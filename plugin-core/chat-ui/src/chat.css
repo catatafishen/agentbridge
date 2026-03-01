@@ -774,10 +774,12 @@ b, strong {
 
 /* ── Copy button ─────────────────────────────────────── */
 .copy-btn {
-    position: absolute;
+    position: sticky;
+    float: right;
     top: var(--sp-2);
     right: var(--sp-2);
     z-index: 1;
+    margin: 0 0 0 var(--sp-3);
     background: var(--fg-a08);
     color: var(--fg);
     border: none;

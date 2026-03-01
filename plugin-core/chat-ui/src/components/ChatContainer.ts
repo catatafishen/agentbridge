@@ -66,7 +66,7 @@ export default class ChatContainer extends HTMLElement {
                         setTimeout(() => btn.textContent = 'Copy', 1500);
                     });
                 };
-                pre.appendChild(btn);
+                pre.prepend(btn);
             });
         });
         this._copyObs.observe(this._messages, {childList: true, subtree: true});
