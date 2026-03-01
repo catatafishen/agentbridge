@@ -1045,6 +1045,8 @@ public class CopilotAcpClient implements Closeable {
 
     private void handleResponseMessage(JsonObject msg) {
         long id = msg.get("id").getAsLong();
+        LOG.info("ACP response: id=" + id + " keys=" + msg.keySet()
+            + (msg.has(RESULT) ? " result_keys=" + msg.getAsJsonObject(RESULT).keySet() : ""));
         CompletableFuture<JsonObject> future = pendingRequests.remove(id);
         if (future != null) {
             if (msg.has(ERROR)) {
@@ -1072,6 +1074,12 @@ public class CopilotAcpClient implements Closeable {
     }
 
     private void handleNotificationMessage(JsonObject msg) {
+        String method = msg.has(METHOD) ? msg.get(METHOD).getAsString() : "unknown";
+        LOG.info("ACP notification: method=" + method + " keys=" + msg.keySet());
+        if (method.contains("usage") || method.contains("quota") || method.contains("billing")
+            || method.contains("premium") || method.contains("stats") || method.contains("turn")) {
+            LOG.info("ACP notification (quota-related) FULL: " + msg);
+        }
         notifyListeners(msg);
     }
 
@@ -1580,7 +1588,13 @@ public class CopilotAcpClient implements Closeable {
     private void sendPromptMessage(String message) {
         LOG.info("Sending pre-rejection guidance message: " + message.substring(0, Math.min(100, message.length())));
 
+        if (currentSessionId == null) {
+            LOG.warn("Cannot send guidance — no active session");
+            return;
+        }
+
         JsonObject params = new JsonObject();
+        params.addProperty(SESSION_ID, currentSessionId);
         JsonArray messages = new JsonArray();
         JsonObject userMsg = new JsonObject();
         userMsg.addProperty("role", "user");
