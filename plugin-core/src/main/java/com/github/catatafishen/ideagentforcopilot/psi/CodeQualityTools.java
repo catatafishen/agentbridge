@@ -179,6 +179,8 @@ class CodeQualityTools extends AbstractToolHandler {
     }
 
     private void getHighlightsCached(String pathStr, int limit, CompletableFuture<String> resultFuture) {
+        // Step 1: Collect daemon highlights (needs read action)
+        StringBuilder result = new StringBuilder();
         ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
             Collection<VirtualFile> allFiles = collectFilesForHighlightAnalysis(pathStr, fileIndex, resultFuture);
@@ -190,16 +192,32 @@ class CodeQualityTools extends AbstractToolHandler {
             int[] counts = analyzeFilesForHighlights(allFiles, limit, problems);
 
             if (problems.isEmpty()) {
-                resultFuture.complete(String.format("No highlights found in %d files analyzed (0 files with issues). " +
+                result.append(String.format("No highlights found in %d files analyzed (0 files with issues). " +
                         "Note: This reads cached daemon analysis results from already-analyzed files. " +
                         "For comprehensive code quality analysis, use run_inspections instead.",
                     allFiles.size()));
             } else {
-                String summary = String.format("Found %d problems across %d files (showing up to %d):%n%n",
-                    counts[0], counts[1], limit);
-                resultFuture.complete(summary + String.join("\n", problems));
+                result.append(String.format("Found %d problems across %d files (showing up to %d):%n%n",
+                    counts[0], counts[1], limit));
+                result.append(String.join("\n", problems));
             }
         });
+        if (resultFuture.isDone()) return;
+
+        // Step 2: Collect editor notifications (needs EDT for Swing components)
+        if (pathStr != null && !pathStr.isEmpty()) {
+            try {
+                List<String> notifications = collectEditorNotifications(pathStr);
+                if (!notifications.isEmpty()) {
+                    result.append("\n\n--- Editor Notifications ---\n");
+                    result.append(String.join("\n", notifications));
+                }
+            } catch (Exception e) {
+                LOG.info("Failed to collect editor notifications: " + e.getMessage());
+            }
+        }
+
+        resultFuture.complete(result.toString());
     }
 
     private int[] analyzeFilesForHighlights(Collection<VirtualFile> files, int limit, List<String> problems) {
@@ -224,12 +242,14 @@ class CodeQualityTools extends AbstractToolHandler {
         Collection<VirtualFile> files = new ArrayList<>();
         if (pathStr != null && !pathStr.isEmpty()) {
             VirtualFile vf = resolveVirtualFile(pathStr);
-            if (vf != null && fileIndex.isInSourceContent(vf)) {
-                files.add(vf);
-            } else {
-                resultFuture.complete("Error: File not found or not in source content: " + pathStr);
+            if (vf == null) {
+                resultFuture.complete("Error: File not found: " + pathStr);
                 return Collections.emptyList();
             }
+            if (fileIndex.isInSourceContent(vf)) {
+                files.add(vf);
+            }
+            // Non-source files: return empty list — notifications may still apply
         } else {
             fileIndex.iterateContent(file -> {
                 if (!file.isDirectory() && fileIndex.isInSourceContent(file)) {
@@ -267,6 +287,54 @@ class CodeQualityTools extends AbstractToolHandler {
             LOG.warn("Failed to analyze file: " + relPath, e);
         }
         return added;
+    }
+
+    /**
+     * Collects editor notification banners for a file (e.g., "Some ignored directories are not excluded").
+     * Must be called outside a read action since it dispatches to EDT for Swing component creation.
+     */
+    private List<String> collectEditorNotifications(String pathStr) throws Exception {
+        CompletableFuture<List<String>> future = new CompletableFuture<>();
+        ApplicationManager.getApplication().invokeLater(() -> {
+            try {
+                VirtualFile vf = resolveVirtualFile(pathStr);
+                if (vf == null) {
+                    future.complete(Collections.emptyList());
+                    return;
+                }
+
+                var fem = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project);
+                var editors = fem.getEditors(vf);
+                if (editors.length == 0) {
+                    future.complete(Collections.emptyList());
+                    return;
+                }
+
+                var editor = editors[0];
+                List<String> notifications = new ArrayList<>();
+
+                for (var provider : com.intellij.ui.EditorNotificationProvider.EP_NAME.getExtensions(project)) {
+                    try {
+                        var factory = provider.collectNotificationData(project, vf);
+                        if (factory == null) continue;
+                        var panel = factory.apply(editor);
+                        if (panel instanceof com.intellij.ui.EditorNotificationPanel enp) {
+                            String text = enp.getText();
+                            if (text != null && !text.isEmpty()) {
+                                notifications.add("[BANNER] " + text);
+                            }
+                        }
+                    } catch (Exception e) {
+                        // Skip failing providers silently
+                    }
+                }
+
+                future.complete(notifications);
+            } catch (Exception e) {
+                future.complete(Collections.emptyList());
+            }
+        });
+        return future.get(10, TimeUnit.SECONDS);
     }
 
     // ---- get_compilation_errors ----
