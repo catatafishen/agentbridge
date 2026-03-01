@@ -1,9 +1,11 @@
 <idea-plugin>
   <id>com.github.catatafishen.ideagentforcopilot</id>
   <name>IDE Agent for Copilot</name>
-  <vendor email="support@example.com" url="https://github.com/yourusername/intellij-copilot-plugin">
+  <vendor email="henrik@westergard.org" url="https://github.com/catatafishen/ide-agent-for-copilot">
     IDE Agent for Copilot Contributors
   </vendor>
+
+  <category>AI Assistant</category>
 
   <description><![CDATA[
     <p>Copilot Bridge transforms GitHub Copilot from a chat assistant into a true coding agent inside your JetBrains IDE.</p>
