@@ -11,6 +11,7 @@ internal object MarkdownRenderer {
     private val FILE_PATH_REGEX = Regex(
         """(?<![:\w])(?:/[\w.\-]+(?:/[\w.\-]+)*\.\w+|(?:\.\.?/)?[\w.\-]+(?:/[\w.\-]+)+\.\w+)(?::\d+(?::\d+)?)?"""
     )
+    private val GIT_SHA_REGEX = Regex("""^[0-9a-f]{7,40}$""")
 
     data class MarkdownState(
         var inCode: Boolean = false,
@@ -164,6 +165,8 @@ internal object MarkdownRenderer {
                     if (resolved != null) {
                         val href = resolved.first + if (resolved.second != null) ":${resolved.second}" else ""
                         result.append("<a href='openfile://$href'><code>${escapeHtml(content)}</code></a>")
+                    } else if (GIT_SHA_REGEX.matches(content)) {
+                        result.append("<a href='gitshow://$content'><code>${escapeHtml(content)}</code></a>")
                     } else {
                         result.append("<code>${escapeHtml(content)}</code>")
                     }
