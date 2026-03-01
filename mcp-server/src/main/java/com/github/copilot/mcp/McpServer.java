@@ -827,7 +827,12 @@ public class McpServer {
      * Falls back to null if bridge is unavailable.
      */
     private static boolean isLongRunningTool(String toolName) {
-        return "run_sonarqube_analysis".equals(toolName) || "run_qodana".equals(toolName);
+        return switch (toolName) {
+            case "run_sonarqube_analysis", "run_qodana",
+                 "run_command", "run_tests", "build_project",
+                 "run_configuration", "run_inspections" -> true;
+            default -> false;
+        };
     }
 
     /**
@@ -900,6 +905,7 @@ public class McpServer {
      */
     private static String delegateToPsiBridge(String toolName, JsonObject arguments) {
         int readTimeoutMs = isLongRunningTool(toolName) ? 180_000 : 90_000;
+        int bridgePort = -1;
         try {
             Path bridgeFile = Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json");
             if (!Files.exists(bridgeFile)) {
@@ -910,10 +916,9 @@ public class McpServer {
             String content = Files.readString(bridgeFile);
             JsonObject bridgeData = JsonParser.parseString(content).getAsJsonObject();
 
-            int port;
             if (bridgeData.has("port")) {
                 // Legacy single-entry format
-                port = bridgeData.get("port").getAsInt();
+                bridgePort = bridgeData.get("port").getAsInt();
                 if (bridgeData.has("projectPath")) {
                     String bridgeProject = bridgeData.get("projectPath").getAsString().replace('\\', '/');
                     String ourProject = projectRoot.replace('\\', '/');
@@ -941,10 +946,10 @@ public class McpServer {
                         "Projects with active bridges: [" + known + "]. " +
                         "Open this project in IntelliJ with the IDE Agent for Copilot plugin.";
                 }
-                port = matchedEntry.get("port").getAsInt();
+                bridgePort = matchedEntry.get("port").getAsInt();
             }
 
-            URL url = URI.create("http://127.0.0.1:" + port + "/tools/call").toURL();
+            URL url = URI.create("http://127.0.0.1:" + bridgePort + "/tools/call").toURL();
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
@@ -974,13 +979,40 @@ public class McpServer {
             return "ERROR: IntelliJ bridge connection refused for project '" + projectRoot + "' — " +
                 "IntelliJ may have restarted. Try running your prompt again once IntelliJ has fully loaded.";
         } catch (java.net.SocketTimeoutException e) {
-            return "ERROR: IntelliJ bridge timed out for tool '" + toolName + "'. " +
-                "This may be because a permission request is waiting for user approval in the IDE, " +
-                "or IntelliJ may be busy. Check the IDE for any pending permission dialogs.";
+            return buildTimeoutErrorMessage(toolName, bridgePort);
         } catch (Exception e) {
             LOG.log(Level.WARNING, "PSI Bridge error for tool: " + toolName, e);
             return "ERROR: IntelliJ bridge error for tool '" + toolName + "': " + e.getMessage();
         }
+    }
+
+    /**
+     * Builds a specific timeout error message by querying the PSI bridge's /tools/status endpoint
+     * to determine if a permission prompt is blocking the tool call.
+     */
+    private static String buildTimeoutErrorMessage(String toolName, int bridgePort) {
+        if (bridgePort > 0) {
+            try {
+                URL statusUrl = URI.create("http://127.0.0.1:" + bridgePort + "/tools/status").toURL();
+                HttpURLConnection sc = (HttpURLConnection) statusUrl.openConnection();
+                sc.setConnectTimeout(2000);
+                sc.setReadTimeout(2000);
+                if (sc.getResponseCode() == 200) {
+                    try (InputStream is = sc.getInputStream()) {
+                        JsonObject status = JsonParser.parseString(
+                            new String(is.readAllBytes(), StandardCharsets.UTF_8)).getAsJsonObject();
+                        if (status.has("permissionPending") && status.get("permissionPending").getAsBoolean()) {
+                            return "ERROR: Tool '" + toolName + "' is waiting for permission approval in IntelliJ. " +
+                                "Check the IDE for the pending permission dialog and approve or deny it.";
+                        }
+                    }
+                }
+            } catch (Exception ignored) {
+                // Status check failed — fall through to generic message
+            }
+        }
+        return "ERROR: Tool '" + toolName + "' timed out. IntelliJ may be busy with a long-running operation. " +
+            "Try again in a moment.";
     }
 
     // --- Tool implementations (regex fallback) ---

@@ -53,6 +53,8 @@ public final class PsiBridgeService implements Disposable {
     private final RunConfigurationService runConfigService;
     private final Map<String, ToolHandler> toolRegistry = new LinkedHashMap<>();
     private final FileTools fileTools;
+    private final java.util.concurrent.atomic.AtomicBoolean permissionPending =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
     private HttpServer httpServer;
     private int port;
 
@@ -112,6 +114,7 @@ public final class PsiBridgeService implements Disposable {
             httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
             httpServer.createContext("/tools/call", this::handleToolCall);
             httpServer.createContext("/tools/list", this::handleToolsList);
+            httpServer.createContext("/tools/status", this::handleToolStatus);
             httpServer.createContext("/health", this::handleHealth);
             httpServer.setExecutor(Executors.newFixedThreadPool(8));
             httpServer.start();
@@ -219,6 +222,16 @@ public final class PsiBridgeService implements Disposable {
         exchange.getResponseBody().close();
     }
 
+    private void handleToolStatus(HttpExchange exchange) throws IOException {
+        JsonObject status = new JsonObject();
+        status.addProperty("permissionPending", permissionPending.get());
+        byte[] resp = GSON.toJson(status).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
+        exchange.sendResponseHeaders(200, resp.length);
+        exchange.getResponseBody().write(resp);
+        exchange.getResponseBody().close();
+    }
+
     private void handleToolsList(HttpExchange exchange) throws IOException {
         if (!"GET".equals(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
@@ -311,6 +324,16 @@ public final class PsiBridgeService implements Disposable {
         }
 
         // ASK: show a permission bubble in the chat panel and block until user responds
+        permissionPending.set(true);
+        try {
+            return askUserPermission(toolName, arguments);
+        } finally {
+            permissionPending.set(false);
+        }
+    }
+
+    @Nullable
+    private String askUserPermission(String toolName, JsonObject arguments) {
         ToolRegistry.ToolEntry entry = ToolRegistry.findById(toolName);
         String displayName = entry != null ? entry.displayName : toolName;
         String argsJson = arguments.toString();
