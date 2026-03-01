@@ -2,9 +2,9 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
@@ -70,7 +70,8 @@ class EditorTools extends AbstractToolHandler {
                 }
 
                 // Force DaemonCodeAnalyzer to run on this file
-                PsiFile psiFile = ReadAction.compute(() -> PsiManager.getInstance(project).findFile(vf));
+                PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
+                    (Computable<PsiFile>) () -> PsiManager.getInstance(project).findFile(vf));
                 if (psiFile != null) {
                     com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.getInstance(project).restart(psiFile, "File opened in editor");
                 }

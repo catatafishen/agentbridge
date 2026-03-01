@@ -269,19 +269,6 @@ class InfrastructureTools extends AbstractToolHandler {
     private List<com.intellij.execution.ui.RunContentDescriptor> collectRunDescriptors() {
         var manager = com.intellij.execution.ui.RunContentManager.getInstance(project);
         var descriptors = new ArrayList<>(manager.getAllDescriptors());
-
-        // Also include debug session descriptors
-        try {
-            var debugManager = com.intellij.xdebugger.XDebuggerManager.getInstance(project);
-            for (var session : debugManager.getDebugSessions()) {
-                var rd = session.getRunContentDescriptor();
-                if (!descriptors.contains(rd)) {
-                    descriptors.add(rd);
-                }
-            }
-        } catch (Exception ignored) {
-            // XDebugger may not be available
-        }
         return descriptors;
     }
 

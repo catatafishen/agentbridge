@@ -1,6 +1,3 @@
-import java.net.HttpURLConnection
-import java.net.URL
-
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.3.10"
@@ -218,8 +215,8 @@ intellijPlatform {
         """.trimIndent()
 
         ideaVersion {
-            sinceBuild = "251"
-            untilBuild = "253.*"
+            sinceBuild = "253"
+            untilBuild = provider { null }
         }
     }
 

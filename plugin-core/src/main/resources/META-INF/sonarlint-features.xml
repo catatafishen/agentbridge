@@ -1,0 +1,4 @@
+<idea-plugin>
+    <!-- SonarLint optional dependency extensions -->
+    <!-- SonarLint integration accessed via reflection for enhanced tool support -->
+</idea-plugin>

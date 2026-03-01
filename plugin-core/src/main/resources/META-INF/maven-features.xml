@@ -1,0 +1,4 @@
+<idea-plugin>
+    <!-- Maven optional dependency extensions -->
+    <!-- Maven integration accessed via reflection for enhanced tool support -->
+</idea-plugin>

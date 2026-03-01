@@ -1,0 +1,4 @@
+<idea-plugin>
+    <!-- Coverage optional dependency extensions -->
+    <!-- Coverage data accessed via reflection for enhanced tool support -->
+</idea-plugin>
