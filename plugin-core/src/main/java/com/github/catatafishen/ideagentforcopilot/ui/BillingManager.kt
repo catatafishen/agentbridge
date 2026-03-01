@@ -223,7 +223,7 @@ internal class BillingManager {
             val today = LocalDate.now()
             val cycleStart = resetLocalDate.minusMonths(1)
             val totalDays = ChronoUnit.DAYS.between(cycleStart, resetLocalDate).toInt().coerceAtLeast(1)
-            val currentDay = ChronoUnit.DAYS.between(cycleStart, today).toInt().coerceIn(0, totalDays)
+            val currentDay = ChronoUnit.DAYS.between(cycleStart, today).toInt().coerceIn(1, totalDays)
 
             usageGraphPanel.graphData = UsageGraphData(currentDay, totalDays, used, entitlement)
             usageGraphPanel.toolTipText =
