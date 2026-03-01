@@ -72,7 +72,7 @@ class EditorTools extends AbstractToolHandler {
                 // Force DaemonCodeAnalyzer to run on this file
                 PsiFile psiFile = ReadAction.compute(() -> PsiManager.getInstance(project).findFile(vf));
                 if (psiFile != null) {
-                    com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.getInstance(project).restart(psiFile, "File opened in editor");
+                    com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.getInstance(project).restart(psiFile);
                 }
 
                 resultFuture.complete("Opened " + pathStr + (line > 0 ? " at line " + line : "") +
