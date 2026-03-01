@@ -86,6 +86,7 @@ public final class PsiBridgeService implements Disposable {
         toolRegistry.put("run_configuration", runConfigService::runConfiguration);
         toolRegistry.put("create_run_configuration", runConfigService::createRunConfiguration);
         toolRegistry.put("edit_run_configuration", runConfigService::editRunConfiguration);
+        toolRegistry.put("delete_run_configuration", runConfigService::deleteRunConfiguration);
     }
 
     @SuppressWarnings("java:S1905") // Cast needed: IDE doesn't resolve Project→ComponentManager supertype

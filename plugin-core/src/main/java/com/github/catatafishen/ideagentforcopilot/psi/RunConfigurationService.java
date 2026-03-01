@@ -141,14 +141,23 @@ public final class RunConfigurationService {
                 // Apply common properties
                 applyConfigProperties(config, args);
 
-                // Apply type-specific properties
+                // Apply type-specific properties (includes Gradle tasks)
                 applyTypeSpecificProperties(config, args);
+
+                // Store as shared (project file) by default
+                boolean shared = !args.has("shared") || args.get("shared").getAsBoolean();
+                if (shared) {
+                    settings.storeInDotIdeaFolder();
+                } else {
+                    settings.storeInLocalWorkspace();
+                }
 
                 runManager.addConfiguration(settings);
                 runManager.setSelectedConfiguration(settings);
 
+                String storage = shared ? " (shared/project file)" : " (workspace-local)";
                 resultFuture.complete("Created run configuration: " + name
-                    + " [" + configType.getDisplayName() + "]"
+                    + " [" + configType.getDisplayName() + "]" + storage
                     + "\nUse run_configuration to execute it, or edit_run_configuration to modify it.");
             } catch (Exception e) {
                 resultFuture.complete("Error creating run configuration: " + e.getMessage());
@@ -177,10 +186,21 @@ public final class RunConfigurationService {
 
                 List<String> changes = applyEditProperties(settings.getConfiguration(), args);
 
+                // Handle shared/workspace storage toggle
+                if (args.has("shared")) {
+                    boolean shared = args.get("shared").getAsBoolean();
+                    if (shared) {
+                        settings.storeInDotIdeaFolder();
+                    } else {
+                        settings.storeInLocalWorkspace();
+                    }
+                    changes.add(shared ? "stored as shared" : "stored in workspace");
+                }
+
                 if (changes.isEmpty()) {
                     resultFuture.complete("No changes applied. Available properties: "
                         + "env (object), jvm_args, program_args, working_dir, "
-                        + "main_class, test_class, test_method, tasks");
+                        + "main_class, test_class, test_method, tasks, script_parameters, shared");
                 } else {
                     resultFuture.complete("Updated run configuration '" + name + "': "
                         + String.join(", ", changes));
@@ -216,8 +236,35 @@ public final class RunConfigurationService {
         if (args.has(PARAM_MAIN_CLASS)) changes.add("main class");
         if (args.has(PARAM_TEST_CLASS)) changes.add("test class");
         if (args.has("tasks")) changes.add("Gradle tasks");
+        if (args.has("script_parameters")) changes.add("script parameters");
 
         return changes;
+    }
+
+    public String deleteRunConfiguration(JsonObject args) throws Exception {
+        String name = args.get("name").getAsString();
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+
+        EdtUtil.invokeLater(() -> {
+            try {
+                RunManager runManager = RunManager.getInstance(project);
+                var settings = runManager.findConfigurationByName(name);
+                if (settings == null) {
+                    resultFuture.complete("Run configuration not found: '" + name
+                        + "'. Use list_run_configurations to see available configs.");
+                    return;
+                }
+
+                String typeName = settings.getType().getDisplayName();
+                runManager.removeConfiguration(settings);
+                resultFuture.complete("Deleted run configuration: " + name + " [" + typeName + "]");
+            } catch (Exception e) {
+                resultFuture.complete("Error deleting run configuration: " + e.getMessage());
+            }
+        });
+
+        return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
     // ---- Helper Methods ----
@@ -280,6 +327,9 @@ public final class RunConfigurationService {
         if (args.has(PARAM_TEST_CLASS) || args.has(PARAM_TEST_METHOD)) {
             applyJUnitTestProperties(config, args);
         }
+
+        // Gradle: tasks and script parameters via ExternalSystemRunConfiguration
+        applyGradleProperties(config, args);
 
         if (args.has(PARAM_MODULE_NAME)) {
             applyModuleProperty(config, args);
@@ -345,6 +395,39 @@ public final class RunConfigurationService {
             .findModuleByName(args.get(PARAM_MODULE_NAME).getAsString());
         if (module != null) {
             trySetModuleOnConfig(config, module);
+        }
+    }
+
+    private void applyGradleProperties(RunConfiguration config, JsonObject args) {
+        if (!args.has("tasks") && !args.has("script_parameters")) return;
+        try {
+            // ExternalSystemRunConfiguration.getSettings() -> ExternalSystemTaskExecutionSettings
+            var getSettings = config.getClass().getMethod("getSettings");
+            var settings = getSettings.invoke(config);
+
+            if (args.has("tasks")) {
+                // Parse tasks: accept JSON array or space-separated string
+                List<String> taskNames = new ArrayList<>();
+                var tasksElem = args.get("tasks");
+                if (tasksElem.isJsonArray()) {
+                    for (var t : tasksElem.getAsJsonArray()) {
+                        taskNames.add(t.getAsString());
+                    }
+                } else {
+                    for (String t : tasksElem.getAsString().split("\\s+")) {
+                        if (!t.isEmpty()) taskNames.add(t);
+                    }
+                }
+                var setTaskNames = settings.getClass().getMethod("setTaskNames", List.class);
+                setTaskNames.invoke(settings, taskNames);
+            }
+
+            if (args.has("script_parameters")) {
+                var setScriptParams = settings.getClass().getMethod("setScriptParameters", String.class);
+                setScriptParams.invoke(settings, args.get("script_parameters").getAsString());
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to apply Gradle properties (config may not be a Gradle type)", e);
         }
     }
 

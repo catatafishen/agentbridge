@@ -111,6 +111,7 @@ public final class ToolRegistry {
         new ToolEntry("run_configuration", "Run Configuration", "Execute an existing run configuration by name", Category.BUILD, false, false, false),
         new ToolEntry("create_run_configuration", "Create Run Config", "Create a new run configuration (application, JUnit, or Gradle)", Category.BUILD, false, false, false),
         new ToolEntry("edit_run_configuration", "Edit Run Config", "Edit an existing run configuration's arguments, environment, or working directory", Category.BUILD, false, false, false),
+        new ToolEntry("delete_run_configuration", "Delete Run Config", "Delete a run configuration by name", Category.BUILD, false, false, false),
         new ToolEntry("list_run_configurations", "List Run Configs", "List all available run configurations in the project", Category.BUILD, false, false, false),
 
         // ── Terminal & commands ───────────────────────────────────────────────────

@@ -292,15 +292,18 @@ public class McpServer {
             List.of("name")));
 
         addIfEnabled.accept(buildTool("create_run_configuration", "Create Run Configuration",
-            Map.of(
-                "name", Map.of("type", "string", "description", "Name for the new run configuration"),
-                "type", Map.of("type", "string", "description", "Configuration type: 'application', 'junit', or 'gradle'"),
-                "jvm_args", Map.of("type", "string", "description", "Optional: JVM arguments (e.g., '-Xmx512m')"),
-                "program_args", Map.of("type", "string", "description", "Optional: program arguments"),
-                "working_dir", Map.of("type", "string", "description", "Optional: working directory path"),
-                "main_class", Map.of("type", "string", "description", "Optional: main class (for Application configs)"),
-                "test_class", Map.of("type", "string", "description", "Optional: test class (for JUnit configs)"),
-                "module_name", Map.of("type", "string", "description", "Optional: IntelliJ module name (from project structure)")
+            Map.ofEntries(
+                Map.entry("name", Map.of("type", "string", "description", "Name for the new run configuration")),
+                Map.entry("type", Map.of("type", "string", "description", "Configuration type: 'application', 'junit', or 'gradle'")),
+                Map.entry("jvm_args", Map.of("type", "string", "description", "Optional: JVM arguments (e.g., '-Xmx512m')")),
+                Map.entry("program_args", Map.of("type", "string", "description", "Optional: program arguments")),
+                Map.entry("working_dir", Map.of("type", "string", "description", "Optional: working directory path")),
+                Map.entry("main_class", Map.of("type", "string", "description", "Optional: main class (for Application configs)")),
+                Map.entry("test_class", Map.of("type", "string", "description", "Optional: test class (for JUnit configs)")),
+                Map.entry("module_name", Map.of("type", "string", "description", "Optional: IntelliJ module name (from project structure)")),
+                Map.entry("tasks", Map.of("type", "string", "description", "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')")),
+                Map.entry("script_parameters", Map.of("type", "string", "description", "Optional: Gradle script parameters (e.g., '--info')")),
+                Map.entry("shared", Map.of("type", "boolean", "description", "Store as shared project file (default: true). If false, stored in workspace only"))
             ),
             List.of("name", "type")));
         addEnvProperty(tools.get(tools.size() - 1).getAsJsonObject());
@@ -310,10 +313,19 @@ public class McpServer {
                 "name", Map.of("type", "string", "description", "Name of the run configuration to edit"),
                 "jvm_args", Map.of("type", "string", "description", "Optional: new JVM arguments"),
                 "program_args", Map.of("type", "string", "description", "Optional: new program arguments"),
-                "working_dir", Map.of("type", "string", "description", "Optional: new working directory")
+                "working_dir", Map.of("type", "string", "description", "Optional: new working directory"),
+                "tasks", Map.of("type", "string", "description", "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')"),
+                "script_parameters", Map.of("type", "string", "description", "Optional: Gradle script parameters (e.g., '--info')"),
+                "shared", Map.of("type", "boolean", "description", "Optional: toggle shared (project file) vs workspace-local storage")
             ),
             List.of("name")));
         addEnvProperty(tools.get(tools.size() - 1).getAsJsonObject());
+
+        addIfEnabled.accept(buildTool("delete_run_configuration", "Delete Run Configuration",
+            Map.of(
+                "name", Map.of("type", "string", "description", "Exact name of the run configuration to delete")
+            ),
+            List.of("name")));
 
         addIfEnabled.accept(buildTool("get_problems", "Get Problems",
             Map.of(
