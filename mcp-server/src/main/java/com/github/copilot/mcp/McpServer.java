@@ -385,7 +385,7 @@ public class McpServer {
             ),
             List.of()));
 
-        addIfEnabled.accept(buildTool("intellij_read_file", "Read the contents of a file via IntelliJ editor buffer (always up-to-date). Use this instead of shell cat/head/tail.",
+        addIfEnabled.accept(buildTool("intellij_read_file", "Intellij Read File",
             Map.of(
                 "path", Map.of("type", "string", "description", "Absolute or project-relative path to the file to read"),
                 "start_line", Map.of("type", "integer", "description", "Optional: first line to read (1-based, inclusive)"),
@@ -407,13 +407,13 @@ public class McpServer {
 
         // ---- Git tools ----
 
-        addIfEnabled.accept(buildTool("git_status", "Show working tree status. Use this instead of shell 'git status' — shell git bypasses IntelliJ's VCS layer and causes buffer desync.",
+        addIfEnabled.accept(buildTool("git_status", "Git Status",
             Map.of(
                 "verbose", Map.of("type", "boolean", "description", "If true, show full 'git status' output including untracked files")
             ),
             List.of()));
 
-        addIfEnabled.accept(buildTool("git_diff", "Show changes between commits, working tree, etc. Use this instead of shell 'git diff'.",
+        addIfEnabled.accept(buildTool("git_diff", "Git Diff",
             Map.of(
                 "staged", Map.of("type", "boolean", "description", "If true, show staged (cached) changes only"),
                 "commit", Map.of("type", "string", "description", "Compare against this commit (e.g., 'HEAD~1', branch name)"),
@@ -422,7 +422,7 @@ public class McpServer {
             ),
             List.of()));
 
-        addIfEnabled.accept(buildTool("git_log", "Show commit history. Use this instead of shell 'git log'.",
+        addIfEnabled.accept(buildTool("git_log", "Git Log",
             Map.of(
                 "max_count", Map.of("type", "integer", "description", "Maximum number of commits to show (default: 10)"),
                 "format", Map.of("type", "string", "description", "Output format: 'oneline', 'short', 'medium', 'full'"),
@@ -433,7 +433,7 @@ public class McpServer {
             ),
             List.of()));
 
-        addIfEnabled.accept(buildTool("git_blame", "Show line-by-line authorship. Use this instead of shell 'git blame'.",
+        addIfEnabled.accept(buildTool("git_blame", "Git Blame",
             Map.of(
                 "path", Map.of("type", "string", "description", "File path to blame"),
                 "line_start", Map.of("type", "integer", "description", "Start line number for partial blame"),
@@ -441,7 +441,7 @@ public class McpServer {
             ),
             List.of("path")));
 
-        addIfEnabled.accept(buildTool("git_commit", "Record changes to the repository. Use this instead of shell 'git commit' — keeps IntelliJ's VCS layer in sync.",
+        addIfEnabled.accept(buildTool("git_commit", "Git Commit",
             Map.of(
                 "message", Map.of("type", "string", "description", "Commit message (use conventional commit format)"),
                 "amend", Map.of("type", "boolean", "description", "If true, amend the previous commit instead of creating a new one"),
@@ -449,7 +449,7 @@ public class McpServer {
             ),
             List.of("message")));
 
-        var gitStage = buildTool("git_stage", "Stage files for commit. Use this instead of shell 'git add'.",
+        var gitStage = buildTool("git_stage", "Git Stage",
             Map.of(
                 "path", Map.of("type", "string", "description", "Single file path to stage"),
                 "paths", Map.of("type", "array", "description", "Multiple file paths to stage"),
@@ -459,7 +459,7 @@ public class McpServer {
         addArrayItems(gitStage, "paths");
         tools.add(gitStage);
 
-        var gitUnstage = buildTool("git_unstage", "Unstage files from the index. Use this instead of shell 'git restore --staged'.",
+        var gitUnstage = buildTool("git_unstage", "Git Unstage",
             Map.of(
                 "path", Map.of("type", "string", "description", "Single file path to unstage"),
                 "paths", Map.of("type", "array", "description", "Multiple file paths to unstage")
@@ -468,7 +468,7 @@ public class McpServer {
         addArrayItems(gitUnstage, "paths");
         tools.add(gitUnstage);
 
-        addIfEnabled.accept(buildTool("git_branch", "List, create, switch, or delete branches. Use this instead of shell 'git branch/checkout/switch'.",
+        addIfEnabled.accept(buildTool("git_branch", "Git Branch",
             Map.of(
                 "action", Map.of("type", "string", "description", "Action: 'list' (default), 'create', 'switch', 'delete'"),
                 "name", Map.of("type", "string", "description", "Branch name (required for create/switch/delete)"),
@@ -478,7 +478,7 @@ public class McpServer {
             ),
             List.of()));
 
-        addIfEnabled.accept(buildTool("git_stash", "Stash changes in working directory. Use this instead of shell 'git stash'.",
+        addIfEnabled.accept(buildTool("git_stash", "Git Stash",
             Map.of(
                 "action", Map.of("type", "string", "description", "Action: 'list' (default), 'push', 'pop', 'apply', 'drop'"),
                 "message", Map.of("type", "string", "description", "Stash message (for push action)"),
@@ -487,7 +487,7 @@ public class McpServer {
             ),
             List.of()));
 
-        addIfEnabled.accept(buildTool("git_show", "Show details of a commit. Use this instead of shell 'git show'.",
+        addIfEnabled.accept(buildTool("git_show", "Git Show",
             Map.of(
                 "ref", Map.of("type", "string", "description", "Commit SHA, branch, tag, or ref (default: HEAD)"),
                 "stat_only", Map.of("type", "boolean", "description", "If true, show only file stats, not full diff content"),
@@ -495,7 +495,7 @@ public class McpServer {
             ),
             List.of()));
 
-        addIfEnabled.accept(buildTool("git_push", "Push commits to remote. Use this instead of shell 'git push'.",
+        addIfEnabled.accept(buildTool("git_push", "Git Push",
             Map.of(
                 "remote", Map.of("type", "string", "description", "Remote name (default: origin)"),
                 "branch", Map.of("type", "string", "description", "Branch to push (default: current)"),
@@ -505,7 +505,7 @@ public class McpServer {
             ),
             List.of()));
 
-        addIfEnabled.accept(buildTool("git_remote", "Manage git remotes. Use this instead of shell 'git remote'.",
+        addIfEnabled.accept(buildTool("git_remote", "Git Remote",
             Map.of(
                 "action", Map.of("type", "string", "description", "Action: 'list' (default), 'add', 'remove', 'set_url', 'get_url'"),
                 "name", Map.of("type", "string", "description", "Remote name (required for add/remove/set_url/get_url)"),
@@ -524,7 +524,7 @@ public class McpServer {
             ),
             List.of("url")));
 
-        addIfEnabled.accept(buildTool("run_command", "Run a shell command in the project directory. Output is paginated (default 8000 chars). For running tests use run_tests; for code search use search_symbols or search_text instead. NEVER use for git commands (use git_status, git_diff, git_commit etc. instead — shell git causes buffer desync). NEVER use for reading/writing files (use intellij_read_file/intellij_write_file instead).",
+        addIfEnabled.accept(buildTool("run_command", "Run a shell command in the project directory. Output is paginated (default 8000 chars). For running tests use run_tests; for code search use search_symbols instead. NEVER use for git commands (use git_status, git_diff, git_commit etc. instead \u2192 shell git causes buffer desync).",
             Map.of(
                 "command", Map.of("type", "string", "description", "Shell command to execute (e.g., 'gradle build', 'cat file.txt')"),
                 "timeout", Map.of("type", "integer", "description", "Timeout in seconds (default: 60)"),
