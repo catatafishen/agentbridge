@@ -73,7 +73,10 @@ class CodeQualityTools extends AbstractToolHandler {
         register("run_inspections", this::runInspections);
         register("apply_quickfix", this::applyQuickfix);
         register("suppress_inspection", this::suppressInspection);
-        register("run_qodana", this::runQodana);
+        if (isPluginInstalled("org.jetbrains.qodana")) {
+            register("run_qodana", this::runQodana);
+            LOG.info("Qodana plugin detected — run_qodana tool registered");
+        }
         register("optimize_imports", this::optimizeImports);
         register("format_code", this::formatCode);
         register("add_to_dictionary", this::addToDictionary);

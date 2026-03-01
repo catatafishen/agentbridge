@@ -329,9 +329,11 @@ class TestTools extends AbstractToolHandler {
 
             int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
 
-            return (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
-                + " — " + configName
-                + "\nResults are visible in the IntelliJ test runner panel.";
+            String summary = (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
+                + " — " + configName;
+
+            String testOutput = collectTestRunOutput(configName);
+            return testOutput.isEmpty() ? summary + "\nResults are visible in the IntelliJ test runner panel." : summary + "\n" + testOutput;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("tryRunJUnitNatively failed", e);
@@ -466,9 +468,11 @@ class TestTools extends AbstractToolHandler {
 
             int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
 
-            return (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
-                + " \u2014 " + configName
-                + "\nResults are visible in the IntelliJ test runner panel.";
+            String summary = (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
+                + " \u2014 " + configName;
+
+            String testOutput = collectTestRunOutput(configName);
+            return testOutput.isEmpty() ? summary + "\nResults are visible in the IntelliJ test runner panel." : summary + "\n" + testOutput;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("tryRunJUnitPattern failed", e);
@@ -495,6 +499,88 @@ class TestTools extends AbstractToolHandler {
             return simpleName;
         } catch (Exception e) {
             return simpleName;
+        }
+    }
+
+    /**
+     * Collect test results from the IntelliJ Run panel after a test run completes.
+     * Looks up the RunContentDescriptor by config name and extracts test tree + console output.
+     */
+    private String collectTestRunOutput(String configName) {
+        try {
+            var manager = com.intellij.execution.ui.RunContentManager.getInstance(project);
+            var descriptors = new ArrayList<>(manager.getAllDescriptors());
+
+            com.intellij.execution.ui.RunContentDescriptor target = null;
+            for (var d : descriptors) {
+                if (d.getDisplayName() != null && d.getDisplayName().contains(configName)) {
+                    target = d;
+                    break;
+                }
+            }
+            if (target == null) return "";
+
+            var console = target.getExecutionConsole();
+            if (console == null) return "";
+
+            // Try SMTRunnerConsoleView (test tree)
+            try {
+                var getResultsViewer = console.getClass().getMethod("getResultsViewer");
+                var viewer = getResultsViewer.invoke(console);
+                if (viewer != null) {
+                    var getAllTests = viewer.getClass().getMethod("getAllTests");
+                    var tests = (java.util.List<?>) getAllTests.invoke(viewer);
+                    if (tests != null && !tests.isEmpty()) {
+                        StringBuilder sb = new StringBuilder("\n=== Test Results ===\n");
+                        for (var test : tests) {
+                            appendTestDetail(test, sb);
+                        }
+                        return sb.toString();
+                    }
+                }
+            } catch (NoSuchMethodException ignored) {
+                // Not an SMTRunnerConsoleView
+            }
+
+            // Fall back to plain console text
+            try {
+                var getTextMethod = console.getClass().getMethod("getText");
+                String text = (String) getTextMethod.invoke(console);
+                if (text != null && !text.isBlank()) {
+                    return "\n=== Console Output ===\n" + ToolUtils.truncateOutput(text);
+                }
+            } catch (NoSuchMethodException ignored) {
+                // getText not available
+            }
+        } catch (Exception e) {
+            LOG.debug("Failed to collect test run output", e);
+        }
+        return "";
+    }
+
+    private void appendTestDetail(Object test, StringBuilder sb) throws Exception {
+        var getName = test.getClass().getMethod("getPresentableName");
+        var isPassed = test.getClass().getMethod("isPassed");
+        var isDefect = test.getClass().getMethod("isDefect");
+        String name = (String) getName.invoke(test);
+        boolean passed = (boolean) isPassed.invoke(test);
+        boolean defect = (boolean) isDefect.invoke(test);
+        String status = passed ? "\u2705 PASSED" : defect ? "\u274C FAILED" : "\u26A0 UNKNOWN";
+        sb.append("  ").append(status).append(" ").append(name).append("\n");
+
+        if (defect) {
+            try {
+                String errorMsg = (String) test.getClass().getMethod("getErrorMessage").invoke(test);
+                if (errorMsg != null && !errorMsg.isEmpty()) {
+                    sb.append("    Error: ").append(errorMsg).append("\n");
+                }
+                String stacktrace = (String) test.getClass().getMethod("getStacktrace").invoke(test);
+                if (stacktrace != null && !stacktrace.isEmpty()) {
+                    sb.append("    Stacktrace:\n").append(stacktrace).append("\n");
+                }
+            } catch (NoSuchMethodException ignored) {
+                // Method not available on this test result type
+            }
         }
     }
 
@@ -576,8 +662,11 @@ class TestTools extends AbstractToolHandler {
                 if (!xmlResults.isEmpty()) return xmlResults;
             }
 
-            return (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
+            String summary = (exitCode == 0 ? "\u2705 Tests PASSED" : "\u274C Tests FAILED (exit code " + exitCode + ")")
                 + " \u2014 " + configName;
+
+            String testOutput = collectTestRunOutput(configName);
+            return testOutput.isEmpty() ? summary : summary + "\n" + testOutput;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Error: Test execution interrupted";

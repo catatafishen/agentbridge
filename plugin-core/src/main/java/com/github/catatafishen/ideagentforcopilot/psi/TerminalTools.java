@@ -22,9 +22,12 @@ final class TerminalTools extends AbstractToolHandler {
 
     TerminalTools(Project project) {
         super(project);
-        register("run_in_terminal", this::runInTerminal);
-        register("read_terminal_output", this::readTerminalOutput);
-        register("list_terminals", args -> listTerminals());
+        if (isPluginInstalled("org.jetbrains.plugins.terminal")) {
+            register("run_in_terminal", this::runInTerminal);
+            register("read_terminal_output", this::readTerminalOutput);
+            register("list_terminals", args -> listTerminals());
+            LOG.info("Terminal plugin detected — terminal tools registered");
+        }
     }
 
     private String runInTerminal(JsonObject args) {

@@ -209,10 +209,16 @@ public class McpServer {
         JsonObject result = new JsonObject();
         JsonArray tools = new JsonArray();
 
-        // Helper: only add tool if it isn't in the disabled set
+        // Query PSI bridge for the set of tools actually registered in IntelliJ
+        Set<String> availableTools = queryBridgeAvailableTools();
+
+        // Helper: only add tool if it isn't disabled and is available in the PSI bridge
         java.util.function.Consumer<JsonObject> addIfEnabled = tool -> {
             String name = tool.has("name") ? tool.get("name").getAsString() : "";
-            if (!disabledTools.contains(name)) tools.add(tool);
+            if (!disabledTools.contains(name)
+                && (availableTools == null || availableTools.contains(name))) {
+                tools.add(tool);
+            }
         };
 
         addIfEnabled.accept(buildTool("search_symbols", "Search Symbols",
@@ -822,6 +828,69 @@ public class McpServer {
      */
     private static boolean isLongRunningTool(String toolName) {
         return "run_sonarqube_analysis".equals(toolName) || "run_qodana".equals(toolName);
+    }
+
+    /**
+     * Resolves the PSI bridge HTTP port for the current project.
+     * Returns -1 if the bridge is unavailable.
+     */
+    private static int resolveBridgePort() {
+        try {
+            Path bridgeFile = Path.of(System.getProperty("user.home"), ".copilot", "psi-bridge.json");
+            if (!Files.exists(bridgeFile)) return -1;
+
+            String content = Files.readString(bridgeFile);
+            JsonObject bridgeData = JsonParser.parseString(content).getAsJsonObject();
+
+            if (bridgeData.has("port")) {
+                return bridgeData.get("port").getAsInt();
+            }
+
+            String ourProject = projectRoot.replace('\\', '/');
+            for (Map.Entry<String, com.google.gson.JsonElement> e : bridgeData.entrySet()) {
+                String key = e.getKey().replace('\\', '/');
+                if (ourProject.equals(key) || ourProject.startsWith(key + "/") || key.startsWith(ourProject + "/")) {
+                    return e.getValue().getAsJsonObject().get("port").getAsInt();
+                }
+            }
+        } catch (Exception e) {
+            LOG.log(Level.FINE, "Could not resolve PSI bridge port", e);
+        }
+        return -1;
+    }
+
+    /**
+     * Query the PSI bridge for the set of actually registered tool names.
+     * Returns null if the bridge is unavailable (meaning: advertise all tools as fallback).
+     */
+    private static Set<String> queryBridgeAvailableTools() {
+        int port = resolveBridgePort();
+        if (port < 0) return null;
+
+        try {
+            URL url = URI.create("http://127.0.0.1:" + port + "/tools/list").toURL();
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(2000);
+            conn.setReadTimeout(5000);
+
+            if (conn.getResponseCode() == 200) {
+                try (InputStream is = conn.getInputStream()) {
+                    String response = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                    JsonObject data = JsonParser.parseString(response).getAsJsonObject();
+                    JsonArray toolsArray = data.getAsJsonArray("tools");
+                    Set<String> names = new java.util.HashSet<>();
+                    for (var elem : toolsArray) {
+                        names.add(elem.getAsJsonObject().get("name").getAsString());
+                    }
+                    LOG.info("PSI bridge reports " + names.size() + " available tools");
+                    return names;
+                }
+            }
+        } catch (Exception e) {
+            LOG.log(Level.FINE, "Could not query PSI bridge tool list", e);
+        }
+        return null;
     }
 
     /**
