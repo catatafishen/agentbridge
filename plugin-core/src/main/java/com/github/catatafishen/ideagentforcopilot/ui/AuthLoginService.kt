@@ -43,6 +43,35 @@ internal class AuthLoginService(private val project: Project) {
             message.contains("Copilot CLI") ||
             message.contains("authenticated")
 
+    // ── Logout ─────────────────────────────────────────────────────────────
+
+    /**
+     * Signs out of Copilot by stopping the ACP process and running `copilot auth logout`.
+     * Must be called on a background thread. Returns null on success or an error message.
+     */
+    fun logout(): String? {
+        try {
+            // Stop the running ACP subprocess so its cached token is discarded
+            CopilotService.getInstance(project).stop()
+
+            // Run the CLI logout command
+            val pb = ProcessBuilder("copilot", "auth", "logout")
+            pb.redirectErrorStream(true)
+            val proc = pb.start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            val exitCode = proc.waitFor()
+            if (exitCode != 0) {
+                LOG.warn("copilot auth logout exited with code $exitCode: $output")
+                return output.ifEmpty { "Logout failed (exit code $exitCode)" }
+            }
+            LOG.info("Copilot auth logout succeeded")
+            return null
+        } catch (e: Exception) {
+            LOG.error("Failed to run copilot auth logout", e)
+            return e.message ?: "Logout failed"
+        }
+    }
+
     // ── Login flows ──────────────────────────────────────────────────────────
 
     /**

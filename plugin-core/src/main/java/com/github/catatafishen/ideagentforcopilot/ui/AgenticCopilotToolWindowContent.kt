@@ -732,6 +732,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         leftGroup.addSeparator()
         leftGroup.add(CopyConversationAction())
         leftGroup.add(SettingsAction())
+        leftGroup.add(SignOutAction())
         leftGroup.add(HelpAction(project))
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
@@ -1031,6 +1032,28 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun actionPerformed(e: AnActionEvent) = debugPanel.openSettings()
+    }
+
+    /** Toolbar button that signs out of Copilot, stops the CLI process, and shows the auth banner. */
+    private inner class SignOutAction : AnAction(
+        "Sign Out", "Sign out of GitHub Copilot",
+        AllIcons.Actions.Exit
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        override fun actionPerformed(e: AnActionEvent) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val error = authService.logout()
+                SwingUtilities.invokeLater {
+                    if (error != null) {
+                        Messages.showErrorDialog(project, error, "Sign Out Failed")
+                    } else {
+                        resetSession()
+                        copilotBanner?.triggerCheck()
+                        consolePanel.showPlaceholder("Signed out of Copilot.")
+                    }
+                }
+            }
+        }
     }
 
     private inner class FollowAgentFilesToggleAction : ToggleAction(
