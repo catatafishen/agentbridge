@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.Presentation
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.Logger
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
@@ -59,6 +60,7 @@ internal class BillingManager {
     private val polledTimeFormat = DateTimeFormatter.ofPattern("HH:mm:ss")
 
     private companion object {
+        private val LOG = Logger.getInstance(BillingManager::class.java)
         private const val OS_NAME_PROPERTY = "os.name"
         private val ERROR_COLOR: JBColor
             get() = UIManager.getColor("Label.errorForeground") as? JBColor
@@ -71,10 +73,12 @@ internal class BillingManager {
     }
 
     fun loadBillingData(startPolling: Boolean = false) {
+        LOG.info("loadBillingData called (startPolling=$startPolling)")
         if (startPolling) startPostTurnPolling()
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val ghCli = findGhCli() ?: run {
+                    LOG.warn("gh CLI not found on PATH")
                     updateUsageUi(
                         "Usage info unavailable (gh CLI not found)",
                         "Install GitHub CLI: https://cli.github.com  then run 'gh auth login'"
@@ -83,6 +87,7 @@ internal class BillingManager {
                 }
 
                 if (!isGhAuthenticated(ghCli)) {
+                    LOG.warn("gh CLI not authenticated")
                     updateUsageUi(
                         "Usage info unavailable (not authenticated)",
                         "Run 'gh auth login' in a terminal to authenticate with GitHub"
@@ -90,12 +95,27 @@ internal class BillingManager {
                     return@executeOnPooledThread
                 }
 
-                val obj = fetchCopilotUserData(ghCli) ?: return@executeOnPooledThread
-                val snapshots = obj.getAsJsonObject("quota_snapshots") ?: return@executeOnPooledThread
-                val premium = snapshots.getAsJsonObject("premium_interactions") ?: return@executeOnPooledThread
+                LOG.info("Fetching copilot user data via: $ghCli api /copilot_internal/user")
+                val obj = fetchCopilotUserData(ghCli)
+                if (obj == null) {
+                    LOG.warn("fetchCopilotUserData returned null")
+                    return@executeOnPooledThread
+                }
+                val snapshots = obj.getAsJsonObject("quota_snapshots")
+                if (snapshots == null) {
+                    LOG.warn("No 'quota_snapshots' in response. Keys: ${obj.keySet()}")
+                    return@executeOnPooledThread
+                }
+                val premium = snapshots.getAsJsonObject("premium_interactions")
+                if (premium == null) {
+                    LOG.warn("No 'premium_interactions' in quota_snapshots. Keys: ${snapshots.keySet()}")
+                    return@executeOnPooledThread
+                }
+                LOG.info("Billing API response: entitlement=${premium["entitlement"]}, remaining=${premium["remaining"]}, unlimited=${premium["unlimited"]}, resetDate=${obj["quota_reset_date"]}")
 
                 displayBillingQuota(premium, obj)
             } catch (e: Exception) {
+                LOG.warn("Billing data fetch failed", e)
                 updateUsageUi(
                     "Usage info unavailable",
                     "Error: ${e.message}. Ensure 'gh auth login' has been run."
@@ -111,8 +131,10 @@ internal class BillingManager {
     private fun startPostTurnPolling() {
         billingPollFuture?.cancel(false)
         val usageAtTurnEnd = lastBillingUsed
+        LOG.info("startPostTurnPolling: will poll every 60s until usage changes from $usageAtTurnEnd")
         billingPollFuture = pollExecutor.scheduleAtFixedRate({
             try {
+                LOG.info("Billing poll tick (waiting for usage to change from $usageAtTurnEnd)")
                 val ghCli = findGhCli() ?: return@scheduleAtFixedRate
                 if (!isGhAuthenticated(ghCli)) return@scheduleAtFixedRate
                 val obj = fetchCopilotUserData(ghCli) ?: return@scheduleAtFixedRate
@@ -125,10 +147,11 @@ internal class BillingManager {
                 val remaining = premium["remaining"]?.asInt ?: 0
                 val currentUsed = entitlement - remaining
                 if (currentUsed != usageAtTurnEnd) {
+                    LOG.info("Billing poll: usage changed ($usageAtTurnEnd -> $currentUsed), stopping poll")
                     billingPollFuture?.cancel(false)
                 }
-            } catch (_: Exception) {
-                // Silently retry on next poll
+            } catch (e: Exception) {
+                LOG.warn("Billing poll failed", e)
             }
         }, 60, 60, java.util.concurrent.TimeUnit.SECONDS)
     }
@@ -151,7 +174,13 @@ internal class BillingManager {
     private fun fetchCopilotUserData(ghCli: String): com.google.gson.JsonObject? {
         val apiProcess = ProcessBuilder(ghCli, "api", "/copilot_internal/user").redirectErrorStream(true).start()
         val json = apiProcess.inputStream.bufferedReader().readText()
-        apiProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+        val exited = apiProcess.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+        val exitCode = if (exited) apiProcess.exitValue() else -1
+        if (exitCode != 0) {
+            LOG.warn("gh api /copilot_internal/user exited with code $exitCode, output: ${json.take(500)}")
+        } else {
+            LOG.info("gh api /copilot_internal/user succeeded (${json.length} chars)")
+        }
         return com.google.gson.Gson().fromJson(json, com.google.gson.JsonObject::class.java)
     }
 
@@ -162,6 +191,7 @@ internal class BillingManager {
         val overagePermitted = premium["overage_permitted"]?.asBoolean ?: false
         val resetDate = obj["quota_reset_date"]?.asString ?: ""
         val used = entitlement - remaining
+        LOG.info("displayBillingQuota: used=$used (entitlement=$entitlement - remaining=$remaining), unlimited=$unlimited, resetDate=$resetDate, billingCycleStartUsed=$billingCycleStartUsed, previousUsedCount=$previousUsedCount")
         val shouldAnimate = previousUsedCount >= 0 && used > previousUsedCount
         previousUsedCount = used
 
