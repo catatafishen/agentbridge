@@ -97,8 +97,8 @@
     </ul>
     ]]></change-notes>
 
-  <!-- Require IntelliJ Platform 2025.1+ (compatible through 2025.3) -->
-  <idea-version since-build="251" until-build="253.*"/>
+  <!-- Require IntelliJ Platform 2025.3+ -->
+  <idea-version since-build="253" until-build="253.*"/>
 
   <!-- Plugin dependencies -->
   <depends>com.intellij.modules.platform</depends>
