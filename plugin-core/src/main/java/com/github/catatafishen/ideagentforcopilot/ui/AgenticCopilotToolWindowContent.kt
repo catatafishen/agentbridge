@@ -85,6 +85,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private lateinit var consolePanel: ChatPanelApi
     private lateinit var responsePanelContainer: JBPanel<JBPanel<*>>
     private var copilotBanner: AuthSetupBanner? = null
+    private var inlineAuthProcess: Process? = null
 
     // Per-turn tracking
     private var turnToolCallCount = 0
@@ -259,7 +260,24 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
         banner.actionButton.addActionListener {
             banner.showSignInPending()
-            authService.startCopilotLogin()
+            // Try inline auth first (captures device code from CLI stdout)
+            inlineAuthProcess?.destroy()
+            inlineAuthProcess = authService.startInlineAuth(
+                onDeviceCode = { info ->
+                    banner.showDeviceCode(info.code, info.url)
+                },
+                onAuthComplete = {
+                    banner.hideDeviceCode()
+                    inlineAuthProcess = null
+                    banner.triggerCheck()
+                },
+                onFallback = {
+                    // Inline auth failed to parse — open terminal as fallback
+                    banner.hideDeviceCode()
+                    inlineAuthProcess = null
+                    authService.startCopilotLogin()
+                },
+            )
         }
         return banner
     }

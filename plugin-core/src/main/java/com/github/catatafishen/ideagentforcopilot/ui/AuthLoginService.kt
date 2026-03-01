@@ -16,6 +16,12 @@ internal class AuthLoginService(private val project: Project) {
     private companion object {
         private val LOG = Logger.getInstance(AuthLoginService::class.java)
         private const val OS_NAME_PROPERTY = "os.name"
+
+        /** Matches device codes like ABCD-1234, AB12-CD34, etc. */
+        private val CODE_PATTERN = Regex("\\b[A-Z0-9]{4,8}-[A-Z0-9]{4,8}\\b")
+
+        /** Matches verification URLs (GitHub device flow endpoints). */
+        private val URL_PATTERN = Regex("https?://[\\w.-]+(?:/[\\w./-]*)?/device(?:/[\\w./-]*)?")
     }
 
     // ── Auth error tracking ─────────────────────────────────────────────────
@@ -110,13 +116,14 @@ internal class AuthLoginService(private val project: Project) {
 
     // ── Login flows ──────────────────────────────────────────────────────────
 
+    /** Parsed device-flow info from the CLI's stdout. */
+    data class DeviceCodeInfo(val code: String, val url: String)
+
     /**
-     * Opens a "Copilot Sign In" terminal tab and runs the auth command.
-     * The command is taken from the ACP initialize response when available,
-     * falling back to `copilot auth login`.
-     * Falls back to an external terminal if the embedded terminal plugin is absent.
+     * Resolves the auth command from the ACP `authMethod` or falls back to `copilot auth login`.
+     * Splits the result into a list suitable for [ProcessBuilder].
      */
-    fun startCopilotLogin() {
+    private fun resolveAuthCommand(): List<String> {
         var command = "copilot auth login"
         try {
             val authMethod = CopilotService.getInstance(project).getClient().authMethod
@@ -126,8 +133,103 @@ internal class AuthLoginService(private val project: Project) {
             }
         } catch (_: Exception) { /* best-effort */
         }
+        return command.split(" ").filter { it.isNotEmpty() }
+    }
 
-        val resolvedCommand = command
+    /**
+     * Attempts to run the auth command via [ProcessBuilder], capturing stdout line-by-line
+     * to extract the device code and verification URL.
+     *
+     * @param onDeviceCode  called on EDT when a device code + URL are parsed from stdout
+     * @param onAuthComplete called on EDT when the process exits successfully (auth done)
+     * @param onFallback     called on EDT if we cannot parse or the process fails — caller
+     *                       should open the embedded terminal as a fallback
+     * @return the spawned [Process], or null if it could not be started.  Callers should
+     *         [Process.destroy] it when no longer needed (e.g. banner dismissed).
+     */
+    fun startInlineAuth(
+        onDeviceCode: (DeviceCodeInfo) -> Unit,
+        onAuthComplete: () -> Unit,
+        onFallback: () -> Unit,
+    ): Process? {
+        val cmd = resolveAuthCommand()
+        val process: Process
+        try {
+            val pb = ProcessBuilder(cmd)
+            pb.redirectErrorStream(true)
+            process = pb.start()
+        } catch (e: Exception) {
+            LOG.warn("Inline auth: could not start process, falling back to terminal", e)
+            onFallback()
+            return null
+        }
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                var foundCode = false
+                var pendingCode: String? = null
+                var pendingUrl: String? = null
+
+                process.inputStream.bufferedReader().use { reader ->
+                    reader.forEachLine { line ->
+                        val parsed = parseDeviceCode(line, pendingCode, pendingUrl)
+                        if (parsed.code != null) pendingCode = parsed.code
+                        if (parsed.url != null) pendingUrl = parsed.url
+
+                        if (pendingCode != null && pendingUrl != null && !foundCode) {
+                            foundCode = true
+                            val info = DeviceCodeInfo(pendingCode, pendingUrl)
+                            SwingUtilities.invokeLater { onDeviceCode(info) }
+                        }
+                    }
+                }
+
+                val exitCode = process.waitFor()
+                SwingUtilities.invokeLater {
+                    if (exitCode == 0) {
+                        onAuthComplete()
+                    } else if (!foundCode) {
+                        LOG.info("Inline auth: process exited with $exitCode, no device code found — falling back")
+                        onFallback()
+                    }
+                    // If we did show a code but exit != 0, user probably cancelled — do nothing
+                }
+            } catch (e: Exception) {
+                if (!process.isAlive) return@executeOnPooledThread // killed intentionally
+                LOG.warn("Inline auth: reader failed, falling back", e)
+                SwingUtilities.invokeLater { onFallback() }
+            }
+        }
+        return process
+    }
+
+    private data class ParseResult(val code: String?, val url: String?)
+
+    /**
+     * Tries to extract a device code or verification URL from a single line of CLI output.
+     * Returns any newly found values; previous partial results are passed in so the caller
+     * can accumulate across lines (code and URL may appear on separate lines).
+     *
+     * Patterns are intentionally broad so minor CLI format changes don't break parsing.
+     */
+    private fun parseDeviceCode(line: String, existingCode: String?, existingUrl: String?): ParseResult {
+        // Device codes: 4-8 uppercase-alphanumeric groups separated by a hyphen
+        val codeMatch = CODE_PATTERN.find(line)
+        val code = codeMatch?.value ?: existingCode
+
+        // Verification URLs: any https URL containing "login/device" or "/device" path
+        val urlMatch = URL_PATTERN.find(line)
+        val url = urlMatch?.value ?: existingUrl
+
+        return ParseResult(code, url)
+    }
+
+    /**
+     * Opens a "Copilot Sign In" terminal tab and runs the auth command.
+     * Used as a fallback when inline auth cannot parse the device code.
+     */
+    fun startCopilotLogin() {
+        val resolvedCommand = resolveAuthCommand().joinToString(" ")
         runAuthInEmbeddedTerminal(project, resolvedCommand, "Copilot Sign In") {
             startCopilotLoginExternal(resolvedCommand)
         }
