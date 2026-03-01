@@ -16,7 +16,7 @@ idea {
     }
 }
 
-val baseVersion = "0.2.0"
+val baseVersion = "0.3.0"
 val gitHash: String = try {
     providers.exec { commandLine("git", "rev-parse", "--short", "HEAD") }
         .standardOutput.asText.get().trim()
