@@ -113,6 +113,7 @@ public final class PsiBridgeService implements Disposable {
             httpServer.createContext("/tools/call", this::handleToolCall);
             httpServer.createContext("/tools/list", this::handleToolsList);
             httpServer.createContext("/health", this::handleHealth);
+            httpServer.createContext("/reload", this::handleReload);
             httpServer.setExecutor(Executors.newFixedThreadPool(8));
             httpServer.start();
             port = httpServer.getAddress().getPort();
@@ -217,6 +218,105 @@ public final class PsiBridgeService implements Disposable {
         exchange.sendResponseHeaders(200, resp.length);
         exchange.getResponseBody().write(resp);
         exchange.getResponseBody().close();
+    }
+
+    /**
+     * Hot-reload endpoint for local development. Called by the deployToMainIde Gradle task.
+     * Uses pure reflection to avoid direct references to internal APIs (verifier-safe).
+     */
+    @SuppressWarnings({"java:S3011", "java:S1181"})
+    private void handleReload(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+        try {
+            var pluginIdClass = Class.forName("com.intellij.openapi.extensions.PluginId");
+            var getId = pluginIdClass.getMethod("getId", String.class);
+            var pluginId = getId.invoke(null, "com.github.catatafishen.ideagentforcopilot");
+
+            var pmcClass = Class.forName("com.intellij.ide.plugins.PluginManagerCore");
+            var findPlugin = pmcClass.getMethod("findPlugin", pluginIdClass);
+            var descriptor = findPlugin.invoke(null, pluginId);
+            if (descriptor == null) {
+                sendJsonResponse(exchange, 404, "Plugin not installed");
+                return;
+            }
+
+            var getPluginPath = descriptor.getClass().getMethod("getPluginPath");
+            var pluginPath = (java.nio.file.Path) getPluginPath.invoke(descriptor);
+
+            var dynClass = Class.forName("com.intellij.ide.plugins.DynamicPlugins");
+            var implClass = Class.forName("com.intellij.ide.plugins.IdeaPluginDescriptorImpl");
+            var allowMethod = dynClass.getMethod("allowLoadUnloadWithoutRestart", implClass);
+            boolean dynamic = (boolean) allowMethod.invoke(null, descriptor);
+            if (!dynamic) {
+                sendJsonResponse(exchange, 409, "Not dynamic-compatible — restart IDE");
+                return;
+            }
+
+            sendJsonResponse(exchange, 200, "Reloading...");
+
+            // Schedule async reload so the HTTP response is sent before our classloader dies
+            ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                try {
+                    Thread.sleep(500);
+                    performReflectiveReload(pluginId, pluginPath);
+                } catch (Throwable t) {
+                    LOG.error("Hot-reload failed", t);
+                }
+            });
+        } catch (Throwable t) {
+            LOG.error("Reload endpoint error", t);
+            sendJsonResponse(exchange, 500, "Error: " + t.getMessage());
+        }
+    }
+
+    private void sendJsonResponse(HttpExchange exchange, int code, String message) throws IOException {
+        JsonObject resp = new JsonObject();
+        resp.addProperty("status", code == 200 ? "ok" : "error");
+        resp.addProperty("message", message);
+        byte[] bytes = GSON.toJson(resp).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
+        exchange.sendResponseHeaders(code, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.getResponseBody().close();
+    }
+
+    /** Unload → reload cycle using pure reflection (no direct internal API imports). */
+    @SuppressWarnings({"java:S3011", "java:S1181"})
+    private void performReflectiveReload(Object pluginId, java.nio.file.Path installPath) {
+        try {
+            var pluginIdClass = Class.forName("com.intellij.openapi.extensions.PluginId");
+            var pmcClass = Class.forName("com.intellij.ide.plugins.PluginManagerCore");
+            var dynClass = Class.forName("com.intellij.ide.plugins.DynamicPlugins");
+            var dynInstance = dynClass.getField("INSTANCE").get(null);
+            var descriptorClass = Class.forName("com.intellij.ide.plugins.PluginMainDescriptor");
+
+            var findPlugin = pmcClass.getMethod("findPlugin", pluginIdClass);
+            var descriptor = findPlugin.invoke(null, pluginId);
+            if (descriptor == null) { LOG.error("Hot-reload: descriptor gone"); return; }
+
+            LOG.info("Hot-reload: unloading...");
+            var unload = dynInstance.getClass().getMethod("unloadPlugin", descriptorClass);
+            boolean unloaded = (boolean) unload.invoke(dynInstance, descriptor);
+            if (!unloaded) { LOG.error("Hot-reload: unload failed"); return; }
+            LOG.info("Hot-reload: unloaded");
+
+            var loaderClass = Class.forName("com.intellij.ide.plugins.PluginDescriptorLoader");
+            var getBuildNumber = pmcClass.getMethod("getBuildNumber");
+            var buildNumber = getBuildNumber.invoke(null);
+            var loadDesc = loaderClass.getMethod("loadDescriptorFromArtifact",
+                java.nio.file.Path.class, Class.forName("com.intellij.openapi.util.BuildNumber"));
+            var newDescriptor = loadDesc.invoke(null, installPath, buildNumber);
+            if (newDescriptor == null) { LOG.error("Hot-reload: no descriptor at " + installPath); return; }
+
+            var loadPlugin = dynInstance.getClass().getMethod("loadPlugin", descriptorClass);
+            boolean loaded = (boolean) loadPlugin.invoke(dynInstance, newDescriptor);
+            LOG.info(loaded ? "Hot-reload: success!" : "Hot-reload: loadPlugin returned false");
+        } catch (Throwable t) {
+            LOG.error("Hot-reload: reflection failed", t);
+        }
     }
 
     private void handleToolsList(HttpExchange exchange) throws IOException {

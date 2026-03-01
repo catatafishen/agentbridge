@@ -1,3 +1,6 @@
+import java.net.HttpURLConnection
+import java.net.URL
+
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.3.10"
@@ -192,7 +195,36 @@ tasks.register("deployToMainIde") {
             into(installDir.parentFile)
         }
 
-        logger.lifecycle("✅ Deployed to $installDir — restart IDE or use hot-reload to apply")
+        logger.lifecycle("✅ Files deployed")
+
+        // Trigger hot-reload via PSI bridge HTTP endpoint
+        val bridgeFile = File(System.getProperty("user.home"), ".copilot/psi-bridge.json")
+        if (bridgeFile.exists()) {
+            try {
+                val registry = groovy.json.JsonSlurper().parseText(bridgeFile.readText()) as Map<*, *>
+                val projectPath = project.rootDir.absolutePath
+                val entry = registry[projectPath] as? Map<*, *>
+                val port = (entry?.get("port") as? Number)?.toInt()
+                if (port != null) {
+                    logger.lifecycle("🔄 Triggering hot-reload on port $port...")
+                    val url = URL("http://127.0.0.1:$port/reload")
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 3000
+                    conn.readTimeout = 5000
+                    val code = conn.responseCode
+                    val body = conn.inputStream.bufferedReader().readText()
+                    if (code == 200) logger.lifecycle("🎉 Hot-reload triggered — plugin reloading")
+                    else logger.lifecycle("⚠️ Reload: $code $body")
+                } else {
+                    logger.lifecycle("💡 PSI bridge not running for this project — restart IDE to apply")
+                }
+            } catch (e: Exception) {
+                logger.lifecycle("💡 Could not trigger hot-reload (${e.message}) — restart IDE to apply")
+            }
+        } else {
+            logger.lifecycle("💡 No PSI bridge found — restart IDE to apply changes")
+        }
     }
 }
 
