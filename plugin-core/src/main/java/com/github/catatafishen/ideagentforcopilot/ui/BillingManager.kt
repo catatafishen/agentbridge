@@ -38,9 +38,14 @@ internal class BillingManager {
     var localSessionRequests = 0
         private set
 
+    /** Weighted premium request count — accounts for model multipliers (e.g., 3x for Opus). */
+    var localSessionPremiumRequests = 0.0
+        private set
+
     /** Reset the local session counter (called on session reset). */
     fun resetLocalCounter() {
         localSessionRequests = 0
+        localSessionPremiumRequests = 0.0
     }
 
     // Animation state for usage indicator
@@ -77,10 +82,12 @@ internal class BillingManager {
     /**
      * Records a turn completion — increments the local request counter
      * and updates the UI immediately (no API call needed).
+     * @param multiplier the model's cost multiplier string (e.g., "1x", "3x", "0.33x")
      */
-    fun recordTurnCompleted() {
+    fun recordTurnCompleted(multiplier: String = "1x") {
         localSessionRequests++
-        LOG.info("recordTurnCompleted: localSessionRequests=$localSessionRequests")
+        localSessionPremiumRequests += parseMultiplier(multiplier)
+        LOG.info("recordTurnCompleted: localSessionRequests=$localSessionRequests, premium=$localSessionPremiumRequests (mult=$multiplier)")
         val estimated = estimatedUsed()
         val shouldAnimate = previousUsedCount >= 0 && estimated > previousUsedCount
         previousUsedCount = estimated
@@ -91,8 +98,22 @@ internal class BillingManager {
         }
     }
 
-    /** Estimated total used = initial API value + locally counted requests. */
-    private fun estimatedUsed(): Int = lastBillingUsed + localSessionRequests
+    /** Estimated total used = initial API value + weighted premium requests. */
+    private fun estimatedUsed(): Int = lastBillingUsed + localSessionPremiumRequests.toInt()
+
+    /** Parses "3x" → 3.0, "0.33x" → 0.33, defaults to 1.0. */
+    private fun parseMultiplier(multiplier: String): Double {
+        return try {
+            multiplier.removeSuffix("x").toDouble()
+        } catch (_: NumberFormatException) {
+            1.0
+        }
+    }
+
+    /** Formats premium count: shows integer if whole, one decimal otherwise. */
+    private fun formatPremium(value: Double): String =
+        if (value == value.toLong().toDouble()) value.toLong().toString()
+        else "%.1f".format(value)
 
     fun loadBillingData() {
         LOG.info("loadBillingData called")
@@ -217,15 +238,20 @@ internal class BillingManager {
                     costLabel.text = ""
                 } else {
                     usageLabel.text = "$estimated / $lastBillingEntitlement"
+                    val premiumDisplay = if (localSessionPremiumRequests != localSessionRequests.toDouble())
+                        "$localSessionRequests turns ≈ ${formatPremium(localSessionPremiumRequests)} premium"
+                    else "$localSessionRequests this session"
                     usageLabel.toolTipText =
-                        "Premium requests this cycle ($localSessionRequests this session) \u2022 Click to show session usage$polledSuffix"
-                    val estimatedRemaining = lastBillingRemaining - localSessionRequests
+                        "Premium requests this cycle ($premiumDisplay) \u2022 Click to show session usage$polledSuffix"
+                    val estimatedRemaining = lastBillingRemaining - localSessionPremiumRequests.toInt()
                     updateCostLabel(estimatedRemaining, lastBillingOveragePermitted)
                 }
             }
 
             UsageDisplayMode.SESSION -> {
-                usageLabel.text = "$localSessionRequests session"
+                val premiumSuffix = if (localSessionPremiumRequests != localSessionRequests.toDouble())
+                    " (≈${formatPremium(localSessionPremiumRequests)} premium)" else ""
+                usageLabel.text = "$localSessionRequests session$premiumSuffix"
                 usageLabel.toolTipText = "Premium requests this session \u2022 Click to show monthly usage$polledSuffix"
                 costLabel.text = ""
             }
