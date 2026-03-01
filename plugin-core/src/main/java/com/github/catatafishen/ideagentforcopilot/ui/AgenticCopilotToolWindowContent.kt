@@ -951,14 +951,17 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
 
         override fun update(e: AnActionEvent) {
+            val isLoggedIn = authService.pendingAuthError == null
             if (isSending) {
                 e.presentation.icon = com.intellij.icons.AllIcons.Actions.Suspend
                 e.presentation.text = "Stop"
                 e.presentation.description = "Stop"
+                e.presentation.isEnabled = true
             } else {
                 e.presentation.icon = com.intellij.icons.AllIcons.Actions.Execute
                 e.presentation.text = "Send"
-                e.presentation.description = "Send prompt (Enter)"
+                e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
+                e.presentation.isEnabled = isLoggedIn
             }
         }
     }
@@ -1330,7 +1333,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // over the editor's built-in Enter handler (ACTION_EDITOR_ENTER).
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) {
-                if (promptTextArea.text.isNotBlank() && !isSending) {
+                if (promptTextArea.text.isNotBlank() && !isSending && authService.pendingAuthError == null) {
                     onSendStopClicked()
                 }
             }
