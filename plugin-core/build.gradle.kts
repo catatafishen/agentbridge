@@ -149,6 +149,53 @@ tasks.named<Zip>("buildPlugin") {
     }
 }
 
+// Deploy built plugin to the main (outer) IDE installation
+tasks.register("deployToMainIde") {
+    dependsOn("buildPlugin")
+    doLast {
+        val distDir = layout.buildDirectory.dir("distributions").get().asFile
+        val latestZip = distDir.listFiles()
+            ?.filter { it.extension == "zip" }
+            ?.maxByOrNull { it.lastModified() }
+            ?: error("No ZIP found in $distDir — build failed?")
+
+        // Auto-detect Toolbox plugin directory
+        val base = File(System.getProperty("user.home"), ".local/share/JetBrains/Toolbox/apps")
+        val pluginDirs = if (base.exists()) {
+            base.walkTopDown().maxDepth(3)
+                .filter { it.isDirectory && it.name == "plugins" && File(it, "plugin-core").exists() }
+                .toList()
+        } else emptyList()
+
+        val installDir = if (pluginDirs.isNotEmpty()) {
+            File(pluginDirs.first(), "plugin-core")
+        } else {
+            // Fallback: search in standard config locations
+            val configBase = File(System.getProperty("user.home"), ".config/JetBrains")
+            val found = if (configBase.exists()) {
+                configBase.listFiles()
+                    ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
+                    ?.sortedByDescending { it.name }
+                    ?.flatMap { it.resolve("plugins").listFiles()?.toList() ?: emptyList() }
+                    ?.firstOrNull { it.name == "plugin-core" }
+            } else null
+            found ?: error("Could not find plugin install directory. Install the plugin first via IDE.")
+        }
+
+        logger.lifecycle("📦 ZIP: ${latestZip.name}")
+        logger.lifecycle("📂 Target: $installDir")
+
+        // Remove old version and extract new
+        if (installDir.exists()) installDir.deleteRecursively()
+        project.copy {
+            from(project.zipTree(latestZip))
+            into(installDir.parentFile)
+        }
+
+        logger.lifecycle("✅ Deployed to $installDir — restart IDE or use hot-reload to apply")
+    }
+}
+
 sourceSets {
     main {
         resources.srcDir(layout.buildDirectory.dir("generated/buildinfo"))
