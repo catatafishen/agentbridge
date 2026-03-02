@@ -718,7 +718,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 }
             } else null
             consolePanel.addPromptEntry(prompt, ctxFiles)
-            consolePanel.startStreaming()
             promptTextArea.text = ""
 
             ApplicationManager.getApplication().executeOnPooledThread {

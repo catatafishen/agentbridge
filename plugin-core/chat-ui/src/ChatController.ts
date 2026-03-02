@@ -101,17 +101,6 @@ const ChatController = {
 
     // ── Public API ─────────────────────────────────────────────
 
-    startAgentResponse(turnId: string, agentId: string): void {
-        const ctx = this._getCtx(turnId, agentId);
-        if (ctx.textBubble) return;
-        const c = this._ensureMsg(turnId, agentId);
-        const bubble = document.createElement('message-bubble');
-        bubble.setAttribute('streaming', '');
-        c.msg!.appendChild(bubble);
-        c.textBubble = bubble;
-        this._container()?.scrollIfNeeded();
-    },
-
     addUserMessage(text: string, timestamp: string, ctxChipsHtml?: string): void {
         const msg = document.createElement('chat-message');
         msg.setAttribute('type', 'user');

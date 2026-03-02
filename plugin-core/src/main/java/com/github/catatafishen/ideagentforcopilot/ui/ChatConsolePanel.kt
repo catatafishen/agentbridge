@@ -224,8 +224,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun startStreaming() {
-        if (currentTurnId.isEmpty()) currentTurnId = "t${turnCounter++}"
-        executeJs("ChatController.startAgentResponse('$currentTurnId','main')")
+        // no-op: CSS-only indicator via :last-child:not(:has(message-bubble))
     }
 
     override fun setPromptStats(modelId: String, multiplier: String) {
@@ -624,7 +623,13 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val label = if (short != null) "$displayName — $short" else displayName
                 val did = "restored-tool-${entries.size}"
                 val kind = obj["kind"]?.asString ?: "other"
-                executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','${escJs(args ?: "")}','${escJs(kind)}');ChatController.updateToolCall('$did','completed','Completed')")
+                executeJs(
+                    "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','${escJs(args ?: "")}','${
+                        escJs(
+                            kind
+                        )
+                    }');ChatController.updateToolCall('$did','completed','Completed')"
+                )
             }
 
             "subagent" -> {
