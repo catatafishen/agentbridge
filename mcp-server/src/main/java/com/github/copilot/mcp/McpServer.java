@@ -178,6 +178,12 @@ public class McpServer {
 
     /**
      * Load MCP instructions from the persisted user file, falling back to the bundled default.
+     *
+     * <p>NOTE: Copilot CLI currently ignores the MCP {@code instructions} field from the
+     * initialize response (see <a href="https://github.com/github/copilot-cli/issues/1486">#1486</a>).
+     * As a workaround, {@code PsiBridgeStartup} prepends the same instructions to the project's
+     * {@code copilot-instructions.md}, which Copilot <em>does</em> read. We still send instructions
+     * here for protocol correctness and in case the CLI bug is fixed.</p>
      */
     private static String loadInstructions() {
         Path customFile = Path.of(projectRoot, ".agent-work", "startup-instructions.md");
