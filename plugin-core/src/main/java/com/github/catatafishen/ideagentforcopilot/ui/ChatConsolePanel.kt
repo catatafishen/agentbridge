@@ -927,11 +927,29 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     log.warn("No VCS root found for git commit link $hash")
                     return@invokeLater
                 }
-                val hashObj = com.intellij.vcs.log.impl.HashImpl.build(hash)
+                // Resolve short hash to full 40-char SHA — VcsProjectLog requires exact match
+                val fullHash = resolveFullHash(hash) ?: hash
+                val hashObj = com.intellij.vcs.log.impl.HashImpl.build(fullHash)
                 com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, root, hashObj)
             } catch (e: Exception) {
                 log.warn("Failed to open git commit $hash", e)
             }
+        }
+    }
+
+    private fun resolveFullHash(shortHash: String): String? {
+        val basePath = project.basePath ?: return null
+        return try {
+            val process = ProcessBuilder("git", "rev-parse", shortHash)
+                .directory(java.io.File(basePath))
+                .redirectErrorStream(true)
+                .start()
+            val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+            if (exited && process.exitValue() == 0) {
+                process.inputStream.bufferedReader().readLine()?.trim()
+            } else null
+        } catch (_: Exception) {
+            null
         }
     }
 
