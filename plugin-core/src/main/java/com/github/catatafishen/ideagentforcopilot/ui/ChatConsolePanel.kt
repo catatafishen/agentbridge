@@ -888,7 +888,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     return@invokeLater
                 }
                 val hashObj = com.intellij.vcs.log.impl.HashImpl.build(hash)
-                com.intellij.vcs.log.impl.VcsLogNavigationUtil.jumpToRevisionAsync(project, root, hashObj, null)
+                val twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+                val gitTw = twm.getToolWindow("Git") ?: twm.getToolWindow("Version Control")
+                if (gitTw != null) {
+                    gitTw.activate {
+                        com.intellij.vcs.log.impl.VcsLogNavigationUtil.jumpToRevisionAsync(project, root, hashObj, null)
+                    }
+                } else {
+                    com.intellij.vcs.log.impl.VcsLogNavigationUtil.jumpToRevisionAsync(project, root, hashObj, null)
+                }
             } catch (e: Exception) {
                 log.warn("Failed to open git commit $hash", e)
             }
