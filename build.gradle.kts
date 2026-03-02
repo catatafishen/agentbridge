@@ -16,7 +16,7 @@ idea {
     }
 }
 
-val baseVersion = "0.3.0"
+val baseVersion = "1.0.0"
 val ciVersion = providers.environmentVariable("PLUGIN_VERSION").orNull
 val gitHash: String = try {
     providers.exec { commandLine("git", "rev-parse", "--short", "HEAD") }

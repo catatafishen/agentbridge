@@ -83,20 +83,17 @@
     ]]></description>
 
   <change-notes><![CDATA[
-    <h3>0.3.0 — Initial Public Release</h3>
+    <h3>1.0.0 — Initial Release</h3>
     <ul>
-        <li><b>Full agentic coding</b> — 65+ tools spanning code intelligence, navigation, refactoring, git, build, test, run configurations, terminal, and more</li>
-        <li><b>Direct ACP integration</b> — communicates with Copilot via the Agent Communication Protocol; no sidecar or SDK dependency</li>
-        <li><b>Streaming chat UI</b> — markdown rendering, syntax-highlighted code blocks, copy buttons, plan trees, and timeline view</li>
-        <li><b>Model selection</b> — choose between Claude, GPT, and Gemini families with real-time usage multiplier display</li>
-        <li><b>Smart tool filtering</b> — only advertises tools the IDE can actually execute based on installed plugins</li>
-        <li><b>Granular permissions</b> — per-tool Allow / Ask / Deny with in-chat approval prompts</li>
-        <li><b>Billing visibility</b> — live premium request counter with model multiplier weighting, monthly usage graph, and cycle tracking</li>
-        <li><b>Full git workflow</b> — status, diff, log, blame, commit, branch, stash, push, revert — all through IntelliJ's VFS</li>
-        <li><b>Code quality</b> — IntelliJ inspections, Qodana, SonarQube, and coverage integration via reflection</li>
-        <li><b>Context attachments</b> — attach files, selections, and code symbols to prompts</li>
-        <li><b>Quick replies &amp; conversation history</b> — suggested follow-ups, session export, and persistence</li>
-        <li><b>Requires IntelliJ 2025.3+</b> (forward-compatible with 2026.1+)</li>
+        <li>Introduces IDE Agent for Copilot</li>
+        <li><b>Dynamic model discovery</b> — automatically supports all Copilot models without plugin updates</li>
+        <li>Enables multi-step task execution inside the IDE</li>
+        <li>Project navigation and context awareness</li>
+        <li>Multi-file editing capabilities</li>
+        <li>Integration with inspections and refactorings</li>
+        <li>Test and build execution support</li>
+        <li>Git operation support</li>
+        <li>Local-first design with no telemetry</li>
     </ul>
     ]]></change-notes>
 
