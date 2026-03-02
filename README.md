@@ -166,7 +166,6 @@ be removed and the entry marked as ✅.
 - [Development Guide](DEVELOPMENT.md) — Build, deploy, architecture details
 - [Quick Start](QUICK-START.md) — Fast setup instructions
 - [Testing](TESTING.md) — Test running and coverage
-- [Project Spec](PROJECT-SPEC.md) — Original specification
 - [Roadmap](ROADMAP.md) — Project phases and future work
 - [Release Notes](RELEASE_NOTES.md) — Current release details
 
