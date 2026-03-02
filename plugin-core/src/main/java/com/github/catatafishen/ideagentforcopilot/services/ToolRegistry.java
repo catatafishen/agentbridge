@@ -159,6 +159,8 @@ public final class ToolRegistry {
         new ToolEntry("download_sources", "Download Sources", "Download library sources to enable source navigation and debugging", Category.IDE, false, false, false),
         new ToolEntry("get_active_file", "Get Active File", "Get the path and content of the currently active editor file", Category.IDE, false, false, false),
         new ToolEntry("get_open_editors", "Get Open Editors", "List all currently open editor tabs", Category.IDE, false, false, false),
+        new ToolEntry("list_themes", "List Themes", "List all available IDE themes with their dark/light type", Category.IDE, false, false, false),
+        new ToolEntry("set_theme", "Set Theme", "Change the IDE theme by name (e.g., 'Darcula', 'Light')", Category.IDE, false, false, false),
 
         // ── Other ─────────────────────────────────────────────────────────────────
         new ToolEntry("get_chat_html", "Get Chat HTML", "Retrieve the live DOM HTML of the JCEF chat panel for debugging", Category.OTHER, false, false, false),

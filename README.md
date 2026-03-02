@@ -13,7 +13,7 @@ formatting, test execution, git operations, and file operations.
 ### What Works
 
 - Multi-turn conversation with GitHub Copilot agent
-- 67 IntelliJ-native MCP tools (symbol search, file outline, references, test runner, code formatting, git,
+- 69 IntelliJ-native MCP tools (symbol search, file outline, references, test runner, code formatting, git,
   infrastructure, terminal, etc.)
 - Built-in file operations redirected through IntelliJ Document API (undo support, no external file conflicts)
 - Auto-format (optimize imports + reformat code) after every write
@@ -40,7 +40,7 @@ formatting, test execution, git operations, and file operations.
 │  ┌──────────────────┐    ┌───────────────────────┐            │
 │  │ PsiBridgeService │◄───│  Copilot CLI (--acp)  │            │
 │  │  (HTTP server)   │    │                       │            │
-│  │  67 MCP tools    │    │  - Agent reasoning    │            │
+│  │  69 MCP tools    │    │  - Agent reasoning    │            │
 │  │  - read/write    │    │  - Tool selection     │            │
 │  │  - format        │    │  - Permission reqs    │            │
 │  │  - search        │    └───────────┬───────────┘            │
@@ -73,14 +73,14 @@ intellij-copilot-plugin/
 │       ├── ui/           # Tool Window (Swing)
 │       ├── services/     # CopilotService, CopilotSettings
 │       ├── bridge/       # CopilotAcpClient (ACP protocol)
-│       └── psi/          # PsiBridgeService (67 MCP tools)
+│       └── psi/          # PsiBridgeService (69 MCP tools)
 ├── mcp-server/           # MCP stdio server (bundled JAR)
 │   └── src/main/java/com/github/copilot/mcp/
 │       └── McpServer.java
 └── integration-tests/    # (placeholder)
 ```
 
-## MCP Tools (67 tools)
+## MCP Tools (69 tools)
 
 | Category            | Tools                                                                                                                                                                                                                   |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -92,8 +92,8 @@ intellij-copilot-plugin/
 | **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `download_sources`, `mark_directory`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`                  |
 | **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_show`, `git_push`, `git_remote`                                                             |
 | **Infrastructure**  | `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `read_run_output`                                                                                                                                   |
-| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`                                                                                                                                                                               |
-| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `get_active_file`, `get_open_editors`, `get_chat_html`                                                                                      |
+| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`                                                                                                                                                       |
+| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `get_active_file`, `get_open_editors`, `get_chat_html`, `list_themes`, `set_theme`                                                                                      |
 
 *\* `run_sonarqube_analysis` only available when SonarLint plugin is installed.*
 

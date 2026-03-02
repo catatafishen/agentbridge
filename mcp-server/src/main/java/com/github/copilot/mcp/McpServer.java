@@ -739,6 +739,16 @@ public class McpServer {
             Map.of(),
             List.of()));
 
+        addIfEnabled.accept(buildTool("list_themes", "List Themes",
+            Map.of(),
+            List.of()));
+
+        addIfEnabled.accept(buildTool("set_theme", "Set Theme",
+            Map.of(
+                "theme", Map.of("type", "string", "description", "Theme name or partial name (e.g., 'Darcula', 'Light')")
+            ),
+            List.of("theme")));
+
         // Refactoring & code modification tools
         addIfEnabled.accept(buildTool("apply_quickfix", "Apply Quickfix",
             Map.of(
