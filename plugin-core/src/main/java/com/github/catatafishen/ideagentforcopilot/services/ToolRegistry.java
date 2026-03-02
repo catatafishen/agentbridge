@@ -117,6 +117,7 @@ public final class ToolRegistry {
         // ── Terminal & commands ───────────────────────────────────────────────────
         new ToolEntry("run_command", "Run Command", "Run a shell command with paginated output — prefer this over the built-in bash tool", Category.RUN, false, false, false),
         new ToolEntry("run_in_terminal", "Run in Terminal", "Run a command in IntelliJ's integrated terminal", Category.RUN, false, false, false),
+        new ToolEntry("write_terminal_input", "Write Terminal Input", "Send raw text or keystrokes to a running terminal (e.g. answer prompts, send Ctrl-C)", Category.RUN, false, false, false),
         new ToolEntry("read_run_output", "Read Run Output", "Read output from a recent Run panel tab by name", Category.RUN, false, false, false),
         new ToolEntry("read_terminal_output", "Read Terminal", "Read output from an integrated terminal tab", Category.RUN, false, false, false),
 

@@ -40,6 +40,10 @@ You are running inside an IntelliJ IDEA plugin with access to 56 IDE tools.
 
 11. **Grammar (GrazieInspection)** — `apply_quickfix` not supported; use `intellij_write_file` instead.
 
+12. **Interactive terminals** — use `run_in_terminal` to start a process, `write_terminal_input` to send follow-up
+    input (answers to prompts, Ctrl-C, arrow keys), and `read_terminal_output` to check results. Use `tab_name` to
+    target a specific terminal tab.
+
 ## Fixing Issues Workflow
 
 When asked to "fix all issues" or "fix the whole project":

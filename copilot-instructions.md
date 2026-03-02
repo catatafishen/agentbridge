@@ -149,14 +149,14 @@ progressively cleaner with every touch.
 
 ### Common Issues & Proper Fixes
 
-| Issue                        | ✅ Fix                                                              | ❌ Don't                     |
-|-----------------------------|---------------------------------------------------------------------|------------------------------|
-| Duplicate string literals    | Extract to `private static final` constants                         | Suppress                     |
-| Cognitive complexity         | Extract methods, simplify conditions, reduce nesting                | Suppress                     |
-| Empty catch blocks           | Log the exception or document why it's safe to ignore               | Suppress                     |
-| `InterruptedException`       | Always call `Thread.currentThread().interrupt()` after catching     | Suppress                     |
-| Unused parameters/methods    | Remove if truly unused; keep only if required by interface/override | Suppress private methods     |
-| Deprecated JetBrains API     | Replace with the recommended alternative                            | Keep using it                |
+| Issue                     | ✅ Fix                                                               | ❌ Don't                  |
+|---------------------------|---------------------------------------------------------------------|--------------------------|
+| Duplicate string literals | Extract to `private static final` constants                         | Suppress                 |
+| Cognitive complexity      | Extract methods, simplify conditions, reduce nesting                | Suppress                 |
+| Empty catch blocks        | Log the exception or document why it's safe to ignore               | Suppress                 |
+| `InterruptedException`    | Always call `Thread.currentThread().interrupt()` after catching     | Suppress                 |
+| Unused parameters/methods | Remove if truly unused; keep only if required by interface/override | Suppress private methods |
+| Deprecated JetBrains API  | Replace with the recommended alternative                            | Keep using it            |
 
 ---
 

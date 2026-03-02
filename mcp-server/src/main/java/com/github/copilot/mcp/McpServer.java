@@ -657,6 +657,17 @@ public class McpServer {
             Map.of(),
             List.of()));
 
+        addIfEnabled.accept(buildTool("write_terminal_input", "Write Terminal Input",
+            Map.of(
+                "input", Map.of("type", "string", "description",
+                    "Text or keystrokes to send. Supports escape sequences: " +
+                        "{enter}, {tab}, {ctrl-c}, {ctrl-d}, {ctrl-z}, {escape}, " +
+                        "{up}, {down}, {left}, {right}, {backspace}, \\n, \\t"),
+                "tab_name", Map.of("type", "string", "description",
+                    "Name of the terminal tab to write to. If omitted, writes to the currently selected tab")
+            ),
+            List.of("input")));
+
         addIfEnabled.accept(buildTool("read_terminal_output", "Read Terminal Output",
             Map.of(
                 "tab_name", Map.of("type", "string", "description", "Name of the terminal tab to read from")

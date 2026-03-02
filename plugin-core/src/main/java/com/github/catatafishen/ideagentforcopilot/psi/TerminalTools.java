@@ -9,7 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Terminal tool handlers: run_in_terminal, read_terminal_output, list_terminals.
+ * Terminal tool handlers: run_in_terminal, write_terminal_input, read_terminal_output, list_terminals.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 final class TerminalTools extends AbstractToolHandler {
@@ -19,11 +19,16 @@ final class TerminalTools extends AbstractToolHandler {
     private static final String TERMINAL_TOOL_WINDOW_ID = "Terminal";
     private static final String GET_INSTANCE_METHOD = "getInstance";
     private static final String OS_NAME_PROPERTY = "os.name";
+    private static final String TERMINAL_MANAGER_CLASS = "org.jetbrains.plugins.terminal.TerminalToolWindowManager";
+    private static final String TERMINAL_WIDGET_CLASS = "com.intellij.terminal.ui.TerminalWidget";
+    private static final String FIND_WIDGET_BY_CONTENT_METHOD = "findWidgetByContent";
+    private static final String TTY_CONNECTOR_CLASS = "com.jediterm.terminal.TtyConnector";
 
     TerminalTools(Project project) {
         super(project);
         if (isPluginInstalled("org.jetbrains.plugins.terminal")) {
             register("run_in_terminal", this::runInTerminal);
+            register("write_terminal_input", this::writeTerminalInput);
             register("read_terminal_output", this::readTerminalOutput);
             register("list_terminals", args -> listTerminals());
             LOG.info("Terminal plugin detected — terminal tools registered");
@@ -45,7 +50,7 @@ final class TerminalTools extends AbstractToolHandler {
 
         EdtUtil.invokeLater(() -> {
             try {
-                var managerClass = Class.forName("org.jetbrains.plugins.terminal.TerminalToolWindowManager");
+                var managerClass = Class.forName(TERMINAL_MANAGER_CLASS);
                 var manager = managerClass.getMethod(GET_INSTANCE_METHOD, Project.class).invoke(null, project);
 
                 var result = getOrCreateTerminalWidget(managerClass, manager, tabName, newTab, shell, command);
@@ -70,6 +75,108 @@ final class TerminalTools extends AbstractToolHandler {
         } catch (Exception e) {
             return "Terminal opened (response timed out, but command was likely sent).";
         }
+    }
+
+    /**
+     * Send raw text/keystrokes to a running terminal without appending Enter.
+     * Useful for answering prompts (y/n), sending Ctrl-C, or typing partial input.
+     */
+    private String writeTerminalInput(JsonObject args) {
+        String input = args.get("input").getAsString();
+        String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
+
+        String resolved = resolveInputEscapes(input);
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+
+        EdtUtil.invokeLater(() -> {
+            try {
+                var managerClass = Class.forName(TERMINAL_MANAGER_CLASS);
+                Object widget = findTerminalWidget(managerClass, tabName);
+                if (widget == null) {
+                    resultFuture.complete("No terminal found" +
+                        (tabName != null ? " matching '" + tabName + "'" : "") +
+                        ". Use run_in_terminal to create one first.");
+                    return;
+                }
+
+                var widgetInterface = Class.forName(TERMINAL_WIDGET_CLASS);
+                var getTtyAccessor = widgetInterface.getMethod("getTtyConnectorAccessor");
+                var accessor = getTtyAccessor.invoke(widget);
+                var getTty = accessor.getClass().getMethod("getTtyConnector");
+                var tty = getTty.invoke(accessor);
+
+                if (tty == null) {
+                    resultFuture.complete("Terminal has no active process. The command may have finished.");
+                    return;
+                }
+
+                var ttyInterface = Class.forName(TTY_CONNECTOR_CLASS);
+                ttyInterface.getMethod("write", String.class).invoke(tty, resolved);
+
+                String description = describeInput(input, resolved);
+                resultFuture.complete("Sent " + description + " to terminal." +
+                    "\n\nTip: Use read_terminal_output to see the result.");
+
+            } catch (Exception e) {
+                LOG.warn("Failed to write terminal input", e);
+                resultFuture.complete("Failed to write to terminal: " + e.getMessage());
+            }
+        });
+
+        try {
+            return resultFuture.get(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Input sent (response timed out).";
+        } catch (Exception e) {
+            return "Input sent (response timed out).";
+        }
+    }
+
+    /**
+     * Find the best matching terminal widget: by tab name if given, otherwise the selected tab.
+     */
+    private Object findTerminalWidget(Class<?> managerClass, String tabName) throws Exception {
+        if (tabName != null) {
+            return findTerminalWidgetByTabName(managerClass, tabName);
+        }
+        var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+            .getToolWindow(TERMINAL_TOOL_WINDOW_ID);
+        if (toolWindow == null) return null;
+        var selected = toolWindow.getContentManager().getSelectedContent();
+        if (selected == null) return null;
+        var findWidget = managerClass.getMethod(FIND_WIDGET_BY_CONTENT_METHOD,
+            com.intellij.ui.content.Content.class);
+        return findWidget.invoke(null, selected);
+    }
+
+    /**
+     * Resolve human-readable escape sequences to actual characters.
+     * Supports: {enter}, {tab}, {ctrl-c}, {ctrl-d}, {ctrl-z}, {escape}, {up}, {down}, {left}, {right}, \n, \t
+     */
+    private static String resolveInputEscapes(String input) {
+        return input
+            .replace("{enter}", "\n")
+            .replace("{tab}", "\t")
+            .replace("{ctrl-c}", "\u0003")
+            .replace("{ctrl-d}", "\u0004")
+            .replace("{ctrl-z}", "\u001A")
+            .replace("{escape}", "\u001B")
+            .replace("{up}", "\u001B[A")
+            .replace("{down}", "\u001B[B")
+            .replace("{right}", "\u001B[C")
+            .replace("{left}", "\u001B[D")
+            .replace("{backspace}", "\u007F")
+            .replace("\\n", "\n")
+            .replace("\\t", "\t");
+    }
+
+    private static String describeInput(String raw, String resolved) {
+        if (raw.contains("{") || raw.contains("\\")) {
+            return "'" + raw + "' (" + resolved.length() + " chars)";
+        }
+        return "'" + raw + "'";
     }
 
     private record TerminalWidgetResult(Object widget, String tabName) {
@@ -99,8 +206,7 @@ final class TerminalTools extends AbstractToolHandler {
      * Send a command to a TerminalWidget, using the interface method to avoid IllegalAccessException.
      */
     private void sendTerminalCommand(Object widget, String command) throws Exception {
-        // Resolve method via the interface class, not the implementation (avoids IllegalAccessException on inner classes)
-        var widgetInterface = Class.forName("com.intellij.terminal.ui.TerminalWidget");
+        var widgetInterface = Class.forName(TERMINAL_WIDGET_CLASS);
         try {
             widgetInterface.getMethod("sendCommandToExecute", String.class).invoke(widget, command);
         } catch (NoSuchMethodException e) {
@@ -116,7 +222,7 @@ final class TerminalTools extends AbstractToolHandler {
             var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID);
             if (toolWindow == null) return null;
 
-            var findWidgetByContent = managerClass.getMethod("findWidgetByContent",
+            var findWidgetByContent = managerClass.getMethod(FIND_WIDGET_BY_CONTENT_METHOD,
                 com.intellij.ui.content.Content.class);
 
             for (var content : toolWindow.getContentManager().getContents()) {
@@ -127,12 +233,12 @@ final class TerminalTools extends AbstractToolHandler {
                         LOG.info("Reusing terminal tab '" + displayName + "'");
                         return widget;
                     }
-                    // Reworked terminal (IntelliJ 2025+) may not set userData — tab not reusable
                 }
             }
         } catch (Exception e) {
             LOG.warn("Could not find terminal tab: " + tabName, e);
         }
+
         return null;
     }
 
@@ -146,60 +252,58 @@ final class TerminalTools extends AbstractToolHandler {
 
         EdtUtil.invokeLater(() -> {
             try {
-                var managerClass = Class.forName("org.jetbrains.plugins.terminal.TerminalToolWindowManager");
                 var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID);
                 if (toolWindow == null) {
                     resultFuture.complete("Terminal tool window not available.");
                     return;
                 }
 
-                com.intellij.ui.content.Content targetContent = findTerminalContent(toolWindow, tabName);
-                if (targetContent == null) {
-                    resultFuture.complete("No terminal tab found" +
-                        (tabName != null ? " matching '" + tabName + "'" : "") + ".");
-                    return;
+                var contentManager = toolWindow.getContentManager();
+                com.intellij.ui.content.Content targetContent = null;
+
+                if (tabName != null) {
+                    for (var content : contentManager.getContents()) {
+                        String name = content.getDisplayName();
+                        if (name != null && name.contains(tabName)) {
+                            targetContent = content;
+                            break;
+                        }
+                    }
+                    if (targetContent == null) {
+                        resultFuture.complete("No terminal tab found matching '" + tabName + "'. " +
+                            "Use list_terminals to see available tabs.");
+                        return;
+                    }
+                } else {
+                    targetContent = contentManager.getSelectedContent();
+                    if (targetContent == null) {
+                        resultFuture.complete("No terminal tab is open. Use run_in_terminal to start one.");
+                        return;
+                    }
                 }
 
-                readTerminalText(managerClass, targetContent, resultFuture);
+                readTerminalText(resultFuture, targetContent);
 
             } catch (Exception e) {
-                LOG.warn("Failed to read terminal output", e);
-                resultFuture.complete("Failed to read terminal output: " + e.getMessage());
+                LOG.warn("Failed to read terminal", e);
+                resultFuture.complete("Failed to read terminal: " + e.getMessage());
             }
         });
 
         try {
-            return resultFuture.get(5, TimeUnit.SECONDS);
+            return resultFuture.get(10, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "Timed out reading terminal output.";
+            return "Terminal read timed out.";
         } catch (Exception e) {
-            return "Timed out reading terminal output.";
+            return "Terminal read timed out.";
         }
     }
 
-    private com.intellij.ui.content.Content findTerminalContent(
-        com.intellij.openapi.wm.ToolWindow toolWindow, String tabName) {
-        var contentManager = toolWindow.getContentManager();
-
-        // Find by name if specified
-        if (tabName != null) {
-            for (var content : contentManager.getContents()) {
-                String displayName = content.getDisplayName();
-                if (displayName != null && displayName.contains(tabName)) {
-                    return content;
-                }
-            }
-        }
-
-        // Fall back to selected content
-        return contentManager.getSelectedContent();
-    }
-
-    private void readTerminalText(Class<?> managerClass, com.intellij.ui.content.Content targetContent,
-                                  CompletableFuture<String> resultFuture) throws Exception {
-        // Find widget via findWidgetByContent
-        var findWidgetByContent = managerClass.getMethod("findWidgetByContent",
+    private void readTerminalText(CompletableFuture<String> resultFuture,
+                                  com.intellij.ui.content.Content targetContent) throws Exception {
+        var managerClass = Class.forName(TERMINAL_MANAGER_CLASS);
+        var findWidgetByContent = managerClass.getMethod(FIND_WIDGET_BY_CONTENT_METHOD,
             com.intellij.ui.content.Content.class);
         Object widget = findWidgetByContent.invoke(null, targetContent);
         if (widget == null) {
@@ -208,9 +312,8 @@ final class TerminalTools extends AbstractToolHandler {
             return;
         }
 
-        // Call getText() via the TerminalWidget interface
         try {
-            var widgetInterface = Class.forName("com.intellij.terminal.ui.TerminalWidget");
+            var widgetInterface = Class.forName(TERMINAL_WIDGET_CLASS);
             var getText = widgetInterface.getMethod("getText");
             CharSequence text = (CharSequence) getText.invoke(widget);
             String output = text != null ? text.toString().strip() : "";
