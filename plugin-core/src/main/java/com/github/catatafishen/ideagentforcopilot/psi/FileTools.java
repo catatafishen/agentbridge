@@ -42,6 +42,12 @@ class FileTools extends AbstractToolHandler {
     private static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
     private static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
 
+    /** Returns a short label for the current model, e.g. "Claude Sonnet 4.5" or "Agent" as fallback. */
+    private static String agentLabel() {
+        String model = CopilotSettings.getSelectedModel();
+        return model != null ? model : "Agent";
+    }
+
     // Files modified during the current agent turn that need formatting at turn end
     private final java.util.Set<String> pendingAutoFormat =
         java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
@@ -102,7 +108,7 @@ class FileTools extends AbstractToolHandler {
             return hint != null ? hint + "\n" + content : content;
         });
 
-        followFileIfEnabled(pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, "Agent is reading");
+        followFileIfEnabled(pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel() + " is reading");
         return result;
     }
 
@@ -232,7 +238,6 @@ class FileTools extends AbstractToolHandler {
      * the highlighted region. Uses the same tint color as the range highlight.
      */
     private static class AgentActionRenderer implements com.intellij.openapi.editor.EditorCustomElementRenderer {
-        private static final String ICON = "\uD83E\uDD16 ";  // 🤖
         private final String text;
         private final java.awt.Color bgColor;
 
@@ -248,7 +253,7 @@ class FileTools extends AbstractToolHandler {
             var editor = inlay.getEditor();
             var metrics = editor.getContentComponent().getFontMetrics(
                 editor.getColorsScheme().getFont(com.intellij.openapi.editor.colors.EditorFontType.PLAIN));
-            return metrics.stringWidth(ICON + text) + 16;
+            return metrics.stringWidth(text) + 16;
         }
 
         @Override
@@ -272,7 +277,7 @@ class FileTools extends AbstractToolHandler {
             g2.setColor(editor.getColorsScheme().getDefaultForeground());
             var metrics = g2.getFontMetrics();
             int textY = targetRegion.y + (targetRegion.height + metrics.getAscent() - metrics.getDescent()) / 2;
-            g2.drawString(ICON + text, targetRegion.x + 8, textY);
+            g2.drawString(text, targetRegion.x + 8, textY);
         }
     }
 
@@ -310,7 +315,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(15, TimeUnit.SECONDS);
-        followFileIfEnabled(pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, "Agent is editing");
+        followFileIfEnabled(pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, agentLabel() + " is editing");
         return result;
     }
 
