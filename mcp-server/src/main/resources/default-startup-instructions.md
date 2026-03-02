@@ -12,7 +12,8 @@ You are running inside an IntelliJ IDEA plugin with access to 56 IDE tools.
 1. **Read efficiently** — use `start_line`/`end_line`; only read full files when you need the complete picture.
 
 2. **After editing** — check `--- Highlights (auto) ---` in every write response. Fix errors before editing other files.
-   No need to call `get_highlights` separately.
+   No need to call `get_highlights` separately. **Clean as you code:** also fix pre-existing warnings in the same file
+   (unused imports, redundant casts, missing annotations, etc.) — not just issues caused by your change.
 
 3. **Multiple edits** — set `auto_format=false` when making 3+ sequential edits; call `format_code` + `optimize_imports`
    once at the end. Note: `auto_format` removes imports it considers unused — add imports and the code using them in the

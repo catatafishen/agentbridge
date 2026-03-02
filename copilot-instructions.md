@@ -183,6 +183,16 @@ public void methodUsedByFramework(Object param) {
 5. **Test**: Build project to ensure no breakage
 6. **Commit**: Group related fixes in logical commits
 
+### Clean As You Code
+
+When editing a file, check `--- Highlights (auto) ---` in the write response for **all** issues in that file — not just those caused by your change. If a highlight can be resolved with a straightforward fix (unused import, redundant cast, missing annotation, etc.), fix it in the same edit. This keeps the codebase progressively cleaner with every touch.
+
+- ✅ Fix pre-existing warnings in files you're already editing
+- ✅ Remove unused imports, dead code, redundant qualifiers
+- ✅ Add missing `@Override`, `@NotNull` annotations
+- ❌ Don't refactor unrelated files you're not touching
+- ❌ Don't fix issues that require design decisions or broad changes
+
 ---
 
 ## 6) Deploying to Main IDE
