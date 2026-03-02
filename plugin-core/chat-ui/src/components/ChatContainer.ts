@@ -58,12 +58,17 @@ export default class ChatContainer extends HTMLElement {
                 (pre as HTMLElement).dataset.copyBtn = '1';
                 const btn = document.createElement('button');
                 btn.className = 'copy-btn';
-                btn.textContent = 'Copy';
+                btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
+                btn.title = 'Copy';
                 btn.onclick = () => {
                     const code = pre.querySelector('code');
                     navigator.clipboard.writeText(code ? code.textContent! : pre.textContent!).then(() => {
-                        btn.textContent = 'Copied!';
-                        setTimeout(() => btn.textContent = 'Copy', 1500);
+                        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
+                        btn.title = 'Copied!';
+                        setTimeout(() => {
+                            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
+                            btn.title = 'Copy';
+                        }, 1500);
                     });
                 };
                 pre.prepend(btn);

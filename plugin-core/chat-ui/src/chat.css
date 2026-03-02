@@ -761,12 +761,14 @@ b, strong {
     color: var(--fg);
     border: none;
     border-radius: var(--r-sm);
-    padding: var(--sp-1) var(--sp-4);
-    font-size: 0.75em;
+    padding: var(--sp-1);
+    line-height: 0;
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.15s;
-    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 pre:hover .copy-btn {

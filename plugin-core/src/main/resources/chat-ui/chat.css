@@ -53,15 +53,12 @@
     --tool-a08: rgba(180, 160, 220, 0.08);
     --tool-a16: rgba(180, 160, 220, 0.16);
     --tool-a40: rgba(180, 160, 220, 0.40);
-    /* Tool category colors */
-    --cat-file: rgb(100, 185, 185);
-    --cat-search: rgb(195, 175, 110);
-    --cat-quality: rgb(130, 190, 130);
-    --cat-build: rgb(205, 155, 95);
-    --cat-git: rgb(195, 135, 135);
-    --cat-ide: rgb(170, 155, 210);
-    --cat-github: rgb(135, 165, 215);
-    --cat-default: rgb(160, 165, 170);
+    /* Tool kind colors */
+    --kind-read: rgb(100, 185, 185);
+    --kind-edit: rgb(205, 155, 95);
+    --kind-execute: rgb(130, 190, 130);
+    --kind-think: rgb(170, 155, 210);
+    --kind-other: rgb(160, 165, 170);
     --spin-bg: rgb(60, 60, 60);
     --code-bg: rgb(30, 30, 30);
     --tbl-border: rgb(60, 60, 60);
@@ -294,81 +291,54 @@ body {
     background: var(--tool-a16);
 }
 
-/* Tool category color overrides */
-.turn-chip.cat-file {
-    color: var(--cat-file);
-    background: color-mix(in srgb, var(--cat-file) 10%, transparent);
+/* Tool kind color overrides */
+.turn-chip.kind-read {
+    color: var(--kind-read);
+    background: color-mix(in srgb, var(--kind-read) 10%, transparent);
 }
 
-.turn-chip.cat-search {
-    color: var(--cat-search);
-    background: color-mix(in srgb, var(--cat-search) 10%, transparent);
+.turn-chip.kind-edit {
+    color: var(--kind-edit);
+    background: color-mix(in srgb, var(--kind-edit) 10%, transparent);
 }
 
-.turn-chip.cat-quality {
-    color: var(--cat-quality);
-    background: color-mix(in srgb, var(--cat-quality) 10%, transparent);
+.turn-chip.kind-execute {
+    color: var(--kind-execute);
+    background: color-mix(in srgb, var(--kind-execute) 10%, transparent);
 }
 
-.turn-chip.cat-build {
-    color: var(--cat-build);
-    background: color-mix(in srgb, var(--cat-build) 10%, transparent);
+.turn-chip.kind-think {
+    color: var(--kind-think);
+    background: color-mix(in srgb, var(--kind-think) 10%, transparent);
 }
 
-.turn-chip.cat-git {
-    color: var(--cat-git);
-    background: color-mix(in srgb, var(--cat-git) 10%, transparent);
+.turn-chip.kind-other {
+    color: var(--kind-other);
+    background: color-mix(in srgb, var(--kind-other) 8%, transparent);
 }
 
-.turn-chip.cat-ide {
-    color: var(--cat-ide);
-    background: color-mix(in srgb, var(--cat-ide) 10%, transparent);
+.turn-chip.kind-read:hover {
+    background: color-mix(in srgb, var(--kind-read) 18%, transparent);
 }
 
-.turn-chip.cat-github {
-    color: var(--cat-github);
-    background: color-mix(in srgb, var(--cat-github) 10%, transparent);
+.turn-chip.kind-edit:hover {
+    background: color-mix(in srgb, var(--kind-edit) 18%, transparent);
 }
 
-.turn-chip.cat-default {
-    color: var(--cat-default);
-    background: color-mix(in srgb, var(--cat-default) 8%, transparent);
+.turn-chip.kind-execute:hover {
+    background: color-mix(in srgb, var(--kind-execute) 18%, transparent);
 }
 
-.turn-chip.cat-file:hover {
-    background: color-mix(in srgb, var(--cat-file) 18%, transparent);
+.turn-chip.kind-think:hover {
+    background: color-mix(in srgb, var(--kind-think) 18%, transparent);
 }
 
-.turn-chip.cat-search:hover {
-    background: color-mix(in srgb, var(--cat-search) 18%, transparent);
+.turn-chip.kind-other:hover {
+    background: color-mix(in srgb, var(--kind-other) 16%, transparent);
 }
 
-.turn-chip.cat-quality:hover {
-    background: color-mix(in srgb, var(--cat-quality) 18%, transparent);
-}
-
-.turn-chip.cat-build:hover {
-    background: color-mix(in srgb, var(--cat-build) 18%, transparent);
-}
-
-.turn-chip.cat-git:hover {
-    background: color-mix(in srgb, var(--cat-git) 18%, transparent);
-}
-
-.turn-chip.cat-ide:hover {
-    background: color-mix(in srgb, var(--cat-ide) 18%, transparent);
-}
-
-.turn-chip.cat-github:hover {
-    background: color-mix(in srgb, var(--cat-github) 18%, transparent);
-}
-
-.turn-chip.cat-default:hover {
-    background: color-mix(in srgb, var(--cat-default) 16%, transparent);
-}
-
-/* Category-colored spinners — inherit from chip text color */
-.turn-chip[class*="cat-"] .chip-spinner {
+/* Kind-colored spinners — inherit from chip text color */
+.turn-chip[class*="kind-"] .chip-spinner {
     border-top-color: currentColor;
 }
 
@@ -581,6 +551,13 @@ thinking-chip .chip-spinner {
     overflow-y: auto;
 }
 
+.tool-runtime {
+    font-size: 0.78em;
+    color: var(--think);
+    margin-top: var(--sp-2);
+    text-align: right;
+}
+
 /* ── Status messages ─────────────────────────────────── */
 .status-row {
     display: block;
@@ -784,12 +761,14 @@ b, strong {
     color: var(--fg);
     border: none;
     border-radius: var(--r-sm);
-    padding: var(--sp-1) var(--sp-4);
-    font-size: 0.75em;
+    padding: var(--sp-1);
+    line-height: 0;
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.15s;
-    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 pre:hover .copy-btn {
@@ -905,4 +884,115 @@ permission-request {
     html {
         scroll-behavior: auto;
     }
+}
+
+/* ── Git commit result card ──────────────────────────── */
+.git-commit-result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+.git-commit-header {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-2);
+}
+
+.git-commit-hash {
+    font-family: monospace;
+    font-size: 0.92em;
+    font-weight: 600;
+}
+
+.git-commit-link {
+    color: var(--link);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.git-commit-link:hover {
+    text-decoration: underline;
+}
+
+.git-commit-branch {
+    font-size: 0.82em;
+    background: var(--fg-a08);
+    border-radius: var(--r-sm);
+    padding: 1px var(--sp-3);
+    color: var(--think);
+}
+
+.git-commit-message {
+    font-weight: 500;
+    margin-bottom: var(--sp-3);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.git-commit-stats {
+    font-size: 0.85em;
+    color: var(--think);
+    margin-bottom: var(--sp-3);
+}
+
+.git-stat-ins {
+    color: #5cb85c;
+    font-weight: 600;
+}
+
+.git-stat-del {
+    color: #d9534f;
+    font-weight: 600;
+}
+
+.git-commit-files {
+    border-top: 1px solid var(--fg-a08);
+    padding-top: var(--sp-3);
+}
+
+.git-file-entry {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: 1px 0;
+    font-size: 0.88em;
+}
+
+.git-file-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: var(--r-sm);
+    font-size: 0.75em;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.git-file-add {
+    background: rgba(80, 180, 80, 0.15);
+    color: #5cb85c;
+}
+
+.git-file-del {
+    background: rgba(220, 80, 80, 0.15);
+    color: #d9534f;
+}
+
+.git-file-mod {
+    background: rgba(86, 156, 214, 0.15);
+    color: var(--link);
+}
+
+.git-file-rename {
+    background: rgba(240, 173, 78, 0.15);
+    color: #f0ad4e;
+}
+
+.git-file-path {
+    font-family: monospace;
+    font-size: 0.92em;
+    word-break: break-all;
 }
