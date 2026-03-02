@@ -42,8 +42,10 @@ class FileTools extends AbstractToolHandler {
     private static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
     private static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
 
-    /** Returns a short label for the current model, e.g. "Claude Sonnet 4.5" or "Agent" as fallback. */
+    /** Returns a label like "ui-reviewer", "claude-sonnet-4.5", or "Agent" as fallback. */
     private static String agentLabel() {
+        String agent = CopilotSettings.getActiveAgentLabel();
+        if (agent != null) return agent;
         String model = CopilotSettings.getSelectedModel();
         return model != null ? model : "Agent";
     }
