@@ -222,10 +222,10 @@ body {
 chat-message.agent-row:last-child:not(:has(message-bubble))::after {
     content: 'Working…';
     display: block;
-    padding: var(--sp-4) var(--sp-6) var(--sp-4) 32px;
-    margin-top: var(--sp-4);
-    border-radius: var(--r-lg);
-    background: var(--agent-a5) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='7' r='5' fill='none' stroke='%23888' stroke-width='2' stroke-dasharray='20 12' stroke-linecap='round'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 7 7' to='360 7 7' dur='.8s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E") no-repeat var(--sp-6) center / 14px 14px;
+    padding: var(--sp-4) var(--sp-8) var(--sp-4) 36px;
+    max-width: 90%;
+    border-radius: var(--r-sm) var(--r-lg) var(--r-lg) var(--r-lg);
+    background: var(--agent-a06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='7' r='5' fill='none' stroke='%23888' stroke-width='2' stroke-dasharray='20 12' stroke-linecap='round'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 7 7' to='360 7 7' dur='.8s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E") no-repeat var(--sp-8) center / 14px 14px;
     color: color-mix(in srgb, var(--fg) 55%, transparent);
     font-size: 0.88em;
 }
