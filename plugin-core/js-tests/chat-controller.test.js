@@ -354,4 +354,35 @@ describe('ChatController', () => {
             expect(chip.getAttribute('status')).toBe('complete');
         });
     });
+
+    describe('load more / restoreBatch', () => {
+        it('showLoadMore adds load-more element at top of messages', () => {
+            CC().addUserMessage('Hello', '10:30', '');
+            CC().showLoadMore(5);
+            const msgs = getMessages();
+            expect(msgs.firstElementChild.tagName).toBe('LOAD-MORE');
+            expect(msgs.firstElementChild.getAttribute('count')).toBe('5');
+        });
+
+        it('restoreBatch inserts after load-more, not before it', () => {
+            CC().addUserMessage('Current message', '10:30', '');
+            CC().showLoadMore(3);
+            const encoded = btoa('<chat-message type="agent"><div class="bubble"><p>Old message</p></div></chat-message>');
+            CC().restoreBatch(encoded);
+            const msgs = getMessages();
+            // load-more should still be the first child
+            expect(msgs.firstElementChild.tagName).toBe('LOAD-MORE');
+            // restored message should be between load-more and the existing message
+            const children = Array.from(msgs.children);
+            expect(children[1].tagName).toBe('CHAT-MESSAGE');
+            expect(children[1].querySelector('.bubble').textContent).toBe('Old message');
+        });
+
+        it('removeLoadMore removes the element', () => {
+            CC().showLoadMore(5);
+            expect(document.querySelector('load-more')).not.toBeNull();
+            CC().removeLoadMore();
+            expect(document.querySelector('load-more')).toBeNull();
+        });
+    });
 });

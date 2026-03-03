@@ -29,6 +29,11 @@ export default class ChatContainer extends HTMLElement {
             } else if (window.scrollY < this._prevScrollY) {
                 // User intentionally scrolled up — disable auto-scroll
                 this._autoScroll = false;
+                // Trigger load-more when scrolled near the top
+                if (window.scrollY <= 50) {
+                    const lm = this._messages.querySelector('load-more:not([loading])');
+                    if (lm) (lm as HTMLElement).click();
+                }
             }
             this._prevScrollY = window.scrollY;
         });

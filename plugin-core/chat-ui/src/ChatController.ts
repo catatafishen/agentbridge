@@ -407,10 +407,11 @@ const ChatController = {
         const temp = document.createElement('div');
         temp.innerHTML = html;
         const msgs = this._msgs();
-        const first = msgs.firstChild;
+        // Insert after the load-more banner (if present), otherwise before existing messages
+        const loadMore = msgs.querySelector('load-more');
+        const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
         while (temp.firstChild) {
-            if (first) msgs.insertBefore(temp.firstChild, first);
-            else msgs.appendChild(temp.firstChild);
+            msgs.insertBefore(temp.firstChild, insertBefore);
         }
     },
 
