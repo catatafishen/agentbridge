@@ -95,6 +95,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             JBColor(Color(0xC6, 0x50, 0x50), Color(229, 115, 115)),
             JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214)),
         )
+
+        // Tool kind chip colors — semantic categories
+        private val KIND_READ_COLOR = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
+        private val KIND_EDIT_COLOR = JBColor(Color(0xA0, 0x7A, 0x3A), Color(205, 155, 95))
+        private val KIND_EXECUTE_COLOR = JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130))
+        private val KIND_SEARCH_COLOR = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
+        private val KIND_THINK_COLOR = JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210))
+        private val KIND_OTHER_COLOR = JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170))
     }
 
     // ── Init ───────────────────────────────────────────────────────
@@ -223,6 +231,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$ctxHtml')")
     }
 
+    override fun startStreaming() {
+        // no-op: CSS-only indicator via :last-child:not(:has(message-bubble))
+    }
+
     override fun setPromptStats(modelId: String, multiplier: String) {
         val short = escJs(modelId.substringAfterLast("/").take(30))
         executeJs("ChatController.setPromptStats('$short','${escJs(multiplier)}')")
@@ -254,6 +266,18 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun appendText(text: String) {
         maybeStartNewSegment()
         collapseThinking()
+
+        // ACP framework status messages arrive as regular text chunks — render them
+        // as distinct info/error entries instead of plain agent text.
+        if (text.startsWith("Info: ")) {
+            addInfoEntry(text.removePrefix("Info: ").trimEnd())
+            return
+        }
+        if (text.startsWith("Error: ")) {
+            addErrorEntry(text.removePrefix("Error: ").trimEnd())
+            return
+        }
+
         if (currentTextData == null && text.isBlank()) return
         if (currentTextData == null) {
             currentTextData = EntryData.Text().also { entries.add(it) }
@@ -265,16 +289,17 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?) {
         finalizeCurrentText()
-        entries.add(EntryData.ToolCall(title, arguments))
+        val resolvedKind = kind ?: "other"
+        entries.add(EntryData.ToolCall(title, arguments, resolvedKind))
         val did = domId(id)
-        val baseName = title.substringAfterLast("-").substringAfterLast("_")
+        val baseName = title.substringAfterLast("-")
         toolCallNames[did] = baseName
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
         val paramsJson = if (!arguments.isNullOrBlank()) escJs(arguments) else ""
-        val safeKind = escJs(kind ?: "other")
+        val safeKind = escJs(resolvedKind)
         executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind')")
     }
 
@@ -291,7 +316,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String?) {
         val saDid = domId(subAgentId)
         val toolDid = domId(toolId)
-        val baseName = title.substringAfterLast("-").substringAfterLast("_")
+        val baseName = title.substringAfterLast("-")
         val info = TOOL_DISPLAY_INFO[baseName]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
@@ -446,6 +471,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         "args",
                         e.arguments ?: ""
                     )
+                    obj.addProperty("kind", e.kind)
                 }
 
                 is EntryData.SubAgent -> {
@@ -525,7 +551,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             "tool" -> entries.add(
                 EntryData.ToolCall(
                     obj["title"]?.asString ?: "",
-                    obj["args"]?.asString
+                    obj["args"]?.asString,
+                    obj["kind"]?.asString ?: "other"
                 )
             )
 
@@ -580,6 +607,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     val encoded = b64(html)
                     executeJs("ChatController.finalizeAgentText('$currentTurnId','main','$encoded')")
                 }
+                // Reset segment so subsequent tool/text entries get a fresh message element,
+                // matching the live flow where newSegment is called between tool results and new text.
+                executeJs("ChatController.newSegment('$currentTurnId','main')")
             }
 
             "thinking" -> {
@@ -594,13 +624,20 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 if (currentTurnId.isEmpty()) currentTurnId = "t${turnCounter++}"
                 val title = obj["title"]?.asString ?: ""
                 val args = obj["args"]?.asString
-                val baseName = title.substringAfterLast("-").substringAfterLast("_")
+                val baseName = title.substringAfterLast("-")
                 val info = TOOL_DISPLAY_INFO[baseName]
                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                 val short = formatToolSubtitle(baseName, args)
                 val label = if (short != null) "$displayName — $short" else displayName
                 val did = "restored-tool-${entries.size}"
-                executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','${escJs(args ?: "")}','other');ChatController.updateToolCall('$did','completed','Completed')")
+                val kind = obj["kind"]?.asString ?: "other"
+                executeJs(
+                    "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','${escJs(args ?: "")}','${
+                        escJs(
+                            kind
+                        )
+                    }');ChatController.updateToolCall('$did','completed','Completed')"
+                )
             }
 
             "subagent" -> {
@@ -735,13 +772,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                             "tool" -> {
                                 val title = e["title"]?.asString ?: ""
                                 val args = e["args"]?.asString
-                                val baseName = title.substringAfterLast("-").substringAfterLast("_")
+                                val kind = e["kind"]?.asString ?: "other"
+                                val baseName = title.substringAfterLast("-")
                                 val info = TOOL_DISPLAY_INFO[baseName]
                                 val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
                                 val short = formatToolSubtitle(baseName, args)
                                 val label = if (short != null) "$displayName — $short" else displayName
                                 val id = "batch-tool-${batchIdCounter++}"
-                                metaChips.append("<tool-chip label='${esc(label)}' status='complete' data-chip-for='$id'></tool-chip>")
+                                metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'></tool-chip>")
                                 detailsContent.append("<tool-section id='$id' title='${esc(label)}'")
                                 if (args != null) detailsContent.append(" params='${esc(args)}'")
                                 detailsContent.append("><div class='tool-params'></div><div class='tool-result'>Completed</div></tool-section>")
@@ -868,75 +906,77 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             return
         }
         val pathAndLine = href.removePrefix("openfile://")
-        val parts = pathAndLine.split(":")
-        val filePath = parts[0]
-        val line = parts.getOrNull(1)?.toIntOrNull() ?: 0
-        val vf = LocalFileSystem.getInstance().findFileByPath(filePath) ?: return
+        val (filePath, line) = parsePathAndLine(pathAndLine)
+        val normalizedPath = filePath.replace('\\', '/')
+        val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
         SwingUtilities.invokeLater {
             OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(true)
         }
     }
 
+    /** Splits a path-and-optional-line string, handling Windows drive letters (e.g. C:\...:42). */
+    private fun parsePathAndLine(pathAndLine: String): Pair<String, Int> {
+        val lastColon = pathAndLine.lastIndexOf(':')
+        if (lastColon > 0) {
+            val afterColon = pathAndLine.substring(lastColon + 1)
+            val lineNum = afterColon.toIntOrNull()
+            if (lineNum != null) return Pair(pathAndLine.substring(0, lastColon), lineNum)
+        }
+        return Pair(pathAndLine, 0)
+    }
+
     private fun handleGitShowLink(hash: String) {
-        SwingUtilities.invokeLater {
+        val log = com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
+        ApplicationManager.getApplication().invokeLater {
             try {
-                // Open the Git log tool window and select the commit
-                val twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
-                val gitTw = twm.getToolWindow("Git") ?: twm.getToolWindow("Version Control")
-                if (gitTw != null) {
-                    gitTw.activate {
-                        // Try to jump to the commit via VcsProjectLog (reflection — Git4Idea is optional)
-                        try {
-                            val vcsProjectLogClass = Class.forName("com.intellij.vcs.log.impl.VcsProjectLog")
-                            val getInstance = vcsProjectLogClass.getMethod("getInstance", Project::class.java)
-                            val vcsProjectLog = getInstance.invoke(null, project) ?: return@activate
-                            val getLogManager = vcsProjectLogClass.getMethod("getLogManager")
-                            val logManager = getLogManager.invoke(vcsProjectLog) ?: return@activate
-
-                            val contentUtilClass = Class.forName("com.intellij.vcs.log.impl.VcsLogContentUtil")
-                            val selectMethod = contentUtilClass.methods.find {
-                                it.name == "openMainLogAndExecute" && it.parameterCount == 2
-                            }
-                            if (selectMethod != null) {
-                                val hashClass = Class.forName("com.intellij.vcs.log.Hash")
-                                val hashImplClass = Class.forName("com.intellij.vcs.log.HashImpl")
-                                val buildHash = hashImplClass.getMethod("build", String::class.java)
-                                val commitHash = buildHash.invoke(null, hash)
-
-                                selectMethod.invoke(null, project, java.util.function.Consumer { ui: Any ->
-                                    try {
-                                        val getVcsLog = ui.javaClass.getMethod("getVcsLog")
-                                        val vcsLog = getVcsLog.invoke(ui)
-                                        val getDataPack = ui.javaClass.getMethod("getDataPack")
-                                        val dataPack = getDataPack.invoke(ui)
-                                        val getLogProviders = dataPack.javaClass.getMethod("getLogProviders")
-
-                                        @Suppress("UNCHECKED_CAST")
-                                        val providers = getLogProviders.invoke(dataPack) as? Map<Any, Any>
-                                        val root = providers?.keys?.firstOrNull() ?: return@Consumer
-                                        val jumpMethod = vcsLog.javaClass.getMethod(
-                                            "jumpToCommit",
-                                            hashClass,
-                                            Class.forName("com.intellij.openapi.vfs.VirtualFile")
-                                        )
-                                        jumpMethod.invoke(vcsLog, commitHash, root)
-                                    } catch (_: Exception) { /* best effort */
-                                    }
-                                })
-                            }
-                        } catch (_: Exception) { /* Git4Idea not available — tool window is already open */
-                        }
-                    }
+                val repos = git4idea.repo.GitRepositoryManager.getInstance(project).repositories
+                val root = repos.firstOrNull()?.root
+                if (root == null) {
+                    log.warn("No VCS root found for git commit link $hash")
+                    return@invokeLater
                 }
+                // Resolve short hash to full 40-char SHA — VcsProjectLog requires exact match
+                val fullHash = resolveFullHash(hash) ?: hash
+                val hashObj = com.intellij.vcs.log.impl.HashImpl.build(fullHash)
+                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, root, hashObj)
             } catch (e: Exception) {
-                com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
-                    .warn("Failed to open git commit $hash", e)
+                log.warn("Failed to open git commit $hash", e)
             }
         }
     }
 
+    private fun resolveFullHash(shortHash: String): String? {
+        val basePath = project.basePath ?: return null
+        return try {
+            val process = ProcessBuilder("git", "rev-parse", shortHash)
+                .directory(java.io.File(basePath))
+                .redirectErrorStream(true)
+                .start()
+            val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+            if (exited && process.exitValue() == 0) {
+                process.inputStream.bufferedReader().readLine()?.trim()
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun markdownToHtml(text: String): String =
-        MarkdownRenderer.markdownToHtml(text, ::resolveFileReference, ::resolveFilePath)
+        MarkdownRenderer.markdownToHtml(text, ::resolveFileReference, ::resolveFilePath, ::isGitCommit)
+
+    private fun isGitCommit(sha: String): Boolean {
+        val basePath = project.basePath ?: return false
+        return try {
+            val process = ProcessBuilder("git", "cat-file", "-t", sha)
+                .directory(java.io.File(basePath))
+                .redirectErrorStream(true)
+                .start()
+            val exited = process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)
+            exited && process.exitValue() == 0
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     private fun resolveFileReference(ref: String): Pair<String, Int?>? {
         val colonIdx = ref.indexOf(':')
@@ -1224,6 +1264,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 };--sa-c$i-a15:${rgba(c, 0.15)};"
             )
         }
+        sb.append("--kind-read:${rgb(KIND_READ_COLOR)};--kind-edit:${rgb(KIND_EDIT_COLOR)};")
+        sb.append("--kind-execute:${rgb(KIND_EXECUTE_COLOR)};--kind-search:${rgb(KIND_SEARCH_COLOR)};")
+        sb.append("--kind-think:${rgb(KIND_THINK_COLOR)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
         return sb.toString()
     }
 

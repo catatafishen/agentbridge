@@ -31,7 +31,7 @@ public final class ToolUtils {
     private ToolUtils() {
     }
 
-    static String classifyElement(PsiElement element) {
+    public static String classifyElement(PsiElement element) {
         String cls = element.getClass().getSimpleName();
 
         // Java PSI
@@ -100,7 +100,7 @@ public final class ToolUtils {
         return vf;
     }
 
-    static String relativize(String basePath, String filePath) {
+    public static String relativize(String basePath, String filePath) {
         String base = basePath.replace('\\', '/');
         String file = filePath.replace('\\', '/');
         return file.startsWith(base + "/") ? file.substring(base.length() + 1) : file;
@@ -284,7 +284,8 @@ public final class ToolUtils {
         return switch (abuseType) {
             case "git" -> "Error: git commands are not allowed via run_command (causes IntelliJ buffer desync). "
                 + "Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, "
-                + "git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote.";
+                + "git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, "
+                + "git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
             case "cat" -> "Error: cat/head/tail/less/more are not allowed via run_command (reads stale disk files). "
                 + "Use intellij_read_file to read live editor buffers instead.";
             case "sed" -> "Error: sed is not allowed via run_command (bypasses IntelliJ editor buffers). "

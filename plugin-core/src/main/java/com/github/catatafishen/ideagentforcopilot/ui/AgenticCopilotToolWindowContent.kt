@@ -524,6 +524,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun createPromptTab(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
+        panel.border = JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0)
 
         // PSI bridge status banner (shown when bridge is not reachable)
         val psiBridgeBanner = createPsiBridgeBanner()
@@ -1088,26 +1089,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
     }
 
-    /** Open a file in the editor, creating it with default content if it doesn't exist yet. */
-    private fun openOrCreateProjectFile(relativePath: String, defaultContent: () -> String) {
-        val base = project.basePath ?: return
-        val file = java.io.File(base, relativePath)
-        if (!file.exists()) {
-            file.parentFile?.mkdirs()
-            file.writeText(defaultContent())
-        }
-        val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-            .refreshAndFindFileByPath(file.absolutePath) ?: return
-        com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
-    }
-
-    /** Load the bundled default MCP instructions from plugin resources. */
-    private fun loadDefaultMcpInstructions(): String {
-        val stream = javaClass.getResourceAsStream("/default-startup-instructions.md")
-        return stream?.bufferedReader()?.use { it.readText() }
-            ?: "You are running inside an IntelliJ IDEA plugin with IDE tools."
-    }
-
     /** Dropdown action for project configuration files: Instructions, TODO, Agent Definitions, MCP Instructions */
     private inner class ProjectFilesDropdownAction : AnAction(
         "Project Files", "Open project configuration files",
@@ -1137,18 +1118,31 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             val group = DefaultActionGroup()
             val base = project.basePath
 
-            // Instructions
+            // Instructions (detect copilot-instructions.md in .copilot/ or .github/)
+            val copilotInstructionsFile = if (base != null) {
+                val dotCopilot = java.io.File(base, ".copilot/copilot-instructions.md")
+                val dotGithub = java.io.File(base, ".github/copilot-instructions.md")
+                when {
+                    dotCopilot.exists() -> dotCopilot
+                    dotGithub.exists() -> dotGithub
+                    else -> null
+                }
+            } else null
             group.add(object : AnAction(
                 "Instructions",
-                "Open copilot-instructions.md",
+                copilotInstructionsFile?.let { "Open ${it.relativeTo(java.io.File(base!!))}" }
+                    ?: "No copilot-instructions.md found",
                 com.intellij.icons.AllIcons.Actions.IntentionBulb
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
                 override fun update(e: AnActionEvent) {
-                    e.presentation.isEnabled = base != null && java.io.File(base, "copilot-instructions.md").exists()
+                    e.presentation.isEnabled = copilotInstructionsFile != null
                 }
 
-                override fun actionPerformed(e: AnActionEvent) = openProjectFile("copilot-instructions.md")
+                override fun actionPerformed(e: AnActionEvent) {
+                    val relPath = copilotInstructionsFile?.relativeTo(java.io.File(base!!))?.path ?: return
+                    openProjectFile(relPath)
+                }
             })
 
             // TODO
@@ -1191,37 +1185,36 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
             group.addSeparator("MCP Server")
 
-            // Startup Instructions (MCP server instructions)
+            // Startup Instructions — disabled because Copilot ignores MCP initialize instructions.
+            // See: https://github.com/github/copilot-cli/issues/1486
+            // Plugin instructions are now prepended to copilot-instructions.md instead.
             group.add(object : AnAction(
                 "Startup Instructions",
-                "Open .agent-work/startup-instructions.md",
+                "Disabled: Copilot ignores MCP instructions. Use copilot-instructions.md instead. " +
+                    "See github.com/github/copilot-cli/issues/1486",
                 com.intellij.icons.AllIcons.Actions.IntentionBulbGrey
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                override fun actionPerformed(e: AnActionEvent) {
-                    openOrCreateProjectFile(".agent-work/startup-instructions.md") {
-                        loadDefaultMcpInstructions()
-                    }
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isEnabled = false
                 }
+
+                override fun actionPerformed(e: AnActionEvent) {}
             })
 
-            // Restore default
+            // Restore default — also disabled for the same reason
             group.add(object : AnAction(
                 "Restore Default Instructions",
-                "Reset startup instructions to built-in default",
+                "Disabled: Copilot ignores MCP instructions. Use copilot-instructions.md instead. " +
+                    "See github.com/github/copilot-cli/issues/1486",
                 com.intellij.icons.AllIcons.Actions.Rollback
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                override fun actionPerformed(e: AnActionEvent) {
-                    val filePath = ".agent-work/startup-instructions.md"
-                    val absFile = java.io.File(base ?: return, filePath)
-                    absFile.parentFile?.mkdirs()
-                    absFile.writeText(loadDefaultMcpInstructions())
-                    // Refresh and open
-                    val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-                        .refreshAndFindFileByPath(absFile.absolutePath) ?: return
-                    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isEnabled = false
                 }
+
+                override fun actionPerformed(e: AnActionEvent) {}
             })
 
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
@@ -1753,6 +1746,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 toolCallTitles[toolCallId] = "task" // mark as sub-agent for update routing
                 activeSubAgentId = toolCallId
                 CopilotService.getInstance(project).getClient().setSubAgentActive(true)
+                CopilotSettings.setActiveAgentLabel(agentType)
                 setResponseStatus("Running: $title")
                 val description = title.ifBlank { extractJsonField(arguments, "description") ?: "Sub-agent task" }
                 val prompt = extractJsonField(arguments, "prompt")
@@ -1795,6 +1789,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             if (isSubAgent) {
                 activeSubAgentId = null
                 CopilotService.getInstance(project).getClient().setSubAgentActive(false)
+                CopilotSettings.setActiveAgentLabel(null)
                 consolePanel.updateSubAgentResult(toolCallId, "completed", result)
             } else if (isInternal) {
                 consolePanel.updateSubAgentToolCall(toolCallId, "completed", result)
@@ -1808,6 +1803,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             if (isSubAgent) {
                 activeSubAgentId = null
                 CopilotService.getInstance(project).getClient().setSubAgentActive(false)
+                CopilotSettings.setActiveAgentLabel(null)
                 consolePanel.updateSubAgentResult(toolCallId, "failed", error)
             } else if (isInternal) {
                 consolePanel.updateSubAgentToolCall(toolCallId, "failed", error)

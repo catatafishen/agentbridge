@@ -24,6 +24,7 @@ interface ChatPanelApi : Disposable {
 
     // ── Agent text (streaming) ─────────────────────────────────────
 
+    fun startStreaming()
     fun appendText(text: String)
     fun appendThinkingText(text: String)
     fun collapseThinking()

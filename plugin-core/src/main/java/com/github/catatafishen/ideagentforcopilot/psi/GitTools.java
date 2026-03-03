@@ -22,5 +22,12 @@ class GitTools extends AbstractToolHandler {
         register("git_show", gitToolHandler::gitShow);
         register("git_push", gitToolHandler::gitPush);
         register("git_remote", gitToolHandler::gitRemote);
+        register("git_fetch", gitToolHandler::gitFetch);
+        register("git_pull", gitToolHandler::gitPull);
+        register("git_merge", gitToolHandler::gitMerge);
+        register("git_rebase", gitToolHandler::gitRebase);
+        register("git_cherry_pick", gitToolHandler::gitCherryPick);
+        register("git_tag", gitToolHandler::gitTag);
+        register("git_reset", gitToolHandler::gitReset);
     }
 }

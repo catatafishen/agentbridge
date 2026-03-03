@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -12,6 +11,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -39,6 +39,16 @@ class FileTools extends AbstractToolHandler {
     private static final String PARAM_END_LINE = "end_line";
     private static final String PARAM_NEW_STR = "new_str";
     private static final String FORMAT_CHARS_SUFFIX = " chars)";
+    static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
+    static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
+
+    /** Returns a label like "ui-reviewer", "claude-sonnet-4.5", or "Agent" as fallback. */
+    static String agentLabel() {
+        String agent = CopilotSettings.getActiveAgentLabel();
+        if (agent != null) return agent;
+        String model = CopilotSettings.getSelectedModel();
+        return model != null ? model : "Agent";
+    }
 
     // Files modified during the current agent turn that need formatting at turn end
     private final java.util.Set<String> pendingAutoFormat =
@@ -100,7 +110,7 @@ class FileTools extends AbstractToolHandler {
             return hint != null ? hint + "\n" + content : content;
         });
 
-        followFileIfEnabled(pathStr, startLine > 0 ? startLine : -1);
+        followFileIfEnabled(project, pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel() + " is reading");
         return result;
     }
 
@@ -140,20 +150,26 @@ class FileTools extends AbstractToolHandler {
 
     /**
      * Opens the file in the editor if "Follow Agent Files" is enabled.
+     * Scrolls to the middle of [startLine, endLine] and briefly highlights the region.
+     * Package-private so other tool handlers can reuse it.
      */
-    private void followFileIfEnabled(String pathStr, int line) {
+    static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
+                                    java.awt.Color highlightColor, String actionLabel) {
         if (!CopilotSettings.getFollowAgentFiles()) return;
 
         EdtUtil.invokeLater(() -> {
             try {
-                VirtualFile vf = resolveVirtualFile(pathStr);
+                VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
                 if (vf == null) return;
 
                 FileEditorManager fem = FileEditorManager.getInstance(project);
-                if (line > 0) {
-                    new com.intellij.openapi.fileEditor.OpenFileDescriptor(project, vf, line - 1, 0)
+                int midLine = (startLine > 0 && endLine > 0)
+                    ? (startLine + endLine) / 2
+                    : Math.max(startLine, 1);
+                if (midLine > 0) {
+                    new com.intellij.openapi.fileEditor.OpenFileDescriptor(project, vf, midLine - 1, 0)
                         .navigate(false);
-                    scrollEditorToLine(fem, vf, line);
+                    scrollAndHighlight(fem, vf, startLine, endLine, midLine, highlightColor, actionLabel);
                 } else {
                     fem.openFile(vf, false);
                 }
@@ -163,19 +179,125 @@ class FileTools extends AbstractToolHandler {
         });
     }
 
-    private void scrollEditorToLine(FileEditorManager fem, VirtualFile vf, int line) {
+    private static void scrollAndHighlight(FileEditorManager fem, VirtualFile vf,
+                                    int startLine, int endLine, int midLine,
+                                    java.awt.Color highlightColor, String actionLabel) {
         for (com.intellij.openapi.fileEditor.FileEditor fe : fem.getEditors(vf)) {
             if (fe instanceof TextEditor textEditor) {
                 com.intellij.openapi.editor.Editor editor = textEditor.getEditor();
-                int lineCount = editor.getDocument().getLineCount();
-                if (line - 1 < lineCount) {
-                    int offset = editor.getDocument().getLineStartOffset(line - 1);
+                Document doc = editor.getDocument();
+                int lineCount = doc.getLineCount();
+                if (midLine - 1 >= lineCount) break;
+
+                // If the highlighted range fits in the viewport, center it;
+                // otherwise scroll so the start (with the action label) is visible near the top.
+                int visibleLines = editor.getScrollingModel().getVisibleArea().height
+                    / editor.getLineHeight();
+                int rangeLines = endLine - startLine + 1;
+                boolean fitsInViewport = startLine <= 0 || endLine <= 0
+                    || rangeLines <= visibleLines;
+
+                if (fitsInViewport) {
+                    int offset = doc.getLineStartOffset(Math.max(midLine - 1, 0));
+                    editor.getCaretModel().moveToOffset(offset);
+                    editor.getScrollingModel().scrollToCaret(
+                        com.intellij.openapi.editor.ScrollType.CENTER);
+                } else {
+                    // Place start line a few lines from the top so the inlay label is visible
+                    int topLine = Math.max(startLine - 2, 1);
+                    int offset = doc.getLineStartOffset(Math.max(topLine - 1, 0));
                     editor.getCaretModel().moveToOffset(offset);
                     editor.getScrollingModel().scrollToCaret(
                         com.intellij.openapi.editor.ScrollType.CENTER);
                 }
+
+                flashLineRange(editor, doc, startLine, endLine, highlightColor, actionLabel, textEditor);
                 break;
             }
+        }
+    }
+
+    private static void flashLineRange(com.intellij.openapi.editor.Editor editor, Document doc,
+                                int startLine, int endLine,
+                                java.awt.Color color, String actionLabel,
+                                TextEditor disposableParent) {
+        int lineCount = doc.getLineCount();
+        if (startLine <= 0 || endLine <= 0 || startLine > lineCount) return;
+
+        int hlStart = doc.getLineStartOffset(startLine - 1);
+        int hlEnd = doc.getLineEndOffset(Math.min(endLine, lineCount) - 1);
+        if (hlEnd <= hlStart) return;
+
+        var attrs = new com.intellij.openapi.editor.markup.TextAttributes();
+        attrs.setBackgroundColor(color);
+        var markup = editor.getMarkupModel();
+        var hl = markup.addRangeHighlighter(
+            hlStart, hlEnd,
+            com.intellij.openapi.editor.markup.HighlighterLayer.SELECTION - 1,
+            attrs,
+            com.intellij.openapi.editor.markup.HighlighterTargetArea.LINES_IN_RANGE);
+
+        // Add an inline label above the highlighted region
+        var inlay = editor.getInlayModel().addBlockElement(
+            hlStart, true, true, 0,
+            new AgentActionRenderer(actionLabel, color));
+
+        var alarm = new com.intellij.util.Alarm(
+            com.intellij.util.Alarm.ThreadToUse.SWING_THREAD, disposableParent);
+        alarm.addRequest(() -> {
+            try {
+                markup.removeHighlighter(hl);
+                if (inlay != null) inlay.dispose();
+            } catch (Exception ignored) {
+            }
+        }, 2500);
+    }
+
+    /**
+     * Renders a small label ("Agent is reading" / "Agent is editing") as a block inlay above
+     * the highlighted region. Uses the same tint color as the range highlight.
+     */
+    private static class AgentActionRenderer implements com.intellij.openapi.editor.EditorCustomElementRenderer {
+        private final String text;
+        private final java.awt.Color bgColor;
+
+        AgentActionRenderer(String text, java.awt.Color bgColor) {
+            this.text = text;
+            this.bgColor = new java.awt.Color(
+                bgColor.getRed(), bgColor.getGreen(), bgColor.getBlue(),
+                Math.min(bgColor.getAlpha() * 3, 255));
+        }
+
+        @Override
+        public int calcWidthInPixels(com.intellij.openapi.editor.Inlay inlay) {
+            var editor = inlay.getEditor();
+            var metrics = editor.getContentComponent().getFontMetrics(
+                editor.getColorsScheme().getFont(com.intellij.openapi.editor.colors.EditorFontType.PLAIN));
+            return metrics.stringWidth(text) + 16;
+        }
+
+        @Override
+        public int calcHeightInPixels(com.intellij.openapi.editor.Inlay inlay) {
+            return inlay.getEditor().getLineHeight();
+        }
+
+        @Override
+        public void paint(com.intellij.openapi.editor.Inlay inlay,
+                          java.awt.Graphics g, java.awt.Rectangle targetRegion,
+                          com.intellij.openapi.editor.markup.TextAttributes textAttributes) {
+            var g2 = (java.awt.Graphics2D) g;
+            g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(bgColor);
+            g2.fillRoundRect(targetRegion.x, targetRegion.y,
+                targetRegion.width, targetRegion.height, 6, 6);
+            var editor = inlay.getEditor();
+            g2.setFont(editor.getColorsScheme().getFont(
+                com.intellij.openapi.editor.colors.EditorFontType.PLAIN));
+            g2.setColor(editor.getColorsScheme().getDefaultForeground());
+            var metrics = g2.getFontMetrics();
+            int textY = targetRegion.y + (targetRegion.height + metrics.getAscent() - metrics.getDescent()) / 2;
+            g2.drawString(text, targetRegion.x + 8, textY);
         }
     }
 
@@ -186,9 +308,8 @@ class FileTools extends AbstractToolHandler {
         boolean autoFormat = !args.has("auto_format") || args.get("auto_format").getAsBoolean();
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        // [0] = 1-based line to scroll to after the write; -1 = don't scroll.
-        // Set on EDT before completing resultFuture, read after get() (happens-before).
-        int[] followLine = {-1};
+        // [0] = start line, [1] = end line (1-based) to scroll/highlight after write; -1 = don't.
+        int[] followRange = {-1, -1};
 
         EdtUtil.invokeLater(() -> {
             try {
@@ -197,13 +318,13 @@ class FileTools extends AbstractToolHandler {
                 if (args.has(PARAM_CONTENT)) {
                     writeFileFullContent(vf, pathStr, args.get(PARAM_CONTENT).getAsString(),
                         autoFormat, resultFuture);
-                    followLine[0] = 1;
+                    followRange[0] = 1;
                 } else if (args.has("old_str") && args.has(PARAM_NEW_STR)) {
                     writeFilePartialEdit(vf, pathStr, args.get("old_str").getAsString(),
-                        args.get(PARAM_NEW_STR).getAsString(), autoFormat, resultFuture, followLine);
+                        args.get(PARAM_NEW_STR).getAsString(), autoFormat, resultFuture, followRange);
                 } else if (args.has(PARAM_START_LINE) && args.has(PARAM_NEW_STR)) {
-                    followLine[0] = args.get(PARAM_START_LINE).getAsInt();
-                    writeFileLineRange(vf, pathStr, args, autoFormat, resultFuture);
+                    followRange[0] = args.get(PARAM_START_LINE).getAsInt();
+                    writeFileLineRange(vf, pathStr, args, autoFormat, resultFuture, followRange);
                 } else {
                     resultFuture.complete("write_file requires either 'content' (full write), " +
                         "'old_str'+'new_str' (partial edit), or 'start_line'+'new_str' (line-range replace)");
@@ -214,7 +335,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(15, TimeUnit.SECONDS);
-        followFileIfEnabled(pathStr, followLine[0]);
+        followFileIfEnabled(project, pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, agentLabel() + " is editing");
         return result;
     }
 
@@ -272,7 +393,7 @@ class FileTools extends AbstractToolHandler {
 
     private void writeFilePartialEdit(VirtualFile vf, String pathStr, String oldStr, String newStr,
                                       boolean autoFormat, CompletableFuture<String> resultFuture,
-                                      int[] followLine) {
+                                      int[] followRange) {
         if (vf == null) {
             resultFuture.complete(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
             return;
@@ -314,8 +435,9 @@ class FileTools extends AbstractToolHandler {
         FileDocumentManager.getInstance().saveDocument(doc);
         String syntaxWarning = checkSyntaxErrors(pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
-        followLine[0] = doc.getLineNumber(finalIdx) + 1;
+        followRange[0] = doc.getLineNumber(finalIdx) + 1;
         int ctxEnd = Math.min(finalIdx + normalizedNew.length(), doc.getTextLength());
+        followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, finalIdx)) + 1;
         resultFuture.complete("Edited: " + pathStr + " (replaced " + finalLen + " chars with " + normalizedNew.length() + FORMAT_CHARS_SUFFIX
             + contextLines(doc, finalIdx, ctxEnd) + syntaxWarning);
     }
@@ -325,7 +447,8 @@ class FileTools extends AbstractToolHandler {
      * If end_line is omitted, only start_line is replaced.
      */
     private void writeFileLineRange(VirtualFile vf, String pathStr, JsonObject args,
-                                    boolean autoFormat, CompletableFuture<String> resultFuture) {
+                                    boolean autoFormat, CompletableFuture<String> resultFuture,
+                                    int[] followRange) {
         if (vf == null) {
             resultFuture.complete(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
             return;
@@ -373,6 +496,7 @@ class FileTools extends AbstractToolHandler {
         String syntaxWarning = checkSyntaxErrors(pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) pendingAutoFormat.add(pathStr);
         int ctxEnd = Math.min(fStart + fNew.length(), doc.getTextLength());
+        followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, fStart)) + 1;
         resultFuture.complete("Edited: " + pathStr + " (replaced lines " + startLine + "-" + endLine
             + " (" + replacedLines + " lines) with " + fNew.length() + FORMAT_CHARS_SUFFIX
             + contextLines(doc, fStart, ctxEnd) + syntaxWarning);
@@ -572,6 +696,7 @@ class FileTools extends AbstractToolHandler {
 
         // Refresh VFS so IntelliJ sees the file
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        int lineCount = content.split("\n", -1).length;
         EdtUtil.invokeLater(() -> {
             try {
                 LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath.toString());
@@ -581,7 +706,9 @@ class FileTools extends AbstractToolHandler {
             }
         });
 
-        return resultFuture.get(10, TimeUnit.SECONDS);
+        String result = resultFuture.get(10, TimeUnit.SECONDS);
+        followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel() + " created");
+        return result;
     }
 
     private String deleteFile(JsonObject args) throws Exception {

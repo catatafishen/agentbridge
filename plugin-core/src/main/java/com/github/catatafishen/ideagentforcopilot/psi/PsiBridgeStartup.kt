@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi
 
+import com.github.catatafishen.ideagentforcopilot.bridge.CopilotInstructionsManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
@@ -17,6 +18,12 @@ class PsiBridgeStartup : ProjectActivity {
         LOG.info("Starting PSI Bridge for project: ${project.name}")
 
         createAgentWorkspace(project)
+
+        // Ensure copilot-instructions.md exists with plugin instructions.
+        // This is also called from CopilotAcpClient.start() as a safety net
+        // against race conditions (tool window may start CLI before this runs).
+        CopilotInstructionsManager.ensureInstructions(project.basePath)
+        notifyIfNewInstructions(project)
 
         PsiBridgeService.getInstance(project).start()
     }
@@ -43,6 +50,49 @@ class PsiBridgeStartup : ProjectActivity {
         } catch (e: Exception) {
             LOG.warn("Failed to create agent workspace", e)
         }
+    }
+
+    /**
+     * Shows a one-time notification when instructions are first added to a project.
+     * The actual file write is handled by [CopilotInstructionsManager.ensureInstructions].
+     */
+    private fun notifyIfNewInstructions(project: Project) {
+        val basePath = project.basePath ?: return
+        val dotCopilotFile = Path.of(basePath, ".copilot", "copilot-instructions.md")
+        val dotGithubFile = Path.of(basePath, ".github", "copilot-instructions.md")
+        val targetFile = when {
+            Files.isRegularFile(dotCopilotFile) -> dotCopilotFile
+            Files.isRegularFile(dotGithubFile) -> dotGithubFile
+            else -> return
+        }
+        try {
+            val content = Files.readString(targetFile)
+            if (content.contains(CopilotInstructionsManager.INSTRUCTIONS_SENTINEL)) {
+                // File exists with our sentinel — check if we should notify
+                // (only on first creation, tracked by agent-work marker)
+                val marker = Path.of(basePath, ".agent-work", ".instructions-notified")
+                if (!Files.exists(marker)) {
+                    notifyInstructionsUpdated(project, targetFile)
+                    Files.writeString(marker, "done")
+                }
+            }
+        } catch (_: Exception) {
+            // Best-effort notification
+        }
+    }
+
+    private fun notifyInstructionsUpdated(project: Project, file: Path) {
+        val relativePath = Path.of(project.basePath ?: "").relativize(file).toString()
+        com.intellij.notification.NotificationGroupManager.getInstance()
+            .getNotificationGroup("Copilot Notifications")
+            .createNotification(
+                "IDE Agent for Copilot",
+                "Plugin instructions added to $relativePath. " +
+                    "Copilot ignores MCP server instructions, so this file is used instead. " +
+                    "You can edit or remove the added section at any time.",
+                com.intellij.notification.NotificationType.INFORMATION
+            )
+            .notify(project)
     }
 
     companion object {

@@ -41,6 +41,8 @@ class EditorTools extends AbstractToolHandler {
         register("get_chat_html", this::getChatHtml);
         register("get_active_file", this::getActiveFile);
         register("get_open_editors", this::getOpenEditors);
+        register("list_themes", this::listThemes);
+        register("set_theme", this::setTheme);
     }
 
     private String openInEditor(JsonObject args) throws Exception {
@@ -178,7 +180,12 @@ class EditorTools extends AbstractToolHandler {
                     (errorMsg[0] != null ? ": " + errorMsg[0] : "");
             }
 
-            return "Created scratch file: " + resultFile[0].getPath() + " (" + content.length() + FORMAT_CHARS_SUFFIX;
+            String scratchPath = resultFile[0].getPath();
+            int lineCount = content.isEmpty() ? 1 : (int) content.lines().count();
+            FileTools.followFileIfEnabled(project, scratchPath, 1, lineCount,
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " created scratch");
+
+            return "Created scratch file: " + scratchPath + " (" + content.length() + FORMAT_CHARS_SUFFIX;
         } catch (Exception e) {
             LOG.warn("Failed to create scratch file", e);
             return "Error creating scratch file: " + e.getMessage();
@@ -624,6 +631,66 @@ class EditorTools extends AbstractToolHandler {
                 resultFuture.complete(sb.toString().trim());
             } catch (Exception e) {
                 resultFuture.complete("Error: " + e.getMessage());
+            }
+        });
+
+        return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private String listThemes(JsonObject args) {
+        var lafManager = com.intellij.ide.ui.LafManager.getInstance();
+        var current = lafManager.getCurrentUIThemeLookAndFeel();
+        String currentName = current != null ? current.getName() : "";
+
+        var themes = kotlin.sequences.SequencesKt.toList(lafManager.getInstalledThemes());
+        var sb = new StringBuilder("Available themes:\n\n");
+        for (var theme : themes) {
+            boolean active = theme.getName().equals(currentName);
+            sb.append(active ? "  ▸ " : "  • ").append(theme.getName())
+                .append(theme.isDark() ? " (dark)" : " (light)");
+            if (active) sb.append(" ← current");
+            sb.append("\n");
+        }
+        return sb.toString().trim();
+    }
+
+    private String setTheme(JsonObject args) throws Exception {
+        if (!args.has("theme")) {
+            return "Missing required parameter: 'theme' (theme name or partial name)";
+        }
+        String themeQuery = args.get("theme").getAsString();
+        String queryLower = themeQuery.toLowerCase();
+
+        var lafManager = com.intellij.ide.ui.LafManager.getInstance();
+        var themes = kotlin.sequences.SequencesKt.toList(lafManager.getInstalledThemes());
+
+        // Find matching theme: exact name first, then case-insensitive substring
+        com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo target = null;
+        for (var theme : themes) {
+            if (theme.getName().equals(themeQuery)) {
+                target = theme;
+                break;
+            }
+            if (target == null && theme.getName().toLowerCase().contains(queryLower)) {
+                target = theme;
+            }
+        }
+
+        if (target == null) {
+            return "Theme not found: '" + themeQuery + "'. Use list_themes to see available themes.";
+        }
+
+        var finalTarget = target;
+        java.util.concurrent.CompletableFuture<String> resultFuture = new java.util.concurrent.CompletableFuture<>();
+
+        EdtUtil.invokeLater(() -> {
+            try {
+                lafManager.setCurrentLookAndFeel(finalTarget, false);
+                lafManager.updateUI();
+                resultFuture.complete("Theme changed to '" + finalTarget.getName() + "'.");
+            } catch (Exception e) {
+                LOG.warn("Failed to set theme", e);
+                resultFuture.complete("Failed to set theme: " + e.getMessage());
             }
         });
 

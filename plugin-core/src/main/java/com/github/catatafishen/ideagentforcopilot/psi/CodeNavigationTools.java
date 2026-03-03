@@ -2,11 +2,11 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -43,7 +43,9 @@ class CodeNavigationTools extends AbstractToolHandler {
         super(project);
         register("search_symbols", this::searchSymbols);
         register("get_file_outline", this::getFileOutline);
-        register("get_class_outline", this::getClassOutline);
+        if (isPluginInstalled("com.intellij.modules.java")) {
+            register("get_class_outline", this::getClassOutline);
+        }
         register("find_references", this::findReferences);
         register("list_project_files", this::listProjectFiles);
         register("search_text", this::searchText);
@@ -133,7 +135,8 @@ class CodeNavigationTools extends AbstractToolHandler {
 
     /**
      * Get the outline of a class by fully qualified name, including library/JDK classes.
-     * Uses JavaPsiFacade to resolve the class from any scope (project + libraries).
+     * Delegates to {@link com.github.catatafishen.ideagentforcopilot.psi.java.CodeNavigationJavaSupport} which uses Java-only PSI classes.
+     * Only registered when {@code com.intellij.modules.java} is present.
      */
     String getClassOutline(JsonObject args) {
         String className = args.has("class_name") ? args.get("class_name").getAsString() : "";
@@ -141,173 +144,9 @@ class CodeNavigationTools extends AbstractToolHandler {
         boolean includeInherited = args.has("include_inherited")
             && args.get("include_inherited").getAsBoolean();
 
-        return com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction(
-            (com.intellij.openapi.util.Computable<String>) () -> computeClassOutline(className, includeInherited));
-    }
-
-    @SuppressWarnings("java:S3776") // cognitive complexity acceptable for outline builder
-    private String computeClassOutline(String className, boolean includeInherited) {
-        try {
-            var facade = com.intellij.psi.JavaPsiFacade.getInstance(project);
-            var scope = GlobalSearchScope.allScope(project);
-            var psiClass = facade.findClass(className, scope);
-
-            if (psiClass == null) {
-                // Try short name search
-                var cache = com.intellij.psi.search.PsiShortNamesCache.getInstance(project);
-                var classes = cache.getClassesByName(
-                    className.contains(".") ? className.substring(className.lastIndexOf('.') + 1) : className,
-                    scope);
-                if (classes.length == 0) return "Class not found: " + className;
-                psiClass = classes[0];
-            }
-
-            StringBuilder sb = new StringBuilder();
-            String kind = ToolUtils.classifyElement(psiClass);
-            String qName = psiClass.getQualifiedName();
-            sb.append(kind != null ? kind : "class").append(" ").append(qName != null ? qName : className);
-
-            // Superclass
-            var superClass = psiClass.getSuperClass();
-            if (superClass != null && !"java.lang.Object".equals(superClass.getQualifiedName())) {
-                sb.append(" extends ").append(superClass.getQualifiedName());
-            }
-            // Interfaces
-            var interfaces = psiClass.getInterfaces();
-            if (interfaces.length > 0) {
-                sb.append(" implements ");
-                for (int i = 0; i < interfaces.length; i++) {
-                    if (i > 0) sb.append(", ");
-                    sb.append(interfaces[i].getQualifiedName());
-                }
-            }
-            sb.append("\n\n");
-
-            // Constructors
-            appendConstructors(psiClass, sb);
-
-            // Methods (own or all)
-            appendMethods(psiClass, sb, includeInherited);
-
-            // Fields
-            appendFields(psiClass, sb, includeInherited);
-
-            // Inner classes
-            appendInnerClasses(psiClass, sb);
-
-            return sb.toString().trim();
-        } catch (Exception e) {
-            return "Error resolving class " + className + ": " + e.getMessage();
-        }
-    }
-
-    private void appendConstructors(com.intellij.psi.PsiClass psiClass, StringBuilder sb) {
-        var constructors = psiClass.getConstructors();
-        if (constructors.length > 0) {
-            sb.append("Constructors:\n");
-            for (var ctor : constructors) {
-                sb.append("  ").append(formatMethodSignature(ctor)).append("\n");
-            }
-            sb.append("\n");
-        }
-    }
-
-    private boolean shouldIncludeMethod(com.intellij.psi.PsiMethod method, com.intellij.psi.PsiClass psiClass, boolean includeInherited) {
-        if (method.isConstructor()) return false;
-        var containingClass = method.getContainingClass();
-        if (!includeInherited && containingClass != psiClass) return false;
-        return containingClass == null || !"java.lang.Object".equals(containingClass.getQualifiedName());
-    }
-
-    private void appendMethods(com.intellij.psi.PsiClass psiClass, StringBuilder sb, boolean includeInherited) {
-        var methods = includeInherited ? psiClass.getAllMethods() : psiClass.getMethods();
-        if (methods.length > 0) {
-            sb.append("Methods:\n");
-            Set<String> seen = new HashSet<>();
-            for (var method : methods) {
-                if (!shouldIncludeMethod(method, psiClass, includeInherited)) continue;
-                String sig = formatMethodSignature(method);
-                if (seen.add(sig)) {
-                    sb.append("  ").append(sig).append("\n");
-                }
-            }
-            sb.append("\n");
-        }
-    }
-
-    private void appendFields(com.intellij.psi.PsiClass psiClass, StringBuilder sb, boolean includeInherited) {
-        var fields = includeInherited ? psiClass.getAllFields() : psiClass.getFields();
-        if (fields.length > 0) {
-            sb.append("Fields:\n");
-            for (var field : fields) {
-                var containingClass = field.getContainingClass();
-                if (!includeInherited && containingClass != psiClass) continue;
-                sb.append("  ").append(formatFieldSignature(field)).append("\n");
-            }
-            sb.append("\n");
-        }
-    }
-
-    private void appendInnerClasses(com.intellij.psi.PsiClass psiClass, StringBuilder sb) {
-        var innerClasses = psiClass.getInnerClasses();
-        if (innerClasses.length > 0) {
-            sb.append("Inner classes:\n");
-            for (var inner : innerClasses) {
-                String innerKind = ToolUtils.classifyElement(inner);
-                sb.append("  ").append(innerKind != null ? innerKind : "class").append(" ");
-                sb.append(inner.getName()).append("\n");
-            }
-        }
-    }
-
-    @SuppressWarnings("java:S3776")
-    private String formatMethodSignature(com.intellij.psi.PsiMethod method) {
-        StringBuilder sig = new StringBuilder();
-        // Visibility
-        var modifiers = method.getModifierList();
-        if (modifiers.hasModifierProperty("public")) sig.append("public ");
-        else if (modifiers.hasModifierProperty("protected")) sig.append("protected ");
-        else if (modifiers.hasModifierProperty("private")) sig.append("private ");
-        if (modifiers.hasModifierProperty("static")) sig.append("static ");
-        if (modifiers.hasModifierProperty("abstract")) sig.append("abstract ");
-        // Return type
-        var returnType = method.getReturnType();
-        if (returnType != null) {
-            sig.append(returnType.getPresentableText()).append(" ");
-        }
-        // Name + params
-        sig.append(method.getName()).append("(");
-        var params = method.getParameterList().getParameters();
-        for (int i = 0; i < params.length; i++) {
-            if (i > 0) sig.append(", ");
-            sig.append(params[i].getType().getPresentableText());
-            sig.append(" ").append(params[i].getName());
-        }
-        sig.append(")");
-        // Thrown exceptions
-        var throwsList = method.getThrowsList().getReferencedTypes();
-        if (throwsList.length > 0) {
-            sig.append(" throws ");
-            for (int i = 0; i < throwsList.length; i++) {
-                if (i > 0) sig.append(", ");
-                sig.append(throwsList[i].getPresentableText());
-            }
-        }
-        return sig.toString();
-    }
-
-    private String formatFieldSignature(com.intellij.psi.PsiField field) {
-        StringBuilder sig = new StringBuilder();
-        var modifiers = field.getModifierList();
-        if (modifiers != null) {
-            if (modifiers.hasModifierProperty("public")) sig.append("public ");
-            else if (modifiers.hasModifierProperty("protected")) sig.append("protected ");
-            else if (modifiers.hasModifierProperty("private")) sig.append("private ");
-            if (modifiers.hasModifierProperty("static")) sig.append("static ");
-            if (modifiers.hasModifierProperty("final")) sig.append("final ");
-        }
-        sig.append(field.getType().getPresentableText()).append(" ").append(field.getName());
-        return sig.toString();
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+            com.github.catatafishen.ideagentforcopilot.psi.java.CodeNavigationJavaSupport.computeClassOutline(project, className, includeInherited)
+        );
     }
 
     // ---- search_symbols ----

@@ -278,3 +278,50 @@ confirming the plugin is dynamic-compatible from the platform's perspective.
 - **CopilotFreeModelIntegrationTest**: 3 tests — free model integration
 - **WrapLayoutTest**: 6 tests — UI layout
 - **McpServerTest**: 24 tests — all MCP tools, security (path traversal), protocol
+
+## Contributing
+
+### Branch Strategy
+
+- **`master`** is protected — no direct pushes
+- Create feature branches and merge through pull requests
+- PRs run CI automatically (build + test + plugin verification)
+- Merging to `master` triggers automatic versioning and release
+
+### Conventional Commits
+
+All commit messages **must** follow the [Conventional Commits](https://www.conventionalcommits.org/) specification.
+The release workflow uses these to automatically determine the next semantic version.
+
+**Format:** `<type>(<optional scope>): <description>`
+
+| Type       | When to use                                    | Version bump |
+|------------|------------------------------------------------|--------------|
+| `feat`     | New feature or capability                      | **minor**    |
+| `fix`      | Bug fix                                        | **patch**    |
+| `docs`     | Documentation only                             | **patch**    |
+| `chore`    | Build, CI, tooling, dependencies               | **patch**    |
+| `refactor` | Code change that neither fixes a bug nor adds a feature | **patch** |
+| `test`     | Adding or updating tests                       | **patch**    |
+| `perf`     | Performance improvement                        | **patch**    |
+| `style`    | Formatting, whitespace (no logic change)       | **patch**    |
+
+**Breaking changes** → **major** bump:
+- Add `!` after the type: `feat!: remove legacy API`
+- Or include `BREAKING CHANGE:` in the commit body
+
+**Examples:**
+```
+feat: add run_inspections tool with scope filtering
+fix: resolve timeout when permission dialog is pending
+docs: update changelog for 0.3.0 release
+chore: bump Kotlin to 2.3.10
+feat!: drop support for IntelliJ 2025.1
+```
+
+### CI/CD Pipeline
+
+| Trigger              | Workflow  | What it does                                              |
+|----------------------|-----------|-----------------------------------------------------------|
+| Pull request opened  | `ci.yml`  | Build, test (MCP + plugin), verify plugin compatibility   |
+| PR merged to master  | `release.yml` | Calculate next semver, tag, build release ZIP, publish GitHub Release |

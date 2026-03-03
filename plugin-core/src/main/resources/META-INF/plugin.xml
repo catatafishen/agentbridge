@@ -8,95 +8,75 @@
   <category>AI Assistant</category>
 
   <description><![CDATA[
-    <p><b>IDE Agent for Copilot</b> turns GitHub Copilot into a full coding agent inside your JetBrains IDE.
-    Instead of suggesting code in isolation, the agent plans and executes multi-step tasks using the same IDE
-    features you use every day &mdash; navigation, refactoring, inspections, testing, build tools, and Git &mdash;
-    all within a single conversation.</p>
+    <p><b>IDE Agent for Copilot</b> transforms GitHub Copilot from a chat assistant into a coding agent
+    inside your JetBrains IDE.</p>
 
-    <h3>Why this plugin?</h3>
-    <ul>
-        <li><b>66 IDE-native tools</b> &mdash; the agent reads, writes, searches, refactors, builds, tests, and
-            commits through IntelliJ&rsquo;s own APIs, not regex hacks</li>
-        <li><b>Direct ACP integration</b> &mdash; no sidecar, SDK, or extra server; talks straight to GitHub Copilot CLI</li>
-        <li><b>Sub-agents</b> &mdash; specialized Explore, Task, Code Review, and UI Review agents that run in parallel</li>
-        <li><b>Full undo support</b> &mdash; every file edit goes through IntelliJ&rsquo;s Document API with native undo/redo</li>
-        <li><b>Model choice</b> &mdash; pick Claude, GPT, or Gemini; see usage multipliers and billing in real time</li>
-    </ul>
+    <p>Instead of suggesting code in isolation, the agent can plan and execute multi-step tasks using the same
+    IDE capabilities you use every day &mdash; navigation, refactoring, inspections, testing, build tools, and
+    Git &mdash; all within a single conversation.</p>
 
-    <h3>Code Intelligence</h3>
+    <h3>What Makes It Different</h3>
+    <p>Traditional AI assistants generate code snippets. This agent can:</p>
     <ul>
-        <li>Symbol search, find references, go-to-declaration, type hierarchy</li>
-        <li>Class and file outlines, Javadoc/KDoc lookup</li>
-        <li>Text and regex search across the project</li>
+        <li>Navigate your project structure</li>
+        <li>Modify multiple files coherently</li>
+        <li>Run inspections and refactorings</li>
+        <li>Execute tests and builds</li>
+        <li>Diagnose errors and fix them</li>
+        <li>Perform Git operations</li>
+        <li>Iterate until the task is complete</li>
     </ul>
+    <p>All actions happen directly through the IDE &mdash; not through simulated edits or external tools.</p>
 
-    <h3>Code Quality</h3>
+    <h3>Works for Tasks of Any Size</h3>
+    <p>Use it as:</p>
     <ul>
-        <li>Run IntelliJ inspections, Qodana, and SonarLint</li>
-        <li>Auto-apply quickfixes and suppress warnings</li>
-        <li>Check compilation errors, optimize imports, format code</li>
+        <li>An everyday coding assistant</li>
+        <li>A tool for repetitive multi-file changes</li>
+        <li>A helper for fixing failing tests or build issues</li>
+        <li>A refactoring assistant</li>
+        <li>A way to explore unfamiliar codebases</li>
+        <li>An autonomous agent for larger end-to-end tasks</li>
     </ul>
+    <p>Start small or go big &mdash; the agent adapts to the scope of your request.</p>
 
-    <h3>Build, Test &amp; Run</h3>
+    <h3>Privacy &amp; Local-First Design</h3>
     <ul>
-        <li>Incremental build, run tests by class/method/pattern with coverage</li>
-        <li>Create, edit, and run Gradle/JUnit/Application configurations</li>
-        <li>Shell command execution with paginated output</li>
+        <li>No telemetry</li>
+        <li>No data collection</li>
+        <li>No external services (beyond GitHub Copilot)</li>
+        <li>All operations executed locally inside your IDE</li>
+        <li>Your code never leaves your environment except through Copilot itself</li>
     </ul>
-
-    <h3>Git</h3>
-    <ul>
-        <li>Status, diff, log, blame, stage, commit, branch, stash, push</li>
-        <li>All operations go through IntelliJ&rsquo;s VFS &mdash; no buffer desync</li>
-    </ul>
-
-    <h3>Refactoring</h3>
-    <ul>
-        <li>Rename, extract method, inline, safe-delete via IntelliJ refactoring engine</li>
-    </ul>
-
-    <h3>Chat &amp; Workflow</h3>
-    <ul>
-        <li>Streaming markdown responses with code blocks and syntax highlighting</li>
-        <li>Context attachments: files, selections, code symbols</li>
-        <li>Plan tree visualization with real-time step progress</li>
-        <li>Timeline view of reasoning, tool calls, and sub-agent activity</li>
-        <li>Quick-reply buttons, conversation export, session history</li>
-        <li>Granular tool permissions (Allow / Ask / Deny per tool)</li>
-        <li>Real-time billing graph with cycle tracking and cost estimates</li>
-    </ul>
-
-    <h3>Developer Tooling</h3>
-    <ul>
-        <li>Hot-reload plugin from build output without IDE restart</li>
-        <li>Scratch file creation and execution</li>
-        <li>IDE log reader, notification viewer, debug panel</li>
-    </ul>
+    <p>Ideal for privacy-sensitive or enterprise environments.</p>
 
     <h3>Requirements</h3>
     <ul>
-        <li>GitHub Copilot subscription (Free, Pro, Business, or Enterprise)</li>
-        <li>GitHub Copilot CLI installed (<code>npm install -g @githubnext/github-copilot-cli</code>
-            or <code>winget install GitHub.Copilot</code>)</li>
-        <li>IntelliJ IDEA 2025.1 or later</li>
+        <li>A supported JetBrains IDE</li>
+        <li>GitHub Copilot plugin installed and authenticated</li>
+        <li>An active GitHub Copilot subscription</li>
     </ul>
+
+    <h3>Open Source</h3>
+    <p>This plugin is open source under the Apache 2.0 License.<br/>
+    Source code, issues, and contributions:
+    <a href="https://github.com/catatafishen/ide-agent-for-copilot">github.com/catatafishen/ide-agent-for-copilot</a></p>
+
+    <p><em>This plugin is an independent open-source project and is not affiliated with or endorsed by GitHub or JetBrains.</em></p>
     ]]></description>
 
   <change-notes><![CDATA[
-    <h3>0.3.0 — Initial Public Release</h3>
+    <h3>1.0.0 — Initial Release</h3>
     <ul>
-        <li><b>Full agentic coding</b> — 65+ tools spanning code intelligence, navigation, refactoring, git, build, test, run configurations, terminal, and more</li>
-        <li><b>Direct ACP integration</b> — communicates with Copilot via the Agent Communication Protocol; no sidecar or SDK dependency</li>
-        <li><b>Streaming chat UI</b> — markdown rendering, syntax-highlighted code blocks, copy buttons, plan trees, and timeline view</li>
-        <li><b>Model selection</b> — choose between Claude, GPT, and Gemini families with real-time usage multiplier display</li>
-        <li><b>Smart tool filtering</b> — only advertises tools the IDE can actually execute based on installed plugins</li>
-        <li><b>Granular permissions</b> — per-tool Allow / Ask / Deny with in-chat approval prompts</li>
-        <li><b>Billing visibility</b> — live premium request counter with model multiplier weighting, monthly usage graph, and cycle tracking</li>
-        <li><b>Full git workflow</b> — status, diff, log, blame, commit, branch, stash, push, revert — all through IntelliJ's VFS</li>
-        <li><b>Code quality</b> — IntelliJ inspections, Qodana, SonarQube, and coverage integration via reflection</li>
-        <li><b>Context attachments</b> — attach files, selections, and code symbols to prompts</li>
-        <li><b>Quick replies &amp; conversation history</b> — suggested follow-ups, session export, and persistence</li>
-        <li><b>Requires IntelliJ 2025.3+</b> (forward-compatible with 2026.1+)</li>
+        <li>Introduces IDE Agent for Copilot</li>
+        <li><b>Dynamic model discovery</b> — automatically supports all Copilot models without plugin updates</li>
+        <li>Enables multi-step task execution inside the IDE</li>
+        <li>Project navigation and context awareness</li>
+        <li>Multi-file editing capabilities</li>
+        <li>Integration with inspections and refactorings</li>
+        <li>Test and build execution support</li>
+        <li>Git operation support</li>
+        <li>Local-first design with no telemetry</li>
     </ul>
     ]]></change-notes>
 
@@ -111,8 +91,6 @@
   <!-- Optional plugins accessed via reflection for enhanced tool support -->
   <depends optional="true" config-file="gradle-features.xml">org.jetbrains.plugins.gradle</depends>
   <depends optional="true" config-file="maven-features.xml">org.jetbrains.idea.maven</depends>
-  <depends optional="true" config-file="coverage-features.xml">com.intellij.coverage</depends>
-  <depends optional="true" config-file="qodana-features.xml">org.jetbrains.qodana</depends>
   <depends optional="true" config-file="sonarlint-features.xml">org.sonarlint.idea</depends>
 
   <!-- Extension points and implementations -->

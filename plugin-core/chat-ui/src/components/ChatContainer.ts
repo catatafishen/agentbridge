@@ -52,21 +52,43 @@ export default class ChatContainer extends HTMLElement {
         });
         this._observer.observe(this._messages, {childList: true, subtree: true, characterData: true});
 
-        // Copy-button observer
+        // Copy & wrap button observer
         this._copyObs = new MutationObserver(() => {
             this._messages.querySelectorAll('pre:not([data-copy-btn]):not(.streaming)').forEach(pre => {
                 (pre as HTMLElement).dataset.copyBtn = '1';
-                const btn = document.createElement('button');
-                btn.className = 'copy-btn';
-                btn.textContent = 'Copy';
-                btn.onclick = () => {
+
+                // Wrap toggle button
+                const wrapBtn = document.createElement('button');
+                wrapBtn.className = 'code-action-btn wrap-btn';
+                wrapBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M3 8h7a2 2 0 0 1 0 4H8"/><polyline points="9.5 10.5 8 12 9.5 13.5"/></svg>';
+                wrapBtn.title = 'Toggle word wrap';
+                wrapBtn.onclick = () => {
+                    pre.classList.toggle('word-wrap');
+                    wrapBtn.classList.toggle('active', pre.classList.contains('word-wrap'));
+                };
+
+                // Copy button
+                const copyBtn = document.createElement('button');
+                copyBtn.className = 'code-action-btn copy-btn';
+                copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
+                copyBtn.title = 'Copy';
+                copyBtn.onclick = () => {
                     const code = pre.querySelector('code');
                     navigator.clipboard.writeText(code ? code.textContent! : pre.textContent!).then(() => {
-                        btn.textContent = 'Copied!';
-                        setTimeout(() => btn.textContent = 'Copy', 1500);
+                        copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
+                        copyBtn.title = 'Copied!';
+                        setTimeout(() => {
+                            copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
+                            copyBtn.title = 'Copy';
+                        }, 1500);
                     });
                 };
-                pre.prepend(btn);
+
+                // Insert buttons: copy first (rightmost), then wrap
+                const toolbar = document.createElement('div');
+                toolbar.className = 'code-actions';
+                toolbar.append(wrapBtn, copyBtn);
+                pre.prepend(toolbar);
             });
         });
         this._copyObs.observe(this._messages, {childList: true, subtree: true});

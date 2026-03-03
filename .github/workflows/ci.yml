@@ -1,36 +1,71 @@
 name: CI
 
 on:
-  push:
-    branches: [ master, main ]
   pull_request:
-    branches: [ master, main ]
+    branches: [ master ]
+
+concurrency:
+  group: ci-${{ github.head_ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-plugin:
-    name: Build Plugin
-    runs-on: windows-latest
-    
+  mcp-server-tests:
+    name: MCP Server Tests
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up JDK 21
-      uses: actions/setup-java@v4
-      with:
-        java-version: '21'
-        distribution: 'temurin'
-    
-    - name: Build plugin
-      run: |
-        .\gradlew.bat --no-daemon :plugin-core:buildPlugin
-    
-    - name: Run tests
-      run: |
-        .\gradlew.bat --no-daemon :plugin-core:test
-    
-    - name: Upload plugin artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: intellij-plugin
-        path: plugin-core/build/distributions/*.zip
-        if-no-files-found: error
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run MCP server tests
+        run: ./gradlew :mcp-server:test --no-daemon
+
+  build-and-test:
+    name: Build, Test & Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: plugin-core/chat-ui/package-lock.json
+
+      - name: Install chat-ui dependencies
+        run: npm ci
+        working-directory: plugin-core/chat-ui
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build plugin
+        run: ./gradlew :plugin-core:buildPlugin --no-daemon
+
+      - name: Run plugin tests
+        run: ./gradlew :plugin-core:test --no-daemon
+
+      - name: Verify plugin (marketplace compatibility)
+        run: ./gradlew :plugin-core:verifyPlugin --no-daemon
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-pr-${{ github.event.pull_request.number }}
+          path: plugin-core/build/distributions/*.zip
+          if-no-files-found: error
+          retention-days: 7

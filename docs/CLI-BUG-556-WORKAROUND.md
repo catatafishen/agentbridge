@@ -119,10 +119,65 @@ breaking MCP server registration entirely (MCP tools disappeared from the agent'
 
 **Decision:**
 - **Removed** `--deny-tool` flags (no effect + breaks MCP registration)
-- **Kept** `DENIED_PERMISSION_KINDS` as primary defense for write/execute tools
-- **Kept** `tool_call` interception for read-only tool guidance
+- **Removed** `DENIED_PERMISSION_KINDS` static set (replaced by per-tool ToolPermission settings)
+- **Removed** `tool_call` interception for read-only tools (see below)
 - All three CLI filtering mechanisms (`--available-tools`, `--excluded-tools`, `--deny-tool`)
   confirmed broken in ACP mode — this is all the same CLI bug #556
+
+## Sub-Agent Limitations (Mar 2026)
+
+### The Problem
+
+Sub-agents (explore, task, general-purpose) launched via the Copilot `task` tool run in their
+own internal context within the CLI. They do **not** receive:
+
+- `.github/copilot-instructions.md` custom instructions
+- `session/message` guidance notifications from the plugin
+
+### What We Tried
+
+1. **`sendSubAgentGuidance()`** — sent comprehensive IntelliJ tool instructions via
+   `session/message` when a sub-agent was detected. Result: completely ignored.
+2. **`interceptBuiltInToolCall()`** — detected every built-in tool call (view, grep, glob)
+   via `tool_call` notifications and sent corrective guidance via `session/message`.
+   Result: 40+ guidance messages sent in a single sub-agent turn with zero behavioral change.
+3. **`classifyBuiltInTool()`** — classified tool calls by title patterns and returned
+   targeted guidance. Never had any effect because the delivery mechanism was broken.
+
+### Why It Failed
+
+`session/message` is a fire-and-forget JSON-RPC notification. It either:
+- Gets silently discarded by the CLI
+- Goes to the main agent's message queue, not the sub-agent's execution context
+- Gets queued for a future turn, not the current one
+
+### What Still Works
+
+- **Permission denial** for write/execute tools (`edit`, `create`, `bash`) — these require
+  `request_permission`, and our denial forces retry with MCP tools ✅
+- **Sub-agent git write blocking** — `detectSubAgentGitWrite()` prevents destructive git
+  operations from sub-agents ✅
+
+### What Cannot Be Intercepted
+
+- **Read-only built-in tools** (`view`, `grep`, `glob`) — auto-execute without permission
+  and cannot be blocked or redirected ❌
+- **Sub-agent custom instructions** — sub-agents don't see `.github/copilot-instructions.md` ❌
+
+### Practical Impact
+
+For saved files, built-in read-only tools give identical results to IntelliJ MCP tools.
+The only difference is for unsaved editor buffers, which is an edge case for sub-agents
+(they typically don't edit files). This is an acceptable limitation until CLI bug #556 is fixed.
+
+### Code Removed
+
+- `sendSubAgentGuidance()` — proactive guidance on sub-agent start
+- `interceptBuiltInToolCall()` — post-hoc detection and guidance for built-in tool calls
+- `classifyBuiltInTool()` — title-based tool classification for targeted guidance
+- `BUILT_IN_TOOL_WARNING_PREFIX` constant
+- `DENIED_PERMISSION_KINDS` static set (replaced by per-tool permissions)
+- `CREATE_KIND` constant
 
 ## When to Remove This Workaround
 

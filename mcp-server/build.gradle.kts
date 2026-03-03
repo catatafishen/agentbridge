@@ -12,6 +12,11 @@ application {
     mainClass.set("com.github.copilot.mcp.McpServer")
 }
 
+// Single source of truth: copy startup instructions from plugin-core at build time
+tasks.processResources {
+    from(project(":plugin-core").file("src/main/resources/default-startup-instructions.md"))
+}
+
 tasks.jar {
     manifest {
         attributes["Main-Class"] = "com.github.copilot.mcp.McpServer"

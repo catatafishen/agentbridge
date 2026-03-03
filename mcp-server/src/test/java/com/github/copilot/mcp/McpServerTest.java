@@ -130,6 +130,13 @@ class McpServerTest {
         assertTrue(toolNames.contains("git_show"));
         assertTrue(toolNames.contains("git_push"));
         assertTrue(toolNames.contains("git_remote"));
+        assertTrue(toolNames.contains("git_fetch"));
+        assertTrue(toolNames.contains("git_pull"));
+        assertTrue(toolNames.contains("git_merge"));
+        assertTrue(toolNames.contains("git_rebase"));
+        assertTrue(toolNames.contains("git_cherry_pick"));
+        assertTrue(toolNames.contains("git_tag"));
+        assertTrue(toolNames.contains("git_reset"));
         // Refactoring & code modification tools
         assertTrue(toolNames.contains("apply_quickfix"));
         assertTrue(toolNames.contains("refactor"));

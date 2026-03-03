@@ -16,8 +16,8 @@
     --sp-10: 20px;
     --r-sm: 4px;
     --r-md: 8px;
-    --r-lg: 16px;
-    --r-pill: 10px;
+    --r-lg: 12px;
+    --r-pill: 6px;
     --font-family: system-ui, sans-serif;
     --font-size: 11pt;
     --code-font-size: 10pt;
@@ -58,6 +58,7 @@
     --kind-edit: rgb(205, 155, 95);
     --kind-execute: rgb(130, 190, 130);
     --kind-think: rgb(170, 155, 210);
+    --kind-search: rgb(100, 185, 185);
     --kind-other: rgb(160, 165, 170);
     --spin-bg: rgb(60, 60, 60);
     --code-bg: rgb(30, 30, 30);
@@ -171,10 +172,12 @@ body {
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1);
-    background: var(--user-a15);
-    border-radius: var(--r-pill);
+    background: var(--user-a12);
+    border: 1px solid var(--user-a16);
+    border-radius: var(--r-sm);
     padding: 1px var(--sp-4);
     font-size: 0.82em;
+    font-weight: 500;
     color: var(--user);
     text-decoration: none;
     white-space: nowrap;
@@ -182,7 +185,8 @@ body {
 
 .prompt-ctx-chip:hover {
     text-decoration: none;
-    background: var(--user-a25);
+    background: var(--user-a18);
+    border-color: var(--user-a25);
 }
 
 /* ── Agent response ──────────────────────────────────── */
@@ -218,6 +222,18 @@ body {
     font-size: inherit;
 }
 
+/* "Working" indicator: last agent message with no text bubble yet */
+chat-message.agent-row:last-child:not(:has(message-bubble))::after {
+    content: 'Working…';
+    display: block;
+    padding: var(--sp-4) var(--sp-8) var(--sp-4) 36px;
+    max-width: 90%;
+    border-radius: var(--r-sm) var(--r-lg) var(--r-lg) var(--r-lg);
+    background: var(--agent-a06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Ccircle cx='7' cy='7' r='5' fill='none' stroke='%23888' stroke-width='2' stroke-dasharray='20 12' stroke-linecap='round'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 7 7' to='360 7 7' dur='.8s' repeatCount='indefinite'/%3E%3C/circle%3E%3C/svg%3E") no-repeat var(--sp-8) center / 14px 14px;
+    color: color-mix(in srgb, var(--fg) 55%, transparent);
+    font-size: 0.88em;
+}
+
 /* ── Thinking section ─────────────────────────────────── */
 .thinking-section {
     display: block;
@@ -245,6 +261,20 @@ body {
     border-radius: var(--r-md);
 }
 
+.tool-section-header {
+    font-weight: 600;
+    padding-bottom: var(--sp-2);
+    margin-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--think-a16);
+    cursor: pointer;
+    color: var(--fg);
+    opacity: 0.85;
+}
+
+.tool-section-header:hover {
+    opacity: 1;
+}
+
 /* ── Turn chips (meta pills) ─────────────────────────── */
 .meta {
     display: none;
@@ -270,9 +300,11 @@ body {
     align-items: center;
     gap: var(--sp-2);
     background: var(--think-a08);
-    border-radius: var(--r-pill);
-    padding: 2px var(--sp-4);
+    border: 1px solid var(--think-a16);
+    border-radius: var(--r-sm);
+    padding: 2px var(--sp-5);
     font-size: 0.88em;
+    font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
     animation: chipIn 0.25s ease;
@@ -280,61 +312,85 @@ body {
 
 .turn-chip:hover {
     background: var(--think-a16);
+    border-color: var(--think-a25);
 }
 
 .turn-chip.tool {
     background: var(--tool-a08);
+    border-color: var(--tool-a16);
     color: var(--tool);
 }
 
 .turn-chip.tool:hover {
     background: var(--tool-a16);
+    border-color: var(--tool-a40);
 }
 
 /* Tool kind color overrides */
 .turn-chip.kind-read {
     color: var(--kind-read);
     background: color-mix(in srgb, var(--kind-read) 10%, transparent);
+    border-color: color-mix(in srgb, var(--kind-read) 22%, transparent);
 }
 
 .turn-chip.kind-edit {
     color: var(--kind-edit);
     background: color-mix(in srgb, var(--kind-edit) 10%, transparent);
+    border-color: color-mix(in srgb, var(--kind-edit) 22%, transparent);
 }
 
 .turn-chip.kind-execute {
     color: var(--kind-execute);
     background: color-mix(in srgb, var(--kind-execute) 10%, transparent);
+    border-color: color-mix(in srgb, var(--kind-execute) 22%, transparent);
+}
+
+.turn-chip.kind-search {
+    color: var(--kind-search);
+    background: color-mix(in srgb, var(--kind-search) 10%, transparent);
+    border-color: color-mix(in srgb, var(--kind-search) 22%, transparent);
 }
 
 .turn-chip.kind-think {
     color: var(--kind-think);
     background: color-mix(in srgb, var(--kind-think) 10%, transparent);
+    border-color: color-mix(in srgb, var(--kind-think) 22%, transparent);
 }
 
 .turn-chip.kind-other {
     color: var(--kind-other);
     background: color-mix(in srgb, var(--kind-other) 8%, transparent);
+    border-color: color-mix(in srgb, var(--kind-other) 18%, transparent);
 }
 
 .turn-chip.kind-read:hover {
     background: color-mix(in srgb, var(--kind-read) 18%, transparent);
+    border-color: color-mix(in srgb, var(--kind-read) 32%, transparent);
 }
 
 .turn-chip.kind-edit:hover {
     background: color-mix(in srgb, var(--kind-edit) 18%, transparent);
+    border-color: color-mix(in srgb, var(--kind-edit) 32%, transparent);
 }
 
 .turn-chip.kind-execute:hover {
     background: color-mix(in srgb, var(--kind-execute) 18%, transparent);
+    border-color: color-mix(in srgb, var(--kind-execute) 32%, transparent);
+}
+
+.turn-chip.kind-search:hover {
+    background: color-mix(in srgb, var(--kind-search) 18%, transparent);
+    border-color: color-mix(in srgb, var(--kind-search) 32%, transparent);
 }
 
 .turn-chip.kind-think:hover {
     background: color-mix(in srgb, var(--kind-think) 18%, transparent);
+    border-color: color-mix(in srgb, var(--kind-think) 32%, transparent);
 }
 
 .turn-chip.kind-other:hover {
     background: color-mix(in srgb, var(--kind-other) 16%, transparent);
+    border-color: color-mix(in srgb, var(--kind-other) 28%, transparent);
 }
 
 /* Kind-colored spinners — inherit from chip text color */
@@ -344,6 +400,7 @@ body {
 
 .turn-chip.stats {
     background: var(--think-a06);
+    border-color: var(--think-a10);
     color: var(--think);
     cursor: default;
     font-size: 0.82em;
@@ -351,6 +408,7 @@ body {
 
 .turn-chip.failed {
     background: var(--error-a06);
+    border-color: var(--error-a12);
     color: var(--error);
 }
 
@@ -366,6 +424,11 @@ body {
 
 thinking-chip .chip-spinner {
     border-top-color: var(--think);
+}
+
+thinking-chip.thinking-active .thought-bubble {
+    display: inline-block;
+    animation: pulse 1.5s ease-in-out infinite;
 }
 
 .chip-expanded {
@@ -523,11 +586,13 @@ thinking-chip .chip-spinner {
 
 .turn-chip.subagent {
     background: var(--sa-a06);
+    border-color: var(--sa-a15);
     color: var(--sa-color);
 }
 
 .turn-chip.subagent:hover {
     background: var(--sa-a10);
+    border-color: var(--sa-color);
 }
 
 .turn-chip.subagent .chip-spinner {
@@ -727,20 +792,58 @@ b, strong {
 
 .quick-reply-btn {
     display: inline-block;
-    background: var(--agent-a08);
-    color: var(--agent);
-    border: 1px solid var(--agent-a16);
-    border-radius: var(--r-pill);
+    background: var(--think-a06);
+    color: var(--fg);
+    border: 1px solid var(--think-a25);
+    border-radius: 6px;
     padding: var(--sp-2) var(--sp-7);
     font-size: 0.88em;
+    font-weight: 500;
     cursor: pointer;
     transition: background .15s, border-color .15s;
     user-select: none;
 }
 
 .quick-reply-btn:hover {
-    background: var(--agent-a16);
+    background: var(--think-a16);
+    border-color: var(--think-a40);
+}
+
+.quick-reply-btn.qr-danger {
+    background: color-mix(in srgb, var(--error) 10%, transparent);
+    color: var(--error);
+    border-color: color-mix(in srgb, var(--error) 22%, transparent);
+}
+.quick-reply-btn.qr-danger:hover {
+    background: color-mix(in srgb, var(--error) 20%, transparent);
+    border-color: var(--error);
+}
+.quick-reply-btn.qr-primary {
+    background: color-mix(in srgb, var(--link) 12%, transparent);
+    color: var(--link);
+    border-color: color-mix(in srgb, var(--link) 24%, transparent);
+}
+.quick-reply-btn.qr-primary:hover {
+    background: color-mix(in srgb, var(--link) 22%, transparent);
+    border-color: var(--link);
+}
+.quick-reply-btn.qr-success {
+    background: color-mix(in srgb, var(--agent) 10%, transparent);
+    color: var(--agent);
+    border-color: color-mix(in srgb, var(--agent) 22%, transparent);
+}
+.quick-reply-btn.qr-success:hover {
+    background: color-mix(in srgb, var(--agent) 20%, transparent);
     border-color: var(--agent);
+}
+.quick-reply-btn.qr-warning {
+    background: color-mix(in srgb, var(--sa-c1) 10%, transparent);
+    color: var(--sa-c1);
+    border-color: color-mix(in srgb, var(--sa-c1) 22%, transparent);
+}
+.quick-reply-btn.qr-warning:hover {
+    background: color-mix(in srgb, var(--sa-c1) 20%, transparent);
+    border-color: var(--sa-c1);
 }
 
 .quick-replies.disabled .quick-reply-btn {
@@ -749,48 +852,80 @@ b, strong {
     pointer-events: none;
 }
 
-/* ── Copy button ─────────────────────────────────────── */
-.copy-btn {
+/* ── Code action buttons (copy, wrap) ────────────────── */
+.code-actions {
     position: sticky;
     float: right;
     top: var(--sp-2);
     right: var(--sp-2);
     z-index: 1;
+    display: flex;
+    gap: var(--sp-1);
     margin: 0 0 0 var(--sp-3);
-    background: var(--fg-a08);
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+pre:hover .code-actions {
+    opacity: 1;
+}
+
+pre:focus-within .code-actions {
+    opacity: 1;
+}
+
+.code-action-btn {
+    background: var(--code-bg);
     color: var(--fg);
     border: none;
     border-radius: var(--r-sm);
-    padding: var(--sp-1) var(--sp-4);
-    font-size: 0.75em;
+    padding: var(--sp-1);
+    line-height: 0;
     cursor: pointer;
-    opacity: 0;
-    transition: opacity 0.15s;
-    font-family: inherit;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
 }
 
-pre:hover .copy-btn {
-    opacity: 0.7;
+.code-action-btn:hover {
+    background: var(--th-bg);
 }
 
-pre:focus-within .copy-btn {
-    opacity: 0.7;
+.code-action-btn:focus-visible {
+    background: var(--th-bg);
 }
 
-.copy-btn:hover {
-    opacity: 1;
-    background: var(--fg-a16);
+.code-action-btn.active {
+    background: var(--th-bg);
+    color: var(--agent);
 }
 
-.copy-btn:focus-visible {
-    opacity: 1;
-    background: var(--fg-a16);
+/* Word wrap mode */
+pre.word-wrap {
+    overflow-x: hidden;
+}
+
+pre.word-wrap code {
+    white-space: pre-wrap;
+    word-break: break-all;
 }
 
 /* ── Animations ──────────────────────────────────────── */
 @keyframes spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.4;
+        transform: scale(0.9);
     }
 }
 
@@ -818,7 +953,7 @@ pre:focus-within .copy-btn {
 
 /* ── Keyboard accessibility ──────────────────────────── */
 .turn-chip:focus-visible, .prompt-bubble:focus-visible,
-.quick-reply-btn:focus-visible, .copy-btn:focus-visible,
+.quick-reply-btn:focus-visible, .code-action-btn:focus-visible,
 .load-more-banner:focus-visible {
     outline: 2px solid var(--agent);
     outline-offset: 2px;

@@ -9,6 +9,22 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class CopilotSettings {
     private static final String KEY_SELECTED_MODEL = "copilot.selectedModel";
+
+    /**
+     * Runtime-only label for the currently active agent (e.g. "ui-reviewer").
+     * Set by the UI layer when a sub-agent starts/stops; read by FileTools for inlay labels.
+     * Null means the main agent is active (no sub-agent running).
+     */
+    private static volatile String activeAgentLabel;
+
+    @Nullable
+    public static String getActiveAgentLabel() {
+        return activeAgentLabel;
+    }
+
+    public static void setActiveAgentLabel(@Nullable String label) {
+        activeAgentLabel = label;
+    }
     private static final String KEY_SESSION_MODE = "copilot.sessionMode";
     private static final String KEY_MONTHLY_REQUESTS = "copilot.monthlyRequests";
     private static final String KEY_MONTHLY_COST = "copilot.monthlyCost";

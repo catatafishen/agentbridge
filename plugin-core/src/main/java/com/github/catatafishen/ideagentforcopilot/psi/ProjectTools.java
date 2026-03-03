@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import com.intellij.execution.RunManager;
 import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
@@ -17,6 +16,7 @@ import com.intellij.openapi.roots.ModifiableRootModel;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.ProjectRootManager;
 import com.intellij.openapi.roots.SourceFolder;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 
@@ -46,7 +46,9 @@ class ProjectTools extends AbstractToolHandler {
     ProjectTools(Project project) {
         super(project);
         register("get_project_info", this::getProjectInfo);
-        register("build_project", this::buildProject);
+        if (isPluginInstalled("com.intellij.modules.java")) {
+            register("build_project", this::buildProject);
+        }
         register("get_indexing_status", this::getIndexingStatus);
         register("download_sources", this::downloadSources);
         register("mark_directory", this::markDirectory);
@@ -168,100 +170,7 @@ class ProjectTools extends AbstractToolHandler {
 
         String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
 
-        CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        long startTime = System.currentTimeMillis();
-
-        EdtUtil.invokeLater(() -> {
-            try {
-                var compilerManager = com.intellij.openapi.compiler.CompilerManager.getInstance(project);
-
-                com.intellij.openapi.compiler.CompileStatusNotification callback =
-                    (aborted, errorCount, warningCount, context) -> {
-                        buildInProgress.set(false);
-                        resultFuture.complete(formatBuildResult(aborted, errorCount, warningCount, context, startTime));
-                    };
-
-                if (!moduleName.isEmpty()) {
-                    Module module = resolveModule(moduleName);
-                    if (module == null) {
-                        buildInProgress.set(false);
-                        resultFuture.complete("Error: Module '" + moduleName + "' not found.\n" + listAvailableModules());
-                        return;
-                    }
-                    compilerManager.compile(module, callback);
-                } else {
-                    compilerManager.make(callback);
-                }
-            } catch (Exception e) {
-                buildInProgress.set(false);
-                LOG.warn("Build error", e);
-                resultFuture.complete("Error starting build: " + e.getMessage());
-            }
-        });
-
-        try {
-            return resultFuture.get(300, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            buildInProgress.set(false);
-            throw e;
-        }
-    }
-
-    private String formatBuildResult(boolean aborted, int errorCount, int warningCount,
-                                     com.intellij.openapi.compiler.CompileContext context, long startTime) {
-        long elapsed = System.currentTimeMillis() - startTime;
-        StringBuilder sb = new StringBuilder();
-
-        if (aborted) {
-            sb.append("Build aborted.\n");
-        } else if (errorCount == 0) {
-            sb.append("✓ Build succeeded");
-        } else {
-            sb.append("✗ Build failed");
-        }
-        sb.append(String.format(" (%d errors, %d warnings, %.1fs)%n",
-            errorCount, warningCount, elapsed / 1000.0));
-
-        appendCompilerMessages(sb, context, com.intellij.openapi.compiler.CompilerMessageCategory.ERROR, "ERROR", Integer.MAX_VALUE);
-        appendCompilerMessages(sb, context, com.intellij.openapi.compiler.CompilerMessageCategory.WARNING, "WARN", 20);
-
-        return sb.toString();
-    }
-
-    private static void appendCompilerMessages(StringBuilder sb, com.intellij.openapi.compiler.CompileContext context,
-                                               com.intellij.openapi.compiler.CompilerMessageCategory category,
-                                               String label, int maxCount) {
-        var messages = context.getMessages(category);
-        int shown = 0;
-        for (var msg : messages) {
-            if (shown++ >= maxCount) {
-                sb.append("  ... and ").append(messages.length - maxCount).append(" more ").append(label.toLowerCase()).append("s\n");
-                break;
-            }
-            String file = msg.getVirtualFile() != null ? msg.getVirtualFile().getName() : "";
-            sb.append("  ").append(label).append(" ").append(file);
-            if (msg instanceof com.intellij.compiler.CompilerMessageImpl impl && impl.getLine() > 0) {
-                sb.append(":").append(impl.getLine());
-            }
-            sb.append(" ").append(msg.getMessage()).append("\n");
-        }
-    }
-
-    private Module resolveModule(String moduleName) {
-        Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
-        if (module == null) {
-            String projectName = project.getName();
-            module = ModuleManager.getInstance(project).findModuleByName(projectName + "." + moduleName);
-        }
-        return module;
-    }
-
-    private String listAvailableModules() {
-        StringBuilder available = new StringBuilder("Available modules:\n");
-        for (Module m : ModuleManager.getInstance(project).getModules()) {
-            available.append("  ").append(m.getName()).append("\n");
-        }
-        return available.toString();
+        return com.github.catatafishen.ideagentforcopilot.psi.java.ProjectBuildSupport.buildProject(project, moduleName, buildInProgress);
     }
 
     // ---- get_indexing_status ----

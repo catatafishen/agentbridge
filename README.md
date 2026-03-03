@@ -13,7 +13,7 @@ formatting, test execution, git operations, and file operations.
 ### What Works
 
 - Multi-turn conversation with GitHub Copilot agent
-- 66 IntelliJ-native MCP tools (symbol search, file outline, references, test runner, code formatting, git,
+- 69 IntelliJ-native MCP tools (symbol search, file outline, references, test runner, code formatting, git,
   infrastructure, terminal, etc.)
 - Built-in file operations redirected through IntelliJ Document API (undo support, no external file conflicts)
 - Auto-format (optimize imports + reformat code) after every write
@@ -40,7 +40,7 @@ formatting, test execution, git operations, and file operations.
 │  ┌──────────────────┐    ┌───────────────────────┐            │
 │  │ PsiBridgeService │◄───│  Copilot CLI (--acp)  │            │
 │  │  (HTTP server)   │    │                       │            │
-│  │  66 MCP tools    │    │  - Agent reasoning    │            │
+│  │  69 MCP tools    │    │  - Agent reasoning    │            │
 │  │  - read/write    │    │  - Tool selection     │            │
 │  │  - format        │    │  - Permission reqs    │            │
 │  │  - search        │    └───────────┬───────────┘            │
@@ -73,14 +73,14 @@ intellij-copilot-plugin/
 │       ├── ui/           # Tool Window (Swing)
 │       ├── services/     # CopilotService, CopilotSettings
 │       ├── bridge/       # CopilotAcpClient (ACP protocol)
-│       └── psi/          # PsiBridgeService (66 MCP tools)
+│       └── psi/          # PsiBridgeService (69 MCP tools)
 ├── mcp-server/           # MCP stdio server (bundled JAR)
 │   └── src/main/java/com/github/copilot/mcp/
 │       └── McpServer.java
 └── integration-tests/    # (placeholder)
 ```
 
-## MCP Tools (66 tools)
+## MCP Tools (69 tools)
 
 | Category            | Tools                                                                                                                                                                                                                   |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -92,8 +92,8 @@ intellij-copilot-plugin/
 | **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `download_sources`, `mark_directory`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`                  |
 | **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_show`, `git_push`, `git_remote`                                                             |
 | **Infrastructure**  | `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `read_run_output`                                                                                                                                   |
-| **Terminal**        | `run_in_terminal`, `read_terminal_output`                                                                                                                                                                               |
-| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `get_active_file`, `get_open_editors`, `get_chat_html`                                                                                      |
+| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`                                                                                                                                                       |
+| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `get_active_file`, `get_open_editors`, `get_chat_html`, `list_themes`, `set_theme`                                                                                      |
 
 *\* `run_sonarqube_analysis` only available when SonarLint plugin is installed.*
 
@@ -151,12 +151,21 @@ unzip -q plugin-core/build/distributions/plugin-core-*.zip -d "$PLUGIN_DIR"
 - **Build**: Gradle 8.x with Kotlin DSL
 - **Testing**: JUnit 5
 
+## Known Copilot Platform Issues
+
+Tracked issues on the Copilot CLI side that affect this plugin. When an issue is resolved upstream, the workaround can
+be removed and the entry marked as ✅.
+
+| # | Issue                                                                                         | Status  | Impact                                                                                                                                                                 | Workaround                                                                                                                                                                                       |
+|---|-----------------------------------------------------------------------------------------------|---------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | [#1486](https://github.com/github/copilot-cli/issues/1486) — MCP `instructions` field ignored | 🔴 Open | Copilot ignores the `instructions` field from the MCP `initialize` response, so the agent never sees our tool-usage guidance.                                          | Plugin prepends instructions to `copilot-instructions.md` on project open ([PsiBridgeStartup.kt](plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/psi/PsiBridgeStartup.kt)). |
+| 2 | [#556](https://github.com/github/copilot-cli/issues/556) — Tool filtering not respected       | 🔴 Open | `--available-tools` / `--excluded-tools` CLI flags and `tools/remove` MCP capability are all ignored. Built-in tools (`view`, `edit`, `bash`, etc.) cannot be removed. | Permission denial via ACP + redirect messages. See [CLI-BUG-556-WORKAROUND.md](docs/CLI-BUG-556-WORKAROUND.md).                                                                                  |
+
 ## Documentation
 
 - [Development Guide](DEVELOPMENT.md) — Build, deploy, architecture details
 - [Quick Start](QUICK-START.md) — Fast setup instructions
 - [Testing](TESTING.md) — Test running and coverage
-- [Project Spec](PROJECT-SPEC.md) — Original specification
 - [Roadmap](ROADMAP.md) — Project phases and future work
 - [Release Notes](RELEASE_NOTES.md) — Current release details
 

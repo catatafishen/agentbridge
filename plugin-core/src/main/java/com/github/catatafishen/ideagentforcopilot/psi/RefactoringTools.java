@@ -2,13 +2,13 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -24,9 +24,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -60,7 +58,9 @@ class RefactoringTools extends AbstractToolHandler {
         super(project);
         register("refactor", this::refactor);
         register("go_to_declaration", this::goToDeclaration);
-        register("get_type_hierarchy", this::getTypeHierarchy);
+        if (isPluginInstalled("com.intellij.modules.java")) {
+            register("get_type_hierarchy", this::getTypeHierarchyWrapper);
+        }
         register("get_documentation", this::getDocumentation);
     }
 
@@ -290,7 +290,12 @@ class RefactoringTools extends AbstractToolHandler {
             }
         });
 
-        return resultFuture.get(30, TimeUnit.SECONDS);
+        String result = resultFuture.get(30, TimeUnit.SECONDS);
+        if (!result.startsWith("Error")) {
+            FileTools.followFileIfEnabled(project, pathStr, Math.max(targetLine, 1), Math.max(targetLine, 1),
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " refactored");
+        }
+        return result;
     }
 
     private String resolveAndRefactor(String operation, String pathStr, String symbolName,
@@ -441,7 +446,10 @@ class RefactoringTools extends AbstractToolHandler {
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         int targetLine = args.get("line").getAsInt();
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        // [0] = declPath, [1] = declLine (as string)
+        String[] declInfo = new String[2];
+
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -471,8 +479,29 @@ class RefactoringTools extends AbstractToolHandler {
                     " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.";
             }
 
+            // Capture first declaration location for follow mode
+            PsiElement firstDecl = declarations.getFirst();
+            PsiFile declFile = firstDecl.getContainingFile();
+            if (declFile != null && declFile.getVirtualFile() != null) {
+                String basePath = project.getBasePath();
+                VirtualFile declVf = declFile.getVirtualFile();
+                declInfo[0] = basePath != null ? relativize(basePath, declVf.getPath()) : declVf.getPath();
+                Document declDoc = FileDocumentManager.getInstance().getDocument(declVf);
+                if (declDoc != null) {
+                    declInfo[1] = String.valueOf(declDoc.getLineNumber(firstDecl.getTextOffset()) + 1);
+                }
+            }
+
             return formatDeclarationResults(declarations, symbolName);
         });
+
+        if (declInfo[0] != null && declInfo[1] != null) {
+            int declLine = Integer.parseInt(declInfo[1]);
+            FileTools.followFileIfEnabled(project, declInfo[0], declLine, declLine,
+                FileTools.HIGHLIGHT_READ, FileTools.agentLabel() + " found declaration");
+        }
+
+        return result;
     }
 
     private List<PsiElement> findDeclarationsOnLine(
@@ -580,109 +609,16 @@ class RefactoringTools extends AbstractToolHandler {
         }
     }
 
-    // ---- get_type_hierarchy ----
+    // ---- get_type_hierarchy (delegates to RefactoringJavaSupport) ----
 
-    private String getTypeHierarchy(JsonObject args) {
+    private String getTypeHierarchyWrapper(JsonObject args) {
         if (!args.has(PARAM_SYMBOL)) return "Error: 'symbol' parameter is required";
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
         String direction = args.has("direction") ? args.get("direction").getAsString() : "both";
 
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
-            com.intellij.psi.PsiClass psiClass = resolveClassByName(symbolName);
-            if (psiClass == null) {
-                return "Error: Class/interface '" + symbolName + "' not found. " +
-                    "Use search_symbols to find the correct name.";
-            }
-
-            StringBuilder sb = new StringBuilder();
-            String basePath = project.getBasePath();
-
-            String qualifiedName = psiClass.getQualifiedName();
-            sb.append("Type hierarchy for: ").append(qualifiedName != null ? qualifiedName : symbolName);
-            sb.append(psiClass.isInterface() ? " (interface)" : " (class)").append("\n\n");
-
-            if ("supertypes".equals(direction) || "both".equals(direction)) {
-                sb.append("Supertypes:\n");
-                appendSupertypes(psiClass, sb, basePath, "  ", new HashSet<>(), 0);
-                sb.append("\n");
-            }
-
-            if ("subtypes".equals(direction) || "both".equals(direction)) {
-                appendSubtypes(psiClass, sb, basePath);
-            }
-
-            return sb.toString();
-        });
-    }
-
-    private com.intellij.psi.PsiClass resolveClassByName(String symbolName) {
-        var javaPsiFacade = com.intellij.psi.JavaPsiFacade.getInstance(project);
-        var scope = GlobalSearchScope.allScope(project);
-
-        com.intellij.psi.PsiClass psiClass = javaPsiFacade.findClass(symbolName, scope);
-        if (psiClass != null) return psiClass;
-
-        var classes = javaPsiFacade.findClasses(symbolName, scope);
-        if (classes.length == 0) {
-            var shortNameCache = com.intellij.psi.search.PsiShortNamesCache.getInstance(project);
-            classes = shortNameCache.getClassesByName(symbolName, scope);
-        }
-        return classes.length > 0 ? classes[0] : null;
-    }
-
-    private void appendSubtypes(com.intellij.psi.PsiClass psiClass, StringBuilder sb, String basePath) {
-        sb.append("Subtypes/Implementations:\n");
-        var searcher = com.intellij.psi.search.searches.ClassInheritorsSearch.search(
-            psiClass, GlobalSearchScope.projectScope(project), true);
-        var inheritors = searcher.findAll();
-        if (inheritors.isEmpty()) {
-            sb.append("  (none found in project scope)\n");
-            return;
-        }
-        for (var inheritor : inheritors) {
-            String iName = inheritor.getQualifiedName();
-            String iFile = getClassFile(inheritor, basePath);
-            sb.append("  ").append(inheritor.isInterface() ? "interface " : "class ")
-                .append(iName != null ? iName : inheritor.getName())
-                .append(iFile).append("\n");
-        }
-    }
-
-    private void appendSupertypes(com.intellij.psi.PsiClass psiClass, StringBuilder sb,
-                                  String basePath, String indent, Set<String> visited, int depth) {
-        if (depth > 10) return;
-        String qn = psiClass.getQualifiedName();
-        if (qn != null && !visited.add(qn)) return;
-
-        // Superclass
-        com.intellij.psi.PsiClass superClass = psiClass.getSuperClass();
-        if (superClass != null && !"java.lang.Object".equals(superClass.getQualifiedName())) {
-            String superName = superClass.getQualifiedName();
-            String file = getClassFile(superClass, basePath);
-            sb.append(indent).append("extends ").append(superName != null ? superName : superClass.getName())
-                .append(file).append("\n");
-            appendSupertypes(superClass, sb, basePath, indent + "  ", visited, depth + 1);
-        }
-
-        // Interfaces
-        for (var iface : psiClass.getInterfaces()) {
-            String ifaceName = iface.getQualifiedName();
-            if ("java.lang.Object".equals(ifaceName)) continue;
-            String file = getClassFile(iface, basePath);
-            sb.append(indent).append("implements ").append(ifaceName != null ? ifaceName : iface.getName())
-                .append(file).append("\n");
-            appendSupertypes(iface, sb, basePath, indent + "  ", visited, depth + 1);
-        }
-    }
-
-    private String getClassFile(com.intellij.psi.PsiClass cls, String basePath) {
-        PsiFile file = cls.getContainingFile();
-        if (file != null && file.getVirtualFile() != null && basePath != null) {
-            String path = file.getVirtualFile().getPath();
-            if (path.contains(".jar!")) return ""; // Library class — don't show path
-            return " (" + relativize(basePath, path) + ")";
-        }
-        return "";
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+            com.github.catatafishen.ideagentforcopilot.psi.java.RefactoringJavaSupport.getTypeHierarchy(project, symbolName, direction)
+        );
     }
 
     // ---- Utilities ----

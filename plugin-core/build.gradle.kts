@@ -1,3 +1,6 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
+
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.3.10"
@@ -13,8 +16,12 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // Use the local IDE installation (configured via intellijPlatform.localPath in gradle.properties)
-        local(providers.gradleProperty("intellijPlatform.localPath"))
+        val localPath = providers.gradleProperty("intellijPlatform.localPath").orNull
+        if (localPath != null) {
+            local(localPath)
+        } else {
+            intellijIdeaUltimate("2025.3")
+        }
         instrumentationTools()
         testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
         bundledPlugin("com.intellij.java")
@@ -225,8 +232,25 @@ intellijPlatform {
     }
 
     pluginVerification {
+        // Don't fail on COMPATIBILITY_PROBLEMS or MISSING_DEPENDENCIES: our Java support
+        // classes (psi.java package) reference Java PSI and Compiler APIs that are absent in
+        // non-Java IDEs (PY, WS, GO). These classes are guarded at runtime by
+        // isPluginInstalled("com.intellij.modules.java") + NoClassDefFoundError catch.
+        // TODO: Move psi.java classes to a separate Gradle module (separate JAR) so the
+        //       verifier only checks them against IDEs with Java support.
+        failureLevel.set(listOf(
+            FailureLevel.INVALID_PLUGIN,
+            FailureLevel.INTERNAL_API_USAGES,
+            FailureLevel.OVERRIDE_ONLY_API_USAGES,
+            FailureLevel.NON_EXTENDABLE_API_USAGES,
+            FailureLevel.PLUGIN_STRUCTURE_WARNINGS,
+        ))
         ides {
             recommended()
+            // Verify against non-Java JetBrains IDEs
+            create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
+            create(IntelliJPlatformType.WebStorm, "2025.3")
+            create(IntelliJPlatformType.GoLand, "2025.3")
         }
     }
 }

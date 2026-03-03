@@ -117,6 +117,7 @@ public final class ToolRegistry {
         // ── Terminal & commands ───────────────────────────────────────────────────
         new ToolEntry("run_command", "Run Command", "Run a shell command with paginated output — prefer this over the built-in bash tool", Category.RUN, false, false, false),
         new ToolEntry("run_in_terminal", "Run in Terminal", "Run a command in IntelliJ's integrated terminal", Category.RUN, false, false, false),
+        new ToolEntry("write_terminal_input", "Write Terminal Input", "Send raw text or keystrokes to a running terminal (e.g. answer prompts, send Ctrl-C)", Category.RUN, false, false, false),
         new ToolEntry("read_run_output", "Read Run Output", "Read output from a recent Run panel tab by name", Category.RUN, false, false, false),
         new ToolEntry("read_terminal_output", "Read Terminal", "Read output from an integrated terminal tab", Category.RUN, false, false, false),
 
@@ -133,6 +134,13 @@ public final class ToolRegistry {
         new ToolEntry("git_blame", "Git Blame", "Show per-line authorship for a file, optionally restricted to a line range", Category.GIT, false, false, false),
         new ToolEntry("git_push", "Git Push", "Push commits to a remote repository", Category.GIT, false, false, false),
         new ToolEntry("git_remote", "Git Remote", "List, add, remove, or update remote repositories", Category.GIT, false, false, false),
+        new ToolEntry("git_fetch", "Git Fetch", "Download objects and refs from a remote without merging", Category.GIT, false, false, false),
+        new ToolEntry("git_pull", "Git Pull", "Fetch from remote and integrate changes into the current branch", Category.GIT, false, false, false),
+        new ToolEntry("git_merge", "Git Merge", "Merge a branch into the current branch; supports squash, no-ff, ff-only, and abort", Category.GIT, false, false, false),
+        new ToolEntry("git_rebase", "Git Rebase", "Rebase current branch onto another; supports abort, continue, skip, onto, and interactive", Category.GIT, false, false, false),
+        new ToolEntry("git_cherry_pick", "Git Cherry Pick", "Apply specific commits from another branch onto the current branch", Category.GIT, false, false, false),
+        new ToolEntry("git_tag", "Git Tag", "List, create, or delete tags", Category.GIT, false, false, false),
+        new ToolEntry("git_reset", "Git Reset", "Reset HEAD to a specific commit (soft, mixed, or hard)", Category.GIT, false, false, false),
 
         // ── Refactoring ───────────────────────────────────────────────────────────
         new ToolEntry("refactor", "Refactor", "Rename, extract method, inline, or safe-delete a symbol using IntelliJ's refactoring engine", Category.REFACTOR, false, false, false),
@@ -151,6 +159,8 @@ public final class ToolRegistry {
         new ToolEntry("download_sources", "Download Sources", "Download library sources to enable source navigation and debugging", Category.IDE, false, false, false),
         new ToolEntry("get_active_file", "Get Active File", "Get the path and content of the currently active editor file", Category.IDE, false, false, false),
         new ToolEntry("get_open_editors", "Get Open Editors", "List all currently open editor tabs", Category.IDE, false, false, false),
+        new ToolEntry("list_themes", "List Themes", "List all available IDE themes with their dark/light type", Category.IDE, false, false, false),
+        new ToolEntry("set_theme", "Set Theme", "Change the IDE theme by name (e.g., 'Darcula', 'Light')", Category.IDE, false, false, false),
 
         // ── Other ─────────────────────────────────────────────────────────────────
         new ToolEntry("get_chat_html", "Get Chat HTML", "Retrieve the live DOM HTML of the JCEF chat panel for debugging", Category.OTHER, false, false, false),

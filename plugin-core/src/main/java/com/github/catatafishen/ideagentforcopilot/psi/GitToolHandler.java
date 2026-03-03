@@ -4,11 +4,16 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager;
+import com.intellij.openapi.vfs.LocalFileSystem;
+import com.intellij.openapi.vfs.VfsUtil;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -33,6 +38,15 @@ final class GitToolHandler {
 
     private static final String STATUS_PARAM = "status";
 
+    /**
+     * Git subcommands that modify the repository and require a VCS refresh.
+     */
+    private static final Set<String> WRITE_COMMANDS = Set.of(
+        "add", "branch", "checkout", "cherry-pick", "commit", "fetch", "merge",
+        "pull", "push", "rebase", "remote", "reset", "restore",
+        "revert", "stash", "switch", "tag"
+    );
+
     private final Project project;
     private final FileTools fileTools;
 
@@ -41,7 +55,35 @@ final class GitToolHandler {
         this.fileTools = fileTools;
     }
 
+    /**
+     * Run a git command, preferring IntelliJ's Git4Idea infrastructure for proper VCS integration.
+     * Falls back to ProcessBuilder if Git4Idea is unavailable or the command is not mapped.
+     */
     private String runGit(String... args) throws Exception {
+        if (args.length == 0) return "Error: no git command";
+
+        String result;
+        try {
+            result = IdeGitSupport.run(project, args);
+            if (result == null) {
+                result = runGitProcess(args);
+            }
+        } catch (NoClassDefFoundError e) {
+            // Git4Idea plugin not available — fall back to ProcessBuilder
+            result = runGitProcess(args);
+        }
+
+        if (WRITE_COMMANDS.contains(args[0])) {
+            refreshVcsState();
+        }
+
+        return result;
+    }
+
+    /**
+     * Fallback: run git via ProcessBuilder (bypasses IntelliJ VCS layer).
+     */
+    private String runGitProcess(String... args) throws Exception {
         String basePath = project.getBasePath();
         if (basePath == null) return "Error: no project base path";
 
@@ -71,12 +113,31 @@ final class GitToolHandler {
     }
 
     /**
+     * Refresh IntelliJ's VCS state after git write operations so the Git tool window
+     * (Changes tab, Log tab, branch indicator) updates in real time.
+     */
+    private void refreshVcsState() {
+        String basePath = project.getBasePath();
+        if (basePath == null) return;
+        ApplicationManager.getApplication().invokeLater(() -> {
+            var root = LocalFileSystem.getInstance().findFileByPath(basePath);
+            if (root != null) {
+                VfsUtil.markDirtyAndRefresh(true, true, true, root);
+            }
+            VcsDirtyScopeManager.getInstance(project).markEverythingDirty();
+        });
+    }
+
+    /**
      * Flush all IntelliJ editor buffers to disk so git sees current content.
+     * Commits any pending PSI changes first to catch async reformats from external tools.
      */
     private void saveAllDocuments() {
         EdtUtil.invokeAndWait(() ->
-            ApplicationManager.getApplication().runWriteAction(() ->
-                FileDocumentManager.getInstance().saveAllDocuments()));
+            ApplicationManager.getApplication().runWriteAction(() -> {
+                com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
+                FileDocumentManager.getInstance().saveAllDocuments();
+            }));
     }
 
     String gitStatus(JsonObject args) throws Exception {
@@ -285,17 +346,32 @@ final class GitToolHandler {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("push");
 
+        boolean setUpstream = args.has("set_upstream") && args.get("set_upstream").getAsBoolean();
         if (args.has("force") && args.get("force").getAsBoolean()) {
             gitArgs.add("--force");
         }
-        if (args.has("set_upstream") && args.get("set_upstream").getAsBoolean()) {
+        if (setUpstream) {
             gitArgs.add("--set-upstream");
         }
-        if (args.has("remote")) {
-            gitArgs.add(args.get("remote").getAsString());
+
+        String remote = args.has("remote") ? args.get("remote").getAsString() : null;
+        String branch = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
+
+        // When --set-upstream is used, git requires explicit remote and branch
+        if (setUpstream) {
+            if (remote == null) {
+                remote = "origin";
+            }
+            if (branch == null) {
+                branch = runGit("rev-parse", "--abbrev-ref", "HEAD").trim();
+            }
         }
-        if (args.has(PARAM_BRANCH)) {
-            gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+
+        if (remote != null) {
+            gitArgs.add(remote);
+        }
+        if (branch != null) {
+            gitArgs.add(branch);
         }
         if (args.has("tags") && args.get("tags").getAsBoolean()) {
             gitArgs.add("--tags");
@@ -346,6 +422,218 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
+    String gitFetch(JsonObject args) throws Exception {
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("fetch");
+
+        if (args.has("prune") && args.get("prune").getAsBoolean()) {
+            gitArgs.add("--prune");
+        }
+        if (args.has("tags") && args.get("tags").getAsBoolean()) {
+            gitArgs.add("--tags");
+        }
+        if (args.has("remote")) {
+            gitArgs.add(args.get("remote").getAsString());
+        }
+        if (args.has(PARAM_BRANCH)) {
+            gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+        }
+
+        String result = runGit(gitArgs.toArray(new String[0]));
+        return result.isEmpty() ? "Fetch completed successfully." : result;
+    }
+
+    String gitPull(JsonObject args) throws Exception {
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("pull");
+
+        if (args.has("rebase") && args.get("rebase").getAsBoolean()) {
+            gitArgs.add("--rebase");
+        }
+        if (args.has("ff_only") && args.get("ff_only").getAsBoolean()) {
+            gitArgs.add("--ff-only");
+        }
+        if (args.has("remote")) {
+            gitArgs.add(args.get("remote").getAsString());
+        }
+        if (args.has(PARAM_BRANCH)) {
+            gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+        }
+
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    String gitMerge(JsonObject args) throws Exception {
+        if (!args.has(PARAM_BRANCH) && !args.has("abort")) {
+            return "Error: 'branch' parameter is required (or 'abort' to abort a merge)";
+        }
+
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("merge");
+
+        if (args.has("abort") && args.get("abort").getAsBoolean()) {
+            gitArgs.add("--abort");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+
+        if (args.has("no_ff") && args.get("no_ff").getAsBoolean()) {
+            gitArgs.add("--no-ff");
+        }
+        if (args.has("ff_only") && args.get("ff_only").getAsBoolean()) {
+            gitArgs.add("--ff-only");
+        }
+        if (args.has("squash") && args.get("squash").getAsBoolean()) {
+            gitArgs.add("--squash");
+        }
+        if (args.has(PARAM_MESSAGE)) {
+            gitArgs.add("-m");
+            gitArgs.add(args.get(PARAM_MESSAGE).getAsString());
+        }
+        gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    String gitRebase(JsonObject args) throws Exception {
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("rebase");
+
+        // Handle abort/continue/skip first
+        if (args.has("abort") && args.get("abort").getAsBoolean()) {
+            gitArgs.add("--abort");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+        if (args.has("continue_rebase") && args.get("continue_rebase").getAsBoolean()) {
+            gitArgs.add("--continue");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+        if (args.has("skip") && args.get("skip").getAsBoolean()) {
+            gitArgs.add("--skip");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+
+        if (args.has("interactive") && args.get("interactive").getAsBoolean()) {
+            gitArgs.add("--interactive");
+            // Set GIT_SEQUENCE_EDITOR to 'true' (no-op) for autosquash
+            if (args.has("autosquash") && args.get("autosquash").getAsBoolean()) {
+                gitArgs.add("--autosquash");
+            }
+        }
+
+        if (args.has("onto")) {
+            gitArgs.add("--onto");
+            gitArgs.add(args.get("onto").getAsString());
+        }
+
+        if (args.has(PARAM_BRANCH)) {
+            gitArgs.add(args.get(PARAM_BRANCH).getAsString());
+        }
+
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    String gitCherryPick(JsonObject args) throws Exception {
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("cherry-pick");
+
+        if (args.has("abort") && args.get("abort").getAsBoolean()) {
+            gitArgs.add("--abort");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+        if (args.has("continue_pick") && args.get("continue_pick").getAsBoolean()) {
+            gitArgs.add("--continue");
+            return runGit(gitArgs.toArray(new String[0]));
+        }
+
+        if (args.has("no_commit") && args.get("no_commit").getAsBoolean()) {
+            gitArgs.add("--no-commit");
+        }
+
+        if (!args.has("commits")) {
+            return "Error: 'commits' parameter is required (one or more commit SHAs)";
+        }
+
+        var commits = args.getAsJsonArray("commits");
+        for (var c : commits) {
+            gitArgs.add(c.getAsString());
+        }
+
+        return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    String gitTag(JsonObject args) throws Exception {
+        String action = args.has(JSON_ACTION) ? args.get(JSON_ACTION).getAsString() : "list";
+
+        return switch (action) {
+            case "list" -> {
+                List<String> gitArgs = new ArrayList<>(List.of("tag", "-l"));
+                if (args.has("pattern")) {
+                    gitArgs.add(args.get("pattern").getAsString());
+                }
+                if (args.has("sort")) {
+                    gitArgs.add("--sort=" + args.get("sort").getAsString());
+                }
+                yield runGit(gitArgs.toArray(new String[0]));
+            }
+            case "create" -> {
+                if (!args.has("name")) yield "Error: 'name' required for create";
+                List<String> gitArgs = new ArrayList<>(List.of("tag"));
+                if (args.has("annotate") && args.get("annotate").getAsBoolean()) {
+                    gitArgs.add("-a");
+                }
+                gitArgs.add(args.get("name").getAsString());
+                if (args.has(PARAM_COMMIT)) {
+                    gitArgs.add(args.get(PARAM_COMMIT).getAsString());
+                }
+                if (args.has(PARAM_MESSAGE)) {
+                    gitArgs.add("-m");
+                    gitArgs.add(args.get(PARAM_MESSAGE).getAsString());
+                }
+                yield runGit(gitArgs.toArray(new String[0]));
+            }
+            case "delete" -> {
+                if (!args.has("name")) yield "Error: 'name' required for delete";
+                yield runGit("tag", "-d", args.get("name").getAsString());
+            }
+            default -> "Error: unknown action '" + action + "'. Use: list, create, delete";
+        };
+    }
+
+    String gitReset(JsonObject args) throws Exception {
+        saveAllDocuments();
+        List<String> gitArgs = new ArrayList<>();
+        gitArgs.add("reset");
+
+        String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";
+        switch (mode) {
+            case "soft" -> gitArgs.add("--soft");
+            case "hard" -> gitArgs.add("--hard");
+            case "mixed" -> gitArgs.add("--mixed");
+            default -> {
+                return "Error: unknown mode '" + mode + "'. Use: soft, mixed, hard";
+            }
+        }
+
+        if (args.has(PARAM_COMMIT)) {
+            gitArgs.add(args.get(PARAM_COMMIT).getAsString());
+        }
+
+        // If specific paths given, reset those files only (removes from staging)
+        if (args.has("path")) {
+            gitArgs.clear();
+            gitArgs.add("reset");
+            gitArgs.add("--");
+            gitArgs.add(args.get("path").getAsString());
+        }
+
+        String result = runGit(gitArgs.toArray(new String[0]));
+        return result.isEmpty() ? "Reset completed successfully." : result;
+    }
+
     String gitShow(JsonObject args) throws Exception {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("show");
@@ -361,5 +649,80 @@ final class GitToolHandler {
             gitArgs.add(args.get("path").getAsString());
         }
         return runGit(gitArgs.toArray(new String[0]));
+    }
+
+    /**
+     * Runs git commands through IntelliJ's Git4Idea infrastructure (GitLineHandler).
+     * <p>
+     * Isolated in a static inner class so git4idea class loading is deferred until first use.
+     * If Git4Idea is disabled, the outer class catches {@link NoClassDefFoundError} and falls
+     * back to ProcessBuilder.
+     */
+    private static final class IdeGitSupport {
+        private static final Map<String, git4idea.commands.GitCommand> COMMAND_MAP = Map.ofEntries(
+            Map.entry("add", git4idea.commands.GitCommand.ADD),
+            Map.entry("blame", git4idea.commands.GitCommand.BLAME),
+            Map.entry("branch", git4idea.commands.GitCommand.BRANCH),
+            Map.entry("checkout", git4idea.commands.GitCommand.CHECKOUT),
+            Map.entry("cherry-pick", git4idea.commands.GitCommand.CHERRY_PICK),
+            Map.entry("commit", git4idea.commands.GitCommand.COMMIT),
+            Map.entry("config", git4idea.commands.GitCommand.CONFIG),
+            Map.entry("diff", git4idea.commands.GitCommand.DIFF),
+            Map.entry("fetch", git4idea.commands.GitCommand.FETCH),
+            Map.entry("log", git4idea.commands.GitCommand.LOG),
+            Map.entry("merge", git4idea.commands.GitCommand.MERGE),
+            Map.entry("pull", git4idea.commands.GitCommand.PULL),
+            Map.entry("push", git4idea.commands.GitCommand.PUSH),
+            Map.entry("rebase", git4idea.commands.GitCommand.REBASE),
+            Map.entry("remote", git4idea.commands.GitCommand.REMOTE),
+            Map.entry("reset", git4idea.commands.GitCommand.RESET),
+            Map.entry("restore", git4idea.commands.GitCommand.RESTORE),
+            Map.entry("rev-parse", git4idea.commands.GitCommand.REV_PARSE),
+            Map.entry("revert", git4idea.commands.GitCommand.REVERT),
+            Map.entry("show", git4idea.commands.GitCommand.SHOW),
+            Map.entry("stash", git4idea.commands.GitCommand.STASH),
+            Map.entry("status", git4idea.commands.GitCommand.STATUS),
+            Map.entry("switch", git4idea.commands.GitCommand.CHECKOUT),
+            Map.entry("tag", git4idea.commands.GitCommand.TAG)
+        );
+
+        /** Returns command output, or null to signal fallback to ProcessBuilder. */
+        static String run(Project project, String[] args) {
+            if (args.length == 0) return null;
+
+            git4idea.commands.GitCommand command = COMMAND_MAP.get(args[0]);
+            if (command == null) return null;
+
+            List<git4idea.repo.GitRepository> repos =
+                git4idea.repo.GitRepositoryManager.getInstance(project).getRepositories();
+            if (repos.isEmpty()) return null;
+
+            // Find the repo matching the project base path
+            git4idea.repo.GitRepository repo = repos.getFirst();
+            String basePath = project.getBasePath();
+            if (basePath != null && repos.size() > 1) {
+                for (git4idea.repo.GitRepository r : repos) {
+                    if (r.getRoot().getPath().equals(basePath)) {
+                        repo = r;
+                        break;
+                    }
+                }
+            }
+
+            git4idea.commands.GitLineHandler handler =
+                new git4idea.commands.GitLineHandler(project, repo.getRoot(), command);
+            handler.setSilent(true);
+            handler.setStdoutSuppressed(true);
+            if (args.length > 1) {
+                handler.addParameters(Arrays.asList(args).subList(1, args.length));
+            }
+
+            git4idea.commands.GitCommandResult result =
+                git4idea.commands.Git.getInstance().runCommand(handler);
+            if (result.success()) {
+                return result.getOutputAsJoinedString();
+            }
+            return "Error (exit " + result.getExitCode() + "): " + result.getErrorOutputAsJoinedString();
+        }
     }
 }

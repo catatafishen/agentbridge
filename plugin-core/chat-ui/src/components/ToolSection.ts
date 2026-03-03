@@ -9,13 +9,29 @@ export default class ToolSection extends HTMLElement {
         this._init = true;
         this._startTime = Date.now();
         this.classList.add('tool-section', 'turn-hidden');
+        const title = this.getAttribute('title') || '';
         this.innerHTML = `
+            <div class="tool-section-header">${escHtml(title)}</div>
             <div class="tool-params"></div>
             <div class="tool-result">Running...</div>
             <div class="tool-runtime"></div>`;
+        this.querySelector('.tool-section-header')!.addEventListener('click', () => this._collapse());
         // Attribute may have been set before connectedCallback — apply it now
         const p = this.getAttribute('params');
         if (p) this.params = p;
+    }
+
+    private _collapse(): void {
+        const chip = document.querySelector(`[data-chip-for="${this.id}"]`) as HTMLElement | null;
+        if (chip) {
+            chip.style.opacity = '1';
+            chip.setAttribute('aria-expanded', 'false');
+        }
+        this.classList.add('collapsing');
+        setTimeout(() => {
+            this.classList.remove('collapsing', 'chip-expanded');
+            this.classList.add('turn-hidden');
+        }, 250);
     }
 
     set params(val: string) {

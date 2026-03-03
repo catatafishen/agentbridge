@@ -12,6 +12,7 @@ internal object MarkdownRenderer {
         """(?<![:\w])(?:/[\w.\-]+(?:/[\w.\-]+)*\.\w+|(?:\.\.?/)?[\w.\-]+(?:/[\w.\-]+)+\.\w+)(?::\d+(?::\d+)?)?"""
     )
     private val GIT_SHA_REGEX = Regex("""^[0-9a-f]{7,40}$""")
+    private val BARE_GIT_SHA_REGEX = Regex("""\b([0-9a-f]{7,12})\b""")
 
     data class MarkdownState(
         var inCode: Boolean = false,
@@ -23,7 +24,8 @@ internal object MarkdownRenderer {
     fun markdownToHtml(
         text: String,
         resolveFileReference: (String) -> Pair<String, Int?>? = { null },
-        resolveFilePath: (String) -> String? = { null }
+        resolveFilePath: (String) -> String? = { null },
+        isGitCommit: (String) -> Boolean = { false }
     ): String {
         val lines = text.lines()
         val sb = StringBuilder()
@@ -34,13 +36,13 @@ internal object MarkdownRenderer {
             when {
                 t.startsWith("```") -> handleCodeFence(sb, state)
                 state.inCode -> sb.append(escapeHtml(line)).append("\n")
-                processBlockElement(sb, state, t, resolveFileReference, resolveFilePath) -> { /* handled by helper */
+                processBlockElement(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit) -> { /* handled by helper */
                 }
 
                 t.isEmpty() -> { /* skip blank lines */
                 }
 
-                else -> sb.append("<p>").append(formatInline(line, resolveFileReference, resolveFilePath))
+                else -> sb.append("<p>").append(formatInline(line, resolveFileReference, resolveFilePath, isGitCommit))
                     .append("</p>")
             }
         }
@@ -61,25 +63,27 @@ internal object MarkdownRenderer {
     private fun processBlockElement(
         sb: StringBuilder, state: MarkdownState, t: String,
         resolveFileReference: (String) -> Pair<String, Int?>?,
-        resolveFilePath: (String) -> String?
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
     ): Boolean {
         val hm = Regex("^(#{1,4})\\s+(.+)").find(t)
         if (hm != null) {
             closeListAndTable(sb, state)
             val lv = hm.groupValues[1].length + 1
-            sb.append("<h$lv>").append(formatInline(hm.groupValues[2], resolveFileReference, resolveFilePath))
+            sb.append("<h$lv>").append(formatInline(hm.groupValues[2], resolveFileReference, resolveFilePath, isGitCommit))
                 .append("</h$lv>")
             return true
         }
-        if (handleTableRow(sb, state, t, resolveFileReference, resolveFilePath)) return true
-        if (handleListItem(sb, state, t, resolveFileReference, resolveFilePath)) return true
+        if (handleTableRow(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)) return true
+        if (handleListItem(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)) return true
         return false
     }
 
     private fun handleTableRow(
         sb: StringBuilder, state: MarkdownState, t: String,
         resolveFileReference: (String) -> Pair<String, Int?>?,
-        resolveFilePath: (String) -> String?
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
     ): Boolean {
         if (!(t.startsWith("|") && t.endsWith("|") && t.count { it == '|' } >= 3)) {
             if (state.inTable) {
@@ -97,7 +101,7 @@ internal object MarkdownRenderer {
         val cells = t.split("|").drop(1).dropLast(1).map { it.trim() }
         val tag = if (state.firstTR) "th" else "td"
         sb.append("<tr>"); cells.forEach {
-            sb.append("<$tag>").append(formatInline(it, resolveFileReference, resolveFilePath)).append("</$tag>")
+            sb.append("<$tag>").append(formatInline(it, resolveFileReference, resolveFilePath, isGitCommit)).append("</$tag>")
         }
         sb.append("</tr>"); state.firstTR = false
         return true
@@ -106,7 +110,8 @@ internal object MarkdownRenderer {
     private fun handleListItem(
         sb: StringBuilder, state: MarkdownState, t: String,
         resolveFileReference: (String) -> Pair<String, Int?>?,
-        resolveFilePath: (String) -> String?
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
     ): Boolean {
         if (!(t.startsWith("- ") || t.startsWith("* "))) {
             if (state.inList) {
@@ -118,7 +123,7 @@ internal object MarkdownRenderer {
             sb.append("<ul>"); state.inList = true
         }
         sb.append("<li>")
-            .append(formatInline(t.removePrefix("- ").removePrefix("* "), resolveFileReference, resolveFilePath))
+            .append(formatInline(t.removePrefix("- ").removePrefix("* "), resolveFileReference, resolveFilePath, isGitCommit))
             .append("</li>")
         return true
     }
@@ -141,7 +146,8 @@ internal object MarkdownRenderer {
     private fun formatInline(
         text: String,
         resolveFileReference: (String) -> Pair<String, Int?>?,
-        resolveFilePath: (String) -> String?
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
     ): String {
         val result = StringBuilder()
         var lastEnd = 0
@@ -149,12 +155,12 @@ internal object MarkdownRenderer {
         val combinedPattern =
             Regex("""\*\*(.+?)\*\*|`([^`]+)`|\[([^\]]+)]\((https?://[^)]+)\)|(https?://[^\s<>\[\]()]+)""")
         for (match in combinedPattern.findAll(text)) {
-            result.append(formatNonCode(text.substring(lastEnd, match.range.first), resolveFilePath))
+            result.append(formatNonCode(text.substring(lastEnd, match.range.first), resolveFilePath, isGitCommit))
             when {
                 match.groupValues[1].isNotEmpty() -> {
                     // Bold: **content** — recurse to allow inline code/links inside bold
                     result.append("<b>")
-                        .append(formatInline(match.groupValues[1], resolveFileReference, resolveFilePath))
+                        .append(formatInline(match.groupValues[1], resolveFileReference, resolveFilePath, isGitCommit))
                         .append("</b>")
                 }
 
@@ -165,7 +171,7 @@ internal object MarkdownRenderer {
                     if (resolved != null) {
                         val href = resolved.first + if (resolved.second != null) ":${resolved.second}" else ""
                         result.append("<a href='openfile://$href'><code>${escapeHtml(content)}</code></a>")
-                    } else if (GIT_SHA_REGEX.matches(content)) {
+                    } else if (GIT_SHA_REGEX.matches(content) && isGitCommit(content)) {
                         result.append("<a href='gitshow://$content'><code>${escapeHtml(content)}</code></a>")
                     } else {
                         result.append("<code>${escapeHtml(content)}</code>")
@@ -187,17 +193,22 @@ internal object MarkdownRenderer {
             }
             lastEnd = match.range.last + 1
         }
-        result.append(formatNonCode(text.substring(lastEnd), resolveFilePath))
+        result.append(formatNonCode(text.substring(lastEnd), resolveFilePath, isGitCommit))
         return result.toString()
     }
 
-    private fun formatNonCode(text: String, resolveFilePath: (String) -> String?): String {
+    private fun formatNonCode(text: String, resolveFilePath: (String) -> String?, isGitCommit: (String) -> Boolean): String {
         var html = escapeHtml(text)
         html = FILE_PATH_REGEX.replace(html) { m ->
             val pathPart = m.value.split(":")[0]
             val line = m.value.split(":").getOrNull(1)?.toIntOrNull()
             val resolved = resolveFilePath(pathPart)
             if (resolved != null) "<a href='openfile://$resolved${if (line != null) ":$line" else ""}'>${m.value}</a>"
+            else m.value
+        }
+        html = BARE_GIT_SHA_REGEX.replace(html) { m ->
+            val sha = m.groupValues[1]
+            if (isGitCommit(sha)) "<a href='gitshow://$sha' class='git-commit-link' title='Show commit $sha'>$sha</a>"
             else m.value
         }
         return html

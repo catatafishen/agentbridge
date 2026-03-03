@@ -19,7 +19,7 @@ import javax.swing.UIManager
  * Help popup showing toolbar guide and plugin info.
  * Displayed as a non-modal floating popup so users can keep it open while interacting with the plugin.
  */
-internal class HelpAction(private val project: Project) : AnAction(
+internal class HelpAction(@Suppress("unused") private val project: Project) : AnAction(
     "Help", "Show help for all toolbar features and plugin behavior",
     com.intellij.icons.AllIcons.Actions.Help
 ) {
@@ -108,7 +108,19 @@ internal class HelpAction(private val project: Project) : AnAction(
 
     private fun buildContent(): JBPanel<JBPanel<*>> {
         return JBPanel<JBPanel<*>>(BorderLayout()).apply {
-            val mainPanel = JBPanel<JBPanel<*>>().apply {
+            val mainPanel = object : JBPanel<JBPanel<*>>(), javax.swing.Scrollable {
+                override fun getPreferredScrollableViewportSize(): java.awt.Dimension = preferredSize
+                override fun getScrollableUnitIncrement(
+                    visibleRect: java.awt.Rectangle, orientation: Int, direction: Int
+                ) = JBUI.scale(16)
+
+                override fun getScrollableBlockIncrement(
+                    visibleRect: java.awt.Rectangle, orientation: Int, direction: Int
+                ) = visibleRect.height
+
+                override fun getScrollableTracksViewportWidth() = true
+                override fun getScrollableTracksViewportHeight() = false
+            }.apply {
                 layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
                 border = JBUI.Borders.empty(12)
 
@@ -146,7 +158,8 @@ internal class HelpAction(private val project: Project) : AnAction(
             }
 
             val scrollPane = JBScrollPane(mainPanel).apply {
-                preferredSize = JBUI.size(600, 500)
+                preferredSize = JBUI.size(650, 600)
+                horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
                 border = null
             }
             add(scrollPane, BorderLayout.CENTER)
@@ -181,6 +194,7 @@ internal class HelpAction(private val project: Project) : AnAction(
     private fun createHelpRow(item: HelpItem.Row): JBPanel<JBPanel<*>> {
         return JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(8), 0)).apply {
             alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            maximumSize = java.awt.Dimension(Int.MAX_VALUE, Int.MAX_VALUE)
             border = JBUI.Borders.emptyBottom(4)
 
             add(JBLabel(item.icon).apply {
