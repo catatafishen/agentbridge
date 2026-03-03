@@ -495,8 +495,8 @@ class CodeQualityTools extends AbstractToolHandler {
             String basePath = project.getBasePath();
             String profileName = currentProfile.getName();
 
-            com.intellij.codeInspection.ex.GlobalInspectionContextBase context =
-                new com.intellij.codeInspection.ex.GlobalInspectionContextBase(project) {
+            com.intellij.codeInspection.ex.GlobalInspectionContextEx context =
+                new com.intellij.codeInspection.ex.GlobalInspectionContextEx(project) {
 
                     @Override
                     protected void notifyInspectionsFinished(@NotNull com.intellij.analysis.AnalysisScope scope) {
@@ -526,7 +526,7 @@ class CodeQualityTools extends AbstractToolHandler {
      * (0ms, 500ms, 1000ms) to allow tool presentations to populate.
      */
     private void scheduleInspectionCollection(
-        com.intellij.codeInspection.ex.GlobalInspectionContextBase ctx, Map<String, Integer> severityRank, int requiredRank,
+        com.intellij.codeInspection.ex.GlobalInspectionContextEx ctx, Map<String, Integer> severityRank, int requiredRank,
         String basePath, InspectionPageParams pageParams,
         CompletableFuture<String> resultFuture, int attempt) {
 
@@ -626,7 +626,7 @@ class CodeQualityTools extends AbstractToolHandler {
     @SuppressWarnings({"UnstableApiUsage", "java:S2583"})
     // null check is defensive against runtime nulls despite @NotNull
     private InspectionCollectionResult collectInspectionProblems(
-        com.intellij.codeInspection.ex.GlobalInspectionContextBase ctx, Map<String, Integer> severityRank,
+        com.intellij.codeInspection.ex.GlobalInspectionContextEx ctx, Map<String, Integer> severityRank,
         int requiredRank, String basePath) {
         List<String> allProblems = new ArrayList<>();
         Set<String> filesSet = new HashSet<>();
@@ -634,14 +634,11 @@ class CodeQualityTools extends AbstractToolHandler {
         int skippedNoFile = 0;
         int toolsWithProblems = 0;
 
-        // Cast to Ex to access getPresentation()
-        var ctxEx = (com.intellij.codeInspection.ex.GlobalInspectionContextEx) ctx;
-
         for (var tools : ctx.getUsedTools()) {
             var toolWrapper = tools.getTool();
             String toolId = toolWrapper.getShortName();
 
-            var presentation = ctxEx.getPresentation(toolWrapper);
+            var presentation = ctx.getPresentation(toolWrapper);
             //noinspection ConstantValue - presentation can be null at runtime despite @NotNull annotation
             if (presentation == null) continue;
 
