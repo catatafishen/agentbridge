@@ -695,6 +695,7 @@ class FileTools extends AbstractToolHandler {
 
         // Refresh VFS so IntelliJ sees the file
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        int lineCount = content.split("\n", -1).length;
         EdtUtil.invokeLater(() -> {
             try {
                 LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath.toString());
@@ -704,7 +705,9 @@ class FileTools extends AbstractToolHandler {
             }
         });
 
-        return resultFuture.get(10, TimeUnit.SECONDS);
+        String result = resultFuture.get(10, TimeUnit.SECONDS);
+        followFileIfEnabled(pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel() + " created");
+        return result;
     }
 
     private String deleteFile(JsonObject args) throws Exception {
