@@ -845,6 +845,16 @@ b, strong {
     background: color-mix(in srgb, var(--sa-c1) 20%, transparent);
     border-color: var(--sa-c1);
 }
+.quick-reply-btn.qr-dismiss {
+    background: transparent;
+    color: var(--fg-muted);
+    border-color: transparent;
+    font-size: 0.85em;
+}
+.quick-reply-btn.qr-dismiss:hover {
+    background: var(--think-a16);
+    border-color: transparent;
+}
 
 .quick-replies.disabled .quick-reply-btn {
     opacity: 0.4;

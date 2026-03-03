@@ -356,6 +356,20 @@ describe('quick-replies', () => {
         expect(buttons[1].textContent).toBe('Note:unknown');
         expect(buttons[1].className).toBe('quick-reply-btn');
     });
+
+    it('dismiss suffix disables buttons without dispatching event', () => {
+        let received = false;
+        document.addEventListener('quick-reply', () => {
+            received = true;
+        }, { once: true });
+        qr.options = ['Ok:dismiss'];
+        const btn = qr.querySelector('.quick-reply-btn');
+        expect(btn.textContent).toBe('Ok');
+        expect(btn.className).toBe('quick-reply-btn qr-dismiss');
+        btn.click();
+        expect(received).toBe(false);
+        expect(qr.hasAttribute('disabled')).toBe(true);
+    });
 });
 
 describe('status-message', () => {

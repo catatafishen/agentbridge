@@ -141,7 +141,9 @@ repository.
 
 Agent responses can include quick-reply suggestions rendered as clickable buttons. These appear as
 green-tinted pills below the response and send the selected option back as a new prompt with a
-single click, enabling rapid conversational flow without retyping.
+single click, enabling rapid conversational flow without retyping. Buttons support semantic color
+suffixes (`:danger`, `:primary`, `:success`, `:warning`) and a `:dismiss` suffix that simply hides
+the buttons without sending a message — useful for no-op options like "No thanks".
 
 ### Usage & Billing Tracking
 

@@ -45,7 +45,8 @@
   or when the user can just type naturally. \
   Format: `[quick-reply: Option A | Option B]` — one tag per response, pipe-separated, max 6 options, short labels (2-4 words). \
   Semantic color suffixes: `:danger` (red, for destructive actions), `:primary` (blue, for emphasis). \
-  Examples: `[quick-reply: Yes | No]`  `[quick-reply: Keep | Delete all:danger]`
+  Dismiss suffix: `:dismiss` — disables the buttons without sending a message. Use for no-op options like "No thanks" or "I'll do it myself". \
+  Examples: `[quick-reply: Yes | No:dismiss]`  `[quick-reply: Keep | Delete all:danger]`
 
   > End of auto-generated instructions
 ---
