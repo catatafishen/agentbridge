@@ -211,10 +211,7 @@ const ChatController = {
     updateToolCall(id: string, status: string, resultHtml?: string): void {
         const section = document.getElementById(id);
         if (section) {
-            const resultDiv = section.querySelector('.tool-result');
-            if (resultDiv) {
-                resultDiv.innerHTML = (typeof resultHtml === 'string') ? resultHtml : 'Completed';
-            }
+            (section as any).result = (typeof resultHtml === 'string') ? resultHtml : 'Completed';
             if (status === 'failed') section.classList.add('failed');
         }
         const chip = document.querySelector('[data-chip-for="' + id + '"]');
