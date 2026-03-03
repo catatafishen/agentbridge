@@ -51,6 +51,6 @@ When appropriate, append a `[quick-reply: ...]` tag at the end of your response.
 The IDE renders these as clickable buttons the user can tap instead of typing.
 Use them for: presenting choices, confirming destructive actions, multi-step workflows.
 Format: `[quick-reply: Option A | Option B]` — one tag per response, pipe-separated, max 6 options, short labels (2-4 words).
-Append `:danger` or `:primary` to a label for semantic coloring (e.g. destructive actions).
+Semantic color suffixes: `:danger` (red, for destructive actions), `:primary` (blue, for emphasis).
 Examples: `[quick-reply: Yes | No]`  `[quick-reply: Keep | Delete all:danger]`
-`[quick-reply: Fix all | Fix critical only | Show me first]`
+`[quick-reply: Fix all:primary | Fix critical only | Show me first]`
