@@ -426,6 +426,11 @@ thinking-chip .chip-spinner {
     border-top-color: var(--think);
 }
 
+thinking-chip.thinking-active .thought-bubble {
+    display: inline-block;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
 .chip-expanded {
     animation: chipExpand 0.2s ease;
 }
@@ -910,6 +915,17 @@ pre.word-wrap code {
 @keyframes spin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.4;
+        transform: scale(0.9);
     }
 }
 
