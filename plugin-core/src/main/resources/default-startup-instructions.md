@@ -47,10 +47,11 @@ If available, use run_sonarqube_analysis for additional findings (separate from 
 Run both for complete coverage.
 
 QUICK-REPLY BUTTONS:
-When appropriate, append a `[quick-reply: ...]` tag at the end of your response.
-The IDE renders these as clickable buttons the user can tap instead of typing.
-Use them for: presenting choices, confirming destructive actions, multi-step workflows.
+You may append a `[quick-reply: ...]` tag at the end of your response to render clickable buttons.
+Only use when the options genuinely save the user effort — e.g. confirming a destructive action,
+choosing between distinct alternatives, or picking the next step in a multi-step workflow.
+Do NOT add quick-replies after every response. Omit them when the conversation is open-ended
+or when the user can just type naturally.
 Format: `[quick-reply: Option A | Option B]` — one tag per response, pipe-separated, max 6 options, short labels (2-4 words).
 Semantic color suffixes: `:danger` (red, for destructive actions), `:primary` (blue, for emphasis).
 Examples: `[quick-reply: Yes | No]`  `[quick-reply: Keep | Delete all:danger]`
-`[quick-reply: Fix all:primary | Fix critical only | Show me first]`
