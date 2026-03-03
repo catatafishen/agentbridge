@@ -19,35 +19,15 @@
   4. BEFORE EDITING UNFAMILIAR FILES: If you get old_str match failures, \
      call format_code first to normalize whitespace, then re-read.
 
-  5. CLEAN AS YOU CODE: When editing a file, also fix pre-existing warnings \
-     (unused imports, redundant casts, missing annotations, etc.) — not just issues caused by your change.
-
-  6. GIT: ALWAYS use built-in git tools (git_status, git_diff, git_log, git_commit, etc.). \
+  5. GIT: Use built-in git tools (git_status, git_diff, git_log, git_commit, etc.). \
      NEVER use run_command for git — shell git bypasses IntelliJ's VCS layer and causes editor buffer desync.
 
-  7. GIT WRITE RESTRICTION (sub-agents): If you are a sub-agent (launched via the Task tool), \
-     you MUST NOT use git write commands: git_commit, git_stage, git_unstage, git_branch, git_stash. \
-     Only the parent agent may perform git writes. Read-only git tools (git_status, git_diff, git_log, \
-     git_show, git_blame) are allowed.
+  6. GrazieInspection (grammar) does NOT support apply_quickfix → use intellij_write_file instead.
 
-  8. GrazieInspection (grammar) does NOT support apply_quickfix → use intellij_write_file instead.
-
-  9. VERIFICATION HIERARCHY (use the lightest tool that suffices): \
+  7. VERIFICATION HIERARCHY (use the lightest tool that suffices): \
      a) Auto-highlights in write response → after EACH edit. Instant. Catches most errors. \
      b) get_compilation_errors() → after editing multiple files. Fast scan of open files. \
-     c) build_project → ONLY before committing. Full incremental compilation. \
-     NEVER use build_project as first error check — it's 100x slower than highlights. \
-     If "Build already in progress", wait and retry.
-
-  KEY PRINCIPLES:
-
-  - Related changes → ONE commit. Unrelated changes → SEPARATE commits.
-  - Skip grammar (GrazieInspection) unless user specifically requests it.
-  - Skip generated files (gradlew.bat, logs).
-
-  SONARQUBE FOR IDE:
-  If available, run run_sonarqube_analysis for additional findings (separate from IntelliJ inspections). \
-  Run both for complete coverage.
+     c) build_project. Full incremental compilation. If "Build already in progress", wait and retry.
 
   SUB-AGENT TOOL GUIDANCE:
   Sub-agents do not see these instructions. When launching sub-agents via the Task tool, \
@@ -161,37 +141,6 @@ progressively cleaner with every touch.
 | `InterruptedException`    | Always call `Thread.currentThread().interrupt()` after catching     | Suppress                 |
 | Unused parameters/methods | Remove if truly unused; keep only if required by interface/override | Suppress private methods |
 | Deprecated JetBrains API  | Replace with the recommended alternative                            | Keep using it            |
-
----
-
-## Deploying to Main IDE
-
-The sandbox IDE (`runIde`) picks up code changes automatically. The **main IDE does not** — you must manually rebuild
-and deploy after each change.
-
-**After every code change, run these 3 commands:**
-
-```bash
-cd /path/to/ide-agent-for-copilot
-
-# 1. Build the plugin zip
-./gradlew :plugin-core:buildPlugin -x buildSearchableOptions --quiet
-
-# 2. Remove the old installed plugin
-rm -rf ~/.local/share/JetBrains/IntelliJIdea2025.3/plugin-core
-
-# 3. Extract the new one (use latest zip)
-unzip -q "$(ls -t plugin-core/build/distributions/*.zip | head -1)" -d ~/.local/share/JetBrains/IntelliJIdea2025.3/
-```
-
-Then tell the user to **restart the main IDE**.
-
-> **Key points:**
-> - Install path: `~/.local/share/JetBrains/IntelliJIdea2025.3/plugin-core/` — no `plugins/` subfolder
-    (Toolbox-managed layout)
-> - **Must** `rm -rf` the old folder first — otherwise stale JARs remain
-> - `-x buildSearchableOptions` is required — that task tries to launch an IDE which conflicts with the running one
-> - Zip filename includes a commit hash (e.g. `plugin-core-0.2.0-2bb9797.zip`), so always use `ls -t ... | head -1`
 
 ---
 
