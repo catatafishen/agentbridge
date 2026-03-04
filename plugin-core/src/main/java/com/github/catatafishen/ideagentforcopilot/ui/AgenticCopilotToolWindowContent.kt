@@ -472,6 +472,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // Response/chat history area (top of splitter)
         val responsePanel = createResponsePanel()
         responsePanelContainer = JBPanel<JBPanel<*>>(BorderLayout())
+        responsePanelContainer.border = JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0)
         responsePanelContainer.add(responsePanel, BorderLayout.CENTER)
         val topPanel = JBPanel<JBPanel<*>>(BorderLayout())
         val northStack = JBPanel<JBPanel<*>>()

@@ -83,7 +83,6 @@ class StatusBanner(parentDisposable: Disposable) :
                         g2.fillRect(0, 0, width, height)
                         g2.color = borderColor
                         g2.fillRect(0, 0, width, 1)
-                        g2.fillRect(0, height - 1, width, 1)
                     } finally {
                         g2.dispose()
                     }
