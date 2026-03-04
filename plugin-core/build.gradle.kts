@@ -218,12 +218,7 @@ intellijPlatform {
         id = "com.github.catatafishen.ideagentforcopilot"
         name = "IDE Agent for Copilot"
         version = project.version.toString()
-        description = """
-            IDE Agent for Copilot transforms GitHub Copilot from a chat assistant into a coding agent
-            inside your JetBrains IDE. Instead of suggesting code in isolation, the agent can plan
-            and execute multi-step tasks using the same IDE capabilities you use every day — navigation,
-            refactoring, inspections, testing, build tools, and Git — all within a single conversation.
-        """.trimIndent()
+        // Description is maintained in plugin.xml as rich HTML for the marketplace.
 
         ideaVersion {
             sinceBuild = "253"
