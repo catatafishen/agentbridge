@@ -275,8 +275,22 @@ class InfrastructureTools extends AbstractToolHandler {
      * Flush deferred console output and extract text. Must be called on EDT.
      */
     private String readConsoleTextOnEdt(com.intellij.execution.ui.ExecutionConsole console) {
-        flushConsoleOutput(console);
-        return extractConsoleText(console);
+        // Unwrap delegate wrappers (e.g. JavaConsoleWithProfilerWidget in Ultimate)
+        var unwrapped = unwrapConsoleDelegate(console);
+        flushConsoleOutput(unwrapped);
+        return extractConsoleText(unwrapped);
+    }
+
+    /**
+     * Unwrap ConsoleViewWithDelegate wrappers to get the underlying ConsoleView.
+     * IntelliJ Ultimate wraps consoles in profiler/performance widgets.
+     */
+    private com.intellij.execution.ui.ExecutionConsole unwrapConsoleDelegate(
+        com.intellij.execution.ui.ExecutionConsole console) {
+        if (console instanceof com.intellij.execution.ui.ConsoleViewWithDelegate wrapper) {
+            return wrapper.getDelegate();
+        }
+        return console;
     }
 
     private List<com.intellij.execution.ui.RunContentDescriptor> collectRunDescriptors() {
