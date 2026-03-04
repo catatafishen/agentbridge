@@ -20,6 +20,9 @@ class GitWarningBanner(private val project: Project) : InlineBanner("", EditorNo
         try {
             g2.color = background
             g2.fillRect(0, 0, width, height)
+            g2.color = com.intellij.ui.JBColor.border()
+            g2.fillRect(0, 0, width, 1)
+            g2.fillRect(0, height - 1, width, 1)
         } finally {
             g2.dispose()
         }

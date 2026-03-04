@@ -7,7 +7,6 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.EditorNotificationPanel
 import com.intellij.ui.InlineBanner
 import com.intellij.util.Alarm
-import com.intellij.util.ui.GraphicsUtil
 import java.awt.BorderLayout
 import java.awt.Graphics
 import java.awt.event.MouseAdapter
@@ -63,11 +62,17 @@ class StatusBanner(parentDisposable: Disposable) :
             dismiss()
             val banner = object : InlineBanner(message, status) {
                 override fun paintComponent(g: Graphics) {
-                    super.paintComponent(g)
-                    val config = GraphicsUtil.setupAAPainting(g)
-                    g.color = background
-                    g.fillRect(0, 0, width, height)
-                    config.restore()
+                    val g2 = g.create() as java.awt.Graphics2D
+                    try {
+                        g2.color = background
+                        g2.fillRect(0, 0, width, height)
+                        g2.color = com.intellij.ui.JBColor.border()
+                        g2.fillRect(0, 0, width, 1)
+                        g2.fillRect(0, height - 1, width, 1)
+                    } finally {
+                        g2.dispose()
+                    }
+                    paintChildren(g as java.awt.Graphics2D)
                 }
             }
             banner.showCloseButton(true)
