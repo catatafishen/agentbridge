@@ -558,11 +558,12 @@ class ProjectTools extends AbstractToolHandler {
     // ---- edit_project_structure ----
 
     private static final String PARAM_ACTION = "action";
-    private static final String PARAM_MODULE = "module";
     private static final String PARAM_DEPENDENCY_NAME = "dependency_name";
     private static final String PARAM_DEPENDENCY_TYPE = "dependency_type";
     private static final String PARAM_SCOPE = "scope";
     private static final String PARAM_JAR_PATH = "jar_path";
+    private static final String MSG_MODULE_PREFIX = "Module '";
+    private static final String MSG_NOT_FOUND = "' not found";
 
     private String editProjectStructure(JsonObject args) throws Exception {
         String action = args.has(PARAM_ACTION) ? args.get(PARAM_ACTION).getAsString() : "";
@@ -577,7 +578,7 @@ class ProjectTools extends AbstractToolHandler {
     }
 
     private String listModules() {
-        return ApplicationManager.getApplication().<String>runReadAction(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             Module[] modules = ModuleManager.getInstance(project).getModules();
             if (modules.length == 0) {
                 return "No modules found in the project.";
@@ -605,6 +606,8 @@ class ProjectTools extends AbstractToolHandler {
             } else if (entry instanceof com.intellij.openapi.roots.ModuleOrderEntry modEntry) {
                 String depName = modEntry.getModuleName();
                 if (!depName.isEmpty()) {
+                    modDepCount++;
+                    moduleDepNames.add(depName);
                 }
             }
         }
@@ -617,44 +620,55 @@ class ProjectTools extends AbstractToolHandler {
     }
 
     private String listDependencies(JsonObject args) {
-        String moduleName = args.has(PARAM_MODULE) ? args.get(PARAM_MODULE).getAsString() : "";
+        String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
         if (moduleName.isEmpty()) {
             return ToolUtils.ERROR_PREFIX + "'module' parameter is required for list_dependencies";
         }
 
-        return ApplicationManager.getApplication().<String>runReadAction(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
             if (module == null) {
-                return ToolUtils.ERROR_PREFIX + "Module '" + moduleName + "' not found";
+                return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
             }
 
             ModuleRootManager rootManager = ModuleRootManager.getInstance(module);
             StringBuilder sb = new StringBuilder();
             sb.append("Dependencies for module '").append(moduleName).append("':\n");
 
-            int index = 0;
-            for (var entry : rootManager.getOrderEntries()) {
-                if (entry instanceof com.intellij.openapi.roots.JdkOrderEntry jdkEntry) {
-                    sb.append("\n").append(++index).append(". [SDK] ").append(jdkEntry.getPresentableName()).append("\n");
-                } else if (entry instanceof com.intellij.openapi.roots.LibraryOrderEntry libEntry) {
-                    appendLibraryDetail(sb, libEntry, ++index);
-                } else if (entry instanceof com.intellij.openapi.roots.ModuleOrderEntry modEntry) {
-                    String depName = modEntry.getModuleName();
-                    if (!depName.isEmpty()) {
-                        sb.append("\n").append(++index).append(". [Module] ").append(depName);
-                        sb.append("  (scope: ").append(modEntry.getScope().name()).append(")\n");
-                        if (modEntry.isExported()) {
-                            sb.append("   exported: true\n");
-                        }
-                    }
-                }
-            }
+            int index = formatDependencyEntries(sb, rootManager);
 
             if (index == 0) {
                 sb.append("  (no dependencies)\n");
             }
             return sb.toString().trim();
         });
+    }
+
+    private static int formatDependencyEntries(StringBuilder sb, ModuleRootManager rootManager) {
+        int index = 0;
+        for (var entry : rootManager.getOrderEntries()) {
+            if (entry instanceof com.intellij.openapi.roots.JdkOrderEntry jdkEntry) {
+                sb.append("\n").append(++index).append(". [SDK] ").append(jdkEntry.getPresentableName()).append("\n");
+            } else if (entry instanceof com.intellij.openapi.roots.LibraryOrderEntry libEntry) {
+                appendLibraryDetail(sb, libEntry, ++index);
+            } else if (entry instanceof com.intellij.openapi.roots.ModuleOrderEntry modEntry) {
+                index = appendModuleDependencyDetail(sb, modEntry, index);
+            }
+        }
+        return index;
+    }
+
+    private static int appendModuleDependencyDetail(StringBuilder sb,
+                                                    com.intellij.openapi.roots.ModuleOrderEntry modEntry, int index) {
+        String depName = modEntry.getModuleName();
+        if (!depName.isEmpty()) {
+            sb.append("\n").append(++index).append(". [Module] ").append(depName);
+            sb.append("  (scope: ").append(modEntry.getScope().name()).append(")\n");
+            if (modEntry.isExported()) {
+                sb.append("   exported: true\n");
+            }
+        }
+        return index;
     }
 
     private static void appendLibraryDetail(StringBuilder sb,
@@ -677,7 +691,7 @@ class ProjectTools extends AbstractToolHandler {
     }
 
     private String addDependency(JsonObject args) throws Exception {
-        String moduleName = args.has(PARAM_MODULE) ? args.get(PARAM_MODULE).getAsString() : "";
+        String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
         if (moduleName.isEmpty()) {
             return ToolUtils.ERROR_PREFIX + "'module' parameter is required for add_dependency";
         }
@@ -687,7 +701,7 @@ class ProjectTools extends AbstractToolHandler {
         String scopeStr = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : "COMPILE";
         String jarPath = args.has(PARAM_JAR_PATH) ? args.get(PARAM_JAR_PATH).getAsString() : "";
 
-        if ("module".equals(depType)) {
+        if (JSON_MODULE.equals(depType)) {
             if (depName.isEmpty()) {
                 return ToolUtils.ERROR_PREFIX + "'dependency_name' is required when dependency_type is 'module'";
             }
@@ -710,7 +724,7 @@ class ProjectTools extends AbstractToolHandler {
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                String result = ApplicationManager.getApplication().<String>runWriteAction(
+                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
                     () -> doAddModuleDependency(moduleName, depModuleName, scope));
                 future.complete(result);
             } catch (Exception e) {
@@ -724,11 +738,11 @@ class ProjectTools extends AbstractToolHandler {
                                          com.intellij.openapi.roots.DependencyScope scope) {
         Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
         if (module == null) {
-            return ToolUtils.ERROR_PREFIX + "Module '" + moduleName + "' not found";
+            return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
         }
         Module depModule = ModuleManager.getInstance(project).findModuleByName(depModuleName);
         if (depModule == null) {
-            return ToolUtils.ERROR_PREFIX + "Dependency module '" + depModuleName + "' not found";
+            return ToolUtils.ERROR_PREFIX + "Dependency module '" + depModuleName + MSG_NOT_FOUND;
         }
 
         // Check for duplicate
@@ -781,7 +795,7 @@ class ProjectTools extends AbstractToolHandler {
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                String result = ApplicationManager.getApplication().<String>runWriteAction(
+                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
                     () -> doAddLibraryDependency(
                         moduleName, effectiveLibName, absoluteJarPath, scope));
                 future.complete(result);
@@ -796,7 +810,7 @@ class ProjectTools extends AbstractToolHandler {
                                           com.intellij.openapi.roots.DependencyScope scope) {
         Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
         if (module == null) {
-            return ToolUtils.ERROR_PREFIX + "Module '" + moduleName + "' not found";
+            return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
         }
 
         VirtualFile jarFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(absoluteJarPath);
@@ -854,7 +868,7 @@ class ProjectTools extends AbstractToolHandler {
     }
 
     private String removeDependency(JsonObject args) throws Exception {
-        String moduleName = args.has(PARAM_MODULE) ? args.get(PARAM_MODULE).getAsString() : "";
+        String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
         String depName = args.has(PARAM_DEPENDENCY_NAME) ? args.get(PARAM_DEPENDENCY_NAME).getAsString() : "";
 
         if (moduleName.isEmpty()) {
@@ -867,7 +881,7 @@ class ProjectTools extends AbstractToolHandler {
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                String result = ApplicationManager.getApplication().<String>runWriteAction(
+                String result = ApplicationManager.getApplication().runWriteAction((Computable<String>)
                     () -> doRemoveDependency(moduleName, depName));
                 future.complete(result);
             } catch (Exception e) {
@@ -880,7 +894,7 @@ class ProjectTools extends AbstractToolHandler {
     private String doRemoveDependency(String moduleName, String depName) {
         Module module = ModuleManager.getInstance(project).findModuleByName(moduleName);
         if (module == null) {
-            return ToolUtils.ERROR_PREFIX + "Module '" + moduleName + "' not found";
+            return ToolUtils.ERROR_PREFIX + MSG_MODULE_PREFIX + moduleName + MSG_NOT_FOUND;
         }
 
         ModifiableRootModel model = ModuleRootManager.getInstance(module).getModifiableModel();
