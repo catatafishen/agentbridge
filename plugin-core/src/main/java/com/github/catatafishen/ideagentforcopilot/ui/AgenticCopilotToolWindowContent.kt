@@ -491,7 +491,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             currentSessionId = null
             loadModels()
         }
-        northStack.add(copilotBanner)
+        val cb = copilotBanner!!
+        northStack.add(cb)
         val ghBanner = createGhSetupBanner { billing.loadBillingData() }
         northStack.add(ghBanner)
         val gitBanner = GitWarningBanner(project)
@@ -499,6 +500,29 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val sb = StatusBanner(project)
         statusBanner = sb
         northStack.add(sb)
+
+        // Grey separator line — visible only when no banners are showing
+        val bannerSeparator = object : com.intellij.ui.components.JBPanel<com.intellij.ui.components.JBPanel<*>>() {
+            init {
+                isOpaque = false
+                preferredSize = java.awt.Dimension(Int.MAX_VALUE, 1)
+                maximumSize = java.awt.Dimension(Int.MAX_VALUE, 1)
+                minimumSize = java.awt.Dimension(0, 1)
+            }
+
+            override fun paintComponent(g: java.awt.Graphics) {
+                g.color = com.intellij.ui.JBColor.border()
+                g.fillRect(0, 0, width, height)
+            }
+        }
+        northStack.add(bannerSeparator)
+
+        val allBanners = listOf(psiBridgeBanner, cb, ghBanner, gitBanner, sb)
+        val updateSeparator = java.beans.PropertyChangeListener {
+            bannerSeparator.isVisible = allBanners.none { b -> b.isVisible }
+        }
+        allBanners.forEach { it.addPropertyChangeListener("visible", updateSeparator) }
+        bannerSeparator.isVisible = allBanners.none { it.isVisible }
 
         consolePanel.onStatusMessage = { type, message ->
             when (type) {

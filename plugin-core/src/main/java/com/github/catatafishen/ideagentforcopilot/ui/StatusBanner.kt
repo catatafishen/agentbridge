@@ -52,6 +52,7 @@ class StatusBanner(parentDisposable: Disposable) :
 
     init {
         isOpaque = false
+        isVisible = false
         addAncestorListener(object : AncestorListener {
             override fun ancestorAdded(e: AncestorEvent) { /* no-op */
             }
@@ -121,6 +122,7 @@ class StatusBanner(parentDisposable: Disposable) :
 
             currentBanner = banner
             add(banner, BorderLayout.CENTER)
+            isVisible = true
             revalidate()
             repaint()
         }
@@ -138,6 +140,7 @@ class StatusBanner(parentDisposable: Disposable) :
         currentBanner?.let { banner ->
             currentBanner = null
             banner.close()
+            isVisible = false
             // Ensure parent relayouts after InlineBanner's close animation
             SwingUtilities.invokeLater {
                 revalidate()
