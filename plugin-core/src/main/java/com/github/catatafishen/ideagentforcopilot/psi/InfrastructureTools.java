@@ -235,41 +235,53 @@ class InfrastructureTools extends AbstractToolHandler {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
 
-        //noinspection RedundantCast — needed for Computable vs ThrowableComputable overload resolution
-        return ApplicationManager.getApplication().runReadAction((com.intellij.openapi.util.Computable<String>) () -> {
-            try {
-                List<com.intellij.execution.ui.RunContentDescriptor> descriptors = collectRunDescriptors();
-                if (descriptors.isEmpty()) {
-                    return "No Run or Debug panel tabs available.";
-                }
+        try {
+            // Step 1: Find the target descriptor (needs read action)
+            //noinspection RedundantCast — needed for Computable vs ThrowableComputable overload resolution
+            var findResult = ApplicationManager.getApplication()
+                .runReadAction((com.intellij.openapi.util.Computable<Object>) () -> {
+                    var descriptors = collectRunDescriptors();
+                    if (descriptors.isEmpty()) return "No Run or Debug panel tabs available.";
+                    return findTargetRunDescriptor(descriptors, tabName);
+                });
 
-                var result = findTargetRunDescriptor(descriptors, tabName);
-                if (result instanceof String errorMsg) {
-                    return errorMsg;
-                }
+            if (findResult instanceof String errorMsg) return errorMsg;
 
-                var target = (com.intellij.execution.ui.RunContentDescriptor) result;
-                var console = target.getExecutionConsole();
-                if (console == null) {
-                    return "Tab '" + target.getDisplayName() + "' has no console.";
-                }
-
-                String text = extractConsoleText(console);
-                if (text == null || text.isEmpty()) {
-                    return "Tab '" + target.getDisplayName() + "' has no text content (console may still be loading or is an unsupported type).";
-                }
-
-                return formatRunOutput(target.getDisplayName(), text, maxChars);
-            } catch (Exception e) {
-                return "Error reading Run output: " + e.getMessage();
+            var target = (com.intellij.execution.ui.RunContentDescriptor) findResult;
+            var console = target.getExecutionConsole();
+            if (console == null) {
+                return "Tab '" + target.getDisplayName() + "' has no console.";
             }
-        });
+
+            // Step 2: Flush and read on EDT — flushDeferredText() only works
+            // synchronously on the EDT; from other threads it posts async and returns
+            // immediately, so the text would still be empty when we read it.
+            var textRef = new java.util.concurrent.atomic.AtomicReference<String>();
+            ApplicationManager.getApplication().invokeAndWait(() ->
+                textRef.set(readConsoleTextOnEdt(console)));
+
+            String text = textRef.get();
+            if (text == null || text.isEmpty()) {
+                return "Tab '" + target.getDisplayName()
+                    + "' has no text content (console may still be loading or is an unsupported type).";
+            }
+            return formatRunOutput(target.getDisplayName(), text, maxChars);
+        } catch (Exception e) {
+            return "Error reading Run output: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Flush deferred console output and extract text. Must be called on EDT.
+     */
+    private String readConsoleTextOnEdt(com.intellij.execution.ui.ExecutionConsole console) {
+        flushConsoleOutput(console);
+        return extractConsoleText(console);
     }
 
     private List<com.intellij.execution.ui.RunContentDescriptor> collectRunDescriptors() {
         var manager = com.intellij.execution.ui.RunContentManager.getInstance(project);
-        var descriptors = new ArrayList<>(manager.getAllDescriptors());
-        return descriptors;
+        return new ArrayList<>(manager.getAllDescriptors());
     }
 
     private Object findTargetRunDescriptor(List<com.intellij.execution.ui.RunContentDescriptor> descriptors,
@@ -310,7 +322,7 @@ class InfrastructureTools extends AbstractToolHandler {
     }
 
     /**
-     * Extract text from any type of ExecutionConsole (regular, test runner, etc.)
+     * Extract plain text from any type of ExecutionConsole (regular, test runner, etc.)
      */
     private String extractConsoleText(com.intellij.execution.ui.ExecutionConsole console) {
         try {
@@ -399,6 +411,27 @@ class InfrastructureTools extends AbstractToolHandler {
             // Method not available in this version
         } catch (Exception e) {
             LOG.debug("Failed to get test console output", e);
+        }
+    }
+
+    /**
+     * Flush deferred text from console buffers so getText() returns complete output.
+     * Process consoles buffer output and only write to the document periodically.
+     */
+    private void flushConsoleOutput(Object console) {
+        if (console instanceof com.intellij.execution.impl.ConsoleViewImpl consoleView) {
+            consoleView.flushDeferredText();
+            return;
+        }
+        // For wrapped consoles (e.g. test runners), try to get the inner console
+        try {
+            var getConsole = console.getClass().getMethod("getConsole");
+            var innerConsole = getConsole.invoke(console);
+            if (innerConsole instanceof com.intellij.execution.impl.ConsoleViewImpl inner) {
+                inner.flushDeferredText();
+            }
+        } catch (Exception ignored) {
+            // Not all console types have an inner console
         }
     }
 
