@@ -267,7 +267,7 @@ public final class PsiBridgeService implements Disposable {
         LOG.info("Reload requested, ZIP: " + zipPath);
         ApplicationManager.getApplication().invokeLater(() -> {
             try {
-                // Use reflection — PluginDescriptorLoader and IdeaPluginDescriptorImpl are @ApiStatus.Internal
+                // Use reflection — DynamicPlugins, PluginDescriptorLoader, IdeaPluginDescriptorImpl are @ApiStatus.Internal
                 var buildNumber = com.intellij.ide.plugins.PluginManagerCore.getBuildNumber();
                 Class<?> loaderClass = Class.forName("com.intellij.ide.plugins.PluginDescriptorLoader");
                 var loadMethod = loaderClass.getMethod("loadDescriptorFromArtifact",
@@ -278,15 +278,36 @@ public final class PsiBridgeService implements Disposable {
                     return;
                 }
 
-                Class<?> installerClass = Class.forName("com.intellij.ide.plugins.PluginInstaller");
+                // Check why dynamic reload might fail
+                Class<?> dynamicPluginsClass = Class.forName("com.intellij.ide.plugins.DynamicPlugins");
                 Class<?> descriptorImplClass = Class.forName("com.intellij.ide.plugins.IdeaPluginDescriptorImpl");
-                var installMethod = installerClass.getMethod("installAndLoadDynamicPlugin",
-                    Path.class, descriptorImplClass);
-                boolean ok = (boolean) installMethod.invoke(null, zipPath, descriptor);
-                if (ok) {
+                Object dpInstance = dynamicPluginsClass.getField("INSTANCE").get(null);
+
+                var checkMethod = dynamicPluginsClass.getMethod("checkCanUnloadWithoutRestart", descriptorImplClass);
+                String reason = (String) checkMethod.invoke(dpInstance, descriptor);
+                if (reason != null) {
+                    LOG.warn("Plugin cannot be dynamically reloaded: " + reason);
+                    return;
+                }
+
+                // Unload old plugin, then load new one
+                var pluginId = com.intellij.openapi.extensions.PluginId.getId("com.github.catatafishen.ideagentforcopilot");
+                var currentDesc = com.intellij.ide.plugins.PluginManagerCore.getPlugin(pluginId);
+                if (currentDesc != null) {
+                    var unloadMethod = dynamicPluginsClass.getMethod("unloadPlugin", descriptorImplClass);
+                    boolean unloaded = (boolean) unloadMethod.invoke(dpInstance, currentDesc);
+                    if (!unloaded) {
+                        LOG.warn("Failed to unload current plugin — IDE restart required");
+                        return;
+                    }
+                }
+
+                var loadPluginMethod = dynamicPluginsClass.getMethod("loadPlugin", descriptorImplClass);
+                boolean loaded = (boolean) loadPluginMethod.invoke(dpInstance, descriptor);
+                if (loaded) {
                     LOG.info("Plugin reloaded successfully from: " + zipPath);
                 } else {
-                    LOG.warn("Dynamic reload returned false — IDE restart may be required");
+                    LOG.warn("Failed to load new plugin version — IDE restart required");
                 }
             } catch (Exception e) {
                 LOG.error("Failed to reload plugin", e);
