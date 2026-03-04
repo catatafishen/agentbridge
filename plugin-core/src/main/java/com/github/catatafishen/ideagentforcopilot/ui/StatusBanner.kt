@@ -46,7 +46,7 @@ class StatusBanner(parentDisposable: Disposable) :
         const val WARNING_DISMISS_MS = 15_000
     }
 
-    private val dismissAlarm = Alarm(Alarm.ThreadToUse.SWING_THREAD, parentDisposable)
+    private val dismissAlarm = Alarm(parentDisposable)
     private var currentBanner: InlineBanner? = null
     private var hovered = false
 
