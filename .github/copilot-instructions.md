@@ -145,6 +145,18 @@ progressively cleaner with every touch.
 
 ---
 
+## Build Artifacts — Do Not Edit
+
+The following paths contain **generated build output** — never edit them directly:
+
+- `plugin-core/src/main/resources/chat/chat-components.js` — built from `plugin-core/chat-ui/src/` via `npm run build`
+- `plugin-core/src/main/resources/chat/chat.css` — copied from `plugin-core/chat-ui/src/chat.css` at build time
+- `plugin-core/out/production/` — IntelliJ incremental build output
+
+Always edit the **source** files in `plugin-core/chat-ui/src/` and run the build to regenerate.
+
+---
+
 ## Implementation Decisions
 
 - **Build**: Gradle 8.x with IntelliJ Platform Plugin 2.x
