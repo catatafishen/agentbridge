@@ -501,28 +501,14 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         statusBanner = sb
         northStack.add(sb)
 
-        // Grey separator line — visible only when no banners are showing
-        val bannerSeparator = object : com.intellij.ui.components.JBPanel<com.intellij.ui.components.JBPanel<*>>() {
-            init {
-                isOpaque = false
-                preferredSize = java.awt.Dimension(Int.MAX_VALUE, 1)
-                maximumSize = java.awt.Dimension(Int.MAX_VALUE, 1)
-                minimumSize = java.awt.Dimension(0, 1)
-            }
-
-            override fun paintComponent(g: java.awt.Graphics) {
-                g.color = com.intellij.ui.JBColor.border()
-                g.fillRect(0, 0, width, height)
-            }
-        }
-        northStack.add(bannerSeparator)
-
+        // Toggle a top border on responsePanelContainer: grey when no banners, none when a banner is showing
         val allBanners = listOf(psiBridgeBanner, cb, ghBanner, gitBanner, sb)
-        val updateSeparator = java.beans.PropertyChangeListener {
-            bannerSeparator.isVisible = allBanners.none { b -> b.isVisible }
+        val greyBorder = com.intellij.util.ui.JBUI.Borders.customLine(com.intellij.ui.JBColor.border(), 1, 0, 0, 0)
+        val updateContainerBorder = java.beans.PropertyChangeListener {
+            responsePanelContainer.border = if (allBanners.none { b -> b.isVisible }) greyBorder else null
         }
-        allBanners.forEach { it.addPropertyChangeListener("visible", updateSeparator) }
-        bannerSeparator.isVisible = allBanners.none { it.isVisible }
+        allBanners.forEach { it.addPropertyChangeListener("visible", updateContainerBorder) }
+        responsePanelContainer.border = if (allBanners.none { it.isVisible }) greyBorder else null
 
         consolePanel.onStatusMessage = { type, message ->
             when (type) {
