@@ -116,7 +116,7 @@ progressively cleaner with every touch.
 ### Warnings and Suppressions
 
 - **Do not suppress warnings** — fix the root cause instead
-- No `@SuppressWarnings` as a first resort
+- No `@SuppressWarnings` or `@Suppress` as a first resort
 - No disabling inspection rules to lower the count
 - Investigate every warning: understand WHY it's flagged, then fix the underlying problem
 
@@ -124,6 +124,11 @@ progressively cleaner with every touch.
 
 1. Required by framework (override signature, interface implementation)
 2. Defensive null checks that IntelliJ marks as "always true" but protect against runtime edge cases
+3. Overload disambiguation where the IDE incorrectly flags an explicit type as redundant
+
+**When a suppression is genuinely unavoidable**, always add a code comment on the line above explaining
+**why** the suppression is needed and why fixing the root cause is not possible. A bare `@Suppress` or
+`@SuppressWarnings` without a comment is never acceptable.
 
 ### Priority Order
 

@@ -1324,6 +1324,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val scratchService = com.intellij.ide.scratch.ScratchFileService.getInstance()
                 val scratchRoot = com.intellij.ide.scratch.ScratchRootType.getInstance()
 
+                // Explicit Computable type needed: runWriteAction is overloaded (Computable vs ThrowableComputable)
                 @Suppress("RedundantCast")
                 val file = ApplicationManager.getApplication().runWriteAction(
                     com.intellij.openapi.util.Computable<com.intellij.openapi.vfs.VirtualFile?> {
