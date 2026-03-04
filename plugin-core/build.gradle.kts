@@ -146,6 +146,10 @@ val buildChatUi by tasks.registering {
     }
 }
 
+tasks.named("processResources") {
+    dependsOn(buildChatUi)
+}
+
 // Also include in the distribution ZIP
 tasks.named<Zip>("buildPlugin") {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
