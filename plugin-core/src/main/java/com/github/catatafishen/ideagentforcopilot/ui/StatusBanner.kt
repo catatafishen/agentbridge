@@ -16,6 +16,20 @@ import javax.swing.event.AncestorEvent
 import javax.swing.event.AncestorListener
 
 /**
+ * Returns the theme-aware border color for the given [EditorNotificationPanel.Status].
+ *
+ * The `border` field on [EditorNotificationPanel.Status] is package-private,
+ * so we map each status to its corresponding [com.intellij.util.ui.JBUI.CurrentTheme.Banner] color.
+ */
+internal fun statusBorderColor(status: EditorNotificationPanel.Status): java.awt.Color = when (status) {
+    EditorNotificationPanel.Status.Info -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
+    EditorNotificationPanel.Status.Success -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.SUCCESS_BORDER_COLOR
+    EditorNotificationPanel.Status.Warning -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.WARNING_BORDER_COLOR
+    EditorNotificationPanel.Status.Error -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.ERROR_BORDER_COLOR
+    EditorNotificationPanel.Status.Promo -> com.intellij.util.ui.JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
+}
+
+/**
  * Transient status banner that shows error/warning/info messages above the chat panel.
  *
  * Uses [InlineBanner] for native JetBrains look and feel. Info messages auto-dismiss
@@ -60,17 +74,14 @@ class StatusBanner(parentDisposable: Disposable) :
     private fun show(message: String, status: EditorNotificationPanel.Status) {
         SwingUtilities.invokeLater {
             dismiss()
+            val borderColor = statusBorderColor(status)
             val banner = object : InlineBanner(message, status) {
-                private val statusBorderColor: java.awt.Color =
-                    (border as? javax.swing.border.LineBorder)?.lineColor
-                        ?: com.intellij.ui.JBColor.border()
-
                 override fun paintComponent(g: Graphics) {
                     val g2 = g.create() as java.awt.Graphics2D
                     try {
                         g2.color = background
                         g2.fillRect(0, 0, width, height)
-                        g2.color = statusBorderColor
+                        g2.color = borderColor
                         g2.fillRect(0, 0, width, 1)
                         g2.fillRect(0, height - 1, width, 1)
                     } finally {
