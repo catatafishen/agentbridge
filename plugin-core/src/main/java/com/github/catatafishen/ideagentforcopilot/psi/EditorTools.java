@@ -542,6 +542,8 @@ class EditorTools extends AbstractToolHandler {
             case "groovy", "gvy" -> "groovy";
             case "py" -> "python";
             case "scala" -> "scala";
+            case "js", "mjs" -> "node.js";
+            case "ts", "mts" -> "node.js";
             default -> extension;
         };
 
@@ -570,7 +572,7 @@ class EditorTools extends AbstractToolHandler {
     @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
     private boolean setScriptPath(com.intellij.execution.configurations.RunConfiguration config, String path) {
         for (String method : java.util.List.of("setupFilePath", "setFilePath", "setScriptPath", "setScriptFile",
-            "setMainClassName")) {
+            "setMainScriptFilePath", "setMainClassName")) {
             try {
                 config.getClass().getMethod(method, String.class).invoke(config, path);
                 return true;

@@ -706,7 +706,7 @@ public class McpServer {
 
         addIfEnabled.accept(buildTool("run_scratch_file", "Run Scratch File",
             Map.of(
-                "name", Map.of("type", "string", "description", "Scratch file name with extension (e.g., 'test.kts', 'script.py')"),
+                "name", Map.of("type", "string", "description", "Scratch file name with extension (e.g., 'test.kts', 'script.py', 'hello.js')"),
                 "module", Map.of("type", "string", "description", "Optional: module name for classpath (e.g., 'plugin-core')"),
                 "interactive", Map.of("type", "boolean", "description", "Optional: enable interactive/REPL mode (Kotlin scripts)")
             ),
