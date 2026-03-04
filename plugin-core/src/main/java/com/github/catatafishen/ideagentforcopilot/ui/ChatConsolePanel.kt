@@ -1030,8 +1030,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             if (custom != null) return "b64('${b64(custom)}')"
         }
         val encoded = b64(
-            "<div class='tool-result-label'>Output:</div>" +
-                "<pre class='tool-output'><code>${esc(details)}</code></pre>"
+            "<pre class='tool-output'><code>${esc(details)}</code></pre>"
         )
         return "b64('$encoded')"
     }
