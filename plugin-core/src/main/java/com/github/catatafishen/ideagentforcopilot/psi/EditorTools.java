@@ -581,6 +581,10 @@ class EditorTools extends AbstractToolHandler {
                     return;
                 }
 
+                // 1b. Open the scratch in the editor so the user can follow along
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                    .openFile(scratchFile, false);
+
                 // 2. Find appropriate configuration type for this file extension
                 String extension = scratchFile.getExtension();
                 var configType = findScratchConfigType(extension);
