@@ -98,7 +98,13 @@ final class FileAccessTracker {
     private static void refreshProjectView(Project project) {
         SwingUtilities.invokeLater(() -> {
             try {
-                ProjectView.getInstance(project).refresh();
+                var pane = ProjectView.getInstance(project).getCurrentProjectViewPane();
+                if (pane != null && pane.getTree() != null) {
+                    // Repaint the tree directly to re-trigger decorators on visible nodes.
+                    // ProjectView.refresh() rebuilds tree structure but may skip
+                    // re-decoration of nodes whose structure hasn't changed.
+                    pane.getTree().repaint();
+                }
             } catch (Exception ignored) {
                 // Project view may not be available
             }
