@@ -144,6 +144,9 @@ public final class ToolRegistry {
 
         // ── Refactoring ───────────────────────────────────────────────────────────
         new ToolEntry("refactor", "Refactor", "Rename, extract method, inline, or safe-delete a symbol using IntelliJ's refactoring engine", Category.REFACTOR, false, false, false),
+        new ToolEntry("replace_symbol_body", "Replace Symbol Body", "Replace the entire definition of a symbol (method, class, field) by name — no line numbers needed", Category.REFACTOR, false, false, true),
+        new ToolEntry("insert_before_symbol", "Insert Before Symbol", "Insert content before a symbol definition", Category.REFACTOR, false, false, true),
+        new ToolEntry("insert_after_symbol", "Insert After Symbol", "Insert content after a symbol definition", Category.REFACTOR, false, false, true),
         new ToolEntry("optimize_imports", "Optimize Imports", "Remove unused imports and organize them according to code style", Category.REFACTOR, false, false, false),
         new ToolEntry("format_code", "Format Code", "Format a file using IntelliJ's configured code style", Category.REFACTOR, false, false, false),
         new ToolEntry("suppress_inspection", "Suppress Inspection", "Insert a suppress annotation or comment for a specific inspection at a given line", Category.REFACTOR, false, false, false),

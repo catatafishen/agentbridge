@@ -116,19 +116,23 @@ public final class PlatformApiCompat {
      *
      * <p>This wrapper catches the reflection failure and returns null, allowing the caller
      * to skip the incompatible tool gracefully instead of aborting the entire inspection run.
-     * We catch {@code Exception} (not just {@code RuntimeException}) because
-     * {@code NoSuchMethodException} is a checked exception that can propagate unchecked
-     * from Kotlin-compiled platform code.</p>
+     * We catch {@code Throwable} (not just {@code Exception}) because the platform's reflective
+     * instantiation in {@code createPresentation()} can throw both checked exceptions
+     * ({@code NoSuchMethodException}) and {@code Error} subclasses
+     * ({@code ExceptionInInitializerError}, {@code NoClassDefFoundError}) depending on
+     * the IDE version and the third-party plugin's class loading state.</p>
      */
     static @Nullable InspectionToolResultExporter getInspectionPresentation(
         @NotNull GlobalInspectionContextEx ctx, @NotNull InspectionToolWrapper<?, ?> toolWrapper) {
         try {
             return ctx.getPresentation(toolWrapper);
-        } catch (Exception e) {
+        } catch (Throwable t) {
             // Constructor mismatch in a third-party inspection plugin's presentation class.
             // Common with DuplicateInspectionPresentation when IDE version != target platform.
+            // Catch Throwable (not just Exception) because the platform's reflective instantiation
+            // can throw Error subclasses (e.g., ExceptionInInitializerError, NoClassDefFoundError).
             LOG.debug("Skipping inspection tool '" + toolWrapper.getShortName()
-                + "' — presentation class incompatible: " + e.getMessage());
+                + "' — presentation class incompatible: " + t.getMessage());
             return null;
         }
     }
@@ -242,6 +246,11 @@ public final class PlatformApiCompat {
      * immediately. Instead, it registers a {@code DataPackChangeListener} and triggers a VCS log
      * refresh. When the log finishes refreshing (and the new commit is indexed), it navigates.
      * <p>
+     * Note: {@code DataPack} is deprecated (scheduled for removal) but there is no non-internal
+     * replacement listener API yet. {@code VcsLogProgress.ProgressListener} exists but requires
+     * {@code VcsLogData.DATA_PACK_REFRESH} which is {@code @ApiStatus.Internal}. Using deprecated
+     * APIs only produces a verifier warning, while internal APIs produce a verifier failure.
+     * <p>
      * This avoids the "Commit or reference 'xxx' not found" notification that
      * {@code showRevisionInMainLog} shows when called before the log has indexed a new commit.
      * <p>
@@ -262,13 +271,13 @@ public final class PlatformApiCompat {
 
         var navigated = new java.util.concurrent.atomic.AtomicBoolean(false);
         com.intellij.vcs.log.data.DataPackChangeListener[] listenerRef =
-            new com.intellij.vcs.log.data.DataPackChangeListener[1];
+                new com.intellij.vcs.log.data.DataPackChangeListener[1];
 
         listenerRef[0] = dataPack -> {
             if (!navigated.compareAndSet(false, true)) return;
             data.removeDataPackChangeListener(listenerRef[0]);
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
+                    com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
         };
 
         data.addDataPackChangeListener(listenerRef[0]);
@@ -284,11 +293,11 @@ public final class PlatformApiCompat {
 
         // Timeout: clean up listener after 5 seconds to prevent leak
         com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService()
-            .schedule(() -> {
-                if (navigated.compareAndSet(false, true)) {
-                    data.removeDataPackChangeListener(listenerRef[0]);
-                }
-            }, 5, java.util.concurrent.TimeUnit.SECONDS);
+                .schedule(() -> {
+                    if (navigated.compareAndSet(false, true)) {
+                        data.removeDataPackChangeListener(listenerRef[0]);
+                    }
+                }, 5, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     /**

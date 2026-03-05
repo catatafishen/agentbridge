@@ -180,8 +180,8 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    CLI["Copilot CLI"] -- stdio --> MCP["MCP Server (JAR)<br/>intellij-code-tools"]
-    MCP -- HTTP --> PSI["PsiBridgeService<br/>(IntelliJ process)"]
+    CLI["Copilot CLI"] -->|stdio| MCP["MCP Server (JAR)\nintelij-code-tools"]
+    MCP -->|HTTP| PSI["PsiBridgeService\n(IntelliJ process)"]
 ```
 
 - **MCP Server** (`mcp-server/`): Standalone JAR, stdio protocol, routes tool calls to PSI bridge
@@ -198,12 +198,52 @@ Every file write through `intellij_write_file` triggers:
 
 This runs inside a single undoable command group on the EDT.
 
+### JCEF Cursor Bridge
+
+JCEF does **not** propagate CSS `cursor` values to the Swing host component. Setting
+`cursor: grab` in CSS changes the cursor inside the Chromium renderer, but the Swing
+`JComponent` that wraps the browser ignores it — the user sees the default arrow.
+
+All cursor changes must go through a three-layer bridge:
+
+```
+CSS (visual only) → JS mouseover / event handler → _bridge.setCursor(name) → Kotlin → java.awt.Cursor
+```
+
+**Layer 1 — CSS** (`chat.css`): Declare `cursor:` as usual for web styling. This is still
+needed for the in-browser rendering but has **no effect** on the actual Swing cursor.
+
+**Layer 2 — JavaScript** (`index.ts` + component files):
+- A global `mouseover` listener in `index.ts` maps element selectors to cursor names
+  (e.g. `.chip-strip` → `'grab'`, `.tool-popup-resize` → `'nwse-resize'`).
+- For **dynamic** cursor changes (drag-in-progress, resize-in-progress), the component must
+  call `globalThis._bridge?.setCursor()` directly in its `mousedown`/`mouseup` handlers,
+  because `mouseover` doesn't fire when a CSS class is toggled on the current element.
+
+**Layer 3 — Kotlin** (`ChatConsolePanel.kt`): The `cursorQuery` handler maps string names
+to `java.awt.Cursor` constants:
+
+| Bridge value      | Java cursor                  |
+|-------------------|------------------------------|
+| `"pointer"`       | `HAND_CURSOR`                |
+| `"text"`          | `TEXT_CURSOR`                |
+| `"grab"`, `"grabbing"` | `MOVE_CURSOR`          |
+| `"nwse-resize"`   | `SE_RESIZE_CURSOR`           |
+| anything else     | `DEFAULT_CURSOR`             |
+
+**When adding a new interactive cursor:**
+
+1. Add the CSS `cursor:` property (for in-browser rendering)
+2. Add the selector to the `mouseover` handler in `index.ts`, **or** call
+   `globalThis._bridge?.setCursor()` directly from the component's event handlers
+3. Add the string → `java.awt.Cursor` mapping in `ChatConsolePanel.kt`
+
 ## Key Files
 
 | File                                                    | Purpose                                     |
 |---------------------------------------------------------|---------------------------------------------|
 | `plugin-core/.../bridge/AcpClient.java`              | ACP client, permission handler, retry logic |
-| `plugin-core/.../psi/PsiBridgeService.java`             | 80 MCP tools via IntelliJ APIs              |
+| `plugin-core/.../psi/PsiBridgeService.java`             | 83 MCP tools via IntelliJ APIs              |
 | `plugin-core/.../services/CopilotService.java`          | Service entry point, starts ACP client      |
 | `plugin-core/.../ui/AgenticCopilotToolWindowContent.kt` | Main UI (Kotlin Swing)                      |
 | `mcp-server/.../mcp/McpServer.java`                     | MCP stdio server, tool registrations        |

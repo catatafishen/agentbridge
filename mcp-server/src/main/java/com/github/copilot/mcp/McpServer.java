@@ -794,6 +794,33 @@ public class McpServer {
             ),
             List.of("operation", "file", "symbol")));
 
+        addIfEnabled.accept(buildTool("replace_symbol_body", "Replace the entire body of a symbol (method, class, function, field) with new content. Resolves symbols by name using IntelliJ's PSI, so you don't need to know exact line numbers.",
+            Map.of(
+                "file", Map.of("type", "string", "description", "Path to the file containing the symbol"),
+                "symbol", Map.of("type", "string", "description", "Name of the symbol to replace (method, class, function, or field)"),
+                "new_body", Map.of("type", "string", "description", "The complete new definition to replace the symbol with"),
+                "line", Map.of("type", "integer", "description", "Optional: line number hint to disambiguate if multiple symbols share the same name")
+            ),
+            List.of("file", "symbol", "new_body")));
+
+        addIfEnabled.accept(buildTool("insert_before_symbol", "Insert content before a symbol definition. Useful for adding methods, fields, annotations, or comments before an existing symbol.",
+            Map.of(
+                "file", Map.of("type", "string", "description", "Path to the file containing the symbol"),
+                "symbol", Map.of("type", "string", "description", "Name of the symbol to insert before"),
+                "content", Map.of("type", "string", "description", "The content to insert before the symbol"),
+                "line", Map.of("type", "integer", "description", "Optional: line number hint to disambiguate if multiple symbols share the same name")
+            ),
+            List.of("file", "symbol", "content")));
+
+        addIfEnabled.accept(buildTool("insert_after_symbol", "Insert content after a symbol definition. Useful for adding new methods, fields, or classes after an existing symbol.",
+            Map.of(
+                "file", Map.of("type", "string", "description", "Path to the file containing the symbol"),
+                "symbol", Map.of("type", "string", "description", "Name of the symbol to insert after"),
+                "content", Map.of("type", "string", "description", "The content to insert after the symbol"),
+                "line", Map.of("type", "integer", "description", "Optional: line number hint to disambiguate if multiple symbols share the same name")
+            ),
+            List.of("file", "symbol", "content")));
+
         addIfEnabled.accept(buildTool("go_to_declaration", "Go To Declaration",
             Map.of(
                 "file", Map.of("type", "string", "description", "Path to the file containing the symbol usage"),

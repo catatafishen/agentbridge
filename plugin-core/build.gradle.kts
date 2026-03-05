@@ -322,6 +322,10 @@ intellijPlatform {
             create(IntelliJPlatformType.PyCharmProfessional, "2025.3")
             create(IntelliJPlatformType.WebStorm, "2025.3")
             create(IntelliJPlatformType.GoLand, "2025.3")
+            // Note: Android Studio verification via Gradle plugin is broken
+            // (URL resolution bug in IntelliJPlatformGradlePlugin). Android Studio
+            // Panda 2 (2025.3.2) uses platform build 253.30387.90 — same base as
+            // IntelliJ IDEA 2025.3 which we verify above via recommended().
         }
     }
 }

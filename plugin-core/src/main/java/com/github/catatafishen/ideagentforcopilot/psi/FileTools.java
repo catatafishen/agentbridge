@@ -57,6 +57,14 @@ class FileTools extends AbstractToolHandler {
         java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
 
     /**
+     * Queue a file for deferred auto-format (reformat + optimize imports).
+     * Called by other tool handlers (e.g., SymbolEditingTools) that modify files.
+     */
+    void queueAutoFormat(String path) {
+        pendingAutoFormat.add(path);
+    }
+
+    /**
      * Extract context lines around an edit region for the response.
      * Returns ~5 lines before and after the edited region so the agent
      * can see what the file looks like post-edit/format.

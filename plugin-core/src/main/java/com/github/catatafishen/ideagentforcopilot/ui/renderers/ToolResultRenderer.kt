@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import java.util.Base64
+import java.util.*
 
 /**
  * Interface for custom tool-result renderers in the chat panel.
@@ -59,6 +59,16 @@ internal object ToolRenderers {
         "run_command" to RunCommandRenderer,
         // HTTP
         "http_request" to HttpRequestRenderer,
+        // File I/O
+        "intellij_read_file" to ReadFileRenderer,
+        "read_file" to ReadFileRenderer,
+        "intellij_write_file" to WriteFileRenderer,
+        "write_file" to WriteFileRenderer,
+        "create_file" to WriteFileRenderer,
+        // Symbol editing
+        "replace_symbol_body" to ReplaceSymbolRenderer,
+        "insert_before_symbol" to ReplaceSymbolRenderer,
+        "insert_after_symbol" to ReplaceSymbolRenderer,
     )
 
     fun get(toolName: String): ToolResultRenderer? = registry[toolName]

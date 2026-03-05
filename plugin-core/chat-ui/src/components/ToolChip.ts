@@ -1,5 +1,6 @@
-import {collapseAllChips, escHtml} from '../helpers';
+import {escHtml} from '../helpers';
 import {toolDisplayName} from '../toolDisplayName';
+import {dismissToolPopup, isToolPopupVisibleFor, showToolPopup} from './ToolPopup';
 
 export default class ToolChip extends HTMLElement {
     static get observedAttributes(): string[] {
@@ -60,20 +61,10 @@ export default class ToolChip extends HTMLElement {
         this._resolveLink();
         const section = this._linkedSection;
         if (!section) return;
-        collapseAllChips(this.closest('chat-message'), this);
-        if (section.classList.contains('turn-hidden')) {
-            section.classList.remove('turn-hidden');
-            section.classList.add('chip-expanded');
-            this.style.opacity = '0.5';
-            this.setAttribute('aria-expanded', 'true');
+        if (isToolPopupVisibleFor(this)) {
+            dismissToolPopup();
         } else {
-            this.style.opacity = '1';
-            section.classList.add('collapsing');
-            setTimeout(() => {
-                section.classList.remove('collapsing', 'chip-expanded');
-                section.classList.add('turn-hidden');
-            }, 250);
-            this.setAttribute('aria-expanded', 'false');
+            showToolPopup(this, section);
         }
     }
 

@@ -1,6 +1,6 @@
 # IDE Agent for Copilot — Features
 
-> **80 tools** across 10 categories — the most comprehensive AI agent integration for JetBrains IDEs.
+> **83 tools** across 10 categories — the most comprehensive AI agent integration for JetBrains IDEs.
 
 IDE Agent for Copilot connects GitHub Copilot's agentic mode directly to IntelliJ's internal APIs.
 Every file edit, refactoring, inspection, and git operation goes through IntelliJ's own engine — not
@@ -71,6 +71,16 @@ update all references, extract method with proper scope analysis, and more.
 
 - **`refactor`** — Perform rename, extract method, inline, or safe-delete operations
 - **`get_documentation`** — Retrieve Javadoc/KDoc for any symbol by fully qualified name
+
+### Symbol-Level Editing
+
+Edit code by symbol name instead of line numbers. The agent resolves symbols using IntelliJ's PSI,
+so edits stay correct even when line numbers shift. Disambiguation by line hint when multiple symbols
+share the same name.
+
+- **`replace_symbol_body`** — Replace the entire definition of a method, class, or field by name
+- **`insert_before_symbol`** — Insert content (methods, annotations, comments) before a symbol
+- **`insert_after_symbol`** — Insert content (methods, fields, classes) after a symbol
 
 ---
 
@@ -190,7 +200,7 @@ The chat interface is a full-featured agent console built on JCEF (Chromium).
 
 Fine-grained control over what the agent can do.
 
-- **Per-tool permissions** — Allow, Ask, or Deny for each of the 80 tools
+- **Per-tool permissions** — Allow, Ask, or Deny for each of the 83 tools
 - **Path-based rules** — different permissions for project files vs. files outside the project
 - **Built-in edit interception** — Copilot CLI file edits are redirected through IntelliJ's document API so every change
   is undoable

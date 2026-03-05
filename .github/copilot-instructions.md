@@ -187,3 +187,12 @@ Always edit the **source** files in `plugin-core/chat-ui/src/` and run the build
 - **Development**: Sandbox-first with `./restart-sandbox.sh` for fast reload
 - **Testing**: JUnit 5, unit tests via `run_tests`
 - **All code**: Java 21. Kotlin shims only when IntelliJ API requires it.
+
+### JCEF Cursor Bridge
+
+CSS `cursor` values in the JCEF chat panel do **not** propagate to the Swing host. All cursor
+changes must go through `_bridge.setCursor(name)` in JS → `cursorQuery` handler in
+`ChatConsolePanel.kt` → `java.awt.Cursor`. When adding interactive cursors (drag, resize),
+update all three layers: CSS, the JS `mouseover` handler in `index.ts` (or direct bridge calls
+in event handlers), and the Kotlin cursor mapping. See `DEVELOPMENT.md` § "JCEF Cursor Bridge"
+for the full reference.

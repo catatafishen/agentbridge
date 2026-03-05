@@ -132,6 +132,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     browser.component.cursor = when (type) {
                         "pointer" -> java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
                         "text" -> java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.TEXT_CURSOR)
+                        "grab", "grabbing" -> java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.MOVE_CURSOR)
+                        "nwse-resize" -> java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.SE_RESIZE_CURSOR)
                         else -> java.awt.Cursor.getDefaultCursor()
                     }
                 }

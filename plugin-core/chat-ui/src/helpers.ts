@@ -6,9 +6,12 @@ export function b64(s: string): string {
     return new TextDecoder().decode(b);
 }
 
+import {dismissToolPopup} from './components/ToolPopup';
+
 /** Collapse all expanded chip sections in a container, optionally except one. */
 export function collapseAllChips(container: Element | null, except?: Element): void {
     if (!container) return;
+    dismissToolPopup();
     container.querySelectorAll('tool-chip, thinking-chip, subagent-chip').forEach(chip => {
         if (chip === except) return;
         const section = (chip as any)._linkedSection as HTMLElement | undefined;

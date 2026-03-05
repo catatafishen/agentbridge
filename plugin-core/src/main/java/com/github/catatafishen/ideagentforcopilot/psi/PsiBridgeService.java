@@ -73,6 +73,7 @@ public final class PsiBridgeService implements Disposable {
             fileTools,
             new CodeQualityTools(project),
             refactoringTools,
+            new SymbolEditingTools(project, fileTools),
             new TestTools(project, refactoringTools),
             new ProjectTools(project),
             new GitTools(project, gitToolHandler),

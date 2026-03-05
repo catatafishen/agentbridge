@@ -26,17 +26,17 @@ formatting, test execution, git operations, and file operations.
 
 ```mermaid
 graph TD
-    subgraph IntelliJ IDEA Plugin
-        TW["🖥️ Tool Window<br/>(Swing / JCEF chat)"]
-        ACP["AcpClient<br/>JSON-RPC 2.0 · Permission handler<br/>Streaming · Retry logic"]
-        PSI["PsiBridgeService<br/>(HTTP server)<br/>80 MCP tools"]
-        TW -- "prompts /<br/>context" --> ACP
-        ACP -- "streaming<br/>responses" --> TW
+    subgraph ij["IntelliJ IDEA Plugin"]
+        TW["Tool Window\n(Swing / JCEF chat)"]
+        ACP["AcpClient\nJSON-RPC 2.0\nPermission handler"]
+        PSI["PsiBridgeService\n(HTTP server)\n83 MCP tools"]
+        TW -->|"prompts /\ncontext"| ACP
+        ACP -->|"streaming\nresponses"| TW
     end
 
-    ACP -- "stdin / stdout" <--> CLI["Copilot CLI --acp<br/>Agent reasoning<br/>Tool selection"]
-    CLI -- stdio --> MCP["MCP Server (JAR)<br/>intellij-code-tools"]
-    MCP -- HTTP --> PSI
+    ACP <-->|"stdin / stdout"| CLI["Copilot CLI --acp\nAgent reasoning\nTool selection"]
+    CLI -->|stdio| MCP["MCP Server (JAR)\nintelij-code-tools"]
+    MCP -->|HTTP| PSI
 ```
 
 ### Key Design: IntelliJ-Native File Operations
@@ -58,21 +58,21 @@ intellij-copilot-plugin/
 │       ├── ui/           # Tool Window (Swing)
 │       ├── services/     # CopilotService, CopilotSettings
 │       ├── bridge/       # AcpClient (ACP protocol)
-│       └── psi/          # PsiBridgeService (80 MCP tools)
+│       └── psi/          # PsiBridgeService (83 MCP tools)
 ├── mcp-server/           # MCP stdio server (bundled JAR)
 │   └── src/main/java/com/github/copilot/mcp/
 │       └── McpServer.java
 └── integration-tests/    # (placeholder)
 ```
 
-## MCP Tools (80 tools)
+## MCP Tools (83 tools)
 
 | Category            | Tools                                                                                                                                                                                                                   |
 |---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **Code Navigation** | `search_symbols`, `get_file_outline`, `get_class_outline`, `find_references`, `list_project_files`, `search_text`                                                                                                                                                             |
 | **File I/O**        | `intellij_read_file`, `intellij_write_file`, `create_file`, `delete_file`, `undo`, `reload_from_disk`                                                                                                                                                                         |
 | **Code Quality**    | `get_problems`, `get_highlights`, `run_inspections`, `apply_quickfix`, `suppress_inspection`, `optimize_imports`, `format_code`, `add_to_dictionary`, `get_compilation_errors`, `run_qodana`, `run_sonarqube_analysis`*                                                        |
-| **Refactoring**     | `refactor`, `go_to_declaration`, `get_type_hierarchy`, `get_documentation`                                                                                                                                                                                                     |
+| **Refactoring**     | `refactor`, `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`, `go_to_declaration`, `get_type_hierarchy`, `get_documentation`                                                                                                                                                                                                     |
 | **Testing**         | `list_tests`, `run_tests`, `get_coverage`                                                                                                                                                                                                                                      |
 | **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `download_sources`, `mark_directory`, `edit_project_structure`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`, `delete_run_configuration`                    |
 | **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_revert`, `git_show`, `git_push`, `git_remote`, `git_fetch`, `git_pull`, `git_merge`, `git_rebase`, `git_cherry_pick`, `git_tag`, `git_reset`     |

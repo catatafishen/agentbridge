@@ -6,10 +6,10 @@ function flush() {
 }
 
 describe('Web Components Registration', () => {
-    it('all 15 custom elements are defined', () => {
+    it('all 16 custom elements are defined', () => {
         const tags = [
             'chat-container', 'chat-message', 'message-bubble', 'message-meta',
-            'thinking-block', 'tool-section', 'tool-chip', 'thinking-chip',
+            'thinking-block', 'tool-section', 'tool-chip', 'tool-popup', 'thinking-chip',
             'subagent-chip', 'quick-replies',
             'session-divider', 'load-more',
         ];
@@ -171,23 +171,6 @@ describe('tool-section', () => {
         expect(header.textContent).toBe('Read File');
     });
 
-    it('clicking header collapses section', () => {
-        // Set up chip linked to section
-        section.id = 'ts-1';
-        section.classList.remove('turn-hidden');
-        section.classList.add('chip-expanded');
-        const chip = document.createElement('tool-chip');
-        chip.setAttribute('label', 'Read File');
-        chip.setAttribute('status', 'complete');
-        chip.dataset.chipFor = 'ts-1';
-        document.body.appendChild(chip);
-        chip.style.opacity = '0.5';
-
-        section.querySelector('.tool-section-header').click();
-        expect(chip.style.opacity).toBe('1');
-        expect(chip.getAttribute('aria-expanded')).toBe('false');
-    });
-
     it('updateStatus is a no-op (status tracked on chip)', () => {
         section.updateStatus('completed');
         section.updateStatus('failed');
@@ -227,14 +210,16 @@ describe('tool-chip', () => {
         expect(chip.classList.contains('failed')).toBe(true);
     });
 
-    it('linkSection connects chip to section toggle', () => {
+    it('linkSection connects chip to section and opens popup on click', () => {
         const section = document.createElement('tool-section');
         section.setAttribute('title', 'Read File');
         document.body.appendChild(section);
         chip.linkSection(section);
-        // Clicking chip should toggle section visibility
+        // Clicking chip should open the floating popup
         chip.click();
-        expect(section.classList.contains('turn-hidden')).toBe(false);
+        const popup = document.querySelector('tool-popup');
+        expect(popup).not.toBeNull();
+        expect(popup.classList.contains('tool-popup-hidden')).toBe(false);
     });
 });
 
