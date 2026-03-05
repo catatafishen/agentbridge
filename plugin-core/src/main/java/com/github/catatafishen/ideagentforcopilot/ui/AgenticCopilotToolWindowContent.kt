@@ -1483,7 +1483,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         SwingUtilities.invokeLater {
             consolePanel.component.revalidate()
             consolePanel.component.repaint()
-            promptTextArea.requestFocusInWindow()
+            if (com.github.catatafishen.ideagentforcopilot.services.CopilotSettings.getFollowAgentFiles()) {
+                promptTextArea.requestFocusInWindow()
+            }
         }
     }
 

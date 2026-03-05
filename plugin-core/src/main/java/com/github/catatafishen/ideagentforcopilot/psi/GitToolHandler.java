@@ -666,6 +666,16 @@ final class GitToolHandler {
 
     /**
      * Opens the Git Log tool window and navigates to the newly created commit (HEAD).
+     * <p>
+     * Commits already go through IntelliJ's git4idea layer (Git.runCommand via
+     * GitLineHandler in IdeGitSupport), which is the correct programmatic API.
+     * IntelliJ's higher-level commit APIs (GitCheckinEnvironment, ChangeListManager)
+     * are UI-coupled and not designed for headless/programmatic commits.
+     * <p>
+     * The delay before showing the commit is necessary because the VCS Log indexes
+     * new commits asynchronously via file watchers. Even though runGit already calls
+     * refreshVcsState(), the log's internal DataPack may not have processed the new
+     * commit yet. There is no synchronous public API to wait for log indexing.
      */
     private void showNewCommitInLog() {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
@@ -673,17 +683,9 @@ final class GitToolHandler {
                 String fullHash = runGit("rev-parse", "HEAD").trim();
                 if (fullHash.length() != 40) return;
 
-                // Refresh VFS so IntelliJ detects the new .git state
-                var basePath = project.getBasePath();
-                if (basePath != null) {
-                    var gitDir = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-                        .refreshAndFindFileByPath(basePath + "/.git");
-                    if (gitDir != null) {
-                        gitDir.refresh(false, true);
-                    }
-                }
-
-                // Brief delay for the VCS log to index the new commit after VFS refresh
+                // Wait for VCS log to index the new commit. refreshVcsState() (called
+                // by runGit for write commands) triggers VFS + dirty scope refresh, but
+                // the log's DataPack update is asynchronous with no public wait API.
                 Thread.sleep(800);
 
                 ApplicationManager.getApplication().invokeLater(() -> {
