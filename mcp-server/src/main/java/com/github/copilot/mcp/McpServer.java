@@ -685,7 +685,9 @@ public class McpServer {
 
         addIfEnabled.accept(buildTool("read_terminal_output", "Read Terminal Output",
             Map.of(
-                "tab_name", Map.of("type", "string", "description", "Name of the terminal tab to read from")
+                "tab_name", Map.of("type", "string", "description", "Name of the terminal tab to read from"),
+                "max_lines", Map.of("type", "integer", "description",
+                    "Maximum number of lines to return from the end of the terminal buffer (default: 50). Use 0 for the full buffer.")
             ),
             List.of()));
 

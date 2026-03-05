@@ -23,6 +23,7 @@ final class TerminalTools extends AbstractToolHandler {
     private static final String TERMINAL_WIDGET_CLASS = "com.intellij.terminal.ui.TerminalWidget";
     private static final String FIND_WIDGET_BY_CONTENT_METHOD = "findWidgetByContent";
     private static final String TTY_CONNECTOR_CLASS = "com.jediterm.terminal.TtyConnector";
+    private static final int DEFAULT_MAX_LINES = 50;
 
     TerminalTools(Project project) {
         super(project);
@@ -247,43 +248,20 @@ final class TerminalTools extends AbstractToolHandler {
      */
     private String readTerminalOutput(JsonObject args) {
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
+        int maxLines = args.has("max_lines") ? args.get("max_lines").getAsInt() : DEFAULT_MAX_LINES;
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
         EdtUtil.invokeLater(() -> {
             try {
-                var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID);
-                if (toolWindow == null) {
-                    resultFuture.complete("Terminal tool window not available.");
+                com.intellij.ui.content.Content targetContent = resolveTerminalContent(tabName);
+                if (targetContent == null) {
+                    resultFuture.complete(tabName != null
+                        ? "No terminal tab found matching '" + tabName + "'. Use list_terminals to see available tabs."
+                        : "No terminal tab is open. Use run_in_terminal to start one.");
                     return;
                 }
-
-                var contentManager = toolWindow.getContentManager();
-                com.intellij.ui.content.Content targetContent = null;
-
-                if (tabName != null) {
-                    for (var content : contentManager.getContents()) {
-                        String name = content.getDisplayName();
-                        if (name != null && name.contains(tabName)) {
-                            targetContent = content;
-                            break;
-                        }
-                    }
-                    if (targetContent == null) {
-                        resultFuture.complete("No terminal tab found matching '" + tabName + "'. " +
-                            "Use list_terminals to see available tabs.");
-                        return;
-                    }
-                } else {
-                    targetContent = contentManager.getSelectedContent();
-                    if (targetContent == null) {
-                        resultFuture.complete("No terminal tab is open. Use run_in_terminal to start one.");
-                        return;
-                    }
-                }
-
-                readTerminalText(resultFuture, targetContent);
-
+                readTerminalText(resultFuture, targetContent, maxLines);
             } catch (Exception e) {
                 LOG.warn("Failed to read terminal", e);
                 resultFuture.complete("Failed to read terminal: " + e.getMessage());
@@ -300,8 +278,32 @@ final class TerminalTools extends AbstractToolHandler {
         }
     }
 
+    /**
+     * Resolve terminal content by tab name (fuzzy match) or return the selected tab.
+     * Returns null if no matching tab is found.
+     */
+    private com.intellij.ui.content.Content resolveTerminalContent(String tabName) {
+        var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+            .getToolWindow(TERMINAL_TOOL_WINDOW_ID);
+        if (toolWindow == null) return null;
+
+        var contentManager = toolWindow.getContentManager();
+        if (tabName == null) {
+            return contentManager.getSelectedContent();
+        }
+
+        for (var content : contentManager.getContents()) {
+            String name = content.getDisplayName();
+            if (name != null && name.contains(tabName)) {
+                return content;
+            }
+        }
+        return null;
+    }
+
     private void readTerminalText(CompletableFuture<String> resultFuture,
-                                  com.intellij.ui.content.Content targetContent) throws Exception {
+                                  com.intellij.ui.content.Content targetContent,
+                                  int maxLines) throws Exception {
         var managerClass = Class.forName(TERMINAL_MANAGER_CLASS);
         var findWidgetByContent = managerClass.getMethod(FIND_WIDGET_BY_CONTENT_METHOD,
             com.intellij.ui.content.Content.class);
@@ -316,17 +318,40 @@ final class TerminalTools extends AbstractToolHandler {
             var widgetInterface = Class.forName(TERMINAL_WIDGET_CLASS);
             var getText = widgetInterface.getMethod("getText");
             CharSequence text = (CharSequence) getText.invoke(widget);
-            String output = text != null ? text.toString().strip() : "";
-            if (output.isEmpty()) {
+            String fullOutput = text != null ? text.toString().strip() : "";
+            if (fullOutput.isEmpty()) {
                 resultFuture.complete("Terminal '" + targetContent.getDisplayName() + "' has no output.");
-            } else {
-                resultFuture.complete("Terminal '" + targetContent.getDisplayName() + "' output:\n" +
-                    ToolUtils.truncateOutput(output));
+                return;
             }
+
+            String output = tailLines(fullOutput, maxLines);
+            String tabDisplayName = targetContent.getDisplayName();
+            resultFuture.complete("Terminal '" + tabDisplayName + "' output:\n" + output);
         } catch (NoSuchMethodException e) {
             resultFuture.complete("getText() not available on this terminal type (" +
                 widget.getClass().getSimpleName() + "). Terminal output reading not supported.");
         }
+    }
+
+    /**
+     * Return the last {@code maxLines} lines of the text. If maxLines &le; 0, return the full text
+     * (subject to character truncation via {@link ToolUtils#truncateOutput}).
+     */
+    private static String tailLines(String text, int maxLines) {
+        if (maxLines <= 0) {
+            return ToolUtils.truncateOutput(text);
+        }
+        String[] lines = text.split("\n", -1);
+        if (lines.length <= maxLines) {
+            return text;
+        }
+        int start = lines.length - maxLines;
+        StringBuilder sb = new StringBuilder();
+        for (int i = start; i < lines.length; i++) {
+            if (i > start) sb.append('\n');
+            sb.append(lines[i]);
+        }
+        return sb.toString();
     }
 
     private String listTerminals() {
