@@ -416,12 +416,21 @@ class EditorTools extends AbstractToolHandler {
 
                 // 4. Set script/file path via reflection
                 boolean pathSet;
+                boolean needsModule = false;
                 if (config instanceof com.intellij.execution.scratch.JavaScratchConfiguration scratchConfig) {
                     scratchConfig.setScratchFileUrl(scratchFile.getUrl());
                     // Main class name must match the public class in the scratch file
                     String className = scratchFile.getNameWithoutExtension();
                     scratchConfig.setMainClassName(className);
                     pathSet = true;
+                    needsModule = true;
+                } else if ("kt".equalsIgnoreCase(extension)) {
+                    // Kotlin .kt files use an application-style runner that needs a main class name.
+                    // Kotlin compiles top-level fun main() in test.kt to class TestKt.
+                    String baseName = scratchFile.getNameWithoutExtension();
+                    String kotlinClassName = Character.toUpperCase(baseName.charAt(0)) + baseName.substring(1) + "Kt";
+                    pathSet = trySetMainClassName(config, kotlinClassName);
+                    needsModule = true;
                 } else {
                     pathSet = setScriptPath(config, scratchFile.getPath());
                 }
@@ -429,7 +438,7 @@ class EditorTools extends AbstractToolHandler {
                 // 4b. Set working directory (needed by Node.js and other script runners)
                 trySetWorkingDirectory(config, scratchFile.getParent().getPath());
 
-                // 5. Set classpath module (auto-detect for Java if not specified)
+                // 5. Set classpath module (auto-detect for Java/Kotlin if not specified)
                 String moduleStatus = "";
                 if (!moduleName.isEmpty()) {
                     var module = com.intellij.openapi.module.ModuleManager.getInstance(project)
@@ -440,7 +449,7 @@ class EditorTools extends AbstractToolHandler {
                     } else {
                         moduleStatus = "\nWarning: Module '" + moduleName + "' not found";
                     }
-                } else if (config instanceof com.intellij.execution.scratch.JavaScratchConfiguration) {
+                } else if (needsModule) {
                     var modules = com.intellij.openapi.module.ModuleManager.getInstance(project).getModules();
                     if (modules.length > 0) {
                         trySetModule(config, modules[0]);
@@ -543,9 +552,9 @@ class EditorTools extends AbstractToolHandler {
         // Use exact IDs (prefixed with "id:") when available to avoid ambiguous matches
         String searchTerm = switch (extension.toLowerCase()) {
             case "kts" -> "kotlin script";
-            case "kt" -> "kotlin";
+            case "kt" -> "id:JetRunConfigurationType";
             case "groovy", "gvy" -> "groovy";
-            case "py" -> "python";
+            case "py" -> "id:PythonConfigurationType";
             case "scala" -> "scala";
             case "js", "mjs", "ts", "mts" -> "id:NodeJSConfigurationType";
             default -> extension;
@@ -585,6 +594,19 @@ class EditorTools extends AbstractToolHandler {
             "setMainScriptFilePath", "setMainClassName")) {
             try {
                 config.getClass().getMethod(method, String.class).invoke(config, path);
+                return true;
+            } catch (Exception ignored) {
+                // Try next method name
+            }
+        }
+        return false;
+    }
+
+    @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API
+    private boolean trySetMainClassName(com.intellij.execution.configurations.RunConfiguration config, String className) {
+        for (String method : java.util.List.of("setMainClassName", "setRunClass")) {
+            try {
+                config.getClass().getMethod(method, String.class).invoke(config, className);
                 return true;
             } catch (Exception ignored) {
                 // Try next method name

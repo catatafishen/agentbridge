@@ -149,7 +149,7 @@ Access the editor state, create scratch files for quick prototyping, and inspect
 - **`get_open_editors`** — List all open editor tabs
 - **`create_scratch_file`** — Create a scratch file with any extension and content
 - **`list_scratch_files`** — List all existing scratch files
-- **`run_scratch_file`** — Execute a scratch file. Works reliably with Kotlin Script (.kts), Java (.java — filename must match class name), Groovy (.groovy), and JavaScript (.js). TypeScript (.ts) needs Node 22.6+ or tsx. Python (.py) needs the Python plugin.
+- **`run_scratch_file`** — Execute a scratch file. Works reliably with Kotlin Script (.kts), Kotlin (.kt), Java (.java — filename must match class name), Groovy (.groovy), and JavaScript (.js). TypeScript (.ts) needs Node 22.6+ or tsx. Python (.py) needs the Python plugin.
 - **`get_chat_html`** — Retrieve the live DOM of the chat panel (for debugging)
 
 ---

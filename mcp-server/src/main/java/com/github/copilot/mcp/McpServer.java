@@ -709,10 +709,11 @@ public class McpServer {
                 + "Supported languages: Kotlin Script (.kts) works reliably, use interactive=true for REPL mode. "
                 + "Java (.java) requires the filename (without .java) to EXACTLY match the class name, case-sensitive "
                 + "(e.g. 'MyApp.java' must contain 'class MyApp'). "
+                + "Kotlin (.kt) works for files with top-level fun main(); the filename determines the run class "
+                + "(e.g. 'test.kt' runs as TestKt). "
                 + "Groovy (.groovy/.gvy) works reliably. "
                 + "JavaScript (.js) works reliably via Node.js. "
                 + "TypeScript (.ts) requires Node.js 22.6+ or tsx/ts-node; plain Node.js 20 cannot run .ts files. "
-                + "Kotlin (.kt) may fail to produce a run configuration; prefer .kts for scratch files. "
                 + "Python (.py) requires the Python plugin installed in the IDE.",
             Map.of(
                 "name", Map.of("type", "string", "description", "Scratch file name with extension (e.g., 'test.kts', 'MyApp.java', 'hello.js')"),
