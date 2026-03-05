@@ -150,6 +150,23 @@ progressively cleaner with every touch.
 
 ---
 
+## File Organization
+
+**Do not create large monolithic files with comment banners dividing them into sections.** If a file needs section
+comments like `// === Rendering ===` or `// --- Utilities ---` to stay navigable, it is too large and should be split.
+
+- **One file, one responsibility.** Each file should have a clear, singular purpose.
+- **Split by language conventions:** Java → one top-level class per file. CSS → separate files per component or concern.
+  JavaScript → one module per file. Kotlin → one class per file (data classes and sealed hierarchies may share a file).
+- **Prefer many small files over few large ones.** Navigation, diffs, code review, and merge conflicts all improve with
+  smaller files.
+- **Use packages/directories for grouping** — not comment headers inside a file. If you find yourself adding a section
+  comment, create a new file in an appropriate package instead.
+- **Threshold:** If a file exceeds ~300 lines, evaluate whether it can be decomposed. This is a guideline, not a hard
+  limit — some files (e.g., generated code, comprehensive test suites) are naturally longer.
+
+---
+
 ## Build Artifacts — Do Not Edit
 
 The following paths contain **generated build output** — never edit them directly:

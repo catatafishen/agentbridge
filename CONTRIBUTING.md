@@ -40,6 +40,9 @@ Thank you for your interest in contributing! This document provides guidelines f
 - Follow existing code conventions in the project
 - Java/Kotlin files are auto-formatted by IntelliJ defaults
 - Add tests for new functionality where practical
+- **Do not create large files with comment-based section dividers** — split into multiple files following
+  language conventions (one class per file in Java/Kotlin, one module per file in JS, separate files per
+  concern in CSS). See [`.github/copilot-instructions.md`](.github/copilot-instructions.md) for details.
 
 ## License
 
