@@ -219,6 +219,44 @@ Add to `Help > Diagnostic Tools > Debug Log Settings`:
 | Agent uses built-in edit tool     | Deny+retry not working        | Check permission handler logs        |
 | "file changed externally" dialog  | Write bypassed Document API   | Verify `intellij_write_file` is used |
 
+### Platform API False Positives (`PlatformApiCompat`)
+
+The IDE daemon shows false-positive resolution errors on certain IntelliJ Platform API calls.
+This happens because the dev IDE resolves symbols against its **own** bundled platform JARs,
+which differ from the target SDK configured in Gradle (`platformVersion` in `build.gradle.kts`).
+The Gradle build compiles cleanly — only the IDE analyzer is affected.
+
+**Symptoms:** Red error highlights like `Cannot resolve method 'getService'`, `Cannot resolve
+method 'connect()'`, `Unknown class`, or `Incompatible types` on standard platform API calls.
+
+**Solution:** All affected API calls are wrapped in
+`PlatformApiCompat.java` (`plugin-core/.../psi/PlatformApiCompat.java`). This concentrates
+all false positives in a single file. Each wrapper method has Javadoc explaining:
+- What the original API call is
+- Why the IDE shows a false positive
+- Why it compiles and works correctly at runtime
+
+**When you encounter a new false positive:**
+
+1. Add a new static method to `PlatformApiCompat` with a descriptive name
+2. Add Javadoc explaining the false positive (follow existing examples)
+3. Replace the call site with the wrapper
+4. Verify with `./gradlew :plugin-core:compileJava :plugin-core:compileKotlin --quiet`
+
+**Known false-positive patterns:**
+
+| Pattern | Example |
+|---------|---------|
+| `@NotNull` annotation mismatch | `PluginManagerCore.isPluginInstalled(PluginId)` |
+| Extension point generics | `ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()` |
+| `Project.getService(Class<T>)` wildcard bounds | `project.getService(someClass)` |
+| MessageBus connect/subscribe/disconnect | `project.getMessageBus().connect()` |
+| JCEF adapter method signatures | `CefLoadHandlerAdapter`, `CefDisplayHandlerAdapter` |
+| Kotlin platform types vs Java generics | `LafManagerListener.TOPIC` |
+| Git4Idea bundled plugin APIs | `HashImpl`, `GitRepositoryManager`, `GitLineHandler` |
+| JPS model types | `JavaSourceRootType`, `JavaSourceRootProperties` |
+| `ThrowableRunnable` functional interface | `WriteAction.runAndWait()` |
+
 ## Dynamic Plugin Loading
 
 The plugin declares `require-restart="false"` in `plugin.xml` and uses only dynamic-compatible
