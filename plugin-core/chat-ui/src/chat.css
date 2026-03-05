@@ -402,7 +402,7 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
 /* ── Turn chips (meta pills) ─────────────────────────── */
 .meta {
     display: none;
-    flex-wrap: wrap;
+    align-items: center;
     gap: var(--sp-2);
     padding: var(--sp-1) 0;
     margin-bottom: var(--sp-1);
@@ -417,6 +417,54 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
     color: var(--think);
     font-size: 0.92em;
     white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.chip-strip {
+    display: flex;
+    gap: var(--sp-2);
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+}
+
+.chip-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--think-a16);
+    border-radius: var(--r-sm);
+    color: var(--think);
+    cursor: pointer;
+    padding: 0 3px;
+    font-size: 0.95em;
+    line-height: 1.4;
+    opacity: 0.7;
+    transition: opacity 0.15s, color 0.15s;
+}
+
+.chip-nav:hover {
+    opacity: 1;
+    color: var(--fg);
+    background: var(--think-a08);
+}
+
+.chip-nav.hidden {
+    display: none;
+}
+
+.chip-overflow-count {
+    color: var(--think);
+    font-size: 0.85em;
+    white-space: nowrap;
+    flex-shrink: 0;
+    opacity: 0.6;
+}
+
+.chip-overflow-count.hidden {
+    display: none;
 }
 
 .turn-chip {
@@ -431,6 +479,7 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
+    flex-shrink: 0;
     animation: chipIn 0.25s ease;
 }
 
