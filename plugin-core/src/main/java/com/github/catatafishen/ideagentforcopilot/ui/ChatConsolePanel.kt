@@ -66,6 +66,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private val deferredRestoreJson = mutableListOf<com.google.gson.JsonElement>()
     private val pendingPermissionCallbacks = java.util.concurrent.ConcurrentHashMap<String, (Boolean) -> Unit>()
 
+    // Periodic JCEF repaint during streaming to avoid partial-update artifacts
+    private val repaintTimer = javax.swing.Timer(150) {
+        browser?.cefBrowser?.invalidate()
+    }.apply { isRepeats = true }
+
     // ── Swing fallback ─────────────────────────────────────────────
     private val fallbackArea: JBTextArea?
 
@@ -239,7 +244,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun startStreaming() {
-        // no-op: CSS-only indicator via :last-child:not(:has(message-bubble))
+        repaintTimer.start()
     }
 
     override fun setPromptStats(modelId: String, multiplier: String) {
@@ -429,6 +434,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
+        repaintTimer.stop()
         toolJustCompleted = false
         finalizeCurrentText()
         collapseThinking()
@@ -448,6 +454,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun cancelAllRunning() {
+        repaintTimer.stop()
         executeJs("ChatController.cancelAllRunning()")
     }
 
@@ -862,6 +869,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun dispose() {
+        repaintTimer.stop()
         instances.remove(project)
     }
 

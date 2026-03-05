@@ -123,6 +123,8 @@ body {
     background: var(--bg);
     padding: var(--sp-4);
     line-height: 1.45;
+    /* Promote to GPU compositing layer for smoother JCEF rendering during streaming */
+    will-change: scroll-position;
 }
 
 ::-webkit-scrollbar {
