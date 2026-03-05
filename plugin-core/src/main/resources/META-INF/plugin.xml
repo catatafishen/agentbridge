@@ -61,6 +61,60 @@
     ]]></description>
 
   <change-notes><![CDATA[
+    <h3>1.5.0</h3>
+
+    <h4>Follow Agent Mode</h4>
+    <p>The IDE now visually follows the agent as it works, enabled by default:</p>
+    <ul>
+        <li>Highlight code as the agent reads/edits it</li>
+        <li>Editor shows "Agent is reading/editing" inlay labels</li>
+        <li>Project explorer marks files with read/write indicators</li>
+        <li>Git Log opens and selects commits after the agent commits</li>
+    </ul>
+
+    <h4>Redesigned Chat UI</h4>
+    <p>Chat now looks and feels native to JetBrains:</p>
+    <ul>
+        <li>JetBrains-style markdown — tables, accent-bordered code blocks, heading hierarchy, blockquote support</li>
+        <li>Quick-reply buttons — clickable suggestions with semantic colors and dismiss support</li>
+        <li>Code block enhancements — language labels, "Open in Scratch" button, word wrap toggle</li>
+        <li>Native Swing banners — status/auth/git banners use JetBrains InlineBanner</li>
+    </ul>
+
+    <h4>Scratch File Execution</h4>
+    <p>Run code directly from chat — Java, JavaScript, TypeScript, Kotlin Script, Groovy, and Python scratch files.</p>
+
+    <h4>Project Structure Management</h4>
+    <p>New tool to manage module dependencies, libraries, and SDKs programmatically.</p>
+
+    <h4>Conversation History</h4>
+    <p>Search and recall past conversations across sessions.</p>
+
+    <h4>Git Enhancements</h4>
+    <ul>
+        <li>7 new git tools: fetch, pull, merge, rebase, cherry-pick, tag, reset</li>
+        <li>Commit hashes in chat are clickable links that navigate to the VCS Log</li>
+        <li>Git operations routed through IntelliJ Git4Idea infrastructure</li>
+        <li>Agent commits automatically appear in the Git Log</li>
+    </ul>
+
+    <h4>Theme and Terminal Tools</h4>
+    <ul>
+        <li>list_themes / set_theme — agent can switch your IDE theme</li>
+        <li>write_terminal_input — agent can interact with terminal sessions</li>
+    </ul>
+
+    <h4>Multi-IDE Compatibility</h4>
+    <p>Java-specific code isolated so the plugin can run in WebStorm, PyCharm, and other non-Java IDEs.</p>
+
+    <h4>Reliability</h4>
+    <ul>
+        <li>Auto-retry on stale Copilot sessions</li>
+        <li>Graceful handling of Copilot process crashes</li>
+        <li>Chat saved incrementally during streaming</li>
+        <li>Reduced rendering artifacts during streaming</li>
+    </ul>
+
     <h3>1.0.0 — Initial Release</h3>
     <ul>
         <li>Introduces IDE Agent for Copilot</li>
