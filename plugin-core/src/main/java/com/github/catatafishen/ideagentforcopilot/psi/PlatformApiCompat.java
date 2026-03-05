@@ -114,26 +114,64 @@ public final class PlatformApiCompat {
      * across IDE versions. When the running IDE version differs from the target platform,
      * this throws {@code NoSuchMethodException} wrapped in {@code RuntimeException}.</p>
      *
-     * <p>This wrapper catches the reflection failure and returns null, allowing the caller
-     * to skip the incompatible tool gracefully instead of aborting the entire inspection run.
-     * We catch {@code Throwable} (not just {@code Exception}) because the platform's reflective
-     * instantiation in {@code createPresentation()} can throw both checked exceptions
-     * ({@code NoSuchMethodException}) and {@code Error} subclasses
-     * ({@code ExceptionInInitializerError}, {@code NoClassDefFoundError}) depending on
-     * the IDE version and the third-party plugin's class loading state.</p>
+     * <p>This wrapper pre-checks the presentation constructor signature before calling the
+     * platform's {@code getPresentation()}. The platform's {@code createPresentation()} uses
+     * reflection expecting a {@code (InspectionToolWrapper, GlobalInspectionContextEx)} constructor,
+     * but some bundled tools (e.g., {@code UnusedDeclarationPresentation}) change the second
+     * parameter to {@code GlobalInspectionContextImpl} across IDE versions. The platform logs
+     * the resulting {@code NoSuchMethodException} at ERROR level internally before re-throwing.
+     * By detecting the mismatch beforehand, we avoid triggering the platform's error logging.</p>
+     *
+     * <p>The outer {@code catch(Throwable)} remains as a safety net for any other reflection
+     * failures not caught by the pre-check (e.g., {@code ExceptionInInitializerError},
+     * {@code NoClassDefFoundError}).</p>
      */
     static @Nullable InspectionToolResultExporter getInspectionPresentation(
         @NotNull GlobalInspectionContextEx ctx, @NotNull InspectionToolWrapper<?, ?> toolWrapper) {
+        if (!hasPresentationConstructor(toolWrapper)) {
+            return null;
+        }
         try {
             return ctx.getPresentation(toolWrapper);
         } catch (Throwable t) {
-            // Constructor mismatch in a third-party inspection plugin's presentation class.
-            // Common with DuplicateInspectionPresentation when IDE version != target platform.
-            // Catch Throwable (not just Exception) because the platform's reflective instantiation
-            // can throw Error subclasses (e.g., ExceptionInInitializerError, NoClassDefFoundError).
             LOG.debug("Skipping inspection tool '" + toolWrapper.getShortName()
                 + "' — presentation class incompatible: " + t.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Checks whether the tool's custom presentation class (if any) has the constructor
+     * signature that the platform's {@code createPresentation()} expects:
+     * {@code (InspectionToolWrapper, GlobalInspectionContextEx)}.
+     *
+     * <p>Returns {@code true} if no custom presentation is declared (the platform's default
+     * presentation will be used, which always works) or if the constructor exists.
+     * Returns {@code false} if the constructor signature doesn't match.</p>
+     */
+    private static boolean hasPresentationConstructor(@NotNull InspectionToolWrapper<?, ?> toolWrapper) {
+        var ep = toolWrapper.getExtension();
+        if (ep == null) {
+            return true;
+        }
+        String presentationClassName = ep.presentation;
+        if (presentationClassName == null || presentationClassName.isEmpty()) {
+            return true;
+        }
+        try {
+            ClassLoader classLoader = ep.getPluginDescriptor() != null
+                ? ep.getPluginDescriptor().getClassLoader()
+                : ep.getClass().getClassLoader();
+            Class<?> presClass = Class.forName(presentationClassName, false, classLoader);
+            presClass.getConstructor(InspectionToolWrapper.class, GlobalInspectionContextEx.class);
+            return true;
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            LOG.debug("Skipping tool '" + toolWrapper.getShortName()
+                + "' — presentation '" + presentationClassName + "' incompatible: " + e.getMessage());
+            return false;
+        } catch (Throwable t) {
+            LOG.debug("Error checking presentation for '" + toolWrapper.getShortName() + "': " + t.getMessage());
+            return false;
         }
     }
 
@@ -271,13 +309,13 @@ public final class PlatformApiCompat {
 
         var navigated = new java.util.concurrent.atomic.AtomicBoolean(false);
         com.intellij.vcs.log.data.DataPackChangeListener[] listenerRef =
-                new com.intellij.vcs.log.data.DataPackChangeListener[1];
+            new com.intellij.vcs.log.data.DataPackChangeListener[1];
 
         listenerRef[0] = dataPack -> {
             if (!navigated.compareAndSet(false, true)) return;
             data.removeDataPackChangeListener(listenerRef[0]);
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-                    com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
+                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
         };
 
         data.addDataPackChangeListener(listenerRef[0]);
@@ -293,11 +331,11 @@ public final class PlatformApiCompat {
 
         // Timeout: clean up listener after 5 seconds to prevent leak
         com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService()
-                .schedule(() -> {
-                    if (navigated.compareAndSet(false, true)) {
-                        data.removeDataPackChangeListener(listenerRef[0]);
-                    }
-                }, 5, java.util.concurrent.TimeUnit.SECONDS);
+            .schedule(() -> {
+                if (navigated.compareAndSet(false, true)) {
+                    data.removeDataPackChangeListener(listenerRef[0]);
+                }
+            }, 5, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     /**
