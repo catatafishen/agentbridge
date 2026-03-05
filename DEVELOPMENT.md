@@ -131,31 +131,45 @@ locks prevent this — close the sandbox IDE first, then re-run `runIde`.
 The plugin communicates with GitHub Copilot CLI via the **Agent Client Protocol (ACP)** — JSON-RPC 2.0 over
 stdin/stdout:
 
-```
-Plugin (AcpClient)
-  │
-  ├─► initialize          → Agent capabilities, auth methods
-  ├─► session/new         → Create session, get models
-  ├─► session/prompt      → Send prompt, receive streaming chunks
-  │     ◄── session/update (notifications: chunks, tool_calls, plan)
-  │     ◄── session/request_permission (agent requests)
-  │     ──► permission response (approve/deny)
-  └─► session/cancel      → Abort current prompt
+```mermaid
+sequenceDiagram
+    participant P as Plugin (AcpClient)
+    participant C as Copilot CLI
+
+    P->>C: initialize
+    C-->>P: Agent capabilities, auth methods
+
+    P->>C: session/new
+    C-->>P: Session ID, available models
+
+    P->>C: session/prompt
+    C-->>P: session/update (chunks, tool_calls, plan)
+    C-->>P: session/request_permission
+    P->>C: permission response (approve/deny)
+
+    P->>C: session/cancel
 ```
 
 ### Permission Deny + Retry Flow
 
 Built-in Copilot file operations are **denied** so all writes go through IntelliJ's Document API:
 
-```
-1. User sends prompt
-2. Agent decides to edit a file → sends request_permission (kind="edit")
-3. Plugin DENIES the permission (responds with reject_once)
-4. Agent reports tool failure, turn ends (stopReason: end_turn)
-5. Plugin detects denial occurred → sends automatic retry prompt:
-   "Use intellij_write_file MCP tool instead"
-6. Agent retries using MCP tool → write goes through Document API
-7. Auto-format runs (optimize imports + reformat code)
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant P as Plugin
+    participant A as Agent
+    participant MCP as MCP Tool
+
+    U->>P: Send prompt
+    P->>A: session/prompt
+    A->>P: request_permission (kind="edit")
+    P--xA: DENY (reject_once)
+    A->>P: Tool failure, turn ends
+    P->>A: Auto-retry: "Use intellij_write_file instead"
+    A->>MCP: intellij_write_file
+    MCP->>P: Write via Document API
+    P->>P: Auto-format (imports + reformat)
 ```
 
 **Denied permission kinds**: `edit`, `create`, `read`, `execute`, `runInTerminal`  
@@ -164,9 +178,10 @@ Built-in Copilot file operations are **denied** so all writes go through Intelli
 
 ### MCP Tool Bridge
 
-```
-Copilot CLI ──stdio──► MCP Server (JAR) ──HTTP──► PsiBridgeService
-                       intellij-code-tools         (IntelliJ process)
+```mermaid
+graph LR
+    CLI["Copilot CLI"] -- stdio --> MCP["MCP Server (JAR)<br/>intellij-code-tools"]
+    MCP -- HTTP --> PSI["PsiBridgeService<br/>(IntelliJ process)"]
 ```
 
 - **MCP Server** (`mcp-server/`): Standalone JAR, stdio protocol, routes tool calls to PSI bridge

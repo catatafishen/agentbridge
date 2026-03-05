@@ -24,34 +24,17 @@ formatting, test execution, git operations, and file operations.
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                 IntelliJ IDEA Plugin (Java 21)               │
-│  ┌────────────────┐  ┌──────────────────────────────────────┐│
-│  │   Tool Window   │  │          AcpClient                   ││
-│  │    (Swing)      │  │  - JSON-RPC 2.0 over stdin/stdout   ││
-│  │                 │  │  - Permission handler (deny edits)   ││
-│  │  - Chat console │  │  - Retry with MCP tool instruction   ││
-│  │  - Toolbar      │  │  - Streaming chunk delivery          ││
-│  │  - Prompt input │  └──────────────┬───────────────────────┘│
-│  │                 │                 │ spawns                  │
-│  └─────────────────┘                 │                         │
-│                                      ▼                         │
-│  ┌──────────────────┐    ┌───────────────────────┐            │
-│  │ PsiBridgeService │◄───│  Copilot CLI (--acp)  │            │
-│  │  (HTTP server)   │    │                       │            │
-│  │  80 MCP tools    │    │  - Agent reasoning    │            │
-│  │  - read/write    │    │  - Tool selection     │            │
-│  │  - format        │    │  - Permission reqs    │            │
-│  │  - search        │    └───────────┬───────────┘            │
-│  │  - test runner   │               │                         │
-│  └──────────────────┘               ▼                         │
-│                          ┌──────────────────────┐             │
-│                          │  MCP Server (JAR)    │             │
-│                          │  intellij-code-tools │             │
-│                          │  (stdio bridge)      │             │
-│                          └──────────────────────┘             │
-└──────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph IntelliJ IDEA Plugin - Java 21
+        TW["🖥️ Tool Window (Swing)<br/>Chat console · Toolbar · Prompt input"]
+        ACP["AcpClient<br/>JSON-RPC 2.0 over stdin/stdout<br/>Permission handler · Retry logic<br/>Streaming chunk delivery"]
+        PSI["PsiBridgeService (HTTP server)<br/>80 MCP tools<br/>read/write · format · search · test runner"]
+    end
+
+    ACP -- spawns --> CLI["Copilot CLI (--acp)<br/>Agent reasoning · Tool selection<br/>Permission requests"]
+    CLI -- stdio --> MCP["MCP Server (JAR)<br/>intellij-code-tools<br/>stdio bridge"]
+    MCP -- HTTP --> PSI
 ```
 
 ### Key Design: IntelliJ-Native File Operations
