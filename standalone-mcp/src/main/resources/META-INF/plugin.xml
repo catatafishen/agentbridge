@@ -1,0 +1,105 @@
+<idea-plugin require-restart="false">
+  <id>com.github.catatafishen.idemcpserver</id>
+  <name>IDE MCP Server</name>
+  <vendor email="henrik@westergard.org" url="https://github.com/catatafishen/ide-agent-for-copilot">
+    IDE MCP Server Contributors
+  </vendor>
+
+  <category>AI Assistant</category>
+
+  <description><![CDATA[
+    <p><b>IDE MCP Server</b> exposes your JetBrains IDE as an MCP (Model Context Protocol) server
+    so any AI agent can use IntelliJ's code intelligence tools — inspections, refactoring,
+    navigation, build, test, and Git — over a simple HTTP endpoint.</p>
+
+    <h3>How It Works</h3>
+    <p>The plugin starts an MCP-compatible HTTP server on a configurable port. Point any
+    MCP client (Claude Desktop, Cursor, your own agent) at it and get access to 70+ IDE tools.</p>
+
+    <h3>Capabilities</h3>
+    <ul>
+        <li><b>Code navigation</b> — search symbols, find references, go to declaration, type hierarchy</li>
+        <li><b>File operations</b> — read, write, create, delete files through IntelliJ's editor buffers</li>
+        <li><b>Code quality</b> — run inspections, get compilation errors, apply quick-fixes</li>
+        <li><b>Refactoring</b> — rename, extract method, inline, format code, optimize imports</li>
+        <li><b>Build &amp; test</b> — trigger builds, run tests, manage run configurations</li>
+        <li><b>Git</b> — full Git operations through IntelliJ's VCS layer</li>
+        <li><b>Terminal</b> — run commands, read output, interact with terminal sessions</li>
+    </ul>
+
+    <h3>Configuration</h3>
+    <ul>
+        <li>Set the HTTP port in <b>Settings → Tools → IDE MCP Server</b></li>
+        <li>Enable/disable individual tools with checkboxes</li>
+        <li>Start/stop the server from the tool window</li>
+        <li>Copy the MCP client configuration JSON with one click</li>
+    </ul>
+
+    <h3>Privacy</h3>
+    <ul>
+        <li>All operations executed locally inside your IDE</li>
+        <li>Server binds to localhost by default</li>
+        <li>No telemetry or data collection</li>
+    </ul>
+
+    <p><em>This plugin is an independent open-source project.</em></p>
+    ]]></description>
+
+  <change-notes><![CDATA[
+    <h3>1.0.0 — Initial Release</h3>
+    <ul>
+        <li>MCP HTTP server with configurable port</li>
+        <li>70+ IDE tools exposed via MCP protocol</li>
+        <li>Tool enable/disable checkboxes</li>
+        <li>Start/stop from tool window</li>
+        <li>Copy MCP config for Claude, Cursor, etc.</li>
+    </ul>
+    ]]></change-notes>
+
+  <idea-version since-build="253"/>
+
+  <depends>com.intellij.modules.platform</depends>
+  <depends optional="true" config-file="java-features.xml">com.intellij.modules.java</depends>
+  <depends optional="true" config-file="git-features.xml">Git4Idea</depends>
+  <depends optional="true" config-file="terminal-features.xml">org.jetbrains.plugins.terminal</depends>
+  <depends optional="true" config-file="gradle-features.xml">org.jetbrains.plugins.gradle</depends>
+  <depends optional="true" config-file="maven-features.xml">org.jetbrains.idea.maven</depends>
+  <depends optional="true" config-file="sonarlint-features.xml">org.sonarlint.idea</depends>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- PSI Bridge: reused from plugin-core for tool execution -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService"/>
+
+    <!-- Project service: MCP HTTP server -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.idemcpserver.McpHttpServer"/>
+
+    <!-- Settings page: Tools > IDE MCP Server -->
+    <projectConfigurable
+      parentId="tools"
+      instance="com.github.catatafishen.idemcpserver.settings.McpServerConfigurable"
+      id="com.github.catatafishen.idemcpserver.settings"
+      displayName="IDE MCP Server"/>
+
+    <!-- Persistent settings state -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.idemcpserver.settings.McpServerSettings"/>
+
+    <!-- Tool Window -->
+    <toolWindow id="MCP Server"
+                secondary="false"
+                anchor="right"
+                icon="/icons/mcp-server.svg"
+                factoryClass="com.github.catatafishen.idemcpserver.ui.McpServerToolWindowFactory"/>
+
+    <!-- Start PSI Bridge + MCP server on project open -->
+    <postStartupActivity
+      implementation="com.github.catatafishen.idemcpserver.McpServerStartup"/>
+
+    <!-- Notification Group -->
+    <notificationGroup id="MCP Server Notifications" displayType="STICKY_BALLOON"/>
+    <!-- Copilot Notifications group needed by PsiBridgeService error handling -->
+    <notificationGroup id="Copilot Notifications" displayType="STICKY_BALLOON"/>
+  </extensions>
+</idea-plugin>

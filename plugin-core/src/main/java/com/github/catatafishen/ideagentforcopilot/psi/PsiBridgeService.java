@@ -116,6 +116,28 @@ public final class PsiBridgeService implements Disposable {
         FileAccessTracker.clear(project);
     }
 
+    /**
+     * Invokes a tool by name with the given arguments. Returns the tool result as a string.
+     * Used by the standalone MCP server to delegate tool calls in-process.
+     */
+    public String callTool(String toolName, JsonObject arguments) {
+        ToolHandler handler = toolRegistry.get(toolName);
+        if (handler == null) return "Unknown tool: " + toolName;
+        try {
+            return handler.handle(arguments);
+        } catch (Exception e) {
+            LOG.warn("Tool call error: " + toolName, e);
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Returns the set of registered tool names.
+     */
+    public java.util.Set<String> getRegisteredToolNames() {
+        return java.util.Collections.unmodifiableSet(toolRegistry.keySet());
+    }
+
     public synchronized void start() {
         if (httpServer != null) return;
         try {
