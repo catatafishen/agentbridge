@@ -432,9 +432,6 @@ chat-message.agent-row:last-child:not(:has(message-bubble))::after {
     animation: spin 0.6s linear infinite;
 }
 
-thinking-chip .chip-spinner {
-    border-top-color: var(--think);
-}
 
 thinking-chip.thinking-active .thought-bubble {
     display: inline-block;
@@ -802,43 +799,52 @@ b, strong {
     color: var(--error);
     border-color: color-mix(in srgb, var(--error) 22%, transparent);
 }
+
 .quick-reply-btn.qr-danger:hover {
     background: color-mix(in srgb, var(--error) 20%, transparent);
     border-color: var(--error);
 }
+
 .quick-reply-btn.qr-primary {
     background: color-mix(in srgb, var(--link) 12%, transparent);
     color: var(--link);
     border-color: color-mix(in srgb, var(--link) 24%, transparent);
 }
+
 .quick-reply-btn.qr-primary:hover {
     background: color-mix(in srgb, var(--link) 22%, transparent);
     border-color: var(--link);
 }
+
 .quick-reply-btn.qr-success {
     background: color-mix(in srgb, var(--agent) 10%, transparent);
     color: var(--agent);
     border-color: color-mix(in srgb, var(--agent) 22%, transparent);
 }
+
 .quick-reply-btn.qr-success:hover {
     background: color-mix(in srgb, var(--agent) 20%, transparent);
     border-color: var(--agent);
 }
+
 .quick-reply-btn.qr-warning {
     background: color-mix(in srgb, var(--sa-c1) 10%, transparent);
     color: var(--sa-c1);
     border-color: color-mix(in srgb, var(--sa-c1) 22%, transparent);
 }
+
 .quick-reply-btn.qr-warning:hover {
     background: color-mix(in srgb, var(--sa-c1) 20%, transparent);
     border-color: var(--sa-c1);
 }
+
 .quick-reply-btn.qr-dismiss {
     background: transparent;
     color: var(--fg-muted);
     border-color: transparent;
     font-size: 0.85em;
 }
+
 .quick-reply-btn.qr-dismiss:hover {
     background: var(--think-a16);
     border-color: transparent;

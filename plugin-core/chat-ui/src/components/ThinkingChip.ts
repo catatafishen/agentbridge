@@ -32,7 +32,7 @@ export default class ThinkingChip extends HTMLElement {
     private _render(): void {
         const status = this.getAttribute('status') || 'complete';
         if (status === 'running' || status === 'thinking') {
-            this.innerHTML = '<span class="chip-spinner"></span> <span class="thought-bubble">💭</span> Thinking…';
+            this.innerHTML = '<span class="thought-bubble">💭</span> Thinking…';
             this.classList.add('thinking-active');
         } else {
             this.textContent = '💭 Thought';
