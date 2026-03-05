@@ -160,6 +160,22 @@ public final class CopilotSettings {
         PropertiesComponent.getInstance().setValue(KEY_COMMIT_BEFORE_END, enabled, false);
     }
 
+    private static final String KEY_ATTACH_TRIGGER = "copilot.attachTriggerChar";
+    private static final String DEFAULT_ATTACH_TRIGGER = "#";
+
+    /**
+     * Trigger character for file search in chat input.
+     * "#" (VS Code Copilot style, default), "@" (JetBrains AI Assistant style), or "" (disabled).
+     */
+    @NotNull
+    public static String getAttachTriggerChar() {
+        return PropertiesComponent.getInstance().getValue(KEY_ATTACH_TRIGGER, DEFAULT_ATTACH_TRIGGER);
+    }
+
+    public static void setAttachTriggerChar(@NotNull String trigger) {
+        PropertiesComponent.getInstance().setValue(KEY_ATTACH_TRIGGER, trigger, DEFAULT_ATTACH_TRIGGER);
+    }
+
     // ── Per-tool permissions ─────────────────────────────────────────────────
 
     private static final String KEY_TOOL_PERM = "copilot.tool.perm.";

@@ -713,8 +713,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val leftGroup = DefaultActionGroup()
         leftGroup.add(SendStopAction())
         leftGroup.addSeparator()
-        leftGroup.add(AttachFileAction())
-        leftGroup.add(AttachSelectionAction())
+        leftGroup.add(AttachContextDropdownAction())
         leftGroup.addSeparator()
         leftGroup.add(ModelSelectorAction())
         leftGroup.add(ModeSelectorAction())
@@ -934,23 +933,63 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
     }
 
-    // Attach current file to the next prompt
-    private inner class AttachFileAction : AnAction(
-        "Attach File", "Attach current file to prompt", com.intellij.icons.AllIcons.Actions.AddFile
+    // Unified attach dropdown: current file, selection, or search project files
+    private inner class AttachContextDropdownAction : AnAction(
+        "Attach Context", "Attach file, selection, or search project files",
+        AllIcons.General.Add
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun actionPerformed(e: AnActionEvent) {
-            handleAddCurrentFile()
-        }
-    }
+            val inputEvent = e.inputEvent ?: return
+            val component = inputEvent.source as? java.awt.Component ?: return
 
-    // Attach current selection to the next prompt
-    private inner class AttachSelectionAction : AnAction(
-        "Attach Selection", "Attach selected text to prompt", com.intellij.icons.AllIcons.Actions.AddMulticaret
-    ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-        override fun actionPerformed(e: AnActionEvent) {
-            handleAddSelection()
+            val group = DefaultActionGroup()
+            group.add(object : AnAction(
+                "Current File",
+                "Attach the currently open file",
+                com.intellij.icons.AllIcons.Actions.AddFile
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) = handleAddCurrentFile()
+            })
+            group.add(object : AnAction(
+                "Editor Selection",
+                "Attach the selected text",
+                com.intellij.icons.AllIcons.Actions.AddMulticaret
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) = handleAddSelection()
+            })
+            group.addSeparator()
+            group.add(object : AnAction(
+                "Search Project Files\u2026",
+                "Search and attach a file from the project",
+                AllIcons.Actions.Search
+            ) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun actionPerformed(e: AnActionEvent) = openFileSearchPopup()
+            })
+            group.addSeparator()
+
+            // Trigger character sub-menu
+            val triggerGroup = DefaultActionGroup("File Search Trigger", true)
+            triggerGroup.templatePresentation.icon = AllIcons.General.Settings
+            for ((label, value) in listOf("# (VS Code style)" to "#", "@ (AI Assistant style)" to "@", "Disabled" to "")) {
+                triggerGroup.add(object : ToggleAction(label) {
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+                    override fun isSelected(e: AnActionEvent) = CopilotSettings.getAttachTriggerChar() == value
+                    override fun setSelected(e: AnActionEvent, state: Boolean) {
+                        if (state) CopilotSettings.setAttachTriggerChar(value)
+                    }
+                })
+            }
+            group.add(triggerGroup)
+
+            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
+                null, group, e.dataContext,
+                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+            )
+            popup.showUnderneathOf(component)
         }
     }
 
@@ -1319,6 +1358,30 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             ),
             contentComponent
         )
+
+        // Trigger character detection: when the configured char (# or @) is typed,
+        // remove it and open the file search popup instead
+        editor.document.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
+            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                val trigger = CopilotSettings.getAttachTriggerChar()
+                if (trigger.isEmpty()) return
+                val inserted = event.newFragment.toString()
+                if (inserted != trigger) return
+
+                val offset = event.offset
+                val text = editor.document.text
+                val isAtStart = offset == 0
+                val isAfterSpace = offset > 0 && text[offset - 1] == ' '
+                if (!isAtStart && !isAfterSpace) return
+
+                SwingUtilities.invokeLater {
+                    com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                        editor.document.deleteString(offset, offset + trigger.length)
+                    }
+                    openFileSearchPopup()
+                }
+            }
+        }, project)
     }
 
     private fun setupPromptContextMenu(editor: EditorEx) {
@@ -2115,6 +2178,31 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 fileType = currentFile.fileType, isSelection = true
             )
         )
+    }
+
+    private fun openFileSearchPopup() {
+        val model = com.intellij.ide.util.gotoByName.GotoFileModel(project)
+        val popup = com.intellij.ide.util.gotoByName.ChooseByNamePopup.createPopup(project, model, null as com.intellij.psi.PsiElement?)
+        popup.invoke(object : com.intellij.ide.util.gotoByName.ChooseByNamePopupComponent.Callback() {
+            override fun elementChosen(element: Any?) {
+                val psiFile = element as? com.intellij.psi.PsiFile ?: return
+                val vf = psiFile.virtualFile ?: return
+                val path = vf.path
+                val exists = (0 until contextListModel.size()).any { contextListModel[it].path == path }
+                if (exists) return
+
+                val lineCount = try {
+                    com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf)?.lineCount ?: 0
+                } catch (_: Exception) { 0 }
+
+                contextListModel.addElement(
+                    ContextItem(
+                        path = path, name = vf.name, startLine = 1, endLine = lineCount,
+                        fileType = vf.fileType, isSelection = false
+                    )
+                )
+            }
+        }, com.intellij.openapi.application.ModalityState.current(), false)
     }
 
     // Debug/Timeline/Settings tabs extracted to DebugPanel.kt
