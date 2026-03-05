@@ -26,9 +26,11 @@ internal object ToolRenderers {
         "git_log" to GitLogRenderer,
         "git_show" to GitShowRenderer,
         "git_blame" to GitBlameRenderer,
+        "git_branch" to GitBranchRenderer,
         // Build & test
         "build_project" to BuildResultRenderer,
         "run_tests" to TestResultRenderer,
+        "list_tests" to ListTestsRenderer,
         // Code quality
         "run_inspections" to InspectionResultRenderer,
         "get_compilation_errors" to InspectionResultRenderer,
@@ -39,6 +41,8 @@ internal object ToolRenderers {
         "search_symbols" to SearchResultRenderer,
         "find_references" to SearchResultRenderer,
         "get_file_outline" to FileOutlineRenderer,
+        // IDE
+        "get_project_info" to ProjectInfoRenderer,
     )
 
     fun get(toolName: String): ToolResultRenderer? = registry[toolName]
