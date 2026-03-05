@@ -277,7 +277,7 @@ final class GitToolHandler {
         String result = runGit(gitArgs.toArray(new String[0]));
 
         // On success, git add produces no output — provide descriptive result
-        if (result.isEmpty() || result.isBlank()) {
+        if (result.isBlank()) {
             if (stageAll) {
                 String cached = runGit("diff", "--cached", "--name-status");
                 if (cached.isBlank()) return "✓ Nothing to stage";
@@ -688,62 +688,32 @@ final class GitToolHandler {
     /**
      * Opens the Git Log tool window and navigates to the newly created commit (HEAD).
      * <p>
-     * Commits already go through IntelliJ's git4idea layer (Git.runCommand via
-     * GitLineHandler in IdeGitSupport), which is the correct programmatic API.
-     * IntelliJ's higher-level commit APIs (GitCheckinEnvironment, ChangeListManager)
-     * are UI-coupled and not designed for headless/programmatic commits.
-     * <p>
-     * The Git Log tool window is opened immediately. Then we poll for the commit
-     * to appear in the log's index (up to 5 attempts at 200ms intervals). The VCS
-     * Log indexes new commits asynchronously via file watchers — even though runGit
-     * already calls refreshVcsState(), the log's internal DataPack may not have
-     * processed the new commit yet. If polling exhausts all attempts, we accept
-     * that the tool window is already open and visible — good enough.
+     * Uses {@link PlatformApiCompat#showRevisionInLogAfterRefresh} to register a
+     * {@code DataPackChangeListener} and trigger a VCS log refresh. Navigation happens
+     * only after the log has indexed the new commit, avoiding the
+     * "Commit or reference 'xxx' not found" notification.
      */
-    private static final int COMMIT_POLL_ATTEMPTS = 5;
-    private static final long COMMIT_POLL_INTERVAL_MS = 200;
-
     private void showNewCommitInLog() {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 String fullHash = runGit("rev-parse", "HEAD").trim();
                 if (fullHash.length() != 40) return;
 
-                // Open the Git Log tool window immediately
                 ApplicationManager.getApplication().invokeLater(() -> {
+                    // Open the Git Log tool window
                     var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
                     var tw = twm.getToolWindow("Version Control");
                     if (tw != null) tw.activate(null);
-                });
 
-                // Poll for the commit to appear in the log index
-                pollForCommitInLog(fullHash);
+                    // Navigate after VCS log refresh (avoids "not found" notification)
+                    PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash);
+                });
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (Exception ignored) {
                 // best-effort — fall back silently
             }
         });
-    }
-
-    /**
-     * Polls for a commit to appear in the VCS Log index, then navigates to it.
-     * Gives up silently after exhausting all attempts — the Git Log is already open.
-     */
-    private void pollForCommitInLog(String fullHash) throws InterruptedException {
-        for (int attempt = 0; attempt < COMMIT_POLL_ATTEMPTS; attempt++) {
-            Thread.sleep(COMMIT_POLL_INTERVAL_MS);
-            boolean[] found = {false};
-            ApplicationManager.getApplication().invokeAndWait(() -> {
-                try {
-                    PlatformApiCompat.showRevisionInLog(project, fullHash);
-                    found[0] = true;
-                } catch (Exception ignored) {
-                    // commit not yet indexed — retry
-                }
-            });
-            if (found[0]) return;
-        }
     }
 
     /**

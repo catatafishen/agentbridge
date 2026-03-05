@@ -213,12 +213,12 @@ public final class PlatformApiCompat {
      * platform types that does not affect runtime behavior.</p>
      */
     public static void subscribeLafChanges(
-            @NotNull com.intellij.openapi.Disposable parentDisposable,
-            @NotNull Runnable onLafChanged) {
+        @NotNull com.intellij.openapi.Disposable parentDisposable,
+        @NotNull Runnable onLafChanged) {
         var conn = com.intellij.openapi.application.ApplicationManager.getApplication()
-                .getMessageBus().connect(parentDisposable);
+            .getMessageBus().connect(parentDisposable);
         conn.subscribe(com.intellij.ide.ui.LafManagerListener.TOPIC,
-                (com.intellij.ide.ui.LafManagerListener) source -> onLafChanged.run());
+            (com.intellij.ide.ui.LafManagerListener) source -> onLafChanged.run());
     }
 
     /**
@@ -233,6 +233,62 @@ public final class PlatformApiCompat {
     static void showRevisionInLog(@NotNull Project project, @NotNull String fullHash) {
         var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
         com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
+    }
+
+    /**
+     * Navigates to a commit in the VCS Log after the log has refreshed its data pack.
+     * <p>
+     * Unlike {@link #showRevisionInLog}, this method does NOT call {@code showRevisionInMainLog}
+     * immediately. Instead, it registers a {@code DataPackChangeListener} and triggers a VCS log
+     * refresh. When the log finishes refreshing (and the new commit is indexed), it navigates.
+     * <p>
+     * This avoids the "Commit or reference 'xxx' not found" notification that
+     * {@code showRevisionInMainLog} shows when called before the log has indexed a new commit.
+     * <p>
+     * Must be called on the EDT.
+     *
+     * @param project  the current project
+     * @param fullHash the full 40-character commit SHA
+     */
+    static void showRevisionInLogAfterRefresh(@NotNull Project project, @NotNull String fullHash) {
+        var hash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
+        var vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project);
+        var data = vcsLog.getDataManager();
+        if (data == null) {
+            // Log not initialized — fall back to direct navigation
+            com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash);
+            return;
+        }
+
+        var navigated = new java.util.concurrent.atomic.AtomicBoolean(false);
+        com.intellij.vcs.log.data.DataPackChangeListener[] listenerRef =
+            new com.intellij.vcs.log.data.DataPackChangeListener[1];
+
+        listenerRef[0] = dataPack -> {
+            if (!navigated.compareAndSet(false, true)) return;
+            data.removeDataPackChangeListener(listenerRef[0]);
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
+        };
+
+        data.addDataPackChangeListener(listenerRef[0]);
+
+        // Trigger VCS log refresh to pick up the new commit
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            var root = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(basePath);
+            if (root != null) {
+                data.refresh(java.util.List.of(root));
+            }
+        }
+
+        // Timeout: clean up listener after 5 seconds to prevent leak
+        com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService()
+            .schedule(() -> {
+                if (navigated.compareAndSet(false, true)) {
+                    data.removeDataPackChangeListener(listenerRef[0]);
+                }
+            }, 5, java.util.concurrent.TimeUnit.SECONDS);
     }
 
     /**
@@ -478,10 +534,10 @@ public final class PlatformApiCompat {
      * @return the matching ConfigurationType, or null if not found
      */
     static com.intellij.execution.configurations.ConfigurationType findConfigurationTypeBySearch(
-            String idOrNameSubstring) {
+        String idOrNameSubstring) {
         String lowerSearch = idOrNameSubstring.toLowerCase();
         for (var ct : com.intellij.execution.configurations.ConfigurationType
-                .CONFIGURATION_TYPE_EP.getExtensionList()) {
+            .CONFIGURATION_TYPE_EP.getExtensionList()) {
             if (ct.getId().toLowerCase().contains(lowerSearch)
                 || ct.getDisplayName().toLowerCase().contains(lowerSearch)) {
                 return ct;
@@ -503,8 +559,8 @@ public final class PlatformApiCompat {
      * @return a Runnable that disconnects the subscription when called
      */
     static Runnable subscribeExecutionListener(
-            com.intellij.openapi.project.Project project,
-            com.intellij.execution.ExecutionListener listener) {
+        com.intellij.openapi.project.Project project,
+        com.intellij.execution.ExecutionListener listener) {
         var connection = project.getMessageBus().connect();
         connection.subscribe(com.intellij.execution.ExecutionManager.EXECUTION_TOPIC, listener);
         return connection::disconnect;
