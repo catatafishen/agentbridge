@@ -12,7 +12,7 @@ import java.awt.*;
  * <p>
  * Background tint persists for the duration of the turn (write color takes
  * priority over read). A transient location label ("Agent reading" /
- * "Agent editing") appears for 2.5 seconds after each access.
+ * "Agent editing") appears for {@link FileAccessTracker#LABEL_DURATION_MS} after each access.
  */
 public final class AgentFileDecorator implements ProjectViewNodeDecorator {
 

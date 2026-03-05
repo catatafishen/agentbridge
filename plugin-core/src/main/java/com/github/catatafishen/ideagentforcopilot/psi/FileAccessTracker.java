@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -29,7 +30,7 @@ final class FileAccessTracker {
         READ, WRITE, READ_WRITE
     }
 
-    private static final long LABEL_DURATION_MS = 4000;
+    static final long LABEL_DURATION_MS = 4000;
 
     private static final Map<String, AccessType> accessMap = new ConcurrentHashMap<>();
     private static final Map<String, String> activeLabels = new ConcurrentHashMap<>();
@@ -51,8 +52,8 @@ final class FileAccessTracker {
         accessMap.merge(key, AccessType.READ, FileAccessTracker::merge);
         activeLabels.put(key, "Agent reading");
         long gen = generationFor(key).incrementAndGet();
-        refreshNode(project, vf);
-        scheduleLabelExpiry(project, key, vf, gen);
+        scheduleProjectViewRefresh(project);
+        scheduleLabelExpiry(project, key, gen);
     }
 
     static void recordWrite(Project project, String path) {
@@ -62,8 +63,8 @@ final class FileAccessTracker {
         accessMap.merge(key, AccessType.WRITE, FileAccessTracker::merge);
         activeLabels.put(key, "Agent editing");
         long gen = generationFor(key).incrementAndGet();
-        refreshNode(project, vf);
-        scheduleLabelExpiry(project, key, vf, gen);
+        scheduleProjectViewRefresh(project);
+        scheduleLabelExpiry(project, key, gen);
     }
 
     /**
@@ -85,7 +86,7 @@ final class FileAccessTracker {
         accessMap.clear();
         activeLabels.clear();
         labelGenerations.clear();
-        refreshProjectView(project);
+        scheduleProjectViewRefresh(project);
     }
 
     private static AtomicLong generationFor(String key) {
@@ -102,51 +103,43 @@ final class FileAccessTracker {
         return existing;
     }
 
-    private static void scheduleLabelExpiry(Project project, String key, VirtualFile vf, long generation) {
+    private static void scheduleLabelExpiry(Project project, String key, long generation) {
         scheduler.schedule(() -> {
             AtomicLong current = labelGenerations.get(key);
             if (current == null || current.get() != generation) {
                 return; // a newer access superseded this one
             }
             activeLabels.remove(key);
-            refreshNode(project, vf);
+            scheduleProjectViewRefresh(project);
         }, LABEL_DURATION_MS, TimeUnit.MILLISECONDS);
     }
 
     /**
-     * Refreshes decoration for a single file node in the project view.
-     * Uses {@code updateFrom()} to re-evaluate decorators for the specific node,
-     * which is lighter than rebuilding the entire tree.
+     * Debounced project view refresh.
+     * <p>
+     * Uses {@code updateFromRoot(true)} which reliably triggers decorator
+     * re-evaluation for all visible nodes (unlike {@code updateFrom()} which
+     * only updates the currently-selected node). The flag ensures rapid bursts
+     * of file access events coalesce into a single tree rebuild. IntelliJ's
+     * {@code StructureTreeModel} further batches multiple {@code updateFromRoot}
+     * calls internally.
      */
-    private static void refreshNode(Project project, VirtualFile vf) {
-        ApplicationManager.getApplication().invokeLater(() -> {
-            if (project.isDisposed()) return;
-            try {
-                var pane = ProjectView.getInstance(project).getCurrentProjectViewPane();
-                if (pane != null) {
-                    pane.updateFrom(vf, false, false);
-                }
-            } catch (Exception ignored) {
-                // Project view may not be available
-            }
-        });
-    }
+    private static final AtomicBoolean refreshPending = new AtomicBoolean(false);
 
-    /**
-     * Refreshes all file decorations in the project view by rebuilding from root.
-     * Used at end-of-turn when all highlights need to be cleared at once.
-     */
-    private static void refreshProjectView(Project project) {
-        ApplicationManager.getApplication().invokeLater(() -> {
-            if (project.isDisposed()) return;
-            try {
-                var pane = ProjectView.getInstance(project).getCurrentProjectViewPane();
-                if (pane != null) {
-                    pane.updateFromRoot(false);
+    private static void scheduleProjectViewRefresh(Project project) {
+        if (refreshPending.compareAndSet(false, true)) {
+            ApplicationManager.getApplication().invokeLater(() -> {
+                refreshPending.set(false);
+                if (project.isDisposed()) return;
+                try {
+                    var pane = ProjectView.getInstance(project).getCurrentProjectViewPane();
+                    if (pane != null) {
+                        pane.updateFromRoot(true);
+                    }
+                } catch (Exception ignored) {
+                    // Project view may not be available
                 }
-            } catch (Exception ignored) {
-                // Project view may not be available
-            }
-        });
+            });
+        }
     }
 }
