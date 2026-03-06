@@ -529,8 +529,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         // Input row (bottom of splitter — resizable)
         val inputRow = createInputRow()
 
-        // Splitter between output and input only
-        val splitter = OnePixelSplitter(true, 0.75f)
+        // Splitter between output and input only (85% chat, 15% input ≈ 3 lines)
+        val splitter = OnePixelSplitter(true, 0.85f)
         splitter.firstComponent = topPanel
         splitter.secondComponent = inputRow
         splitter.setHonorComponentsMinimumSize(true)
@@ -600,6 +600,19 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             editor.settings.isUseSoftWraps = true
             editor.contentComponent.border = JBUI.Borders.empty(4, 6)
             editor.setBorder(null)
+
+            // Auto-scroll the outer JBScrollPane to keep the caret visible while typing
+            editor.caretModel.addCaretListener(object : com.intellij.openapi.editor.event.CaretListener {
+                override fun caretPositionChanged(event: com.intellij.openapi.editor.event.CaretEvent) {
+                    SwingUtilities.invokeLater {
+                        val caretOffset = editor.caretModel.offset
+                        val caretPoint = editor.offsetToXY(caretOffset)
+                        val lineHeight = editor.lineHeight
+                        val rect = java.awt.Rectangle(caretPoint.x, caretPoint.y, 1, lineHeight)
+                        editor.contentComponent.scrollRectToVisible(rect)
+                    }
+                }
+            })
         }
 
         // Auto-revalidate on document changes
@@ -1372,6 +1385,28 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                     java.awt.event.InputEvent.SHIFT_DOWN_MASK
                 )
             ),
+            contentComponent
+        )
+
+        // Intercept paste: redirect large clipboard content to a scratch file
+        val pasteShortcuts = listOf(
+            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
+            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
+            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK),
+        )
+        object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) {
+                val clipText = getClipboardText()
+                if (clipText != null && (clipText.lines().size > 3 || clipText.length > 200)) {
+                    handlePasteToScratch(clipText)
+                } else {
+                    val handler = com.intellij.openapi.editor.actionSystem.EditorActionManager.getInstance()
+                        .getActionHandler(IdeActions.ACTION_EDITOR_PASTE)
+                    handler.execute(editor, editor.caretModel.currentCaret, e.dataContext)
+                }
+            }
+        }.registerCustomShortcutSet(
+            CustomShortcutSet(*pasteShortcuts.toTypedArray()),
             contentComponent
         )
 
@@ -2228,6 +2263,41 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }, com.intellij.openapi.application.ModalityState.current(), false)
     }
 
+    private fun getClipboardText(): String? {
+        return try {
+            val clipboard = java.awt.Toolkit.getDefaultToolkit().systemClipboard
+            clipboard.getData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun handlePasteToScratch(text: String) {
+        val settings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance()
+        val enabledLanguages = settings.enabledLanguages
+
+        if (enabledLanguages.isEmpty()) {
+            Messages.showInfoMessage(
+                project,
+                "No languages are enabled. Configure them in Settings → Tools → Scratch File Types.",
+                "No Scratch Languages"
+            )
+            return
+        }
+
+        com.intellij.ide.scratch.LRUPopupBuilder
+            .languagePopupBuilder(project, "Paste as Scratch File") { lang ->
+                lang.associatedFileType?.icon ?: com.intellij.icons.AllIcons.FileTypes.Any_type
+            }
+            .forValues(enabledLanguages)
+            .onChosen { lang ->
+                val ext = lang.associatedFileType?.defaultExtension ?: return@onChosen
+                createAndAttachScratch(ext, text)
+            }
+            .buildPopup()
+            .showCenteredInCurrentWindow(project)
+    }
+
     private fun handleCreateScratch(e: AnActionEvent) {
         val settings = com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings.getInstance()
         val enabledLanguages = settings.enabledLanguages
@@ -2254,7 +2324,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             .showCenteredInCurrentWindow(project)
     }
 
-    private fun createAndAttachScratch(ext: String) {
+    private fun createAndAttachScratch(ext: String, initialContent: String? = null) {
         ApplicationManager.getApplication().invokeLater {
             try {
                 val scratchService = com.intellij.ide.scratch.ScratchFileService.getInstance()
@@ -2265,10 +2335,14 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 val file = ApplicationManager.getApplication().runWriteAction(
                     com.intellij.openapi.util.Computable<com.intellij.openapi.vfs.VirtualFile?> {
                         try {
-                            scratchService.findFile(
+                            val vf = scratchService.findFile(
                                 scratchRoot, name,
                                 com.intellij.ide.scratch.ScratchFileService.Option.create_new_always
                             )
+                            if (vf != null && !initialContent.isNullOrEmpty()) {
+                                vf.setBinaryContent(initialContent.toByteArray(Charsets.UTF_8))
+                            }
+                            vf
                         } catch (e: java.io.IOException) {
                             LOG.warn("Failed to create scratch file", e)
                             null
