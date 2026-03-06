@@ -89,9 +89,11 @@ public final class McpProtocolHandler {
             tool.addProperty("name", entry.id);
             tool.addProperty("description", entry.description);
 
-            // Empty input schema — the actual schemas come from the tool implementations
+            // Minimal valid schema — CAPI requires 'properties' on all object types
             JsonObject inputSchema = new JsonObject();
             inputSchema.addProperty("type", "object");
+            inputSchema.add("properties", new JsonObject());
+            inputSchema.add("required", new JsonArray());
             tool.add("inputSchema", inputSchema);
 
             tools.add(tool);

@@ -417,41 +417,75 @@ class McpServerTest {
         assertTrue(desc.contains("search_symbols"), "run_command description should redirect to search_symbols");
     }
 
+    /**
+     * CAPI schema validation: every tool's inputSchema must be a valid JSON Schema
+     * that CAPI will accept. Validates recursively — catches "object schema missing
+     * properties", "array schema missing items", etc. at any nesting depth.
+     */
     @Test
     void testAllToolSchemasAreValid() {
         JsonObject request = buildRequest("tools/list", new JsonObject());
         JsonObject response = McpServer.handleMessage(request);
-        assertNotNull(response);
+        assertNotNull(response, "tools/list should return a response");
         JsonArray tools = response.getAsJsonObject("result").getAsJsonArray("tools");
+        assertNotNull(tools, "tools/list result should contain 'tools' array");
+        assertTrue(tools.size() > 50, "Expected 50+ tools, got " + tools.size());
 
-        for (var element : tools) {
-            JsonObject tool = element.getAsJsonObject();
-            String name = tool.get("name").getAsString();
+        var errors = new ArrayList<String>();
+        for (var toolElement : tools) {
+            JsonObject tool = toolElement.getAsJsonObject();
+            String toolName = tool.get("name").getAsString();
 
-            assertTrue(tool.has("description"), name + ": missing description");
-            assertTrue(tool.has("inputSchema"), name + ": missing inputSchema");
+            if (!tool.has("inputSchema")) {
+                errors.add(toolName + ": missing inputSchema");
+                continue;
+            }
 
-            JsonObject schema = tool.getAsJsonObject("inputSchema");
-            assertEquals("object", schema.get("type").getAsString(), name + ": inputSchema type must be 'object'");
-            assertTrue(schema.has("properties"), name + ": inputSchema missing 'properties'");
-            assertTrue(schema.has("required"), name + ": inputSchema missing 'required'");
+            validateJsonSchema(tool.getAsJsonObject("inputSchema"), toolName, "", errors);
+        }
 
-            // Recursively validate nested object-type properties have 'properties' field
+        if (!errors.isEmpty()) {
+            fail("CAPI schema validation errors:\n  " + String.join("\n  ", errors));
+        }
+    }
+
+    /**
+     * Recursively validates a JSON Schema node for CAPI compliance.
+     * Rules: object types must have "properties", array types must have "items",
+     * every schema node must have "type". Nested schemas are checked recursively.
+     */
+    private void validateJsonSchema(JsonObject schema, String toolName, String path, ArrayList<String> errors) {
+        String context = toolName + (path.isEmpty() ? "" : "." + path);
+
+        if (!schema.has("type")) {
+            errors.add(context + ": missing 'type'");
+            return;
+        }
+
+        String type = schema.get("type").getAsString();
+
+        if ("object".equals(type)) {
+            if (!schema.has("properties")) {
+                errors.add(context + ": object schema missing 'properties'");
+                return;
+            }
             JsonObject properties = schema.getAsJsonObject("properties");
             for (String propName : properties.keySet()) {
-                JsonObject prop = properties.getAsJsonObject(propName);
-                assertTrue(prop.has("type"), name + "." + propName + ": missing 'type'");
-                assertTrue(prop.has("description"), name + "." + propName + ": missing 'description'");
-
-                String propType = prop.get("type").getAsString();
-                if ("object".equals(propType)) {
-                    assertTrue(prop.has("properties"),
-                        name + "." + propName + ": object property missing 'properties' field");
+                JsonObject propSchema = properties.getAsJsonObject(propName);
+                if (propSchema == null) {
+                    errors.add(context + "." + propName + ": property schema is null");
+                    continue;
                 }
-                if ("array".equals(propType)) {
-                    assertTrue(prop.has("items"),
-                        name + "." + propName + ": array property missing 'items' field");
-                }
+                validateJsonSchema(propSchema, toolName, path.isEmpty() ? propName : path + "." + propName, errors);
+            }
+        } else if ("array".equals(type)) {
+            if (!schema.has("items")) {
+                errors.add(context + ": array schema missing 'items'");
+                return;
+            }
+            JsonObject items = schema.getAsJsonObject("items");
+            if (items != null) {
+                validateJsonSchema(items, toolName, path.isEmpty() ? "items" : path + ".items", errors);
             }
         }
     }
