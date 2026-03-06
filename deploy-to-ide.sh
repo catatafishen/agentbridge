@@ -8,35 +8,41 @@
 #
 set -euo pipefail
 
-PLUGIN_DIR_NAME="plugin-core"
 DIST_DIR="plugin-core/build/distributions"
 BRIDGE_FILE="$HOME/.copilot/psi-bridge.json"
 
-# Auto-detect IntelliJ install dir
+# Detect the top-level directory name inside the ZIP (e.g. "ide-agent-for-copilot")
+detect_zip_root_dir() {
+    local zip="$1"
+    unzip -l "$zip" | awk 'NR>3 && $NF ~ /\/$/ { split($NF,a,"/"); print a[1]; exit }'
+}
+
+# Auto-detect IntelliJ install dir for the plugin
 detect_install_dir() {
+    local plugin_dir_name="$1"
     local base="$HOME/.local/share/JetBrains"
 
-    # 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/plugin-core
+    # 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/<plugin>
     local ide_dir
     ide_dir=$(ls -dt "$base"/IntelliJIdea* 2>/dev/null | head -1)
-    if [[ -n "$ide_dir" && -d "$ide_dir/$PLUGIN_DIR_NAME" ]]; then
-        echo "$ide_dir/$PLUGIN_DIR_NAME"
+    if [[ -n "$ide_dir" && -d "$ide_dir/$plugin_dir_name" ]]; then
+        echo "$ide_dir/$plugin_dir_name"
         return
     fi
 
-    # 2. Toolbox app-level: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/plugin-core
+    # 2. Toolbox app-level: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/<plugin>
     local dir
     dir=$(find "$base/Toolbox/apps" -maxdepth 3 -name "plugins" -type d 2>/dev/null | while read -r d; do
-        [[ -d "$d/$PLUGIN_DIR_NAME" ]] && echo "$d/$PLUGIN_DIR_NAME" && break
+        [[ -d "$d/$plugin_dir_name" ]] && echo "$d/$plugin_dir_name" && break
     done)
     if [[ -n "$dir" ]]; then
         echo "$dir"
         return
     fi
 
-    # 3. Fallback: newest IntelliJIdea dir (create if needed)
+    # 3. Fallback: newest IntelliJIdea dir (create target)
     if [[ -n "$ide_dir" ]]; then
-        echo "$ide_dir/$PLUGIN_DIR_NAME"
+        echo "$ide_dir/$plugin_dir_name"
     fi
 }
 
@@ -55,8 +61,15 @@ fi
 LATEST_ZIP_ABS=$(realpath "$LATEST_ZIP")
 echo "📦 ZIP: $(basename "$LATEST_ZIP")"
 
-# Step 3: Always deploy files to plugin install directory
-INSTALL_DIR=$(detect_install_dir)
+# Step 3: Detect plugin directory name from ZIP contents
+PLUGIN_DIR_NAME=$(detect_zip_root_dir "$LATEST_ZIP")
+if [[ -z "$PLUGIN_DIR_NAME" ]]; then
+    echo "❌ Could not detect plugin directory name in ZIP"
+    exit 1
+fi
+
+# Step 4: Deploy files to plugin install directory
+INSTALL_DIR=$(detect_install_dir "$PLUGIN_DIR_NAME")
 if [[ -z "$INSTALL_DIR" ]]; then
     echo "❌ Could not find plugin install directory"
     exit 1
@@ -75,7 +88,7 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
 fi
 echo "✅ Files deployed"
 
-# Step 4: Try dynamic reload via PSI bridge (best-effort)
+# Step 5: Try dynamic reload via PSI bridge (best-effort)
 if [[ -f "$BRIDGE_FILE" ]]; then
     PORT=$(python3 -c "
 import json, sys
