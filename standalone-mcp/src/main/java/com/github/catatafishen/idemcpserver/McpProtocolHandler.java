@@ -46,7 +46,7 @@ public final class McpProtocolHandler {
 
             JsonObject result = switch (method) {
                 case "initialize" -> handleInitialize(msg);
-                case "tools/list" -> handleToolsList();
+                case "tools/list" -> handleToolsList(msg);
                 case "tools/call" -> handleToolsCall(msg);
                 case "ping" -> respondResult(msg, new JsonObject());
                 default -> respondError(msg, -32601, "Method not found: " + method);
@@ -79,7 +79,7 @@ public final class McpProtocolHandler {
         return respondResult(msg, result);
     }
 
-    private JsonObject handleToolsList() {
+    private JsonObject handleToolsList(JsonObject msg) {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         List<ToolRegistry.ToolEntry> enabledTools = McpToolFilter.getEnabledTools(settings, project);
 
@@ -99,7 +99,7 @@ public final class McpProtocolHandler {
 
         JsonObject result = new JsonObject();
         result.add("tools", tools);
-        return result;
+        return respondResult(msg, result);
     }
 
     private JsonObject handleToolsCall(JsonObject msg) {
