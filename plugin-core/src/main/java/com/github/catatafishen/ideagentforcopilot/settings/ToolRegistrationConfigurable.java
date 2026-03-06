@@ -25,7 +25,7 @@ import java.util.Map;
 
 /**
  * Settings page: Settings → Tools → IDE Agent for Copilot → Tool Registration.
- * MCP server config (port, auto-start) and tool enable/disable checkboxes.
+ * MCP server config (port, transport mode, auto-start) and tool enable/disable checkboxes.
  */
 public final class ToolRegistrationConfigurable implements Configurable {
 
@@ -33,6 +33,7 @@ public final class ToolRegistrationConfigurable implements Configurable {
 
     private final Project project;
     private JSpinner portSpinner;
+    private JComboBox<TransportMode> transportModeCombo;
     private JBCheckBox autoStartCheckbox;
     private JBCheckBox followModeCheckbox;
     private final Map<String, JBCheckBox> toolCheckboxes = new LinkedHashMap<>();
@@ -54,6 +55,21 @@ public final class ToolRegistrationConfigurable implements Configurable {
 
         portSpinner = new JSpinner(new SpinnerNumberModel(
             settings.getPort(), 1024, 65535, 1));
+
+        transportModeCombo = new JComboBox<>(TransportMode.values());
+        transportModeCombo.setSelectedItem(settings.getTransportMode());
+        transportModeCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value,
+                                                          int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof TransportMode mode) {
+                    setText(mode.getDisplayName());
+                }
+                return this;
+            }
+        });
+
         autoStartCheckbox = new JBCheckBox("Start MCP server automatically when project opens",
             settings.isAutoStart());
         followModeCheckbox = new JBCheckBox("Follow Agent — open files and highlight regions as the agent reads or edits them",
@@ -73,6 +89,7 @@ public final class ToolRegistrationConfigurable implements Configurable {
 
         JPanel serverPanel = FormBuilder.createFormBuilder()
             .addLabeledComponent("MCP server port:", portSpinner)
+            .addLabeledComponent("Transport mode:", transportModeCombo)
             .addComponent(autoStartCheckbox)
             .addComponent(followModeCheckbox)
             .addComponent(buttonRow)
@@ -117,6 +134,7 @@ public final class ToolRegistrationConfigurable implements Configurable {
     public boolean isModified() {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         if ((Integer) portSpinner.getValue() != settings.getPort()) return true;
+        if (transportModeCombo.getSelectedItem() != settings.getTransportMode()) return true;
         if (autoStartCheckbox.isSelected() != settings.isAutoStart()) return true;
         if (followModeCheckbox.isSelected() != CopilotSettings.getFollowAgentFiles(project)) return true;
         for (Map.Entry<String, JBCheckBox> entry : toolCheckboxes.entrySet()) {
@@ -129,6 +147,7 @@ public final class ToolRegistrationConfigurable implements Configurable {
     public void apply() {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         settings.setPort((Integer) portSpinner.getValue());
+        settings.setTransportMode((TransportMode) transportModeCombo.getSelectedItem());
         settings.setAutoStart(autoStartCheckbox.isSelected());
         CopilotSettings.setFollowAgentFiles(project, followModeCheckbox.isSelected());
         for (Map.Entry<String, JBCheckBox> entry : toolCheckboxes.entrySet()) {
@@ -140,6 +159,7 @@ public final class ToolRegistrationConfigurable implements Configurable {
     public void reset() {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         portSpinner.setValue(settings.getPort());
+        transportModeCombo.setSelectedItem(settings.getTransportMode());
         autoStartCheckbox.setSelected(settings.isAutoStart());
         followModeCheckbox.setSelected(CopilotSettings.getFollowAgentFiles(project));
         for (Map.Entry<String, JBCheckBox> entry : toolCheckboxes.entrySet()) {
@@ -150,10 +170,15 @@ public final class ToolRegistrationConfigurable implements Configurable {
     private void copyMcpConfig(JButton button) {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         int port = settings.getPort();
+        TransportMode mode = settings.getTransportMode();
+        String url = (mode == TransportMode.SSE)
+            ? "http://127.0.0.1:" + port + "/sse"
+            : "http://127.0.0.1:" + port + "/mcp";
+
         String config = "{\n"
             + "  \"mcpServers\": {\n"
             + "    \"ide-mcp-server\": {\n"
-            + "      \"url\": \"http://127.0.0.1:" + port + "/mcp\"\n"
+            + "      \"url\": \"" + url + "\"\n"
             + "    }\n"
             + "  }\n"
             + "}";
@@ -176,23 +201,37 @@ public final class ToolRegistrationConfigurable implements Configurable {
         button.setText("Restarting...");
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            String errorMessage = null;
             try {
                 Class<?> serverClass = Class.forName(
                     "com.github.catatafishen.idemcpserver.McpHttpServer");
                 Object server = PlatformApiCompat.getServiceByRawClass(project, serverClass);
                 if (server == null) {
-                    LOG.warn("McpHttpServer service not found");
+                    errorMessage = "MCP HTTP Server service not found. Is the IDE MCP Server plugin installed?";
+                    LOG.warn(errorMessage);
                     return;
                 }
                 serverClass.getMethod("stop").invoke(server);
+                Thread.sleep(500);
                 serverClass.getMethod("start").invoke(server);
                 LOG.info("MCP server restarted via settings");
+            } catch (ClassNotFoundException ex) {
+                errorMessage = "MCP HTTP Server plugin is not installed. "
+                    + "Install the 'IDE MCP Server' plugin to use the HTTP server.";
+                LOG.info(errorMessage);
             } catch (Exception ex) {
+                errorMessage = "Failed to restart: " + ex.getMessage();
                 LOG.error("Failed to restart MCP server", ex);
             } finally {
+                String finalError = errorMessage;
                 ApplicationManager.getApplication().invokeLater(() -> {
                     button.setText("Restart MCP Server");
                     button.setEnabled(true);
+                    if (finalError != null) {
+                        button.setToolTipText(finalError);
+                    } else {
+                        button.setToolTipText("Stop and restart the MCP server to pick up tool registration changes");
+                    }
                 });
             }
         });
