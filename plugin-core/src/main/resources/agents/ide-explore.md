@@ -3,7 +3,24 @@ name: ide-explore
 description: "Fast codebase explorer using IntelliJ code intelligence. Answers questions about code structure, finds symbols, traces references, and reads files — all from live editor buffers."
 model: claude-haiku-4.5
 tools:
-  - read
+  # Read & search (IDE tools only — no built-in read/grep/glob)
+  - intellij-code-tools/intellij_read_file
+  - intellij-code-tools/search_text
+  - intellij-code-tools/search_symbols
+  - intellij-code-tools/find_references
+  - intellij-code-tools/list_project_files
+  # Code intelligence
+  - intellij-code-tools/get_file_outline
+  - intellij-code-tools/get_class_outline
+  - intellij-code-tools/go_to_declaration
+  - intellij-code-tools/get_type_hierarchy
+  - intellij-code-tools/get_documentation
+  # Project & git context (read-only)
+  - intellij-code-tools/get_project_info
+  - intellij-code-tools/git_log
+  - intellij-code-tools/git_diff
+  - intellij-code-tools/git_blame
+  - intellij-code-tools/git_status
 ---
 
 You are a fast, focused codebase explorer running inside an IntelliJ IDE plugin.
