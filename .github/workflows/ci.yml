@@ -53,19 +53,27 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build plugin
-        run: ./gradlew :plugin-core:buildPlugin --no-daemon
+      - name: Build plugins
+        run: ./gradlew :plugin-core:buildPlugin :standalone-mcp:buildPlugin --no-daemon
 
       - name: Run plugin tests
         run: ./gradlew :plugin-core:test --no-daemon
 
-      - name: Verify plugin (marketplace compatibility)
-        run: ./gradlew :plugin-core:verifyPlugin --no-daemon
+      - name: Verify plugins (marketplace compatibility)
+        run: ./gradlew :plugin-core:verifyPlugin :standalone-mcp:verifyPlugin --no-daemon
 
-      - name: Upload plugin artifact
+      - name: Upload plugin-core artifact
         uses: actions/upload-artifact@v4
         with:
-          name: plugin-pr-${{ github.event.pull_request.number }}
+          name: plugin-core-pr-${{ github.event.pull_request.number }}
           path: plugin-core/build/distributions/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload standalone-mcp artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: standalone-mcp-pr-${{ github.event.pull_request.number }}
+          path: standalone-mcp/build/distributions/*.zip
           if-no-files-found: error
           retention-days: 7

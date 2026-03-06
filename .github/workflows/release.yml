@@ -86,11 +86,11 @@ jobs:
           echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "skip=false" >> "$GITHUB_OUTPUT"
 
-      - name: Build release ZIP
+      - name: Build release ZIPs
         if: steps.version.outputs.skip != 'true'
         env:
           PLUGIN_VERSION: ${{ steps.version.outputs.version }}
-        run: ./gradlew :plugin-core:buildPlugin --no-daemon
+        run: ./gradlew :plugin-core:buildPlugin :standalone-mcp:buildPlugin --no-daemon
 
       - name: Create tag and GitHub release
         if: steps.version.outputs.skip != 'true'
@@ -112,4 +112,5 @@ jobs:
           gh release create "$TAG" \
             --title "Release $TAG" \
             --notes "$NOTES" \
-            plugin-core/build/distributions/*.zip
+            plugin-core/build/distributions/*.zip \
+            standalone-mcp/build/distributions/*.zip
