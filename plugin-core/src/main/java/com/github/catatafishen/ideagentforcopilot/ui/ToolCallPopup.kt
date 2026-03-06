@@ -12,30 +12,40 @@ import java.awt.Point
 import javax.swing.JEditorPane
 import javax.swing.UIManager
 
-/**
- * Lightweight floating popup that shows tool call details (parameters and result)
- * rendered as HTML. Uses [JBPopupFactory] — movable, resizable, closes on click-outside
- * or Escape. Re-uses the same CSS classes as the chat panel tool renderers.
- */
 internal object ToolCallPopup {
 
     private var currentPopup: com.intellij.openapi.ui.popup.JBPopup? = null
 
+    /** Kind → chip background color mapping (10% alpha blend onto panel background). */
+    private val KIND_COLORS = mapOf(
+        "read" to JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185)),
+        "edit" to JBColor(Color(0xA0, 0x7A, 0x3A), Color(205, 155, 95)),
+        "execute" to JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130)),
+        "search" to JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185)),
+        "think" to JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210)),
+        "other" to JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170)),
+    )
+
     /**
-     * @param paramsHtml  pre-rendered HTML for the parameters section, or null to omit
-     * @param resultHtml  pre-rendered HTML for the result section (from [com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers])
+     * @param kind       tool kind ("read", "edit", "execute", etc.) — drives the background tint
+     * @param paramsHtml pre-rendered HTML for the parameters section, or null to omit
+     * @param resultHtml pre-rendered HTML for the result section
      */
-    fun show(project: Project, title: String, paramsHtml: String?, resultHtml: String) {
+    fun show(project: Project, title: String, kind: String, paramsHtml: String?, resultHtml: String) {
         currentPopup?.cancel()
 
-        val htmlDoc = buildHtmlDocument(paramsHtml, resultHtml)
+        val kindColor = KIND_COLORS[kind] ?: KIND_COLORS["other"]!!
+        val panelBg = UIUtil.getPanelBackground()
+        val tintedBg = blendColor(kindColor, panelBg, 0.07)
+
+        val htmlDoc = buildHtmlDocument(tintedBg, paramsHtml, resultHtml)
         val editorPane = JEditorPane().apply {
             contentType = "text/html"
             isEditable = false
             text = htmlDoc
             caretPosition = 0
             border = JBUI.Borders.empty()
-            background = UIUtil.getPanelBackground()
+            background = tintedBg
         }
 
         val scrollPane = com.intellij.ui.components.JBScrollPane(editorPane).apply {
@@ -68,15 +78,15 @@ internal object ToolCallPopup {
         }
     }
 
-    private fun buildHtmlDocument(paramsHtml: String?, resultHtml: String): String {
-        val css = buildPopupCss()
+    private fun buildHtmlDocument(bg: Color, paramsHtml: String?, resultHtml: String): String {
+        val css = buildPopupCss(bg)
         val body = StringBuilder()
+        body.append("<div class='section'><div class='section-label'>Result</div>")
+        body.append("<div class='section-content'>$resultHtml</div></div>")
         if (paramsHtml != null) {
             body.append("<div class='section'><div class='section-label'>Parameters</div>")
             body.append("<div class='section-content'>$paramsHtml</div></div>")
         }
-        body.append("<div class='section'><div class='section-label'>Result</div>")
-        body.append("<div class='section-content'>$resultHtml</div></div>")
 
         return """
             <html><head><style>$css</style></head>
@@ -87,11 +97,9 @@ internal object ToolCallPopup {
     /**
      * Builds a CSS stylesheet with colors resolved from the current IDE theme.
      * JEditorPane supports CSS1 only — no variables, flexbox, or modern features.
-     * We map the renderer class names to concrete colors.
      */
-    private fun buildPopupCss(): String {
+    private fun buildPopupCss(bg: Color): String {
         val fg = UIUtil.getLabelForeground()
-        val bg = UIUtil.getPanelBackground()
         val muted = blendColor(fg, bg, 0.55)
         val codeBg = UIManager.getColor("Editor.backgroundColor")
             ?: JBColor(Color(0xF0, 0xF0, 0xF0), Color(0x2B, 0x2D, 0x30))
@@ -135,7 +143,7 @@ internal object ToolCallPopup {
             .tool-output { font-size: ${font.size - 2}pt; }
             .tool-params-code { background: ${css(codeBg)}; }
 
-            /* ── Git file badges ──────────────────── */
+            /* ── Git file badges ── */
             .git-file-badge {
                 font-family: $monoFont;
                 font-size: ${font.size - 3}pt;
@@ -152,7 +160,7 @@ internal object ToolCallPopup {
             .git-file-path { font-family: $monoFont; font-size: ${font.size - 2}pt; }
             .git-file-entry { padding: 1px 0; }
 
-            /* ── Git status ───────────────────────── */
+            /* ── Git status ── */
             .git-status-result { line-height: 1.5; }
             .git-status-branch-name { font-weight: bold; }
             .git-status-tracking { color: ${css(muted)}; font-size: ${font.size - 2}pt; }
@@ -170,7 +178,7 @@ internal object ToolCallPopup {
             .git-status-untracked { color: ${css(muted)}; }
             .git-status-conflict { color: ${css(dangerColor)}; }
 
-            /* ── Git stage ────────────────────────── */
+            /* ── Git stage ── */
             .git-stage-header {
                 color: ${css(successColor)};
                 font-weight: bold;
@@ -178,7 +186,7 @@ internal object ToolCallPopup {
                 margin-bottom: 6px;
             }
 
-            /* ── Git diff ─────────────────────────── */
+            /* ── Git diff ── */
             .git-diff-result { line-height: 1.45; }
             .git-diff-file { margin-bottom: 8px; }
             .git-diff-file-header {
@@ -213,7 +221,7 @@ internal object ToolCallPopup {
             .git-diff-stat-count { font-family: $monoFont; color: ${css(muted)}; }
             .git-diff-stat-bar { font-family: $monoFont; }
 
-            /* ── Git log ──────────────────────────── */
+            /* ── Git log ── */
             .git-log-result { line-height: 1.55; }
             .git-log-entry { padding: 2px 0; }
             .git-log-hash {
@@ -225,7 +233,7 @@ internal object ToolCallPopup {
             .git-log-author { color: ${css(muted)}; font-size: ${font.size - 2}pt; }
             .git-log-date { color: ${css(muted)}; font-size: ${font.size - 2}pt; }
 
-            /* ── Search results ───────────────────── */
+            /* ── Search results ── */
             .search-result { line-height: 1.5; }
             .search-header { font-weight: bold; margin-bottom: 4px; }
             .search-count { color: ${css(linkColor)}; margin-right: 4px; }
@@ -241,7 +249,7 @@ internal object ToolCallPopup {
                 margin: 0 4px;
             }
 
-            /* ── Build / test results ─────────────── */
+            /* ── Build / test results ── */
             .build-result { line-height: 1.5; }
             .build-status-success { color: ${css(successColor)}; font-weight: bold; }
             .build-status-fail { color: ${css(dangerColor)}; font-weight: bold; }
@@ -250,18 +258,18 @@ internal object ToolCallPopup {
             .test-fail { color: ${css(dangerColor)}; }
             .test-skip { color: ${css(muted)}; }
 
-            /* ── Inspection results ───────────────── */
+            /* ── Inspection results ── */
             .inspection-result { line-height: 1.5; }
             .inspection-error { color: ${css(dangerColor)}; }
             .inspection-warning { color: ${css(warningColor)}; }
             .inspection-info { color: ${css(muted)}; }
 
-            /* ── File outline / class outline ─────── */
+            /* ── File outline / class outline ── */
             .outline-result { line-height: 1.5; }
             .outline-kind { color: ${css(linkColor)}; font-weight: bold; font-size: ${font.size - 2}pt; }
             .outline-name { font-family: $monoFont; }
 
-            /* ── Misc / fallback ──────────────────── */
+            /* ── Misc / fallback ── */
             .git-blame-result { line-height: 1.5; }
             .file-content-result { line-height: 1.4; }
             .write-result { line-height: 1.5; }

@@ -1303,15 +1303,24 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun handleShowToolPopup(toolDomId: String) {
         val entry = toolCallEntries[toolDomId]
         val baseName = toolCallNames[toolDomId]
-        val info = if (baseName != null) TOOL_DISPLAY_INFO[baseName] else null
-        val displayTitle = info?.displayName ?: baseName ?: toolDomId
+        val chipTitle = toolChipTitle(baseName, entry?.arguments)
+        val kind = entry?.kind ?: "other"
         val resultHtml = renderToolResultHtml(baseName, entry?.status, entry?.result)
         val paramsHtml = if (!entry?.arguments.isNullOrBlank()) {
             "<pre class='tool-params-code'><code>${esc(prettyJson(entry!!.arguments!!))}</code></pre>"
         } else null
         SwingUtilities.invokeLater {
-            ToolCallPopup.show(project, displayTitle, paramsHtml, resultHtml)
+            ToolCallPopup.show(project, chipTitle, kind, paramsHtml, resultHtml)
         }
+    }
+
+    /** Produces a chip-style title matching the JS toolDisplayName() logic. */
+    private fun toolChipTitle(baseName: String?, arguments: String?): String {
+        if (baseName == null) return "Tool Call"
+        val subtitle = formatToolSubtitle(baseName, arguments)
+        val info = TOOL_DISPLAY_INFO[baseName]
+        val display = info?.displayName ?: baseName
+        return if (subtitle != null) "$display — $subtitle" else display
     }
 
     private fun prettyJson(json: String): String {
