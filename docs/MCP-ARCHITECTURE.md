@@ -206,6 +206,86 @@ plugin when launching the Copilot CLI.
 }
 ```
 
+### 4. Standalone MCP HTTP Server
+
+**Location:** `standalone-mcp/src/main/java/com/github/catatafishen/idemcpserver/`
+
+**Purpose:** Exposes the same MCP tools over HTTP for external AI agents (Claude Desktop, Cursor,
+custom MCP clients) that cannot use the stdio-based subprocess model.
+
+**Key classes:**
+
+| Class                          | Role                                                             |
+|--------------------------------|------------------------------------------------------------------|
+| `McpHttpServer`                | Starts `com.sun.net.httpserver.HttpServer`, registers endpoints  |
+| `McpProtocolHandler`           | Stateless JSON-RPC handler (shared by all transports)            |
+| `McpSseTransport`              | SSE session management, `/sse` and `/message` endpoints          |
+| `SseSession`                   | Single SSE client connection (event stream, keep-alive)          |
+| `McpServerSettings`            | Persistent settings: port, auto-start, transport mode            |
+| `McpServerGeneralConfigurable` | Settings UI (port, transport mode, auto-start, follow agent)     |
+| `McpServerToggleAction`        | Toolbar toggle to start/stop the server                          |
+
+#### Transport Modes
+
+Configured in **Settings → Tools → IDE Agent for Copilot → MCP Server → General**.
+
+##### Streamable HTTP (default)
+
+Single request/response model — the simplest transport for MCP.
+
+| Endpoint      | Method  | Description                            |
+|---------------|---------|----------------------------------------|
+| `/mcp`        | POST    | JSON-RPC request → JSON-RPC response   |
+| `/health`     | GET     | Server status check                    |
+
+Client config:
+```json
+{
+  "mcpServers": {
+    "ide-mcp-server": {
+      "url": "http://127.0.0.1:8642/mcp"
+    }
+  }
+}
+```
+
+##### SSE (Server-Sent Events)
+
+Long-lived event stream — required by some MCP clients (e.g., older Claude Desktop versions).
+
+| Endpoint              | Method | Description                                    |
+|-----------------------|--------|------------------------------------------------|
+| `/sse`                | GET    | Opens SSE stream; sends `endpoint` event       |
+| `/message?sessionId=` | POST   | Receives JSON-RPC; response via SSE stream     |
+| `/health`             | GET    | Server status check                            |
+
+**SSE protocol flow:**
+
+1. Client opens `GET /sse` → server sends `event: endpoint\ndata: /message?sessionId=xxx\n\n`
+2. Client sends JSON-RPC to `POST /message?sessionId=xxx`
+3. Server responds with HTTP 202 (accepted) and pushes the JSON-RPC response through
+   the SSE stream as `event: message\ndata: {...}\n\n`
+4. A keep-alive comment (`: keepalive`) is sent every 30 seconds to prevent timeouts
+
+Client config:
+```json
+{
+  "mcpServers": {
+    "ide-mcp-server": {
+      "url": "http://127.0.0.1:8642/sse"
+    }
+  }
+}
+```
+
+#### Startup Flow (Standalone)
+
+1. `McpServerStartup` runs on project open
+2. `PsiBridgeService` is started (tool handlers)
+3. If auto-start is enabled, `McpHttpServer.start()` is called
+4. Based on `TransportMode` setting, registers either `/mcp` or `/sse` + `/message` endpoints
+5. Server listens on `127.0.0.1:<port>` (localhost only)
+
 ---
 
 ## Tool Categories
@@ -585,6 +665,7 @@ void testToolsListReturnsAllTools() {
 
 ### Protocol Improvements
 
+- **SSE Transport:** ✅ Implemented — configurable in MCP Server settings
 - **WebSocket Transport:** Replace stdio with WebSocket for bidirectional streaming
 - **Batch Tool Calls:** Execute multiple tools in single request
 - **Streaming Results:** Return large results incrementally

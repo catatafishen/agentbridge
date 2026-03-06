@@ -1,6 +1,6 @@
 package com.github.catatafishen.idemcpserver;
 
-import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
+import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.ToggleAction;
@@ -50,12 +50,15 @@ public final class McpServerToggleAction extends ToggleAction implements DumbAwa
             return;
         }
 
-        boolean running = McpHttpServer.getInstance(project).isRunning();
-        McpServerSettings settings = McpServerSettings.getInstance(project);
-        int port = running ? McpHttpServer.getInstance(project).getPort() : settings.getPort();
-        e.getPresentation().setText(running
-            ? "MCP Server (port " + port + ")"
-            : "MCP Server (stopped)");
+        McpHttpServer server = McpHttpServer.getInstance(project);
+        boolean running = server.isRunning();
+        if (running) {
+            TransportMode mode = server.getActiveTransportMode();
+            String modeLabel = mode != null ? mode.getDisplayName() : "HTTP";
+            e.getPresentation().setText("MCP Server (port " + server.getPort() + ", " + modeLabel + ")");
+        } else {
+            e.getPresentation().setText("MCP Server (stopped)");
+        }
     }
 
     @Override

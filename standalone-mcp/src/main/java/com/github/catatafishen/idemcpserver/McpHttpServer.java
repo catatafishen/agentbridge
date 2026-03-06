@@ -1,6 +1,7 @@
 package com.github.catatafishen.idemcpserver;
 
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
+import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -17,8 +18,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * HTTP server exposing the MCP (Model Context Protocol) endpoint.
- * Listens on a configurable port and handles Streamable HTTP transport:
- * POST /mcp for JSON-RPC requests, GET /health for status checks.
+ * Supports two transport modes configured via {@link McpServerSettings#getTransportMode()}:
+ * <ul>
+ *   <li><b>Streamable HTTP</b> — POST /mcp for JSON-RPC request/response</li>
+ *   <li><b>SSE</b> — GET /sse opens an event stream; POST /message sends requests,
+ *       responses arrive via the SSE stream</li>
+ * </ul>
+ * GET /health is always available for status checks.
  */
 @Service(Service.Level.PROJECT)
 public final class McpHttpServer implements Disposable {
@@ -29,6 +35,8 @@ public final class McpHttpServer implements Disposable {
     private final Project project;
     private HttpServer httpServer;
     private McpProtocolHandler protocolHandler;
+    private McpSseTransport sseTransport;
+    private TransportMode activeTransportMode;
     private final AtomicInteger activeConnections = new AtomicInteger(0);
     private volatile boolean running;
 
@@ -44,22 +52,38 @@ public final class McpHttpServer implements Disposable {
         if (running) return;
         McpServerSettings settings = McpServerSettings.getInstance(project);
         int port = settings.getPort();
+        activeTransportMode = settings.getTransportMode();
 
         protocolHandler = new McpProtocolHandler(project);
         httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
-        httpServer.createContext("/mcp", this::handleMcp);
         httpServer.createContext("/health", this::handleHealth);
+
+        if (activeTransportMode == TransportMode.SSE) {
+            sseTransport = new McpSseTransport(protocolHandler);
+            httpServer.createContext("/sse", sseTransport::handleSseConnect);
+            httpServer.createContext("/message", sseTransport::handleMessage);
+            sseTransport.start();
+        } else {
+            httpServer.createContext("/mcp", this::handleMcp);
+        }
+
         httpServer.setExecutor(Executors.newFixedThreadPool(8));
         httpServer.start();
         running = true;
-        LOG.info("MCP HTTP server started on port " + port + " for project: " + project.getBasePath());
+        LOG.info("MCP server started on port " + port + " (" + activeTransportMode.getDisplayName()
+            + ") for project: " + project.getBasePath());
     }
 
     public synchronized void stop() {
         if (!running || httpServer == null) return;
+        if (sseTransport != null) {
+            sseTransport.stop();
+            sseTransport = null;
+        }
         httpServer.stop(1);
         httpServer = null;
         protocolHandler = null;
+        activeTransportMode = null;
         running = false;
         activeConnections.set(0);
         LOG.info("MCP HTTP server stopped for project: " + project.getBasePath());
@@ -69,11 +93,18 @@ public final class McpHttpServer implements Disposable {
         return running;
     }
 
+    public TransportMode getActiveTransportMode() {
+        return activeTransportMode;
+    }
+
     public int getPort() {
         return httpServer != null ? httpServer.getAddress().getPort() : 0;
     }
 
     public int getActiveConnections() {
+        if (sseTransport != null) {
+            return sseTransport.getActiveSessionCount();
+        }
         return activeConnections.get();
     }
 
@@ -81,7 +112,7 @@ public final class McpHttpServer implements Disposable {
         // CORS headers for browser-based agents
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", CONTENT_TYPE);
 
         if ("OPTIONS".equals(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(204, -1);
@@ -124,7 +155,9 @@ public final class McpHttpServer implements Disposable {
 
     private void handleHealth(HttpExchange exchange) throws IOException {
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        String transport = activeTransportMode != null ? activeTransportMode.name() : "none";
         String json = "{\"status\":\"" + (running ? "ok" : "stopped") + "\","
+            + "\"transport\":\"" + transport + "\","
             + "\"project\":\"" + (project.getName().replace("\"", "'")) + "\"}";
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);

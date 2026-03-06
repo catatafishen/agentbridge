@@ -29,7 +29,8 @@ public final class McpServerStartup implements ProjectActivity {
         if (settings.isAutoStart()) {
             try {
                 McpHttpServer.getInstance(project).start();
-                LOG.info("MCP HTTP server auto-started on port " + settings.getPort());
+                LOG.info("MCP server auto-started on port " + settings.getPort()
+                    + " (" + settings.getTransportMode().getDisplayName() + ")");
             } catch (Exception e) {
                 LOG.error("Failed to auto-start MCP HTTP server", e);
             }

@@ -62,6 +62,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         }
     }
 
+    public TransportMode getTransportMode() {
+        return myState.transportMode;
+    }
+
+    public void setTransportMode(TransportMode mode) {
+        myState.transportMode = mode;
+    }
+
     @Override
     public @NotNull State getState() {
         return myState;
@@ -75,6 +83,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     public static class State {
         public int port = DEFAULT_PORT;
         public boolean autoStart = false;
+        public TransportMode transportMode = TransportMode.STREAMABLE_HTTP;
         public Set<String> disabledToolIds = new LinkedHashSet<>();
     }
 }
