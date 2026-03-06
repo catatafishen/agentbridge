@@ -1,92 +1,112 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.parseDiffStats
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
- * Renders a git commit result as a rich card with commit metadata,
- * message, changed files with stats, and a link to show in IDE git tools.
+ * Renders a git commit result as a card with commit metadata,
+ * message, changed files with stats.
  */
 internal object GitCommitRenderer : ToolResultRenderer {
+
+    private val HEADER_PATTERN = Regex("""\[(\S+)\s+([a-f0-9]+)]\s+(.+)""")
+    private val SUMMARY_PATTERN = Regex("""\d+ files? changed.*""")
+    private val CREATE_PATTERN = Regex("""create mode \d+ (.+)""")
+    private val DELETE_PATTERN = Regex("""delete mode \d+ (.+)""")
+    private val RENAME_PATTERN = Regex("""rename (.+) => (.+) \((\d+)%\)""")
+
+    private val ADD_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
+    private val DEL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
+    private val RENAME_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
+        val headerMatch = HEADER_PATTERN.find(lines[0]) ?: return null
 
-        val headerMatch = Regex("""\[(\S+)\s+([a-f0-9]+)]\s+(.+)""").find(lines[0]) ?: return null
-        val branch = esc(headerMatch.groupValues[1])
-        val shortHash = esc(headerMatch.groupValues[2])
-        val message = esc(headerMatch.groupValues[3])
+        val branch = headerMatch.groupValues[1]
+        val shortHash = headerMatch.groupValues[2]
+        val message = headerMatch.groupValues[3]
 
-        val fileLines = mutableListOf<String>()
+        val panel = ToolRenderers.listPanel()
+
+        // Header row: hash + branch
+        val headerRow = ToolRenderers.rowPanel()
+        headerRow.add(ToolRenderers.monoLabel(shortHash).apply {
+            foreground = JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
+        })
+        headerRow.add(ToolRenderers.mutedLabel(branch))
+        panel.add(headerRow)
+
+        // Commit message
+        panel.add(JBLabel(message).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyTop(2)
+        })
+
+        // Parse file lines and summary
         var summaryLine = ""
+        val fileLines = mutableListOf<String>()
         for (i in 1 until lines.size) {
             val line = lines[i].trim()
             if (line.isEmpty()) continue
-            if (line.matches(Regex("""\d+ files? changed.*"""))) summaryLine = line
+            if (line.matches(SUMMARY_PATTERN)) summaryLine = line
             else fileLines.add(line)
         }
 
-        val sb = StringBuilder("<div class='git-commit-result'>")
-
-        // Header: hash + branch
-        sb.append("<div class='git-commit-header'>")
-        sb.append("<span class='git-commit-hash'>")
-        sb.append("<a href='gitshow://$shortHash' class='git-commit-link' title='Show commit in IDE'>$shortHash</a>")
-        sb.append("</span>")
-        sb.append(" <span class='git-commit-branch'>$branch</span>")
-        sb.append("</div>")
-
-        sb.append("<div class='git-commit-message'>$message</div>")
-
+        // Diff stats
         if (summaryLine.isNotEmpty()) {
-            val stats = parseDiffStats(summaryLine)
-            sb.append("<div class='git-commit-stats'>")
-            sb.append("<span class='git-stat-files'>${esc(stats.files)}</span>")
+            val stats = ToolRenderers.parseDiffStats(summaryLine)
+            val statsRow = ToolRenderers.rowPanel()
+            statsRow.border = JBUI.Borders.emptyTop(4)
+            statsRow.add(ToolRenderers.mutedLabel(stats.files))
             if (stats.insertions.isNotEmpty()) {
-                sb.append(" <span class='git-stat-ins'>+${esc(stats.insertions)}</span>")
+                statsRow.add(JBLabel("+${stats.insertions}").apply { foreground = ADD_COLOR })
             }
             if (stats.deletions.isNotEmpty()) {
-                sb.append(" <span class='git-stat-del'>-${esc(stats.deletions)}</span>")
+                statsRow.add(JBLabel("-${stats.deletions}").apply { foreground = DEL_COLOR })
             }
-            sb.append("</div>")
+            panel.add(statsRow)
         }
 
-        if (fileLines.isNotEmpty()) {
-            sb.append("<div class='git-commit-files'>")
-            for (fileLine in fileLines) sb.append(renderFileEntry(fileLine))
-            sb.append("</div>")
+        // File entries
+        for (fileLine in fileLines) {
+            panel.add(renderFileEntry(fileLine))
         }
 
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
+        return panel
     }
 
-    private fun renderFileEntry(line: String): String {
-        val createMatch = Regex("""create mode \d+ (.+)""").find(line)
-        val deleteMatch = Regex("""delete mode \d+ (.+)""").find(line)
-        val renameMatch = Regex("""rename (.+) => (.+) \((\d+)%\)""").find(line)
+    private fun renderFileEntry(line: String): JComponent {
+        val row = ToolRenderers.rowPanel()
+        val createMatch = CREATE_PATTERN.find(line)
+        val deleteMatch = DELETE_PATTERN.find(line)
+        val renameMatch = RENAME_PATTERN.find(line)
 
-        return when {
+        when {
             createMatch != null -> {
-                val raw = createMatch.groupValues[1].trim()
-                val path = esc(raw)
-                "<div class='git-file-entry'><span class='git-file-badge git-file-add'>A</span> <a href='openfile://$path' class='git-file-path'>$path</a></div>"
+                row.add(ToolRenderers.badgeLabel("A", ADD_COLOR))
+                row.add(ToolRenderers.monoLabel(createMatch.groupValues[1].trim()))
             }
             deleteMatch != null -> {
-                val raw = deleteMatch.groupValues[1].trim()
-                val path = esc(raw)
-                "<div class='git-file-entry'><span class='git-file-badge git-file-del'>D</span> <span class='git-file-path'>$path</span></div>"
+                row.add(ToolRenderers.badgeLabel("D", DEL_COLOR))
+                row.add(ToolRenderers.monoLabel(deleteMatch.groupValues[1].trim()))
             }
             renameMatch != null -> {
-                val to = esc(renameMatch.groupValues[2].trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-rename'>R</span> <a href='openfile://$to' class='git-file-path'>${esc(renameMatch.groupValues[1].trim())} → $to</a></div>"
+                row.add(ToolRenderers.badgeLabel("R", RENAME_COLOR))
+                row.add(ToolRenderers.monoLabel("${renameMatch.groupValues[1].trim()} → ${renameMatch.groupValues[2].trim()}"))
             }
             else -> {
-                val path = esc(line.trim())
-                "<div class='git-file-entry'><span class='git-file-badge git-file-mod'>M</span> <a href='openfile://$path' class='git-file-path'>$path</a></div>"
+                row.add(ToolRenderers.badgeLabel("M", JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())))
+                row.add(ToolRenderers.monoLabel(line.trim()))
             }
         }
+        return row
     }
 }

@@ -1,22 +1,21 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
  * Renders git branch list output with the current branch highlighted.
- *
- * Input format (git branch --list -v):
- * ```
- * * main       abc1234 Latest commit message
- *   feature-x  def5678 Work in progress
- *   fix/bug    ghi9012 Fix null pointer
- * ```
  */
 internal object GitBranchRenderer : ToolResultRenderer {
 
     private val BRANCH_LINE = Regex("""^([* ])\s+(\S+)\s+([a-f0-9]+)\s+(.*)$""")
     private val REMOTE_PREFIX = Regex("""^remotes?/""")
+    private val CURRENT_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -26,15 +25,10 @@ internal object GitBranchRenderer : ToolResultRenderer {
         val locals = branches.filter { !it.isRemote }
         val remotes = branches.filter { it.isRemote }
 
-        val sb = StringBuilder("<div class='branch-result'>")
-        if (locals.isNotEmpty()) {
-            appendSection(sb, "Local", locals)
-        }
-        if (remotes.isNotEmpty()) {
-            appendSection(sb, "Remote", remotes)
-        }
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
+        val panel = ToolRenderers.listPanel()
+        if (locals.isNotEmpty()) appendSection(panel, "Local", locals)
+        if (remotes.isNotEmpty()) appendSection(panel, "Remote", remotes)
+        return panel
     }
 
     private data class Branch(
@@ -58,24 +52,36 @@ internal object GitBranchRenderer : ToolResultRenderer {
         )
     }
 
-    private fun appendSection(sb: StringBuilder, label: String, branches: List<Branch>) {
-        sb.append("<div class='branch-section'>")
-        sb.append("<div class='outline-header'><span style='font-weight:600'>$label</span>")
-        sb.append("<span class='inspection-file-count'>${branches.size}</span></div>")
-        sb.append("<div class='branch-entries'>")
-        for (b in branches) {
-            val cls = if (b.isCurrent) "branch-entry branch-current" else "branch-entry"
-            sb.append("<div class='$cls'>")
-            if (b.isCurrent) {
-                sb.append("<span class='git-file-badge git-file-add'>●</span>")
-            } else {
-                sb.append("<span class='git-file-badge git-file-mod'> </span>")
-            }
-            sb.append("<span class='branch-name'>${esc(b.name)}</span>")
-            sb.append("<span class='git-commit-hash'>${esc(b.hash)}</span>")
-            sb.append("<span class='branch-msg'>${esc(b.message)}</span>")
-            sb.append("</div>")
+    private fun appendSection(panel: javax.swing.JPanel, label: String, branches: List<Branch>) {
+        val section = ToolRenderers.listPanel().apply {
+            border = JBUI.Borders.emptyTop(4)
+            alignmentX = JComponent.LEFT_ALIGNMENT
         }
-        sb.append("</div></div>")
+        val sectionHeader = ToolRenderers.rowPanel()
+        sectionHeader.add(JBLabel(label).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+        })
+        sectionHeader.add(ToolRenderers.mutedLabel("${branches.size}"))
+        section.add(sectionHeader)
+
+        for (b in branches) {
+            val row = ToolRenderers.rowPanel()
+            if (b.isCurrent) {
+                row.add(ToolRenderers.badgeLabel("●", CURRENT_COLOR))
+                row.add(JBLabel(b.name).apply {
+                    font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+                    foreground = CURRENT_COLOR
+                })
+            } else {
+                row.add(JBLabel(b.name))
+            }
+            row.add(ToolRenderers.monoLabel(b.hash).apply {
+                foreground = JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
+            })
+            row.add(ToolRenderers.mutedLabel(b.message))
+            section.add(row)
+        }
+
+        panel.add(section)
     }
 }

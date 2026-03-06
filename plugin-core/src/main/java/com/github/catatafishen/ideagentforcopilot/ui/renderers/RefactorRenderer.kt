@@ -1,27 +1,16 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
  * Renders refactor results (rename, safe_delete, extract_method, inline)
  * as a status card with the operation summary and affected files.
- *
- * Input formats:
- * ```
- * ✅ Renamed 'oldName' to 'newName'
- *   Updated 5 references across the project.
- *   File: path/to/File.java
- * ```
- * ```
- * ✅ Safely deleted 'symbolName' (no usages found).
- *   File: path/to/File.java
- * ```
- * ```
- * Cannot safely delete 'symbolName' — it has 3 usages:
- *   File.java:42
- *   Other.java:10
- * ```
  */
 internal object RefactorRenderer : ToolResultRenderer {
 
@@ -34,127 +23,120 @@ internal object RefactorRenderer : ToolResultRenderer {
     private val FILE_LINE = Regex("""^\s*File:\s+(.+)$""")
     private val USAGE_LINE = Regex("""^\s+(.+?):(\d+)""")
 
+    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
+    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
+
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
-
         val first = lines.first().trim()
 
-        val renameMatch = RENAME.find(first)
-        val deleteOkMatch = DELETE_OK.find(first)
-        val extractMatch = EXTRACT.find(first)
-        val inlineMatch = INLINE.find(first)
-        val deleteFailMatch = DELETE_FAIL.find(first)
-
-        if (renameMatch == null && deleteOkMatch == null && extractMatch == null
-            && inlineMatch == null && deleteFailMatch == null
-        ) return null
-
-        val sb = StringBuilder("<div class='refactor-result'>")
-
-        when {
-            renameMatch != null -> renderRename(sb, renameMatch, lines)
-            deleteOkMatch != null -> renderDeleteOk(sb, deleteOkMatch, lines)
-            extractMatch != null -> renderSuccess(sb, "Extracted method", extractMatch.groupValues[1], lines)
-            inlineMatch != null -> renderSuccess(sb, "Inlined", inlineMatch.groupValues[1], lines)
-            deleteFailMatch != null -> renderDeleteFail(sb, deleteFailMatch, lines)
+        return when {
+            RENAME.containsMatchIn(first) -> renderRename(RENAME.find(first)!!, lines)
+            DELETE_OK.containsMatchIn(first) -> renderDeleteOk(DELETE_OK.find(first)!!, lines)
+            EXTRACT.containsMatchIn(first) -> renderSuccess("Extracted method", EXTRACT.find(first)!!.groupValues[1], lines)
+            INLINE.containsMatchIn(first) -> renderSuccess("Inlined", INLINE.find(first)!!.groupValues[1], lines)
+            DELETE_FAIL.containsMatchIn(first) -> renderDeleteFail(DELETE_FAIL.find(first)!!, lines)
+            else -> null
         }
-
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
     }
 
-    private fun renderRename(sb: StringBuilder, match: MatchResult, lines: List<String>) {
+    private fun renderRename(match: MatchResult, lines: List<String>): JComponent {
         val oldName = match.groupValues[1]
         val newName = match.groupValues[2]
-        val refCount = lines.firstNotNullOfOrNull { REF_COUNT.find(it) }?.groupValues?.get(1)
-        val file = extractFile(lines)
 
-        sb.append("<div class='refactor-header refactor-success'>")
-        sb.append("<span class='build-icon'>✓</span>")
-        sb.append("<span class='build-status'>Renamed</span>")
-        sb.append("</div>")
+        val panel = ToolRenderers.listPanel()
+        addSuccessHeader(panel, "Renamed")
 
-        sb.append("<div class='refactor-detail'>")
-        sb.append("<span class='refactor-old'>${esc(oldName)}</span>")
-        sb.append("<span class='refactor-arrow'>→</span>")
-        sb.append("<span class='refactor-new'>${esc(newName)}</span>")
-        sb.append("</div>")
+        val nameRow = ToolRenderers.rowPanel()
+        nameRow.add(JBLabel(oldName).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = ToolRenderers.blendColor(UIUtil.getLabelForeground(), UIUtil.getPanelBackground(), 0.3)
+        })
+        nameRow.add(ToolRenderers.mutedLabel("→"))
+        nameRow.add(JBLabel(newName).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+        })
+        panel.add(nameRow)
 
-        appendMeta(sb, refCount, file)
+        addMeta(panel, lines)
+        return panel
     }
 
-    private fun renderDeleteOk(sb: StringBuilder, match: MatchResult, lines: List<String>) {
+    private fun renderDeleteOk(match: MatchResult, lines: List<String>): JComponent {
         val name = match.groupValues[1]
-        val file = extractFile(lines)
-
-        sb.append("<div class='refactor-header refactor-success'>")
-        sb.append("<span class='build-icon'>✓</span>")
-        sb.append("<span class='build-status'>Deleted</span>")
-        sb.append("<span class='refactor-symbol'>${esc(name)}</span>")
-        sb.append("</div>")
-
-        if (file != null) {
-            sb.append("<div class='refactor-meta'>")
-            sb.append("<span class='git-file-path'>${esc(file.substringAfterLast('/'))}</span>")
-            sb.append("</div>")
-        }
+        val panel = ToolRenderers.listPanel()
+        addSuccessHeader(panel, "Deleted")
+        panel.add(JBLabel(name).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        })
+        addMeta(panel, lines)
+        return panel
     }
 
-    private fun renderSuccess(sb: StringBuilder, action: String, name: String, lines: List<String>) {
-        val refCount = lines.firstNotNullOfOrNull { REF_COUNT.find(it) }?.groupValues?.get(1)
-        val file = extractFile(lines)
-
-        sb.append("<div class='refactor-header refactor-success'>")
-        sb.append("<span class='build-icon'>✓</span>")
-        sb.append("<span class='build-status'>${esc(action)}</span>")
-        sb.append("<span class='refactor-symbol'>${esc(name)}</span>")
-        sb.append("</div>")
-
-        appendMeta(sb, refCount, file)
+    private fun renderSuccess(action: String, name: String, lines: List<String>): JComponent {
+        val panel = ToolRenderers.listPanel()
+        addSuccessHeader(panel, action)
+        panel.add(JBLabel(name).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        })
+        addMeta(panel, lines)
+        return panel
     }
 
-    private fun renderDeleteFail(sb: StringBuilder, match: MatchResult, lines: List<String>) {
+    private fun renderDeleteFail(match: MatchResult, lines: List<String>): JComponent {
         val name = match.groupValues[1]
         val count = match.groupValues[2]
 
-        sb.append("<div class='refactor-header refactor-fail'>")
-        sb.append("<span class='build-icon'>✗</span>")
-        sb.append("<span class='build-status'>Cannot delete</span>")
-        sb.append("<span class='refactor-symbol'>${esc(name)}</span>")
-        sb.append("</div>")
+        val panel = ToolRenderers.listPanel()
 
-        sb.append("<div class='refactor-meta'>")
-        sb.append("<span class='build-meta'>$count usages</span>")
-        sb.append("</div>")
+        val headerRow = ToolRenderers.rowPanel()
+        headerRow.add(JBLabel("✗ Cannot delete").apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = FAIL_COLOR
+        })
+        headerRow.add(JBLabel(name).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+        })
+        panel.add(headerRow)
+
+        panel.add(ToolRenderers.mutedLabel("$count usages").apply {
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        })
 
         val usages = lines.drop(1).mapNotNull { line ->
             USAGE_LINE.find(line)?.let { it.groupValues[1] to it.groupValues[2] }
         }
-        if (usages.isNotEmpty()) {
-            sb.append("<div class='refactor-usages'>")
-            for ((file, line) in usages) {
-                sb.append("<div class='refactor-usage'>")
-                sb.append("<span class='git-file-path'>${esc(file)}</span>")
-                sb.append("<span class='search-line'>:${esc(line)}</span>")
-                sb.append("</div>")
-            }
-            sb.append("</div>")
+        for ((file, lineNum) in usages) {
+            val usageRow = ToolRenderers.rowPanel()
+            usageRow.border = JBUI.Borders.emptyLeft(8)
+            usageRow.add(ToolRenderers.monoLabel(file))
+            usageRow.add(ToolRenderers.mutedLabel(":$lineNum"))
+            panel.add(usageRow)
         }
+
+        return panel
     }
 
-    private fun extractFile(lines: List<String>): String? =
-        lines.firstNotNullOfOrNull { FILE_LINE.find(it) }?.groupValues?.get(1)?.trim()
+    private fun addSuccessHeader(panel: javax.swing.JPanel, action: String) {
+        val headerRow = ToolRenderers.rowPanel()
+        headerRow.add(JBLabel("✓ $action").apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = SUCCESS_COLOR
+        })
+        panel.add(headerRow)
+    }
 
-    private fun appendMeta(sb: StringBuilder, refCount: String?, file: String?) {
+    private fun addMeta(panel: javax.swing.JPanel, lines: List<String>) {
+        val refCount = lines.firstNotNullOfOrNull { REF_COUNT.find(it) }?.groupValues?.get(1)
+        val file = lines.firstNotNullOfOrNull { FILE_LINE.find(it) }?.groupValues?.get(1)?.trim()
         if (refCount == null && file == null) return
-        sb.append("<div class='refactor-meta'>")
-        if (refCount != null) {
-            sb.append("<span class='build-meta'>$refCount references updated</span>")
-        }
-        if (file != null) {
-            sb.append("<span class='git-file-path'>${esc(file.substringAfterLast('/'))}</span>")
-        }
-        sb.append("</div>")
+
+        val metaRow = ToolRenderers.rowPanel()
+        if (refCount != null) metaRow.add(ToolRenderers.mutedLabel("$refCount references updated"))
+        if (file != null) metaRow.add(ToolRenderers.monoLabel(file.substringAfterLast('/')))
+        panel.add(metaRow)
     }
 }

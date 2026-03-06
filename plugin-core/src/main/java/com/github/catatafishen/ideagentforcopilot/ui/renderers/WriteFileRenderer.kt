@@ -1,17 +1,15 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
  * Renders intellij_write_file output as a status card with edit summary
  * and context lines displayed as a code block.
- *
- * Input formats:
- * - `Written: path (123 chars)`
- * - `Edited: path (replaced X chars with Y chars)\n\nContext after edit (lines M-N):\nM: code\n...`
- * - `Edited: path (replaced lines X-Y (Z lines) with N chars)\n\nContext after edit ...`
- * - `Created: path`
  */
 internal object WriteFileRenderer : ToolResultRenderer {
 
@@ -19,66 +17,54 @@ internal object WriteFileRenderer : ToolResultRenderer {
     private val CREATED = Regex("""^Created:\s+(.+)$""")
     private val EDITED_CHARS = Regex("""^Edited:\s+(.+?)\s+\(replaced\s+(\d+)\s+chars\s+with\s+(\d+)\s+chars\)""")
     private val EDITED_LINES = Regex("""^Edited:\s+(.+?)\s+\(replaced\s+lines\s+(\d+)-(\d+)\s+\((\d+)\s+lines?\)\s+with\s+(\d+)\s+chars\)""")
-    private val CONTEXT_HEADER = Regex("""Context after edit \(lines (\d+)-(\d+)\):""")
     private val CONTEXT_LINE = Regex("""^(\d+): (.*)$""")
     private val SYNTAX_WARNING = Regex("""⚠.*$""", RegexOption.DOT_MATCHES_ALL)
+    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
+    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
 
     override fun render(output: String): JComponent? {
         val text = output.trimEnd()
         if (text.isEmpty()) return null
-
         val firstLine = text.lines().first()
 
         return when {
-            WRITTEN.containsMatchIn(firstLine) -> ToolRenderers.htmlPanel(renderWritten(text, firstLine))
-            CREATED.containsMatchIn(firstLine) -> ToolRenderers.htmlPanel(renderCreated(firstLine))
-            EDITED_LINES.containsMatchIn(firstLine) -> ToolRenderers.htmlPanel(renderEdited(text, firstLine))
-            EDITED_CHARS.containsMatchIn(firstLine) -> ToolRenderers.htmlPanel(renderEdited(text, firstLine))
+            WRITTEN.containsMatchIn(firstLine) -> renderWritten(text, firstLine)
+            CREATED.containsMatchIn(firstLine) -> renderCreated(firstLine)
+            EDITED_LINES.containsMatchIn(firstLine) -> renderEdited(text, firstLine)
+            EDITED_CHARS.containsMatchIn(firstLine) -> renderEdited(text, firstLine)
             else -> null
         }
     }
 
-    private fun renderWritten(text: String, firstLine: String): String {
-        val match = WRITTEN.find(firstLine) ?: return fallback(text)
+    private fun renderWritten(text: String, firstLine: String): JComponent? {
+        val match = WRITTEN.find(firstLine) ?: return null
         val path = match.groupValues[1]
         val chars = match.groupValues[2]
         val fileName = path.substringAfterLast('/')
-        val syntaxWarn = SYNTAX_WARNING.find(text)?.value
 
-        val sb = StringBuilder("<div class='file-write-result'>")
-        sb.append("<div class='file-write-header file-write-success'>")
-        sb.append("<span class='build-icon'>✓</span>")
-        sb.append("<span class='build-status'>Written</span>")
-        sb.append("<span class='git-file-path' title='${esc(path)}'>${esc(fileName)}</span>")
-        sb.append("<span class='build-meta'>${esc(chars)} chars</span>")
-        sb.append("</div>")
-        appendSyntaxWarning(sb, syntaxWarn)
-        appendContextBlock(sb, text)
-        sb.append("</div>")
-        return sb.toString()
+        val panel = ToolRenderers.listPanel()
+        addStatusHeader(panel, "Written", fileName, path)
+        addDetail(panel, "$chars chars")
+        addSyntaxWarning(panel, text)
+        addContextBlock(panel, text)
+        return panel
     }
 
-    private fun renderCreated(firstLine: String): String {
-        val match = CREATED.find(firstLine) ?: return fallback(firstLine)
+    private fun renderCreated(firstLine: String): JComponent? {
+        val match = CREATED.find(firstLine) ?: return null
         val path = match.groupValues[1]
         val fileName = path.substringAfterLast('/')
 
-        val sb = StringBuilder("<div class='file-write-result'>")
-        sb.append("<div class='file-write-header file-write-success'>")
-        sb.append("<span class='build-icon'>✓</span>")
-        sb.append("<span class='build-status'>Created</span>")
-        sb.append("<span class='git-file-path' title='${esc(path)}'>${esc(fileName)}</span>")
-        sb.append("</div>")
-        sb.append("</div>")
-        return sb.toString()
+        val panel = ToolRenderers.listPanel()
+        addStatusHeader(panel, "Created", fileName, path)
+        return panel
     }
 
-    private fun renderEdited(text: String, firstLine: String): String {
+    private fun renderEdited(text: String, firstLine: String): JComponent? {
         val linesMatch = EDITED_LINES.find(firstLine)
         val charsMatch = EDITED_CHARS.find(firstLine)
-        val syntaxWarn = SYNTAX_WARNING.find(text)?.value
 
-        val sb = StringBuilder("<div class='file-write-result'>")
+        val panel = ToolRenderers.listPanel()
 
         when {
             linesMatch != null -> {
@@ -86,65 +72,57 @@ internal object WriteFileRenderer : ToolResultRenderer {
                 val startLine = linesMatch.groupValues[2]
                 val endLine = linesMatch.groupValues[3]
                 val lineCount = linesMatch.groupValues[4]
-                val fileName = path.substringAfterLast('/')
-
-                sb.append("<div class='file-write-header file-write-success'>")
-                sb.append("<span class='build-icon'>✓</span>")
-                sb.append("<span class='build-status'>Edited</span>")
-                sb.append("<span class='git-file-path' title='${esc(path)}'>${esc(fileName)}</span>")
-                sb.append("<span class='build-meta'>lines $startLine–$endLine ($lineCount replaced)</span>")
-                sb.append("</div>")
+                addStatusHeader(panel, "Edited", path.substringAfterLast('/'), path)
+                addDetail(panel, "lines $startLine–$endLine ($lineCount replaced)")
             }
-
             charsMatch != null -> {
                 val path = charsMatch.groupValues[1]
                 val oldChars = charsMatch.groupValues[2]
                 val newChars = charsMatch.groupValues[3]
-                val fileName = path.substringAfterLast('/')
-
-                sb.append("<div class='file-write-header file-write-success'>")
-                sb.append("<span class='build-icon'>✓</span>")
-                sb.append("<span class='build-status'>Edited</span>")
-                sb.append("<span class='git-file-path' title='${esc(path)}'>${esc(fileName)}</span>")
-                sb.append("<span class='build-meta'>${esc(oldChars)} → ${esc(newChars)} chars</span>")
-                sb.append("</div>")
+                addStatusHeader(panel, "Edited", path.substringAfterLast('/'), path)
+                addDetail(panel, "$oldChars → $newChars chars")
             }
-
-            else -> return fallback(text)
+            else -> return null
         }
 
-        appendSyntaxWarning(sb, syntaxWarn)
-        appendContextBlock(sb, text)
-        sb.append("</div>")
-        return sb.toString()
+        addSyntaxWarning(panel, text)
+        addContextBlock(panel, text)
+        return panel
     }
 
-    private fun appendSyntaxWarning(sb: StringBuilder, warning: String?) {
-        if (warning == null) return
-        sb.append("<div class='file-write-warning'>${esc(warning)}</div>")
+    private fun addStatusHeader(panel: javax.swing.JPanel, action: String, fileName: String, fullPath: String) {
+        val headerRow = ToolRenderers.rowPanel()
+        headerRow.add(JBLabel("✓ $action").apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = SUCCESS_COLOR
+        })
+        headerRow.add(ToolRenderers.monoLabel(fileName).apply { toolTipText = fullPath })
+        panel.add(headerRow)
     }
 
-    private fun appendContextBlock(sb: StringBuilder, text: String) {
+    private fun addDetail(panel: javax.swing.JPanel, detail: String) {
+        val row = ToolRenderers.rowPanel()
+        row.add(ToolRenderers.mutedLabel(detail))
+        panel.add(row)
+    }
+
+    private fun addSyntaxWarning(panel: javax.swing.JPanel, text: String) {
+        val warning = SYNTAX_WARNING.find(text)?.value ?: return
+        val row = ToolRenderers.rowPanel()
+        row.add(JBLabel(warning).apply { foreground = WARN_COLOR })
+        panel.add(row)
+    }
+
+    private fun addContextBlock(panel: javax.swing.JPanel, text: String) {
         val contextStart = text.indexOf("Context after edit")
         if (contextStart < 0) return
 
         val contextText = text.substring(contextStart)
-        val lines = contextText.lines()
-        if (lines.size < 2) return
-
-        sb.append("<div class='file-write-context'>")
-        for (line in lines.drop(1)) {
-            val ctxMatch = CONTEXT_LINE.find(line) ?: continue
-            val num = ctxMatch.groupValues[1]
-            val code = ctxMatch.groupValues[2]
-            sb.append("<div class='file-line'>")
-            sb.append("<span class='file-line-num'>${esc(num)}</span>")
-            sb.append("<span class='file-line-code'>${esc(code)}</span>")
-            sb.append("</div>")
+        val codeLines = contextText.lines().drop(1).mapNotNull { line ->
+            CONTEXT_LINE.find(line)?.let { "${it.groupValues[1]}: ${it.groupValues[2]}" }
         }
-        sb.append("</div>")
-    }
+        if (codeLines.isEmpty()) return
 
-    private fun fallback(text: String): String =
-        "<pre class='tool-output'><code>${esc(text)}</code></pre>"
+        panel.add(ToolRenderers.codeBlock(codeLines.joinToString("\n")))
+    }
 }

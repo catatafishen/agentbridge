@@ -1,14 +1,22 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
  * Renderer for get_coverage output.
- * Input: "ClassName: 85.2% covered (42 / 49 lines)" per line, or error message.
+ * Input: "ClassName: 85.2% covered (42 / 49 lines)" per line.
  */
 internal object CoverageRenderer : ToolResultRenderer {
 
     private val COVERAGE_LINE = Regex("""^(.+?):\s+([\d.]+)%\s+covered\s+\((\d+)\s*/\s*(\d+)\s+lines\)""")
+    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
+    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
+    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
 
     override fun render(output: String): JComponent? {
         val lines = output.lines()
@@ -17,45 +25,40 @@ internal object CoverageRenderer : ToolResultRenderer {
 
         val totalCovered = entries.sumOf { it.groupValues[3].toInt() }
         val totalLines = entries.sumOf { it.groupValues[4].toInt() }
-        val overallPct = if (totalLines > 0) (totalCovered * 100.0 / totalLines) else 0.0
+        val overallPct = if (totalLines > 0) totalCovered * 100.0 / totalLines else 0.0
 
-        val e = ToolRenderers::esc
-        val sb = StringBuilder()
-        sb.append("<div class='coverage-result'>")
+        val panel = ToolRenderers.listPanel()
+        panel.add(
+            ToolRenderers.headerPanel(
+                "📊", entries.size,
+                "${if (entries.size == 1) "class" else "classes"} — ${String.format("%.1f", overallPct)}% overall"
+            )
+        )
 
-        // Header
-        sb.append("<div class='outline-header'>")
-        sb.append("<span class='search-icon'>📊</span> ")
-        sb.append("<span class='search-count'>${entries.size}</span> ")
-        sb.append("<span class='search-label'>${if (entries.size == 1) "class" else "classes"} — ")
-        sb.append("${String.format("%.1f", overallPct)}% overall</span>")
-        sb.append("</div>")
-
-        // Entries
-        sb.append("<div class='coverage-entries'>")
         for (m in entries) {
             val name = m.groupValues[1]
             val pct = m.groupValues[2].toDouble()
             val covered = m.groupValues[3]
             val total = m.groupValues[4]
-            val barColor = when {
-                pct >= 80 -> "var(--success)"
-                pct >= 50 -> "var(--warning)"
-                else -> "var(--danger)"
+
+            val pctColor = when {
+                pct >= 80 -> SUCCESS_COLOR
+                pct >= 50 -> WARN_COLOR
+                else -> FAIL_COLOR
             }
-            sb.append("<div class='coverage-entry'>")
-            sb.append("<div class='coverage-entry-header'>")
-            sb.append("<span class='coverage-name'>${e(name)}</span>")
-            sb.append("<span class='coverage-pct' style='color:$barColor'>${e(m.groupValues[2])}%</span>")
-            sb.append("</div>")
-            sb.append("<div class='coverage-bar'>")
-            sb.append("<div class='coverage-bar-fill' style='width:${pct}%;background:$barColor'></div>")
-            sb.append("</div>")
-            sb.append("<div class='coverage-detail'>${e(covered)} / ${e(total)} lines</div>")
-            sb.append("</div>")
+
+            val row = ToolRenderers.rowPanel()
+            row.add(JBLabel(name).apply {
+                font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            })
+            row.add(JBLabel("${m.groupValues[2]}%").apply {
+                foreground = pctColor
+                font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            })
+            row.add(ToolRenderers.mutedLabel("$covered / $total lines"))
+            panel.add(row)
         }
-        sb.append("</div>")
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
+
+        return panel
     }
 }

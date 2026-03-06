@@ -1,22 +1,19 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
  * Renders search results (text search, symbol search, find references) as
  * grouped file cards with line numbers and match highlights.
- *
- * Handles output from: search_text, search_symbols, find_references.
- *
- * Formats:
- * - `path:line: content`           (search_text)
- * - `path:line [type] name`        (search_symbols, find_references)
  */
 internal object SearchResultRenderer : ToolResultRenderer {
 
     private val LINE_REF_PATTERN = Regex("""^(.+?):(\d+):\s+(.+)$""")
-    private val LOCATION_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^\]]+)]\s+(.+)$""")
+    private val LOCATION_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^]]+)]\s+(.+)$""")
     private val COUNT_HEADER = Regex("""^(\d+)\s+(matches|results?|references?|symbols?)\b""", RegexOption.IGNORE_CASE)
     private val NO_MATCHES = Regex("""^No\s+(matches|results|references|symbols)\s+found""", RegexOption.IGNORE_CASE)
 
@@ -24,97 +21,93 @@ internal object SearchResultRenderer : ToolResultRenderer {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
-        // "No matches found" case
         if (NO_MATCHES.containsMatchIn(lines.first())) {
-            return ToolRenderers.htmlPanel(renderEmpty(lines.first()))
+            val panel = ToolRenderers.listPanel()
+            panel.add(ToolRenderers.mutedLabel("∅ ${lines.first()}").apply {
+                alignmentX = JComponent.LEFT_ALIGNMENT
+            })
+            return panel
         }
 
         val results = mutableListOf<SearchResult>()
         var headerLine: String? = null
 
         for (line in lines) {
-            val locMatch = LOCATION_PATTERN.matchEntire(line.trim())
-            val lineRefMatch = LINE_REF_PATTERN.matchEntire(line.trim())
-            if (locMatch != null) {
-                results.add(
+            val trimmed = line.trim()
+            val locMatch = LOCATION_PATTERN.matchEntire(trimmed)
+            val lineRefMatch = LINE_REF_PATTERN.matchEntire(trimmed)
+            when {
+                locMatch != null -> results.add(
                     SearchResult(
-                        path = locMatch.groupValues[1],
-                        line = locMatch.groupValues[2].toIntOrNull() ?: 0,
-                        badge = locMatch.groupValues[3],
-                        content = locMatch.groupValues[4],
+                        locMatch.groupValues[1],
+                        locMatch.groupValues[2].toIntOrNull() ?: 0,
+                        locMatch.groupValues[3],
+                        locMatch.groupValues[4]
                     )
                 )
-            } else if (lineRefMatch != null) {
-                results.add(
+
+                lineRefMatch != null -> results.add(
                     SearchResult(
-                        path = lineRefMatch.groupValues[1],
-                        line = lineRefMatch.groupValues[2].toIntOrNull() ?: 0,
-                        badge = "",
-                        content = lineRefMatch.groupValues[3],
+                        lineRefMatch.groupValues[1],
+                        lineRefMatch.groupValues[2].toIntOrNull() ?: 0,
+                        "",
+                        lineRefMatch.groupValues[3]
                     )
                 )
-            } else if (COUNT_HEADER.containsMatchIn(line) || headerLine == null && line.isNotBlank()) {
-                headerLine = line
+
+                COUNT_HEADER.containsMatchIn(line) || (headerLine == null && line.isNotBlank()) -> headerLine = line
             }
         }
 
         if (results.isEmpty()) return null
 
-        val sb = StringBuilder("<div class='search-result'>")
-        appendHeader(sb, headerLine, results.size)
-        appendGroupedResults(sb, results)
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
+        val panel = ToolRenderers.listPanel()
+        addHeader(panel, headerLine, results.size)
+        addGroupedResults(panel, results)
+        return panel
     }
 
-    private data class SearchResult(
-        val path: String,
-        val line: Int,
-        val badge: String,
-        val content: String,
-    )
+    private data class SearchResult(val path: String, val line: Int, val badge: String, val content: String)
 
-    private fun renderEmpty(line: String): String {
-        return "<div class='search-result'>" +
-                "<div class='search-header search-empty'>" +
-                "<span class='search-icon'>∅</span>" +
-                "<span class='search-status'>${esc(line)}</span>" +
-                "</div></div>"
-    }
-
-    private fun appendHeader(sb: StringBuilder, headerLine: String?, count: Int) {
+    private fun addHeader(panel: javax.swing.JPanel, headerLine: String?, count: Int) {
         val match = headerLine?.let { COUNT_HEADER.find(it) }
         val displayCount = match?.groupValues?.get(1)?.toIntOrNull() ?: count
         val kind = match?.groupValues?.get(2) ?: "results"
-
-        sb.append("<div class='search-header'>")
-        sb.append("<span class='search-count'>$displayCount</span>")
-        sb.append("<span class='search-label'>$kind</span>")
-        sb.append("</div>")
+        panel.add(ToolRenderers.headerPanel("🔍", displayCount, kind))
     }
 
-    private fun appendGroupedResults(sb: StringBuilder, results: List<SearchResult>) {
+    private fun addGroupedResults(panel: javax.swing.JPanel, results: List<SearchResult>) {
         val grouped = results.groupBy { it.path }
-        sb.append("<div class='search-files'>")
         for ((path, fileResults) in grouped) {
-            sb.append("<div class='search-file'>")
-            sb.append("<div class='search-file-header'>")
-            val fileName = path.substringAfterLast('/')
-            sb.append("<span class='git-file-path' title='${esc(path)}'>${esc(fileName)}</span>")
-            sb.append("<span class='search-file-count'>${fileResults.size}</span>")
-            sb.append("</div>")
-            sb.append("<div class='search-file-matches'>")
-            for (r in fileResults) {
-                sb.append("<div class='search-match'>")
-                sb.append("<span class='search-line'>:${r.line}</span>")
-                if (r.badge.isNotEmpty()) {
-                    sb.append(" <span class='search-badge'>${esc(r.badge)}</span>")
-                }
-                sb.append(" <span class='search-content'>${esc(r.content)}</span>")
-                sb.append("</div>")
+            val section = ToolRenderers.listPanel().apply {
+                border = JBUI.Borders.emptyTop(4)
+                alignmentX = JComponent.LEFT_ALIGNMENT
             }
-            sb.append("</div></div>")
+            val fileName = path.substringAfterLast('/')
+            val fileHeader = ToolRenderers.rowPanel()
+            fileHeader.add(ToolRenderers.monoLabel(fileName).apply {
+                font = font.deriveFont(Font.BOLD)
+                toolTipText = path
+            })
+            fileHeader.add(ToolRenderers.mutedLabel("${fileResults.size}"))
+            section.add(fileHeader)
+
+            for (r in fileResults) {
+                val row = ToolRenderers.rowPanel()
+                row.border = JBUI.Borders.emptyLeft(8)
+                row.add(ToolRenderers.mutedLabel(":${r.line}"))
+                if (r.badge.isNotEmpty()) {
+                    row.add(
+                        ToolRenderers.badgeLabel(
+                            r.badge,
+                            UIUtil.getLabelForeground()
+                        )
+                    )
+                }
+                row.add(JBLabel(r.content))
+                section.add(row)
+            }
+            panel.add(section)
         }
-        sb.append("</div>")
     }
 }

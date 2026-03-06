@@ -1,6 +1,11 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
@@ -9,64 +14,60 @@ import javax.swing.JComponent
  */
 internal object BuildResultRenderer : ToolResultRenderer {
 
+    private val COUNTS_PATTERN = Regex("""\((\d+) errors?,\s*(\d+) warnings?,\s*([\d.]+)s\)""")
+    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
+    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
+    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
+
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
 
         val firstLine = lines.first()
-        val status = classifyStatus(firstLine) ?: return null
+        val (icon, label, color) = classifyStatus(firstLine) ?: return null
 
-        val sb = StringBuilder("<div class='build-result'>")
-        appendHeader(sb, firstLine, status)
-        appendMessages(sb, lines.drop(1))
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
-    }
+        val panel = ToolRenderers.listPanel()
 
-    private enum class Status(val css: String, val icon: String, val label: String) {
-        SUCCESS("build-success", "✓", "Build succeeded"),
-        FAILED("build-fail", "✗", "Build failed"),
-        ABORTED("build-abort", "⚠", "Build aborted"),
-    }
+        // Status header
+        val headerRow = ToolRenderers.rowPanel()
+        headerRow.add(JBLabel("$icon $label").apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = color
+        })
 
-    private fun classifyStatus(line: String): Status? = when {
-        line.startsWith("✓") -> Status.SUCCESS
-        line.startsWith("✗") -> Status.FAILED
-        line.startsWith("Build aborted") -> Status.ABORTED
-        else -> null
-    }
-
-    private val COUNTS_PATTERN = Regex("""\((\d+) errors?,\s*(\d+) warnings?,\s*([\d.]+)s\)""")
-
-    private fun appendHeader(sb: StringBuilder, line: String, status: Status) {
-        val countsMatch = COUNTS_PATTERN.find(line)
-        sb.append("<div class='build-header ${status.css}'>")
-        sb.append("<span class='build-icon'>${status.icon}</span>")
-        sb.append("<span class='build-status'>${status.label}</span>")
+        val countsMatch = COUNTS_PATTERN.find(firstLine)
         if (countsMatch != null) {
             val errors = countsMatch.groupValues[1]
             val warnings = countsMatch.groupValues[2]
             val duration = countsMatch.groupValues[3]
-            sb.append("<span class='build-meta'>${duration}s</span>")
-            if (errors != "0") sb.append(" <span class='build-errors'>$errors errors</span>")
-            if (warnings != "0") sb.append(" <span class='build-warnings'>$warnings warnings</span>")
+            headerRow.add(ToolRenderers.mutedLabel("${duration}s"))
+            if (errors != "0") headerRow.add(JBLabel("$errors errors").apply { foreground = FAIL_COLOR })
+            if (warnings != "0") headerRow.add(JBLabel("$warnings warnings").apply { foreground = WARN_COLOR })
         }
-        sb.append("</div>")
-    }
+        panel.add(headerRow)
 
-    private fun appendMessages(sb: StringBuilder, lines: List<String>) {
-        val messages = lines.filter { it.isNotBlank() }
-        if (messages.isEmpty()) return
-        sb.append("<div class='build-messages'>")
+        // Error/warning messages
+        val messages = lines.drop(1).filter { it.isNotBlank() }
         for (msg in messages) {
             val trimmed = msg.trim()
-            val cls = when {
-                trimmed.startsWith("ERROR") -> "build-msg-error"
-                trimmed.startsWith("WARN") -> "build-msg-warn"
-                else -> "build-msg-info"
+            val msgColor = when {
+                trimmed.startsWith("ERROR") -> FAIL_COLOR
+                trimmed.startsWith("WARN") -> WARN_COLOR
+                else -> UIUtil.getLabelForeground()
             }
-            sb.append("<div class='build-msg $cls'>${esc(trimmed)}</div>")
+            val msgRow = ToolRenderers.rowPanel()
+            msgRow.border = JBUI.Borders.emptyLeft(8)
+            msgRow.add(ToolRenderers.monoLabel(trimmed).apply { foreground = msgColor })
+            panel.add(msgRow)
         }
-        sb.append("</div>")
+
+        return panel
+    }
+
+    private fun classifyStatus(line: String): Triple<String, String, Color>? = when {
+        line.startsWith("✓") -> Triple("✓", "Build succeeded", SUCCESS_COLOR)
+        line.startsWith("✗") -> Triple("✗", "Build failed", FAIL_COLOR)
+        line.startsWith("Build aborted") -> Triple("⚠", "Build aborted", WARN_COLOR)
+        else -> null
     }
 }

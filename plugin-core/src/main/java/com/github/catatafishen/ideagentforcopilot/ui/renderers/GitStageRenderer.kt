@@ -1,67 +1,62 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.JBColor
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
- * Renders git stage results as a card with staged file list and clickable paths.
+ * Renders git stage results as a card with staged file list.
  *
  * Expected formats:
- * - `✓ Staged N file(s):\npath1\npath2`      (specific files)
- * - `✓ Staged all changes:\nM\tpath1\nA\tpath2` (--all with name-status)
+ * - `✓ Staged N file(s):\npath1\npath2`
+ * - `✓ Staged all changes:\nM\tpath1\nA\tpath2`
  * - `✓ Nothing to stage`
  * - Error output (fallback)
  */
 internal object GitStageRenderer : ToolResultRenderer {
 
     private val SUCCESS_PATTERN = Regex("""^✓\s+(.+)""")
+    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
-
         val firstMatch = SUCCESS_PATTERN.find(lines.first()) ?: return null
 
-        val sb = StringBuilder("<div class='git-stage-result'>")
-        sb.append("<div class='git-stage-header'>")
-        sb.append("<span class='inspection-icon'>✓</span>")
-        sb.append("<span class='git-stage-label'>${esc(firstMatch.groupValues[1])}</span>")
-        sb.append("</div>")
+        val panel = ToolRenderers.listPanel()
+
+        val header = com.intellij.ui.components.JBLabel("✓ ${firstMatch.groupValues[1]}").apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = SUCCESS_COLOR
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        }
+        panel.add(header)
 
         val fileLines = lines.drop(1).filter { it.isNotBlank() }
-        if (fileLines.isNotEmpty()) {
-            sb.append("<div class='git-commit-files'>")
-            for (fileLine in fileLines) sb.append(renderFileEntry(fileLine))
-            sb.append("</div>")
+        for (fileLine in fileLines) {
+            val row = ToolRenderers.rowPanel()
+            val tabIdx = fileLine.indexOf('\t')
+            if (tabIdx >= 0) {
+                val status = fileLine.substring(0, tabIdx).trim()
+                val path = fileLine.substring(tabIdx + 1).trim()
+                row.add(ToolRenderers.badgeLabel(status, badgeColor(status)))
+                row.add(ToolRenderers.monoLabel(path))
+            } else {
+                row.add(ToolRenderers.badgeLabel("+", SUCCESS_COLOR))
+                row.add(ToolRenderers.monoLabel(fileLine.trim()))
+            }
+            panel.add(row)
         }
 
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
+        return panel
     }
 
-    private fun renderFileEntry(line: String): String {
-        // name-status format: "M\tpath" or "A\tpath"
-        val tabIdx = line.indexOf('\t')
-        if (tabIdx >= 0) {
-            val status = line.substring(0, tabIdx).trim()
-            val path = esc(line.substring(tabIdx + 1).trim())
-            val (badge, cls) = statusBadge(status)
-            return "<div class='git-file-entry'><span class='git-file-badge $cls'>$badge</span> " +
-                    "<a href='openfile://$path' class='git-file-path'>$path</a></div>"
-        }
-        // Plain path (specific file staging)
-        val path = esc(line.trim())
-        return "<div class='git-file-entry'><span class='git-file-badge git-file-add'>+</span> " +
-                "<a href='openfile://$path' class='git-file-path'>$path</a></div>"
-    }
-
-    private fun statusBadge(status: String): Pair<String, String> = when (status) {
-        "M" -> "M" to "git-file-mod"
-        "A" -> "A" to "git-file-add"
-        "D" -> "D" to "git-file-del"
-        "R" -> "R" to "git-file-rename"
-        "C" -> "C" to "git-file-rename"
-        "T" -> "T" to "git-file-mod"
-        else -> status to "git-file-mod"
+    private fun badgeColor(status: String): Color = when (status) {
+        "A" -> SUCCESS_COLOR
+        "D" -> JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
+        "R", "C" -> JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
+        else -> JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
     }
 }

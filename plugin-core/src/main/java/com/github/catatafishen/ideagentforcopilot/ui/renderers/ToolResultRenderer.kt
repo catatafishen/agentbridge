@@ -1,11 +1,14 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
+import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JEditorPane
+import javax.swing.JPanel
 import javax.swing.JTextArea
 import javax.swing.UIManager
 
@@ -84,6 +87,76 @@ internal object ToolRenderers {
     fun hasRenderer(toolName: String): Boolean = toolName in registry
 
     // ── Shared rendering utilities ────────────────────────────
+
+    private const val MONO_FONT = "JetBrains Mono"
+
+    /**
+     * Creates a header panel with icon, count, and label (e.g., "🏷 5 tags").
+     */
+    fun headerPanel(icon: String, count: Int, label: String): JPanel {
+        val header = JBLabel("$icon $count $label").apply {
+            font = UIUtil.getLabelFont().deriveFont(java.awt.Font.BOLD)
+            border = JBUI.Borders.emptyBottom(4)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        }
+        return JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            add(header)
+        }
+    }
+
+    /**
+     * Creates a vertical list panel with standard spacing.
+     */
+    fun listPanel(): JPanel = JPanel().apply {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        isOpaque = false
+    }
+
+    /**
+     * Creates a horizontal row panel for list items.
+     */
+    fun rowPanel(): JPanel = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 1)).apply {
+        isOpaque = false
+        alignmentX = JComponent.LEFT_ALIGNMENT
+    }
+
+    /**
+     * Creates a monospace JBLabel.
+     */
+    fun monoLabel(text: String): JBLabel = JBLabel(text).apply {
+        font = JBUI.Fonts.create(MONO_FONT, UIUtil.getLabelFont().size)
+    }
+
+    /**
+     * Creates a muted-color JBLabel for secondary information.
+     */
+    fun mutedLabel(text: String): JBLabel = JBLabel(text).apply {
+        foreground = blendColor(UIUtil.getLabelForeground(), UIUtil.getPanelBackground(), 0.55)
+        font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size2D - 1f)
+    }
+
+    /**
+     * Creates a bold monospace badge label (e.g., status codes like "M", "A", "D").
+     */
+    fun badgeLabel(text: String, color: Color): JBLabel = JBLabel(text).apply {
+        font = JBUI.Fonts.create(MONO_FONT, UIUtil.getLabelFont().size - 1).deriveFont(java.awt.Font.BOLD)
+        foreground = color
+    }
+
+    /**
+     * Creates a read-only code block with monospace font and subtle background.
+     */
+    fun codeBlock(text: String): JTextArea = JTextArea(text).apply {
+        isEditable = false
+        font = JBUI.Fonts.create(MONO_FONT, UIUtil.getLabelFont().size)
+        background = blendColor(UIUtil.getPanelBackground(), UIUtil.getLabelForeground(), 0.05)
+        foreground = UIUtil.getLabelForeground()
+        border = JBUI.Borders.empty(6)
+        lineWrap = false
+        alignmentX = JComponent.LEFT_ALIGNMENT
+    }
 
     /**
      * Creates a read-only monospace text area for displaying plain text output.
@@ -314,7 +387,7 @@ internal object ToolRenderers {
 
     private fun css(c: Color): String = "rgb(${c.red},${c.green},${c.blue})"
 
-    private fun blendColor(fg: Color, bg: Color, alpha: Double): Color = Color(
+    fun blendColor(fg: Color, bg: Color, alpha: Double): Color = Color(
         (fg.red * alpha + bg.red * (1 - alpha)).toInt().coerceIn(0, 255),
         (fg.green * alpha + bg.green * (1 - alpha)).toInt().coerceIn(0, 255),
         (fg.blue * alpha + bg.blue * (1 - alpha)).toInt().coerceIn(0, 255),

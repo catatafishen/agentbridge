@@ -1,24 +1,27 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
  * Renders test results as a status card with pass/fail counts,
  * duration, and a colored list of failures.
- *
- * Output format:
- * ```
- * Test Results: N tests, N passed, N failed, N errors, N skipped (Xs)
- * Failures:
- *   ❌ class.method: message
- * ```
  */
 internal object TestResultRenderer : ToolResultRenderer {
 
     private val SUMMARY_PATTERN = Regex(
         """Test Results:\s*(\d+)\s+tests?,\s*(\d+)\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+errors?,\s*(\d+)\s+skipped\s*\(([\d.]+)s\)"""
     )
+
+    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
+    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
+    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
+    private val SKIP_COLOR = JBColor(Color(0x6E, 0x77, 0x81), Color(0x8B, 0x94, 0x9E))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -33,47 +36,48 @@ internal object TestResultRenderer : ToolResultRenderer {
         val duration = summary.groupValues[6]
 
         val allPassed = failed == 0 && errors == 0
-        val statusCss = if (allPassed) "build-success" else "build-fail"
+        val panel = ToolRenderers.listPanel()
+
+        // Status header
+        val headerRow = ToolRenderers.rowPanel()
+        val statusColor = if (allPassed) SUCCESS_COLOR else FAIL_COLOR
         val icon = if (allPassed) "✓" else "✗"
-
-        val sb = StringBuilder("<div class='build-result'>")
-
-        // Header — reuses build-result styling
-        sb.append("<div class='build-header $statusCss'>")
-        sb.append("<span class='build-icon'>$icon</span>")
-        sb.append("<span class='build-status'>$total tests</span>")
-        sb.append("<span class='build-meta'>${duration}s</span>")
-        sb.append("</div>")
+        headerRow.add(JBLabel("$icon $total tests").apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = statusColor
+        })
+        headerRow.add(ToolRenderers.mutedLabel("${duration}s"))
+        panel.add(headerRow)
 
         // Stat badges
-        sb.append("<div class='test-stats'>")
-        if (passed > 0) sb.append("<span class='test-badge test-passed'>$passed passed</span>")
-        if (failed > 0) sb.append("<span class='test-badge test-failed'>$failed failed</span>")
-        if (errors > 0) sb.append("<span class='test-badge test-errors'>$errors errors</span>")
-        if (skipped > 0) sb.append("<span class='test-badge test-skipped'>$skipped skipped</span>")
-        sb.append("</div>")
+        val statsRow = ToolRenderers.rowPanel()
+        if (passed > 0) statsRow.add(JBLabel("$passed passed").apply { foreground = SUCCESS_COLOR })
+        if (failed > 0) statsRow.add(JBLabel("$failed failed").apply { foreground = FAIL_COLOR })
+        if (errors > 0) statsRow.add(JBLabel("$errors errors").apply { foreground = FAIL_COLOR })
+        if (skipped > 0) statsRow.add(JBLabel("$skipped skipped").apply { foreground = SKIP_COLOR })
+        panel.add(statsRow)
 
         // Failures
         val failures = lines.drop(1).filter { it.trim().startsWith("❌") || it.trim().startsWith("\u274C") }
-        if (failures.isNotEmpty()) {
-            sb.append("<div class='build-messages'>")
-            for (failure in failures) {
-                val trimmed = failure.trim().removePrefix("❌").removePrefix("\u274C").trim()
-                val colonIdx = trimmed.indexOf(':')
-                if (colonIdx > 0) {
-                    val testName = esc(trimmed.substring(0, colonIdx).trim())
-                    val message = esc(trimmed.substring(colonIdx + 1).trim())
-                    sb.append("<div class='build-msg build-msg-error'>")
-                    sb.append("<span class='test-name'>$testName</span>: $message")
-                    sb.append("</div>")
-                } else {
-                    sb.append("<div class='build-msg build-msg-error'>${esc(trimmed)}</div>")
-                }
+        for (failure in failures) {
+            val trimmed = failure.trim().removePrefix("❌").removePrefix("\u274C").trim()
+            val row = ToolRenderers.rowPanel()
+            row.border = JBUI.Borders.emptyLeft(8)
+            val colonIdx = trimmed.indexOf(':')
+            if (colonIdx > 0) {
+                row.add(JBLabel(trimmed.substring(0, colonIdx).trim()).apply {
+                    font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+                    foreground = FAIL_COLOR
+                })
+                row.add(JBLabel(trimmed.substring(colonIdx + 1).trim()).apply {
+                    foreground = WARN_COLOR
+                })
+            } else {
+                row.add(JBLabel(trimmed).apply { foreground = FAIL_COLOR })
             }
-            sb.append("</div>")
+            panel.add(row)
         }
 
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
+        return panel
     }
 }

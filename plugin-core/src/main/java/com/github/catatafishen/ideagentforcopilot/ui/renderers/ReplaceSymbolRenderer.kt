@@ -1,40 +1,36 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.UIUtil
+import java.awt.Color
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
  * Renders replace_symbol_body / insert_before_symbol / insert_after_symbol
  * output as a compact status card.
- *
- * Input formats:
- * - `Replaced lines X-Y (Z lines) with N lines in path`
- * - `Inserted N lines before symbolName in path`
- * - `Inserted N lines after symbolName in path`
  */
 internal object ReplaceSymbolRenderer : ToolResultRenderer {
 
-    private val REPLACED = Regex(
-        """^Replaced lines (\d+)-(\d+) \((\d+) lines?\) with (\d+) lines? in (.+)$"""
-    )
-    private val INSERTED = Regex(
-        """^Inserted (\d+) lines? (before|after) (.+?) in (.+)$"""
-    )
+    private val REPLACED = Regex("""^Replaced lines (\d+)-(\d+) \((\d+) lines?\) with (\d+) lines? in (.+)$""")
+    private val INSERTED = Regex("""^Inserted (\d+) lines? (before|after) (.+?) in (.+)$""")
+    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
 
     override fun render(output: String): JComponent? {
         val text = output.trimEnd()
         val firstLine = text.lines().first()
 
         val replacedMatch = REPLACED.find(firstLine)
-        if (replacedMatch != null) return ToolRenderers.htmlPanel(renderReplaced(replacedMatch))
+        if (replacedMatch != null) return renderReplaced(replacedMatch)
 
         val insertedMatch = INSERTED.find(firstLine)
-        if (insertedMatch != null) return ToolRenderers.htmlPanel(renderInserted(insertedMatch))
+        if (insertedMatch != null) return renderInserted(insertedMatch)
 
         return null
     }
 
-    private fun renderReplaced(match: MatchResult): String {
+    private fun renderReplaced(match: MatchResult): JComponent {
         val startLine = match.groupValues[1]
         val endLine = match.groupValues[2]
         val oldLines = match.groupValues[3]
@@ -42,48 +38,52 @@ internal object ReplaceSymbolRenderer : ToolResultRenderer {
         val path = match.groupValues[5]
         val fileName = path.substringAfterLast('/')
 
-        val sb = StringBuilder("<div class='file-write-result'>")
-        sb.append("<div class='file-write-header file-write-success'>")
-        sb.append("<span class='build-icon'>✓</span>")
-        sb.append("<span class='build-status'>Replaced</span>")
-        sb.append("<span class='git-file-path' title='${esc(path)}'>${esc(fileName)}</span>")
-        sb.append("</div>")
+        val panel = ToolRenderers.listPanel()
 
-        sb.append("<div class='file-write-detail'>")
-        sb.append("<span class='build-meta'>Lines $startLine–$endLine</span>")
-        sb.append("<span class='file-write-arrow'>→</span>")
-        sb.append("<span class='build-meta'>$newLines lines</span>")
+        val headerRow = ToolRenderers.rowPanel()
+        headerRow.add(JBLabel("✓ Replaced").apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = SUCCESS_COLOR
+        })
+        headerRow.add(ToolRenderers.monoLabel(fileName).apply { toolTipText = path })
+        panel.add(headerRow)
+
+        val detailRow = ToolRenderers.rowPanel()
+        detailRow.add(ToolRenderers.mutedLabel("Lines $startLine–$endLine → $newLines lines"))
         if (oldLines != newLines) {
             val delta = newLines.toInt() - oldLines.toInt()
             val sign = if (delta > 0) "+" else ""
-            sb.append("<span class='file-write-delta'>(${sign}$delta)</span>")
+            detailRow.add(ToolRenderers.mutedLabel("(${sign}$delta)"))
         }
-        sb.append("</div>")
+        panel.add(detailRow)
 
-        sb.append("</div>")
-        return sb.toString()
+        return panel
     }
 
-    private fun renderInserted(match: MatchResult): String {
+    private fun renderInserted(match: MatchResult): JComponent {
         val lineCount = match.groupValues[1]
         val position = match.groupValues[2]
         val symbolName = match.groupValues[3]
         val path = match.groupValues[4]
         val fileName = path.substringAfterLast('/')
 
-        val sb = StringBuilder("<div class='file-write-result'>")
-        sb.append("<div class='file-write-header file-write-success'>")
-        sb.append("<span class='build-icon'>✓</span>")
-        sb.append("<span class='build-status'>Inserted</span>")
-        sb.append("<span class='git-file-path' title='${esc(path)}'>${esc(fileName)}</span>")
-        sb.append("</div>")
+        val panel = ToolRenderers.listPanel()
 
-        sb.append("<div class='file-write-detail'>")
-        sb.append("<span class='build-meta'>$lineCount lines $position</span>")
-        sb.append("<span class='refactor-symbol'>${esc(symbolName)}</span>")
-        sb.append("</div>")
+        val headerRow = ToolRenderers.rowPanel()
+        headerRow.add(JBLabel("✓ Inserted").apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            foreground = SUCCESS_COLOR
+        })
+        headerRow.add(ToolRenderers.monoLabel(fileName).apply { toolTipText = path })
+        panel.add(headerRow)
 
-        sb.append("</div>")
-        return sb.toString()
+        val detailRow = ToolRenderers.rowPanel()
+        detailRow.add(ToolRenderers.mutedLabel("$lineCount lines $position"))
+        detailRow.add(JBLabel(symbolName).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+        })
+        panel.add(detailRow)
+
+        return panel
     }
 }

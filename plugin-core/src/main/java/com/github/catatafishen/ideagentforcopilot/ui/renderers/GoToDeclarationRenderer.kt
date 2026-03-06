@@ -1,23 +1,13 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers.esc
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.UIUtil
+import java.awt.Font
 import javax.swing.JComponent
 
 /**
  * Renders go_to_declaration output as a compact card with the file path,
  * line number, and a code context snippet.
- *
- * Input format:
- * ```
- * Declaration of 'symbolName':
- *
- *   File: path/to/File.java
- *   Line: 42
- *   Context:
- *     → 42: public void methodName() {
- *         43:   implementation
- *         44: }
- * ```
  */
 internal object GoToDeclarationRenderer : ToolResultRenderer {
 
@@ -29,13 +19,12 @@ internal object GoToDeclarationRenderer : ToolResultRenderer {
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
-
         val headerMatch = HEADER.find(lines.first().trim()) ?: return null
         val symbolName = headerMatch.groupValues[1]
 
         var filePath = ""
         var lineNumber = ""
-        val contextLines = mutableListOf<Triple<Boolean, String, String>>() // (isTarget, lineNum, code)
+        val contextLines = mutableListOf<Triple<Boolean, String, String>>()
 
         for (line in lines.drop(1)) {
             val fileMatch = FILE_LINE.find(line)
@@ -45,45 +34,39 @@ internal object GoToDeclarationRenderer : ToolResultRenderer {
                 fileMatch != null -> filePath = fileMatch.groupValues[1].trim()
                 lineMatch != null -> lineNumber = lineMatch.groupValues[1]
                 ctxMatch != null -> contextLines.add(
-                    Triple(
-                        ctxMatch.groupValues[1].isNotEmpty(),
-                        ctxMatch.groupValues[2],
-                        ctxMatch.groupValues[3]
-                    )
+                    Triple(ctxMatch.groupValues[1].isNotEmpty(), ctxMatch.groupValues[2], ctxMatch.groupValues[3])
                 )
             }
         }
-
         if (filePath.isEmpty()) return null
 
-        val fileName = filePath.substringAfterLast('/')
+        val panel = ToolRenderers.listPanel()
 
-        val sb = StringBuilder("<div class='decl-result'>")
+        // Symbol name
+        panel.add(JBLabel(symbolName).apply {
+            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        })
 
-        sb.append("<div class='decl-header'>")
-        sb.append("<span class='decl-symbol'>${esc(symbolName)}</span>")
-        sb.append("</div>")
-
-        sb.append("<div class='decl-location'>")
-        sb.append("<span class='git-file-path' title='${esc(filePath)}'>${esc(fileName)}</span>")
+        // File location
+        val locRow = ToolRenderers.rowPanel()
+        locRow.add(ToolRenderers.monoLabel(filePath.substringAfterLast('/')).apply {
+            toolTipText = filePath
+        })
         if (lineNumber.isNotEmpty()) {
-            sb.append("<span class='search-line'>:$lineNumber</span>")
+            locRow.add(ToolRenderers.mutedLabel(":$lineNumber"))
         }
-        sb.append("</div>")
+        panel.add(locRow)
 
+        // Code context
         if (contextLines.isNotEmpty()) {
-            sb.append("<div class='decl-context'>")
-            for ((isTarget, num, code) in contextLines) {
-                val cls = if (isTarget) "decl-line decl-target" else "decl-line"
-                sb.append("<div class='$cls'>")
-                sb.append("<span class='decl-line-num'>${esc(num)}</span>")
-                sb.append("<span class='decl-line-code'>${esc(code)}</span>")
-                sb.append("</div>")
+            val codeText = contextLines.joinToString("\n") { (isTarget, num, code) ->
+                val prefix = if (isTarget) "→" else " "
+                "$prefix $num: $code"
             }
-            sb.append("</div>")
+            panel.add(ToolRenderers.codeBlock(codeText))
         }
 
-        sb.append("</div>")
-        return ToolRenderers.htmlPanel(sb.toString())
+        return panel
     }
 }
