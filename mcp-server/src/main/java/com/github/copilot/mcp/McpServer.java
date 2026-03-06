@@ -318,7 +318,7 @@ public class McpServer {
                 Map.entry("shared", Map.of("type", "boolean", "description", "Store as shared project file (default: true). If false, stored in workspace only"))
             ),
             List.of("name", "type")));
-        addEnvProperty(tools.get(tools.size() - 1).getAsJsonObject());
+        addDictProperty(tools.get(tools.size() - 1).getAsJsonObject(), "env", "Environment variables as key-value pairs");
 
         addIfEnabled.accept(buildTool("edit_run_configuration", "Edit Run Configuration",
             Map.of(
@@ -331,7 +331,7 @@ public class McpServer {
                 "shared", Map.of("type", "boolean", "description", "Optional: toggle shared (project file) vs workspace-local storage")
             ),
             List.of("name")));
-        addEnvProperty(tools.get(tools.size() - 1).getAsJsonObject());
+        addDictProperty(tools.get(tools.size() - 1).getAsJsonObject(), "env", "Environment variables as key-value pairs");
 
         addIfEnabled.accept(buildTool("delete_run_configuration", "Delete Run Configuration",
             Map.of(
@@ -623,10 +623,10 @@ public class McpServer {
             Map.of(
                 "url", Map.of("type", "string", "description", "Full URL to request (e.g., http://localhost:8080/api)"),
                 "method", Map.of("type", "string", "description", "HTTP method: GET (default), POST, PUT, PATCH, DELETE"),
-                "body", Map.of("type", "string", "description", "Request body (for POST/PUT/PATCH)"),
-                "headers", Map.of("type", "object", "description", "Request headers as key-value pairs")
+                "body", Map.of("type", "string", "description", "Request body (for POST/PUT/PATCH)")
             ),
             List.of("url")));
+        addDictProperty(tools.get(tools.size() - 1).getAsJsonObject(), "headers", "Request headers as key-value pairs");
 
         addIfEnabled.accept(buildTool("run_command", "Run a shell command in the project directory. Output is paginated (default 8000 chars). For running tests use run_tests; for code search use search_symbols instead. NEVER use for git commands (use git_status, git_diff, git_commit etc. instead \u2192 shell git causes buffer desync).",
             Map.of(
@@ -929,18 +929,20 @@ public class McpServer {
     }
 
     /**
-     * Add an 'env' property with correct object schema to a tool's inputSchema.
+     * Add a dict-type property (type: "object" with additionalProperties: string) to a tool's inputSchema.
+     * JSON Schema requires object types to include a "properties" field — even if empty.
      */
-    private static void addEnvProperty(JsonObject tool) {
+    private static void addDictProperty(JsonObject tool, String propertyName, String description) {
         JsonObject schema = tool.getAsJsonObject("inputSchema");
         JsonObject props = schema.getAsJsonObject("properties");
-        JsonObject envProp = new JsonObject();
-        envProp.addProperty("type", "object");
-        envProp.addProperty("description", "Environment variables as key-value ");
+        JsonObject dictProp = new JsonObject();
+        dictProp.addProperty("type", "object");
+        dictProp.addProperty("description", description);
+        dictProp.add("properties", new JsonObject());
         JsonObject additionalProps = new JsonObject();
         additionalProps.addProperty("type", "string");
-        envProp.add("additionalProperties", additionalProps);
-        props.add("env", envProp);
+        dictProp.add("additionalProperties", additionalProps);
+        props.add(propertyName, dictProp);
     }
 
     /**

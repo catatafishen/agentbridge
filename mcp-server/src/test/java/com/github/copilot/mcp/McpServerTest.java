@@ -417,6 +417,45 @@ class McpServerTest {
         assertTrue(desc.contains("search_symbols"), "run_command description should redirect to search_symbols");
     }
 
+    @Test
+    void testAllToolSchemasAreValid() {
+        JsonObject request = buildRequest("tools/list", new JsonObject());
+        JsonObject response = McpServer.handleMessage(request);
+        assertNotNull(response);
+        JsonArray tools = response.getAsJsonObject("result").getAsJsonArray("tools");
+
+        for (var element : tools) {
+            JsonObject tool = element.getAsJsonObject();
+            String name = tool.get("name").getAsString();
+
+            assertTrue(tool.has("description"), name + ": missing description");
+            assertTrue(tool.has("inputSchema"), name + ": missing inputSchema");
+
+            JsonObject schema = tool.getAsJsonObject("inputSchema");
+            assertEquals("object", schema.get("type").getAsString(), name + ": inputSchema type must be 'object'");
+            assertTrue(schema.has("properties"), name + ": inputSchema missing 'properties'");
+            assertTrue(schema.has("required"), name + ": inputSchema missing 'required'");
+
+            // Recursively validate nested object-type properties have 'properties' field
+            JsonObject properties = schema.getAsJsonObject("properties");
+            for (String propName : properties.keySet()) {
+                JsonObject prop = properties.getAsJsonObject(propName);
+                assertTrue(prop.has("type"), name + "." + propName + ": missing 'type'");
+                assertTrue(prop.has("description"), name + "." + propName + ": missing 'description'");
+
+                String propType = prop.get("type").getAsString();
+                if ("object".equals(propType)) {
+                    assertTrue(prop.has("properties"),
+                        name + "." + propName + ": object property missing 'properties' field");
+                }
+                if ("array".equals(propType)) {
+                    assertTrue(prop.has("items"),
+                        name + "." + propName + ": array property missing 'items' field");
+                }
+            }
+        }
+    }
+
     private JsonObject findToolByName(String name) {
         JsonObject request = buildRequest("tools/list", new JsonObject());
         JsonObject response = McpServer.handleMessage(request);
