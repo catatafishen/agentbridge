@@ -386,9 +386,17 @@ public final class PsiBridgeService implements Disposable {
         }
 
         // Piggyback highlights after successful write operations
-        if (isSuccessfulWrite(toolName, result) && arguments.has("path")) {
-            LOG.info("Auto-highlights: piggybacking on write to " + arguments.get("path").getAsString());
-            result = appendAutoHighlights(result, arguments.get("path").getAsString());
+        if (isSuccessfulWrite(toolName, result)) {
+            String filePath = null;
+            if (arguments.has("path")) {
+                filePath = arguments.get("path").getAsString();
+            } else if (arguments.has("file")) {
+                filePath = arguments.get("file").getAsString();
+            }
+            if (filePath != null) {
+                LOG.info("Auto-highlights: piggybacking on write to " + filePath);
+                result = appendAutoHighlights(result, filePath);
+            }
         }
 
         JsonObject response = new JsonObject();
@@ -532,8 +540,14 @@ public final class PsiBridgeService implements Disposable {
     }
 
     private static boolean isSuccessfulWrite(String toolName, String result) {
-        return ("write_file".equals(toolName) || "intellij_write_file".equals(toolName) || "edit_text".equals(toolName))
-            && (result.startsWith("Edited:") || result.startsWith("Written:"));
+        return switch (toolName) {
+            case "write_file", "intellij_write_file", "edit_text" ->
+                result.startsWith("Edited:") || result.startsWith("Written:");
+            case "replace_symbol_body" -> result.startsWith("Replaced lines ");
+            case "insert_before_symbol" -> result.startsWith("Inserted ") && result.contains(" before ");
+            case "insert_after_symbol" -> result.startsWith("Inserted ") && result.contains(" after ");
+            default -> false;
+        };
     }
 
     /**
