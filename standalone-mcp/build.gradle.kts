@@ -63,6 +63,7 @@ tasks.named("prepareSandbox") {
 }
 
 tasks.named<Zip>("buildPlugin") {
+    archiveBaseName.set("ide-mcp-server")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn(project(":plugin-core").tasks.named("jar"))
     from(project(":plugin-core").tasks.named("jar")) {

@@ -171,6 +171,7 @@ tasks.named("processResources") {
 
 // Also include in the distribution ZIP
 tasks.named<Zip>("buildPlugin") {
+    archiveBaseName.set("ide-agent-for-copilot")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn(project(":mcp-server").tasks.named("jar"))
     from(project(":mcp-server").tasks.named("jar")) {
