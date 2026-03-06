@@ -46,7 +46,7 @@ internal object ReplaceSymbolRenderer : ToolResultRenderer {
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
             foreground = SUCCESS_COLOR
         })
-        headerRow.add(ToolRenderers.monoLabel(fileName).apply { toolTipText = path })
+        headerRow.add(ToolRenderers.fileLink(fileName, path))
         panel.add(headerRow)
 
         val detailRow = ToolRenderers.rowPanel()
@@ -76,7 +76,7 @@ internal object ReplaceSymbolRenderer : ToolResultRenderer {
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
             foreground = SUCCESS_COLOR
         })
-        headerRow.add(ToolRenderers.monoLabel(fileName).apply { toolTipText = path })
+        headerRow.add(ToolRenderers.fileLink(fileName, path))
         panel.add(headerRow)
 
         val detailRow = ToolRenderers.rowPanel()

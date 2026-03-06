@@ -4,7 +4,6 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import java.awt.Color
-import java.awt.Font
 import javax.swing.JComponent
 
 /**
@@ -56,7 +55,7 @@ internal object GitDiffRenderer : ToolResultRenderer {
         val match = STAT_FILE.find(trimmed)
         if (match != null) {
             val row = ToolRenderers.rowPanel()
-            row.add(ToolRenderers.monoLabel(match.groupValues[1].trim()))
+            row.add(ToolRenderers.fileLink(match.groupValues[1].trim(), match.groupValues[1].trim()))
             row.add(ToolRenderers.mutedLabel(match.groupValues[2]))
             val bar = match.groupValues[3]
             if (bar.isNotEmpty()) row.add(renderStatBar(bar))
@@ -103,8 +102,7 @@ internal object GitDiffRenderer : ToolResultRenderer {
             border = JBUI.Borders.emptyTop(6)
             alignmentX = JComponent.LEFT_ALIGNMENT
         }
-        section.add(ToolRenderers.monoLabel(filePath).apply {
-            font = font.deriveFont(Font.BOLD)
+        section.add(ToolRenderers.fileLink(filePath, filePath).apply {
             alignmentX = JComponent.LEFT_ALIGNMENT
         })
         section.add(ToolRenderers.codeBlock(lines.joinToString("\n")))

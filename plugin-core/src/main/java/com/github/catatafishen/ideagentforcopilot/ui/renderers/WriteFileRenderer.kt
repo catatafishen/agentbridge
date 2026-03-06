@@ -97,7 +97,7 @@ internal object WriteFileRenderer : ToolResultRenderer {
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
             foreground = SUCCESS_COLOR
         })
-        headerRow.add(ToolRenderers.monoLabel(fileName).apply { toolTipText = fullPath })
+        headerRow.add(ToolRenderers.fileLink(fileName, fullPath))
         panel.add(headerRow)
     }
 

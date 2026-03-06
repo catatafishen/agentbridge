@@ -113,8 +113,7 @@ internal object RefactorRenderer : ToolResultRenderer {
         for ((file, lineNum) in usages) {
             val usageRow = ToolRenderers.rowPanel()
             usageRow.border = JBUI.Borders.emptyLeft(8)
-            usageRow.add(ToolRenderers.monoLabel(file))
-            usageRow.add(ToolRenderers.mutedLabel(":$lineNum"))
+            usageRow.add(ToolRenderers.fileLink(file, file, lineNum.toIntOrNull() ?: 0))
             panel.add(usageRow)
         }
 
@@ -138,7 +137,7 @@ internal object RefactorRenderer : ToolResultRenderer {
 
         val metaRow = ToolRenderers.rowPanel()
         if (refCount != null) metaRow.add(ToolRenderers.mutedLabel("$refCount references updated"))
-        if (file != null) metaRow.add(ToolRenderers.monoLabel(file.substringAfterLast('/')))
+        if (file != null) metaRow.add(ToolRenderers.fileLink(file.substringAfterLast('/'), file))
         panel.add(metaRow)
     }
 }

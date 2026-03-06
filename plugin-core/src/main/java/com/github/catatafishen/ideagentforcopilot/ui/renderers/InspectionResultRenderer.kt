@@ -110,10 +110,7 @@ internal object InspectionResultRenderer : ToolResultRenderer {
             }
             val fileName = path.substringAfterLast('/')
             val fileHeader = ToolRenderers.rowPanel()
-            fileHeader.add(ToolRenderers.monoLabel(fileName).apply {
-                font = font.deriveFont(Font.BOLD)
-                toolTipText = path
-            })
+            fileHeader.add(ToolRenderers.fileLink(fileName, path))
             fileHeader.add(ToolRenderers.mutedLabel("${fileFindings.size}"))
             section.add(fileHeader)
 
@@ -121,7 +118,7 @@ internal object InspectionResultRenderer : ToolResultRenderer {
                 val row = ToolRenderers.rowPanel()
                 row.border = JBUI.Borders.emptyLeft(8)
                 row.add(ToolRenderers.badgeLabel(abbreviateSeverity(f.severity), severityColor(f.severity)))
-                row.add(ToolRenderers.mutedLabel(":${f.line}"))
+                row.add(ToolRenderers.fileLink(":${f.line}", f.path, f.line))
                 if (f.toolId.isNotEmpty()) row.add(ToolRenderers.mutedLabel(f.toolId))
                 row.add(JBLabel(f.description))
                 section.add(row)

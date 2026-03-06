@@ -118,7 +118,7 @@ internal object GitStatusRenderer : ToolResultRenderer {
         for ((code, path) in items) {
             val row = ToolRenderers.rowPanel()
             row.add(ToolRenderers.badgeLabel(code.toString(), badgeColor(code)))
-            row.add(ToolRenderers.monoLabel(path))
+            row.add(ToolRenderers.fileLink(path, path))
             section.add(row)
         }
         panel.add(section)

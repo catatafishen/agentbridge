@@ -1290,7 +1290,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val chipTitle = toolChipTitle(baseName, entry?.arguments)
         val kind = entry?.kind ?: "other"
         val resultPanel = renderToolResultPanel(baseName, entry?.status, entry?.result)
-        val paramsPanel = if (!entry?.arguments.isNullOrBlank()) {
+        val hasCustomRenderer = baseName != null && ToolRenderers.hasRenderer(baseName)
+        val paramsPanel = if (!hasCustomRenderer && !entry?.arguments.isNullOrBlank()) {
             ToolRenderers.codePanel(prettyJson(entry.arguments))
         } else null
         SwingUtilities.invokeLater {

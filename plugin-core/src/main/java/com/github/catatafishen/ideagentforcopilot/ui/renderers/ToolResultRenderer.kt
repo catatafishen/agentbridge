@@ -1,7 +1,11 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.intellij.icons.AllIcons
-import com.intellij.ui.JBColor
+import com.intellij.openapi.editor.colors.EditorColorsManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -35,9 +39,6 @@ internal object ToolIcons {
     val FOLDER: Icon = AllIcons.Nodes.Folder
 }
 
-/**
- * Registry of tool-result renderers and shared rendering utilities.
- */
 internal object ToolRenderers {
 
     private val registry: Map<String, ToolResultRenderer> = mapOf(
@@ -129,7 +130,7 @@ internal object ToolRenderers {
     /**
      * Creates a horizontal row panel for list items.
      */
-    fun rowPanel(): JPanel = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 4, 1)).apply {
+    fun rowPanel(): JPanel = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, JBUI.scale(4), 1)).apply {
         isOpaque = false
         alignmentX = JComponent.LEFT_ALIGNMENT
     }
@@ -145,7 +146,7 @@ internal object ToolRenderers {
      * Creates a muted-color JBLabel for secondary information.
      */
     fun mutedLabel(text: String): JBLabel = JBLabel(text).apply {
-        foreground = blendColor(UIUtil.getLabelForeground(), UIUtil.getPanelBackground(), 0.55)
+        foreground = UIUtil.getContextHelpForeground()
         font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size2D - 1f)
     }
 
@@ -158,30 +159,54 @@ internal object ToolRenderers {
     }
 
     /**
-     * Creates a read-only code block with monospace font and subtle background.
+     * Creates a clickable file-path label that opens the file in the editor.
      */
-    fun codeBlock(text: String): JTextArea = JTextArea(text).apply {
-        isEditable = false
-        font = JBUI.Fonts.create(MONO_FONT, UIUtil.getLabelFont().size)
-        background = blendColor(UIUtil.getPanelBackground(), UIUtil.getLabelForeground(), 0.05)
-        foreground = UIUtil.getLabelForeground()
-        border = JBUI.Borders.empty(6)
-        lineWrap = false
-        alignmentX = JComponent.LEFT_ALIGNMENT
+    fun fileLink(displayName: String, filePath: String, lineNumber: Int = 0): JComponent {
+        return HyperlinkLabel(displayName).apply {
+            toolTipText = if (lineNumber > 0) "$filePath:$lineNumber" else filePath
+            addHyperlinkListener { navigateToFile(filePath, lineNumber) }
+        }
+    }
+
+    private fun navigateToFile(path: String, line: Int) {
+        for (project in ProjectManager.getInstance().openProjects) {
+            if (project.isDisposed) continue
+            val basePath = project.basePath ?: continue
+            val absPath = if (java.io.File(path).isAbsolute) path else "$basePath/$path"
+            val vFile = LocalFileSystem.getInstance().findFileByPath(absPath) ?: continue
+            OpenFileDescriptor(project, vFile, maxOf(0, line - 1), 0).navigate(true)
+            return
+        }
+    }
+
+    /**
+     * Creates a read-only code block with monospace font and editor-matching colors.
+     */
+    fun codeBlock(text: String): JTextArea {
+        val scheme = EditorColorsManager.getInstance().globalScheme
+        return JTextArea(text).apply {
+            isEditable = false
+            font = JBUI.Fonts.create(MONO_FONT, UIUtil.getLabelFont().size)
+            background = scheme.defaultBackground
+            foreground = scheme.defaultForeground
+            border = JBUI.Borders.empty(6)
+            lineWrap = false
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        }
     }
 
     /**
      * Creates a read-only monospace text area for displaying plain text output.
      */
     fun codePanel(text: String): JComponent {
+        val scheme = EditorColorsManager.getInstance().globalScheme
         return JTextArea(text).apply {
             isEditable = false
             lineWrap = true
             wrapStyleWord = true
-            font = JBUI.Fonts.create("JetBrains Mono", UIUtil.getLabelFont().size - 1)
-            background = UIManager.getColor("Editor.backgroundColor")
-                ?: JBColor(Color(0xF0, 0xF0, 0xF0), Color(0x2B, 0x2D, 0x30))
-            foreground = UIUtil.getLabelForeground()
+            font = JBUI.Fonts.create(MONO_FONT, UIUtil.getLabelFont().size - 1)
+            background = scheme.defaultBackground
+            foreground = scheme.defaultForeground
             border = JBUI.Borders.empty(6, 8)
         }
     }

@@ -49,7 +49,8 @@ internal object ListProjectFilesRenderer : ToolResultRenderer {
             for (f in files) {
                 val row = ToolRenderers.rowPanel()
                 row.border = JBUI.Borders.emptyLeft(if (dir.isNotEmpty()) 12 else 0)
-                row.add(ToolRenderers.monoLabel(f.name))
+                val fullPath = if (dir.isNotEmpty()) "$dir/${f.name}" else f.name
+                row.add(ToolRenderers.fileLink(f.name, fullPath))
                 for (tag in f.tags) {
                     row.add(JBLabel(tag).apply {
                         font = UIUtil.getLabelFont().deriveFont(UIUtil.getLabelFont().size2D - 2f)

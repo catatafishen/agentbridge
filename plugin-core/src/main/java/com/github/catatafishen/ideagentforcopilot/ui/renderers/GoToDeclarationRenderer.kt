@@ -50,9 +50,8 @@ internal object GoToDeclarationRenderer : ToolResultRenderer {
 
         // File location
         val locRow = ToolRenderers.rowPanel()
-        locRow.add(ToolRenderers.monoLabel(filePath.substringAfterLast('/')).apply {
-            toolTipText = filePath
-        })
+        val lineNum = lineNumber.toIntOrNull() ?: 0
+        locRow.add(ToolRenderers.fileLink(filePath.substringAfterLast('/'), filePath, lineNum))
         if (lineNumber.isNotEmpty()) {
             locRow.add(ToolRenderers.mutedLabel(":$lineNumber"))
         }

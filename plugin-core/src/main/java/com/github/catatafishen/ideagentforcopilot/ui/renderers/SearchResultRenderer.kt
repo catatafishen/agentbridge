@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.ui.renderers
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Font
 import javax.swing.JComponent
 
 /**
@@ -85,17 +84,14 @@ internal object SearchResultRenderer : ToolResultRenderer {
             }
             val fileName = path.substringAfterLast('/')
             val fileHeader = ToolRenderers.rowPanel()
-            fileHeader.add(ToolRenderers.monoLabel(fileName).apply {
-                font = font.deriveFont(Font.BOLD)
-                toolTipText = path
-            })
+            fileHeader.add(ToolRenderers.fileLink(fileName, path))
             fileHeader.add(ToolRenderers.mutedLabel("${fileResults.size}"))
             section.add(fileHeader)
 
             for (r in fileResults) {
                 val row = ToolRenderers.rowPanel()
                 row.border = JBUI.Borders.emptyLeft(8)
-                row.add(ToolRenderers.mutedLabel(":${r.line}"))
+                row.add(ToolRenderers.fileLink(":${r.line}", r.path, r.line))
                 if (r.badge.isNotEmpty()) {
                     row.add(
                         ToolRenderers.badgeLabel(

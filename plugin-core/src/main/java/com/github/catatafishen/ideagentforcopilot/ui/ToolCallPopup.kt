@@ -11,10 +11,7 @@ import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Dimension
 import java.awt.Point
-import javax.swing.BorderFactory
-import javax.swing.BoxLayout
-import javax.swing.JComponent
-import javax.swing.JPanel
+import javax.swing.*
 
 internal object ToolCallPopup {
 
@@ -28,6 +25,9 @@ internal object ToolCallPopup {
         "think" to JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210)),
         "other" to JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170)),
     )
+
+    private val POPUP_WIDTH = JBUI.scale(650)
+    private val POPUP_HEIGHT = JBUI.scale(420)
 
     /**
      * Shows a popup with tool result and optional parameters.
@@ -46,7 +46,7 @@ internal object ToolCallPopup {
         val contentPanel = buildContentPanel(tintedBg, resultPanel, paramsPanel)
 
         val scrollPane = JBScrollPane(contentPanel).apply {
-            preferredSize = Dimension(JBUI.scale(520), JBUI.scale(400))
+            preferredSize = Dimension(POPUP_WIDTH, POPUP_HEIGHT)
             border = JBUI.Borders.empty()
         }
 
@@ -59,15 +59,15 @@ internal object ToolCallPopup {
             .setCancelOnClickOutside(true)
             .setCancelOnOtherWindowOpen(false)
             .setCancelKeyEnabled(true)
-            .setMinSize(Dimension(JBUI.scale(300), JBUI.scale(150)))
+            .setMinSize(Dimension(JBUI.scale(350), JBUI.scale(180)))
             .createPopup()
         currentPopup = popup
 
         val frame = WindowManager.getInstance().getFrame(project)
         if (frame != null) {
             val center = Point(
-                frame.x + (frame.width - JBUI.scale(520)) / 2,
-                frame.y + (frame.height - JBUI.scale(400)) / 2,
+                frame.x + (frame.width - POPUP_WIDTH) / 2,
+                frame.y + (frame.height - POPUP_HEIGHT) / 2,
             )
             popup.showInScreenCoordinates(frame.rootPane, center)
         } else {
@@ -76,19 +76,24 @@ internal object ToolCallPopup {
     }
 
     private fun buildContentPanel(bg: Color, resultPanel: JComponent, paramsPanel: JComponent?): JPanel {
-        val muted = blendColor(UIUtil.getLabelForeground(), bg, 0.55)
         val panel = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             background = bg
-            border = JBUI.Borders.empty(6, 10)
+            border = JBUI.Borders.empty(8, 12)
         }
 
-        panel.add(sectionLabel("Result", muted))
+        panel.add(sectionLabel("Result"))
         resultPanel.alignmentX = JComponent.LEFT_ALIGNMENT
         panel.add(resultPanel)
 
         if (paramsPanel != null) {
-            panel.add(sectionLabel("Parameters", muted))
+            panel.add(Box.createVerticalStrut(JBUI.scale(6)))
+            val separator = JSeparator().apply {
+                alignmentX = JComponent.LEFT_ALIGNMENT
+                maximumSize = Dimension(Int.MAX_VALUE, 1)
+            }
+            panel.add(separator)
+            panel.add(sectionLabel("Parameters"))
             paramsPanel.alignmentX = JComponent.LEFT_ALIGNMENT
             panel.add(paramsPanel)
         }
@@ -96,12 +101,11 @@ internal object ToolCallPopup {
         return panel
     }
 
-    private fun sectionLabel(text: String, color: Color): JBLabel {
-        val font = UIUtil.getLabelFont()
+    private fun sectionLabel(text: String): JBLabel {
         return JBLabel(text).apply {
-            foreground = color
-            this.font = font.deriveFont(font.size2D - 2f).deriveFont(java.awt.Font.BOLD)
-            border = BorderFactory.createEmptyBorder(6, 0, 4, 0)
+            foreground = UIUtil.getContextHelpForeground()
+            font = UIUtil.getLabelFont().deriveFont(java.awt.Font.BOLD, UIUtil.getLabelFont().size2D - 1f)
+            border = JBUI.Borders.empty(4, 0, 6, 0)
             alignmentX = JComponent.LEFT_ALIGNMENT
         }
     }
