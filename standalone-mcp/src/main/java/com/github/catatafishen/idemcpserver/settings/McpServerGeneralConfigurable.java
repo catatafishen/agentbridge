@@ -1,9 +1,9 @@
 package com.github.catatafishen.idemcpserver.settings;
 
-import com.github.catatafishen.idemcpserver.McpHttpServer;
 import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
+import com.github.catatafishen.idemcpserver.McpHttpServer;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.options.Configurable;

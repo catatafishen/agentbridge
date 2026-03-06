@@ -594,6 +594,139 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Detects a programming language from text content using IntelliJ's
+     * {@link com.intellij.openapi.fileTypes.FileTypeRegistry.FileTypeDetector} extensions
+     * and common content heuristics (shebang lines, language-specific patterns).
+     *
+     * <p><b>Why extracted:</b> {@code FileTypeDetector.EP_NAME} and
+     * {@code LanguageUtil.getFileTypeLanguage()} have subtle signature changes across IDE
+     * versions. Centralising here keeps the caller insulated.</p>
+     *
+     * @param text the pasted / imported text to analyse
+     * @return the detected {@link com.intellij.lang.Language}, or {@code null} if unknown
+     */
+    @Nullable
+    public static com.intellij.lang.Language detectLanguageFromContent(@NotNull String text) {
+        // 1. Try IntelliJ's registered file-type detectors (handles shebang, BOM, etc.)
+        com.intellij.lang.Language detected = detectViaFileTypeDetectors(text);
+        if (detected != null) return detected;
+
+        // 2. Heuristic shebang mapping
+        detected = detectViaShebang(text);
+        if (detected != null) return detected;
+
+        // 3. Content-pattern heuristics
+        return detectViaPatterns(text);
+    }
+
+    @Nullable
+    private static com.intellij.lang.Language detectViaFileTypeDetectors(@NotNull String text) {
+        try {
+            byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            var byteSeq = com.intellij.openapi.util.io.ByteArraySequence.create(bytes);
+            int prefixLen = Math.min(bytes.length, 4096);
+            var prefixSeq = new com.intellij.openapi.util.io.ByteArraySequence(bytes, 0, prefixLen);
+
+            for (var detector : com.intellij.openapi.fileTypes.FileTypeRegistry.FileTypeDetector.EP_NAME.getExtensionList()) {
+                try {
+                    int desired = detector.getDesiredContentPrefixLength();
+                    var seq = desired > 0 && desired < bytes.length ? prefixSeq : byteSeq;
+                    var ft = detector.detect(null, seq, text);
+                    if (ft instanceof com.intellij.openapi.fileTypes.LanguageFileType lft) {
+                        return lft.getLanguage();
+                    }
+                } catch (Exception ignored) {
+                    // Some detectors may throw on null VirtualFile — skip
+                }
+            }
+        } catch (Exception e) {
+            LOG.debug("FileTypeDetector scan failed", e);
+        }
+        return null;
+    }
+
+    private static final java.util.Map<String, String> SHEBANG_LANG_MAP = java.util.Map.ofEntries(
+        java.util.Map.entry("python", "Python"),
+        java.util.Map.entry("python3", "Python"),
+        java.util.Map.entry("node", "JavaScript"),
+        java.util.Map.entry("deno", "JavaScript"),
+        java.util.Map.entry("bun", "JavaScript"),
+        java.util.Map.entry("bash", "Shell Script"),
+        java.util.Map.entry("sh", "Shell Script"),
+        java.util.Map.entry("zsh", "Shell Script"),
+        java.util.Map.entry("ruby", "Ruby"),
+        java.util.Map.entry("perl", "Perl"),
+        java.util.Map.entry("php", "PHP"),
+        java.util.Map.entry("groovy", "Groovy"),
+        java.util.Map.entry("lua", "Lua"),
+        java.util.Map.entry("Rscript", "R")
+    );
+
+    @Nullable
+    private static com.intellij.lang.Language detectViaShebang(@NotNull String text) {
+        if (!text.startsWith("#!")) return null;
+        String firstLine = text.lines().findFirst().orElse("");
+        // Extract the interpreter name: #!/usr/bin/env python3 → python3
+        String interpreter = firstLine.contains("/env ")
+            ? firstLine.substring(firstLine.indexOf("/env ") + 5).trim().split("\\s")[0]
+            : firstLine.substring(firstLine.lastIndexOf('/') + 1).trim().split("\\s")[0];
+        String langId = SHEBANG_LANG_MAP.get(interpreter);
+        return langId != null ? com.intellij.lang.LanguageUtil.findRegisteredLanguage(langId) : null;
+    }
+
+    @Nullable
+    private static com.intellij.lang.Language detectViaPatterns(@NotNull String text) {
+        String trimmed = text.stripLeading();
+        String first512 = trimmed.substring(0, Math.min(trimmed.length(), 512));
+
+        // JSON: starts with { or [ and contains " — high confidence
+        if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && first512.contains("\"")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("JSON");
+        }
+        // XML/HTML: starts with < (tag or declaration)
+        if (trimmed.startsWith("<?xml") || trimmed.startsWith("<!DOCTYPE")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("XML");
+        }
+        if (trimmed.startsWith("<html") || trimmed.startsWith("<!doctype html")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("HTML");
+        }
+        // YAML: starts with --- or has key: value patterns on first lines
+        if (trimmed.startsWith("---")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("yaml");
+        }
+        // SQL keywords (case-insensitive)
+        String upper = first512.toUpperCase(java.util.Locale.ROOT);
+        if (upper.startsWith("SELECT ") || upper.startsWith("INSERT ") || upper.startsWith("CREATE TABLE")
+            || upper.startsWith("ALTER TABLE") || upper.startsWith("DROP ")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("SQL");
+        }
+        // Java: package declaration or typical Java imports
+        if (first512.startsWith("package ") && first512.contains(";")) {
+            return first512.contains("fun ") || first512.contains("val ")
+                ? com.intellij.lang.LanguageUtil.findRegisteredLanguage("kotlin")
+                : com.intellij.lang.LanguageUtil.findRegisteredLanguage("JAVA");
+        }
+        // Python: def/class with colon, or import without braces
+        if ((first512.contains("def ") && first512.contains(":"))
+            || first512.startsWith("import ") && !first512.contains("{") && !first512.contains("from '")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("Python");
+        }
+        // Kotlin top-level fun
+        if (first512.contains("fun ") && first512.contains("{") && !first512.contains(";")) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("kotlin");
+        }
+        // Go: package main / func
+        if (first512.startsWith("package main") || (first512.contains("func ") && first512.contains("{"))) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("go");
+        }
+        // Rust: fn main, let mut, pub fn
+        if (first512.contains("fn ") && (first512.contains("let ") || first512.contains("pub "))) {
+            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("Rust");
+        }
+        return null;
+    }
+
+    /**
      * Subscribes an ExecutionListener to the project message bus and returns a disconnect handle.
      * <p>
      * False positive: {@code project.getMessageBus().connect()} fails because the IDE resolves

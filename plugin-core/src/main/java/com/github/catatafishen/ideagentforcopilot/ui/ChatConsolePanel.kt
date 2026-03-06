@@ -80,9 +80,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         private val QUICK_REPLY_TAG_REGEX = Regex("\\[quick-reply:\\s*([^]]+)]")
         private const val FILE_ICON_SVG =
             "<svg width=\\'12\\' height=\\'12\\' viewBox=\\'0 0 16 16\\' fill=\\'currentColor\\' " +
-                    "style=\\'vertical-align:-2px\\'><path d=\\'M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 " +
-                    "3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V6.621a1.5 1.5 0 0 0-.44-1.06L9.94 1.94A1.5 1.5 0 0 0 " +
-                    "8.879 1.5H3.5z\\'/></svg>"
+                "style=\\'vertical-align:-2px\\'><path d=\\'M3.5 1A1.5 1.5 0 0 0 2 2.5v11A1.5 1.5 0 0 0 " +
+                "3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V6.621a1.5 1.5 0 0 0-.44-1.06L9.94 1.94A1.5 1.5 0 0 0 " +
+                "8.879 1.5H3.5z\\'/></svg>"
 
         /** Active panels keyed by project — used by MCP tool to retrieve page HTML. */
         private val instances = java.util.concurrent.ConcurrentHashMap<Project, ChatConsolePanel>()
@@ -1067,7 +1067,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
      * Creates a Swing component for the tool result, dispatching to a custom renderer
      * or falling back to a monospace code panel.
      */
-    private fun renderToolResultPanel(baseName: String?, status: String?, details: String?, arguments: String? = null): JComponent {
+    private fun renderToolResultPanel(
+        baseName: String?,
+        status: String?,
+        details: String?,
+        arguments: String? = null
+    ): JComponent {
         if (details.isNullOrBlank()) {
             return JBLabel(if (status != "failed") "Completed" else "✖ Failed")
         }

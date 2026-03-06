@@ -1389,10 +1389,17 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         )
 
         // Intercept paste: redirect large clipboard content to a scratch file
-        val pasteShortcuts = listOf(
-            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
-            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
-            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK),
+        val pasteShortcuts = arrayOf(
+            com.intellij.openapi.actionSystem.KeyboardShortcut(
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK), null
+            ),
+            com.intellij.openapi.actionSystem.KeyboardShortcut(
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK), null
+            ),
+            com.intellij.openapi.actionSystem.KeyboardShortcut(
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK),
+                null
+            ),
         )
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) {
@@ -1406,7 +1413,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 }
             }
         }.registerCustomShortcutSet(
-            CustomShortcutSet(*pasteShortcuts.toTypedArray()),
+            CustomShortcutSet(*pasteShortcuts),
             contentComponent
         )
 
@@ -2285,6 +2292,21 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             return
         }
 
+        // Auto-detect language from content; skip the picker if confident
+        val detected = com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat
+            .detectLanguageFromContent(text)
+        if (detected != null) {
+            val match = enabledLanguages.find { it.id == detected.id }
+            if (match != null) {
+                val ext = match.associatedFileType?.defaultExtension
+                if (ext != null) {
+                    createAndAttachScratch(ext, text)
+                    return
+                }
+            }
+        }
+
+        // Fallback: show the language picker
         com.intellij.ide.scratch.LRUPopupBuilder
             .languagePopupBuilder(project, "Paste as Scratch File") { lang ->
                 lang.associatedFileType?.icon ?: com.intellij.icons.AllIcons.FileTypes.Any_type
