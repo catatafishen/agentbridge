@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -1295,7 +1296,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val resultPanel = renderToolResultPanel(baseName, entry?.status, entry?.result, entry?.arguments)
         val hasCustomRenderer = baseName != null && ToolRenderers.hasRenderer(baseName)
         val paramsPanel = if (!hasCustomRenderer && !entry?.arguments.isNullOrBlank()) {
-            ToolRenderers.codePanel(prettyJson(entry.arguments))
+            ToolRenderers.jsonEditor(prettyJson(entry.arguments), project)
         } else null
         SwingUtilities.invokeLater {
             ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel)

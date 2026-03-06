@@ -286,6 +286,40 @@ internal object ToolRenderers {
         }
     }
 
+    /**
+     * Creates a read-only IntelliJ editor component with JSON syntax highlighting
+     * and code folding support.
+     */
+    fun jsonEditor(jsonText: String, project: com.intellij.openapi.project.Project): JComponent {
+        val jsonFileType = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
+            .getFileTypeByExtension("json")
+        val doc = com.intellij.openapi.editor.EditorFactory.getInstance()
+            .createDocument(jsonText)
+        doc.setReadOnly(true)
+
+        val editor = com.intellij.ui.EditorTextField(doc, project, jsonFileType, true, false).apply {
+            setOneLineMode(false)
+            addSettingsProvider { editorEx ->
+                editorEx.settings.apply {
+                    isLineNumbersShown = false
+                    isWhitespacesShown = false
+                    isFoldingOutlineShown = true
+                    additionalLinesCount = 0
+                    additionalColumnsCount = 0
+                    isRightMarginShown = false
+                    isCaretRowShown = false
+                    isUseSoftWraps = false
+                }
+                editorEx.setHorizontalScrollbarVisible(true)
+                editorEx.setVerticalScrollbarVisible(true)
+                editorEx.setBorder(JBUI.Borders.empty())
+            }
+            border = JBUI.Borders.empty()
+        }
+
+        return editor
+    }
+
     // ── Shared parsing utilities ──────────────────────────────
 
     data class DiffStats(val files: String, val insertions: String, val deletions: String)
