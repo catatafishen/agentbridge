@@ -243,36 +243,40 @@ tasks.register("deployToMainIde") {
 /** Finds the plugin install directory in the running IDE's plugin folder. */
 fun detectPluginInstallDir(): File {
     val home = System.getProperty("user.home")
+    val pluginDirNames = listOf("ide-agent-for-copilot", "plugin-core")
 
-    // 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/plugin-core
-    //    This is where Toolbox-managed IDEs store user-installed plugins.
+    // 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/<plugin>
     val dataBase = File(home, ".local/share/JetBrains")
     if (dataBase.exists()) {
         val found = dataBase.listFiles()
             ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
             ?.sortedByDescending { it.name }
-            ?.map { it.resolve("plugin-core") }
-            ?.firstOrNull { it.exists() }
+            ?.firstNotNullOfOrNull { ideDir ->
+                pluginDirNames.map { ideDir.resolve(it) }.firstOrNull { it.exists() }
+            }
         if (found != null) return found
     }
 
-    // 2. Toolbox app-level plugins: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/plugin-core
+    // 2. Toolbox app-level plugins: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/<plugin>
     val toolboxBase = File(home, ".local/share/JetBrains/Toolbox/apps")
     if (toolboxBase.exists()) {
         val found = toolboxBase.walkTopDown().maxDepth(3)
-            .filter { it.isDirectory && it.name == "plugins" && File(it, "plugin-core").exists() }
-            .firstOrNull()
-        if (found != null) return File(found, "plugin-core")
+            .filter { it.isDirectory && it.name == "plugins" }
+            .firstNotNullOfOrNull { pluginsDir ->
+                pluginDirNames.map { File(pluginsDir, it) }.firstOrNull { it.exists() }
+            }
+        if (found != null) return found
     }
 
-    // 3. Standard config layout: ~/.config/JetBrains/IntelliJIdea*/plugins/plugin-core
+    // 3. Standard config layout: ~/.config/JetBrains/IntelliJIdea*/plugins/<plugin>
     val configBase = File(home, ".config/JetBrains")
     if (configBase.exists()) {
         val found = configBase.listFiles()
             ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
             ?.sortedByDescending { it.name }
-            ?.flatMap { it.resolve("plugins").listFiles()?.toList() ?: emptyList() }
-            ?.firstOrNull { it.name == "plugin-core" }
+            ?.firstNotNullOfOrNull { ideDir ->
+                pluginDirNames.map { ideDir.resolve("plugins").resolve(it) }.firstOrNull { it.exists() }
+            }
         if (found != null) return found
     }
     error("Could not find plugin install directory. Install the plugin first via IDE.")
