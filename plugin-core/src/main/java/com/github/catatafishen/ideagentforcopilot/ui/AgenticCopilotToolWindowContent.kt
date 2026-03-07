@@ -41,6 +41,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         const val PROMPT_PLACEHOLDER = "Ask Copilot... (Shift+Enter for new line)"
         const val AGENT_WORK_DIR = ".agent-work"
 
+        /** Unicode Object Replacement Character — used as a placeholder for inline context chips. */
+        private const val ORC = '\uFFFC'
+
         /** Theme-aware error color — uses IDE's error foreground or a sensible red fallback. */
         private const val OS_NAME_PROPERTY = "os.name"
         private val ERROR_COLOR: JBColor
@@ -49,9 +52,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private val mainPanel = JBPanel<JBPanel<*>>(BorderLayout())
-
-    // Shared context list across tabs
-    private val contextListModel = DefaultListModel<ContextItem>()
 
     // Shared model list (populated from ACP)
     private var loadedModels: List<AcpClient.Model> = emptyList()
@@ -67,7 +67,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private var currentPromptThread: Thread? = null
     private var isSending = false
     private lateinit var processingTimerPanel: ProcessingTimerPanel
-    private lateinit var attachmentsPanel: JBPanel<JBPanel<*>>
 
     // Timeline events (populated from ACP session/update notifications)
     private val timelineModel = DefaultListModel<TimelineEvent>()
@@ -566,12 +565,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
         row.minimumSize = JBUI.size(100, 40)
 
-        // Attachments chip panel (shown above input when files attached)
-        attachmentsPanel = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 4, 2))
-        attachmentsPanel.isOpaque = false
-        attachmentsPanel.isVisible = false
-        attachmentsPanel.border = JBUI.Borders.emptyBottom(2)
-
         // Use EditorTextFieldProvider for PsiFile-backed document (enables spell checking)
         val editorCustomizations = mutableListOf<com.intellij.ui.EditorCustomization>()
         try {
@@ -622,57 +615,14 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             }
         })
 
-        val inputWrapper = JBPanel<JBPanel<*>>(BorderLayout())
-        inputWrapper.add(attachmentsPanel, BorderLayout.NORTH)
         val scrollPane = JBScrollPane(promptTextArea)
         scrollPane.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
         scrollPane.border = null
         scrollPane.viewportBorder = null
-        inputWrapper.add(scrollPane, BorderLayout.CENTER)
         row.border = JBUI.Borders.empty()
-        row.add(inputWrapper, BorderLayout.CENTER)
-
-        // Refresh attachment chips when list changes
-        contextListModel.addListDataListener(object : javax.swing.event.ListDataListener {
-            override fun intervalAdded(e: javax.swing.event.ListDataEvent?) = refreshAttachmentChips()
-            override fun intervalRemoved(e: javax.swing.event.ListDataEvent?) = refreshAttachmentChips()
-            override fun contentsChanged(e: javax.swing.event.ListDataEvent?) = refreshAttachmentChips()
-        })
+        row.add(scrollPane, BorderLayout.CENTER)
 
         return row
-    }
-
-    private fun refreshAttachmentChips() {
-        SwingUtilities.invokeLater {
-            attachmentsPanel.removeAll()
-            for (i in 0 until contextListModel.size()) {
-                val item = contextListModel.getElementAt(i)
-                val chip = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 2, 0))
-                chip.isOpaque = true
-                chip.background = UIManager.getColor("ActionButton.hoverBackground")
-                    ?: JBColor(Color(0xDF, 0xE1, 0xE5), Color(0x35, 0x3B, 0x48))
-                chip.border = JBUI.Borders.empty(1, 6, 1, 2)
-                val icon = if (item.isSelection) "\u2702" else "\uD83D\uDCC4"
-                val label = JBLabel("$icon ${item.name}")
-                label.font = JBUI.Fonts.smallFont()
-                chip.add(label)
-                val removeBtn = JBLabel("\u2715")
-                removeBtn.font = JBUI.Fonts.smallFont()
-                removeBtn.foreground = JBColor.GRAY
-                removeBtn.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-                removeBtn.addMouseListener(object : java.awt.event.MouseAdapter() {
-                    override fun mouseClicked(e: java.awt.event.MouseEvent?) {
-                        val idx = (0 until contextListModel.size()).firstOrNull { contextListModel[it] === item }
-                        if (idx != null) contextListModel.remove(idx)
-                    }
-                })
-                chip.add(removeBtn)
-                attachmentsPanel.add(chip)
-            }
-            attachmentsPanel.isVisible = contextListModel.size() > 0
-            attachmentsPanel.revalidate()
-            attachmentsPanel.repaint()
-        }
     }
 
     private fun onSendStopClicked() {
@@ -680,8 +630,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             handleStopRequest(currentPromptThread)
             setSendingState(false)
         } else {
-            val prompt = promptTextArea.text.trim()
-            if (prompt.isEmpty()) return
+            val rawText = promptTextArea.text.trim()
+            if (rawText.isEmpty()) return
             consolePanel.disableQuickReplies()
             statusBanner?.dismissCurrent()
             setSendingState(true)
@@ -693,9 +643,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 consolePanel.addSessionSeparator(ts)
             }
 
-            val ctxFiles = if (contextListModel.size() > 0) {
-                (0 until contextListModel.size()).map { i ->
-                    val item = contextListModel.getElementAt(i)
+            // Collect context items from inline inlays and strip ORC placeholders from prompt
+            val contextItems = collectInlineContextItems()
+            val prompt = rawText.replace(ORC.toString(), "").trim()
+            val ctxFiles = if (contextItems.isNotEmpty()) {
+                contextItems.map { item ->
                     Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
                 }
             } else null
@@ -1405,10 +1357,10 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             override fun actionPerformed(e: AnActionEvent) {
                 val clipText = getClipboardText()
                 if (clipText != null && (clipText.lines().size > 3 || clipText.length > 500)) {
-                    // If the text was copied from a project file, attach as selection reference
+                    // If the text was copied from a project file, attach as inline chip
                     val projectSource = findClipboardSourceInProject(clipText)
                     if (projectSource != null) {
-                        contextListModel.addElement(projectSource)
+                        insertInlineChip(editor, projectSource)
                     } else {
                         handlePasteToScratch(clipText)
                     }
@@ -1470,11 +1422,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             })
             add(object : AnAction("Clear Attachments", null, com.intellij.icons.AllIcons.Actions.GC) {
                 override fun actionPerformed(e: AnActionEvent) {
-                    contextListModel.clear()
+                    clearInlineChips(editor)
                 }
 
                 override fun update(e: AnActionEvent) {
-                    e.presentation.isEnabled = contextListModel.size() > 0
+                    e.presentation.isEnabled = collectInlineContextItems().isNotEmpty()
                 }
             })
 
@@ -1507,26 +1459,26 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                         dtde.acceptDrop(java.awt.dnd.DnDConstants.ACTION_COPY)
                         val transferable = dtde.transferable
                         if (transferable.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
-                            @Suppress("UNCHECKED_CAST")
+                            @Suppress("UNCHECKED_CAST") // DataFlavor API returns Object
                             val files = transferable.getTransferData(
                                 java.awt.datatransfer.DataFlavor.javaFileListFlavor
                             ) as List<java.io.File>
+                            val editor = textArea.editor as? EditorEx
                             for (file in files) {
                                 val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
                                     .findFileByIoFile(file) ?: continue
                                 val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
                                     .getDocument(vf) ?: continue
-                                val exists = (0 until contextListModel.size()).any {
-                                    contextListModel[it].path == vf.path
-                                }
-                                if (!exists) {
-                                    contextListModel.addElement(
-                                        ContextItem(
+                                if (editor != null) {
+                                    val existing = collectInlineContextItems().any { it.path == vf.path }
+                                    if (!existing) {
+                                        val data = ContextItemData(
                                             path = vf.path, name = vf.name,
                                             startLine = 1, endLine = doc.lineCount,
-                                            fileType = vf.fileType, isSelection = false
+                                            fileTypeName = vf.fileType.name, isSelection = false
                                         )
-                                    )
+                                        insertInlineChip(editor, data)
+                                    }
                                 }
                             }
                             dtde.dropComplete(true)
@@ -1634,7 +1586,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             val references = buildContextReferences()
             val effectivePrompt = buildEffectivePrompt(prompt)
             addContextEntries(references)
-            SwingUtilities.invokeLater { contextListModel.clear() }
 
             dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)
 
@@ -1702,10 +1653,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     private fun addContextEntries(references: List<AcpClient.ResourceReference>) {
         if (references.isNotEmpty()) {
-            val contextFiles = (0 until contextListModel.size()).map { i ->
-                val item = contextListModel.getElementAt(i)
-                Pair(item.name, item.path)
-            }
+            val items = collectInlineContextItems()
+            val contextFiles = items.map { Pair(it.name, it.path) }
             consolePanel.addContextFilesEntry(contextFiles)
         }
     }
@@ -1750,9 +1699,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun buildContextReferences(): List<AcpClient.ResourceReference> {
+        val items = collectInlineContextItems()
         val references = mutableListOf<AcpClient.ResourceReference>()
-        for (i in 0 until contextListModel.size()) {
-            val item = contextListModel.getElementAt(i)
+        for (item in items) {
             try {
                 val ref = buildSingleReference(item)
                 if (ref != null) references.add(ref)
@@ -1783,13 +1732,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             consolePanel.addSessionSeparator(ts)
         }
 
-        val ctxFiles = if (contextListModel.size() > 0) {
-            (0 until contextListModel.size()).map { i ->
-                val item = contextListModel.getElementAt(i)
-                Triple(item.name, item.path, if (item.isSelection) item.startLine else 0)
-            }
-        } else null
-        consolePanel.addPromptEntry(trimmed, ctxFiles)
+        // Quick-replies don't carry context items
+        consolePanel.addPromptEntry(trimmed, null)
 
         ApplicationManager.getApplication().executeOnPooledThread {
             currentPromptThread = Thread.currentThread()
@@ -1809,9 +1753,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     /** Build short inline reference markers so the agent knows which files/selections are attached.
      *  Full content is already in the ResourceReference — no need to duplicate it in the prompt text. */
     private fun buildReferenceMarkers(): String {
+        val items = collectInlineContextItems()
         val parts = mutableListOf<String>()
-        for (i in 0 until contextListModel.size()) {
-            val item = contextListModel.getElementAt(i)
+        for (item in items) {
             val fileName = item.path.substringAfterLast("/")
             if (item.isSelection && item.startLine > 0) {
                 parts.add("`$fileName:${item.startLine}-${item.endLine}`")
@@ -1823,7 +1767,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return "Referenced: " + parts.joinToString(", ")
     }
 
-    private fun buildSingleReference(item: ContextItem): AcpClient.ResourceReference? {
+    private fun buildSingleReference(item: ContextItemData): AcpClient.ResourceReference? {
         val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
             ?: return null
         var doc: com.intellij.openapi.editor.Document? = null
@@ -1855,11 +1799,9 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val mimeType = getMimeTypeForFileType(file.fileType.name.lowercase())
         val contextLog = com.intellij.openapi.diagnostic.Logger.getInstance("ContextSnippet")
         contextLog.info(
-            "Context ref: uri=$uri, isSelection=${item.isSelection}, lines=${item.startLine}-${item.endLine}, textLength=${text.length}, textPreview=${
-                text.take(
-                    100
-                )
-            }"
+            "Context ref: uri=$uri, isSelection=${item.isSelection}, " +
+                "lines=${item.startLine}-${item.endLine}, textLength=${text.length}, " +
+                "textPreview=${text.take(100)}"
         )
         return AcpClient.ResourceReference(uri, mimeType, text)
     }
@@ -2192,16 +2134,18 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             0
         }
 
-        val exists = (0 until contextListModel.size()).any { contextListModel[it].path == path }
+        val exists = collectInlineContextItems().any { it.path == path }
         if (exists) {
             Messages.showInfoMessage(project, "File already in context: ${currentFile.name}", "Duplicate File")
             return
         }
 
-        contextListModel.addElement(
-            ContextItem(
+        val promptEditor = promptTextArea.editor as? EditorEx ?: return
+        insertInlineChip(
+            promptEditor,
+            ContextItemData(
                 path = path, name = currentFile.name, startLine = 1, endLine = lineCount,
-                fileType = currentFile.fileType, isSelection = false
+                fileTypeName = currentFile.fileType.name, isSelection = false
             )
         )
     }
@@ -2226,11 +2170,13 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         val startLine = document.getLineNumber(selectionModel.selectionStart) + 1
         val endLine = document.getLineNumber(selectionModel.selectionEnd) + 1
 
-        contextListModel.addElement(
-            ContextItem(
+        val promptEditor = promptTextArea.editor as? EditorEx ?: return
+        insertInlineChip(
+            promptEditor,
+            ContextItemData(
                 path = currentFile.path, name = "${currentFile.name}:$startLine-$endLine",
                 startLine = startLine, endLine = endLine,
-                fileType = currentFile.fileType, isSelection = true
+                fileTypeName = currentFile.fileType.name, isSelection = true
             )
         )
     }
@@ -2247,7 +2193,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 val psiFile = element as? com.intellij.psi.PsiFile ?: return
                 val vf = psiFile.virtualFile ?: return
                 val path = vf.path
-                val exists = (0 until contextListModel.size()).any { contextListModel[it].path == path }
+                val exists = collectInlineContextItems().any { it.path == path }
                 if (exists) return
 
                 val lineCount = try {
@@ -2256,10 +2202,12 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                     0
                 }
 
-                contextListModel.addElement(
-                    ContextItem(
+                val promptEditor = promptTextArea.editor as? EditorEx ?: return
+                insertInlineChip(
+                    promptEditor,
+                    ContextItemData(
                         path = path, name = vf.name, startLine = 1, endLine = lineCount,
-                        fileType = vf.fileType, isSelection = false
+                        fileTypeName = vf.fileType.name, isSelection = false
                     )
                 )
             }
@@ -2277,10 +2225,10 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
     /**
      * Checks whether the clipboard text matches the current editor's selection.
-     * Returns a [ContextItem] referencing the source file + line range if found,
+     * Returns a [ContextItemData] referencing the source file + line range if found,
      * or null if the active editor doesn't have a matching selection.
      */
-    private fun findClipboardSourceInProject(clipText: String): ContextItem? {
+    private fun findClipboardSourceInProject(clipText: String): ContextItemData? {
         val fileEditorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
         val selectedEditor = fileEditorManager.selectedTextEditor ?: return null
         val selectedFile = fileEditorManager.selectedFiles.firstOrNull() ?: return null
@@ -2294,18 +2242,18 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         editor: com.intellij.openapi.editor.Editor,
         file: com.intellij.openapi.vfs.VirtualFile,
         clipText: String
-    ): ContextItem? {
+    ): ContextItemData? {
         val selModel = editor.selectionModel
         if (!selModel.hasSelection() || selModel.selectedText != clipText) return null
         val doc = editor.document
         val startLine = doc.getLineNumber(selModel.selectionStart) + 1
         val endLine = doc.getLineNumber(selModel.selectionEnd) + 1
-        return ContextItem(
+        return ContextItemData(
             path = file.path,
             name = "${file.name}:$startLine-$endLine",
             startLine = startLine,
             endLine = endLine,
-            fileType = file.fileType,
+            fileTypeName = file.fileType.name,
             isSelection = true
         )
     }
@@ -2442,13 +2390,17 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 if (file != null) {
                     com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
                         .openFile(file, true)
-                    contextListModel.addElement(
-                        ContextItem(
-                            path = file.path, name = file.name,
-                            startLine = 1, endLine = 0,
-                            fileType = file.fileType, isSelection = false
+                    val promptEditor = promptTextArea.editor as? EditorEx
+                    if (promptEditor != null) {
+                        insertInlineChip(
+                            promptEditor,
+                            ContextItemData(
+                                path = file.path, name = file.name,
+                                startLine = 1, endLine = 0,
+                                fileTypeName = file.fileType.name, isSelection = false
+                            )
                         )
-                    )
+                    }
                 }
             } catch (e: Exception) {
                 LOG.warn("Failed to create scratch file from attach menu", e)
@@ -2541,15 +2493,42 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
     }
 
-    // Data classes
-    private data class ContextItem(
-        val path: String,
-        val name: String,
-        val startLine: Int,
-        val endLine: Int,
-        val fileType: com.intellij.openapi.fileTypes.FileType?,
-        val isSelection: Boolean
-    )
+    /** Insert a U+FFFC placeholder at the caret and attach an inlay chip for the given context item. */
+    private fun insertInlineChip(editor: EditorEx, data: ContextItemData) {
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+            val offset = editor.caretModel.offset
+            editor.document.insertString(offset, ORC.toString())
+            editor.caretModel.moveToOffset(offset + 1)
+        }
+        val inlayOffset = editor.caretModel.offset - 1
+        editor.inlayModel.addInlineElement(inlayOffset, true, ContextChipRenderer(data))
+    }
+
+    /** Collect all context items from active inline inlays in the prompt editor. */
+    private fun collectInlineContextItems(): List<ContextItemData> {
+        val editor = promptTextArea.editor ?: return emptyList()
+        val docLength = editor.document.textLength
+        return editor.inlayModel
+            .getInlineElementsInRange(0, docLength, ContextChipRenderer::class.java)
+            .map { it.renderer.contextData }
+    }
+
+    /** Remove all inline context chips and their ORC placeholders from the prompt editor. */
+    private fun clearInlineChips(editor: EditorEx) {
+        val inlays = editor.inlayModel
+            .getInlineElementsInRange(0, editor.document.textLength, ContextChipRenderer::class.java)
+        if (inlays.isEmpty()) return
+        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+            // Remove ORC characters in reverse order so offsets stay valid
+            for (inlay in inlays.sortedByDescending { it.offset }) {
+                val off = inlay.offset
+                if (off < editor.document.textLength && editor.document.charsSequence[off] == ORC) {
+                    editor.document.deleteString(off, off + 1)
+                }
+                com.intellij.openapi.util.Disposer.dispose(inlay)
+            }
+        }
+    }
 
 // TimelineEvent and EventType extracted to DebugPanel.kt
 

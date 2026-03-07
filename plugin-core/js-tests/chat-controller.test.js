@@ -33,14 +33,14 @@ describe('ChatController', () => {
             expect(meta.textContent).toContain('14:22');
         });
 
-        it('renders inline reference chips in the bubble', () => {
+        it('renders reference chips in metadata row', () => {
             CC().addUserMessage('Hi', '14:22', '<a class="prompt-ctx-chip">📄 file.kt</a>');
             const chip = getMessages().querySelector('.prompt-ctx-chip');
             expect(chip).not.toBeNull();
             expect(chip.textContent).toContain('file.kt');
-            const refsDiv = getMessages().querySelector('.inline-refs');
-            expect(refsDiv).not.toBeNull();
-            expect(refsDiv.closest('message-bubble')).not.toBeNull();
+            const meta = getMessages().querySelector('message-meta');
+            expect(meta.classList.contains('show')).toBe(true);
+            expect(meta.querySelector('.prompt-ctx-chip')).not.toBeNull();
         });
     });
 
