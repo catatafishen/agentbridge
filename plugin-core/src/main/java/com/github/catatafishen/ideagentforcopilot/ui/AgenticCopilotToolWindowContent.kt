@@ -1405,7 +1405,13 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             override fun actionPerformed(e: AnActionEvent) {
                 val clipText = getClipboardText()
                 if (clipText != null && (clipText.lines().size > 3 || clipText.length > 200)) {
-                    handlePasteToScratch(clipText)
+                    // If the text was copied from a project file, attach as selection reference
+                    val projectSource = findClipboardSourceInProject(clipText)
+                    if (projectSource != null) {
+                        contextListModel.addElement(projectSource)
+                    } else {
+                        handlePasteToScratch(clipText)
+                    }
                 } else {
                     val handler = com.intellij.openapi.editor.actionSystem.EditorActionManager.getInstance()
                         .getActionHandler(IdeActions.ACTION_EDITOR_PASTE)
@@ -2277,6 +2283,80 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Checks whether the clipboard text matches code from a project file.
+     * Returns a [ContextItem] referencing the source file + line range if found,
+     * or null if the text didn't come from a known project file.
+     *
+     * Detection order:
+     * 1. Active editor selection (fast path — selection usually still active after copy)
+     * 2. Any other open editor's selection
+     * 3. Substring search in open project-file documents (handles cleared selections)
+     */
+    private fun findClipboardSourceInProject(clipText: String): ContextItem? {
+        val fileEditorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+        val projectFileIndex = com.intellij.openapi.roots.ProjectFileIndex.getInstance(project)
+
+        // 1. Check the currently selected editor — most likely source
+        val selectedEditor = fileEditorManager.selectedTextEditor
+        val selectedFile = fileEditorManager.selectedFiles.firstOrNull()
+        if (selectedEditor != null && selectedFile != null && projectFileIndex.isInContent(selectedFile)) {
+            val match = matchEditorSelection(selectedEditor, selectedFile, clipText)
+            if (match != null) return match
+        }
+
+        // 2. Check all other open editors
+        for (vf in fileEditorManager.openFiles) {
+            if (vf == selectedFile || !projectFileIndex.isInContent(vf)) continue
+            for (fe in fileEditorManager.getEditors(vf)) {
+                val textEditor = (fe as? com.intellij.openapi.fileEditor.TextEditor)?.editor ?: continue
+                val match = matchEditorSelection(textEditor, vf, clipText)
+                if (match != null) return match
+            }
+        }
+
+        // 3. Fallback: search open project-file documents for exact substring
+        for (vf in fileEditorManager.openFiles) {
+            if (!projectFileIndex.isInContent(vf)) continue
+            val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf) ?: continue
+            val idx = doc.text.indexOf(clipText)
+            if (idx >= 0) {
+                val startLine = doc.getLineNumber(idx) + 1
+                val endLine = doc.getLineNumber(idx + clipText.length) + 1
+                return ContextItem(
+                    path = vf.path,
+                    name = "${vf.name}:$startLine-$endLine",
+                    startLine = startLine,
+                    endLine = endLine,
+                    fileType = vf.fileType,
+                    isSelection = true
+                )
+            }
+        }
+
+        return null
+    }
+
+    private fun matchEditorSelection(
+        editor: com.intellij.openapi.editor.Editor,
+        file: com.intellij.openapi.vfs.VirtualFile,
+        clipText: String
+    ): ContextItem? {
+        val selModel = editor.selectionModel
+        if (!selModel.hasSelection() || selModel.selectedText != clipText) return null
+        val doc = editor.document
+        val startLine = doc.getLineNumber(selModel.selectionStart) + 1
+        val endLine = doc.getLineNumber(selModel.selectionEnd) + 1
+        return ContextItem(
+            path = file.path,
+            name = "${file.name}:$startLine-$endLine",
+            startLine = startLine,
+            endLine = endLine,
+            fileType = file.fileType,
+            isSelection = true
+        )
     }
 
     private fun handlePasteToScratch(text: String) {
