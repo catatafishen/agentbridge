@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -55,7 +54,7 @@ class EditorTools extends AbstractToolHandler {
         int line = args.has("line") ? args.get("line").getAsInt() : -1;
         boolean requestedFocus = !args.has("focus") || args.get("focus").getAsBoolean();
         // When follow mode is off, never steal focus from the user's current editor
-        boolean focus = requestedFocus && CopilotSettings.getFollowAgentFiles(project);
+        boolean focus = requestedFocus && ToolLayerSettings.getInstance(project).getFollowAgentFiles();
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
@@ -187,7 +186,7 @@ class EditorTools extends AbstractToolHandler {
             String scratchPath = resultFile[0].getPath();
             int lineCount = content.isEmpty() ? 1 : (int) content.lines().count();
             FileTools.followFileIfEnabled(project, scratchPath, 1, lineCount,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " created scratch");
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " created scratch");
 
             return "Created scratch file: " + scratchPath + " (" + content.length() + FORMAT_CHARS_SUFFIX;
         } catch (Exception e) {
@@ -228,7 +227,7 @@ class EditorTools extends AbstractToolHandler {
             );
 
             if (resultFile[0] != null) {
-                boolean focusScratch = CopilotSettings.getFollowAgentFiles(project);
+                boolean focusScratch = ToolLayerSettings.getInstance(project).getFollowAgentFiles();
                 com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
                     .openFile(resultFile[0], focusScratch);
             }

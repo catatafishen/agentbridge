@@ -966,7 +966,7 @@ class CodeQualityTools extends AbstractToolHandler {
         String result = resultFuture.get(10, TimeUnit.SECONDS);
         if (result.startsWith("Added") || result.startsWith("Suppressed")) {
             FileTools.followFileIfEnabled(project, pathStr, line, line,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " suppressed");
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " suppressed");
         }
         return result;
     }
@@ -1546,7 +1546,7 @@ class CodeQualityTools extends AbstractToolHandler {
         String result = resultFuture.get(30, TimeUnit.SECONDS);
         if (result.startsWith("Code formatted")) {
             FileTools.followFileIfEnabled(project, pathStr, 1, 1,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " formatted");
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " formatted");
         }
         return result;
     }
@@ -1589,7 +1589,7 @@ class CodeQualityTools extends AbstractToolHandler {
         String result = resultFuture.get(30, TimeUnit.SECONDS);
         if (!result.startsWith("Error") && !result.startsWith("No ")) {
             FileTools.followFileIfEnabled(project, pathStr, targetLine, targetLine,
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " applied fix");
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " applied fix");
         }
         return result;
     }

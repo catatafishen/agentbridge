@@ -67,6 +67,11 @@
   <depends optional="true" config-file="sonarlint-features.xml">org.sonarlint.idea</depends>
 
   <extensions defaultExtensionNs="com.intellij">
+    <!-- Tool layer settings: standalone MCP defaults (no agent-specific bindings) -->
+    <projectService
+      serviceInterface="com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings"
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.DefaultToolLayerSettings"/>
+
     <!-- PSI Bridge: reused from plugin-core for tool execution -->
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService"/>

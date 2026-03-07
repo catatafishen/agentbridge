@@ -1,6 +1,6 @@
 package com.github.catatafishen.idemcpserver.settings;
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
 import com.github.catatafishen.idemcpserver.McpHttpServer;
@@ -65,7 +65,7 @@ public final class McpServerGeneralConfigurable implements Configurable {
         autoStartCheckbox = new JBCheckBox("Start MCP server automatically when project opens",
             settings.isAutoStart());
         followModeCheckbox = new JBCheckBox("Follow Agent — open files and highlight regions as the agent reads or edits them",
-            CopilotSettings.getFollowAgentFiles(project));
+            ToolLayerSettings.getInstance(project).getFollowAgentFiles());
 
         JButton restartButton = new JButton("Restart Server");
         restartButton.setToolTipText("Stop and restart the MCP server with current settings");
@@ -95,7 +95,7 @@ public final class McpServerGeneralConfigurable implements Configurable {
         if ((Integer) portSpinner.getValue() != settings.getPort()) return true;
         if (transportModeCombo.getSelectedItem() != settings.getTransportMode()) return true;
         if (autoStartCheckbox.isSelected() != settings.isAutoStart()) return true;
-        return followModeCheckbox.isSelected() != CopilotSettings.getFollowAgentFiles(project);
+        return followModeCheckbox.isSelected() != ToolLayerSettings.getInstance(project).getFollowAgentFiles();
     }
 
     @Override
@@ -104,7 +104,8 @@ public final class McpServerGeneralConfigurable implements Configurable {
         settings.setPort((Integer) portSpinner.getValue());
         settings.setTransportMode((TransportMode) transportModeCombo.getSelectedItem());
         settings.setAutoStart(autoStartCheckbox.isSelected());
-        CopilotSettings.setFollowAgentFiles(project, followModeCheckbox.isSelected());
+        com.intellij.ide.util.PropertiesComponent.getInstance(project)
+            .setValue(ToolLayerSettings.FOLLOW_AGENT_FILES_KEY, followModeCheckbox.isSelected(), true);
     }
 
     @Override
@@ -113,7 +114,7 @@ public final class McpServerGeneralConfigurable implements Configurable {
         portSpinner.setValue(settings.getPort());
         transportModeCombo.setSelectedItem(settings.getTransportMode());
         autoStartCheckbox.setSelected(settings.isAutoStart());
-        followModeCheckbox.setSelected(CopilotSettings.getFollowAgentFiles(project));
+        followModeCheckbox.setSelected(ToolLayerSettings.getInstance(project).getFollowAgentFiles());
     }
 
     private void restartMcpServer(JButton button) {

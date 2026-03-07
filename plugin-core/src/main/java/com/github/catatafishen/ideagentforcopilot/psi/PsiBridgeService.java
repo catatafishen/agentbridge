@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.Gson;
@@ -486,15 +485,16 @@ public final class PsiBridgeService implements Disposable {
     }
 
     private ToolPermission resolvePluginPermission(String toolName, JsonObject arguments) {
+        ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
         ToolRegistry.ToolEntry entry = ToolRegistry.findById(toolName);
         if (entry != null && entry.supportsPathSubPermissions) {
             String path = extractPathArg(arguments);
             if (path != null && !path.isEmpty()) {
                 boolean inside = isInsideProject(path);
-                return CopilotSettings.resolveEffectivePermission(toolName, inside);
+                return settings.resolveEffectivePermission(toolName, inside);
             }
         }
-        return CopilotSettings.getToolPermission(toolName);
+        return settings.getToolPermission(toolName);
     }
 
     @Nullable

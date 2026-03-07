@@ -295,7 +295,7 @@ class RefactoringTools extends AbstractToolHandler {
         String result = resultFuture.get(30, TimeUnit.SECONDS);
         if (!result.startsWith("Error")) {
             FileTools.followFileIfEnabled(project, pathStr, Math.max(targetLine, 1), Math.max(targetLine, 1),
-                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel() + " refactored");
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " refactored");
         }
         return result;
     }
@@ -500,7 +500,7 @@ class RefactoringTools extends AbstractToolHandler {
         if (declInfo[0] != null && declInfo[1] != null) {
             int declLine = Integer.parseInt(declInfo[1]);
             FileTools.followFileIfEnabled(project, declInfo[0], declLine, declLine,
-                FileTools.HIGHLIGHT_READ, FileTools.agentLabel() + " found declaration");
+                FileTools.HIGHLIGHT_READ, FileTools.agentLabel(project) + " found declaration");
         }
 
         return result;

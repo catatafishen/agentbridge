@@ -166,6 +166,9 @@
 
     <!-- Project Services -->
     <projectService
+      serviceInterface="com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings"
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.bridge.CopilotToolLayerSettings"/>
+    <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService"/>
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings"/>

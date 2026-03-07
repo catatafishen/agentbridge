@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.CopilotSettings;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
@@ -23,9 +22,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Handles file read/write/create/delete tool calls for the PSI Bridge.
@@ -46,10 +45,11 @@ class FileTools extends AbstractToolHandler {
     /**
      * Returns a label like "ui-reviewer", "claude-sonnet-4.5", or "Agent" as fallback.
      */
-    static String agentLabel() {
-        String agent = CopilotSettings.getActiveAgentLabel();
+    static String agentLabel(Project project) {
+        ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
+        String agent = settings.getActiveAgentLabel();
         if (agent != null) return agent;
-        String model = CopilotSettings.getSelectedModel();
+        String model = settings.getSelectedModel();
         return model != null ? model : "Agent";
     }
 
@@ -124,7 +124,7 @@ class FileTools extends AbstractToolHandler {
             return hint != null ? hint + "\n" + content : content;
         });
 
-        followFileIfEnabled(project, pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel() + " is reading");
+        followFileIfEnabled(project, pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel(project) + " is reading");
         FileAccessTracker.recordRead(project, pathStr);
         return result;
     }
@@ -177,7 +177,7 @@ class FileTools extends AbstractToolHandler {
      */
     static void followFileIfEnabled(Project project, String pathStr, int startLine, int endLine,
                                     java.awt.Color highlightColor, String actionLabel) {
-        if (!CopilotSettings.getFollowAgentFiles(project)) return;
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
 
         EdtUtil.invokeLater(() -> {
             if (!navigating.compareAndSet(false, true)) return;
@@ -197,10 +197,7 @@ class FileTools extends AbstractToolHandler {
                     fem.openFile(vf, false);
                 }
 
-                // Also select in the Project View so the tree follows along
                 selectInProjectView(project, vf);
-            } catch (Exception e) {
-                LOG.debug("Follow agent file failed: " + pathStr, e);
             } finally {
                 navigating.set(false);
             }
@@ -395,7 +392,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(15, TimeUnit.SECONDS);
-        followFileIfEnabled(project, pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, agentLabel() + " is editing");
+        followFileIfEnabled(project, pathStr, followRange[0], followRange[1], HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
         FileAccessTracker.recordWrite(project, pathStr);
         return result;
     }
@@ -771,7 +768,7 @@ class FileTools extends AbstractToolHandler {
         });
 
         String result = resultFuture.get(10, TimeUnit.SECONDS);
-        followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel() + " created");
+        followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel(project) + " created");
         FileAccessTracker.recordWrite(project, pathStr);
         return result;
     }
