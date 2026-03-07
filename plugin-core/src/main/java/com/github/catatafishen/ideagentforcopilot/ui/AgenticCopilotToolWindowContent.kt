@@ -2238,6 +2238,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                             )
                         )
                     }
+                    // Return focus to the chat input after scratch file creation
+                    promptTextArea.requestFocusInWindow()
                 }
             } catch (e: Exception) {
                 LOG.warn("Failed to create scratch file from attach menu", e)
