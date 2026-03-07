@@ -1579,27 +1579,23 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     /**
-     * Build the prompt sent to the agent, including referenced file content inline.
+     * Build the prompt sent to the agent, optionally including referenced file content inline.
      *
-     * <b>Copilot-specific workaround:</b> ACP {@code ResourceReference} objects are sent
-     * as structured content blocks in the prompt array, but GitHub Copilot surfaces them
-     * only as tagged-file metadata (path + line count) without inlining the actual content
-     * for the agent. To guarantee the agent sees the referenced code, we also append it
-     * as plain text after the user's message.
-     *
-     * <p>The {@code ResourceReference} objects are still sent in parallel (belt-and-suspenders)
-     * so that agents that <em>do</em> honour structured references get the benefit of typed
-     * MIME metadata and {@code file://} URIs. When adding support for other agent backends,
-     * verify whether they surface resource-reference content natively; if so, the text
-     * duplication here can be skipped for those backends via {@code AgentConfig}.
+     * <p>ACP {@code ResourceReference} objects are always sent as structured content blocks
+     * in the prompt array. However, some agents (e.g., GitHub Copilot) surface them only as
+     * metadata (path + line count) without inlining the actual content for the model. For
+     * those agents, the referenced file content is also appended as plain text so the model
+     * sees it. This behaviour is controlled by
+     * {@link com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig#requiresResourceContentDuplication()}.</p>
      */
     private fun buildEffectivePromptWithContent(
+        client: AcpClient,
         prompt: String,
         references: List<ResourceReference>,
         contextItems: List<ContextItemData>
     ): String {
         val base = buildEffectivePrompt(prompt)
-        if (references.isEmpty()) return base
+        if (references.isEmpty() || !client.requiresResourceContentDuplication()) return base
 
         val contentBlocks = references.mapIndexed { i, ref ->
             val label = contextItems.getOrNull(i)?.name ?: ref.uri().substringAfterLast("/")
@@ -1649,7 +1645,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             val modelId = prepareModelAndTurnState()
 
             val references = contextManager.buildContextReferences(contextItems.ifEmpty { null })
-            val effectivePrompt = buildEffectivePromptWithContent(prompt, references, contextItems)
+            val effectivePrompt = buildEffectivePromptWithContent(client, prompt, references, contextItems)
             addContextEntries(references, contextItems)
 
             dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)

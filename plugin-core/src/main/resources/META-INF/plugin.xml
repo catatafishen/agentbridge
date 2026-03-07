@@ -160,6 +160,8 @@
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.CopilotService"/>
     <applicationService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ClaudeService"/>
+    <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings"/>
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings"/>

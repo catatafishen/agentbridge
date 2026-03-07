@@ -82,4 +82,17 @@ public interface AgentConfig {
      */
     @Nullable
     String getAgentBinaryPath();
+
+    /**
+     * Whether ACP {@code ResourceReference} objects need their content duplicated as
+     * plain text in the prompt. GitHub Copilot surfaces resource references as
+     * metadata-only (path + line count) without inlining the content for the model,
+     * so the plugin appends the text as a workaround. Agents that honour structured
+     * resource references natively should return {@code false}.
+     *
+     * @return {@code true} if resource content must be appended as plain text
+     */
+    default boolean requiresResourceContentDuplication() {
+        return false;
+    }
 }

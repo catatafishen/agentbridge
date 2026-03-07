@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.bridge;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -11,23 +10,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Agent configuration for GitHub Copilot CLI.
- * Handles Copilot-specific binary discovery, authentication parsing,
- * model metadata, and pre-launch setup (instructions, agents config).
+ * Agent configuration for Claude Code CLI.
+ * Handles Claude-specific binary discovery, authentication parsing,
+ * and model metadata.
  */
-public class CopilotAgentConfig implements AgentConfig {
-
-    private static final Logger LOG = Logger.getInstance(CopilotAgentConfig.class);
-    private static final String DESCRIPTION = "description";
-    private static final String META = "_meta";
-    private static final String COMMAND = "command";
+public class ClaudeAgentConfig implements AgentConfig {
 
     private String resolvedBinaryPath;
     private JsonArray authMethods;
 
     @Override
     public @NotNull String getDisplayName() {
-        return "Copilot";
+        return "Claude";
     }
 
     @Override
@@ -37,13 +31,12 @@ public class CopilotAgentConfig implements AgentConfig {
 
     @Override
     public void prepareForLaunch(@Nullable String projectBasePath) {
-        CopilotInstructionsManager.ensureInstructions(projectBasePath);
-        CopilotAgentsManager.ensureAgents(projectBasePath);
+        ClaudeInstructionsManager.ensureInstructions(projectBasePath);
     }
 
     @Override
     public @NotNull String findAgentBinary() throws AcpException {
-        String path = CopilotCliLocator.findCopilotCli();
+        String path = ClaudeCliLocator.findClaudeCli();
         resolvedBinaryPath = path;
         return path;
     }
@@ -52,7 +45,7 @@ public class CopilotAgentConfig implements AgentConfig {
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
                                                    @Nullable String projectBasePath) throws AcpException {
         resolvedBinaryPath = binaryPath;
-        return CopilotCliLocator.buildAcpCommand(binaryPath, projectBasePath);
+        return ClaudeCliLocator.buildAcpCommand(binaryPath, projectBasePath);
     }
 
     @Override
@@ -62,9 +55,8 @@ public class CopilotAgentConfig implements AgentConfig {
 
     @Override
     public @Nullable String parseModelUsage(@Nullable JsonObject modelMeta) {
-        if (modelMeta != null && modelMeta.has("copilotUsage")) {
-            return modelMeta.get("copilotUsage").getAsString();
-        }
+        // Claude does not expose a usage multiplier in model metadata (yet).
+        // Return null to indicate no usage data available.
         return null;
     }
 
@@ -75,7 +67,7 @@ public class CopilotAgentConfig implements AgentConfig {
         AuthMethod method = new AuthMethod();
         method.setId(first.has("id") ? first.get("id").getAsString() : "");
         method.setName(first.has("name") ? first.get("name").getAsString() : "");
-        method.setDescription(first.has(DESCRIPTION) ? first.get(DESCRIPTION).getAsString() : "");
+        method.setDescription(first.has("description") ? first.get("description").getAsString() : "");
         parseTerminalAuth(first, method);
         return method;
     }
@@ -86,20 +78,20 @@ public class CopilotAgentConfig implements AgentConfig {
     }
 
     /**
-     * Copilot surfaces ResourceReference as metadata-only — content must be duplicated
-     * as plain text so the model actually sees it.
+     * Claude Code honours structured resource references natively —
+     * no need to duplicate content as plain text.
      */
     @Override
     public boolean requiresResourceContentDuplication() {
-        return true;
+        return false;
     }
 
     private void parseTerminalAuth(JsonObject jsonObject, AuthMethod method) {
-        if (jsonObject.has(META)) {
-            JsonObject meta = jsonObject.getAsJsonObject(META);
+        if (jsonObject.has("_meta")) {
+            JsonObject meta = jsonObject.getAsJsonObject("_meta");
             if (meta.has("terminal-auth")) {
                 JsonObject termAuth = meta.getAsJsonObject("terminal-auth");
-                method.setCommand(termAuth.has(COMMAND) ? termAuth.get(COMMAND).getAsString() : null);
+                method.setCommand(termAuth.has("command") ? termAuth.get("command").getAsString() : null);
                 if (termAuth.has("args")) {
                     List<String> args = new ArrayList<>();
                     for (JsonElement a : termAuth.getAsJsonArray("args")) {

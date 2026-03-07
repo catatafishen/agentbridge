@@ -718,6 +718,16 @@ public class AcpClient implements Closeable {
     }
 
     /**
+     * Whether resource reference content must be duplicated as plain text in the prompt.
+     * Delegates to the underlying {@link AgentConfig}.
+     *
+     * @see AgentConfig#requiresResourceContentDuplication()
+     */
+    public boolean requiresResourceContentDuplication() {
+        return agentConfig.requiresResourceContentDuplication();
+    }
+
+    /**
      * Send a JSON-RPC request and wait for the response.
      */
     @NotNull

@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
@@ -176,8 +177,11 @@ final class CopilotCliLocator {
 
     /**
      * Build MCP config JSON, write to temp file, and add --additional-mcp-config flag.
+     * The {@code disabledToolIds} parameter is a comma-separated list of tool IDs
+     * to exclude from the MCP server's tool listing.
      */
-    static void addMcpConfigFlags(List<String> cmd, @Nullable String projectBasePath) {
+    static void addMcpConfigFlags(List<String> cmd, @Nullable String projectBasePath,
+                                  @NotNull String disabledToolIds) {
         String mcpJarPath = findMcpServerJar();
         if (mcpJarPath == null) {
             LOG.warn(MCP_SERVER_ERROR + ": MCP server JAR not found. IntelliJ code tools will be unavailable.");
@@ -205,12 +209,10 @@ final class CopilotCliLocator {
             args.add(mcpJarPath);
             args.add(projectBasePath != null ? projectBasePath : System.getProperty(USER_HOME));
             codeTools.add("args", args);
-            // Pass currently-disabled tool IDs so the MCP server filters them from tools/list
-            String disabledTools = CopilotSettings.getDisabledMcpToolIds();
-            if (!disabledTools.isEmpty()) {
+            if (!disabledToolIds.isEmpty()) {
                 args.add("--disabled-tools");
-                args.add(disabledTools);
-                LOG.info("MCP disabled tools: " + disabledTools);
+                args.add(disabledToolIds);
+                LOG.info("MCP disabled tools: " + disabledToolIds);
             }
             servers.add("intellij-code-tools", codeTools);
             mcpConfig.add("mcpServers", servers);
@@ -256,7 +258,7 @@ final class CopilotCliLocator {
             LOG.info("Copilot CLI config-dir set to: " + agentWorkPath);
         }
 
-        addMcpConfigFlags(cmd, projectBasePath);
+        addMcpConfigFlags(cmd, projectBasePath, CopilotSettings.getDisabledMcpToolIds());
 
         return new ProcessBuilder(cmd);
     }
