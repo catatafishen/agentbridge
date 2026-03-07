@@ -2315,19 +2315,28 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     /**
-     * Switch to a different AI agent. Resets the session, reloads models,
-     * and updates the toolbar to reflect the new agent.
+     * Switch to a different AI agent. Preserves chat history, shows a session separator
+     * and an auto-dismissing banner to confirm the switch, then reloads available models.
      */
     private fun switchToAgent(type: ActiveAgentManager.AgentType) {
         val previous = agentManager.activeType
         agentManager.switchAgent(type)
 
-        resetSession()
-        consolePanel.showPlaceholder("Switched to ${type.displayName()}.")
+        // Archive old conversation before resetting, then keep chat visible
+        archiveConversation()
+        resetSessionKeepingHistory()
+
+        // Visual divider so the user sees where the new agent context starts
+        if (consolePanel.hasContent()) {
+            val ts = java.text.SimpleDateFormat("MMM d, yyyy h:mm a").format(java.util.Date())
+            consolePanel.addSessionSeparator(ts)
+        }
 
         loadModelsAsync { models ->
             loadedModels = models
             restoreModelSelection(models)
+            // Banner after models load so the user knows the switch succeeded
+            statusBanner?.showInfo("Connected to ${type.displayName()}")
         }
 
         LOG.info("Agent switched from ${previous.displayName()} to ${type.displayName()}")
@@ -2365,6 +2374,7 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 } catch (e: Exception) {
                     lastError = e
                     if (authService.isAuthenticationError(e.message ?: "")) break
+                    if (isCLINotFoundError(e)) break
                     if (attempt < 3) Thread.sleep(2000L)
                 }
             }
@@ -2372,12 +2382,23 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             LOG.warn("Failed to load models: $errorMsg")
             SwingUtilities.invokeLater {
                 modelsStatusText = "Unavailable"
+                statusBanner?.showError(errorMsg)
                 if (authService.isAuthenticationError(errorMsg)) {
                     authService.markAuthError(errorMsg)
                     copilotBanner?.triggerCheck()
                 }
             }
         }
+    }
+
+    /** Returns true if the exception (or its cause chain) indicates the agent CLI binary was not found. */
+    private fun isCLINotFoundError(e: Exception): Boolean {
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause is com.github.catatafishen.ideagentforcopilot.bridge.AcpException && !cause.isRecoverable) return true
+            cause = cause.cause
+        }
+        return false
     }
 
 // TimelineEvent and EventType extracted to DebugPanel.kt
