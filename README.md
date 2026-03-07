@@ -24,20 +24,55 @@ formatting, test execution, git operations, and file operations.
 
 ## Architecture
 
+The plugin is organized into three distinct layers — **UI**, **ACP**, and **MCP** — designed so that
+new agents (Claude Code, Codex CLI, etc.) can be added by implementing two small interfaces without
+touching the protocol or UI code.
+
 ```mermaid
 graph TD
     subgraph ij["IntelliJ IDEA Plugin"]
-        TW["Tool Window\n(Swing / JCEF chat)"]
-        ACP["AcpClient\nJSON-RPC 2.0\nPermission handler"]
-        PSI["PsiBridgeService\n(HTTP server)\n83 MCP tools"]
-        TW -->|"prompts /\ncontext"| ACP
-        ACP -->|"streaming\nresponses"| TW
+        subgraph ui["UI Layer"]
+            TW["Tool Window\n(Swing / JCEF chat)"]
+        end
+        subgraph acp["ACP Layer (agent-agnostic)"]
+            AS["AgentService\n(lifecycle)"]
+            AC["AcpClient\n(JSON-RPC 2.0)"]
+            AS --> AC
+        end
+        subgraph copilot["Copilot Agent"]
+            CS["CopilotService\n← AgentService"]
+            CC["CopilotAgentConfig\n← AgentConfig"]
+            CSt["CopilotAgentSettings\n← AgentSettings"]
+        end
+        subgraph mcp["MCP Layer"]
+            PSI["PsiBridgeService\n(HTTP server)\n83 MCP tools"]
+        end
+        TW -->|"prompts /\ncontext"| AS
+        AC -->|"streaming\nresponses"| TW
     end
 
-    ACP <-->|"stdin / stdout"| CLI["Copilot CLI --acp\nAgent reasoning\nTool selection"]
+    AC <-->|"stdin / stdout"| CLI["Copilot CLI --acp\nAgent reasoning\nTool selection"]
     CLI -->|stdio| MCP["MCP Server (JAR)\nintelij-code-tools"]
     MCP -->|HTTP| PSI
 ```
+
+### Three Layers
+
+| Layer | Package | Purpose |
+|-------|---------|---------|
+| **UI** | `ui/` | Tool window, chat panel, model selector, debug panel — agent-agnostic |
+| **ACP** | `bridge/` | Generic Agent Client Protocol: `AcpClient` (JSON-RPC), `AgentService` (lifecycle), `AgentConfig` / `AgentSettings` (strategy interfaces) |
+| **MCP** | `mcp-server/`, `psi/` | IDE tools exposed via Model Context Protocol over stdio + HTTP |
+
+### Extending for New Agents
+
+To add a new agent backend, implement two interfaces and extend one base class:
+
+1. **`AgentConfig`** — Agent binary discovery, process building, initialize response parsing, auth
+2. **`AgentSettings`** — Runtime settings: prompt timeout, max tool calls per turn, permission resolution
+3. **`AgentService`** (extend) — Provides `createAgentConfig()` + `createAgentSettings()`, inherits full lifecycle (start/stop/restart/dispose)
+
+The `AcpClient` and UI code require no changes — they program against the interfaces.
 
 ### Key Design: IntelliJ-Native File Operations
 
@@ -53,16 +88,17 @@ Built-in Copilot file edits are **denied** at the permission level. The agent au
 
 ```
 intellij-copilot-plugin/
-├── plugin-core/          # Main plugin (Java 21)
+├── plugin-core/              # Main plugin (Java 21)
 │   └── src/main/java/com/github/catatafishen/ideagentforcopilot/
-│       ├── ui/           # Tool Window (Swing)
-│       ├── services/     # CopilotService, CopilotSettings
-│       ├── bridge/       # AcpClient (ACP protocol)
-│       └── psi/          # PsiBridgeService (83 MCP tools)
-├── mcp-server/           # MCP stdio server (bundled JAR)
+│       ├── ui/               # UI layer — Tool Window (Swing/JCEF)
+│       ├── services/         # AgentService (abstract), CopilotService
+│       ├── bridge/           # ACP layer — AcpClient, AgentConfig,
+│       │                     #   AgentSettings, Model, AuthMethod, etc.
+│       └── psi/              # PsiBridgeService (83 MCP tools)
+├── mcp-server/               # MCP stdio server (bundled JAR)
 │   └── src/main/java/com/github/copilot/mcp/
 │       └── McpServer.java
-└── integration-tests/    # (placeholder)
+└── integration-tests/        # (placeholder)
 ```
 
 ## MCP Tools (83 tools)
