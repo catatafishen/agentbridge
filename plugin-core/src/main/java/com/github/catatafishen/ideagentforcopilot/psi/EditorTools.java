@@ -53,11 +53,9 @@ class EditorTools extends AbstractToolHandler {
         }
         String pathStr = args.get("file").getAsString();
         int line = args.has("line") ? args.get("line").getAsInt() : -1;
-        boolean focus = !args.has("focus") || args.get("focus").getAsBoolean();
+        boolean requestedFocus = !args.has("focus") || args.get("focus").getAsBoolean();
         // When follow mode is off, never steal focus from the user's current editor
-        if (!CopilotSettings.getFollowAgentFiles(project)) {
-            focus = false;
-        }
+        boolean focus = requestedFocus && CopilotSettings.getFollowAgentFiles(project);
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
@@ -762,26 +760,12 @@ class EditorTools extends AbstractToolHandler {
                 .findConfigurationType(searchTerm.substring(3));
         }
 
-        // For display-name fuzzy matching, iterate all config types
-        var configTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensions();
-        for (var ct : configTypes) {
-            String displayName = ct.getDisplayName().toLowerCase();
-            String id = ct.getId().toLowerCase();
-            if (displayName.contains(searchTerm) || id.contains(searchTerm.replace(" ", ""))) {
-                return ct;
-            }
-        }
-        return null;
+        // For display-name fuzzy matching, use PlatformApiCompat wrapper
+        return PlatformApiCompat.findConfigurationTypeBySearch(searchTerm);
     }
 
     private String listAvailableConfigTypes() {
-        var configTypes = com.intellij.execution.configurations.ConfigurationType.CONFIGURATION_TYPE_EP.getExtensions();
-        StringBuilder sb = new StringBuilder();
-        for (var ct : configTypes) {
-            if (!sb.isEmpty()) sb.append(", ");
-            sb.append(ct.getDisplayName());
-        }
-        return sb.toString();
+        return String.join(", ", PlatformApiCompat.listConfigurationTypeNames());
     }
 
     @SuppressWarnings("java:S3011") // reflection needed for cross-plugin config API

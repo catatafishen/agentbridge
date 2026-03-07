@@ -118,6 +118,11 @@ Use **conventional commits**:
 - **Use `PlatformApiCompat`** for any JetBrains API call that differs across supported IDE versions (changed signatures,
   moved classes, renamed methods). Wrap the call in a static method there with a Javadoc `<b>Why extracted:</b>` block
   explaining the incompatibility. This keeps version-specific logic in one place and out of business code.
+- **Before calling a JetBrains API directly**, check whether `PlatformApiCompat` already provides a wrapper for it.
+  Many APIs (e.g., `ConfigurationType.CONFIGURATION_TYPE_EP.getExtensionList()`, `PluginManagerCore.getPlugin()`,
+  `FileTypeDetector.EP_NAME`) cause false-positive compilation errors in the IDE daemon because the extension point
+  generic differs between IDE SDK versions — even though Gradle compiles fine. `PlatformApiCompat` centralises these
+  calls so the daemon errors are confined to one file. **Never bypass it by calling the raw API from business code.**
 
 ### Null Safety
 
