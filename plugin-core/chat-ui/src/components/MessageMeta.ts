@@ -1,11 +1,33 @@
 const CHIP_TAGS = new Set(['TOOL-CHIP', 'THINKING-CHIP', 'SUBAGENT-CHIP']);
 
+// Shared ResizeObserver — one for ALL MessageMeta strips, avoids per-instance overhead
+const stripToMeta = new WeakMap<Element, MessageMeta>();
+const sharedResizeObserver = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+        stripToMeta.get(entry.target)?.scheduleNavUpdate();
+    }
+});
+
+// Shared drag-scroll state — one set of document listeners for all instances
+let activeDragMeta: { strip: HTMLElement; startX: number; scrollStart: number } | null = null;
+document.addEventListener('mousemove', (e: MouseEvent) => {
+    if (!activeDragMeta) return;
+    activeDragMeta.strip.scrollLeft = activeDragMeta.scrollStart - (e.clientX - activeDragMeta.startX);
+});
+document.addEventListener('mouseup', () => {
+    if (!activeDragMeta) return;
+    activeDragMeta.strip.classList.remove('dragging');
+    globalThis._bridge?.setCursor('grab');
+    activeDragMeta = null;
+});
+
 export default class MessageMeta extends HTMLElement {
     private _init = false;
     private _strip: HTMLElement | null = null;
     private _navLeft: HTMLElement | null = null;
     private _navRight: HTMLElement | null = null;
     private _badge: HTMLElement | null = null;
+    private _navRAF: number | null = null;
 
     connectedCallback(): void {
         if (this._init) return;
@@ -35,9 +57,22 @@ export default class MessageMeta extends HTMLElement {
 
         for (const chip of existingChips) this._strip.appendChild(chip);
 
-        this._strip.addEventListener('scroll', () => this._updateNav(), {passive: true});
-        new ResizeObserver(() => this._updateNav()).observe(this._strip);
+        this._strip.addEventListener('scroll', () => this.scheduleNavUpdate(), {passive: true});
+        stripToMeta.set(this._strip, this);
+        sharedResizeObserver.observe(this._strip);
         this._initDragScroll(this._strip);
+    }
+
+    disconnectedCallback(): void {
+        if (this._strip) {
+            sharedResizeObserver.unobserve(this._strip);
+            stripToMeta.delete(this._strip);
+        }
+        if (this._navRAF) {
+            cancelAnimationFrame(this._navRAF);
+            this._navRAF = null;
+        }
+        if (activeDragMeta?.strip === this._strip) activeDragMeta = null;
     }
 
     appendChild<T extends Node>(node: T): T {
@@ -47,6 +82,15 @@ export default class MessageMeta extends HTMLElement {
             return node;
         }
         return Node.prototype.appendChild.call(this, node) as T;
+    }
+
+    /** Schedule a nav update coalesced via requestAnimationFrame. */
+    scheduleNavUpdate(): void {
+        if (this._navRAF) return;
+        this._navRAF = requestAnimationFrame(() => {
+            this._navRAF = null;
+            this._updateNav();
+        });
     }
 
     private _createNav(label: string, direction: number): HTMLElement {
@@ -113,30 +157,12 @@ export default class MessageMeta extends HTMLElement {
     }
 
     private _initDragScroll(strip: HTMLElement): void {
-        let dragging = false;
-        let startX = 0;
-        let scrollStart = 0;
-
         strip.addEventListener('mousedown', (e: MouseEvent) => {
             if (e.button !== 0) return;
-            dragging = true;
-            startX = e.clientX;
-            scrollStart = strip.scrollLeft;
+            activeDragMeta = {strip, startX: e.clientX, scrollStart: strip.scrollLeft};
             strip.classList.add('dragging');
             globalThis._bridge?.setCursor('grabbing');
             e.preventDefault();
-        });
-
-        document.addEventListener('mousemove', (e: MouseEvent) => {
-            if (!dragging) return;
-            strip.scrollLeft = scrollStart - (e.clientX - startX);
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (!dragging) return;
-            dragging = false;
-            strip.classList.remove('dragging');
-            globalThis._bridge?.setCursor('grab');
         });
     }
 }
