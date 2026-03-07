@@ -1574,8 +1574,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun buildEffectivePrompt(prompt: String): String {
-        val snippetSuffix = buildSnippetSuffix()
-        var effective = if (snippetSuffix.isNotEmpty()) "$prompt\n\n$snippetSuffix" else prompt
+        val refMarkers = buildReferenceMarkers()
+        var effective = if (refMarkers.isNotEmpty()) "$prompt\n\n$refMarkers" else prompt
 
         if (CopilotSettings.getSessionMode() == "plan") {
             effective = "[[PLAN]] $effective"
@@ -1806,33 +1806,21 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         return match.groupValues[1].split("|").map { it.trim() }.filter { it.isNotEmpty() }
     }
 
-    /** Build inline snippet text for selections so the agent sees the code in the prompt itself */
-    private fun buildSnippetSuffix(): String {
+    /** Build short inline reference markers so the agent knows which files/selections are attached.
+     *  Full content is already in the ResourceReference — no need to duplicate it in the prompt text. */
+    private fun buildReferenceMarkers(): String {
         val parts = mutableListOf<String>()
         for (i in 0 until contextListModel.size()) {
             val item = contextListModel.getElementAt(i)
-            if (!item.isSelection || item.startLine <= 0) continue
-            try {
-                val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
-                    ?: continue
-                var doc: com.intellij.openapi.editor.Document? = null
-                com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
-                    doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(file)
-                }
-                val document = doc ?: continue
-                var snippet = ""
-                com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction {
-                    val s = document.getLineStartOffset((item.startLine - 1).coerceIn(0, document.lineCount - 1))
-                    val e = document.getLineEndOffset((item.endLine - 1).coerceIn(0, document.lineCount - 1))
-                    snippet = document.getText(com.intellij.openapi.util.TextRange(s, e))
-                }
-                val fileName = item.path.substringAfterLast("/")
-                val ext = fileName.substringAfterLast(".", "")
-                parts.add("Selected lines ${item.startLine}-${item.endLine} of `$fileName`:\n```$ext\n$snippet\n```")
-            } catch (_: Exception) { /* skip */
+            val fileName = item.path.substringAfterLast("/")
+            if (item.isSelection && item.startLine > 0) {
+                parts.add("`$fileName:${item.startLine}-${item.endLine}`")
+            } else {
+                parts.add("`$fileName`")
             }
         }
-        return parts.joinToString("\n\n")
+        if (parts.isEmpty()) return ""
+        return "Referenced: " + parts.joinToString(", ")
     }
 
     private fun buildSingleReference(item: ContextItem): AcpClient.ResourceReference? {

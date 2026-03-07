@@ -232,17 +232,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         currentTurnId = "t${turnCounter++}"
         val ts = timestamp()
         entries.add(EntryData.Prompt(text, ts))
-        val ctxHtml = if (!contextFiles.isNullOrEmpty()) {
+        val refsHtml = if (!contextFiles.isNullOrEmpty()) {
             contextFiles.joinToString("") { (name, path, line) ->
                 val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
                 "<a class=\\'prompt-ctx-chip\\' href=\\'$href\\' title=\\'${escJs(path)}${if (line > 0) ":$line" else ""}\\'>$FILE_ICON_SVG ${
-                    escJs(
-                        name
-                    )
+                    escJs(name)
                 }</a>"
             }
         } else ""
-        executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$ctxHtml')")
+        executeJs("ChatController.addUserMessage('${escJs(text)}','$ts','$refsHtml')")
     }
 
     override fun startStreaming() {

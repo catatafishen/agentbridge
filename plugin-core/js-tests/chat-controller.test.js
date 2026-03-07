@@ -33,11 +33,14 @@ describe('ChatController', () => {
             expect(meta.textContent).toContain('14:22');
         });
 
-        it('renders context chips HTML', () => {
+        it('renders inline reference chips in the bubble', () => {
             CC().addUserMessage('Hi', '14:22', '<a class="prompt-ctx-chip">📄 file.kt</a>');
             const chip = getMessages().querySelector('.prompt-ctx-chip');
             expect(chip).not.toBeNull();
             expect(chip.textContent).toContain('file.kt');
+            const refsDiv = getMessages().querySelector('.inline-refs');
+            expect(refsDiv).not.toBeNull();
+            expect(refsDiv.closest('message-bubble')).not.toBeNull();
         });
     });
 

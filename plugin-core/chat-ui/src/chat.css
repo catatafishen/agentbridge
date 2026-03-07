@@ -202,6 +202,15 @@ body {
     border-color: var(--user-a25);
 }
 
+.inline-refs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    margin-top: var(--sp-4);
+    padding-top: var(--sp-4);
+    border-top: 1px solid var(--user-a12);
+}
+
 /* ── Agent response ──────────────────────────────────── */
 .agent-row {
     display: block;
