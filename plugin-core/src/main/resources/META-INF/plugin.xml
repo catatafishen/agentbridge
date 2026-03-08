@@ -170,6 +170,8 @@
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ClineService"/>
     <applicationService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.GenericCustomService"/>
+    <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings"/>
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings"/>

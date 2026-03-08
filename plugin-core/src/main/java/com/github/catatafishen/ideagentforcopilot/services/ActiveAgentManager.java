@@ -25,8 +25,11 @@ public final class ActiveAgentManager {
     private static final String KEY_ATTACH_TRIGGER = "agent.attachTriggerChar";
     private static final String DEFAULT_ATTACH_TRIGGER = "#";
     private static final String KEY_FOLLOW_AGENT_FILES = "agent.followAgentFiles";
+    private static final String KEY_AUTO_CONNECT = "agent.autoConnect";
+    private static final String KEY_CUSTOM_ACP_COMMAND = "agent.customAcpCommand";
 
     private final Project project;
+    private volatile boolean acpConnected;
 
     public ActiveAgentManager(@NotNull Project project) {
         this.project = project;
@@ -45,7 +48,8 @@ public final class ActiveAgentManager {
         KIRO("kiro", "Kiro"),
         GEMINI("gemini", "Gemini"),
         OPENCODE("opencode", "OpenCode"),
-        CLINE("cline", "Cline");
+        CLINE("cline", "Cline"),
+        GENERIC("generic", "Generic ACP");
 
         private final String id;
         private final String displayName;
@@ -118,6 +122,7 @@ public final class ActiveAgentManager {
             case GEMINI -> GeminiService.getInstance(project);
             case OPENCODE -> OpenCodeService.getInstance(project);
             case CLINE -> ClineService.getInstance(project);
+            case GENERIC -> GenericCustomService.getInstance(project);
             default -> CopilotService.getInstance(project);
         };
     }
@@ -157,5 +162,36 @@ public final class ActiveAgentManager {
 
     public static void setFollowAgentFiles(@NotNull Project project, boolean enabled) {
         PropertiesComponent.getInstance(project).setValue(KEY_FOLLOW_AGENT_FILES, enabled, true);
+    }
+
+    // ── ACP connection state ─────────────────────────────────────────────────
+
+    public boolean isAcpConnected() {
+        return acpConnected;
+    }
+
+    public void setAcpConnected(boolean connected) {
+        this.acpConnected = connected;
+    }
+
+    // ── Auto-connect on startup ──────────────────────────────────────────────
+
+    public boolean isAutoConnect() {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_AUTO_CONNECT, false);
+    }
+
+    public void setAutoConnect(boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_AUTO_CONNECT, enabled, false);
+    }
+
+    // ── Generic ACP custom command ───────────────────────────────────────────
+
+    @NotNull
+    public String getCustomAcpCommand() {
+        return PropertiesComponent.getInstance(project).getValue(KEY_CUSTOM_ACP_COMMAND, "");
+    }
+
+    public void setCustomAcpCommand(@NotNull String command) {
+        PropertiesComponent.getInstance(project).setValue(KEY_CUSTOM_ACP_COMMAND, command, "");
     }
 }

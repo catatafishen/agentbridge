@@ -32,7 +32,6 @@ import javax.swing.*
  */
 class AgenticCopilotToolWindowContent(private val project: Project) {
 
-    // UI String Constants
     private companion object {
         private val LOG =
             com.intellij.openapi.diagnostic.Logger.getInstance(AgenticCopilotToolWindowContent::class.java)
@@ -41,6 +40,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         const val MSG_UNKNOWN_ERROR = "Unknown error"
         const val PROMPT_PLACEHOLDER = "Ask Copilot... (Shift+Enter for new line)"
         const val AGENT_WORK_DIR = ".agent-work"
+        const val CARD_CONNECT = "connect"
+        const val CARD_CHAT = "chat"
 
         /** Theme-aware error color — uses IDE's error foreground or a sensible red fallback. */
         private const val OS_NAME_PROPERTY = "os.name"
@@ -49,8 +50,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
                 ?: JBColor(Color(0xC7, 0x22, 0x22), Color(0xE0, 0x60, 0x60))
     }
 
-    private val mainPanel = JBPanel<JBPanel<*>>(BorderLayout())
+    private val cardLayout = CardLayout()
+    private val mainPanel = JBPanel<JBPanel<*>>(cardLayout)
     private val agentManager = ActiveAgentManager.getInstance(project)
+    private lateinit var connectPanel: AcpConnectPanel
+    private var chatPanel: JComponent? = null
 
     // Shared model list (populated from ACP)
     private var loadedModels: List<Model> = emptyList()
@@ -105,7 +109,73 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     }
 
     private fun setupUI() {
-        mainPanel.add(createPromptTab(), BorderLayout.CENTER)
+        // Connect panel — always created
+        connectPanel = AcpConnectPanel(project) { agentType, customCommand ->
+            connectToAgent(agentType, customCommand)
+        }
+        mainPanel.add(connectPanel, CARD_CONNECT)
+
+        // Chat panel — created lazily on first connect
+        if (agentManager.isAutoConnect) {
+            buildAndShowChatPanel()
+        } else {
+            cardLayout.show(mainPanel, CARD_CONNECT)
+        }
+    }
+
+    private fun buildAndShowChatPanel() {
+        if (chatPanel == null) {
+            chatPanel = createPromptTab()
+            mainPanel.add(chatPanel, CARD_CHAT)
+            restoreConversation()
+        }
+        cardLayout.show(mainPanel, CARD_CHAT)
+        agentManager.setAcpConnected(true)
+
+        // If called from auto-connect, kick off model loading
+        if (loadedModels.isEmpty() && modelsStatusText == MSG_LOADING) {
+            loadModelsAsync { models ->
+                loadedModels = models
+                restoreModelSelection(models)
+                val agentName = agentManager.activeType.displayName()
+                statusBanner?.showInfo("Connected to $agentName")
+            }
+        }
+    }
+
+    /**
+     * Called from AcpConnectPanel when the user clicks Connect.
+     * Switches the active agent, builds the chat panel, and loads models.
+     */
+    private fun connectToAgent(type: ActiveAgentManager.AgentType, customCommand: String?) {
+        if (customCommand != null) {
+            agentManager.setCustomAcpCommand(customCommand)
+        }
+        if (agentManager.activeType != type) {
+            agentManager.switchAgent(type)
+        }
+        buildAndShowChatPanel()
+
+        // Load models — on success show the chat; on failure return to connect panel
+        loadModelsAsync { models ->
+            loadedModels = models
+            restoreModelSelection(models)
+            statusBanner?.showInfo("Connected to ${type.displayName()}")
+        }
+    }
+
+    /**
+     * Disconnects the current ACP agent and returns to the connect panel.
+     */
+    fun disconnectFromAgent() {
+        try {
+            agentManager.service.stop()
+        } catch (e: Exception) {
+            LOG.warn("Error stopping agent", e)
+        }
+        agentManager.setAcpConnected(false)
+        connectPanel.refreshMcpStatus()
+        cardLayout.show(mainPanel, CARD_CONNECT)
     }
 
     /** Record an event in the Timeline tab. Thread-safe. */
@@ -539,7 +609,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         panel.add(bottomPanel, BorderLayout.SOUTH)
 
         billing.loadBillingData()
-        loadModels()
 
         return panel
     }
@@ -711,8 +780,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
     private fun createControlsRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
 
-        // Left toolbar — grouped logically:
-        // [Send/Stop] | [Attach File, Attach Selection] | [Model, Mode] | [Follow Agent] | [Project Files ▾] | [Restart ▾] | [Export, Permissions, Help]
         val leftGroup = DefaultActionGroup()
         leftGroup.add(SendStopAction())
         leftGroup.addSeparator()
@@ -738,8 +805,11 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         controlsToolbar.targetComponent = row
         controlsToolbar.setReservePlaceAutoPopupIcon(false)
 
-        // Right toolbar: processing indicator + usage graph (always right-aligned)
+        // Right toolbar: MCP status + disconnect + processing indicator + usage graph
         val rightGroup = DefaultActionGroup()
+        rightGroup.add(McpStatusIndicatorAction())
+        rightGroup.add(DisconnectAction())
+        rightGroup.addSeparator()
         rightGroup.add(ProcessingIndicatorAction())
         rightGroup.add(billing.createUsageGraphAction())
 
@@ -753,6 +823,57 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         row.add(usageToolbar.component, BorderLayout.EAST)
 
         return row
+    }
+
+    /** Toolbar action showing MCP server status (e.g., "MCP: 8642") */
+    private inner class McpStatusIndicatorAction : AnAction(), CustomComponentAction {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun actionPerformed(e: AnActionEvent) { /* display-only */
+        }
+
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+            val label = JBLabel()
+            label.font = label.font.deriveFont(10f)
+            label.border = JBUI.Borders.empty(0, 4)
+            label.toolTipText = "MCP server status"
+
+            // Periodic refresh via timer
+            val timer = Timer(5000) {
+                val running = isMcpServerRunning()
+                val port = com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).port
+                label.text = if (running) "MCP:$port" else "MCP:off"
+                label.foreground = if (running) com.intellij.util.ui.UIUtil.getLabelInfoForeground() else JBColor.GRAY
+            }
+            timer.isRepeats = true
+            timer.initialDelay = 0
+            timer.start()
+            return label
+        }
+
+        private fun isMcpServerRunning(): Boolean {
+            return try {
+                val serverClass = Class.forName("com.github.catatafishen.idemcpserver.McpHttpServer")
+                val getInstance = serverClass.getMethod("getInstance", Project::class.java)
+                val server = getInstance.invoke(null, project) ?: return false
+                val isRunning = serverClass.getMethod("isRunning")
+                isRunning.invoke(server) as Boolean
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
+    /** Toolbar action: disconnect from the current ACP agent */
+    private inner class DisconnectAction :
+        AnAction("Disconnect", "Disconnect from ACP agent", AllIcons.Actions.Suspend) {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        override fun actionPerformed(e: AnActionEvent) {
+            disconnectFromAgent()
+        }
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = agentManager.isAcpConnected
+        }
     }
 
     /** Toolbar action showing a native processing timer while the agent works */
@@ -2382,10 +2503,17 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             LOG.warn("Failed to load models: $errorMsg")
             SwingUtilities.invokeLater {
                 modelsStatusText = "Unavailable"
-                statusBanner?.showError(errorMsg)
-                if (authService.isAuthenticationError(errorMsg)) {
-                    authService.markAuthError(errorMsg)
-                    copilotBanner?.triggerCheck()
+                if (lastError != null && isCLINotFoundError(lastError)) {
+                    // Non-recoverable: return to connect panel with the error
+                    agentManager.setAcpConnected(false)
+                    connectPanel.showError(errorMsg)
+                    cardLayout.show(mainPanel, CARD_CONNECT)
+                } else {
+                    statusBanner?.showError(errorMsg)
+                    if (authService.isAuthenticationError(errorMsg)) {
+                        authService.markAuthError(errorMsg)
+                        copilotBanner?.triggerCheck()
+                    }
                 }
             }
         }
