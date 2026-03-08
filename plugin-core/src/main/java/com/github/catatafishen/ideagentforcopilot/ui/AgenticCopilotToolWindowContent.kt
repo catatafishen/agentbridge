@@ -130,6 +130,8 @@ class AgenticCopilotToolWindowContent(
 
     private fun setupTitleBarActions() {
         val actions = listOf<AnAction>(
+            PermissionsToggleAction(),
+            Separator.create(),
             FollowAgentFilesToggleAction(),
             Separator.create(),
             ProjectFilesDropdownAction(),
@@ -791,7 +793,6 @@ class AgenticCopilotToolWindowContent(
         }
     }
 
-    /** Bottom toolbar: ACP-specific actions (send, attach, model, mode, restart, disconnect, agent name, billing). */
     private fun createControlsRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
 
@@ -802,9 +803,9 @@ class AgenticCopilotToolWindowContent(
         leftGroup.addSeparator()
         leftGroup.add(ModelSelectorAction())
         leftGroup.add(ModeSelectorAction())
-        leftGroup.add(AutoApproveToggleAction())
         leftGroup.addSeparator()
         leftGroup.add(RestartSessionGroup())
+        leftGroup.add(AgentSelectorAction())
         leftGroup.add(DisconnectAction())
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
@@ -814,8 +815,6 @@ class AgenticCopilotToolWindowContent(
         controlsToolbar.setReservePlaceAutoPopupIcon(false)
 
         val rightGroup = DefaultActionGroup()
-        rightGroup.add(AgentSelectorAction())
-        rightGroup.addSeparator()
         rightGroup.add(ProcessingIndicatorAction())
         rightGroup.add(billing.createUsageGraphAction())
 
@@ -1205,25 +1204,12 @@ class AgenticCopilotToolWindowContent(
     private inner class ProjectFilesDropdownAction : AnAction(
         "Project Files", "Open project configuration files",
         com.intellij.icons.AllIcons.Nodes.Folder
-    ), com.intellij.openapi.actionSystem.ex.CustomComponentAction {
+    ) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
         override fun actionPerformed(e: AnActionEvent) {
             val inputEvent = e.inputEvent ?: return
             val component = inputEvent.source as? java.awt.Component ?: return
             showPopup(component)
-        }
-
-        override fun createCustomComponent(
-            presentation: com.intellij.openapi.actionSystem.Presentation,
-            place: String
-        ): javax.swing.JComponent {
-            val button = com.intellij.openapi.actionSystem.impl.ActionButtonWithText(
-                this,
-                presentation,
-                place,
-                com.intellij.openapi.actionSystem.ActionToolbar.DEFAULT_MINIMUM_BUTTON_SIZE
-            )
-            return button
         }
 
         private fun showPopup(owner: java.awt.Component) {
@@ -1441,12 +1427,12 @@ class AgenticCopilotToolWindowContent(
         }
     }
 
-    /**
-     * Plugin-level toggle for auto-approving permission requests.
-     * Visible for all agents — promotes ASK → ALLOW while preserving DENY.
-     */
-    private inner class AutoApproveToggleAction :
-        ToggleAction("Auto-Approve", "Auto-approve permission requests (ASK → ALLOW)", AllIcons.Actions.Lightning) {
+    private inner class PermissionsToggleAction :
+        ToggleAction(
+            "Plugin Permissions",
+            "Auto-approve plugin permission requests (ASK → ALLOW)",
+            AllIcons.Ide.HectorOff
+        ) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
         override fun isSelected(e: AnActionEvent): Boolean {
@@ -1455,6 +1441,19 @@ class AgenticCopilotToolWindowContent(
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             agentManager.isAutoApprovePermissions = state
+        }
+
+        override fun update(e: AnActionEvent) {
+            super.update(e)
+            if (agentManager.isAutoApprovePermissions) {
+                e.presentation.icon = AllIcons.Ide.HectorOn
+                e.presentation.text = "Permissions Granted"
+                e.presentation.description = "Plugin permissions auto-approved — click to disable"
+            } else {
+                e.presentation.icon = AllIcons.Ide.HectorOff
+                e.presentation.text = "Permissions Denied"
+                e.presentation.description = "Plugin permissions require approval — click to auto-approve"
+            }
         }
     }
 
