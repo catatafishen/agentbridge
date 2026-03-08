@@ -1,7 +1,6 @@
-package com.github.catatafishen.idemcpserver;
+package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
-import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
 import com.intellij.openapi.Disposable;

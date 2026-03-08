@@ -1,8 +1,6 @@
-package com.github.catatafishen.idemcpserver;
+package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.github.catatafishen.ideagentforcopilot.settings.McpToolFilter;
 import com.google.gson.Gson;

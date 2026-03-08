@@ -100,16 +100,12 @@
     <!-- Project service: MCP HTTP server -->
     <projectService
       serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
-      serviceImplementation="com.github.catatafishen.idemcpserver.McpHttpServer"/>
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.McpHttpServer"/>
 
     <!-- Persistent settings state (shared from plugin-core) -->
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings"/>
 
-
-    <!-- Start PSI Bridge + MCP server on project open -->
-    <postStartupActivity
-      implementation="com.github.catatafishen.idemcpserver.McpServerStartup"/>
 
     <!-- Notification Group -->
     <notificationGroup id="MCP Server Notifications" displayType="STICKY_BALLOON"/>

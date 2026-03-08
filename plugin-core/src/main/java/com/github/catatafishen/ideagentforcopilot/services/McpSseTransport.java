@@ -1,4 +1,4 @@
-package com.github.catatafishen.idemcpserver;
+package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.sun.net.httpserver.HttpExchange;

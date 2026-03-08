@@ -187,6 +187,11 @@
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings"/>
 
+    <!-- MCP HTTP server (speaks MCP protocol, used by agent CLI via McpStdioProxy) -->
+    <projectService
+      serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.McpHttpServer"/>
+
     <!-- Settings: IDE Agent for Copilot (parent group) -->
     <projectConfigurable
       parentId="tools"

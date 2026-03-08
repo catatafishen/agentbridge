@@ -517,10 +517,25 @@ class AcpConnectPanel(
 
     private fun refreshMcpState() {
         val mcpServer = McpServerControl.getInstance(project)
-        val bridge = PsiBridgeService.getInstance(project)
-        val running = mcpServer?.isRunning ?: bridge.isRunning
-        val port = mcpServer?.port ?: bridge.port
+        if (mcpServer == null) {
+            mcpStartButton.isEnabled = false
+            mcpStartButton.text = "Start server"
+            mcpStartButton.icon = AllIcons.Actions.Execute
+            mcpPortField.isEnabled = false
+            mcpStatusLabel.text = "Error — McpServerControl service not registered"
+            mcpStatusLabel.icon = AllIcons.General.Error
+            statusPill.background = JBColor(
+                Color(0xFD, 0xE0, 0xE0),
+                Color(0x3B, 0x2E, 0x2E)
+            )
+            updateAcpEnabled(false)
+            return
+        }
 
+        val running = mcpServer.isRunning
+        val port = mcpServer.port
+
+        mcpStartButton.isEnabled = true
         mcpStartButton.text = if (running) "Stop server" else "Start server"
         mcpStartButton.icon = if (running) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
 
@@ -565,21 +580,20 @@ class AcpConnectPanel(
 
     private fun toggleMcpServer() {
         val mcpServer = McpServerControl.getInstance(project)
-        val bridge = PsiBridgeService.getInstance(project)
-        val running = mcpServer?.isRunning ?: bridge.isRunning
-        if (running) {
-            mcpServer?.stop() ?: bridge.stop()
+        if (mcpServer == null) {
+            showError("MCP server service is not available — check plugin installation")
+            return
+        }
+
+        if (mcpServer.isRunning) {
+            mcpServer.stop()
         } else {
             val portText = mcpPortField.text.trim()
             val port = portText.toIntOrNull() ?: McpServerSettings.DEFAULT_PORT
             try {
-                if (mcpServer != null) {
-                    mcpServer.start(port)
-                } else {
-                    bridge.start(port)
-                }
+                mcpServer.start(port)
             } catch (e: Exception) {
-                showError("Failed to start server: ${e.message}")
+                showError("Failed to start MCP server: ${e.message}")
             }
         }
         refreshMcpState()

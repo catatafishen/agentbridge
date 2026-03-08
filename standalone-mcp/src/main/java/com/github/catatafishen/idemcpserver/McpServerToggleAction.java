@@ -1,5 +1,6 @@
 package com.github.catatafishen.idemcpserver;
 
+import com.github.catatafishen.ideagentforcopilot.services.McpHttpServer;
 import com.github.catatafishen.ideagentforcopilot.settings.TransportMode;
 import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;

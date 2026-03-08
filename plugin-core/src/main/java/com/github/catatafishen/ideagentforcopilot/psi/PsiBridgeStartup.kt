@@ -25,10 +25,20 @@ class PsiBridgeStartup : ProjectActivity {
         CopilotInstructionsManager.ensureInstructions(project.basePath)
         notifyIfNewInstructions(project)
 
-        if (com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).isBridgeAutoStart) {
-            val port =
-                com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).bridgePort
-            PsiBridgeService.getInstance(project).start(port)
+        val mcpSettings = com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project)
+        if (mcpSettings.isBridgeAutoStart) {
+            PsiBridgeService.getInstance(project).start(mcpSettings.bridgePort)
+        }
+
+        // Auto-start MCP HTTP server (required for agent CLI to access tools)
+        if (mcpSettings.isAutoStart) {
+            try {
+                val mcpServer = com.github.catatafishen.ideagentforcopilot.services.McpServerControl.getInstance(project)
+                mcpServer?.start()
+                LOG.info("MCP server auto-started on port ${mcpSettings.port} (${mcpSettings.transportMode.displayName})")
+            } catch (e: Exception) {
+                LOG.error("Failed to auto-start MCP HTTP server", e)
+            }
         }
     }
 
