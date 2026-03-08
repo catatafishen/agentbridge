@@ -18,6 +18,11 @@ public final class GenericAgentSettings implements AgentSettings {
     }
 
     @Override
+    public boolean isAutopilotMode() {
+        return "autopilot".equals(settings.getSessionMode());
+    }
+
+    @Override
     public int getPromptTimeout() {
         return settings.getPromptTimeout();
     }

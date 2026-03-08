@@ -840,7 +840,8 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
             // Periodic refresh via timer
             val timer = Timer(5000) {
                 val running = isMcpServerRunning()
-                val port = com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).port
+                val port =
+                    com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).port
                 label.text = if (running) "MCP:$port" else "MCP:off"
                 label.foreground = if (running) com.intellij.util.ui.UIUtil.getLabelInfoForeground() else JBColor.GRAY
             }
@@ -1446,7 +1447,6 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
         }
     }
 
-    // ComboBoxAction for mode selection — matches Run panel dropdown style
     private inner class ModeSelectorAction : ComboBoxAction() {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
@@ -1466,11 +1466,22 @@ class AgenticCopilotToolWindowContent(private val project: Project) {
 
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
             })
+            group.add(object : AnAction("Autopilot") {
+                override fun actionPerformed(e: AnActionEvent) {
+                    agentManager.settings.setSessionMode("autopilot")
+                }
+
+                override fun getActionUpdateThread() = ActionUpdateThread.BGT
+            })
             return group
         }
 
         override fun update(e: AnActionEvent) {
-            e.presentation.text = if (agentManager.settings.sessionMode == "plan") "Plan" else "Agent"
+            e.presentation.text = when (agentManager.settings.sessionMode) {
+                "plan" -> "Plan"
+                "autopilot" -> "Autopilot"
+                else -> "Agent"
+            }
         }
     }
 

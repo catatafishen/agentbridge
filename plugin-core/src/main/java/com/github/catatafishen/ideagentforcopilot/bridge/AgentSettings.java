@@ -13,6 +13,14 @@ import org.jetbrains.annotations.NotNull;
 public interface AgentSettings {
 
     /**
+     * Whether the agent is in autopilot mode (auto-approve all permission requests).
+     * Default is {@code false} — each implementation reads from its own session-mode setting.
+     */
+    default boolean isAutopilotMode() {
+        return false;
+    }
+
+    /**
      * Maximum seconds of inactivity before the agent is terminated.
      */
     int getPromptTimeout();

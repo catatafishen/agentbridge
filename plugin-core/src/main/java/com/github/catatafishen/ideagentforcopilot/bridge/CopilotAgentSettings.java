@@ -11,6 +11,11 @@ import org.jetbrains.annotations.NotNull;
 public class CopilotAgentSettings implements AgentSettings {
 
     @Override
+    public boolean isAutopilotMode() {
+        return "autopilot".equals(CopilotSettings.getSessionMode());
+    }
+
+    @Override
     public int getPromptTimeout() {
         return CopilotSettings.getPromptTimeout();
     }

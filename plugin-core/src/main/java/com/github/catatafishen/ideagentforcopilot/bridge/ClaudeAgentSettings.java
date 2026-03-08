@@ -11,6 +11,11 @@ import org.jetbrains.annotations.NotNull;
 public class ClaudeAgentSettings implements AgentSettings {
 
     @Override
+    public boolean isAutopilotMode() {
+        return "autopilot".equals(ClaudeSettings.getSessionMode());
+    }
+
+    @Override
     public int getPromptTimeout() {
         return ClaudeSettings.getPromptTimeout();
     }
