@@ -155,6 +155,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         stored.setSupportsConfigDir(defaults.isSupportsConfigDir());
         stored.setSupportedModes(defaults.getSupportedModes());
         stored.setRequiresResourceDuplication(defaults.isRequiresResourceDuplication());
+        stored.setExcludeAgentBuiltInTools(defaults.isExcludeAgentBuiltInTools());
+        stored.setUsePluginPermissions(defaults.isUsePluginPermissions());
     }
 
     @Nullable
