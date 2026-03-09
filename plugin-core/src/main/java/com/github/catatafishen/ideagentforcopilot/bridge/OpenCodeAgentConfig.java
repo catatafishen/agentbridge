@@ -52,14 +52,21 @@ public class OpenCodeAgentConfig implements AgentConfig {
         resolvedBinaryPath = binaryPath;
         // OpenCode uses subcommand "acp". It does NOT support --model, --additional-mcp-config,
         // or --config-dir at the ACP level — passing unknown flags causes an immediate exit.
-        // Model selection and MCP servers are configured via OpenCode's own config file.
-        return GenericCliLocator.buildAcpCommand(
+        // Instead, MCP servers are injected via the OPENCODE_CONFIG_CONTENT env var, which
+        // OpenCode merges as the highest-priority user config on startup.
+        ProcessBuilder pb = GenericCliLocator.buildAcpCommand(
             binaryPath, "opencode",
             List.of("acp"),
-            null,             // no --model flag (unsupported)
+            null,          // no --model flag (unsupported)
             projectBasePath,
             mcpPort,
-            false, false);    // no --config-dir, no --additional-mcp-config (both unsupported)
+            false, false); // no --config-dir, no --additional-mcp-config (both unsupported)
+
+        String mcpConfigContent = CopilotCliLocator.buildOpenCodeMcpConfigContent(mcpPort);
+        if (mcpConfigContent != null) {
+            pb.environment().put("OPENCODE_CONFIG_CONTENT", mcpConfigContent);
+        }
+        return pb;
     }
 
     @Override
