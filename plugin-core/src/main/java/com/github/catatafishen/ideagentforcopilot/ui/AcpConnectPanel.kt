@@ -53,8 +53,19 @@ class AcpConnectPanel(
         isContentAreaFilled = false
         isFocusable = false
         isVisible = false
+        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         preferredSize = JBUI.size(22, 22)
         maximumSize = JBUI.size(22, 22)
+        addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseEntered(e: java.awt.event.MouseEvent) {
+                isContentAreaFilled = true
+                isBorderPainted = true
+            }
+            override fun mouseExited(e: java.awt.event.MouseEvent) {
+                isContentAreaFilled = false
+                isBorderPainted = false
+            }
+        })
     }
     private var mcpRunningUrl = ""
     private val toolCallLink = HyperlinkLabel("0 calls")
