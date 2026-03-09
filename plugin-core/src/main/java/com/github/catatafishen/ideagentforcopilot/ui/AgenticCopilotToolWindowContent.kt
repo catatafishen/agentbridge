@@ -587,7 +587,7 @@ class AgenticCopilotToolWindowContent(
         // Splitter between chat area (top) and resizable input box (bottom).
         // OnePixelSplitter gives the thin, IDE-native 1px divider; proportion is persisted.
         val inputRow = createInputRow()
-        val splitter = com.intellij.ui.OnePixelSplitter(false, "IdeAgent.InputSplitter", 0.78f)
+        val splitter = com.intellij.ui.OnePixelSplitter(true, "IdeAgent.InputSplitter", 0.78f)
         splitter.firstComponent = topPanel
         splitter.secondComponent = inputRow
         panel.add(splitter, BorderLayout.CENTER)

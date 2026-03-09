@@ -268,7 +268,9 @@ public final class PsiBridgeService implements Disposable {
         }
     }
 
-    /** Removes this project's entry from {@code ~/.copilot/psi-bridge.json}. */
+    /**
+     * Removes this project's entry from {@code ~/.copilot/psi-bridge.json}.
+     */
     private void removePortFile() {
         String projectPath = project.getBasePath();
         if (projectPath == null) return;
