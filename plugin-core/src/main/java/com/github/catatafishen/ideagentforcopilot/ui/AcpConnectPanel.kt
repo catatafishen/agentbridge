@@ -94,8 +94,6 @@ class AcpConnectPanel(
             add(Box.createVerticalGlue())
             add(createMcpSection())
             add(Box.createVerticalGlue())
-            add(createSeparator())
-            add(Box.createVerticalGlue())
             add(createAcpSection().also { acpSection = it })
             add(Box.createVerticalGlue())
         }
@@ -286,13 +284,6 @@ class AcpConnectPanel(
         })
 
         return panel
-    }
-
-    private fun createSeparator(): JComponent {
-        return JSeparator(SwingConstants.HORIZONTAL).apply {
-            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(1))
-            alignmentX = LEFT_ALIGNMENT
-        }
     }
 
     // ── Dropdown popups ──
