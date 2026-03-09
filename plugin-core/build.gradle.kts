@@ -129,6 +129,25 @@ tasks.named("prepareSandbox") {
     }
 }
 
+// Resolve nvm Node so Gradle's exec tasks use the right version.
+// Falls back to system PATH if nvm is not installed.
+val nvmNodeBin: String? by lazy {
+    val nvmDir = File(System.getProperty("user.home"), ".nvm/versions/node")
+    if (!nvmDir.isDirectory) return@lazy null
+    nvmDir.listFiles()
+        ?.filter { it.isDirectory }
+        ?.sortedByDescending { it.name }
+        ?.map { File(it, "bin") }
+        ?.firstOrNull { File(it, "node").exists() }
+        ?.absolutePath
+}
+
+fun ExecSpec.withNvmNode() {
+    nvmNodeBin?.let { binDir ->
+        environment("PATH", "$binDir:${System.getenv("PATH")}")
+    }
+}
+
 // Build chat-ui TypeScript → bundled JS + copy static assets
 val buildChatUi by tasks.registering {
     inputs.dir("chat-ui/src")
@@ -138,6 +157,7 @@ val buildChatUi by tasks.registering {
         exec {
             workingDir = file("chat-ui")
             commandLine("npm", "run", "build")
+            withNvmNode()
         }
         copy {
             from("chat-ui/src/chat.css")
@@ -157,6 +177,7 @@ val jsTest by tasks.registering {
         exec {
             workingDir = file("js-tests")
             commandLine("npm", "test")
+            withNvmNode()
         }
     }
 }
