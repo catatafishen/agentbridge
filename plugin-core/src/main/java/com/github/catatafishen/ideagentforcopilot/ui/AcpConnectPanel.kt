@@ -89,9 +89,9 @@ class AcpConnectPanel(
 
             add(Box.createVerticalGlue())
             add(createMcpSection())
-            add(Box.createVerticalStrut(JBUI.scale(32)))
+            add(Box.createVerticalGlue())
             add(createSeparator())
-            add(Box.createVerticalStrut(JBUI.scale(32)))
+            add(Box.createVerticalGlue())
             add(createAcpSection().also { acpSection = it })
             add(Box.createVerticalGlue())
         }
