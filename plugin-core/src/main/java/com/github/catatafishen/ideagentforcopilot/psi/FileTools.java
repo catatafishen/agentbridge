@@ -358,11 +358,24 @@ class FileTools extends AbstractToolHandler {
         }
     }
 
+    private static final String PARAM_AUTO_FORMAT = "auto_format_and_optimize_imports";
+    private static final String PARAM_AUTO_FORMAT_LEGACY = "auto_format";
+
+    /**
+     * Resolves the auto-format flag from tool args, supporting both the new
+     * {@code auto_format_and_optimize_imports} name and the legacy {@code auto_format} name.
+     */
+    private static boolean resolveAutoFormat(JsonObject args) {
+        if (args.has(PARAM_AUTO_FORMAT)) return args.get(PARAM_AUTO_FORMAT).getAsBoolean();
+        if (args.has(PARAM_AUTO_FORMAT_LEGACY)) return args.get(PARAM_AUTO_FORMAT_LEGACY).getAsBoolean();
+        return true; // default
+    }
+
     private String writeFile(JsonObject args) throws Exception {
         if (!args.has("path") || args.get("path").isJsonNull())
             return ToolUtils.ERROR_PATH_REQUIRED;
         String pathStr = args.get("path").getAsString();
-        boolean autoFormat = !args.has("auto_format") || args.get("auto_format").getAsBoolean();
+        boolean autoFormat = resolveAutoFormat(args);
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         // [0] = start line, [1] = end line (1-based) to scroll/highlight after write; -1 = don't.

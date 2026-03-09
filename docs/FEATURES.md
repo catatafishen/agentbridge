@@ -266,7 +266,7 @@ The primary editing tool. Supports three modes:
 
 All writes execute through `CommandProcessor.executeCommand()` on the EDT, ensuring they appear in
 IntelliJ's undo history. After each write, the file is optionally auto-formatted (optimize imports +
-reformat code). The `auto_format` parameter (default: true) controls this behavior.
+reformat code). The `auto_format_and_optimize_imports` parameter (default: true) controls this behavior.
 
 ### `create_file`
 
@@ -314,7 +314,7 @@ Fast compilation error check using the cached compiler daemon results. Much fast
 ### `optimize_imports`
 
 Removes unused imports and organizes import statements according to project style settings. Uses
-`OptimizeImportsProcessor`. Runs automatically after writes when `auto_format` is enabled.
+`OptimizeImportsProcessor`. Runs automatically after writes when `auto_format_and_optimize_imports` is enabled.
 
 ### `format_code`
 

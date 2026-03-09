@@ -7,11 +7,11 @@ BEST PRACTICES:
 2. WORKSPACE: ALL temp files, plans, notes MUST go in '.agent-work/' (git-ignored, persists across sessions). \
    NEVER write to /tmp/, home directory, or outside the project.
 
-3. MULTIPLE SEQUENTIAL EDITS: Set auto_format=false to prevent reformatting between edits. \
+3. MULTIPLE SEQUENTIAL EDITS: Set auto_format_and_optimize_imports=false to prevent reformatting between edits. \
    After all edits, call format_code and optimize_imports ONCE. \
-   ⚠️ auto_format includes optimize_imports which REMOVES imports it considers unused. \
-   If you add imports in one edit and code using them later, combine them in ONE edit or set auto_format=false. \
-   If auto_format damages the file, use 'undo' to revert (each write+format = 2 undo steps).
+   ⚠️ auto_format_and_optimize_imports includes optimize_imports which REMOVES imports it considers unused. \
+   If you add imports in one edit and code using them later, combine them in ONE edit or set auto_format_and_optimize_imports=false. \
+   If auto_format_and_optimize_imports damages the file, use 'undo' to revert (each write+format = 2 undo steps).
 
 4. BEFORE EDITING UNFAMILIAR FILES: If you get old_str match failures, \
    call format_code first to normalize whitespace, then re-read.

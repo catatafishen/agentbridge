@@ -226,14 +226,14 @@ public final class ToolSchemas {
         m.put("intellij_write_file", schema(new Object[][]{
             {"path", "string", "Absolute or project-relative path to the file to write or create"},
             {"content", "string", "Full file content to write (replaces entire file). Creates the file if it doesn't exist"},
-            {"auto_format", "boolean", "Auto-format code AND optimize imports after writing (default: true). \u26a0\ufe0f Import optimization REMOVES imports it considers unused \u2014 if you add imports in one edit and reference them in a later edit, set this to false or combine both changes in one edit"}
+            {"auto_format_and_optimize_imports", "boolean", "Auto-format code AND optimize imports after writing (default: true). \u26a0\ufe0f Import optimization REMOVES imports it considers unused \u2014 if you add imports in one edit and reference them in a later edit, set this to false or combine both changes in one edit"}
         }, "path", "content"));
 
         m.put("edit_text", schema(new Object[][]{
             {"path", "string", "Absolute or project-relative path to the file to edit"},
             {"old_str", "string", "Exact string to find and replace. Must match exactly one location in the file"},
             {"new_str", "string", "Replacement string"},
-            {"auto_format", "boolean", "Auto-format code AND optimize imports after editing (default: true). \u26a0\ufe0f Import optimization REMOVES imports it considers unused \u2014 if you add imports in one edit and reference them in a later edit, set this to false or combine both changes in one edit"}
+            {"auto_format_and_optimize_imports", "boolean", "Auto-format code AND optimize imports after editing (default: true). \u26a0\ufe0f Import optimization REMOVES imports it considers unused \u2014 if you add imports in one edit and reference them in a later edit, set this to false or combine both changes in one edit"}
         }, "path", "old_str", "new_str"));
 
         m.put("create_file", schema(new Object[][]{
