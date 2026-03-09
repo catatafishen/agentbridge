@@ -173,4 +173,37 @@ public final class GenericSettings {
         }
         return sb.toString();
     }
+
+    // ── Billing persistence ──────────────────────────────────────────────────
+
+    public int getMonthlyRequests() {
+        return PropertiesComponent.getInstance().getInt(key("monthlyRequests"), 0);
+    }
+
+    public void setMonthlyRequests(int count) {
+        PropertiesComponent.getInstance().setValue(key("monthlyRequests"), count, 0);
+    }
+
+    public double getMonthlyCost() {
+        String val = PropertiesComponent.getInstance().getValue(key("monthlyCost"));
+        if (val == null) return 0.0;
+        try {
+            return Double.parseDouble(val);
+        } catch (NumberFormatException e) {
+            return 0.0;
+        }
+    }
+
+    public void setMonthlyCost(double cost) {
+        PropertiesComponent.getInstance().setValue(key("monthlyCost"), String.valueOf(cost));
+    }
+
+    @NotNull
+    public String getUsageResetMonth() {
+        return PropertiesComponent.getInstance().getValue(key("usageResetMonth"), "");
+    }
+
+    public void setUsageResetMonth(@NotNull String month) {
+        PropertiesComponent.getInstance().setValue(key("usageResetMonth"), month, "");
+    }
 }

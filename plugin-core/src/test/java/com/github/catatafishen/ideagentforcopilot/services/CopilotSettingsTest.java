@@ -20,6 +20,9 @@ public class CopilotSettingsTest extends BasePlatformTestCase {
         PropertiesComponent props = PropertiesComponent.getInstance();
         props.unsetValue("copilot.selectedModel");
         props.unsetValue("copilot.sessionMode");
+        props.unsetValue("copilot.monthlyRequests");
+        props.unsetValue("copilot.monthlyCost");
+        props.unsetValue("copilot.usageResetMonth");
     }
 
     public void testSelectedModelDefaultNull() {
@@ -44,5 +47,32 @@ public class CopilotSettingsTest extends BasePlatformTestCase {
     public void testSetAndGetSessionMode() {
         settings.setSessionMode("plan");
         assertEquals("plan", settings.getSessionMode());
+    }
+
+    public void testMonthlyRequestsDefault() {
+        assertEquals(0, settings.getMonthlyRequests());
+    }
+
+    public void testSetAndGetMonthlyRequests() {
+        settings.setMonthlyRequests(42);
+        assertEquals(42, settings.getMonthlyRequests());
+    }
+
+    public void testMonthlyCostDefault() {
+        assertEquals(0.0, settings.getMonthlyCost(), 0.001);
+    }
+
+    public void testSetAndGetMonthlyCost() {
+        settings.setMonthlyCost(12.50);
+        assertEquals(12.50, settings.getMonthlyCost(), 0.001);
+    }
+
+    public void testUsageResetMonthDefault() {
+        assertEquals("", settings.getUsageResetMonth());
+    }
+
+    public void testSetAndGetUsageResetMonth() {
+        settings.setUsageResetMonth("2026-02");
+        assertEquals("2026-02", settings.getUsageResetMonth());
     }
 }
