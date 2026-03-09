@@ -18,8 +18,7 @@ public final class McpToolFilter {
      * Tools that are always hidden — they require the Copilot chat panel.
      */
     private static final Set<String> ALWAYS_HIDDEN = Set.of(
-        "get_chat_html",
-        "search_conversation_history"
+        "get_chat_html"
     );
 
     /**
