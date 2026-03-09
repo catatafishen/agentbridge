@@ -124,4 +124,15 @@ public interface AgentConfig {
     default com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod getPermissionInjectionMethod() {
         return com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod.NONE;
     }
+
+    /**
+     * Returns the name under which the plugin's MCP server is registered for this agent session.
+     * Normally {@code "intellij-code-tools"} (the injected server name), but may differ if the
+     * user has pre-registered the server under a different name in the agent's persistent config.
+     * Used to strip the server-name prefix from incoming tool-call names when resolving tool IDs.
+     */
+    @NotNull
+    default String getEffectiveMcpServerName() {
+        return "intellij-code-tools";
+    }
 }

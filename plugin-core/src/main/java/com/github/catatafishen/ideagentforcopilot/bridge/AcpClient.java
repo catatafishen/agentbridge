@@ -61,7 +61,7 @@ public class AcpClient implements Closeable {
     private static final String USER_HOME = "user.home";
     private static final String TITLE_KEY = "title";
     private static final String PARAMETERS_KEY = "parameters";
-    private static final String TOOL_DENIED_DEFAULT_MSG = "⚠ Tool denied. Use tools with 'intellij-code-tools-' prefix instead.";
+    private static final String TOOL_DENIED_DEFAULT_MSG_TEMPLATE = "⚠ Tool denied. Use tools with '%s' prefix instead.";
     private static final String PRE_REJECTION_GUIDANCE_EVENT = "PRE_REJECTION_GUIDANCE";
     private static final String SENDING_GUIDANCE_DESC = "Sending guidance before rejection";
     private static final String PERMISSION_DENIED_EVENT = "PERMISSION_DENIED";
@@ -79,6 +79,10 @@ public class AcpClient implements Closeable {
     private final AgentConfig agentConfig;
     private final AgentSettings agentSettings;
     private final int mcpPort;
+    /**
+     * Prefix used to strip the MCP server name from incoming tool-call names (e.g. "intellij-code-tools-").
+     */
+    private volatile String effectiveMcpPrefix = "intellij-code-tools-";
     private Process process;
     private BufferedWriter writer;
     private Thread readerThread;
@@ -202,6 +206,7 @@ public class AcpClient implements Closeable {
             LOG.info("Starting " + agentConfig.getDisplayName() + " ACP: " + binaryPath);
 
             ProcessBuilder pb = agentConfig.buildAcpProcess(binaryPath, projectBasePath, mcpPort);
+            effectiveMcpPrefix = agentConfig.getEffectiveMcpServerName() + "-";
             pb.redirectErrorStream(false);
             process = pb.start();
 
@@ -461,7 +466,8 @@ public class AcpClient implements Closeable {
                     LOG.info("Turn ended with denied tools - auto-retry #" + retryCount);
                     fireDebugEvent("AUTO_RETRY", "Retrying after tool denial #" + retryCount,
                         "Last denied: " + getLastDeniedKind());
-                    currentPrompt = "The previous tool calls were denied. Please continue with the task using the correct tools with 'intellij-code-tools-' prefix.";
+                    currentPrompt = "The previous tool calls were denied. Please continue with the task using the correct tools with '"
+                        + effectiveMcpPrefix + "' prefix.";
                     continue;
                 }
 
@@ -1170,15 +1176,17 @@ public class AcpClient implements Closeable {
     }
 
     /**
-     * Strip "intellij-code-tools-" prefix and normalise the tool ID from permKind / toolCall name.
+     * Strip the MCP server-name prefix and normalise the tool ID from permKind / toolCall name.
+     * The prefix is determined dynamically ({@link #effectiveMcpPrefix}) so it works regardless
+     * of the name the user registered the server under.
      */
     private String resolveToolId(@Nullable String permKind, @Nullable JsonObject toolCall) {
         String name = "";
         if (toolCall != null && toolCall.has("name")) {
             name = toolCall.get("name").getAsString();
         }
-        if (name.startsWith("intellij-code-tools-")) {
-            name = name.substring("intellij-code-tools-".length());
+        if (name.startsWith(effectiveMcpPrefix)) {
+            name = name.substring(effectiveMcpPrefix.length());
         }
         return name.isEmpty() ? (permKind != null ? permKind : "") : name;
     }
@@ -1251,7 +1259,8 @@ public class AcpClient implements Closeable {
         if (toolCall == null) return null;
 
         String toolName = toolCall.has("name") ? toolCall.get("name").getAsString() : "";
-        if (!"run_command".equals(toolName) && !"intellij-code-tools-run_command".equals(toolName)) {
+        String expectedName = effectiveMcpPrefix + "run_command";
+        if (!"run_command".equals(toolName) && !expectedName.equals(toolName)) {
             return null;
         }
 
@@ -1284,8 +1293,10 @@ public class AcpClient implements Closeable {
         if (!subAgentActive || toolCall == null) return null;
 
         String toolName = toolCall.has("name") ? toolCall.get("name").getAsString() : "";
-        // Strip MCP prefix if present
-        String shortName = toolName.replace("intellij-code-tools-", "");
+        // Strip MCP prefix (dynamic — matches whatever name the server is registered under)
+        String shortName = toolName.startsWith(effectiveMcpPrefix)
+            ? toolName.substring(effectiveMcpPrefix.length())
+            : toolName;
         return GIT_WRITE_TOOLS.contains(shortName) ? shortName : null;
     }
 
@@ -1294,6 +1305,7 @@ public class AcpClient implements Closeable {
      * Returns a map with "message" key containing the instruction text.
      */
     private Map<String, Object> buildRetryParams(@NotNull String deniedKind) {
+        String p = effectiveMcpPrefix; // shorthand for tool name prefixing
         String instruction;
 
         // Specific guidance for run_command abuse
@@ -1301,22 +1313,21 @@ public class AcpClient implements Closeable {
             String abuseType = deniedKind.substring(RUN_COMMAND_ABUSE_PREFIX.length());
             instruction = switch (abuseType) {
                 case "test" -> "⚠ Don't use run_command for tests (including build/check/verify which " +
-                    "implicitly run tests). Use 'intellij-code-tools-run_tests' instead. " +
+                    "implicitly run tests). Use '" + p + "run_tests' instead. " +
                     "Provides structured results, coverage, and failure details.";
-                case "sed" -> "⚠ Don't use sed. Use 'intellij-code-tools-edit_text' for surgical edits " +
-                    "or 'intellij-code-tools-replace_symbol_body' for replacing whole methods/classes. " +
+                case "sed" -> "⚠ Don't use sed. Use '" + p + "edit_text' for surgical edits " +
+                    "or '" + p + "replace_symbol_body' for replacing whole methods/classes. " +
                     "They provide proper undo/redo and live editor buffer access.";
-                case "cat" ->
-                    "⚠ Don't use cat/head/tail/less/more. Use 'intellij-code-tools-intellij_read_file' instead. " +
-                        "It reads from the live editor buffer, not stale disk files.";
-                case "grep" -> "⚠ Don't use grep. Use 'intellij-code-tools-search_symbols' or " +
-                    "'intellij-code-tools-find_references' instead. They search live editor buffers.";
-                case "find" -> "⚠ Don't use find. Use 'intellij-code-tools-list_project_files' instead.";
+                case "cat" -> "⚠ Don't use cat/head/tail/less/more. Use '" + p + "intellij_read_file' instead. " +
+                    "It reads from the live editor buffer, not stale disk files.";
+                case "grep" -> "⚠ Don't use grep. Use '" + p + "search_symbols' or " +
+                    "'" + p + "find_references' instead. They search live editor buffers.";
+                case "find" -> "⚠ Don't use find. Use '" + p + "list_project_files' instead.";
                 case "git" -> "⚠ Don't use git commands via run_command — it desyncs IntelliJ editor buffers. " +
                     "Use dedicated git tools: git_status, git_diff, git_log, git_commit, git_stage, " +
                     "git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, " +
                     "git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
-                default -> TOOL_DENIED_DEFAULT_MSG;
+                default -> String.format(TOOL_DENIED_DEFAULT_MSG_TEMPLATE, p);
             };
         } else if (deniedKind.startsWith(GIT_WRITE_ABUSE_PREFIX)) {
             instruction = "⚠ Sub-agents must not use git write commands (git_commit, git_stage, git_unstage, " +
@@ -1325,13 +1336,13 @@ public class AcpClient implements Closeable {
                 "Use read-only git tools (git_status, git_diff, git_log, git_show, git_blame, git_fetch) instead.";
         } else if ("bash".equals(deniedKind) || "execute".equals(deniedKind)) {
             instruction = "⚠ Don't use bash/shell execution — it reads/writes disk directly, bypassing IntelliJ editor buffers. " +
-                "Use 'intellij-code-tools-run_command' for shell commands (flushes buffers first). " +
+                "Use '" + p + "run_command' for shell commands (flushes buffers first). " +
                 "For file operations use intellij_read_file, edit_text, replace_symbol_body, search_text, etc. " +
                 "For git use dedicated git tools: git_status, git_diff, git_log, git_commit, git_stage, " +
                 "git_push, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
         } else {
             // Generic message for other denials
-            instruction = TOOL_DENIED_DEFAULT_MSG;
+            instruction = String.format(TOOL_DENIED_DEFAULT_MSG_TEMPLATE, p);
         }
 
         return Map.of(MESSAGE, instruction);

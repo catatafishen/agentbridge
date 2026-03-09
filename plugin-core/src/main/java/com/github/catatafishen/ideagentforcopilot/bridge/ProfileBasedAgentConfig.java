@@ -6,6 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMe
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -13,9 +14,11 @@ import org.jetbrains.annotations.Nullable;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Generic {@link AgentConfig} implementation driven entirely by an {@link AgentProfile}.
@@ -29,6 +32,10 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     private final AgentProfile profile;
     private String resolvedBinaryPath;
     private JsonArray authMethods;
+    /**
+     * Effective MCP server name — either injected ("intellij-code-tools") or detected from existing config.
+     */
+    private String effectiveMcpServerName = "intellij-code-tools";
 
     public ProfileBasedAgentConfig(@NotNull AgentProfile profile) {
         this.profile = profile;
@@ -203,6 +210,11 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         return profile.getPermissionInjectionMethod();
     }
 
+    @Override
+    public @NotNull String getEffectiveMcpServerName() {
+        return effectiveMcpServerName;
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     @Nullable
@@ -296,9 +308,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         cmd.add(binaryPath);
     }
 
-    /**
-     * Writes the MCP config template to a temp file and adds --additional-mcp-config flag.
-     */
     private void addMcpConfigFlag(@NotNull List<String> cmd, int mcpPort) {
         if (mcpPort <= 0) {
             LOG.info("MCP port is " + mcpPort + " — skipping MCP config");
@@ -308,6 +317,16 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         String template = profile.getMcpConfigTemplate();
         if (template.isEmpty()) {
             LOG.info("No MCP config template — skipping MCP config for " + profile.getDisplayName());
+            return;
+        }
+
+        // Check if the MCP server is already registered in a persistent agent config pointing to
+        // our port. If so, skip injection to avoid a duplicate connection under a different name.
+        String existingName = detectExistingMcpRegistration(mcpPort);
+        if (existingName != null) {
+            effectiveMcpServerName = existingName;
+            LOG.info("MCP server already registered as '" + existingName + "' at port " + mcpPort
+                + " — skipping injection, using existing registration");
             return;
         }
 
@@ -326,6 +345,57 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         } catch (IOException e) {
             LOG.warn("Failed to write MCP config file", e);
         }
+    }
+
+    /**
+     * Scan known agent persistent MCP config files for an entry whose URL already points to
+     * {@code http://127.0.0.1:{mcpPort}/mcp}. Returns the registered server name if found,
+     * or {@code null} if no match is detected.
+     *
+     * <p>Checked locations (in order):
+     * <ul>
+     *   <li>{@code ~/.copilot/mcp-config.json} — Copilot CLI persistent MCP config</li>
+     *   <li>{@code ~/.config/github-copilot/mcp.json} — alternative Copilot config path</li>
+     * </ul>
+     * Each file is expected to have a {@code mcpServers} object (or entries at the root) where
+     * each key is the server name and each value has a {@code "url"} field.
+     */
+    @Nullable
+    private String detectExistingMcpRegistration(int mcpPort) {
+        String targetUrl = "http://127.0.0.1:" + mcpPort + "/mcp";
+        String userHome = System.getProperty("user.home", "");
+
+        List<Path> candidates = List.of(
+            Path.of(userHome, ".copilot", "mcp-config.json"),
+            Path.of(userHome, ".config", "github-copilot", "mcp.json")
+        );
+
+        for (Path configPath : candidates) {
+            if (!configPath.toFile().exists()) continue;
+            try {
+                String content = Files.readString(configPath);
+                JsonObject root = JsonParser.parseString(content).getAsJsonObject();
+
+                // Support both {"mcpServers": {...}} and flat {"serverName": {...}}
+                JsonObject servers = root.has("mcpServers") && root.get("mcpServers").isJsonObject()
+                    ? root.getAsJsonObject("mcpServers")
+                    : root;
+
+                for (Map.Entry<String, JsonElement> entry : servers.entrySet()) {
+                    if (!entry.getValue().isJsonObject()) continue;
+                    JsonObject server = entry.getValue().getAsJsonObject();
+                    String url = server.has("url") ? server.get("url").getAsString() : "";
+                    if (targetUrl.equals(url)) {
+                        LOG.info("Found existing MCP registration '" + entry.getKey()
+                            + "' → " + url + " in " + configPath);
+                        return entry.getKey();
+                    }
+                }
+            } catch (Exception e) {
+                LOG.debug("Could not read MCP config at " + configPath, e);
+            }
+        }
+        return null;
     }
 
     /**
