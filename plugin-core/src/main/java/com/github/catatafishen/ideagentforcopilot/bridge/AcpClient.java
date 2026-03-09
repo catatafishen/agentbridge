@@ -275,10 +275,17 @@ public class AcpClient implements Closeable {
         // Empty array here because servers are loaded from the config file
         params.add("mcpServers", new JsonArray());
 
-        // Do NOT send availableTools param - it would filter out MCP tools!
-        // We want the agent to see both CLI tools AND MCP tools.
-        // Tool filtering doesn't work properly in ACP mode (CLI bug #556),
-        // so we handle it via permission denial (see handlePermissionRequest).
+        // Tool filtering: for agents that support it (e.g., OpenCode), send excludedTools
+        // to remove built-in tools so only IntelliJ MCP tools are available.
+        // Copilot CLI ignores this (bug #556) — those tools are denied via permissions instead.
+        if (agentConfig.shouldExcludeBuiltInTools()) {
+            JsonArray excluded = new JsonArray();
+            for (String toolId : com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getBuiltInToolIds()) {
+                excluded.add(toolId);
+            }
+            params.add("excludedTools", excluded);
+            LOG.info("Excluding built-in tools from session: " + excluded);
+        }
 
         LOG.info("Creating session (MCP servers configured via --additional-mcp-config)");
 

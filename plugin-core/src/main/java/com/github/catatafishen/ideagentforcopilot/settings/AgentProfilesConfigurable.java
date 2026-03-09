@@ -58,6 +58,7 @@ public final class AgentProfilesConfigurable implements Configurable {
     private JBCheckBox ensureCopilotAgentsCb;
     private JBCheckBox ensureClaudeInstructionsCb;
     private JBCheckBox usePluginPermissionsCb;
+    private JBCheckBox excludeAgentBuiltInToolsCb;
 
     private List<AgentProfile> workingCopies;
     private int currentIndex = -1;
@@ -166,6 +167,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         var usePluginPermissionsCb = new JBCheckBox("Use plugin-level tool permissions");
         this.usePluginPermissionsCb = usePluginPermissionsCb;
 
+        var excludeAgentBuiltInToolsCb = new JBCheckBox("Exclude agent's built-in tools at session start");
+        this.excludeAgentBuiltInToolsCb = excludeAgentBuiltInToolsCb;
+
         editorCards = new CardLayout();
         editorPanel = new JPanel(editorCards);
 
@@ -210,6 +214,8 @@ public final class AgentProfilesConfigurable implements Configurable {
             .addComponent(new JBLabel("<html><b>Permissions</b></html>"))
             .addComponent(usePluginPermissionsCb)
             .addTooltip("When enabled, tool calls go through plugin's per-tool permission system (allow/ask/deny). When disabled, the agent handles its own permissions.")
+            .addComponent(excludeAgentBuiltInToolsCb)
+            .addTooltip("Send excludedTools in session/new to remove the agent's built-in tools (view, edit, bash, etc.). Only works with agents that honour this parameter (e.g., OpenCode). Copilot CLI ignores it.")
             .addSeparator()
             .addComponent(new JBLabel("<html><b>Pre-launch Hooks</b></html>"))
             .addComponent(ensureCopilotInstructionsCb)
@@ -332,6 +338,7 @@ public final class AgentProfilesConfigurable implements Configurable {
             ensureCopilotAgentsCb.setSelected(p.isEnsureCopilotAgents());
             ensureClaudeInstructionsCb.setSelected(p.isEnsureClaudeInstructions());
             usePluginPermissionsCb.setSelected(p.isUsePluginPermissions());
+            excludeAgentBuiltInToolsCb.setSelected(p.isExcludeAgentBuiltInTools());
         } finally {
             loading = false;
         }
@@ -360,6 +367,7 @@ public final class AgentProfilesConfigurable implements Configurable {
         p.setEnsureCopilotAgents(ensureCopilotAgentsCb.isSelected());
         p.setEnsureClaudeInstructions(ensureClaudeInstructionsCb.isSelected());
         p.setUsePluginPermissions(usePluginPermissionsCb.isSelected());
+        p.setExcludeAgentBuiltInTools(excludeAgentBuiltInToolsCb.isSelected());
 
         // Update list display name
         if (currentIndex < listModel.size()) {
@@ -457,7 +465,8 @@ public final class AgentProfilesConfigurable implements Configurable {
             && a.isEnsureCopilotInstructions() == b.isEnsureCopilotInstructions()
             && a.isEnsureCopilotAgents() == b.isEnsureCopilotAgents()
             && a.isEnsureClaudeInstructions() == b.isEnsureClaudeInstructions()
-            && a.isUsePluginPermissions() == b.isUsePluginPermissions();
+            && a.isUsePluginPermissions() == b.isUsePluginPermissions()
+            && a.isExcludeAgentBuiltInTools() == b.isExcludeAgentBuiltInTools();
     }
 
     @NotNull

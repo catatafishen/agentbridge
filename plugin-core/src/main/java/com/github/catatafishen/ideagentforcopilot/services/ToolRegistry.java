@@ -201,4 +201,18 @@ public final class ToolRegistry {
         }
         return null;
     }
+
+    /**
+     * Returns the IDs of all built-in agent tools (e.g., view, edit, bash).
+     * Used to populate {@code excludedTools} in {@code session/new} for agents
+     * that support filtering out their native tools.
+     */
+    @org.jetbrains.annotations.NotNull
+    public static List<String> getBuiltInToolIds() {
+        List<String> ids = new java.util.ArrayList<>();
+        for (ToolEntry e : ALL_TOOLS) {
+            if (e.isBuiltIn) ids.add(e.id);
+        }
+        return ids;
+    }
 }

@@ -59,6 +59,7 @@ public final class AgentProfile {
     // ── Permissions ────────────────────────────────────────────────────────
 
     private boolean usePluginPermissions = true;
+    private boolean excludeAgentBuiltInTools;
 
     private boolean ensureCopilotInstructions;
     private boolean ensureCopilotAgents;
@@ -107,6 +108,7 @@ public final class AgentProfile {
         copy.modelUsageField = modelUsageField;
         copy.supportedModes = new ArrayList<>(supportedModes);
         copy.usePluginPermissions = usePluginPermissions;
+        copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
         copy.ensureCopilotInstructions = ensureCopilotInstructions;
         copy.ensureCopilotAgents = ensureCopilotAgents;
         copy.ensureClaudeInstructions = ensureClaudeInstructions;
@@ -133,6 +135,7 @@ public final class AgentProfile {
         this.modelUsageField = other.modelUsageField;
         this.supportedModes = new ArrayList<>(other.supportedModes);
         this.usePluginPermissions = other.usePluginPermissions;
+        this.excludeAgentBuiltInTools = other.excludeAgentBuiltInTools;
         this.ensureCopilotInstructions = other.ensureCopilotInstructions;
         this.ensureCopilotAgents = other.ensureCopilotAgents;
         this.ensureClaudeInstructions = other.ensureClaudeInstructions;
@@ -294,6 +297,14 @@ public final class AgentProfile {
 
     public void setUsePluginPermissions(boolean usePluginPermissions) {
         this.usePluginPermissions = usePluginPermissions;
+    }
+
+    public boolean isExcludeAgentBuiltInTools() {
+        return excludeAgentBuiltInTools;
+    }
+
+    public void setExcludeAgentBuiltInTools(boolean excludeAgentBuiltInTools) {
+        this.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
     }
 
     public boolean isEnsureCopilotInstructions() {

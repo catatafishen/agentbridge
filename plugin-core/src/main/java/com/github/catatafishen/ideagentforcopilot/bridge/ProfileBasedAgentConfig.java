@@ -183,6 +183,11 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         return profile.isRequiresResourceDuplication();
     }
 
+    @Override
+    public boolean shouldExcludeBuiltInTools() {
+        return profile.isExcludeAgentBuiltInTools();
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     @Nullable

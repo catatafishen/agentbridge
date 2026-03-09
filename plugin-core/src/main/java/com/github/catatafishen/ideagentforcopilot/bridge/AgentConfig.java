@@ -106,4 +106,13 @@ public interface AgentConfig {
     default boolean requiresResourceContentDuplication() {
         return false;
     }
+
+    /**
+     * Whether to send {@code excludedTools} in the {@code session/new} request
+     * to remove the agent's built-in tools (view, edit, bash, etc.).
+     * Agents like OpenCode honour this parameter; Copilot CLI ignores it (bug #556).
+     */
+    default boolean shouldExcludeBuiltInTools() {
+        return false;
+    }
 }

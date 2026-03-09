@@ -233,6 +233,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setSupportsModelFlag(false);
         p.setSupportsConfigDir(false);
         p.setRequiresResourceDuplication(false);
+        p.setExcludeAgentBuiltInTools(true);
+        p.setUsePluginPermissions(false);
         return p;
     }
 
@@ -271,6 +273,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public boolean ensureCopilotAgents;
         public boolean ensureClaudeInstructions;
         public boolean usePluginPermissions = true;
+        public boolean excludeAgentBuiltInTools;
 
         @NotNull
         static ProfileEntry fromProfile(@NotNull AgentProfile p) {
@@ -296,6 +299,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             e.ensureCopilotAgents = p.isEnsureCopilotAgents();
             e.ensureClaudeInstructions = p.isEnsureClaudeInstructions();
             e.usePluginPermissions = p.isUsePluginPermissions();
+            e.excludeAgentBuiltInTools = p.isExcludeAgentBuiltInTools();
             return e;
         }
 
@@ -327,6 +331,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             p.setEnsureCopilotAgents(ensureCopilotAgents);
             p.setEnsureClaudeInstructions(ensureClaudeInstructions);
             p.setUsePluginPermissions(usePluginPermissions);
+            p.setExcludeAgentBuiltInTools(excludeAgentBuiltInTools);
             return p;
         }
 
