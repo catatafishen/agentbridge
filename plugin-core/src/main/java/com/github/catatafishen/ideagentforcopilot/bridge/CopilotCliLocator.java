@@ -230,57 +230,6 @@ final class CopilotCliLocator {
         }
     }
 
-    /**
-     * Build an {@code OPENCODE_CONFIG_CONTENT} JSON value that registers the IntelliJ MCP server
-     * inside OpenCode's native {@code mcp} config block.
-     *
-     * <p>OpenCode does not support {@code --additional-mcp-config}; instead it reads the
-     * {@code mcp} key from its config. Passing this value via the env var
-     * {@code OPENCODE_CONFIG_CONTENT} (highest-priority user config) ensures the server is
-     * available without touching the user's persistent config files.
-     *
-     * @param mcpPort the port that the plugin's PSI bridge is listening on
-     * @return JSON string suitable for {@code OPENCODE_CONFIG_CONTENT}, or {@code null} if
-     * the MCP server JAR or Java binary cannot be located
-     */
-    @Nullable
-    static String buildOpenCodeMcpConfigContent(int mcpPort) {
-        if (mcpPort <= 0) return null;
-
-        String mcpJarPath = findMcpServerJar();
-        if (mcpJarPath == null) {
-            LOG.warn(MCP_SERVER_ERROR + ": MCP server JAR not found — IntelliJ tools unavailable in OpenCode.");
-            return null;
-        }
-
-        String javaExe = System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java";
-        String javaPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + javaExe;
-        if (!new File(javaPath).exists()) {
-            LOG.warn("Java not found at: " + javaPath + " — IntelliJ tools unavailable in OpenCode.");
-            return null;
-        }
-
-        // OpenCode mcpLocal schema: { type: "local", command: string[] }
-        JsonObject server = new JsonObject();
-        server.addProperty("type", "local");
-        JsonArray command = new JsonArray();
-        command.add(javaPath);
-        command.add("-jar");
-        command.add(mcpJarPath);
-        command.add("--port");
-        command.add(String.valueOf(mcpPort));
-        server.add(COMMAND, command);
-
-        JsonObject mcp = new JsonObject();
-        mcp.add("intellij-code-tools", server);
-
-        JsonObject config = new JsonObject();
-        config.add("mcp", mcp);
-
-        LOG.info("OpenCode MCP config built for port " + mcpPort);
-        return gson.toJson(config);
-    }
-
     static ProcessBuilder buildAcpCommand(String copilotPath, @Nullable String projectBasePath,
                                           int mcpPort) {
         List<String> cmd = new ArrayList<>();
