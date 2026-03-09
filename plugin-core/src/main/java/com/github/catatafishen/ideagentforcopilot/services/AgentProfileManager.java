@@ -1,7 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentMode;
-import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
@@ -122,11 +121,40 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     private void ensureDefaults() {
         if (!profiles.containsKey(COPILOT_PROFILE_ID)) {
             profiles.put(COPILOT_PROFILE_ID, createCopilotProfile());
+        } else {
+            refreshBuiltInProfile(COPILOT_PROFILE_ID);
         }
         if (!profiles.containsKey(OPENCODE_PROFILE_ID)) {
             profiles.put(OPENCODE_PROFILE_ID, createOpenCodeProfile());
+        } else {
+            refreshBuiltInProfile(OPENCODE_PROFILE_ID);
         }
         initialized = true;
+    }
+
+    /**
+     * Refreshes code-managed fields on a built-in profile that was loaded from
+     * persisted state. User-customisable fields (custom binary path, model selection)
+     * are preserved; fields that track internal transport details (MCP config template,
+     * ACP args, install hint) are overwritten from the code-defined defaults so that
+     * bug-fixes (e.g. changing the MCP server type from "streamable-http" to "http")
+     * take effect without requiring the user to manually reset the profile.
+     */
+    private void refreshBuiltInProfile(@NotNull String id) {
+        AgentProfile stored = profiles.get(id);
+        AgentProfile defaults = createDefaultProfile(id);
+        if (stored == null || defaults == null || !stored.isBuiltIn()) return;
+
+        stored.setAcpArgs(defaults.getAcpArgs());
+        stored.setMcpConfigTemplate(defaults.getMcpConfigTemplate());
+        stored.setMcpMethod(defaults.getMcpMethod());
+        stored.setMcpEnvVarName(defaults.getMcpEnvVarName());
+        stored.setInstallHint(defaults.getInstallHint());
+        stored.setSupportsMcpConfigFlag(defaults.isSupportsMcpConfigFlag());
+        stored.setSupportsModelFlag(defaults.isSupportsModelFlag());
+        stored.setSupportsConfigDir(defaults.isSupportsConfigDir());
+        stored.setSupportedModes(defaults.getSupportedModes());
+        stored.setRequiresResourceDuplication(defaults.isRequiresResourceDuplication());
     }
 
     @Nullable
@@ -170,7 +198,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setSupportsMcpConfigFlag(true);
         p.setMcpConfigTemplate(
             "{\"mcpServers\":{\"intellij-code-tools\":"
-                + "{\"type\":\"streamable-http\","
+                + "{\"type\":\"http\","
                 + "\"url\":\"http://localhost:{mcpPort}/mcp\"}}}");
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(true);

@@ -1,24 +1,20 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
-import com.github.catatafishen.ideagentforcopilot.services.*
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
+import com.github.catatafishen.ideagentforcopilot.services.McpServerControl
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
-import com.intellij.ui.SimpleListCellRenderer
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -44,7 +40,6 @@ class AcpConnectPanel(
         toolTipText = "Working…"
     }
     private val mcpDropdownButton = JButton(AllIcons.General.ArrowDown)
-    private val mcpPortField = JBTextField(6)
     private val mcpStatusLabel = JBLabel("Stopped")
     private val mcpUrlCopyButton = JButton(AllIcons.Actions.Copy).apply {
         toolTipText = "Copy MCP URL"
@@ -74,8 +69,6 @@ class AcpConnectPanel(
 
     // ACP controls
     private var acpSection: JComponent = JBPanel<JBPanel<*>>()
-    private lateinit var agentCombo: ComboBox<AgentProfile>
-    private val customCommandField = JBTextField()
     private val connectButton = JButton("Connect")
     private val connectDropdownButton = JButton(AllIcons.General.ArrowDown)
     private val acpHintLabel = JBLabel("Start the tool server above first").apply {
@@ -86,12 +79,6 @@ class AcpConnectPanel(
         isVisible = false
     }
     private val statusBanner = StatusBanner(project)
-
-    // Command details (collapsible)
-    private var detailsExpanded = false
-    private lateinit var detailsToggle: HyperlinkLabel
-    private lateinit var detailsContent: JBPanel<JBPanel<*>>
-    private lateinit var runtimeFlagsArea: JTextArea
 
     init {
         isOpaque = false
@@ -156,22 +143,6 @@ class AcpConnectPanel(
 
         // Status pill
         section.add(createStatusPill())
-        section.add(Box.createVerticalStrut(JBUI.scale(12)))
-
-        // Port label + field (label above)
-        section.add(JBLabel("Port").apply {
-            alignmentX = LEFT_ALIGNMENT
-            foreground = UIUtil.getLabelDisabledForeground()
-        })
-        section.add(Box.createVerticalStrut(JBUI.scale(4)))
-
-        val mcpSettings = McpServerSettings.getInstance(project)
-        mcpPortField.text = mcpSettings.port.toString()
-        mcpPortField.toolTipText = "MCP server port (default: ${McpServerSettings.DEFAULT_PORT})"
-        mcpPortField.emptyText.text = McpServerSettings.DEFAULT_PORT.toString()
-        mcpPortField.alignmentX = LEFT_ALIGNMENT
-        mcpPortField.maximumSize = Dimension(JBUI.scale(120), mcpPortField.preferredSize.height)
-        section.add(mcpPortField)
         section.add(Box.createVerticalStrut(JBUI.scale(14)))
 
         // Start/Stop split button
@@ -263,43 +234,6 @@ class AcpConnectPanel(
         section.add(acpHintLabel)
         section.add(Box.createVerticalStrut(JBUI.scale(12)))
 
-        // Agent label + combo (label above)
-        section.add(JBLabel("Agent").apply {
-            alignmentX = LEFT_ALIGNMENT
-            foreground = UIUtil.getLabelDisabledForeground()
-        })
-        section.add(Box.createVerticalStrut(JBUI.scale(4)))
-
-        val profiles = agentManager.availableProfiles
-        agentCombo = ComboBox(DefaultComboBoxModel(profiles.toTypedArray()))
-        agentCombo.renderer = SimpleListCellRenderer.create("") { it.displayName }
-        agentCombo.selectedItem = agentManager.activeProfile
-        agentCombo.alignmentX = LEFT_ALIGNMENT
-        agentCombo.maximumSize = Dimension(Int.MAX_VALUE, agentCombo.preferredSize.height)
-        agentCombo.addActionListener {
-            updateCustomCommandVisibility()
-            refreshCommandPreview()
-        }
-        section.add(agentCombo)
-        section.add(Box.createVerticalStrut(JBUI.scale(10)))
-
-        // Start command label + field (label above, full width)
-        section.add(JBLabel("Start command").apply {
-            alignmentX = LEFT_ALIGNMENT
-            foreground = UIUtil.getLabelDisabledForeground()
-        })
-        section.add(Box.createVerticalStrut(JBUI.scale(4)))
-
-        customCommandField.text = agentManager.getCustomAcpCommandFor(agentManager.activeProfileId)
-        customCommandField.alignmentX = LEFT_ALIGNMENT
-        customCommandField.maximumSize = Dimension(Int.MAX_VALUE, customCommandField.preferredSize.height)
-        section.add(customCommandField)
-        section.add(Box.createVerticalStrut(JBUI.scale(6)))
-
-        // Collapsible runtime arguments details
-        section.add(createDetailsPanel())
-        section.add(Box.createVerticalStrut(JBUI.scale(10)))
-
         // Connect split button
         section.add(createAcpSplitButton())
         section.add(Box.createVerticalStrut(JBUI.scale(8)))
@@ -308,8 +242,6 @@ class AcpConnectPanel(
         statusBanner.alignmentX = LEFT_ALIGNMENT
         section.add(statusBanner)
 
-        updateCustomCommandVisibility()
-        refreshCommandPreview()
         return section
     }
 
@@ -330,149 +262,6 @@ class AcpConnectPanel(
         panel.add(connectDropdownButton, BorderLayout.EAST)
 
         return panel
-    }
-
-    private fun createDetailsPanel(): JComponent {
-        val wrapper = JBPanel<JBPanel<*>>().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            isOpaque = false
-            alignmentX = LEFT_ALIGNMENT
-        }
-
-        // Toggle link
-        detailsToggle = HyperlinkLabel("\u25B8 Runtime arguments").apply {
-            alignmentX = LEFT_ALIGNMENT
-            toolTipText = "Additional CLI flags added at launch time"
-        }
-        detailsToggle.addHyperlinkListener {
-            detailsExpanded = !detailsExpanded
-            detailsContent.isVisible = detailsExpanded
-            detailsToggle.setHyperlinkText(
-                if (detailsExpanded) "\u25BE Runtime arguments" else "\u25B8 Runtime arguments"
-            )
-            // Constrain height when collapsed so BoxLayout doesn't expand the wrapper
-            wrapper.maximumSize = Dimension(Int.MAX_VALUE, if (detailsExpanded) Int.MAX_VALUE else JBUI.scale(24))
-            wrapper.revalidate()
-        }
-        wrapper.add(detailsToggle)
-        // Collapsed by default — constrain to just the toggle link height
-        wrapper.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(24))
-
-        // Collapsible content
-        detailsContent = JBPanel<JBPanel<*>>().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            isOpaque = false
-            alignmentX = LEFT_ALIGNMENT
-            isVisible = false
-            border = JBUI.Borders.emptyLeft(12)
-        }
-
-        runtimeFlagsArea = JTextArea(3, 40).apply {
-            isEditable = false
-            lineWrap = true
-            wrapStyleWord = true
-            font = JBUI.Fonts.create(Font.MONOSPACED, 11)
-            background = JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x2B, 0x2B, 0x2B))
-            foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
-            border = CompoundBorder(
-                JBUI.Borders.customLine(JBColor.border(), 1),
-                JBUI.Borders.empty(6, 8)
-            )
-            alignmentX = LEFT_ALIGNMENT
-        }
-        // Prevent the text area from expanding beyond the panel
-        runtimeFlagsArea.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(120))
-
-        detailsContent.add(Box.createVerticalStrut(JBUI.scale(4)))
-        detailsContent.add(runtimeFlagsArea)
-        detailsContent.add(Box.createVerticalStrut(JBUI.scale(4)))
-
-        val mcpConfigLink = HyperlinkLabel("View MCP config").apply {
-            alignmentX = LEFT_ALIGNMENT
-            toolTipText = "Show the MCP server configuration JSON passed to the agent"
-        }
-        mcpConfigLink.addHyperlinkListener { showMcpConfigPopup(mcpConfigLink) }
-        detailsContent.add(mcpConfigLink)
-
-        wrapper.add(detailsContent)
-        return wrapper
-    }
-
-    private fun refreshCommandPreview() {
-        if (!::runtimeFlagsArea.isInitialized) return
-        val selectedProfile = agentCombo.selectedItem as? AgentProfile ?: return
-
-        if (selectedProfile.acpArgs.isEmpty()) {
-            runtimeFlagsArea.text = "(no additional flags \u2014 raw command used as-is)"
-            return
-        }
-
-        val lines = mutableListOf<String>()
-
-        val model = GenericSettings(selectedProfile.id).selectedModel
-        if (!model.isNullOrEmpty()) {
-            lines.add("--model $model")
-        }
-
-        if (selectedProfile.isSupportsConfigDir && project.basePath != null) {
-            lines.add("--config-dir ${project.basePath}/.agent-work")
-        }
-
-        if (selectedProfile.isSupportsMcpConfigFlag) {
-            lines.add("--additional-mcp-config @<auto-generated>")
-        }
-
-        runtimeFlagsArea.text = lines.joinToString("\n")
-    }
-
-    private fun buildMcpConfigJson(): String {
-        val javaExe = if (System.getProperty("os.name", "").lowercase().contains("win")) "java.exe" else "java"
-        val javaPath = System.getProperty("java.home") + "/" + "bin" + "/" + javaExe
-        val mcpPort = McpServerSettings.getInstance(project).port
-
-        val mcpJarPath = try {
-            val pluginPath = PlatformApiCompat.getPluginPath("com.github.catatafishen.ideagentforcopilot")
-            pluginPath?.resolve("lib")?.resolve("mcp-server.jar")?.toString()
-                ?: "<plugin>/lib/mcp-server.jar"
-        } catch (_: Exception) {
-            "<plugin>/lib/mcp-server.jar"
-        }
-
-        return """
-{
-  "mcpServers": {
-    "intellij-code-tools": {
-      "command": "$javaPath",
-      "args": [
-        "-jar",
-        "$mcpJarPath",
-        "--port",
-        "$mcpPort"
-      ]
-    }
-  }
-}""".trimIndent()
-    }
-
-    private fun showMcpConfigPopup(anchor: JComponent) {
-        val json = buildMcpConfigJson()
-        val textArea = JTextArea(json).apply {
-            isEditable = false
-            font = JBUI.Fonts.create(Font.MONOSPACED, 12)
-            border = JBUI.Borders.empty(8, 10)
-            background = JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x2B, 0x2B, 0x2B))
-        }
-        val scrollPane = JBScrollPane(textArea).apply {
-            preferredSize = Dimension(JBUI.scale(480), JBUI.scale(220))
-        }
-        JBPopupFactory.getInstance()
-            .createComponentPopupBuilder(scrollPane, textArea)
-            .setTitle("MCP Server Config")
-            .setResizable(true)
-            .setMovable(true)
-            .setFocusable(true)
-            .createPopup()
-            .showUnderneathOf(anchor)
     }
 
     // ── Shared UI helpers ──
@@ -561,7 +350,6 @@ class AcpConnectPanel(
             mcpStartButton.isEnabled = false
             mcpStartButton.text = "Start server"
             mcpStartButton.icon = AllIcons.Actions.Execute
-            mcpPortField.isEnabled = false
             mcpStatusLabel.text = "Error — McpServerControl service not registered"
             mcpStatusLabel.icon = AllIcons.General.Error
             statusPill.background = JBColor(
@@ -580,8 +368,6 @@ class AcpConnectPanel(
         mcpStartButton.icon = if (running) AllIcons.Actions.Suspend else AllIcons.Actions.Execute
 
         if (running && port > 0) {
-            mcpPortField.text = port.toString()
-            mcpPortField.isEnabled = false
             mcpRunningUrl = "http://127.0.0.1:$port/mcp"
             mcpStatusLabel.text = "Running \u2014 $mcpRunningUrl"
             mcpStatusLabel.icon = AllIcons.General.InspectionsOK
@@ -591,10 +377,6 @@ class AcpConnectPanel(
                 Color(0x2E, 0x3B, 0x2E)
             )
         } else {
-            mcpPortField.isEnabled = true
-            if (mcpPortField.text.isBlank()) {
-                mcpPortField.text = McpServerSettings.getInstance(project).port.toString()
-            }
             mcpRunningUrl = ""
             mcpStatusLabel.text = "Stopped"
             mcpStatusLabel.icon = AllIcons.General.InspectionsOKEmpty
@@ -642,8 +424,7 @@ class AcpConnectPanel(
                 if (stopping) {
                     mcpServer.stop()
                 } else {
-                    val portText = mcpPortField.text.trim()
-                    val port = portText.toIntOrNull() ?: McpServerSettings.DEFAULT_PORT
+                    val port = McpServerSettings.getInstance(project).port
                     mcpServer.start(port)
                 }
             } catch (e: Exception) {
@@ -708,42 +489,26 @@ class AcpConnectPanel(
             .showUnderneathOf(toolCallLink)
     }
 
-    // ── ACP state management ──
-
-    private fun updateCustomCommandVisibility() {
-        val selectedProfile = agentCombo.selectedItem as? AgentProfile ?: return
-
-        if (!customCommandField.hasFocus()) {
-            val stored = agentManager.getCustomAcpCommandFor(selectedProfile.id)
-            customCommandField.text = stored
-        }
-
-        customCommandField.emptyText.text = selectedProfile.defaultStartCommand
-
-        refreshCommandPreview()
-    }
-
     private fun doConnect() {
-        val selectedProfile = agentCombo.selectedItem as? AgentProfile ?: return
-        val cmd = customCommandField.text.trim()
-
-        if (cmd.isEmpty()) {
-            statusBanner.showError("Enter a start command for the agent.")
+        val profileId = agentManager.activeProfileId
+        val profile = agentManager.activeProfile
+        if (profile == null) {
+            statusBanner.showError("No agent profile selected — configure one in Settings.")
             return
         }
 
-        agentManager.setCustomAcpCommandFor(selectedProfile.id, cmd)
-
-        val customCommand = if (cmd != selectedProfile.defaultStartCommand) {
-            cmd
-        } else {
-            null
+        val cmd = agentManager.getCustomAcpCommandFor(profileId)
+        if (cmd.isNullOrBlank()) {
+            statusBanner.showError("No start command configured for ${profile.displayName} — check Settings.")
+            return
         }
+
+        val customCommand = if (cmd != profile.defaultStartCommand) cmd else null
 
         statusBanner.dismissCurrent()
         connectButton.isEnabled = false
         connectButton.text = "Connecting\u2026"
-        onConnect(selectedProfile.id, customCommand)
+        onConnect(profileId, customCommand)
     }
 
     // ── Public API for AgenticCopilotToolWindowContent ──
