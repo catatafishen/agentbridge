@@ -199,7 +199,6 @@ public final class PsiBridgeService implements Disposable {
             httpServer.createContext("/tools/list", this::handleToolsList);
             httpServer.createContext("/tools/status", this::handleToolStatus);
             httpServer.createContext("/health", this::handleHealth);
-            httpServer.createContext("/reload-plugin", this::handleReloadPlugin);
             httpServer.setExecutor(Executors.newFixedThreadPool(8));
             httpServer.start();
             port = httpServer.getAddress().getPort();
@@ -332,52 +331,6 @@ public final class PsiBridgeService implements Disposable {
         exchange.sendResponseHeaders(200, resp.length);
         exchange.getResponseBody().write(resp);
         exchange.getResponseBody().close();
-    }
-
-    /**
-     * Handles POST /reload-plugin — deploys plugin and offers IDE restart.
-     * Accepts JSON body: {@code {"zipPath": "/path/to/plugin.zip"}}
-     * <p>
-     * Files are already deployed to the plugin directory by the Gradle task.
-     * This endpoint triggers an IDE restart to pick up the new version.
-     */
-    private void handleReloadPlugin(HttpExchange exchange) throws IOException {
-        if (!"POST".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            return;
-        }
-        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-        JsonObject req = JsonParser.parseString(body).getAsJsonObject();
-        String zipPathStr = req.has("zipPath") ? req.get("zipPath").getAsString() : null;
-        if (zipPathStr == null || zipPathStr.isBlank()) {
-            byte[] err = "{\"error\":\"zipPath is required\"}".getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
-            exchange.sendResponseHeaders(400, err.length);
-            exchange.getResponseBody().write(err);
-            exchange.getResponseBody().close();
-            return;
-        }
-
-        Path zipPath = Path.of(zipPathStr);
-        if (!Files.exists(zipPath)) {
-            byte[] err = ("{\"error\":\"ZIP not found: " + zipPathStr + "\"}").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
-            exchange.sendResponseHeaders(404, err.length);
-            exchange.getResponseBody().write(err);
-            exchange.getResponseBody().close();
-            return;
-        }
-
-        byte[] resp = "{\"status\":\"restart_scheduled\"}".getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set(CONTENT_TYPE_HEADER, APPLICATION_JSON);
-        exchange.sendResponseHeaders(200, resp.length);
-        exchange.getResponseBody().write(resp);
-        exchange.getResponseBody().close();
-
-        LOG.info("Plugin deploy reload requested, ZIP: " + zipPath);
-        ApplicationManager.getApplication().invokeLater(() ->
-                ApplicationManager.getApplication().restart()
-        );
     }
 
     private void handleToolStatus(HttpExchange exchange) throws IOException {
