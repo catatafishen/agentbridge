@@ -180,51 +180,60 @@
       serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.McpHttpServer"/>
 
-    <!-- Settings: IDE Agent for Copilot (parent group) -->
+    <!-- Settings: IDE Agent for Copilot (root) -->
     <projectConfigurable
       parentId="tools"
       instance="com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.settings"
       displayName="IDE Agent for Copilot"/>
 
-    <!-- Settings: Tool Permissions -->
+    <!-- ── MCP section ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
-      displayName="Tool Permissions"/>
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolRegistrationConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.mcp"
+      displayName="MCP"/>
 
-    <!-- Settings: Agent Settings -->
+    <!-- ── ACP section ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.AcpGroupConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.acp"
+      displayName="ACP"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.acp"
       instance="com.github.catatafishen.ideagentforcopilot.settings.AgentSettingsConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.agentSettings"
       displayName="Agent Settings"/>
 
-    <!-- Settings: Agent Profiles -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
+      parentId="com.github.catatafishen.ideagentforcopilot.acp"
       instance="com.github.catatafishen.ideagentforcopilot.settings.AgentProfilesConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.agentProfiles"
       displayName="Agent Profiles"/>
 
-    <!-- Settings: Tool Registration -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolRegistrationConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.toolRegistration"
-      displayName="Tool Registration"/>
+      parentId="com.github.catatafishen.ideagentforcopilot.acp"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
+      displayName="Tool Permissions"/>
 
-    <!-- Settings: Scratch File Types -->
+    <!-- ── Other section ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.OtherGroupConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.other"
+      displayName="Other"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.other"
       instance="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypesConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.scratchTypes"
       displayName="Scratch File Types"/>
 
-    <!-- Settings: Project Files -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
+      parentId="com.github.catatafishen.ideagentforcopilot.other"
       instance="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.projectFiles"
       displayName="Project Files"/>

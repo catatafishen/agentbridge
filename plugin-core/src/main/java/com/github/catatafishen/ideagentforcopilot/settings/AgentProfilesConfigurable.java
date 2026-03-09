@@ -344,7 +344,8 @@ public final class AgentProfilesConfigurable implements Configurable {
         p.setSupportsConfigDir(supportsConfigDirCb.isSelected());
         p.setSupportsMcpConfigFlag(supportsMcpConfigFlagCb.isSelected());
         p.setRequiresResourceDuplication(requiresResourceDuplicationCb.isSelected());
-        p.setModelUsageField(modelUsageFieldField.getText().trim());
+        String modelField = modelUsageFieldField.getText().trim();
+        p.setModelUsageField(modelField.isEmpty() ? null : modelField);
         p.setSupportedModes(deserializeModes(supportedModesField.getText()));
         p.setEnsureCopilotInstructions(ensureCopilotInstructionsCb.isSelected());
         p.setEnsureCopilotAgents(ensureCopilotAgentsCb.isSelected());

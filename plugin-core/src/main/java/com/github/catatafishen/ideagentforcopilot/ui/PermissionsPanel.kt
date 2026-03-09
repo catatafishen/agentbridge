@@ -330,11 +330,29 @@ internal class PermissionsPanel(private val settings: AgentUiSettings) {
 
     // ── Persist ───────────────────────────────────────────────────────────────
 
-    /**
-     * Returns true if any UI value differs from the persisted setting.
-     * Conservative: returns true to ensure Apply is always available.
-     */
-    fun isModified(): Boolean = true
+    fun isModified(): Boolean {
+        for (row in rows) {
+            val id = row.tool.id
+            if (row.isPlugin) {
+                row.permCombo?.let { combo ->
+                    if (combo.selectedIndex.toPluginPermission() != settings.getToolPermission(id)) return true
+                    if (combo.selectedIndex == 0) {
+                        row.inProjectCombo?.let {
+                            if (it.selectedIndex.toPluginPermission() != settings.getToolPermissionInsideProject(id)) return true
+                        }
+                        row.outProjectCombo?.let {
+                            if (it.selectedIndex.toPluginPermission() != settings.getToolPermissionOutsideProject(id)) return true
+                        }
+                    }
+                }
+            } else {
+                row.permCombo?.let {
+                    if (it.selectedIndex.toBuiltinPermission() != settings.getToolPermission(id)) return true
+                }
+            }
+        }
+        return false
+    }
 
     /** Rebuilds the panel from persisted settings. */
     fun reload() {

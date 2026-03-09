@@ -44,13 +44,10 @@ public final class PluginSettingsConfigurable implements Configurable {
         JPanel panel = new JPanel(new BorderLayout());
         JBLabel label = new JBLabel(
             "<html><b>" + DISPLAY_NAME + "</b><br><br>"
-                + "Configure the plugin using the sub-pages in the tree on the left:<br>"
-                + "• <b>Agent Settings</b> — timeout, tool call limits for the active agent<br>"
-                + "• <b>Tool Permissions</b> — set permission levels (allow/ask/deny) per tool<br>"
-                + "• <b>Tool Registration</b> — enable/disable tools and configure MCP server<br>"
-                + "• <b>Macro Tools</b> — register recorded macros as MCP tools<br>"
-                + "• <b>Scratch File Types</b> — extra alias mappings for the \"Open in Scratch\" button<br>"
-                + "• <b>Project Files</b> — file shortcuts in the toolbar dropdown</html>");
+                + "Configure the plugin using the sections in the tree on the left:<br><br>"
+                + "<b>MCP</b> — MCP server, PSI Bridge, and tool registration<br>"
+                + "<b>ACP</b> — agent settings, profiles, and tool permissions<br>"
+                + "<b>Other</b> — scratch file types and project file shortcuts</html>");
         label.setBorder(JBUI.Borders.empty(12));
         panel.add(label, BorderLayout.NORTH);
         return panel;
