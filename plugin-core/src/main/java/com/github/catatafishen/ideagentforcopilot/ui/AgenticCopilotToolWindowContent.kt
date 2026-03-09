@@ -1401,7 +1401,7 @@ class AgenticCopilotToolWindowContent(
         ToggleAction(
             "Plugin Permissions",
             "Auto-approve plugin permission requests (ASK → ALLOW)",
-            AllIcons.Ide.HectorOff
+            AllIcons.CodeWithMe.CwmPermissionsDenied
         ) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
@@ -1416,11 +1416,11 @@ class AgenticCopilotToolWindowContent(
         override fun update(e: AnActionEvent) {
             super.update(e)
             if (agentManager.isAutoApprovePermissions) {
-                e.presentation.icon = AllIcons.Ide.HectorOn
+                e.presentation.icon = AllIcons.CodeWithMe.CwmPermissionsGranted
                 e.presentation.text = "Permissions Granted"
                 e.presentation.description = "Plugin permissions auto-approved — click to disable"
             } else {
-                e.presentation.icon = AllIcons.Ide.HectorOff
+                e.presentation.icon = AllIcons.CodeWithMe.CwmPermissionsDenied
                 e.presentation.text = "Permissions Denied"
                 e.presentation.description = "Plugin permissions require approval — click to auto-approve"
             }
