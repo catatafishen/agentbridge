@@ -593,6 +593,40 @@ class InfrastructureTools extends AbstractToolHandler {
             // XML parsing or file access errors are non-fatal
         }
 
+        // Last resort: walk the Swing component tree looking for a ConsoleViewImpl.
+        // Handles external system (Gradle) consoles where ExternalSystemRunnableState
+        // wraps a BuildView containing an inner ConsoleViewImpl.
+        try {
+            var getComponent = console.getClass().getMethod("getComponent");
+            var component = getComponent.invoke(console);
+            if (component instanceof java.awt.Container container) {
+                String found = findConsoleTextInComponentTree(container);
+                if (found != null && !found.isEmpty()) return found;
+            }
+        } catch (Exception ignored) {
+            // Not a component-based console
+        }
+
+        return null;
+    }
+
+    /**
+     * Recursively walk the Swing component tree to find a ConsoleViewImpl and read its text.
+     * Used as a fallback for Gradle/external-system consoles.
+     */
+    private String findConsoleTextInComponentTree(java.awt.Container container) {
+        if (container instanceof com.intellij.execution.impl.ConsoleViewImpl cv) {
+            cv.flushDeferredText();
+            String text = cv.getText();
+            if (!text.isEmpty()) return text;
+        }
+        for (int i = 0; i < container.getComponentCount(); i++) {
+            var child = container.getComponent(i);
+            if (child instanceof java.awt.Container c) {
+                String result = findConsoleTextInComponentTree(c);
+                if (result != null && !result.isEmpty()) return result;
+            }
+        }
         return null;
     }
 
