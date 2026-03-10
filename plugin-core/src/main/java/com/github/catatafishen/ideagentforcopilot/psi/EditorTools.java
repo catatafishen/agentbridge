@@ -403,9 +403,22 @@ class EditorTools extends AbstractToolHandler {
     private static String searchConversations(String query, String file, java.io.File currentFile,
                                               java.io.File archiveDir, int maxChars) {
         String lowerQuery = query.toLowerCase(java.util.Locale.ROOT);
-        StringBuilder sb = new StringBuilder();
+        java.util.List<java.io.File> files = collectFilesToSearch(file, currentFile, archiveDir);
 
-        // Collect files to search
+        int totalMatches = 0;
+        StringBuilder sb = new StringBuilder();
+        for (java.io.File f : files) {
+            totalMatches += appendFileSearchResult(f, currentFile, lowerQuery, maxChars - sb.length(), sb);
+            if (sb.length() >= maxChars) break;
+        }
+
+        if (totalMatches == 0) return "No matches found for: " + query;
+        return sb.toString().trim();
+    }
+
+    private static java.util.List<java.io.File> collectFilesToSearch(String file,
+                                                                     java.io.File currentFile,
+                                                                     java.io.File archiveDir) {
         java.util.List<java.io.File> files = new java.util.ArrayList<>();
         if (file != null) {
             java.io.File target = resolveConversationFile(file, currentFile, archiveDir);
@@ -415,27 +428,30 @@ class EditorTools extends AbstractToolHandler {
             if (archiveDir.exists()) {
                 java.io.File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(JSON_EXT));
                 if (archives != null) {
-                    java.util.Arrays.sort(archives, java.util.Comparator.comparing(java.io.File::getName).reversed());
+                    java.util.Arrays.sort(archives,
+                        java.util.Comparator.comparing(java.io.File::getName).reversed());
                     files.addAll(java.util.Arrays.asList(archives));
                 }
             }
         }
+        return files;
+    }
 
-        int totalMatches = 0;
-        for (java.io.File f : files) {
-            String label = f.equals(currentFile) ? "current" : f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
-            String result = conversationJsonToText(f, lowerQuery, maxChars - sb.length());
-            if (!result.isEmpty()) {
-                long matchCount = result.lines().filter(l -> l.toLowerCase(java.util.Locale.ROOT).contains(lowerQuery)).count();
-                totalMatches += matchCount;
-                sb.append("── ").append(label).append(" (").append(matchCount).append(" matches) ──\n");
-                sb.append(result).append("\n");
-            }
-            if (sb.length() >= maxChars) break;
-        }
+    private static int appendFileSearchResult(java.io.File f, java.io.File currentFile,
+                                              String lowerQuery, int remainingChars,
+                                              StringBuilder sb) {
+        String label = f.equals(currentFile)
+            ? "current"
+            : f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
+        String result = conversationJsonToText(f, lowerQuery, remainingChars);
+        if (result.isEmpty()) return 0;
 
-        if (totalMatches == 0) return "No matches found for: " + query;
-        return sb.toString().trim();
+        long matchCount = result.lines()
+            .filter(l -> l.toLowerCase(java.util.Locale.ROOT).contains(lowerQuery))
+            .count();
+        sb.append("── ").append(label).append(" (").append(matchCount).append(" matches) ──\n");
+        sb.append(result).append("\n");
+        return (int) matchCount;
     }
 
     private static java.io.File resolveConversationFile(String name, java.io.File currentFile, java.io.File archiveDir) {
@@ -855,51 +871,47 @@ class EditorTools extends AbstractToolHandler {
 
     // ---- End Scratch File Helpers ----
 
-    /**
-     * Returns all currently open editor tabs with their file paths.
-     */
-    @SuppressWarnings("unused")
     private String getOpenEditors(JsonObject args) throws Exception {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-
         EdtUtil.invokeLater(() -> {
             try {
-                var editorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project);
-                VirtualFile[] openFiles = editorManager.getOpenFiles();
-                if (openFiles.length == 0) {
-                    resultFuture.complete("No open editors");
-                    return;
-                }
-
-                // Find the currently selected file to mark it
-                var selectedEditor = editorManager.getSelectedTextEditor();
-                VirtualFile activeFile = null;
-                if (selectedEditor != null) {
-                    activeFile = com.intellij.openapi.fileEditor.FileDocumentManager
-                        .getInstance().getFile(selectedEditor.getDocument());
-                }
-
-                String basePath = project.getBasePath();
-                StringBuilder sb = new StringBuilder();
-                sb.append("Open editors (").append(openFiles.length).append("):\n");
-                for (VirtualFile file : openFiles) {
-                    String filePath = file.getPath();
-                    String displayPath = basePath != null ? relativize(basePath, filePath) : filePath;
-                    boolean isActive = file.equals(activeFile);
-                    boolean isModified = com.intellij.openapi.fileEditor.FileDocumentManager
-                        .getInstance().isFileModified(file);
-                    sb.append(isActive ? "* " : "  ");
-                    sb.append(displayPath);
-                    if (isModified) sb.append(" [modified]");
-                    sb.append('\n');
-                }
-                resultFuture.complete(sb.toString().trim());
+                resultFuture.complete(buildEditorListOnEdt());
             } catch (Exception e) {
                 resultFuture.complete("Error: " + e.getMessage());
             }
         });
-
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Must be called on the EDT.
+     */
+    private String buildEditorListOnEdt() {
+        var editorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project);
+        VirtualFile[] openFiles = editorManager.getOpenFiles();
+        if (openFiles.length == 0) return "No open editors";
+
+        var selectedEditor = editorManager.getSelectedTextEditor();
+        VirtualFile activeFile = selectedEditor != null
+            ? com.intellij.openapi.fileEditor.FileDocumentManager
+            .getInstance().getFile(selectedEditor.getDocument())
+            : null;
+
+        String basePath = project.getBasePath();
+        StringBuilder sb = new StringBuilder();
+        sb.append("Open editors (").append(openFiles.length).append("):\n");
+        for (VirtualFile file : openFiles) {
+            String filePath = file.getPath();
+            String displayPath = basePath != null ? relativize(basePath, filePath) : filePath;
+            boolean isActive = file.equals(activeFile);
+            boolean isModified = com.intellij.openapi.fileEditor.FileDocumentManager
+                .getInstance().isFileModified(file);
+            sb.append(isActive ? "* " : "  ");
+            sb.append(displayPath);
+            if (isModified) sb.append(" [modified]");
+            sb.append('\n');
+        }
+        return sb.toString().trim();
     }
 
     private String listThemes(JsonObject args) {

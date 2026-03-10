@@ -451,59 +451,64 @@ class RefactoringTools extends AbstractToolHandler {
         // [0] = declPath, [1] = declLine (as string)
         String[] declInfo = new String[2];
 
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
-            VirtualFile vf = resolveVirtualFile(pathStr);
-            if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
-
-            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-            if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
-
-            Document document = FileDocumentManager.getInstance().getDocument(vf);
-            if (document == null) return "Error: Cannot get document for: " + pathStr;
-
-            if (targetLine < 1 || targetLine > document.getLineCount()) {
-                return "Error: Line " + targetLine + " is out of bounds (file has " +
-                    document.getLineCount() + FORMAT_LINES_SUFFIX;
-            }
-            int lineStartOffset = document.getLineStartOffset(targetLine - 1);
-            int lineEndOffset = document.getLineEndOffset(targetLine - 1);
-
-            List<PsiElement> declarations = findDeclarationsOnLine(
-                psiFile, lineStartOffset, lineEndOffset, symbolName);
-
-            if (declarations.isEmpty()) {
-                declarations = findDeclarationByOffset(
-                    psiFile, document, lineStartOffset, lineEndOffset, symbolName);
-            }
-
-            if (declarations.isEmpty()) {
-                return "Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
-                    " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.";
-            }
-
-            // Capture first declaration location for follow mode
-            PsiElement firstDecl = declarations.getFirst();
-            PsiFile declFile = firstDecl.getContainingFile();
-            if (declFile != null && declFile.getVirtualFile() != null) {
-                String basePath = project.getBasePath();
-                VirtualFile declVf = declFile.getVirtualFile();
-                declInfo[0] = basePath != null ? relativize(basePath, declVf.getPath()) : declVf.getPath();
-                Document declDoc = FileDocumentManager.getInstance().getDocument(declVf);
-                if (declDoc != null) {
-                    declInfo[1] = String.valueOf(declDoc.getLineNumber(firstDecl.getTextOffset()) + 1);
-                }
-            }
-
-            return formatDeclarationResults(declarations, symbolName);
-        });
+        String result = ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) () -> findAndFormatDeclaration(pathStr, targetLine, symbolName, declInfo));
 
         if (declInfo[0] != null && declInfo[1] != null) {
             int declLine = Integer.parseInt(declInfo[1]);
             FileTools.followFileIfEnabled(project, declInfo[0], declLine, declLine,
                 FileTools.HIGHLIGHT_READ, FileTools.agentLabel(project) + " found declaration");
         }
-
         return result;
+    }
+
+    /**
+     * Must be called inside a read action.
+     */
+    private String findAndFormatDeclaration(String pathStr, int targetLine,
+                                            String symbolName, String[] declInfo) {
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+
+        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
+
+        Document document = FileDocumentManager.getInstance().getDocument(vf);
+        if (document == null) return "Error: Cannot get document for: " + pathStr;
+
+        if (targetLine < 1 || targetLine > document.getLineCount()) {
+            return "Error: Line " + targetLine + " is out of bounds (file has " +
+                document.getLineCount() + FORMAT_LINES_SUFFIX;
+        }
+        int lineStartOffset = document.getLineStartOffset(targetLine - 1);
+        int lineEndOffset = document.getLineEndOffset(targetLine - 1);
+
+        List<PsiElement> declarations = findDeclarationsOnLine(
+            psiFile, lineStartOffset, lineEndOffset, symbolName);
+        if (declarations.isEmpty()) {
+            declarations = findDeclarationByOffset(
+                psiFile, document, lineStartOffset, lineEndOffset, symbolName);
+        }
+        if (declarations.isEmpty()) {
+            return "Could not resolve declaration for '" + symbolName + "' at line " + targetLine +
+                " in " + pathStr + ". The symbol may be unresolved or from an unindexed library.";
+        }
+
+        captureDeclInfo(declarations.getFirst(), declInfo);
+        return formatDeclarationResults(declarations, symbolName);
+    }
+
+    private void captureDeclInfo(PsiElement firstDecl, String[] declInfo) {
+        PsiFile declFile = firstDecl.getContainingFile();
+        if (declFile == null || declFile.getVirtualFile() == null) return;
+
+        String basePath = project.getBasePath();
+        VirtualFile declVf = declFile.getVirtualFile();
+        declInfo[0] = basePath != null ? relativize(basePath, declVf.getPath()) : declVf.getPath();
+        Document declDoc = FileDocumentManager.getInstance().getDocument(declVf);
+        if (declDoc != null) {
+            declInfo[1] = String.valueOf(declDoc.getLineNumber(firstDecl.getTextOffset()) + 1);
+        }
     }
 
     private List<PsiElement> findDeclarationsOnLine(
