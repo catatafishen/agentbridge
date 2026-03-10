@@ -298,7 +298,7 @@ class CodeQualityTools extends AbstractToolHandler {
      */
     private List<String> collectEditorNotifications(String pathStr) throws Exception {
         CompletableFuture<List<String>> future = new CompletableFuture<>();
-        ApplicationManager.getApplication().invokeLater(() -> {
+        EdtUtil.invokeLater(() -> {
             try {
                 VirtualFile vf = resolveVirtualFile(pathStr);
                 if (vf == null) {
@@ -395,7 +395,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return fileHasErrors;
     }
 
-    // ---- run_inspections ----
+// ---- run_inspections ----
 
     @SuppressWarnings("UnstableApiUsage")
     private String runInspections(JsonObject args) throws Exception {
@@ -594,7 +594,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return new com.intellij.analysis.AnalysisScope(psiFile);
     }
 
-    // ---- InspectionCollectionResult ----
+// ---- InspectionCollectionResult ----
 
     private record InspectionCollectionResult(List<String> problems, int fileCount,
                                               int skippedNoDescription, int skippedNoFile) {
@@ -608,7 +608,7 @@ class CodeQualityTools extends AbstractToolHandler {
     }
 
     @SuppressWarnings({"UnstableApiUsage", "java:S2583"})
-    // null check is defensive against runtime nulls despite @NotNull
+// null check is defensive against runtime nulls despite @NotNull
     private InspectionCollectionResult collectInspectionProblems(
         com.intellij.codeInspection.ex.GlobalInspectionContextEx ctx, Map<String, Integer> severityRank,
         int requiredRank, String basePath) {
@@ -920,7 +920,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return filePath;
     }
 
-    // ---- add_to_dictionary ----
+// ---- add_to_dictionary ----
 
     private String addToDictionary(JsonObject args) throws Exception {
         String word = args.get("word").getAsString().trim().toLowerCase();
@@ -943,7 +943,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
-    // ---- suppress_inspection ----
+// ---- suppress_inspection ----
 
     private String suppressInspection(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
@@ -1080,7 +1080,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return "Added //noinspection " + inspectionId + " comment at line " + (targetLine + 1);
     }
 
-    // ---- run_sonarqube_analysis ----
+// ---- run_sonarqube_analysis ----
 
     private String runSonarQubeAnalysis(JsonObject args) {
         String scope = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : "all";
@@ -1091,7 +1091,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return sonar.runAnalysis(scope, limit, offset);
     }
 
-    // ---- run_qodana ----
+// ---- run_qodana ----
 
     private String runQodana(JsonObject args) throws Exception {
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
@@ -1431,7 +1431,7 @@ class CodeQualityTools extends AbstractToolHandler {
         }
     }
 
-    // ---- SarifLocation ----
+// ---- SarifLocation ----
 
     private record SarifLocation(String filePath, int line) {
     }
@@ -1468,7 +1468,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return new SarifLocation(filePath, line);
     }
 
-    // ---- optimize_imports ----
+// ---- optimize_imports ----
 
     private String optimizeImports(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
@@ -1507,7 +1507,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
-    // ---- format_code ----
+// ---- format_code ----
 
     private String formatCode(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
@@ -1551,7 +1551,7 @@ class CodeQualityTools extends AbstractToolHandler {
         return result;
     }
 
-    // ---- apply_quickfix ----
+// ---- apply_quickfix ----
 
     private String applyQuickfix(JsonObject args) throws Exception {
         if (!args.has("file") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {

@@ -258,7 +258,7 @@ class InfrastructureTools extends AbstractToolHandler {
             // synchronously on the EDT; from other threads it posts async and returns
             // immediately, so the text would still be empty when we read it.
             var textRef = new java.util.concurrent.atomic.AtomicReference<String>();
-            ApplicationManager.getApplication().invokeAndWait(() ->
+            EdtUtil.invokeAndWait(() ->
                 textRef.set(readConsoleTextOnEdt(console)));
 
             String text = textRef.get();

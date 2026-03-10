@@ -1,8 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vcs.changes.VcsDirtyScopeManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
@@ -118,7 +115,7 @@ final class GitToolHandler {
     private void refreshVcsState() {
         String basePath = project.getBasePath();
         if (basePath == null) return;
-        ApplicationManager.getApplication().invokeLater(() -> {
+        EdtUtil.invokeLater(() -> {
             var root = LocalFileSystem.getInstance().findFileByPath(basePath);
             if (root != null) {
                 VfsUtil.markDirtyAndRefresh(true, true, true, root);
@@ -133,13 +130,13 @@ final class GitToolHandler {
      */
     private void saveAllDocuments() {
         EdtUtil.invokeAndWait(() ->
-            ApplicationManager.getApplication().runWriteAction(() -> {
+            com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() -> {
                 com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
-                FileDocumentManager.getInstance().saveAllDocuments();
+                com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments();
             }));
     }
 
-    String gitStatus(JsonObject args) throws Exception {
+    String gitStatus(com.google.gson.JsonObject args) throws Exception {
         fileTools.flushPendingAutoFormat();
         saveAllDocuments();
         boolean verbose = args.has("verbose") && args.get("verbose").getAsBoolean();
@@ -149,7 +146,7 @@ final class GitToolHandler {
         return runGit(STATUS_PARAM, "--short", "--branch");
     }
 
-    String gitDiff(JsonObject args) throws Exception {
+    String gitDiff(com.google.gson.JsonObject args) throws Exception {
         fileTools.flushPendingAutoFormat();
         saveAllDocuments();
         List<String> gitArgs = new ArrayList<>();
@@ -171,7 +168,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitLog(JsonObject args) throws Exception {
+    String gitLog(com.google.gson.JsonObject args) throws Exception {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("log");
 
@@ -206,7 +203,7 @@ final class GitToolHandler {
         return result;
     }
 
-    String gitBlame(JsonObject args) throws Exception {
+    String gitBlame(com.google.gson.JsonObject args) throws Exception {
         if (!args.has("path")) return ERROR_PATH_REQUIRED;
 
         List<String> gitArgs = new ArrayList<>();
@@ -221,7 +218,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitCommit(JsonObject args) throws Exception {
+    String gitCommit(com.google.gson.JsonObject args) throws Exception {
         // Flush pending auto-format and save all documents before committing
         fileTools.flushPendingAutoFormat();
         saveAllDocuments();
@@ -246,7 +243,7 @@ final class GitToolHandler {
         return result;
     }
 
-    String gitStage(JsonObject args) throws Exception {
+    String gitStage(com.google.gson.JsonObject args) throws Exception {
         // Flush pending auto-format and save all documents so staged files include formatting
         fileTools.flushPendingAutoFormat();
         saveAllDocuments();
@@ -291,7 +288,7 @@ final class GitToolHandler {
         return result;
     }
 
-    String gitUnstage(JsonObject args) throws Exception {
+    String gitUnstage(com.google.gson.JsonObject args) throws Exception {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("restore");
         gitArgs.add("--staged");
@@ -309,7 +306,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitBranch(JsonObject args) throws Exception {
+    String gitBranch(com.google.gson.JsonObject args) throws Exception {
         String action = args.has(JSON_ACTION) ? args.get(JSON_ACTION).getAsString() : "list";
 
         return switch (action) {
@@ -335,7 +332,7 @@ final class GitToolHandler {
         };
     }
 
-    String gitStash(JsonObject args) throws Exception {
+    String gitStash(com.google.gson.JsonObject args) throws Exception {
         String action = args.has(JSON_ACTION) ? args.get(JSON_ACTION).getAsString() : "list";
 
         return switch (action) {
@@ -367,7 +364,7 @@ final class GitToolHandler {
         };
     }
 
-    String gitPush(JsonObject args) throws Exception {
+    String gitPush(com.google.gson.JsonObject args) throws Exception {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("push");
 
@@ -405,7 +402,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitRemote(JsonObject args) throws Exception {
+    String gitRemote(com.google.gson.JsonObject args) throws Exception {
         String action = args.has(JSON_ACTION) ? args.get(JSON_ACTION).getAsString() : "list";
 
         return switch (action) {
@@ -432,7 +429,7 @@ final class GitToolHandler {
         };
     }
 
-    String gitRevert(JsonObject args) throws Exception {
+    String gitRevert(com.google.gson.JsonObject args) throws Exception {
         if (!args.has(PARAM_COMMIT)) {
             return "Error: 'commit' parameter is required";
         }
@@ -447,7 +444,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitFetch(JsonObject args) throws Exception {
+    String gitFetch(com.google.gson.JsonObject args) throws Exception {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("fetch");
 
@@ -468,7 +465,7 @@ final class GitToolHandler {
         return result.isEmpty() ? "Fetch completed successfully." : result;
     }
 
-    String gitPull(JsonObject args) throws Exception {
+    String gitPull(com.google.gson.JsonObject args) throws Exception {
         saveAllDocuments();
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("pull");
@@ -489,7 +486,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitMerge(JsonObject args) throws Exception {
+    String gitMerge(com.google.gson.JsonObject args) throws Exception {
         if (!args.has(PARAM_BRANCH) && !args.has("abort")) {
             return "Error: 'branch' parameter is required (or 'abort' to abort a merge)";
         }
@@ -521,7 +518,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitRebase(JsonObject args) throws Exception {
+    String gitRebase(com.google.gson.JsonObject args) throws Exception {
         saveAllDocuments();
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("rebase");
@@ -560,7 +557,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitCherryPick(JsonObject args) throws Exception {
+    String gitCherryPick(com.google.gson.JsonObject args) throws Exception {
         saveAllDocuments();
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("cherry-pick");
@@ -590,7 +587,7 @@ final class GitToolHandler {
         return runGit(gitArgs.toArray(new String[0]));
     }
 
-    String gitTag(JsonObject args) throws Exception {
+    String gitTag(com.google.gson.JsonObject args) throws Exception {
         String action = args.has(JSON_ACTION) ? args.get(JSON_ACTION).getAsString() : "list";
 
         return switch (action) {
@@ -628,7 +625,7 @@ final class GitToolHandler {
         };
     }
 
-    String gitReset(JsonObject args) throws Exception {
+    String gitReset(com.google.gson.JsonObject args) throws Exception {
         saveAllDocuments();
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("reset");
@@ -659,7 +656,7 @@ final class GitToolHandler {
         return result.isEmpty() ? "Reset completed successfully." : result;
     }
 
-    String gitShow(JsonObject args) throws Exception {
+    String gitShow(com.google.gson.JsonObject args) throws Exception {
         List<String> gitArgs = new ArrayList<>();
         gitArgs.add("show");
 
@@ -678,7 +675,7 @@ final class GitToolHandler {
         return result;
     }
 
-    String getFileHistory(JsonObject args) throws Exception {
+    String getFileHistory(com.google.gson.JsonObject args) throws Exception {
         if (!args.has("path")) return ERROR_PATH_REQUIRED;
         String path = args.get("path").getAsString();
         int maxCount = args.has("max_count") ? args.get("max_count").getAsInt() : 20;
@@ -702,12 +699,12 @@ final class GitToolHandler {
     private void showNewCommitInLog() {
         if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
 
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 String fullHash = runGit("rev-parse", "HEAD").trim();
                 if (fullHash.length() != 40) return;
 
-                ApplicationManager.getApplication().invokeLater(() -> {
+                EdtUtil.invokeLater(() -> {
                     // Open the Git Log tool window
                     var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
                     var tw = twm.getToolWindow("Version Control");
@@ -745,7 +742,7 @@ final class GitToolHandler {
         }
         if (hash == null) return;
         String finalHash = hash;
-        ApplicationManager.getApplication().invokeLater(() -> {
+        EdtUtil.invokeLater(() -> {
             try {
                 PlatformApiCompat.showRevisionInLog(project, finalHash);
             } catch (Exception ignored) {
@@ -765,4 +762,5 @@ final class GitToolHandler {
             return PlatformApiCompat.runIdeGitCommand(project, args);
         }
     }
+
 }

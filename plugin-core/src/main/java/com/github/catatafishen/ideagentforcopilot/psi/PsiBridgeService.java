@@ -237,7 +237,7 @@ public final class PsiBridgeService implements Disposable {
         if (chatPanel != null) {
             java.util.concurrent.CompletableFuture<com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse> future =
                 new java.util.concurrent.CompletableFuture<>();
-            ApplicationManager.getApplication().invokeLater(() ->
+            EdtUtil.invokeLater(() ->
                 chatPanel.showPermissionRequest(reqId, displayName, argsJson, result -> {
                     future.complete(result);
                     return kotlin.Unit.INSTANCE;
@@ -255,7 +255,7 @@ public final class PsiBridgeService implements Disposable {
         } else {
             // Fallback: modal dialog when JCEF / chat panel is unavailable
             boolean[] result = {false};
-            ApplicationManager.getApplication().invokeAndWait(() -> {
+            EdtUtil.invokeAndWait(() -> {
                 String message = "<html><b>Allow: " + StringUtil.escapeXmlEntities(displayName) + "</b><br><br>"
                     + buildArgSummary(arguments) + "</html>";
                 int choice = Messages.showYesNoDialog(
