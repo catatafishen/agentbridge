@@ -43,6 +43,7 @@ class FileTools extends AbstractToolHandler {
     private static final String AUTO_FORMAT_SUFFIX = " (auto-format queued)";
     static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
     static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
+    private static final int MAX_READ_LINES = 2000;
 
     /**
      * Returns a label like "ui-reviewer", "claude-sonnet-4.5", or "Agent" as fallback.
@@ -124,7 +125,7 @@ class FileTools extends AbstractToolHandler {
 
             // Add directory marking hint for excluded/generated files
             String hint = getDirectoryMarkingHint(vf);
-            return hint != null ? hint + "\n" + content : content;
+            return applyReadHintAndTruncate(content, hint);
         });
 
         followFileIfEnabled(project, pathStr, startLine > 0 ? startLine : -1, endLine > 0 ? endLine : -1, HIGHLIGHT_READ, agentLabel(project) + " is reading");
@@ -153,6 +154,17 @@ class FileTools extends AbstractToolHandler {
             return "[generated – this file is auto-generated; prefer editing the source instead]";
         }
         return null;
+    }
+
+    private String applyReadHintAndTruncate(String content, String hint) {
+        String[] lines = content.split("\n", -1);
+        if (lines.length > MAX_READ_LINES) {
+            String truncated = String.join("\n", java.util.Arrays.copyOfRange(lines, 0, MAX_READ_LINES));
+            String header = "[Large file: " + lines.length + " lines total — showing first " + MAX_READ_LINES
+                + " lines. Use start_line/end_line to read specific sections.]\n";
+            return (hint != null ? hint + "\n" : "") + header + truncated;
+        }
+        return hint != null ? hint + "\n" + content : content;
     }
 
     private String extractLineRange(String content, int startLine, int endLine) {

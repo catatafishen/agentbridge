@@ -6,7 +6,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for pure utility methods in {@link ToolUtils} that do not require
@@ -70,6 +73,41 @@ class ToolUtilsTest {
         @Test
         void matchesDotLiteral() {
             assertFalse(ToolUtils.doesNotMatchGlob("file.java", "*.java"));
+        }
+    }
+
+    @Nested
+    @DisplayName("doesNotMatchGlob — path patterns")
+    class PathGlob {
+        @Test
+        void doubleStarMatchesAcrossSegments() {
+            // **/*.java should match any .java file regardless of depth
+            assertFalse(ToolUtils.doesNotMatchGlob("src/main/Foo.java", "**/*.java"));
+            assertFalse(ToolUtils.doesNotMatchGlob("src/main/java/com/example/Foo.java", "**/*.java"));
+        }
+
+        @Test
+        void srcDoubleStarMatchesInsideSrc() {
+            assertFalse(ToolUtils.doesNotMatchGlob("src/main/Foo.java", "src/**/*.java"));
+            assertFalse(ToolUtils.doesNotMatchGlob("src/test/FooTest.java", "src/**/*.java"));
+        }
+
+        @Test
+        void srcDoubleStarDoesNotMatchOutsideSrc() {
+            assertTrue(ToolUtils.doesNotMatchGlob("test/FooTest.java", "src/**/*.java"));
+        }
+
+        @Test
+        void simpleStarGlobMatchesFilenameOnly() {
+            // *.java has no path separator → matches only the filename portion
+            assertFalse(ToolUtils.doesNotMatchGlob("Foo.java", "*.java"));
+            assertFalse(ToolUtils.doesNotMatchGlob("src/Foo.java", "*.java"));
+        }
+
+        @Test
+        void doubleStarAtRootMatchesAtAnyDepth() {
+            assertFalse(ToolUtils.doesNotMatchGlob("a/b/c/file.txt", "**/file.txt"));
+            assertFalse(ToolUtils.doesNotMatchGlob("file.txt", "**/file.txt"));
         }
     }
 

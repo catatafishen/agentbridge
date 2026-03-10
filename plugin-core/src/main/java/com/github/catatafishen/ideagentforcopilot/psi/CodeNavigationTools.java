@@ -84,7 +84,7 @@ class CodeNavigationTools extends AbstractToolHandler {
             String relPath = relativize(basePath, vf.getPath());
             if (relPath == null) return true;
             if (!dir.isEmpty() && !relPath.startsWith(dir)) return true;
-            if (!pattern.isEmpty() && ToolUtils.doesNotMatchGlob(vf.getName(), pattern)) return true;
+            if (!pattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, pattern)) return true;
             String tag;
             if (fileIndex.isExcluded(vf)) {
                 tag = "excluded ";
@@ -318,22 +318,24 @@ class CodeNavigationTools extends AbstractToolHandler {
                               String filePattern, String basePath, List<String> results) {
         for (PsiReference ref : ReferencesSearch.search(definition, scope).findAll()) {
             if (results.size() >= 100) break;
-
-            PsiElement refEl = ref.getElement();
-            PsiFile file = refEl.getContainingFile();
-            if (file != null && file.getVirtualFile() != null
-                && (filePattern.isEmpty() || !ToolUtils.doesNotMatchGlob(file.getName(), filePattern))) {
-                Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
-                if (doc != null) {
-                    int line = doc.getLineNumber(refEl.getTextOffset()) + 1;
-                    String relPath = basePath != null
-                        ? relativize(basePath, file.getVirtualFile().getPath())
-                        : file.getVirtualFile().getPath();
-                    String lineText = ToolUtils.getLineText(doc, line - 1);
-                    results.add(String.format(FORMAT_LINE_REF, relPath, line, lineText));
-                }
-            }
+            String entry = buildReferenceEntry(ref, filePattern, basePath);
+            if (entry != null) results.add(entry);
         }
+    }
+
+    private String buildReferenceEntry(PsiReference ref, String filePattern, String basePath) {
+        PsiElement refEl = ref.getElement();
+        PsiFile file = refEl.getContainingFile();
+        if (file == null || file.getVirtualFile() == null) return null;
+        String relPath = basePath != null
+            ? relativize(basePath, file.getVirtualFile().getPath())
+            : file.getVirtualFile().getPath();
+        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern)) return null;
+        Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
+        if (doc == null) return null;
+        int line = doc.getLineNumber(refEl.getTextOffset()) + 1;
+        String lineText = ToolUtils.getLineText(doc, line - 1);
+        return String.format(FORMAT_LINE_REF, relPath, line, lineText);
     }
 
     void collectWordReferences(String symbol, GlobalSearchScope scope,
@@ -342,16 +344,16 @@ class CodeNavigationTools extends AbstractToolHandler {
             (element, offsetInElement) -> {
                 PsiFile file = element.getContainingFile();
                 if (file == null || file.getVirtualFile() == null) return true;
-                if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(file.getName(), filePattern))
+                String relPath = basePath != null
+                    ? relativize(basePath, file.getVirtualFile().getPath())
+                    : file.getVirtualFile().getPath();
+                if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern))
                     return true;
 
                 Document doc = FileDocumentManager.getInstance()
                     .getDocument(file.getVirtualFile());
                 if (doc != null) {
                     int line = doc.getLineNumber(element.getTextOffset()) + 1;
-                    String relPath = basePath != null
-                        ? relativize(basePath, file.getVirtualFile().getPath())
-                        : file.getVirtualFile().getPath();
                     String lineText = ToolUtils.getLineText(doc, line - 1);
                     String entry = String.format(FORMAT_LINE_REF, relPath, line, lineText);
                     if (!results.contains(entry)) results.add(entry);
@@ -385,18 +387,11 @@ class CodeNavigationTools extends AbstractToolHandler {
 
     // ---- search_text ----
 
-    private void searchFileForPattern(VirtualFile vf, String filePattern, java.util.regex.Pattern pattern,
-                                      String basePath, List<String> results, int maxResults) {
-        if (vf.isDirectory() || vf.getLength() > 1_000_000) return;
-        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(vf.getName(), filePattern)) return;
-
+    private void searchFileForPattern(VirtualFile vf, java.util.regex.Pattern pattern,
+                                      String relPath, List<String> results, int maxResults) {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return;
-
         String text = doc.getText();
-        String relPath = relativize(basePath, vf.getPath());
-        if (relPath == null) return;
-
         java.util.regex.Matcher matcher = pattern.matcher(text);
         while (matcher.find() && results.size() < maxResults) {
             int line = doc.getLineNumber(matcher.start()) + 1;
@@ -429,14 +424,31 @@ class CodeNavigationTools extends AbstractToolHandler {
         if (pattern == null) return "Error: invalid regex: " + query;
 
         List<String> results = new ArrayList<>();
+        int[] skippedLarge = {0};
         ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
         fileIndex.iterateContent(vf -> {
-            searchFileForPattern(vf, filePattern, pattern, basePath, results, maxResults);
+            if (vf.isDirectory()) return true;
+            String relPath = relativize(basePath, vf.getPath());
+            if (relPath == null) return true;
+            if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern)) return true;
+            if (vf.getLength() > 1_000_000) {
+                skippedLarge[0]++;
+                return results.size() < maxResults;
+            }
+            searchFileForPattern(vf, pattern, relPath, results, maxResults);
             return results.size() < maxResults;
         });
 
-        if (results.isEmpty()) return "No matches found for '" + query + "'";
-        return results.size() + " matches:\n" + String.join("\n", results);
+        StringBuilder sb = new StringBuilder();
+        if (results.isEmpty()) {
+            sb.append("No matches found for '").append(query).append("'");
+        } else {
+            sb.append(results.size()).append(" matches:\n").append(String.join("\n", results));
+        }
+        if (skippedLarge[0] > 0) {
+            sb.append("\n(").append(skippedLarge[0]).append(" file(s) >1 MB skipped)");
+        }
+        return sb.toString();
     }
 
     private java.util.regex.Pattern compileSearchPattern(String query, boolean isRegex, boolean caseSensitive) {

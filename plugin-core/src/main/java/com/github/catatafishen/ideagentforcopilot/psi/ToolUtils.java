@@ -113,9 +113,62 @@ public final class ToolUtils {
         return doc.getText().substring(start, end).trim();
     }
 
-    static boolean doesNotMatchGlob(String fileName, String pattern) {
-        String regex = pattern.replace(".", "\\.").replace("*", ".*").replace("?", ".");
-        return !fileName.matches(regex);
+    /**
+     * Returns true if the given path does NOT match the glob pattern.
+     * <p>
+     * Simple patterns (no {@code /} and no {@code **}) are matched against the
+     * <em>filename</em> only for backward compatibility (e.g. {@code *.java}, {@code *Test}).
+     * Path patterns (containing {@code /} or {@code **}) are matched against the full
+     * relative path using standard glob semantics:
+     * <ul>
+     *   <li>{@code **} — matches zero or more path segments (crosses {@code /})</li>
+     *   <li>{@code *}  — matches any characters within a single path segment (no {@code /})</li>
+     *   <li>{@code ?}  — matches exactly one non-separator character</li>
+     * </ul>
+     * Examples: {@code src/**}{@code /*.java} matches {@code src/main/Foo.java};
+     * {@code *.java} matches {@code Foo.java} (filename only).
+     */
+    static boolean doesNotMatchGlob(String path, String pattern) {
+        if (pattern.isEmpty()) return false;
+        String normalizedPath = path.replace('\\', '/');
+        boolean isPathPattern = pattern.contains("/") || pattern.contains("**");
+        String target = isPathPattern ? normalizedPath : lastSegment(normalizedPath);
+        return !globToRegex(pattern).matcher(target).matches();
+    }
+
+    private static String lastSegment(String path) {
+        int slash = path.lastIndexOf('/');
+        return slash >= 0 ? path.substring(slash + 1) : path;
+    }
+
+    private static java.util.regex.Pattern globToRegex(String glob) {
+        StringBuilder sb = new StringBuilder("^");
+        int len = glob.length();
+        int i = 0;
+        while (i < len) {
+            char c = glob.charAt(i);
+            if (c == '*' && i + 1 < len && glob.charAt(i + 1) == '*') {
+                sb.append(".*");
+                i += 2; // consume **
+                if (i < len && glob.charAt(i) == '/') {
+                    i++; // consume the slash after **
+                }
+            } else if (c == '*') {
+                sb.append("[^/]*");
+                i++;
+            } else if (c == '?') {
+                sb.append("[^/]");
+                i++;
+            } else if (".+^${}[]()|\\".indexOf(c) >= 0) {
+                sb.append('\\').append(c);
+                i++;
+            } else {
+                sb.append(c);
+                i++;
+            }
+        }
+        sb.append("$");
+        return java.util.regex.Pattern.compile(sb.toString());
     }
 
     static String fileType(String name) {
