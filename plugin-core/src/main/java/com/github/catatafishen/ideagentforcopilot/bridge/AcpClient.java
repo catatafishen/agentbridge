@@ -1144,6 +1144,7 @@ public class AcpClient implements Closeable {
             try {
                 response = future.get(120, java.util.concurrent.TimeUnit.SECONDS);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 LOG.info("ACP request_permission: ASK timed out / cancelled for " + toolId + " — denying");
                 response = PermissionResponse.DENY;
             } finally {

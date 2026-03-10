@@ -308,6 +308,7 @@ class TestTools extends AbstractToolHandler {
             try {
                 handler = handlerFuture.get(15, TimeUnit.SECONDS);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 disconnect.get().run();
                 return "Started tests via IntelliJ JUnit runner: " + configName
                     + "\nCould not capture process handle. Check the Run panel for results.";
@@ -448,6 +449,7 @@ class TestTools extends AbstractToolHandler {
             try {
                 handler = handlerFuture.get(15, TimeUnit.SECONDS);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 disconnect.get().run();
                 return "Started tests via IntelliJ JUnit runner: " + configName
                     + "\nCould not capture process handle. Check the Run panel for results.";
@@ -637,6 +639,7 @@ class TestTools extends AbstractToolHandler {
             try {
                 handler = handlerFuture.get(15, TimeUnit.SECONDS);
             } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 disconnect.get().run();
                 return "Started tests via Gradle run configuration: " + configName
                     + "\nCould not capture process handle. Check the Run panel for results.";

@@ -160,6 +160,7 @@ public final class MacroToolHandler implements ToolHandler {
         try {
             return result.get(5, TimeUnit.SECONDS);
         } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             return "Error opening file: " + e.getMessage();
         }
     }
