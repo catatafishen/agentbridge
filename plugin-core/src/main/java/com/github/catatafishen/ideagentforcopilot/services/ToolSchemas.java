@@ -606,6 +606,11 @@ public final class ToolSchemas {
             {"count", "integer", "Number of undo steps (default: 1). Each write + auto-format counts as 2 steps"}
         }, "path"));
 
+        m.put("redo", schema(new Object[][]{
+            {"path", "string", "Path to the file to redo changes on"},
+            {"count", "integer", "Number of redo steps (default: 1)"}
+        }, "path"));
+
         // ── Other ────────────────────────────────────────────────────────────
 
         m.put("get_chat_html", schema(new Object[][]{}));

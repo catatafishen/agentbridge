@@ -98,6 +98,7 @@ class FileTools extends AbstractToolHandler {
         register("rename_file", this::renameFile);
         register("move_file", this::moveFile);
         register("undo", this::undo);
+        register("redo", this::redo);
         register("reload_from_disk", this::reloadFromDisk);
     }
 
@@ -991,6 +992,50 @@ class FileTools extends AbstractToolHandler {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> performUndo(pathStr, count, resultFuture));
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private String redo(JsonObject args) throws Exception {
+        if (!args.has("path")) return ToolUtils.ERROR_PATH_REQUIRED;
+        String pathStr = args.get("path").getAsString();
+        int count = args.has("count") ? args.get("count").getAsInt() : 1;
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> performRedo(pathStr, count, resultFuture));
+        return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private void performRedo(String pathStr, int count, CompletableFuture<String> resultFuture) {
+        try {
+            VirtualFile vf = resolveVirtualFile(pathStr);
+            if (vf == null) {
+                resultFuture.complete(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+                return;
+            }
+            com.intellij.openapi.fileEditor.FileEditor fileEditor = findFileEditor(vf);
+            UndoManager undoManager = UndoManager.getInstance(project);
+            String result = executeRedoSteps(undoManager, fileEditor, count, pathStr);
+            resultFuture.complete(result);
+        } catch (Exception e) {
+            resultFuture.complete("Redo failed: " + e.getMessage());
+        }
+    }
+
+    private String executeRedoSteps(UndoManager undoManager, com.intellij.openapi.fileEditor.FileEditor fileEditor, int count, String pathStr) {
+        StringBuilder actions = new StringBuilder();
+        int redone = 0;
+        for (int i = 0; i < count; i++) {
+            if (!undoManager.isRedoAvailable(fileEditor)) break;
+            String actionName = PlatformApiCompat.getRedoActionName(undoManager, fileEditor);
+            undoManager.redo(fileEditor);
+            redone++;
+            if (!actions.isEmpty()) actions.append(", ");
+            actions.append(actionName != null && !actionName.isEmpty() ? actionName : "unknown");
+        }
+        if (redone == 0) {
+            return "Nothing to redo for " + pathStr;
+        }
+        FileDocumentManager.getInstance().saveAllDocuments();
+        return "Redid " + redone + " action(s) on " + pathStr + ": " + actions;
     }
 
     /**

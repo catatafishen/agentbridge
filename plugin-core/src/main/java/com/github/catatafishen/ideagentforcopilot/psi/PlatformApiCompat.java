@@ -67,6 +67,20 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Retrieves the name of the next redo action for a given file editor.
+     *
+     * <p><b>Why extracted:</b> Same generic-type annotation issue as
+     * {@link #getUndoActionName} — the {@code Pair} return type of
+     * {@code getRedoActionNameAndDescription()} triggers false-positive
+     * daemon errors between SDK versions.</p>
+     */
+    static @Nullable String getRedoActionName(
+        @NotNull com.intellij.openapi.command.undo.UndoManager undoManager,
+        @Nullable com.intellij.openapi.fileEditor.FileEditor fileEditor) {
+        return undoManager.getRedoActionNameAndDescription(fileEditor).first;
+    }
+
+    /**
      * Collects text from editor notification banners (e.g., "Some directories are not excluded").
      *
      * <p><b>Why extracted:</b> Three API calls on this path produce false-positive errors in the IDE:</p>

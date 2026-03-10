@@ -91,6 +91,8 @@ public final class ToolRegistry {
         new ToolEntry("delete_file", "Delete File", "Delete a file from the project via IntelliJ", Category.FILE, false, false, true),
         new ToolEntry("rename_file", "Rename File", "Rename a file in place without moving it to a different directory", Category.FILE, false, false, true),
         new ToolEntry("move_file", "Move File", "Move a file to a different directory", Category.FILE, false, false, true),
+        new ToolEntry("undo", "Undo", "Undo the last N edit actions on a file using IntelliJ's UndoManager", Category.FILE, false, false, true),
+        new ToolEntry("redo", "Redo", "Redo the last N undone actions on a file using IntelliJ's UndoManager", Category.FILE, false, false, true),
         new ToolEntry("reload_from_disk", "Reload from Disk", "Force IntelliJ to refresh a file or directory from disk, picking up changes made by external tools", Category.FILE, false, false, true),
         new ToolEntry("open_in_editor", "Open in Editor", "Open a file in the editor, optionally navigating to a specific line", Category.FILE, false, false, true),
         new ToolEntry("show_diff", "Show Diff", "Show a diff viewer comparing a file to proposed content or another file", Category.FILE, false, false, false),
