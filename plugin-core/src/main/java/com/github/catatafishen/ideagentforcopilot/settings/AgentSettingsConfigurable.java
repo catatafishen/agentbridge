@@ -50,15 +50,15 @@ public final class AgentSettingsConfigurable implements Configurable {
         maxToolCallsSpinner.setMaximumSize(spinnerSize);
 
         mainPanel = FormBuilder.createFormBuilder()
-                .addComponent(new JBLabel("<html>Settings for the <b>" + agentName + "</b> agent. "
-                        + "Switch agents by disconnecting and reconnecting from the Connect screen.</html>"))
-                .addSeparator()
-                .addLabeledComponent("Prompt timeout (seconds):", timeoutSpinner)
-                .addTooltip("Time before an inactive agent session is considered timed out (30\u20133600).")
-                .addLabeledComponent("Max tool calls per turn:", maxToolCallsSpinner)
-                .addTooltip("Limit how many tools the agent can call in a single turn. 0 = unlimited.")
-                .addComponentFillVertically(new JPanel(), 0)
-                .getPanel();
+            .addComponent(new JBLabel("<html>Settings for the <b>" + agentName + "</b> agent. "
+                + "Switch agents by disconnecting and reconnecting from the Connect screen.</html>"))
+            .addSeparator()
+            .addLabeledComponent("Prompt timeout (seconds):", timeoutSpinner)
+            .addTooltip("Time before an inactive agent session is considered timed out (30\u20133600).")
+            .addLabeledComponent("Max tool calls per turn:", maxToolCallsSpinner)
+            .addTooltip("Limit how many tools the agent can call in a single turn. 0 = unlimited.")
+            .addComponentFillVertically(new JPanel(), 0)
+            .getPanel();
         mainPanel.setBorder(JBUI.Borders.empty(8));
 
         reset();
