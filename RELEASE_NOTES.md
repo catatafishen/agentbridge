@@ -1,5 +1,73 @@
 # Release Notes
 
+## 1.12.0
+
+### Renamed to AgentBridge
+The plugin is now called **AgentBridge** — reflecting its evolution from a Copilot-specific
+integration into a general-purpose ACP & MCP bridge for any AI coding agent.
+
+### Multi-Agent Support
+Connect any ACP-compatible agent — including GitHub Copilot, opencode, and custom configurations:
+- Agent profile selector in the connection panel — switch agents with one click
+- Per-profile settings: connection command, tool permissions, built-in tool blocking, custom instructions
+- Built-in profiles for GitHub Copilot and opencode, plus fully custom profiles
+- Agent and sub-agent names shown in chat bubble headers
+- Profile-specific message coloring in chat
+
+### Comprehensive Settings UI
+Settings reorganized into structured sections:
+- **MCP** — Server configuration and individual tool enable/disable
+- **ACP** — Agent settings, profiles, and tool permissions
+- **Other** — Scratch file types, project files, and billing data
+- Plugin version and build info shown in the settings page footer and root connection panel
+
+### New MCP Tools (92 total)
+- `undo` / `redo` — undo and redo file changes
+- `edit_text` — surgical find-and-replace within a file
+- `rename_file` / `move_file` — file renaming and moving via IntelliJ VFS
+- `find_implementations` — find all implementations of a class/interface or method overrides
+- `get_call_hierarchy` — find all callers of a method
+- `get_file_history` — git history for a specific file (including renames)
+- `read_build_output` — read from the Build tool window
+- `list_terminals` / `read_terminal_output` — terminal tab management
+- `list_project_files` now supports sorting, size filters, and date filters
+
+### Permission System
+- Three-way permission prompt: Deny / Allow / Allow for Session
+- MCP tool annotations for granular permission control
+- Sub-agent built-in write tools automatically blocked via permission denial
+- Agent-level permission injection per profile
+
+### Follow Agent Mode Improvements
+- Status bar feedback during search operations
+- `build_project` no longer steals editor focus when Follow Agent is off
+
+### MCP Instructions
+Plugin instructions are now sent via the MCP `initialize` response, with a fallback to
+`copilot-instructions.md` for agents that don't support it.
+
+### Code Quality
+- Gradle compile abuse detection — prevents runaway compilation tasks
+- Extensive SonarQube finding fixes across the codebase
+- Reduced cognitive complexity in core tool handlers
+- Extracted QodanaAnalyzer from CodeQualityTools for better separation
+
+### UI Cleanup
+- Removed debug, timeline, and help panels — cleaner tool window
+- Version number shown on the root connection panel and settings page
+
+### Bug Fixes
+- Profile names no longer gain "(Copy)" suffix on every settings open
+- MCP tools now work during modal dialogs
+- Fixed paste-to-scratch file bugs
+- Fixed `git_reset` path+commit handling
+- Fixed `read_run_output` for Gradle consoles and JUnit runners
+- Fixed backtick escaping in chat messages
+- Fixed .kts file type misclassification
+- Fixed missing imports in several files
+
+---
+
 ## 1.5.0
 
 ### Follow Agent Mode
@@ -43,6 +111,8 @@ Java-specific code isolated so the plugin can run in WebStorm, PyCharm, and othe
 - Graceful handling of Copilot process crashes
 - Chat saved incrementally during streaming
 - Reduced rendering artifacts during streaming
+
+---
 
 ## 1.0.0 — Initial Release
 

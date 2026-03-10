@@ -19,7 +19,7 @@ import java.awt.*;
 public final class PluginSettingsConfigurable implements Configurable {
 
     public static final String ID = "com.github.catatafishen.ideagentforcopilot.settings";
-    public static final String DISPLAY_NAME = "IDE Agent for Copilot";
+    public static final String DISPLAY_NAME = "AgentBridge";
 
     private final Project project;
 

@@ -69,7 +69,7 @@ CLAUDE.md
 .settings/
 
 # Stale root-level plugin metadata (real one lives in plugin-core/src/main/resources/META-INF/)
-META-INF/
+/META-INF/
 
 qodana.yaml
 .sandbox-plugins/

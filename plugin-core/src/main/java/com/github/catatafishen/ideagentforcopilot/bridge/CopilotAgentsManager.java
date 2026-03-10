@@ -26,7 +26,7 @@ public final class CopilotAgentsManager {
     private static final Logger LOG = Logger.getInstance(CopilotAgentsManager.class);
 
     private static final String SENTINEL =
-            "<!-- Deployed by IDE Agent for Copilot — edits are preserved, delete to stop auto-deploy -->";
+            "<!-- Deployed by AgentBridge — edits are preserved, delete to stop auto-deploy -->";
 
     private static final String[] BUNDLED_AGENTS = {"ide-explore.md"};
 

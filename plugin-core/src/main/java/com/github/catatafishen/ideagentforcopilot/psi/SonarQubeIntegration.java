@@ -123,7 +123,7 @@ final class SonarQubeIntegration {
         EdtUtil.invokeLater(() -> {
             try {
                 var frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project);
-                ActionManager.getInstance().tryToExecute(action, null, frame, "IDE Agent for Copilot", true);
+                ActionManager.getInstance().tryToExecute(action, null, frame, "AgentBridge", true);
                 future.complete(true);
             } catch (Exception e) {
                 LOG.warn("Failed to trigger SonarLint action: " + actionId, e);

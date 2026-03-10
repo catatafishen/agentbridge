@@ -1,20 +1,27 @@
 <idea-plugin require-restart="false">
   <id>com.github.catatafishen.ideagentforcopilot</id>
-  <name>IDE Agent for Copilot</name>
+  <name>AgentBridge</name>
   <vendor email="henrik@westergard.org" url="https://github.com/catatafishen/ide-agent-for-copilot">
-    IDE Agent for Copilot Contributors
+    AgentBridge Contributors
   </vendor>
 
   <category>AI Assistant</category>
 
   <description><![CDATA[
-    <p><b>IDE Agent for Copilot</b> gives GitHub Copilot deep integration with your JetBrains IDE.
-    Instead of working through a terminal or generating diffs in isolation, the agent operates through
-    the same tools you use &mdash; IntelliJ inspections, refactorings, the built-in test runner,
-    the Gradle/Maven build system, and the IDE's Git interface.</p>
+    <p><b>AgentBridge</b> &mdash; ACP &amp; MCP bridge connecting AI coding agents to your JetBrains IDE
+    through <b>92 native MCP tools</b>.</p>
+
+    <p>Instead of operating through a terminal or generating diffs in isolation, agents work through
+    IntelliJ inspections, refactorings, the test runner, the build system, and Git &mdash; the same
+    tools you use.</p>
+
+    <h3>Multi-Agent Support</h3>
+    <p>Connect any ACP-compatible agent &mdash; including GitHub Copilot, opencode, and custom
+    configurations. Switch between agent profiles instantly, each with its own connection settings,
+    tool permissions, and instructions.</p>
 
     <h3>Real IDE Integration, Not Just a Shell</h3>
-    <p>Other coding agents can build, test, and use Git. This plugin does it through native JetBrains
+    <p>Other coding agents can build, test, and use Git. AgentBridge does it through native JetBrains
     platform APIs &mdash; keeping you in the loop with visible, reviewable actions:</p>
     <ul>
         <li><b>Inspections &amp; quick-fixes</b> &mdash; the agent sees the same warnings you see and can apply IDE-suggested fixes</li>
@@ -22,14 +29,16 @@
         <li><b>Test runner</b> &mdash; executes tests in the IDE's Run panel so you can watch results live</li>
         <li><b>Build tools</b> &mdash; triggers incremental builds through IntelliJ, not a blind <code>gradle build</code></li>
         <li><b>Git operations</b> &mdash; commits, diffs, and branches through the IDE's VCS layer with full editor buffer awareness</li>
-        <li><b>Code navigation</b> &mdash; go-to-declaration, find references, type hierarchy &mdash; using the IDE's semantic index</li>
+        <li><b>Code navigation</b> &mdash; go-to-declaration, find references, type hierarchy, call hierarchy &mdash; using the IDE's semantic index</li>
+        <li><b>Static analysis</b> &mdash; Qodana, SonarQube, and IntelliJ inspections available as agent tools</li>
     </ul>
     <p>Every action is visible in the IDE. Nothing happens behind your back.</p>
 
     <h3>Human in the Loop</h3>
     <p>The agent works <em>with</em> you, not around you. You see every file change in the editor,
     every test result in the Run panel, every Git operation in the VCS log. You can pause, review,
-    undo, or redirect at any point. It's pair programming with an agent that speaks IntelliJ.</p>
+    undo, or redirect at any point. Fine-grained per-tool permissions let you control exactly what
+    the agent can do.</p>
 
     <h3>Works for Tasks of Any Size</h3>
     <ul>
@@ -43,24 +52,98 @@
     <ul>
         <li>No telemetry or data collection</li>
         <li>All operations executed locally inside your IDE</li>
-        <li>Your code never leaves your environment except through Copilot itself</li>
+        <li>Your code never leaves your environment except through the connected agent</li>
     </ul>
 
     <h3>Requirements</h3>
     <ul>
-        <li>A supported JetBrains IDE (IntelliJ IDEA, WebStorm, PyCharm, GoLand, etc.)</li>
-        <li>GitHub Copilot CLI installed and authenticated</li>
-        <li>An active GitHub Copilot subscription</li>
+        <li>A supported JetBrains IDE (IntelliJ IDEA, WebStorm, PyCharm, GoLand, etc.) version 2025.3+</li>
+        <li>An ACP-compatible agent CLI (e.g., GitHub Copilot CLI, opencode)</li>
     </ul>
 
     <h3>Open Source</h3>
     <p>Apache 2.0 License &mdash;
     <a href="https://github.com/catatafishen/ide-agent-for-copilot">github.com/catatafishen/ide-agent-for-copilot</a></p>
 
-    <p><em>This plugin is an independent open-source project and is not affiliated with or endorsed by GitHub or JetBrains.</em></p>
+    <p><em>This plugin is an independent open-source project and is not affiliated with or endorsed by GitHub, Anthropic, or JetBrains.</em></p>
     ]]></description>
 
   <change-notes><![CDATA[
+    <h3>1.12.0</h3>
+
+    <h4>Multi-Agent Support</h4>
+    <p>AgentBridge is no longer limited to a single agent. Configure and switch between multiple agents:</p>
+    <ul>
+        <li>Agent profile selector in the connection panel &mdash; switch agents with one click</li>
+        <li>Per-profile settings: connection command, tool permissions, built-in tool blocking, custom instructions</li>
+        <li>Built-in profiles for GitHub Copilot and opencode, plus fully custom profiles</li>
+        <li>Agent and sub-agent names shown in chat bubble headers</li>
+        <li>Profile-specific message coloring in chat</li>
+    </ul>
+
+    <h4>Comprehensive Settings UI</h4>
+    <p>Settings reorganized into structured sections:</p>
+    <ul>
+        <li><b>MCP</b> &mdash; Server configuration and individual tool enable/disable</li>
+        <li><b>ACP</b> &mdash; Agent settings, profiles, and tool permissions</li>
+        <li><b>Other</b> &mdash; Scratch file types, project files, and billing data</li>
+        <li>Plugin version and build info shown in the settings page footer</li>
+    </ul>
+
+    <h4>New MCP Tools (92 total)</h4>
+    <ul>
+        <li><code>undo</code> / <code>redo</code> &mdash; undo and redo file changes</li>
+        <li><code>edit_text</code> &mdash; surgical find-and-replace within a file</li>
+        <li><code>rename_file</code> / <code>move_file</code> &mdash; file renaming and moving via IntelliJ VFS</li>
+        <li><code>find_implementations</code> &mdash; find all implementations of a class/interface or method overrides</li>
+        <li><code>get_call_hierarchy</code> &mdash; find all callers of a method</li>
+        <li><code>get_file_history</code> &mdash; git history for a specific file (including renames)</li>
+        <li><code>read_build_output</code> &mdash; read from the Build tool window</li>
+        <li><code>list_terminals</code> / <code>read_terminal_output</code> &mdash; terminal tab management</li>
+        <li><code>list_project_files</code> now supports sorting, size filters, and date filters</li>
+    </ul>
+
+    <h4>Permission System</h4>
+    <ul>
+        <li>Three-way permission prompt: Deny / Allow / Allow for Session</li>
+        <li>MCP tool annotations for granular permission control</li>
+        <li>Sub-agent built-in write tools automatically blocked via permission denial</li>
+        <li>Agent-level permission injection per profile</li>
+    </ul>
+
+    <h4>Follow Agent Mode Improvements</h4>
+    <ul>
+        <li>Status bar feedback during search operations</li>
+        <li><code>build_project</code> no longer steals editor focus when Follow Agent is off</li>
+    </ul>
+
+    <h4>MCP Instructions</h4>
+    <p>Plugin instructions are now sent via the MCP <code>initialize</code> response, with a fallback to
+    <code>copilot-instructions.md</code> for agents that don't support it.</p>
+
+    <h4>Code Quality</h4>
+    <ul>
+        <li>Gradle compile abuse detection &mdash; prevents runaway compilation tasks</li>
+        <li>Extensive SonarQube finding fixes across the codebase</li>
+        <li>Reduced cognitive complexity in core tool handlers</li>
+    </ul>
+
+    <h4>UI Cleanup</h4>
+    <ul>
+        <li>Removed debug, timeline, and help panels &mdash; cleaner tool window</li>
+        <li>Version number shown on the root connection panel and settings page</li>
+    </ul>
+
+    <h4>Bug Fixes</h4>
+    <ul>
+        <li>Profile names no longer gain "(Copy)" suffix on every settings open</li>
+        <li>MCP tools now work during modal dialogs</li>
+        <li>Fixed paste-to-scratch file bugs</li>
+        <li>Fixed <code>git_reset</code> path+commit handling</li>
+        <li>Fixed <code>read_run_output</code> for Gradle consoles and JUnit runners</li>
+        <li>Fixed backtick escaping in chat messages</li>
+    </ul>
+
     <h3>1.5.0</h3>
 
     <h4>Follow Agent Mode</h4>
@@ -75,14 +158,14 @@
     <h4>Redesigned Chat UI</h4>
     <p>Chat now looks and feels native to JetBrains:</p>
     <ul>
-        <li>JetBrains-style markdown — tables, accent-bordered code blocks, heading hierarchy, blockquote support</li>
-        <li>Quick-reply buttons — clickable suggestions with semantic colors and dismiss support</li>
-        <li>Code block enhancements — language labels, "Open in Scratch" button, word wrap toggle</li>
-        <li>Native Swing banners — status/auth/git banners use JetBrains InlineBanner</li>
+        <li>JetBrains-style markdown &mdash; tables, accent-bordered code blocks, heading hierarchy, blockquote support</li>
+        <li>Quick-reply buttons &mdash; clickable suggestions with semantic colors and dismiss support</li>
+        <li>Code block enhancements &mdash; language labels, "Open in Scratch" button, word wrap toggle</li>
+        <li>Native Swing banners &mdash; status/auth/git banners use JetBrains InlineBanner</li>
     </ul>
 
     <h4>Scratch File Execution</h4>
-    <p>Run code directly from chat — Java, JavaScript, TypeScript, Kotlin Script, Groovy, and Python scratch files.</p>
+    <p>Run code directly from chat &mdash; Java, JavaScript, TypeScript, Kotlin Script, Groovy, and Python scratch files.</p>
 
     <h4>Project Structure Management</h4>
     <p>New tool to manage module dependencies, libraries, and SDKs programmatically.</p>
@@ -100,8 +183,8 @@
 
     <h4>Theme and Terminal Tools</h4>
     <ul>
-        <li>list_themes / set_theme — agent can switch your IDE theme</li>
-        <li>write_terminal_input — agent can interact with terminal sessions</li>
+        <li>list_themes / set_theme &mdash; agent can switch your IDE theme</li>
+        <li>write_terminal_input &mdash; agent can interact with terminal sessions</li>
     </ul>
 
     <h4>Multi-IDE Compatibility</h4>
@@ -115,10 +198,10 @@
         <li>Reduced rendering artifacts during streaming</li>
     </ul>
 
-    <h3>1.0.0 — Initial Release</h3>
+    <h3>1.0.0 &mdash; Initial Release</h3>
     <ul>
         <li>Introduces IDE Agent for Copilot</li>
-        <li><b>Dynamic model discovery</b> — automatically supports all Copilot models without plugin updates</li>
+        <li><b>Dynamic model discovery</b> &mdash; automatically supports all Copilot models without plugin updates</li>
         <li>Enables multi-step task execution inside the IDE</li>
         <li>Project navigation and context awareness</li>
         <li>Multi-file editing capabilities</li>
@@ -148,7 +231,7 @@
     <iconMapper mappingFile="CopilotBridgeIconMappings.json"/>
 
     <!-- Tool Window -->
-    <toolWindow id="IDE Agent for Copilot"
+    <toolWindow id="AgentBridge"
                 secondary="false"
                 anchor="right"
                 icon="/icons/copilot.svg"
@@ -180,12 +263,12 @@
       serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.McpHttpServer"/>
 
-    <!-- Settings: IDE Agent for Copilot (root) -->
+    <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
       parentId="tools"
       instance="com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.settings"
-      displayName="IDE Agent for Copilot"/>
+      displayName="AgentBridge"/>
 
     <!-- ── MCP section ── -->
     <projectConfigurable
@@ -260,8 +343,8 @@
     <postStartupActivity
       implementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeStartup"/>
 
-    <!-- Notification Group for Copilot status messages -->
-    <notificationGroup id="Copilot Notifications" displayType="STICKY_BALLOON"/>
+    <!-- Notification Group for status messages -->
+    <notificationGroup id="AgentBridge Notifications" displayType="STICKY_BALLOON"/>
 
     <!-- Project View decorator showing agent file access (read/edited) -->
     <projectViewNodeDecorator

@@ -404,7 +404,7 @@ class AgenticCopilotToolWindowContent(
     private fun createPsiBridgeBanner(): com.intellij.ui.InlineBanner {
         val banner = com.intellij.ui.InlineBanner(
             "IntelliJ code tools unavailable \u2014 PSI bridge is not running. " +
-                "Make sure a project is open and the IDE Agent for Copilot plugin is active, then restart IntelliJ.",
+                "Make sure a project is open and the AgentBridge plugin is active, then restart IntelliJ.",
             com.intellij.ui.EditorNotificationPanel.Status.Warning
         )
         banner.isVisible = false
@@ -1093,7 +1093,7 @@ class AgenticCopilotToolWindowContent(
 
     /** Toolbar button that opens the plugin settings. */
     private inner class SettingsAction : AnAction(
-        "Settings", "Open IDE Agent for Copilot settings",
+        "Settings", "Open AgentBridge settings",
         AllIcons.General.Settings
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -2047,12 +2047,12 @@ class AgenticCopilotToolWindowContent(
         // Balloon attached to the Copilot tool window tab (same style as build/test notifications)
         com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
             .notifyByBalloon(
-                "IDE Agent for Copilot",
+                "AgentBridge",
                 com.intellij.openapi.ui.MessageType.INFO,
                 "<b>$title</b><br>$content"
             )
         // OS-native notification with sound
-        com.intellij.ui.SystemNotifications.getInstance().notify("Copilot Notifications", title, content)
+        com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
         // Flash the taskbar icon
         com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
     }
@@ -2060,15 +2060,15 @@ class AgenticCopilotToolWindowContent(
     private fun notifyPermissionRequestIfUnfocused(toolName: String) {
         val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
         if (frame.isActive) return
-        val title = "Copilot needs approval"
+        val title = "Agent needs approval"
         val content = "Permission requested for: $toolName"
         com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
             .notifyByBalloon(
-                "IDE Agent for Copilot",
+                "AgentBridge",
                 com.intellij.openapi.ui.MessageType.WARNING,
                 "<b>$title</b><br>$content"
             )
-        com.intellij.ui.SystemNotifications.getInstance().notify("Copilot Notifications", title, content)
+        com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
         com.intellij.ui.AppIcon.getInstance().requestAttention(project, true)
     }
 

@@ -1,8 +1,8 @@
-# IDE Agent for Copilot — Features
+# AgentBridge — Features
 
-> **83 tools** across 10 categories — the most comprehensive AI agent integration for JetBrains IDEs.
+> **92 tools** across 12 categories — the most comprehensive AI agent integration for JetBrains IDEs.
 
-IDE Agent for Copilot connects GitHub Copilot's agentic mode directly to IntelliJ's internal APIs.
+AgentBridge connects ACP-compatible AI agents directly to IntelliJ's internal APIs.
 Every file edit, refactoring, inspection, and git operation goes through IntelliJ's own engine — not
 raw file I/O — so undo, formatting, indexing, and VCS all work correctly.
 
@@ -17,11 +17,16 @@ same way you do.
 - **`search_text`** — Search text or regex patterns across all project files (reads from editor buffers, always
   up-to-date)
 - **`find_references`** — Find all usages of any symbol across the project
+- **`find_implementations`** — Find all implementations of a class/interface or overrides of a method
+- **`get_call_hierarchy`** — Find all callers of a method with file paths and line numbers
 - **`go_to_declaration`** — Jump to the declaration of a symbol
 - **`get_file_outline`** — Get file structure — classes, methods, fields with line numbers
 - **`get_class_outline`** — Get the full API of any class by fully qualified name (works on project, library, and JDK
   classes)
 - **`get_type_hierarchy`** — Show supertypes and subtypes of any class or interface
+- **`get_documentation`** — Retrieve Javadoc/KDoc for any symbol by fully qualified name
+- **`download_sources`** — Download library source JARs for navigation and debugging
+- **`list_project_files`** — List files with sorting, size filters, and date filters
 
 ---
 
@@ -49,16 +54,19 @@ All file operations go through IntelliJ's Document API and Virtual File System �
 undoable, auto-formatted, and instantly visible in the editor.
 
 - **`intellij_read_file`** — Read file content from IntelliJ's editor buffer (always reflects unsaved changes)
-- **`intellij_write_file`** — Write or edit files with three modes: full replace, find-and-replace (`old_str`/
-  `new_str`), or line-range replace
+- **`intellij_write_file`** — Write full file content or create a new file
+- **`edit_text`** — Surgical find-and-replace within a file (exact string matching)
 - **`create_file`** — Create a new file registered in IntelliJ's VFS
 - **`delete_file`** — Delete a file from the project
+- **`rename_file`** — Rename a file in place without moving it
+- **`move_file`** — Move a file to a different directory
 - **`reload_from_disk`** — Refresh IntelliJ's VFS to pick up external changes
 - **`open_in_editor`** — Open a file in the editor, optionally at a specific line
 - **`show_diff`** — Open IntelliJ's diff viewer to compare current content with proposed changes
 - **`undo`** — Undo the last edit operation (each write + auto-format = 2 undo steps)
+- **`redo`** — Redo previously undone edits
 
-**Key behavior:** Built-in Copilot CLI file edits are automatically intercepted and redirected
+**Key behavior:** Built-in agent file edits are automatically intercepted and redirected
 through `intellij_write_file` — so you always get proper undo, formatting, and no
 "file changed externally" dialogs.
 
@@ -70,7 +78,6 @@ Structural refactoring operations powered by IntelliJ's refactoring engine — s
 update all references, extract method with proper scope analysis, and more.
 
 - **`refactor`** — Perform rename, extract method, inline, or safe-delete operations
-- **`get_documentation`** — Retrieve Javadoc/KDoc for any symbol by fully qualified name
 
 ### Symbol-Level Editing
 
@@ -101,8 +108,8 @@ Access project structure, trigger builds, and manage source roots.
 - **`build_project`** — Trigger incremental compilation of the project or a specific module
 - **`get_project_info`** — Get project name, SDK, modules, IDE version, and OS info
 - **`get_indexing_status`** — Check if IntelliJ indexing is in progress (can block until finished)
-- **`download_sources`** — Download library source JARs for navigation and debugging
 - **`mark_directory`** — Mark a directory as source root, test root, resources, excluded, or generated
+- **`edit_project_structure`** — Manage module dependencies, libraries, and SDKs
 
 ---
 
@@ -144,6 +151,7 @@ conversation.
 - **`git_tag`** — List, create, or delete tags
 - **`git_reset`** — Reset HEAD to a specific commit (soft, mixed, or hard)
 - **`git_revert`** — Revert a commit (with optional no-commit mode)
+- **`get_file_history`** — Get commit history for a specific file (including renames)
 
 ---
 
@@ -155,7 +163,9 @@ Run shell commands with output capture, or use IntelliJ's integrated terminal.
 - **`run_in_terminal`** — Run a command in IntelliJ's integrated terminal
 - **`write_terminal_input`** — Send text or keystrokes to a running terminal session (e.g. answer prompts, send Ctrl-C)
 - **`read_terminal_output`** — Read output from a terminal tab
+- **`list_terminals`** — List active terminal tabs
 - **`read_run_output`** — Read output from a Run panel tab
+- **`read_build_output`** — Read output from the Build tool window
 
 ---
 
@@ -168,13 +178,15 @@ Access the editor state, create scratch files for quick prototyping, and inspect
 - **`create_scratch_file`** — Create a scratch file with any extension and content
 - **`list_scratch_files`** — List all existing scratch files
 - **`run_scratch_file`** — Execute a scratch file. Works reliably with Kotlin Script (.kts), Java (.java — filename must match class name), Groovy (.groovy), and JavaScript (.js). TypeScript (.ts) needs Node 22.6+ or tsx. Python (.py) needs the Python plugin.
+- **`list_themes`** / **`set_theme`** — List available IDE themes or switch themes
 - **`get_chat_html`** — Retrieve the live DOM of the chat panel (for debugging)
+- **`search_conversation_history`** — Search and recall past conversations across sessions
 
 ---
 
 ## Infrastructure
 
-Plugin management, HTTP requests, and IDE diagnostics.
+HTTP requests, IDE diagnostics, and notification access.
 
 - **`http_request`** — Make HTTP requests (GET, POST, PUT, PATCH, DELETE) to any URL
 - **`read_ide_log`** — Read recent IDE log entries with optional level and text filtering
@@ -189,10 +201,22 @@ The chat interface is a full-featured agent console built on JCEF (Chromium).
 - **Streaming markdown** with syntax-highlighted code blocks
 - **Context attachments** — attach files, selections, and symbols to prompts
 - **Plan visualization** — tree view of agent steps with real-time progress indicators
-- **Timeline view** — reasoning steps, tool calls, and sub-agent activity
 - **Quick-reply buttons** for fast follow-up responses
 - **Conversation history** maintained across IDE sessions
 - **Export** — save conversations for reference
+- **Sub-agent names** shown in chat bubble headers
+- **Profile-specific coloring** for agent messages
+
+---
+
+## Multi-Agent Support
+
+Connect any ACP-compatible agent and switch between profiles instantly.
+
+- **Agent profiles** — Built-in profiles for GitHub Copilot and opencode, plus fully custom profiles
+- **Per-profile settings** — Connection command, tool permissions, built-in tool blocking, custom instructions
+- **Agent selector** — Switch agents with one click from the connection panel
+- **Extensible** — Add new agent backends by implementing `AgentConfig` + `AgentSettings` interfaces
 
 ---
 
@@ -200,11 +224,13 @@ The chat interface is a full-featured agent console built on JCEF (Chromium).
 
 Fine-grained control over what the agent can do.
 
-- **Per-tool permissions** — Allow, Ask, or Deny for each of the 83 tools
-- **Path-based rules** — different permissions for project files vs. files outside the project
-- **Built-in edit interception** — Copilot CLI file edits are redirected through IntelliJ's document API so every change
+- **Per-tool permissions** — Allow, Ask, or Deny for each of the 92 tools
+- **Three-way prompts** — Deny / Allow / Allow for Session
+- **Path-based rules** — Different permissions for project files vs. files outside the project
+- **Built-in edit interception** — Agent CLI file edits are redirected through IntelliJ's document API so every change
   is undoable
-- **Settings panel** — enable/disable individual tools and configure permissions visually
+- **Sub-agent write blocking** — Built-in write tools automatically denied for sub-agents
+- **Settings panel** — Enable/disable individual tools and configure permissions visually
 
 ---
 
@@ -212,27 +238,14 @@ Fine-grained control over what the agent can do.
 
 Choose the right model for the task and track usage in real time.
 
-- **Multiple model families** — Claude (Sonnet, Opus, Haiku), GPT (5.x, Codex), Gemini
-- **Real-time billing graph** — live cost estimates and monthly cycle tracking
-- **Usage multipliers** — see per-model cost multipliers before selecting
-- **One-click model switching** — change models mid-conversation
-
----
-
-## Sub-Agents
-
-Specialized agents that run in parallel for focused tasks.
-
-- **Explore** — Fast codebase exploration and question answering
-- **Task** — Execute commands (builds, tests, lints) with clean output
-- **General-purpose** — Complex multi-step tasks with full tool access
-- **Code Review** — High signal-to-noise code review — only surfaces real issues
+- **Real-time billing graph** — Live cost estimates and monthly cycle tracking for Copilot
+- **Usage multipliers** — See per-model cost multipliers before selecting
+- **One-click model switching** — Change models mid-conversation
 
 ---
 
 ## Requirements
 
-- **GitHub Copilot subscription** (Individual, Business, or Enterprise)
-- **Copilot CLI** installed and authenticated (`gh copilot` or standalone)
-- **IntelliJ IDEA 2025.1** or later (compatible through 2025.3)
+- **An ACP-compatible agent CLI** (e.g., GitHub Copilot CLI, opencode)
+- **IntelliJ IDEA 2025.3** or later (compatible with any JetBrains IDE)
 - **Java 21+** runtime

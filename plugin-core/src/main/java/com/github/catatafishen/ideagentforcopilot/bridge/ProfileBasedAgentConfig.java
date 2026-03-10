@@ -49,7 +49,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull String getNotificationGroupId() {
-        return "Copilot Notifications";
+        return "AgentBridge Notifications";
     }
 
     @Override

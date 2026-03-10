@@ -130,7 +130,7 @@ class AcpConnectPanel(
         add(scrollPane, BorderLayout.CENTER)
 
         val versionLabel = JBLabel(
-            "IDE Agent for Copilot ${com.github.catatafishen.ideagentforcopilot.BuildInfo.getVersion()}"
+            "AgentBridge ${com.github.catatafishen.ideagentforcopilot.BuildInfo.getVersion()}"
         ).apply {
             foreground = JBUI.CurrentTheme.Label.disabledForeground()
             font = JBUI.Fonts.smallFont()

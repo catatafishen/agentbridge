@@ -13,11 +13,11 @@ public final class AgenticCopilotService implements Disposable {
     private static final Logger LOG = Logger.getInstance(AgenticCopilotService.class);
 
     public AgenticCopilotService() {
-        LOG.info("IDE Agent for Copilot Service initialized");
+        LOG.info("AgentBridge Service initialized");
     }
 
     @Override
     public void dispose() {
-        LOG.info("IDE Agent for Copilot Service disposed");
+        LOG.info("AgentBridge Service disposed");
     }
 }
