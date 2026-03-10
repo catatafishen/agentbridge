@@ -5,8 +5,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Registry of all tools the agent can use, both built-in Copilot CLI tools
- * (which cannot be disabled due to ACP bug #556) and MCP tools we provide.
+ * Registry of all tools the agent can use, both built-in agent tools
+ * and MCP tools we provide via IntelliJ.
  */
 public final class ToolRegistry {
 
@@ -39,7 +39,8 @@ public final class ToolRegistry {
         public final String description;
         public final Category category;
         /**
-         * True = Copilot CLI injects this tool; we cannot disable it (ACP bug #556).
+         * True = agent built-in tool; excluded via excludedTools in session/new for agents that
+         * support it (e.g. OpenCode). Cannot be disabled in Copilot CLI (ACP bug #556).
          */
         public final boolean isBuiltIn;
         /**
@@ -66,23 +67,26 @@ public final class ToolRegistry {
     }
 
     private static final List<ToolEntry> ALL_TOOLS = Collections.unmodifiableList(Arrays.asList(
-        // ── Built-in CLI tools (cannot disable — ACP bug #556) ──────────────────
-        // view/read/grep/glob run silently — no permission hook fires (hasDenyControl=false)
+        // -- Built-in agent tools ---------------------------------------------------------
+        // Copilot CLI: view/read/grep/glob run silently -- no permission hook (hasDenyControl=false)
+        // OpenCode:    read/grep/glob/list run silently -- no permission hook (hasDenyControl=false)
         new ToolEntry("view", "Read File (built-in)", "Read file contents from disk (Copilot CLI built-in)", Category.FILE, true, false, true),
-        new ToolEntry("read", "Read File alt (built-in)", "Alternate file read tool injected by Copilot CLI", Category.FILE, true, false, true),
-        new ToolEntry("grep", "Grep Search (built-in)", "Search file contents with regular expressions (Copilot CLI built-in)", Category.SEARCH, true, false, false),
-        new ToolEntry("glob", "Glob Find (built-in)", "Find files by name pattern (Copilot CLI built-in)", Category.SEARCH, true, false, false),
-        new ToolEntry("bash", "Bash Shell (built-in)", "Run arbitrary shell commands — use run_command instead for safer, paginated execution", Category.SHELL, true, true, false),
-        // edit/create/execute/runInTerminal fire permission requests (hasDenyControl=true)
-        new ToolEntry("edit", "Edit File (built-in)", "Edit a file in place (Copilot CLI built-in) — use edit_text or replace_symbol_body for IDE-aware editing", Category.FILE, true, true, true),
-        new ToolEntry("create", "Create File (built-in)", "Create a new file (Copilot CLI built-in) — use create_file for IDE-aware creation", Category.FILE, true, true, true),
-        new ToolEntry("execute", "Execute (built-in)", "Execute a shell command (Copilot CLI built-in)", Category.SHELL, true, true, false),
+        new ToolEntry("read", "Read File (built-in)", "Read file contents from disk (built-in)", Category.FILE, true, false, true),
+        new ToolEntry("grep", "Grep Search (built-in)", "Search file contents with regular expressions (built-in)", Category.SEARCH, true, false, false),
+        new ToolEntry("glob", "Glob Find (built-in)", "Find files by name pattern (built-in)", Category.SEARCH, true, false, false),
+        new ToolEntry("list", "List Files (built-in)", "List files and directories (OpenCode built-in)", Category.SEARCH, true, false, true),
+        new ToolEntry("bash", "Bash Shell (built-in)", "Run arbitrary shell commands -- use run_command instead for safer, paginated execution", Category.SHELL, true, true, false),
+        // edit/write/create/execute/runInTerminal fire permission requests (hasDenyControl=true)
+        new ToolEntry("edit", "Edit File (built-in)", "Edit a file in place (built-in) -- use edit_text or replace_symbol_body for IDE-aware editing", Category.FILE, true, true, true),
+        new ToolEntry("write", "Write File (built-in)", "Create or overwrite a file (OpenCode built-in) -- use intellij_write_file for IDE-aware writing", Category.FILE, true, true, true),
+        new ToolEntry("create", "Create File (built-in)", "Create a new file (Copilot CLI built-in) -- use create_file for IDE-aware creation", Category.FILE, true, true, true),
+        new ToolEntry("execute", "Execute (built-in)", "Execute a shell command (built-in)", Category.SHELL, true, true, false),
         new ToolEntry("runInTerminal", "Run in Terminal (built-in)", "Run a command in the integrated terminal (Copilot CLI built-in)", Category.SHELL, true, true, false),
 
-        // ── File operations ──────────────────────────────────────────────────────
-        new ToolEntry("intellij_read_file", "Read File", "Read a file via IntelliJ's editor buffer — always returns the current in-memory content", Category.FILE, false, false, true),
+        // -- File operations --------------------------------------------------------------
+        new ToolEntry("intellij_read_file", "Read File", "Read a file via IntelliJ's editor buffer -- always returns the current in-memory content", Category.FILE, false, false, true),
         new ToolEntry("intellij_write_file", "Write File", "Write full file content or create a new file through IntelliJ's editor buffer", Category.FILE, false, false, true),
-        new ToolEntry("edit_text", "Edit Text", "Surgical find-and-replace edit within a file — for small changes inside methods, imports, or config", Category.FILE, false, false, true),
+        new ToolEntry("edit_text", "Edit Text", "Surgical find-and-replace edit within a file -- for small changes inside methods, imports, or config", Category.FILE, false, false, true),
         new ToolEntry("create_file", "Create File", "Create a new file and register it in IntelliJ's VFS", Category.FILE, false, false, true),
         new ToolEntry("delete_file", "Delete File", "Delete a file from the project via IntelliJ", Category.FILE, false, false, true),
         new ToolEntry("rename_file", "Rename File", "Rename a file in place without moving it to a different directory", Category.FILE, false, false, true),
@@ -91,26 +95,26 @@ public final class ToolRegistry {
         new ToolEntry("open_in_editor", "Open in Editor", "Open a file in the editor, optionally navigating to a specific line", Category.FILE, false, false, true),
         new ToolEntry("show_diff", "Show Diff", "Show a diff viewer comparing a file to proposed content or another file", Category.FILE, false, false, false),
 
-        // ── Search & navigation ──────────────────────────────────────────────────
+        // -- Search & navigation ----------------------------------------------------------
         new ToolEntry("search_symbols", "Search Symbols", "Search for classes, methods, or fields by name using IntelliJ's symbol index", Category.SEARCH, false, false, false),
         new ToolEntry("search_text", "Search Text", "Search for text or regex patterns across project files using IntelliJ's editor buffers", Category.SEARCH, false, false, false),
         new ToolEntry("find_references", "Find References", "Find all usages of a symbol throughout the project", Category.SEARCH, false, false, false),
         new ToolEntry("go_to_declaration", "Go to Declaration", "Navigate to the declaration of a symbol at a given file and line", Category.SEARCH, false, false, false),
-        new ToolEntry("get_file_outline", "Get File Outline", "Get the structure of a file — classes, methods, and fields with line numbers", Category.SEARCH, false, false, false),
+        new ToolEntry("get_file_outline", "Get File Outline", "Get the structure of a file -- classes, methods, and fields with line numbers", Category.SEARCH, false, false, false),
         new ToolEntry("get_class_outline", "Get Class Outline", "Get the full API of any class by fully-qualified name, including library and JDK classes", Category.SEARCH, false, false, false),
         new ToolEntry("get_type_hierarchy", "Get Type Hierarchy", "Show supertypes and/or subtypes of a class or interface", Category.SEARCH, false, false, false),
         new ToolEntry("find_implementations", "Find Implementations", "Find all implementations of a class/interface or overrides of a method", Category.SEARCH, false, false, false),
         new ToolEntry("get_call_hierarchy", "Get Call Hierarchy", "Find all callers of a method with file paths and line numbers", Category.SEARCH, false, false, false),
 
-        // ── Code quality ─────────────────────────────────────────────────────────
+        // -- Code quality -----------------------------------------------------------------
         new ToolEntry("run_inspections", "Run Inspections", "Run IntelliJ's full inspection engine on the project or a specific scope", Category.CODE_QUALITY, false, false, false),
         new ToolEntry("run_qodana", "Run Qodana", "Run Qodana static analysis and return findings", Category.CODE_QUALITY, false, false, false),
         new ToolEntry("run_sonarqube_analysis", "Run SonarQube", "Run SonarQube for IDE (SonarLint) analysis on the full project or changed files", Category.CODE_QUALITY, false, false, false),
         new ToolEntry("get_problems", "Get Problems", "Get cached editor problems (errors/warnings) for open files", Category.CODE_QUALITY, false, false, false),
         new ToolEntry("get_highlights", "Get Highlights", "Get cached editor highlights for open files", Category.CODE_QUALITY, false, false, false),
-        new ToolEntry("get_compilation_errors", "Get Compilation Errors", "Fast compilation error check using cached daemon results — much faster than a full build", Category.CODE_QUALITY, false, false, false),
+        new ToolEntry("get_compilation_errors", "Get Compilation Errors", "Fast compilation error check using cached daemon results -- much faster than a full build", Category.CODE_QUALITY, false, false, false),
 
-        // ── Build / Run / Test ────────────────────────────────────────────────────
+        // -- Build / Run / Test -----------------------------------------------------------
         new ToolEntry("build_project", "Build Project", "Trigger incremental compilation of the project or a specific module", Category.BUILD, false, false, false),
         new ToolEntry("run_tests", "Run Tests", "Run tests by class, method, or wildcard pattern via Gradle", Category.BUILD, false, false, false),
         new ToolEntry("get_coverage", "Get Coverage", "Retrieve code coverage data, optionally filtered by file or class", Category.BUILD, false, false, false),
@@ -120,17 +124,17 @@ public final class ToolRegistry {
         new ToolEntry("delete_run_configuration", "Delete Run Config", "Delete a run configuration by name", Category.BUILD, false, false, false),
         new ToolEntry("list_run_configurations", "List Run Configs", "List all available run configurations in the project", Category.BUILD, false, false, false),
 
-        // ── Terminal & commands ───────────────────────────────────────────────────
-        new ToolEntry("run_command", "Run Command", "Run a shell command with paginated output — prefer this over the built-in bash tool", Category.RUN, false, false, false),
+        // -- Terminal & commands ----------------------------------------------------------
+        new ToolEntry("run_command", "Run Command", "Run a shell command with paginated output -- prefer this over the built-in bash tool", Category.RUN, false, false, false),
         new ToolEntry("run_in_terminal", "Run in Terminal", "Run a command in IntelliJ's integrated terminal", Category.RUN, false, false, false),
         new ToolEntry("write_terminal_input", "Write Terminal Input", "Send raw text or keystrokes to a running terminal (e.g. answer prompts, send Ctrl-C)", Category.RUN, false, false, false),
         new ToolEntry("read_run_output", "Read Run Output", "Read output from a recent Run panel tab by name", Category.RUN, false, false, false),
         new ToolEntry("read_terminal_output", "Read Terminal", "Read output from an integrated terminal tab", Category.RUN, false, false, false),
         new ToolEntry("list_terminals", "List Terminals", "List active terminal tabs", Category.RUN, false, false, false),
 
-        // ── Git ───────────────────────────────────────────────────────────────────
+        // -- Git --------------------------------------------------------------------------
         new ToolEntry("git_status", "Git Status", "Show the working tree status (staged, unstaged, untracked files)", Category.GIT, false, false, false),
-        new ToolEntry("git_diff", "Git Diff", "Show changes as a diff — staged, unstaged, or against a specific commit", Category.GIT, false, false, false),
+        new ToolEntry("git_diff", "Git Diff", "Show changes as a diff -- staged, unstaged, or against a specific commit", Category.GIT, false, false, false),
         new ToolEntry("git_log", "Git Log", "Show commit history, optionally filtered by author, branch, file, or date", Category.GIT, false, false, false),
         new ToolEntry("git_commit", "Git Commit", "Commit staged changes with a message; supports amend and auto-staging all modified files", Category.GIT, false, false, false),
         new ToolEntry("git_stage", "Git Stage", "Stage one or more files for the next commit", Category.GIT, false, false, false),
@@ -150,9 +154,9 @@ public final class ToolRegistry {
         new ToolEntry("git_reset", "Git Reset", "Reset HEAD to a specific commit (soft, mixed, or hard)", Category.GIT, false, false, false),
         new ToolEntry("get_file_history", "Get File History", "Get the git commit history for a specific file, including renames", Category.GIT, false, false, false),
 
-        // ── Refactoring ───────────────────────────────────────────────────────────
+        // -- Refactoring ------------------------------------------------------------------
         new ToolEntry("refactor", "Refactor", "Rename, extract method, inline, or safe-delete a symbol using IntelliJ's refactoring engine", Category.REFACTOR, false, false, false),
-        new ToolEntry("replace_symbol_body", "Replace Symbol Body", "Replace the entire definition of a symbol (method, class, field) by name — no line numbers needed", Category.REFACTOR, false, false, true),
+        new ToolEntry("replace_symbol_body", "Replace Symbol Body", "Replace the entire definition of a symbol (method, class, field) by name -- no line numbers needed", Category.REFACTOR, false, false, true),
         new ToolEntry("insert_before_symbol", "Insert Before Symbol", "Insert content before a symbol definition", Category.REFACTOR, false, false, true),
         new ToolEntry("insert_after_symbol", "Insert After Symbol", "Insert content after a symbol definition", Category.REFACTOR, false, false, true),
         new ToolEntry("optimize_imports", "Optimize Imports", "Remove unused imports and organize them according to code style", Category.REFACTOR, false, false, false),
@@ -161,7 +165,7 @@ public final class ToolRegistry {
         new ToolEntry("apply_quickfix", "Apply Quickfix", "Apply an IntelliJ quick-fix at a specific file and line", Category.REFACTOR, false, false, false),
         new ToolEntry("add_to_dictionary", "Add to Dictionary", "Add a word to the project spell-check dictionary", Category.REFACTOR, false, false, false),
 
-        // ── IDE & project ─────────────────────────────────────────────────────────
+        // -- IDE & project ----------------------------------------------------------------
         new ToolEntry("get_project_info", "Get Project Info", "Get project name, SDK, modules, and overall structure", Category.IDE, false, false, false),
         new ToolEntry("list_project_files", "List Project Files", "List files in a project directory, optionally filtered by glob pattern", Category.IDE, false, false, false),
         new ToolEntry("mark_directory", "Mark Directory", "Mark a directory as source root, test root, resources, excluded, etc.", Category.IDE, false, false, false),
@@ -174,7 +178,7 @@ public final class ToolRegistry {
         new ToolEntry("list_themes", "List Themes", "List all available IDE themes with their dark/light type", Category.IDE, false, false, false),
         new ToolEntry("set_theme", "Set Theme", "Change the IDE theme by name (e.g., 'Darcula', 'Light')", Category.IDE, false, false, false),
 
-        // ── Other ─────────────────────────────────────────────────────────────────
+        // -- Other ------------------------------------------------------------------------
         new ToolEntry("get_chat_html", "Get Chat HTML", "Retrieve the live DOM HTML of the JCEF chat panel for debugging", Category.OTHER, false, false, false),
         new ToolEntry("search_conversation_history", "Search Conversation History", "List, read, and search past conversation sessions from the chat history", Category.OTHER, false, false, false),
         new ToolEntry("get_notifications", "Get Notifications", "Get recent IntelliJ balloon notifications", Category.OTHER, false, false, false),

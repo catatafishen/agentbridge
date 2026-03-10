@@ -446,15 +446,21 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     /**
      * Builds a JSON object mapping tool IDs to their permission mode (allow/ask/deny).
-     * Only includes non-built-in tools with non-default (non-ALLOW) permissions,
-     * plus any ALLOW entries that were explicitly configured.
+     * Includes all non-built-in tools with their configured permissions.
+     * When {@code excludeAgentBuiltInTools} is enabled, also adds "deny" for every
+     * built-in tool so the CONFIG_JSON block enforces the exclusion at the agent level.
      */
     @NotNull
     private com.google.gson.JsonObject buildPermissionJsonObject() {
         var settings = new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(profile.getId());
         var permObj = new com.google.gson.JsonObject();
         for (var entry : com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getAllTools()) {
-            if (entry.isBuiltIn) continue;
+            if (entry.isBuiltIn) {
+                if (profile.isExcludeAgentBuiltInTools()) {
+                    permObj.addProperty(entry.id, "deny");
+                }
+                continue;
+            }
             var perm = settings.getToolPermission(entry.id);
             permObj.addProperty(entry.id, perm.name().toLowerCase(java.util.Locale.ROOT));
         }
