@@ -190,9 +190,20 @@
     <!-- ── MCP section ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolRegistrationConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.mcp"
       displayName="MCP"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.McpServerConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.mcp.server"
+      displayName="Server"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolsConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.mcp.tools"
+      displayName="Tools"/>
 
     <!-- ── ACP section ── -->
     <projectConfigurable
