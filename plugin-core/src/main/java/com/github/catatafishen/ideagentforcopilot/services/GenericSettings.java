@@ -15,6 +15,8 @@ public final class GenericSettings {
 
     private static final int DEFAULT_PROMPT_TIMEOUT = 300;
     private static final int DEFAULT_MAX_TOOL_CALLS = 0;
+    private static final String TOOL_PERM_IN_PREFIX = "tool.perm.in.";
+    private static final String TOOL_PERM_OUT_PREFIX = "tool.perm.out.";
 
     private final String prefix;
     private volatile String activeAgentLabel;
@@ -109,7 +111,7 @@ public final class GenericSettings {
 
     @NotNull
     public ToolPermission getToolPermissionInsideProject(@NotNull String toolId) {
-        String stored = PropertiesComponent.getInstance().getValue(key("tool.perm.in." + toolId));
+        String stored = PropertiesComponent.getInstance().getValue(key(TOOL_PERM_IN_PREFIX + toolId));
         if (stored == null) return getToolPermission(toolId);
         try {
             return ToolPermission.valueOf(stored);
@@ -119,12 +121,12 @@ public final class GenericSettings {
     }
 
     public void setToolPermissionInsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
-        PropertiesComponent.getInstance().setValue(key("tool.perm.in." + toolId), perm.name());
+        PropertiesComponent.getInstance().setValue(key(TOOL_PERM_IN_PREFIX + toolId), perm.name());
     }
 
     @NotNull
     public ToolPermission getToolPermissionOutsideProject(@NotNull String toolId) {
-        String stored = PropertiesComponent.getInstance().getValue(key("tool.perm.out." + toolId));
+        String stored = PropertiesComponent.getInstance().getValue(key(TOOL_PERM_OUT_PREFIX + toolId));
         if (stored == null) return getToolPermission(toolId);
         try {
             return ToolPermission.valueOf(stored);
@@ -134,7 +136,7 @@ public final class GenericSettings {
     }
 
     public void setToolPermissionOutsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
-        PropertiesComponent.getInstance().setValue(key("tool.perm.out." + toolId), perm.name());
+        PropertiesComponent.getInstance().setValue(key(TOOL_PERM_OUT_PREFIX + toolId), perm.name());
     }
 
     @NotNull
@@ -151,8 +153,8 @@ public final class GenericSettings {
     }
 
     public void clearToolSubPermissions(@NotNull String toolId) {
-        PropertiesComponent.getInstance().unsetValue(key("tool.perm.in." + toolId));
-        PropertiesComponent.getInstance().unsetValue(key("tool.perm.out." + toolId));
+        PropertiesComponent.getInstance().unsetValue(key(TOOL_PERM_IN_PREFIX + toolId));
+        PropertiesComponent.getInstance().unsetValue(key(TOOL_PERM_OUT_PREFIX + toolId));
     }
 
     /**
