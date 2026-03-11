@@ -76,7 +76,7 @@ tasks.named("prepareSandbox") {
 }
 
 tasks.named<Zip>("buildPlugin") {
-    archiveBaseName.set("ide-mcp-server")
+    archiveBaseName.set("IDE-MCP-Server")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn(repackagePluginCore)
     from(repackagePluginCore) {

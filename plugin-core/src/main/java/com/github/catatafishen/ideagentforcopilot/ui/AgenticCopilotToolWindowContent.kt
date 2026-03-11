@@ -24,7 +24,6 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
 import java.awt.*
-import java.awt.datatransfer.StringSelection
 import javax.swing.*
 
 /**
@@ -46,11 +45,7 @@ class AgenticCopilotToolWindowContent(
         const val CARD_CONNECT = "connect"
         const val CARD_CHAT = "chat"
 
-        /** Theme-aware error color — uses IDE's error foreground or a sensible red fallback. */
-        private const val OS_NAME_PROPERTY = "os.name"
-        private val ERROR_COLOR: JBColor
-            get() = UIManager.getColor("Label.errorForeground") as? JBColor
-                ?: JBColor(Color(0xC7, 0x22, 0x22), Color(0xE0, 0x60, 0x60))
+
     }
 
     private val cardLayout = CardLayout()
@@ -189,7 +184,7 @@ class AgenticCopilotToolWindowContent(
     }
 
     private fun updatePromptPlaceholder() {
-        val editor = promptTextArea.editor as? com.intellij.openapi.editor.ex.EditorEx ?: return
+        val editor = promptTextArea.editor as? EditorEx ?: return
         editor.setPlaceholder(promptPlaceholder())
     }
 
@@ -217,7 +212,7 @@ class AgenticCopilotToolWindowContent(
                 sessionInfoLabel.foreground = JBColor.foreground()
             } else {
                 sessionInfoLabel.text = "No active session"
-                sessionInfoLabel.foreground = JBColor.GRAY
+                sessionInfoLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
             }
         }
     }
@@ -240,7 +235,6 @@ class AgenticCopilotToolWindowContent(
 
     private fun handleToolCall(update: com.google.gson.JsonObject) {
         val title = update["title"]?.asString ?: "Unknown tool"
-        val status = update["status"]?.asString ?: "pending"
         val toolCallId = update["toolCallId"]?.asString ?: ""
 
         val filePath = extractFilePath(update, title)
@@ -446,12 +440,12 @@ class AgenticCopilotToolWindowContent(
                 val diag = psiBridgeDiagnostics()
                 SwingUtilities.invokeLater {
                     banner.isVisible = diag != null
-                    com.intellij.openapi.ui.Messages.showMessageDialog(
+                    Messages.showMessageDialog(
                         project,
                         diag ?: "PSI bridge is healthy.",
                         "PSI Bridge Diagnostics",
-                        if (diag != null) com.intellij.openapi.ui.Messages.getWarningIcon()
-                        else com.intellij.openapi.ui.Messages.getInformationIcon()
+                        if (diag != null) Messages.getWarningIcon()
+                        else Messages.getInformationIcon()
                     )
                 }
             }
@@ -459,7 +453,7 @@ class AgenticCopilotToolWindowContent(
         banner.addAction("Recheck") { runCheck() }
 
         // First check after 5 s so the bridge has time to start.
-        scheduledFuture = scheduler.schedule(
+        scheduler.schedule(
             {
                 val diag = psiBridgeDiagnostics()
                 SwingUtilities.invokeLater {
@@ -525,7 +519,7 @@ class AgenticCopilotToolWindowContent(
 
         // Toggle a top border on responsePanelContainer: grey when no banners, none when a banner is showing
         val allBanners = listOf(psiBridgeBanner, cb, ghBanner, gitBanner, sb)
-        val greyBorder = com.intellij.util.ui.JBUI.Borders.customLine(com.intellij.ui.JBColor.border(), 1, 0, 0, 0)
+        val greyBorder = JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0)
         val updateContainerBorder = java.beans.PropertyChangeListener {
             responsePanelContainer.border = if (allBanners.none { b -> b.isVisible }) greyBorder else null
         }
@@ -584,7 +578,7 @@ class AgenticCopilotToolWindowContent(
         val editorCustomizations = mutableListOf<com.intellij.ui.EditorCustomization>()
         try {
             val spellCheck = com.intellij.openapi.editor.SpellCheckingEditorCustomizationProvider
-                .getInstance().getEnabledCustomization()
+                .getInstance().enabledCustomization
             if (spellCheck != null) editorCustomizations.add(spellCheck)
         } catch (_: Exception) {
             // Spellchecker plugin not available
@@ -625,7 +619,7 @@ class AgenticCopilotToolWindowContent(
                             editor.contentComponent, caretPoint, promptTextArea
                         )
                         promptTextArea.scrollRectToVisible(
-                            java.awt.Rectangle(converted.x, converted.y, 1, lineHeight)
+                            Rectangle(converted.x, converted.y, 1, lineHeight)
                         )
                     }
                 }
@@ -640,7 +634,7 @@ class AgenticCopilotToolWindowContent(
         })
 
         val scrollPane = JBScrollPane(promptTextArea)
-        scrollPane.horizontalScrollBarPolicy = javax.swing.ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+        scrollPane.horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
         scrollPane.border = null
         scrollPane.viewportBorder = null
         row.border = JBUI.Borders.empty()
@@ -744,7 +738,7 @@ class AgenticCopilotToolWindowContent(
 
         val rightGroup = DefaultActionGroup()
         rightGroup.add(ProcessingIndicatorAction())
-        if (BillingSettings.getInstance().isShowCopilotUsage()) {
+        if (BillingSettings.getInstance().isShowCopilotUsage) {
             rightGroup.add(billing.createUsageGraphAction())
         }
 
@@ -780,13 +774,13 @@ class AgenticCopilotToolWindowContent(
      */
     private inner class ProcessingTimerPanel : JBPanel<ProcessingTimerPanel>() {
         private val spinner = AsyncProcessIcon("CopilotProcessing")
-        private val doneIcon = JBLabel("\u2705")
+        private val doneIcon = JBLabel(AllIcons.Actions.Checked)
         private val timerLabel = JBLabel("")
         private val toolsLabel = JBLabel("")
         private val requestsLabel = JBLabel("")
         private var startedAt = 0L
         private var toolCallCount = 0
-        private val ticker = javax.swing.Timer(1000) { refreshDisplay() }
+        private val ticker = Timer(1000) { refreshDisplay() }
 
         // Session-wide accumulators
         private var sessionTotalTimeMs = 0L
@@ -806,9 +800,9 @@ class AgenticCopilotToolWindowContent(
             spinner.isVisible = false
             doneIcon.isVisible = false
             doneIcon.font = smallGray
-            timerLabel.foreground = JBColor.GRAY; timerLabel.font = smallGray; timerLabel.isVisible = false
-            toolsLabel.foreground = JBColor.GRAY; toolsLabel.font = smallGray; toolsLabel.isVisible = false
-            requestsLabel.foreground = JBColor.GRAY; requestsLabel.font = smallGray; requestsLabel.isVisible = false
+            timerLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground(); timerLabel.font = smallGray; timerLabel.isVisible = false
+            toolsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground(); toolsLabel.font = smallGray; toolsLabel.isVisible = false
+            requestsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground(); requestsLabel.font = smallGray; requestsLabel.isVisible = false
             add(Box.createHorizontalGlue())
             add(spinner)
             add(Box.createHorizontalStrut(4))
@@ -891,7 +885,7 @@ class AgenticCopilotToolWindowContent(
             toolsLabel.text = if (toolCallCount > 0) "\u2022 $toolCallCount tools" else ""
             toolsLabel.isVisible = toolCallCount > 0
             requestsLabel.isVisible = false
-            if (!isRunning) doneIcon.text = "\u2705"
+            if (!isRunning) { doneIcon.icon = AllIcons.Actions.Checked; doneIcon.text = null }
         }
 
         private fun refreshSessionMode() {
@@ -907,7 +901,7 @@ class AgenticCopilotToolWindowContent(
             requestsLabel.text = if (sessionReqs > 0) "\u2022 $sessionReqs req" else "\u2022 0 req"
             requestsLabel.isVisible = true
             toolTipText = "Session totals · Click for turn"
-            doneIcon.text = "\u2211"
+            doneIcon.icon = null; doneIcon.text = "\u2211"
         }
 
         private fun updateLabel() {
@@ -918,7 +912,7 @@ class AgenticCopilotToolWindowContent(
 
     // Send/Stop toggle action for the toolbar
     private inner class SendStopAction : AnAction(
-        "Send", "Send prompt (Enter)", com.intellij.icons.AllIcons.Actions.Execute
+        "Send", "Send prompt (Enter)", AllIcons.Actions.Execute
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
@@ -929,12 +923,12 @@ class AgenticCopilotToolWindowContent(
         override fun update(e: AnActionEvent) {
             val isLoggedIn = authService.pendingAuthError == null
             if (isSending) {
-                e.presentation.icon = com.intellij.icons.AllIcons.Actions.Suspend
+                e.presentation.icon = AllIcons.Actions.Suspend
                 e.presentation.text = "Stop"
                 e.presentation.description = "Stop"
                 e.presentation.isEnabled = true
             } else {
-                e.presentation.icon = com.intellij.icons.AllIcons.Actions.Execute
+                e.presentation.icon = AllIcons.Actions.Execute
                 e.presentation.text = "Send"
                 e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
                 e.presentation.isEnabled = isLoggedIn
@@ -950,13 +944,13 @@ class AgenticCopilotToolWindowContent(
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun actionPerformed(e: AnActionEvent) {
             val inputEvent = e.inputEvent ?: return
-            val component = inputEvent.source as? java.awt.Component ?: return
+            val component = inputEvent.source as? Component ?: return
 
             val group = DefaultActionGroup()
             group.add(object : AnAction(
                 "Current File",
                 "Attach the currently open file",
-                com.intellij.icons.AllIcons.Actions.AddFile
+                AllIcons.Actions.AddFile
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddCurrentFile()
@@ -964,7 +958,7 @@ class AgenticCopilotToolWindowContent(
             group.add(object : AnAction(
                 "Editor Selection",
                 "Attach the selected text",
-                com.intellij.icons.AllIcons.Actions.AddMulticaret
+                AllIcons.Actions.AddMulticaret
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddSelection()
@@ -1011,41 +1005,6 @@ class AgenticCopilotToolWindowContent(
                 com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
             )
             popup.showUnderneathOf(component)
-        }
-    }
-
-    // Export conversation to clipboard (popup with Text / HTML options)
-    private inner class CopyConversationAction : AnAction(
-        "Export Chat", "Export conversation to clipboard", com.intellij.icons.AllIcons.ToolbarDecorator.Export
-    ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun actionPerformed(e: AnActionEvent) {
-            val group = DefaultActionGroup()
-            group.add(object : AnAction("Copy as Text") {
-                override fun actionPerformed(e: AnActionEvent) {
-                    val text = consolePanel.getConversationText()
-                    if (text.isNotBlank()) {
-                        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(text), null)
-                    }
-                }
-
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
-            group.add(object : AnAction("Copy as HTML") {
-                override fun actionPerformed(e: AnActionEvent) {
-                    val html = consolePanel.getConversationHtml()
-                    if (html.isNotBlank()) {
-                        Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(html), null)
-                    }
-                }
-
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-            })
-            val popup = ActionManager.getInstance()
-                .createActionPopupMenu(ActionPlaces.TOOLWINDOW_CONTENT, group)
-            val comp = e.inputEvent?.component ?: return
-            popup.component.show(comp, 0, comp.height)
         }
     }
 
@@ -1129,16 +1088,16 @@ class AgenticCopilotToolWindowContent(
     /** Dropdown action for project configuration files: Instructions, TODO, Agent Definitions, MCP Instructions */
     private inner class ProjectFilesDropdownAction : AnAction(
         "Project Files", "Open project configuration files",
-        com.intellij.icons.AllIcons.Nodes.Folder
+        AllIcons.Nodes.Folder
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.BGT
         override fun actionPerformed(e: AnActionEvent) {
             val inputEvent = e.inputEvent ?: return
-            val component = inputEvent.source as? java.awt.Component ?: return
+            val component = inputEvent.source as? Component ?: return
             showPopup(component)
         }
 
-        private fun showPopup(owner: java.awt.Component) {
+        private fun showPopup(owner: Component) {
             val group = DefaultActionGroup()
             val base = project.basePath
 
@@ -1161,7 +1120,7 @@ class AgenticCopilotToolWindowContent(
                 "Startup Instructions",
                 "Disabled: Copilot ignores MCP instructions. Use copilot-instructions.md instead. " +
                     "See github.com/github/copilot-cli/issues/1486",
-                com.intellij.icons.AllIcons.Actions.IntentionBulbGrey
+                AllIcons.Actions.IntentionBulbGrey
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
                 override fun update(e: AnActionEvent) {
@@ -1177,7 +1136,7 @@ class AgenticCopilotToolWindowContent(
                 "Restore Default Instructions",
                 "Disabled: Copilot ignores MCP instructions. Use copilot-instructions.md instead. " +
                     "See github.com/github/copilot-cli/issues/1486",
-                com.intellij.icons.AllIcons.Actions.Rollback
+                AllIcons.Actions.Rollback
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
                 override fun update(e: AnActionEvent) {
@@ -1241,7 +1200,7 @@ class AgenticCopilotToolWindowContent(
                     })
                 }
             } else {
-                group.add(object : AnAction("None found", null, null) {
+                group.add(object : AnAction("None Found", null, null) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
                     override fun update(e: AnActionEvent) {
                         e.presentation.isEnabled = false
@@ -1337,7 +1296,7 @@ class AgenticCopilotToolWindowContent(
             }
             e.presentation.isVisible = true
             val selected = agentManager.settings.selectedAgent
-            e.presentation.text = if (selected.isEmpty()) "Default" else selected
+            e.presentation.text = selected.ifEmpty { "Default" }
         }
 
         private fun discoverAgentNames(): List<String> {
@@ -1406,13 +1365,13 @@ class AgenticCopilotToolWindowContent(
 
         // Intercept paste: redirect large clipboard content to a scratch file
         val pasteShortcuts = arrayOf(
-            com.intellij.openapi.actionSystem.KeyboardShortcut(
+            KeyboardShortcut(
                 KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK), null
             ),
-            com.intellij.openapi.actionSystem.KeyboardShortcut(
+            KeyboardShortcut(
                 KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK), null
             ),
-            com.intellij.openapi.actionSystem.KeyboardShortcut(
+            KeyboardShortcut(
                 KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK),
                 null
             ),
@@ -1478,13 +1437,13 @@ class AgenticCopilotToolWindowContent(
             addSeparator()
 
             // Attach actions
-            add(object : AnAction("Attach Current File", null, com.intellij.icons.AllIcons.Actions.AddFile) {
+            add(object : AnAction("Attach Current File", null, AllIcons.Actions.AddFile) {
                 override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddCurrentFile()
             })
-            add(object : AnAction("Attach Editor Selection", null, com.intellij.icons.AllIcons.Actions.AddMulticaret) {
+            add(object : AnAction("Attach Editor Selection", null, AllIcons.Actions.AddMulticaret) {
                 override fun actionPerformed(e: AnActionEvent) = contextManager.handleAddSelection()
             })
-            add(object : AnAction("Clear Attachments", null, com.intellij.icons.AllIcons.Actions.GC) {
+            add(object : AnAction("Clear Attachments", null, AllIcons.Actions.GC) {
                 override fun actionPerformed(e: AnActionEvent) {
                     contextManager.clearInlineChips(editor)
                 }
@@ -1497,7 +1456,7 @@ class AgenticCopilotToolWindowContent(
             addSeparator()
 
             // Conversation actions
-            add(object : AnAction("New Conversation", null, com.intellij.icons.AllIcons.General.Add) {
+            add(object : AnAction("New Conversation", null, AllIcons.General.Add) {
                 override fun actionPerformed(e: AnActionEvent) {
                     currentSessionId = null
                     consolePanel.addSessionSeparator(
@@ -1866,7 +1825,7 @@ class AgenticCopilotToolWindowContent(
                 turnToolCallCount++
                 if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
                 toolCallTitles[toolCallId] = "subagent_internal"
-                consolePanel.addSubAgentToolCall(activeSubAgentId!!, toolCallId, title, arguments)
+                consolePanel.addSubAgentToolCall(activeSubAgentId!!, toolCallId, title, arguments, kind)
             } else {
                 turnToolCallCount++
                 if (::processingTimerPanel.isInitialized) processingTimerPanel.incrementToolCalls()
@@ -1998,7 +1957,7 @@ class AgenticCopilotToolWindowContent(
     }
 
     private fun saveTurnStatistics(prompt: String, toolCalls: Int, modelId: String) {
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+        ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val statsDir = java.io.File(project.basePath ?: return@executeOnPooledThread, AGENT_WORK_DIR)
                 statsDir.mkdirs()
@@ -2040,7 +1999,7 @@ class AgenticCopilotToolWindowContent(
     private fun notifyIfUnfocused(toolCallCount: Int) {
         val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
         if (frame.isActive) return
-        val title = "Copilot response ready"
+        val title = "Copilot Response Ready"
         val content =
             if (toolCallCount > 0) "Turn completed with $toolCallCount tool call${if (toolCallCount != 1) "s" else ""}"
             else "Turn completed"
@@ -2060,7 +2019,7 @@ class AgenticCopilotToolWindowContent(
     private fun notifyPermissionRequestIfUnfocused(toolName: String) {
         val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
         if (frame.isActive) return
-        val title = "Agent needs approval"
+        val title = "Agent Needs Approval"
         val content = "Permission requested for: $toolName"
         com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
             .notifyByBalloon(
@@ -2074,7 +2033,7 @@ class AgenticCopilotToolWindowContent(
 
     private fun saveConversation() {
         lastIncrementalSaveMs = System.currentTimeMillis()
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+        ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 conversationFile().writeText(consolePanel.serializeEntries())
             } catch (_: Exception) { /* best-effort */
@@ -2095,7 +2054,7 @@ class AgenticCopilotToolWindowContent(
     }
 
     private fun restoreConversation(onComplete: () -> Unit = {}) {
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+        ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 val file = conversationFile()
                 if (!file.exists() || file.length() < 10) {
@@ -2142,7 +2101,7 @@ class AgenticCopilotToolWindowContent(
 
         val popup = com.intellij.ide.scratch.LRUPopupBuilder
             .languagePopupBuilder(project, "Paste as Scratch File (paste again to skip)") { lang ->
-                lang.associatedFileType?.icon ?: com.intellij.icons.AllIcons.FileTypes.Any_type
+                lang.associatedFileType?.icon ?: AllIcons.FileTypes.Any_type
             }
             .forValues(orderedLanguages)
             .onChosen { lang ->
@@ -2175,9 +2134,9 @@ class AgenticCopilotToolWindowContent(
      */
     private fun registerPasteToSkip(popup: com.intellij.openapi.ui.popup.JBPopup, text: String) {
         val pasteStrokes = setOf(
-            javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
-            javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
-            javax.swing.KeyStroke.getKeyStroke(
+            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.CTRL_DOWN_MASK),
+            KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_V, java.awt.event.InputEvent.META_DOWN_MASK),
+            KeyStroke.getKeyStroke(
                 java.awt.event.KeyEvent.VK_INSERT, java.awt.event.InputEvent.SHIFT_DOWN_MASK
             )
         )
@@ -2213,7 +2172,7 @@ class AgenticCopilotToolWindowContent(
                 if (!popup.isVisible) return@EventDispatcher false
 
                 if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
-                val stroke = javax.swing.KeyStroke.getKeyStrokeForEvent(event)
+                val stroke = KeyStroke.getKeyStrokeForEvent(event)
                 if (stroke !in pasteStrokes) return@EventDispatcher false
 
                 swallowFollowUp = true
@@ -2250,7 +2209,7 @@ class AgenticCopilotToolWindowContent(
         val enabledLanguages = settings.enabledLanguages
 
         if (enabledLanguages.isEmpty()) {
-            com.intellij.openapi.ui.Messages.showInfoMessage(
+            Messages.showInfoMessage(
                 project,
                 "No languages are enabled. Configure them in Settings → Tools → Scratch File Types.",
                 "No Scratch Languages"
@@ -2260,7 +2219,7 @@ class AgenticCopilotToolWindowContent(
 
         com.intellij.ide.scratch.LRUPopupBuilder
             .languagePopupBuilder(project, "New Scratch File") { lang ->
-                lang.associatedFileType?.icon ?: com.intellij.icons.AllIcons.FileTypes.Any_type
+                lang.associatedFileType?.icon ?: AllIcons.FileTypes.Any_type
             }
             .forValues(enabledLanguages)
             .onChosen { lang ->
@@ -2324,7 +2283,6 @@ class AgenticCopilotToolWindowContent(
     }
 
     fun getComponent(): JComponent = mainPanel
-    fun openSettings() = com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable.open(project)
 
     fun resetSession() {
         currentSessionId = null
@@ -2418,17 +2376,17 @@ class AgenticCopilotToolWindowContent(
     private fun isCLINotFoundError(e: Exception): Boolean {
         var cause: Throwable? = e
         while (cause != null) {
-            if (cause is com.github.catatafishen.ideagentforcopilot.bridge.AcpException && !cause.isRecoverable) return true
+            if (cause is AcpException && !cause.isRecoverable) return true
             cause = cause.cause
         }
         return false
     }
 
 
-    /** Tree node that holds file content and path for the Plans tab. */
+    /** Tree node for the Plans tab — display name is shown in the tree. */
     private class FileTreeNode(
         val fileName: String,
         val filePath: String,
-        val fileContent: String
+        val content: String
     ) : javax.swing.tree.DefaultMutableTreeNode("\uD83D\uDCC4 $fileName")
 }

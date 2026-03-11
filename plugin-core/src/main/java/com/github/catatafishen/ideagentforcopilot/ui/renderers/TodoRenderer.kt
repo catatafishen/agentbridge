@@ -1,15 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.intellij.icons.AllIcons
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
-import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.font.TextAttribute
 import javax.swing.JComponent
-import javax.swing.JPanel
 
 /**
  * Renders the agent's task-checklist tool results as a styled panel.
@@ -20,8 +17,6 @@ internal object TodoRenderer : ArgumentAwareRenderer {
 
     private val CHECKBOX_LINE = Regex("""^-\s+\[([ xX])]\s+(.+)$""")
     private val HEADER_LINE = Regex("""^#{1,4}\s+(.+)$""")
-
-    private val DONE_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
 
     override fun render(output: String, arguments: String?): JComponent? {
         val markdown = extractTodos(arguments) ?: output
@@ -92,7 +87,7 @@ internal object TodoRenderer : ArgumentAwareRenderer {
         return JBLabel(text).apply {
             this.icon = icon
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = if (done == total) DONE_COLOR else UIUtil.getLabelForeground()
+            foreground = if (done == total) ToolRenderers.SUCCESS_COLOR else UIUtil.getLabelForeground()
             border = JBUI.Borders.emptyBottom(2)
             alignmentX = JComponent.LEFT_ALIGNMENT
         }
@@ -109,23 +104,13 @@ internal object TodoRenderer : ArgumentAwareRenderer {
 
     private fun buildCheckboxRow(text: String, checked: Boolean): JComponent {
         val icon = if (checked) AllIcons.RunConfigurations.TestPassed else AllIcons.RunConfigurations.TestNotRan
-        val row = object : JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0)) {
-            init {
-                isOpaque = false
-                alignmentX = LEFT_ALIGNMENT
-            }
-
-            override fun getMaximumSize(): java.awt.Dimension {
-                val pref = preferredSize
-                return java.awt.Dimension(Int.MAX_VALUE, pref.height)
-            }
-        }
+        val row = ToolRenderers.rowPanel()
         row.add(JBLabel(icon))
         row.add(JBLabel(text).apply {
             if (checked) {
                 foreground = UIUtil.getContextHelpForeground()
                 font = UIUtil.getLabelFont().deriveFont(
-                    mapOf(java.awt.font.TextAttribute.STRIKETHROUGH to java.awt.font.TextAttribute.STRIKETHROUGH_ON)
+                    mapOf(TextAttribute.STRIKETHROUGH to TextAttribute.STRIKETHROUGH_ON)
                 )
             }
         })

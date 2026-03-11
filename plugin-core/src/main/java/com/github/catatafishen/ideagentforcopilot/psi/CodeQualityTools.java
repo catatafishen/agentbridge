@@ -157,6 +157,9 @@ class CodeQualityTools extends AbstractToolHandler {
     private String getHighlights(JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
+        // include_unindexed bypasses the isInSourceContent guard for newly created files
+        // that may not yet be indexed when called from appendAutoHighlights.
+        boolean includeUnindexed = args.has("include_unindexed") && args.get("include_unindexed").getAsBoolean();
 
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
@@ -165,7 +168,7 @@ class CodeQualityTools extends AbstractToolHandler {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                getHighlightsCached(pathStr, limit, resultFuture);
+                getHighlightsCached(pathStr, limit, includeUnindexed, resultFuture);
             } catch (Exception e) {
                 LOG.error("Error getting highlights", e);
                 resultFuture.complete("Error getting highlights: " + e.getMessage());
@@ -174,12 +177,14 @@ class CodeQualityTools extends AbstractToolHandler {
         return resultFuture.get(30, TimeUnit.SECONDS);
     }
 
-    private void getHighlightsCached(String pathStr, int limit, CompletableFuture<String> resultFuture) {
+    private void getHighlightsCached(String pathStr, int limit, boolean includeUnindexed,
+                                     CompletableFuture<String> resultFuture) {
         // Step 1: Collect daemon highlights (needs read action)
         StringBuilder result = new StringBuilder();
         ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
-            Collection<VirtualFile> allFiles = collectFilesForHighlightAnalysis(pathStr, fileIndex, resultFuture);
+            Collection<VirtualFile> allFiles =
+                collectFilesForHighlightAnalysis(pathStr, includeUnindexed, fileIndex, resultFuture);
             if (resultFuture.isDone()) return;
 
             LOG.info("Analyzing " + allFiles.size() + " files for highlights (cached mode)");
@@ -234,7 +239,8 @@ class CodeQualityTools extends AbstractToolHandler {
     }
 
     private Collection<VirtualFile> collectFilesForHighlightAnalysis(
-        String pathStr, ProjectFileIndex fileIndex, CompletableFuture<String> resultFuture) {
+        String pathStr, boolean includeUnindexed, ProjectFileIndex fileIndex,
+        CompletableFuture<String> resultFuture) {
         Collection<VirtualFile> files = new ArrayList<>();
         if (pathStr != null && !pathStr.isEmpty()) {
             VirtualFile vf = resolveVirtualFile(pathStr);
@@ -242,10 +248,12 @@ class CodeQualityTools extends AbstractToolHandler {
                 resultFuture.complete("Error: File not found: " + pathStr);
                 return Collections.emptyList();
             }
-            if (fileIndex.isInSourceContent(vf)) {
+            // includeUnindexed: skip the source-content check for freshly created/written files
+            // that may not yet be indexed but whose highlights are already in the daemon cache.
+            if (includeUnindexed || fileIndex.isInSourceContent(vf)) {
                 files.add(vf);
             }
-            // Non-source files: return empty list — notifications may still apply
+            // Non-source, non-unindexed files: return empty — notifications may still apply
         } else {
             fileIndex.iterateContent(file -> {
                 if (!file.isDirectory() && fileIndex.isInSourceContent(file)) {
@@ -345,7 +353,7 @@ class CodeQualityTools extends AbstractToolHandler {
     private void collectCompilationErrors(String pathStr, CompletableFuture<String> resultFuture) {
         ApplicationManager.getApplication().runReadAction(() -> {
             ProjectFileIndex fileIndex = ProjectRootManager.getInstance(project).getFileIndex();
-            Collection<VirtualFile> files = collectFilesForHighlightAnalysis(pathStr, fileIndex, resultFuture);
+            Collection<VirtualFile> files = collectFilesForHighlightAnalysis(pathStr, false, fileIndex, resultFuture);
             if (resultFuture.isDone()) return;
 
             String basePath = project.getBasePath();
@@ -390,7 +398,6 @@ class CodeQualityTools extends AbstractToolHandler {
 
 // ---- run_inspections ----
 
-    @SuppressWarnings("UnstableApiUsage")
     private String runInspections(JsonObject args) throws Exception {
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
@@ -447,7 +454,6 @@ class CodeQualityTools extends AbstractToolHandler {
         return summary + String.join("\n", page);
     }
 
-    @SuppressWarnings({"TestOnlyProblems", "UnstableApiUsage"})
     private void runInspectionAnalysis(int limit, int offset, String minSeverity,
                                        String scopePath,
                                        CompletableFuture<String> resultFuture) {
@@ -472,24 +478,16 @@ class CodeQualityTools extends AbstractToolHandler {
             String basePath = project.getBasePath();
             String profileName = currentProfile.getName();
 
-            com.intellij.codeInspection.ex.GlobalInspectionContextEx context =
-                new com.intellij.codeInspection.ex.GlobalInspectionContextEx(project) {
-
-                    @Override
-                    protected void notifyInspectionsFinished(@NotNull com.intellij.analysis.AnalysisScope scope) {
-                        super.notifyInspectionsFinished(scope);
-                        LOG.info("Inspection analysis completed, collecting results...");
-                        LOG.info("Used tools count: " + this.getUsedTools().size());
-
-                        // Use scheduled retries instead of Thread.sleep to allow inspection tool
-                        // presentations to fully populate before collecting results.
-                        scheduleInspectionCollection(this, severityRank, requiredRank, basePath,
-                            new InspectionPageParams(profileName, offset, limit), resultFuture, 0);
-                    }
-                };
-
-            context.setExternalProfile(currentProfile);
-            context.doInspections(scope);
+            // PlatformApiCompat.runFullInspections creates a GlobalInspectionContextImpl (the full
+            // UI context). Using GlobalInspectionContextEx directly would invoke the offline/export
+            // launchInspections which is a no-op: it completes instantly with 0 results and never
+            // opens the IDE Inspection Results window.
+            PlatformApiCompat.runFullInspections(project, scope, currentProfile, ctx -> {
+                LOG.info("Inspection analysis completed, collecting results...");
+                LOG.info("Used tools count: " + ctx.getUsedTools().size());
+                scheduleInspectionCollection(ctx, severityRank, requiredRank, basePath,
+                    new InspectionPageParams(profileName, offset, limit), resultFuture, 0);
+            });
 
         } catch (Exception e) {
             LOG.error("Error setting up inspections", e);
@@ -511,6 +509,7 @@ class CodeQualityTools extends AbstractToolHandler {
 
         AppExecutorUtil.getAppScheduledExecutorService().schedule(() -> {
             try {
+                //noinspection RedundantCast - required to disambiguate Computable<T> vs ThrowableComputable<T,E> overloads
                 InspectionCollectionResult collected = ApplicationManager.getApplication().runReadAction(
                     (com.intellij.openapi.util.Computable<InspectionCollectionResult>) () ->
                         collectInspectionProblems(ctx, severityRank, requiredRank, basePath));
@@ -565,6 +564,7 @@ class CodeQualityTools extends AbstractToolHandler {
             return null;
         }
         if (scopeFile.isDirectory()) {
+            //noinspection RedundantCast - required to disambiguate Computable<T> vs ThrowableComputable<T,E> overloads
             PsiDirectory psiDir = ApplicationManager.getApplication().runReadAction(
                 (com.intellij.openapi.util.Computable<PsiDirectory>) () ->
                     PsiManager.getInstance(project).findDirectory(scopeFile)
@@ -576,6 +576,7 @@ class CodeQualityTools extends AbstractToolHandler {
             LOG.info("Analysis scope: directory " + scopePath);
             return new com.intellij.analysis.AnalysisScope(psiDir);
         }
+        //noinspection RedundantCast - required to disambiguate Computable<T> vs ThrowableComputable<T,E> overloads
         PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
             (com.intellij.openapi.util.Computable<PsiFile>) () ->
                 PsiManager.getInstance(project).findFile(scopeFile));
@@ -600,8 +601,6 @@ class CodeQualityTools extends AbstractToolHandler {
                                      Map<String, Integer> severityRank, int requiredRank) {
     }
 
-    @SuppressWarnings({"UnstableApiUsage", "java:S2583"})
-// null check is defensive against runtime nulls despite @NotNull
     private InspectionCollectionResult collectInspectionProblems(
         com.intellij.codeInspection.ex.GlobalInspectionContextEx ctx, Map<String, Integer> severityRank,
         int requiredRank, String basePath) {
@@ -616,7 +615,6 @@ class CodeQualityTools extends AbstractToolHandler {
             String toolId = toolWrapper.getShortName();
 
             var presentation = PlatformApiCompat.getInspectionPresentation(ctx, toolWrapper);
-            //noinspection ConstantValue - presentation can be null at runtime despite @NotNull annotation
             if (presentation == null) continue;
 
             var inspCtx = new InspectionContext(basePath, filesSet, severityRank, requiredRank);
@@ -891,26 +889,23 @@ class CodeQualityTools extends AbstractToolHandler {
 
     private String resolveRefElementFilePath(
         com.intellij.codeInspection.reference.RefElement refElement, String basePath) {
-        var psiElement = refElement.getPsiElement();
+        return resolveFilePathFromElement(refElement.getPsiElement(), basePath);
+    }
+
+    private String resolveDescriptorFilePath(com.intellij.codeInspection.ProblemDescriptor pd,
+                                             String basePath, Set<String> filesSet) {
+        String filePath = resolveFilePathFromElement(pd.getPsiElement(), basePath);
+        if (!filePath.isEmpty()) filesSet.add(filePath);
+        return filePath;
+    }
+
+    private String resolveFilePathFromElement(com.intellij.psi.PsiElement psiElement, String basePath) {
         if (psiElement == null) return "";
         var containingFile = psiElement.getContainingFile();
         if (containingFile == null) return "";
         var vf = containingFile.getVirtualFile();
         if (vf == null) return "";
         return basePath != null ? relativize(basePath, vf.getPath()) : vf.getName();
-    }
-
-    private String resolveDescriptorFilePath(com.intellij.codeInspection.ProblemDescriptor pd,
-                                             String basePath, Set<String> filesSet) {
-        var psiElement = pd.getPsiElement();
-        if (psiElement == null) return "";
-        var containingFile = psiElement.getContainingFile();
-        if (containingFile == null) return "";
-        var vf = containingFile.getVirtualFile();
-        if (vf == null) return "";
-        String filePath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getName();
-        filesSet.add(filePath);
-        return filePath;
     }
 
 // ---- add_to_dictionary ----
@@ -1015,21 +1010,11 @@ class CodeQualityTools extends AbstractToolHandler {
 
     private String suppressKotlin(com.intellij.psi.PsiElement target, String inspectionId,
                                   com.intellij.openapi.editor.Document document) {
-        int targetOffset = target.getTextRange().getStartOffset();
-        int targetLine = document.getLineNumber(targetOffset);
-        int lineStart = document.getLineStartOffset(targetLine);
+        LineInfo info = getLineInfo(target, document);
 
-        String lineText = document.getText(
-            new com.intellij.openapi.util.TextRange(lineStart, document.getLineEndOffset(targetLine)));
-        StringBuilder indent = new StringBuilder();
-        for (char c : lineText.toCharArray()) {
-            if (c == ' ' || c == '\t') indent.append(c);
-            else break;
-        }
-
-        if (targetLine > 0) {
-            int prevStart = document.getLineStartOffset(targetLine - 1);
-            int prevEnd = document.getLineEndOffset(targetLine - 1);
+        if (info.targetLine() > 0) {
+            int prevStart = document.getLineStartOffset(info.targetLine() - 1);
+            int prevEnd = document.getLineEndOffset(info.targetLine() - 1);
             String prevLine = document.getText(
                 new com.intellij.openapi.util.TextRange(prevStart, prevEnd)).trim();
             if (prevLine.startsWith("@Suppress(") && prevLine.contains(inspectionId)) {
@@ -1037,23 +1022,38 @@ class CodeQualityTools extends AbstractToolHandler {
             }
         }
 
-        String annotation = indent + "@Suppress(\"" + inspectionId + "\")\n";
+        String annotation = info.indent() + "@Suppress(\"" + inspectionId + "\")\n";
         ApplicationManager.getApplication().runWriteAction(() ->
             com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
-                document.insertString(lineStart, annotation);
+                document.insertString(info.lineStart(), annotation);
                 com.intellij.psi.PsiDocumentManager.getInstance(project).commitDocument(document);
             }, LABEL_SUPPRESS_INSPECTION, null)
         );
 
-        return "Added @Suppress(\"" + inspectionId + "\") at line " + (targetLine + 1);
+        return "Added @Suppress(\"" + inspectionId + "\") at line " + (info.targetLine() + 1);
     }
 
     private String suppressWithComment(com.intellij.psi.PsiElement target, String inspectionId,
                                        com.intellij.openapi.editor.Document document) {
+        LineInfo info = getLineInfo(target, document);
+        String comment = info.indent() + "//noinspection " + inspectionId + "\n";
+        ApplicationManager.getApplication().runWriteAction(() ->
+            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
+                document.insertString(info.lineStart(), comment);
+                com.intellij.psi.PsiDocumentManager.getInstance(project).commitDocument(document);
+            }, LABEL_SUPPRESS_INSPECTION, null)
+        );
+        return "Added //noinspection " + inspectionId + " comment at line " + (info.targetLine() + 1);
+    }
+
+    private record LineInfo(int targetLine, int lineStart, String indent) {
+    }
+
+    private LineInfo getLineInfo(com.intellij.psi.PsiElement target,
+                                 com.intellij.openapi.editor.Document document) {
         int targetOffset = target.getTextRange().getStartOffset();
         int targetLine = document.getLineNumber(targetOffset);
         int lineStart = document.getLineStartOffset(targetLine);
-
         String lineText = document.getText(
             new com.intellij.openapi.util.TextRange(lineStart, document.getLineEndOffset(targetLine)));
         StringBuilder indent = new StringBuilder();
@@ -1061,16 +1061,7 @@ class CodeQualityTools extends AbstractToolHandler {
             if (c == ' ' || c == '\t') indent.append(c);
             else break;
         }
-
-        String comment = indent + "//noinspection " + inspectionId + "\n";
-        ApplicationManager.getApplication().runWriteAction(() ->
-            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
-                document.insertString(lineStart, comment);
-                com.intellij.psi.PsiDocumentManager.getInstance(project).commitDocument(document);
-            }, LABEL_SUPPRESS_INSPECTION, null)
-        );
-
-        return "Added //noinspection " + inspectionId + " comment at line " + (targetLine + 1);
+        return new LineInfo(targetLine, lineStart, indent.toString());
     }
 
 // ---- run_sonarqube_analysis ----
@@ -1088,38 +1079,24 @@ class CodeQualityTools extends AbstractToolHandler {
 
     private String optimizeImports(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
-
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-
         EdtUtil.invokeLater(() -> {
             try {
-                VirtualFile vf = resolveVirtualFile(pathStr);
-                if (vf == null) {
-                    resultFuture.complete(ERROR_FILE_NOT_FOUND + pathStr);
-                    return;
-                }
-
-                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-                if (psiFile == null) {
-                    resultFuture.complete(ERROR_CANNOT_PARSE + pathStr);
-                    return;
-                }
-
+                FilePair pair = resolveFilePair(pathStr, resultFuture);
+                if (pair == null) return;
                 ApplicationManager.getApplication().runWriteAction(() ->
                     com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
                         com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
-                        new com.intellij.codeInsight.actions.OptimizeImportsProcessor(project, psiFile).run();
+                        new com.intellij.codeInsight.actions.OptimizeImportsProcessor(project, pair.psiFile()).run();
                     }, "Optimize Imports", null)
                 );
-
                 String relPath = project.getBasePath() != null
-                    ? relativize(project.getBasePath(), vf.getPath()) : pathStr;
+                    ? relativize(project.getBasePath(), pair.vf().getPath()) : pathStr;
                 resultFuture.complete("Imports optimized: " + relPath);
             } catch (Exception e) {
                 resultFuture.complete("Error optimizing imports: " + e.getMessage());
             }
         });
-
         return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
@@ -1127,44 +1104,47 @@ class CodeQualityTools extends AbstractToolHandler {
 
     private String formatCode(JsonObject args) throws Exception {
         String pathStr = args.get("path").getAsString();
-
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-
         EdtUtil.invokeLater(() -> {
             try {
-                VirtualFile vf = resolveVirtualFile(pathStr);
-                if (vf == null) {
-                    resultFuture.complete(ERROR_FILE_NOT_FOUND + pathStr);
-                    return;
-                }
-
-                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-                if (psiFile == null) {
-                    resultFuture.complete(ERROR_CANNOT_PARSE + pathStr);
-                    return;
-                }
-
+                FilePair pair = resolveFilePair(pathStr, resultFuture);
+                if (pair == null) return;
                 ApplicationManager.getApplication().runWriteAction(() ->
                     com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
                         com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
-                        new com.intellij.codeInsight.actions.ReformatCodeProcessor(psiFile, false).run();
+                        new com.intellij.codeInsight.actions.ReformatCodeProcessor(pair.psiFile(), false).run();
                     }, "Reformat Code", null)
                 );
-
                 String relPath = project.getBasePath() != null
-                    ? relativize(project.getBasePath(), vf.getPath()) : pathStr;
+                    ? relativize(project.getBasePath(), pair.vf().getPath()) : pathStr;
                 resultFuture.complete("Code formatted: " + relPath);
             } catch (Exception e) {
                 resultFuture.complete("Error formatting code: " + e.getMessage());
             }
         });
-
         String result = resultFuture.get(30, TimeUnit.SECONDS);
         if (result.startsWith("Code formatted")) {
             FileTools.followFileIfEnabled(project, pathStr, 1, 1,
                 FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " formatted");
         }
         return result;
+    }
+
+    private record FilePair(VirtualFile vf, PsiFile psiFile) {
+    }
+
+    private FilePair resolveFilePair(String pathStr, CompletableFuture<String> future) {
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) {
+            future.complete(ERROR_FILE_NOT_FOUND + pathStr);
+            return null;
+        }
+        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+        if (psiFile == null) {
+            future.complete(ERROR_CANNOT_PARSE + pathStr);
+            return null;
+        }
+        return new FilePair(vf, psiFile);
     }
 
 // ---- apply_quickfix ----

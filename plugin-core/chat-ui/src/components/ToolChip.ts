@@ -12,7 +12,6 @@ export default class ToolChip extends HTMLElement {
         if (this._init) return;
         this._init = true;
         this.classList.add('turn-chip', 'tool');
-        this.style.cursor = 'pointer';
         this.setAttribute('role', 'button');
         this.setAttribute('tabindex', '0');
         this.setAttribute('aria-expanded', 'false');

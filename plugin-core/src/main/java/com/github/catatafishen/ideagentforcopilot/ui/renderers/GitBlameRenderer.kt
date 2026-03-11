@@ -19,11 +19,11 @@ internal object GitBlameRenderer : ToolResultRenderer {
     )
 
     private val PALETTE = listOf(
-        JBColor(Color(0x08, 0x69, 0xDA), Color(0x58, 0xA6, 0xFF)),
-        JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50)),
-        JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22)),
-        JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49)),
-        JBColor(Color(0x8E, 0x44, 0xAD), Color(0xBB, 0x6B, 0xD9)),
+        ToolRenderers.CLASS_COLOR,
+        ToolRenderers.SUCCESS_COLOR,
+        ToolRenderers.WARN_COLOR,
+        ToolRenderers.FAIL_COLOR,
+        ToolRenderers.FIELD_COLOR,
         JBColor(Color(0x16, 0xA0, 0x85), Color(0x39, 0xD3, 0x53)),
     )
 
@@ -53,7 +53,8 @@ internal object GitBlameRenderer : ToolResultRenderer {
         val sb = StringBuilder()
         var prevAuthor = ""
         for (entry in entries) {
-            val authorTag = if (entry.author != prevAuthor) abbreviateAuthor(entry.author).padEnd(14) else " ".repeat(14)
+            val authorTag =
+                if (entry.author != prevAuthor) abbreviateAuthor(entry.author).padEnd(14) else " ".repeat(14)
             sb.appendLine("$authorTag ${entry.date} ${entry.lineNum.padStart(4)}: ${entry.content}")
             prevAuthor = entry.author
         }
@@ -73,11 +74,23 @@ internal object GitBlameRenderer : ToolResultRenderer {
         return legendRow
     }
 
-    private data class BlameEntry(val hash: String, val author: String, val date: String, val lineNum: String, val content: String)
+    private data class BlameEntry(
+        val hash: String,
+        val author: String,
+        val date: String,
+        val lineNum: String,
+        val content: String
+    )
 
     private fun parseBlameLine(line: String): BlameEntry? {
         val match = BLAME_LINE.matchEntire(line) ?: return null
-        return BlameEntry(match.groupValues[1], match.groupValues[2].trim(), match.groupValues[3], match.groupValues[4], match.groupValues[5])
+        return BlameEntry(
+            match.groupValues[1],
+            match.groupValues[2].trim(),
+            match.groupValues[3],
+            match.groupValues[4],
+            match.groupValues[5]
+        )
     }
 
     private fun abbreviateAuthor(name: String): String =

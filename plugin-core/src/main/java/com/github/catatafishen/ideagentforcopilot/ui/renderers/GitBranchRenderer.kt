@@ -4,7 +4,6 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -15,7 +14,6 @@ internal object GitBranchRenderer : ToolResultRenderer {
 
     private val BRANCH_LINE = Regex("""^([* ])\s+(\S+)\s+([a-f0-9]+)\s+(.*)$""")
     private val REMOTE_PREFIX = Regex("""^remotes?/""")
-    private val CURRENT_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -67,10 +65,10 @@ internal object GitBranchRenderer : ToolResultRenderer {
         for (b in branches) {
             val row = ToolRenderers.rowPanel()
             if (b.isCurrent) {
-                row.add(ToolRenderers.badgeLabel("●", CURRENT_COLOR))
+                row.add(ToolRenderers.badgeLabel("●", ToolRenderers.SUCCESS_COLOR))
                 row.add(JBLabel(b.name).apply {
                     font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-                    foreground = CURRENT_COLOR
+                    foreground = ToolRenderers.SUCCESS_COLOR
                 })
             } else {
                 row.add(JBLabel(b.name))

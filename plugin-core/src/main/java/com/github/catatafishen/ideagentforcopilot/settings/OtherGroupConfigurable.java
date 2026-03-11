@@ -30,7 +30,8 @@ public final class OtherGroupConfigurable implements Configurable {
                     + "<b>Additional Settings</b><br><br>"
                     + "Miscellaneous plugin configuration:<br><br>"
                     + "&#8226; <b>Scratch File Types</b> \u2014 language dropdown and alias mappings for scratch files<br>"
-                    + "&#8226; <b>Project Files</b> \u2014 file shortcuts in the toolbar dropdown"
+                    + "&#8226; <b>Project Files</b> \u2014 file shortcuts in the toolbar dropdown<br>"
+                    + "&#8226; <b>Chat History</b> \u2014 manage stored conversation files"
                     + "</html>"))
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();

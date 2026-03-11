@@ -4,7 +4,6 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -13,8 +12,6 @@ import javax.swing.JComponent
  */
 internal object GitShowRenderer : ToolResultRenderer {
 
-    private val ADD_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val DEL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
     private val SUMMARY_PATTERN = Regex(""".*\d+ files? changed.*""")
     private const val COMMIT_PREFIX = "commit "
 
@@ -51,10 +48,15 @@ internal object GitShowRenderer : ToolResultRenderer {
 
         for (line in lines.drop(1)) {
             when {
-                inDiff -> { /* skip diff content */ }
+                inDiff -> { /* skip diff content */
+                }
+
                 line.startsWith("diff --git") -> inDiff = true
                 line.startsWith("Author:") -> parsed.author = line.removePrefix("Author:").trim()
-                line.startsWith("Date:") -> { parsed.date = line.removePrefix("Date:").trim(); inMessage = true }
+                line.startsWith("Date:") -> {
+                    parsed.date = line.removePrefix("Date:").trim(); inMessage = true
+                }
+
                 line.isBlank() && !inMessage && parsed.author.isNotEmpty() -> inMessage = true
                 inMessage && line.isBlank() -> inMessage = false
                 inMessage -> parsed.messageLines.add(line.trim())
@@ -93,8 +95,12 @@ internal object GitShowRenderer : ToolResultRenderer {
         val statsRow = ToolRenderers.rowPanel()
         statsRow.border = JBUI.Borders.emptyTop(4)
         statsRow.add(ToolRenderers.mutedLabel(stats.files))
-        if (stats.insertions.isNotEmpty()) statsRow.add(JBLabel("+${stats.insertions}").apply { foreground = ADD_COLOR })
-        if (stats.deletions.isNotEmpty()) statsRow.add(JBLabel("-${stats.deletions}").apply { foreground = DEL_COLOR })
+        if (stats.insertions.isNotEmpty()) statsRow.add(JBLabel("+${stats.insertions}").apply {
+            foreground = ToolRenderers.ADD_COLOR
+        })
+        if (stats.deletions.isNotEmpty()) statsRow.add(JBLabel("-${stats.deletions}").apply {
+            foreground = ToolRenderers.DEL_COLOR
+        })
         panel.add(statsRow)
     }
 
@@ -103,7 +109,12 @@ internal object GitShowRenderer : ToolResultRenderer {
             val parts = stat.trim().split("|", limit = 2)
             if (parts.size == 2) {
                 val row = ToolRenderers.rowPanel()
-                row.add(ToolRenderers.badgeLabel("M", JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())))
+                row.add(
+                    ToolRenderers.badgeLabel(
+                        "M",
+                        JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
+                    )
+                )
                 row.add(ToolRenderers.monoLabel(parts[0].trim()))
                 row.add(ToolRenderers.mutedLabel(parts[1].trim()))
                 panel.add(row)

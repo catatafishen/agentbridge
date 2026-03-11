@@ -279,13 +279,14 @@ const ChatController = {
         this._container()?.scrollIfNeeded();
     },
 
-    addSubAgentToolCall(subAgentDomId: string, toolDomId: string, title: string, paramsJson?: string): void {
+    addSubAgentToolCall(subAgentDomId: string, toolDomId: string, title: string, paramsJson?: string, kind?: string): void {
         const msg = document.getElementById('sa-' + subAgentDomId);
         if (!msg) return;
         const meta = msg.querySelector('message-meta');
         const chip = document.createElement('tool-chip');
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
+        if (kind) chip.setAttribute('kind', kind);
         chip.dataset.chipFor = toolDomId;
         if (paramsJson) chip.dataset.params = paramsJson;
         if (meta) {

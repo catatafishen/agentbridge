@@ -18,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Executes MCP tool calls inside IntelliJ, providing PSI/AST-backed code intelligence.
@@ -46,8 +47,6 @@ public final class PsiBridgeService implements Disposable {
     private final RunConfigurationService runConfigService;
     private final Map<String, ToolHandler> toolRegistry = new LinkedHashMap<>();
     private final FileTools fileTools;
-    private final java.util.concurrent.atomic.AtomicBoolean permissionPending =
-        new java.util.concurrent.atomic.AtomicBoolean(false);
     private final java.util.Set<String> sessionAllowedTools =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -120,7 +119,24 @@ public final class PsiBridgeService implements Disposable {
         }
         long startMs = System.currentTimeMillis();
         boolean success = true;
-        try {
+
+        // Subscribe to daemon events BEFORE the write to avoid the race where
+        // the daemon finishes before we subscribe and we miss the event entirely.
+        // For existing files, we resolve the VirtualFile now and make the waiter file-specific.
+        // For new files (create_file), vfForHighlights is null; the fresh waiter in appendAutoHighlights
+        // will be created after the file exists and will be file-specific.
+        String filePathForHighlights = isWriteToolName(toolName) ? extractFilePath(arguments) : null;
+        com.intellij.openapi.vfs.VirtualFile vfForHighlights = filePathForHighlights != null
+            ? ToolUtils.resolveVirtualFile(project, filePathForHighlights) : null;
+
+        // Record the document stamp NOW (before the write) so DaemonWaiter can reject
+        // any in-flight daemon pass that analyzed the pre-edit document.
+        long preWriteStamp = getDocumentStamp(vfForHighlights);
+
+        // try-with-resources ensures the waiter is always disconnected.
+        // appendAutoHighlights may close and re-subscribe internally; disconnect() is idempotent.
+        try (DaemonWaiter daemonWaiter = filePathForHighlights != null
+            ? new DaemonWaiter(project, vfForHighlights, preWriteStamp) : null) {
             String denied = checkPluginToolPermission(toolName, arguments);
             if (denied != null) {
                 fireToolCallEvent(toolName, startMs, false);
@@ -130,17 +146,9 @@ public final class PsiBridgeService implements Disposable {
             String result = handler.handle(arguments);
 
             // Piggyback highlights after successful write operations
-            if (isSuccessfulWrite(toolName, result)) {
-                String filePath = null;
-                if (arguments.has("path")) {
-                    filePath = arguments.get("path").getAsString();
-                } else if (arguments.has("file")) {
-                    filePath = arguments.get("file").getAsString();
-                }
-                if (filePath != null) {
-                    LOG.info("Auto-highlights: piggybacking on write to " + filePath);
-                    result = appendAutoHighlights(result, filePath);
-                }
+            if (isSuccessfulWrite(toolName, result) && daemonWaiter != null) {
+                LOG.info("Auto-highlights: piggybacking on write to " + filePathForHighlights);
+                result = appendAutoHighlights(result, filePathForHighlights, daemonWaiter);
             }
             return result;
         } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
@@ -156,14 +164,6 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
-     * Returns the set of registered tool names (built-in + dynamically registered).
-     * Used by MacroToolRegistrar in the experimental plugin variant.
-     */
-    public java.util.Set<String> getRegisteredToolNames() {
-        return java.util.Collections.unmodifiableSet(toolRegistry.keySet());
-    }
-
-    /**
      * Dynamically registers a tool at runtime. Used by MacroToolRegistrar
      * (experimental plugin variant) to add user-recorded macros as MCP tools.
      */
@@ -172,16 +172,16 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
-     * Removes a dynamically registered tool. Returns true if the tool existed.
+     * Removes a dynamically registered tool.
      */
-    public boolean unregisterTool(String id) {
-        return toolRegistry.remove(id) != null;
+    public void unregisterTool(String id) {
+        toolRegistry.remove(id);
     }
 
     private void fireToolCallEvent(String toolName, long startTimeMs, boolean success) {
         long duration = System.currentTimeMillis() - startTimeMs;
         try {
-            project.getMessageBus().syncPublisher(TOOL_CALL_TOPIC)
+            PlatformApiCompat.syncPublisher(project, TOOL_CALL_TOPIC)
                 .toolCalled(toolName, duration, success);
         } catch (Exception e) {
             LOG.debug("Failed to fire tool call event", e);
@@ -211,12 +211,7 @@ public final class PsiBridgeService implements Disposable {
         }
 
         // ASK: show a permission bubble in the chat panel and block until user responds
-        permissionPending.set(true);
-        try {
-            return askUserPermission(toolName, arguments);
-        } finally {
-            permissionPending.set(false);
-        }
+        return askUserPermission(toolName, arguments);
     }
 
     @Nullable
@@ -306,7 +301,14 @@ public final class PsiBridgeService implements Disposable {
     }
 
     private boolean isInsideProject(String path) {
-        String basePath = project.getBasePath();
+        return isPathUnderBase(path, project.getBasePath());
+    }
+
+    /**
+     * Returns true if the given path (absolute or relative) falls under the given base path,
+     * or if either is null/non-absolute (treating such cases as in-project for safety).
+     */
+    public static boolean isPathUnderBase(String path, @Nullable String basePath) {
         if (basePath == null) return true;
         java.io.File f = new java.io.File(path);
         if (!f.isAbsolute()) return true;
@@ -337,10 +339,23 @@ public final class PsiBridgeService implements Disposable {
         return sb.toString();
     }
 
+    /**
+     * Returns true if the tool name is a write operation that should get auto-highlights.
+     */
+    private static boolean isWriteToolName(String toolName) {
+        return switch (toolName) {
+            case "write_file", "intellij_write_file", "edit_text",
+                 "create_file", "replace_symbol_body",
+                 "insert_before_symbol", "insert_after_symbol" -> true;
+            default -> false;
+        };
+    }
+
     private static boolean isSuccessfulWrite(String toolName, String result) {
         return switch (toolName) {
             case "write_file", "intellij_write_file", "edit_text" ->
                 result.startsWith("Edited:") || result.startsWith("Written:");
+            case "create_file" -> result.startsWith("✓ Created file:");
             case "replace_symbol_body" -> result.startsWith("Replaced lines ");
             case "insert_before_symbol" -> result.startsWith("Inserted ") && result.contains(" before ");
             case "insert_after_symbol" -> result.startsWith("Inserted ") && result.contains(" after ");
@@ -348,20 +363,40 @@ public final class PsiBridgeService implements Disposable {
         };
     }
 
+    @Nullable
+    private static String extractFilePath(JsonObject arguments) {
+        if (arguments.has("path")) return arguments.get("path").getAsString();
+        if (arguments.has("file")) return arguments.get("file").getAsString();
+        return null;
+    }
+
     /**
-     * Auto-run get_highlights on the edited file and append results to the write response.
-     * Waits for the DaemonCodeAnalyzer to complete a pass after the edit, then collects highlights.
+     * Returns the document's current modification stamp for the given file,
+     * or -1 if the document is not loaded or the file is null.
+     * Must be called inside a read action (or from EDT); wraps itself if needed.
      */
-    private String appendAutoHighlights(String writeResult, String path) {
-        try {
+    private static long getDocumentStamp(@Nullable com.intellij.openapi.vfs.VirtualFile vf) {
+        if (vf == null) return -1L;
+        // FileDocumentManager.getDocument requires a read action.
+        return com.intellij.openapi.application.ApplicationManager.getApplication()
+            .runReadAction((com.intellij.openapi.util.Computable<Long>) () -> {
+                com.intellij.openapi.editor.Document doc =
+                    com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+                return doc != null ? doc.getModificationStamp() : -1L;
+            });
+    }
+
+    private String appendAutoHighlights(String writeResult, String path, DaemonWaiter preWriteWaiter) {
+        com.intellij.openapi.vfs.VirtualFile vf = ToolUtils.resolveVirtualFile(project, path);
+        try (DaemonWaiter activeWaiter = resolveActiveWaiter(preWriteWaiter, vf, path)) {
+            activeWaiter.await();
+
             ToolHandler highlightHandler = toolRegistry.get("get_highlights");
             if (highlightHandler == null) return writeResult;
 
-            // Wait for daemon to finish re-analyzing after the edit
-            waitForDaemonPass();
-
             JsonObject highlightArgs = new JsonObject();
             highlightArgs.addProperty("path", path);
+            highlightArgs.addProperty("include_unindexed", true);
             String highlights = highlightHandler.handle(highlightArgs);
             LOG.info("Auto-highlights: appended " + highlights.split("\n").length + " lines for " + path);
 
@@ -375,13 +410,146 @@ public final class PsiBridgeService implements Disposable {
         }
     }
 
+    private DaemonWaiter resolveActiveWaiter(
+        DaemonWaiter preWriteWaiter,
+        @Nullable com.intellij.openapi.vfs.VirtualFile vf,
+        String path) {
+        boolean alreadyOpen = vf != null
+            && com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf);
+        if (alreadyOpen) return preWriteWaiter;
+        // Subscribe a file-specific waiter BEFORE opening so we can't miss the new daemon pass.
+        // Use preWriteStamp = -1: the write already happened before this waiter is created, so
+        // any daemon pass that includes this file is necessarily post-write.
+        preWriteWaiter.close();
+        DaemonWaiter fresh = new DaemonWaiter(project, vf, -1L);
+        openFileSilently(vf, path);
+        return fresh;
+    }
+
+    private void openFileSilently(@Nullable com.intellij.openapi.vfs.VirtualFile vf, String path) {
+        CompletableFuture<Void> opened = new CompletableFuture<>();
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+            try {
+                com.intellij.openapi.vfs.VirtualFile target = vf != null
+                    ? vf : ToolUtils.resolveVirtualFile(project, path);
+                if (target != null) {
+                    com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                        .openFile(target, false);
+                }
+            } finally {
+                opened.complete(null);
+            }
+        });
+        try {
+            opened.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.info("openFileSilently interrupted for " + path);
+        } catch (Exception e) {
+            LOG.info("openFileSilently timed out or failed for " + path + ": " + e.getMessage());
+        }
+    }
+
     /**
-     * Wait for the DaemonCodeAnalyzer to finish its current pass.
-     * Uses a fixed wait since DaemonCodeAnalyzer.isRunning() is internal API.
+     * Subscribes to {@code DaemonCodeAnalyzer.DaemonListener} and waits until daemon analysis
+     * has settled for the target file.
+     *
+     * <h3>Why debounce instead of a single latch?</h3>
+     * IntelliJ fires multiple consecutive {@code daemonFinished} events for a single edit:
+     * <ol>
+     *   <li>A fast built-in pass (syntax, annotations) — fires first, within ~300ms</li>
+     *   <li>A slow external-annotator pass (e.g. SonarLint) — fires ~800ms later once the
+     *       Sonar analysis server responds</li>
+     * </ol>
+     * A single {@link java.util.concurrent.CountDownLatch} would trigger on the first (fast) pass and
+     * read highlights before SonarLint has updated the markup model with fresh results.
+     * The debounce approach keeps resetting a timer on every {@code daemonFinished} event, only
+     * proceeding once there has been 600ms of silence — ensuring all passes have settled.
      */
-    private void waitForDaemonPass() throws InterruptedException {
-        Thread.sleep(2000);
-        LOG.info("Auto-highlights: daemon pass wait completed (2s fixed), collecting highlights");
+    private static final class DaemonWaiter implements AutoCloseable {
+
+        /**
+         * How long (ms) to wait after the last {@code daemonFinished} event before considering
+         * analysis settled. 600ms is long enough to bridge the gap between IntelliJ's fast pass
+         * and SonarLint's follow-up external-annotator pass.
+         */
+        private static final long SETTLE_MS = 600L;
+
+        private final java.util.concurrent.CountDownLatch firstPassLatch =
+            new java.util.concurrent.CountDownLatch(1);
+        private volatile long lastFinishedAt = 0L;
+        private final Runnable disconnect;
+
+        /**
+         * @param preWriteStamp the document modificationStamp recorded BEFORE the write, or -1 to
+         *                      accept any daemon pass (e.g. for freshly created files where the write
+         *                      has already happened before this waiter is constructed).
+         */
+        DaemonWaiter(Project proj, @Nullable com.intellij.openapi.vfs.VirtualFile targetFile,
+                     long preWriteStamp) {
+            disconnect = PlatformApiCompat.subscribeDaemonListener(proj,
+                new com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DaemonListener() {
+                    @Override
+                    public void daemonFinished(
+                        @NotNull java.util.Collection<? extends com.intellij.openapi.fileEditor.FileEditor> fileEditors) {
+                        if (targetFile != null) {
+                            boolean included = fileEditors.stream()
+                                .anyMatch(fe -> targetFile.equals(fe.getFile()));
+                            if (!included) return;
+
+                            // Reject pre-write in-flight passes: only accept a daemon pass that
+                            // analyzed a version of the document AFTER the write was applied.
+                            if (preWriteStamp >= 0) {
+                                long currentStamp = getDocumentStamp(targetFile);
+                                if (currentStamp <= preWriteStamp) {
+                                    LOG.info("Auto-highlights: ignoring pre-write daemon pass (stamp "
+                                        + currentStamp + " <= " + preWriteStamp + ")");
+                                    return;
+                                }
+                            }
+                        }
+                        lastFinishedAt = System.currentTimeMillis();
+                        firstPassLatch.countDown();
+                    }
+
+                    @Override
+                    public void daemonFinished() {
+                        if (targetFile == null) {
+                            lastFinishedAt = System.currentTimeMillis();
+                            firstPassLatch.countDown();
+                        }
+                    }
+                });
+        }
+
+        void await() throws InterruptedException {
+            // Phase 1: wait for the first qualifying daemon pass (up to 5s)
+            if (!firstPassLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                LOG.info("Auto-highlights: daemon wait timed out (5s), reading available highlights");
+                return;
+            }
+            LOG.info("Auto-highlights: first daemon pass completed, settling for external annotators");
+
+            // Phase 2: sleep for SETTLE_MS — gives SonarLint (and other external annotators)
+            // time to complete their follow-up pass and update the markup model.
+            long snapshotAt = lastFinishedAt;
+            Thread.sleep(SETTLE_MS);
+
+            // If a second pass fired while we slept (e.g. SonarLint's external annotator),
+            // wait out the remaining settle time from that latest event.
+            if (lastFinishedAt != snapshotAt) {
+                long extraSleep = (lastFinishedAt + SETTLE_MS) - System.currentTimeMillis();
+                if (extraSleep > 0) {
+                    Thread.sleep(extraSleep);
+                }
+            }
+            LOG.info("Auto-highlights: daemon settled");
+        }
+
+        @Override
+        public void close() {
+            disconnect.run();
+        }
     }
 
     @Override

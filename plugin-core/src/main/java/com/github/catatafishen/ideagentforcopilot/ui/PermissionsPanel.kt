@@ -320,7 +320,7 @@ internal class PermissionsPanel(private val settings: AgentUiSettings) {
         gbc.insets = JBUI.insets(0, 24, 0, 0)
         panel.add(JBLabel(labelText).apply {
             font = JBUI.Fonts.smallFont()
-            foreground = JBColor.GRAY
+            foreground = JBUI.CurrentTheme.Label.disabledForeground()
         }, gbc)
         gbc.gridx = 1; gbc.insets = JBUI.insets(1, 0)
         panel.add(combo, gbc)

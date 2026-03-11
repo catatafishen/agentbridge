@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+import com.intellij.icons.AllIcons
+import com.intellij.ui.components.JBLabel
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -34,15 +36,15 @@ internal object RunConfigRenderer : ToolResultRenderer {
             val isTemp = suffix.contains("temporary")
 
             val badge = when {
-                type.contains("Application") -> "▶"
-                type.contains("JUnit") || type.contains("Test") -> "✓"
-                type.contains("Gradle") -> "🔧"
-                else -> "◆"
+                type.contains("Application") -> AllIcons.RunConfigurations.Application
+                type.contains("JUnit") || type.contains("Test") -> AllIcons.RunConfigurations.Junit
+                type.contains("Gradle") -> AllIcons.Nodes.ConfigFolder
+                else -> AllIcons.RunConfigurations.Compound
             }
 
             val row = ToolRenderers.rowPanel()
-            row.add(javax.swing.JLabel(badge))
-            row.add(com.intellij.ui.components.JBLabel(name).apply {
+            row.add(JBLabel().apply { icon = badge })
+            row.add(JBLabel(name).apply {
                 font = font.deriveFont(Font.BOLD)
             })
             row.add(ToolRenderers.mutedLabel(type))

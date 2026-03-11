@@ -28,8 +28,6 @@ internal object WriteFileRenderer : ArgumentAwareRenderer {
         Regex("""^Edited:\s+(.+?)\s+\(replaced\s+lines\s+(\d+)-(\d+)\s+\((\d+)\s+lines?\)\s+with\s+(\d+)\s+chars\)""")
     private val CONTEXT_LINE = Regex("""^(\d+): (.*)$""")
     private val SYNTAX_WARNING = Regex("""WARNING:.*$""", RegexOption.DOT_MATCHES_ALL)
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
 
     private val ADD_BG = JBColor(Color(0xE6, 0xFF, 0xEC), Color(0x1B, 0x3A, 0x22))
     private val DEL_BG = JBColor(Color(0xFF, 0xEB, 0xE9), Color(0x3D, 0x1F, 0x1F))
@@ -132,7 +130,7 @@ internal object WriteFileRenderer : ArgumentAwareRenderer {
         headerRow.add(JBLabel(action).apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         headerRow.add(ToolRenderers.fileLink(fileName, fullPath))
         panel.add(headerRow)
@@ -149,7 +147,7 @@ internal object WriteFileRenderer : ArgumentAwareRenderer {
         val row = ToolRenderers.rowPanel()
         row.add(JBLabel(warning).apply {
             icon = ToolIcons.WARNING
-            foreground = WARN_COLOR
+            foreground = ToolRenderers.WARN_COLOR
         })
         panel.add(row)
     }

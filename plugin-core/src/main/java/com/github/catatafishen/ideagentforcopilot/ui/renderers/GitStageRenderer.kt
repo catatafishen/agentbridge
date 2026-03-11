@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Font
@@ -18,7 +19,6 @@ import javax.swing.JComponent
 internal object GitStageRenderer : ToolResultRenderer {
 
     private val SUCCESS_PATTERN = Regex("""^✓\s+(.+)""")
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -27,9 +27,10 @@ internal object GitStageRenderer : ToolResultRenderer {
 
         val panel = ToolRenderers.listPanel()
 
-        val header = com.intellij.ui.components.JBLabel("✓ ${firstMatch.groupValues[1]}").apply {
+        val header = JBLabel(firstMatch.groupValues[1]).apply {
+            icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
             alignmentX = JComponent.LEFT_ALIGNMENT
         }
         panel.add(header)
@@ -44,7 +45,7 @@ internal object GitStageRenderer : ToolResultRenderer {
                 row.add(ToolRenderers.badgeLabel(status, badgeColor(status)))
                 row.add(ToolRenderers.monoLabel(path))
             } else {
-                row.add(ToolRenderers.badgeLabel("+", SUCCESS_COLOR))
+                row.add(ToolRenderers.badgeLabel("+", ToolRenderers.SUCCESS_COLOR))
                 row.add(ToolRenderers.monoLabel(fileLine.trim()))
             }
             panel.add(row)
@@ -54,9 +55,9 @@ internal object GitStageRenderer : ToolResultRenderer {
     }
 
     private fun badgeColor(status: String): Color = when (status) {
-        "A" -> SUCCESS_COLOR
-        "D" -> JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
-        "R", "C" -> JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
+        "A" -> ToolRenderers.ADD_COLOR
+        "D" -> ToolRenderers.DEL_COLOR
+        "R", "C" -> ToolRenderers.MOD_COLOR
         else -> JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
     }
 }

@@ -1,10 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -23,9 +21,6 @@ internal object RefactorRenderer : ToolResultRenderer {
     private val FILE_LINE = Regex("""^\s*File:\s+(.+)$""")
     private val USAGE_LINE = Regex("""^\s+(.+?):(\d+)""")
 
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
-
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
@@ -34,7 +29,12 @@ internal object RefactorRenderer : ToolResultRenderer {
         return when {
             RENAME.containsMatchIn(first) -> renderRename(RENAME.find(first)!!, lines)
             DELETE_OK.containsMatchIn(first) -> renderDeleteOk(DELETE_OK.find(first)!!, lines)
-            EXTRACT.containsMatchIn(first) -> renderSuccess("Extracted method", EXTRACT.find(first)!!.groupValues[1], lines)
+            EXTRACT.containsMatchIn(first) -> renderSuccess(
+                "Extracted method",
+                EXTRACT.find(first)!!.groupValues[1],
+                lines
+            )
+
             INLINE.containsMatchIn(first) -> renderSuccess("Inlined", INLINE.find(first)!!.groupValues[1], lines)
             DELETE_FAIL.containsMatchIn(first) -> renderDeleteFail(DELETE_FAIL.find(first)!!, lines)
             else -> null
@@ -96,7 +96,7 @@ internal object RefactorRenderer : ToolResultRenderer {
         headerRow.add(JBLabel("Cannot delete").apply {
             icon = ToolIcons.FAILURE
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = FAIL_COLOR
+            foreground = ToolRenderers.FAIL_COLOR
         })
         headerRow.add(JBLabel(name).apply {
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
@@ -125,7 +125,7 @@ internal object RefactorRenderer : ToolResultRenderer {
         headerRow.add(JBLabel(action).apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         panel.add(headerRow)
     }

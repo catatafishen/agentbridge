@@ -1,11 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
-import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
-import java.awt.Color
-import java.awt.Font
 import javax.swing.JComponent
 
 /**
@@ -24,10 +19,6 @@ internal object IdeInfoRenderer : ToolResultRenderer {
     private val INDEXING_PROGRESS = Regex("""^Indexing in progress""", RegexOption.IGNORE_CASE)
     private val LIST_HEADER = Regex("""^(\d+)\s+(.+?):?\s*$""")
     private val DIFF_SHOWN = Regex("""^Diff shown""")
-
-    private val INFO_COLOR = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
 
     override fun render(output: String): JComponent? {
         val text = output.trimEnd()
@@ -82,7 +73,7 @@ internal object IdeInfoRenderer : ToolResultRenderer {
 
             val row = ToolRenderers.rowPanel()
             if (isActive) {
-                row.add(ToolRenderers.badgeLabel("●", SUCCESS_COLOR))
+                row.add(ToolRenderers.badgeLabel("●", ToolRenderers.SUCCESS_COLOR))
             }
             row.add(ToolRenderers.fileLink(path.substringAfterLast('/'), path))
             if (modified) {
@@ -97,29 +88,25 @@ internal object IdeInfoRenderer : ToolResultRenderer {
         return when {
             INDEXING_IDLE.containsMatchIn(firstLine) -> {
                 val panel = ToolRenderers.listPanel()
-                val row = ToolRenderers.rowPanel()
-                row.add(JBLabel("Indexing idle").apply {
-                    icon = ToolIcons.SUCCESS
-                    font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-                    foreground = SUCCESS_COLOR
-                })
-                panel.add(row)
+                panel.add(ToolRenderers.statusHeader(ToolIcons.SUCCESS, "Indexing idle", ToolRenderers.SUCCESS_COLOR))
                 panel
             }
+
             INDEXING_PROGRESS.containsMatchIn(firstLine) -> {
                 val panel = ToolRenderers.listPanel()
-                val row = ToolRenderers.rowPanel()
-                row.add(JBLabel("Indexing in progress").apply {
-                    icon = ToolIcons.EXECUTE
-                    font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-                    foreground = WARN_COLOR
-                })
-                panel.add(row)
+                panel.add(
+                    ToolRenderers.statusHeader(
+                        ToolIcons.EXECUTE,
+                        "Indexing in progress",
+                        ToolRenderers.WARN_COLOR
+                    )
+                )
                 panel.add(ToolRenderers.mutedLabel(firstLine).apply {
                     alignmentX = JComponent.LEFT_ALIGNMENT
                 })
                 panel
             }
+
             else -> null
         }
     }
@@ -127,13 +114,7 @@ internal object IdeInfoRenderer : ToolResultRenderer {
     private fun tryDiffShown(line: String): JComponent? {
         DIFF_SHOWN.find(line) ?: return null
         val panel = ToolRenderers.listPanel()
-        val row = ToolRenderers.rowPanel()
-        row.add(JBLabel(line).apply {
-            icon = ToolIcons.SUCCESS
-            font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
-        })
-        panel.add(row)
+        panel.add(ToolRenderers.statusHeader(ToolIcons.SUCCESS, line, ToolRenderers.SUCCESS_COLOR))
         return panel
     }
 

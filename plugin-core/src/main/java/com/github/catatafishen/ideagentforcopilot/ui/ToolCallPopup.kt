@@ -1,17 +1,21 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
 import java.awt.Dimension
-import java.awt.Point
-import javax.swing.*
+import javax.swing.Box
+import javax.swing.BoxLayout
+import javax.swing.JComponent
+import javax.swing.JSeparator
 
 internal object ToolCallPopup {
 
@@ -26,8 +30,8 @@ internal object ToolCallPopup {
         "other" to JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170)),
     )
 
-    private val POPUP_WIDTH = JBUI.scale(650)
-    private val POPUP_HEIGHT = JBUI.scale(420)
+    private fun popupWidth() = JBUI.scale(650)
+    private fun popupHeight() = JBUI.scale(420)
 
     /**
      * Shows a popup with tool result and optional parameters.
@@ -41,17 +45,20 @@ internal object ToolCallPopup {
 
         val kindColor = KIND_COLORS[kind] ?: KIND_COLORS["other"]!!
         val panelBg = UIUtil.getPanelBackground()
-        val tintedBg = blendColor(kindColor, panelBg, 0.07)
+        val tintedBg = ToolRenderers.blendColor(kindColor, panelBg, 0.07)
 
         val contentPanel = buildContentPanel(tintedBg, resultPanel, paramsPanel)
 
+        val width = popupWidth()
+        val height = popupHeight()
+
         val scrollPane = JBScrollPane(contentPanel).apply {
-            preferredSize = Dimension(POPUP_WIDTH, POPUP_HEIGHT)
+            preferredSize = Dimension(width, height)
             border = JBUI.Borders.empty()
         }
 
         val popup = JBPopupFactory.getInstance()
-            .createComponentPopupBuilder(scrollPane, contentPanel)
+            .createComponentPopupBuilder(scrollPane, scrollPane)
             .setTitle(title)
             .setMovable(true)
             .setResizable(true)
@@ -65,18 +72,22 @@ internal object ToolCallPopup {
 
         val frame = WindowManager.getInstance().getFrame(project)
         if (frame != null) {
-            val center = Point(
-                frame.x + (frame.width - POPUP_WIDTH) / 2,
-                frame.y + (frame.height - POPUP_HEIGHT) / 2,
+            val rootPane = frame.rootPane
+            val relPoint = com.intellij.ui.awt.RelativePoint(
+                rootPane,
+                java.awt.Point(
+                    (rootPane.width - width) / 2,
+                    (rootPane.height - height) / 2,
+                )
             )
-            popup.showInScreenCoordinates(frame.rootPane, center)
+            popup.show(relPoint)
         } else {
             popup.showInFocusCenter()
         }
     }
 
-    private fun buildContentPanel(bg: Color, resultPanel: JComponent, paramsPanel: JComponent?): JPanel {
-        val panel = JPanel().apply {
+    private fun buildContentPanel(bg: Color, resultPanel: JComponent, paramsPanel: JComponent?): JBPanel<JBPanel<*>> {
+        val panel = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             background = bg
             border = JBUI.Borders.empty(8, 12)
@@ -98,7 +109,6 @@ internal object ToolCallPopup {
             panel.add(paramsPanel)
         }
 
-        // Absorb extra vertical space at the bottom so rows keep their preferred height
         panel.add(Box.createVerticalGlue())
 
         return panel
@@ -112,10 +122,4 @@ internal object ToolCallPopup {
             alignmentX = JComponent.LEFT_ALIGNMENT
         }
     }
-
-    private fun blendColor(fg: Color, bg: Color, alpha: Double): Color = Color(
-        (fg.red * alpha + bg.red * (1 - alpha)).toInt().coerceIn(0, 255),
-        (fg.green * alpha + bg.green * (1 - alpha)).toInt().coerceIn(0, 255),
-        (fg.blue * alpha + bg.blue * (1 - alpha)).toInt().coerceIn(0, 255),
-    )
 }

@@ -35,7 +35,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
      * Fired on the project message bus when the MCP server starts or stops.
      */
     public static final Topic<StatusListener> STATUS_TOPIC =
-        Topic.create("McpHttpServer.Status", StatusListener.class);
+            Topic.create("McpHttpServer.Status", StatusListener.class);
 
     /**
      * Listener notified when the MCP HTTP server starts or stops.
@@ -67,7 +67,30 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         activeTransportMode = settings.getTransportMode();
 
         protocolHandler = new McpProtocolHandler(project);
-        httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
+
+        // Try to bind to the configured port; if it fails, auto-allocate the next available port
+        int actualPort = port;
+        IOException lastError = null;
+        for (int attempt = 0; attempt < 100; attempt++) {
+            try {
+                httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", actualPort), 0);
+                break;
+            } catch (IOException e) {
+                lastError = e;
+                actualPort++;
+            }
+        }
+
+        if (httpServer == null) {
+            throw new IOException("Failed to bind MCP server to any port starting from " + port, lastError);
+        }
+
+        // If port changed, save it to settings
+        if (actualPort != port) {
+            settings.setPort(actualPort);
+            LOG.info("Port " + port + " was in use; allocated " + actualPort + " instead for project: " + project.getBasePath());
+        }
+
         httpServer.createContext("/health", this::handleHealth);
 
         if (activeTransportMode == TransportMode.SSE) {
@@ -82,8 +105,8 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         httpServer.setExecutor(Executors.newFixedThreadPool(8));
         httpServer.start();
         running = true;
-        LOG.info("MCP server started on port " + port + " (" + activeTransportMode.getDisplayName()
-            + ") for project: " + project.getBasePath());
+        LOG.info("MCP server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
+                + ") for project: " + project.getBasePath());
         project.getMessageBus().syncPublisher(STATUS_TOPIC).serverStatusChanged();
     }
 
@@ -165,7 +188,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         } catch (Exception e) {
             LOG.warn("MCP request error", e);
             byte[] err = ("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error: "
-                + e.getMessage().replace("\"", "'") + "\"}}").getBytes(StandardCharsets.UTF_8);
+                    + e.getMessage().replace("\"", "'") + "\"}}").getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
             exchange.sendResponseHeaders(500, err.length);
             exchange.getResponseBody().write(err);
@@ -179,8 +202,8 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         String transport = activeTransportMode != null ? activeTransportMode.name() : "none";
         String json = "{\"status\":\"" + (running ? "ok" : "stopped") + "\","
-            + "\"transport\":\"" + transport + "\","
-            + "\"project\":\"" + (project.getName().replace("\"", "'")) + "\"}";
+                + "\"transport\":\"" + transport + "\","
+                + "\"project\":\"" + (project.getName().replace("\"", "'")) + "\"}";
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
         exchange.sendResponseHeaders(200, bytes.length);

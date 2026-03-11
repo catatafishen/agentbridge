@@ -13,7 +13,6 @@ export default class SubagentChip extends HTMLElement {
         this._init = true;
         const ci = this.getAttribute('color-index') || '0';
         this.classList.add('turn-chip', 'subagent', 'subagent-c' + ci);
-        this.style.cursor = 'pointer';
         this.setAttribute('role', 'button');
         this.setAttribute('tabindex', '0');
         this.setAttribute('aria-expanded', 'false');
@@ -55,10 +54,10 @@ export default class SubagentChip extends HTMLElement {
         if (section.classList.contains('turn-hidden')) {
             section.classList.remove('turn-hidden', 'collapsed');
             section.classList.add('chip-expanded');
-            this.style.opacity = '0.5';
+            this.classList.add('chip-dimmed');
             this.setAttribute('aria-expanded', 'true');
         } else {
-            this.style.opacity = '1';
+            this.classList.remove('chip-dimmed');
             section.classList.add('collapsing');
             setTimeout(() => {
                 section.classList.remove('collapsing', 'chip-expanded');

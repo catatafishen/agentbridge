@@ -335,6 +335,12 @@
 
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.other"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ChatHistoryConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.chatHistory"
+      displayName="Chat History"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.other"
       instance="com.github.catatafishen.ideagentforcopilot.settings.BillingConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.billing"
       displayName="Billing Data"/>

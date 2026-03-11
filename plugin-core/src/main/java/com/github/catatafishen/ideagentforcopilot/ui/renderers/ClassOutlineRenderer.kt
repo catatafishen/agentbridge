@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -16,11 +15,6 @@ internal object ClassOutlineRenderer : ToolResultRenderer {
 
     private val HEADER = Regex("""^(class|interface|enum|record|annotation)\s+(\S+)(.*)""")
     private val SECTION = Regex("""^(Constructors|Methods|Fields|Inner classes):$""")
-
-    private val CLASS_COLOR = JBColor(Color(0x08, 0x69, 0xDA), Color(0x58, 0xA6, 0xFF))
-    private val INTERFACE_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val METHOD_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
-    private val FIELD_COLOR = JBColor(Color(0x8E, 0x44, 0xAD), Color(0xBB, 0x6B, 0xD9))
 
     override fun render(output: String): JComponent? {
         val lines = output.lines()
@@ -101,19 +95,19 @@ internal object ClassOutlineRenderer : ToolResultRenderer {
     }
 
     private fun kindBadge(kind: String): Pair<String, Color> = when (kind) {
-        "class" -> "C" to CLASS_COLOR
-        "interface" -> "I" to INTERFACE_COLOR
-        "enum" -> "E" to CLASS_COLOR
-        "record" -> "R" to CLASS_COLOR
-        "annotation" -> "@" to METHOD_COLOR
+        "class" -> "C" to ToolRenderers.CLASS_COLOR
+        "interface" -> "I" to ToolRenderers.INTERFACE_COLOR
+        "enum" -> "E" to ToolRenderers.CLASS_COLOR
+        "record" -> "R" to ToolRenderers.CLASS_COLOR
+        "annotation" -> "@" to ToolRenderers.METHOD_COLOR
         else -> kind.first().uppercaseChar().toString() to UIUtil.getLabelForeground()
     }
 
     private fun sectionBadge(section: String): Pair<String, Color> = when (section) {
-        "Constructors" -> "⊕" to METHOD_COLOR
-        "Methods" -> "M" to METHOD_COLOR
-        "Fields" -> "F" to FIELD_COLOR
-        "Inner classes" -> "C" to CLASS_COLOR
+        "Constructors" -> "⊕" to ToolRenderers.METHOD_COLOR
+        "Methods" -> "M" to ToolRenderers.METHOD_COLOR
+        "Fields" -> "F" to ToolRenderers.FIELD_COLOR
+        "Inner classes" -> "C" to ToolRenderers.CLASS_COLOR
         else -> "•" to UIUtil.getLabelForeground()
     }
 }

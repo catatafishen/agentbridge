@@ -8,7 +8,7 @@ import com.google.gson.JsonObject;
  */
 @FunctionalInterface
 @SuppressWarnings("java:S112") // handlers throw generic Exception caught at JSON-RPC dispatch level
-interface ToolHandler {
+public interface ToolHandler {
     @SuppressWarnings({"RedundantThrows", "unused"})
         // handlers may throw checked exceptions
     String handle(JsonObject args) throws Exception;

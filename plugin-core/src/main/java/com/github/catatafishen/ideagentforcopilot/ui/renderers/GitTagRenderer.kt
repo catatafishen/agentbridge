@@ -6,7 +6,6 @@ import javax.swing.JComponent
 
 internal object GitTagRenderer : ToolResultRenderer {
 
-    private val TAG_LINE = Regex("""^(\S+)\s*(.*)$""")
     private val ANNOTATED = Regex("""^(.+?)\s+(.+)$""")
 
     override fun render(output: String): JComponent? {
@@ -16,7 +15,7 @@ internal object GitTagRenderer : ToolResultRenderer {
         val panel = ToolRenderers.listPanel()
         panel.add(
             ToolRenderers.headerPanel(
-                ToolIcons.FOLDER, tags.size,
+                ToolIcons.TAG, tags.size,
                 if (tags.size == 1) "tag" else "tags"
             )
         )

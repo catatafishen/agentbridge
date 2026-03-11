@@ -51,7 +51,7 @@ interface ChatPanelApi : Disposable {
 
     // ── Sub-agent internal tool calls ──────────────────────────────
 
-    fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String? = null)
+    fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String? = null, kind: String? = null)
     fun updateSubAgentToolCall(toolId: String, status: String, details: String? = null)
 
     // ── Status / errors ────────────────────────────────────────────

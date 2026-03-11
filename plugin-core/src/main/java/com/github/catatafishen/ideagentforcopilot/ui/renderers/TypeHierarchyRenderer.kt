@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -19,9 +18,6 @@ internal object TypeHierarchyRenderer : ToolResultRenderer {
     private val TYPE_ENTRY = Regex("""^\s+(class|interface|enum|annotation)\s+(\S+)(?:\s+\[(.+)])?""")
     private val NONE_FOUND = Regex("""^\s+\(none found""")
 
-    private val CLASS_COLOR = JBColor(Color(0x08, 0x69, 0xDA), Color(0x58, 0xA6, 0xFF))
-    private val INTERFACE_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.isEmpty()) return null
@@ -37,10 +33,15 @@ internal object TypeHierarchyRenderer : ToolResultRenderer {
 
         for (line in lines.drop(1)) {
             val sectionMatch = SECTION_HEADER.find(line.trim())
-            if (sectionMatch != null) { currentSection = sectionMatch.groupValues[1]; continue }
+            if (sectionMatch != null) {
+                currentSection = sectionMatch.groupValues[1]; continue
+            }
             if (NONE_FOUND.containsMatchIn(line)) continue
             val typeMatch = TYPE_ENTRY.find(line) ?: continue
-            val entry = TypeEntry(typeMatch.groupValues[1], typeMatch.groupValues[2], typeMatch.groupValues.getOrNull(3)?.takeIf { it.isNotEmpty() })
+            val entry = TypeEntry(
+                typeMatch.groupValues[1],
+                typeMatch.groupValues[2],
+                typeMatch.groupValues.getOrNull(3)?.takeIf { it.isNotEmpty() })
             when (currentSection) {
                 "Supertypes" -> supertypes.add(entry)
                 "Subtypes", "Implementations" -> subtypes.add(entry)
@@ -93,9 +94,9 @@ internal object TypeHierarchyRenderer : ToolResultRenderer {
     }
 
     private fun kindColor(kind: String): Color = when (kind.lowercase()) {
-        "class" -> CLASS_COLOR
-        "interface" -> INTERFACE_COLOR
-        "enum" -> CLASS_COLOR
+        "class" -> ToolRenderers.CLASS_COLOR
+        "interface" -> ToolRenderers.INTERFACE_COLOR
+        "enum" -> ToolRenderers.CLASS_COLOR
         else -> UIUtil.getLabelForeground()
     }
 }

@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -17,11 +16,6 @@ internal object InspectionResultRenderer : ToolResultRenderer {
     private val FINDING_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^]]+)]\s+(.+)$""")
     private val SUMMARY_PATTERN = Regex("""Found\s+(\d+)\s+(?:total\s+)?(?:problems?|compilation errors?)""")
     private val SUCCESS_PATTERN = Regex("""^No\s+(?:compilation errors|inspection problems)""")
-
-    private val ERROR_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
-    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
-    private val WEAK_COLOR = JBColor(Color(0x6E, 0x77, 0x81), Color(0x8B, 0x94, 0x9E))
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -78,7 +72,7 @@ internal object InspectionResultRenderer : ToolResultRenderer {
         panel.add(JBLabel(line.removePrefix("✅").removePrefix("✓").trim()).apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
             alignmentX = JComponent.LEFT_ALIGNMENT
         })
         return panel
@@ -88,7 +82,7 @@ internal object InspectionResultRenderer : ToolResultRenderer {
         val summaryMatch = headerLines.firstNotNullOfOrNull { SUMMARY_PATTERN.find(it) }
         val count = summaryMatch?.groupValues?.get(1)?.toIntOrNull() ?: totalFindings
         val hasErrors = headerLines.any { "error" in it.lowercase() }
-        val color = if (hasErrors) ERROR_COLOR else WARN_COLOR
+        val color = if (hasErrors) ToolRenderers.FAIL_COLOR else ToolRenderers.WARN_COLOR
         val statusIcon = if (hasErrors) ToolIcons.FAILURE else ToolIcons.WARNING
         val label = if (hasErrors) "problems" else "findings"
 
@@ -128,9 +122,9 @@ internal object InspectionResultRenderer : ToolResultRenderer {
     }
 
     private fun severityColor(severity: String): Color = when (severity.uppercase()) {
-        "ERROR", "GENERIC_SERVER_ERROR_OR_WARNING" -> ERROR_COLOR
-        "WARNING" -> WARN_COLOR
-        else -> WEAK_COLOR
+        "ERROR", "GENERIC_SERVER_ERROR_OR_WARNING" -> ToolRenderers.FAIL_COLOR
+        "WARNING" -> ToolRenderers.WARN_COLOR
+        else -> ToolRenderers.MUTED_COLOR
     }
 
     private fun abbreviateSeverity(severity: String): String = when (severity.uppercase()) {

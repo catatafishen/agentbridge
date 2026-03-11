@@ -6,6 +6,7 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.HyperlinkLabel
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -33,9 +34,6 @@ internal interface ArgumentAwareRenderer : ToolResultRenderer {
     override fun render(output: String): JComponent? = render(output, null)
 }
 
-/**
- * Standard icons for tool-result status indicators.
- */
 internal object ToolIcons {
     val SUCCESS: Icon = AllIcons.RunConfigurations.TestPassed
     val FAILURE: Icon = AllIcons.RunConfigurations.TestFailed
@@ -46,6 +44,8 @@ internal object ToolIcons {
     val COVERAGE: Icon = AllIcons.RunConfigurations.TrackCoverage
     val STASH: Icon = AllIcons.Vcs.ShelveSilent
     val FOLDER: Icon = AllIcons.Nodes.Folder
+    val TEST: Icon = AllIcons.Nodes.Test
+    val TAG: Icon = AllIcons.General.Pin_tab
 }
 
 internal object ToolRenderers {
@@ -162,6 +162,24 @@ internal object ToolRenderers {
 
     fun hasRenderer(toolName: String): Boolean = toolName in registry
 
+    // ── Semantic colors — shared across all renderers ────────
+
+    val SUCCESS_COLOR: JBColor = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
+    val FAIL_COLOR: JBColor = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
+    val WARN_COLOR: JBColor = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
+    val ADD_COLOR: JBColor = SUCCESS_COLOR
+    val DEL_COLOR: JBColor = FAIL_COLOR
+    val MOD_COLOR: JBColor = WARN_COLOR
+    val MUTED_COLOR: JBColor = JBColor(Color(0x6E, 0x77, 0x81), Color(0x8B, 0x94, 0x9E))
+    val INFO_COLOR: JBColor = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
+    val CLASS_COLOR: JBColor = JBColor(Color(0x08, 0x69, 0xDA), Color(0x58, 0xA6, 0xFF))
+    val INTERFACE_COLOR: JBColor = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
+    val METHOD_COLOR: JBColor = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
+    val FIELD_COLOR: JBColor = JBColor(Color(0x8E, 0x44, 0xAD), Color(0xBB, 0x6B, 0xD9))
+
+    /** Maximum entries rendered in list-style renderers before truncation. */
+    const val MAX_LIST_ENTRIES = 50
+
     // ── Shared rendering utilities ────────────────────────────
 
     private const val MONO_FONT = "JetBrains Mono"
@@ -201,15 +219,48 @@ internal object ToolRenderers {
     /**
      * Creates a horizontal row panel for list items.
      */
-    fun rowPanel(): JPanel = object : JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, JBUI.scale(4), 1)) {
-        init {
-            isOpaque = false
-            alignmentX = LEFT_ALIGNMENT
+    fun rowPanel(): JPanel =
+        object : JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, JBUI.scale(4), JBUI.scale(1))) {
+            init {
+                isOpaque = false
+                alignmentX = LEFT_ALIGNMENT
+            }
+
+            override fun getMaximumSize(): java.awt.Dimension {
+                val pref = preferredSize
+                return java.awt.Dimension(Int.MAX_VALUE, pref.height)
+            }
         }
 
-        override fun getMaximumSize(): java.awt.Dimension {
-            val pref = preferredSize
-            return java.awt.Dimension(Int.MAX_VALUE, pref.height)
+    /**
+     * Creates a section panel with a bold header and item count — the standard
+     * pattern used by grouped-list renderers (search results, branches, etc.).
+     */
+    fun sectionPanel(label: String, count: Int, topGap: Int = 4): JPanel {
+        val section = listPanel().apply {
+            border = JBUI.Borders.emptyTop(topGap)
+            alignmentX = JComponent.LEFT_ALIGNMENT
+        }
+        val header = rowPanel()
+        header.add(JBLabel(label).apply {
+            font = UIUtil.getLabelFont().deriveFont(java.awt.Font.BOLD)
+        })
+        header.add(mutedLabel("$count"))
+        section.add(header)
+        return section
+    }
+
+    /**
+     * Creates a status header row with icon, bold label, and semantic color —
+     * the standard pattern for success/failure/warning headers.
+     */
+    fun statusHeader(icon: Icon, text: String, color: Color): JPanel {
+        return rowPanel().also { row ->
+            row.add(JBLabel(text).apply {
+                this.icon = icon
+                font = UIUtil.getLabelFont().deriveFont(java.awt.Font.BOLD)
+                foreground = color
+            })
         }
     }
 
@@ -230,10 +281,29 @@ internal object ToolRenderers {
 
     /**
      * Creates a bold monospace badge label (e.g., status codes like "M", "A", "D").
+     * Sets an accessible name so screen readers announce meaningful text.
      */
     fun badgeLabel(text: String, color: Color): JBLabel = JBLabel(text).apply {
         font = JBUI.Fonts.create(MONO_FONT, UIUtil.getLabelFont().size - 1).deriveFont(java.awt.Font.BOLD)
         foreground = color
+        accessibleContext.accessibleName = BADGE_ACCESSIBLE_NAMES[text] ?: text
+    }
+
+    private val BADGE_ACCESSIBLE_NAMES = mapOf(
+        "A" to "Added", "M" to "Modified", "D" to "Deleted",
+        "U" to "Unmerged", "R" to "Renamed", "C" to "Copied",
+        "?" to "Untracked", "+" to "Staged",
+        "E" to "Error", "W" to "Warning", "w" to "Weak warning", "I" to "Info",
+    )
+
+    /**
+     * Adds a "⋯ N more" truncation indicator to a list panel.
+     */
+    fun addTruncationIndicator(panel: JPanel, remaining: Int, noun: String = "entries") {
+        panel.add(mutedLabel("⋯ $remaining more $noun").apply {
+            alignmentX = JComponent.LEFT_ALIGNMENT
+            border = JBUI.Borders.emptyTop(4)
+        })
     }
 
     /**
@@ -259,10 +329,16 @@ internal object ToolRenderers {
 
     /**
      * Creates a read-only code block with monospace font and editor-matching colors.
+     * Overrides getMaximumSize to prevent unbounded horizontal expansion in BoxLayout.
      */
     fun codeBlock(text: String): JTextArea {
         val scheme = EditorColorsManager.getInstance().globalScheme
-        return JTextArea(text).apply {
+        return object : JTextArea(text) {
+            override fun getMaximumSize(): java.awt.Dimension {
+                val pref = preferredSize
+                return java.awt.Dimension(Int.MAX_VALUE, pref.height)
+            }
+        }.apply {
             isEditable = false
             font = JBUI.Fonts.create(MONO_FONT, UIUtil.getLabelFont().size)
             background = scheme.defaultBackground

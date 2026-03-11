@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
@@ -15,11 +14,6 @@ internal object FileOutlineRenderer : ToolResultRenderer {
 
     private val ENTRY_PATTERN = Regex("""^\s*(\d+):\s+(\w+)\s+(.+)$""")
     private val HEADER_PATTERN = Regex("""^Outline of (.+):$""")
-
-    private val CLASS_COLOR = JBColor(Color(0x08, 0x69, 0xDA), Color(0x58, 0xA6, 0xFF))
-    private val INTERFACE_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val METHOD_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
-    private val FIELD_COLOR = JBColor(Color(0x8E, 0x44, 0xAD), Color(0xBB, 0x6B, 0xD9))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -59,11 +53,11 @@ internal object FileOutlineRenderer : ToolResultRenderer {
     }
 
     private fun typeBadge(type: String): Pair<String, Color> = when (type.lowercase()) {
-        "class" -> "C" to CLASS_COLOR
-        "interface" -> "I" to INTERFACE_COLOR
-        "enum" -> "E" to CLASS_COLOR
-        "method", "function" -> "M" to METHOD_COLOR
-        "field", "property" -> "F" to FIELD_COLOR
+        "class" -> "C" to ToolRenderers.CLASS_COLOR
+        "interface" -> "I" to ToolRenderers.INTERFACE_COLOR
+        "enum" -> "E" to ToolRenderers.CLASS_COLOR
+        "method", "function" -> "M" to ToolRenderers.METHOD_COLOR
+        "field", "property" -> "F" to ToolRenderers.FIELD_COLOR
         else -> type.take(1).uppercase() to UIUtil.getLabelForeground()
     }
 }

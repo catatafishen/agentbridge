@@ -21,6 +21,7 @@
     --font-family: system-ui, sans-serif;
     --font-size: 11pt;
     --code-font-size: 10pt;
+    --code-font: 'JetBrains Mono', monospace;
     --fg: rgb(187, 187, 187);
     --fg-a05: rgba(187, 187, 187, 0.05);
     --fg-a08: rgba(187, 187, 187, 0.08);
@@ -308,7 +309,7 @@ working-indicator .working-text {
     border-radius: var(--r-sm);
     color: var(--think);
     cursor: pointer;
-    padding: 0 3px;
+    padding: 0 var(--sp-2);
     font-size: 0.95em;
     line-height: 1.4;
     opacity: 0.7;
@@ -352,6 +353,11 @@ working-indicator .working-text {
     flex-shrink: 0;
     animation: chipIn 0.25s ease;
     user-select: none;
+    transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.chip-dimmed {
+    opacity: 0.5;
 }
 
 .turn-chip:hover {
@@ -740,7 +746,7 @@ code {
     background: var(--code-bg);
     padding: var(--sp-1) var(--sp-3);
     border-radius: var(--r-sm);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: var(--code-font);
     font-size: var(--code-font-size);
 }
 
@@ -819,6 +825,15 @@ b, strong {
 
 /* ── Headings ────────────────────────────────────────── */
 
+h1 {
+    font-size: 1.4em;
+    font-weight: 700;
+    margin: var(--sp-8) 0 var(--sp-4) 0;
+    padding-bottom: var(--sp-3);
+    border-bottom: 2px solid var(--tbl-border);
+    line-height: 1.3;
+}
+
 h2, h3, h4, h5 {
     margin: var(--sp-6) 0 var(--sp-3) 0;
     font-weight: 600;
@@ -881,7 +896,7 @@ hr {
     background: var(--think-a06);
     color: var(--fg);
     border: 1px solid var(--think-a25);
-    border-radius: 6px;
+    border-radius: var(--r-pill);
     padding: var(--sp-2) var(--sp-7);
     font-size: 0.88em;
     font-weight: 500;
@@ -963,7 +978,7 @@ hr {
     display: block;
     font-size: 0.75em;
     color: var(--fg-muted);
-    font-family: var(--font);
+    font-family: var(--font-family);
     margin: calc(-1 * var(--sp-2)) 0 var(--sp-2) 0;
     user-select: none;
     opacity: 0.7;
@@ -1089,36 +1104,36 @@ permission-request {
 }
 
 .perm-allow {
-    background: rgba(80, 180, 80, 0.12) !important;
-    color: #5cb85c !important;
-    border-color: rgba(80, 180, 80, 0.3) !important;
+    background: color-mix(in srgb, var(--success) 12%, transparent);
+    color: var(--success);
+    border-color: color-mix(in srgb, var(--success) 30%, transparent);
 }
 
 .perm-allow:hover {
-    background: rgba(80, 180, 80, 0.22) !important;
-    border-color: #5cb85c !important;
+    background: color-mix(in srgb, var(--success) 22%, transparent);
+    border-color: var(--success);
 }
 
 .perm-allow-session {
-    background: rgba(80, 140, 220, 0.12) !important;
-    color: #5b9bd5 !important;
-    border-color: rgba(80, 140, 220, 0.3) !important;
+    background: color-mix(in srgb, var(--link) 12%, transparent);
+    color: var(--link);
+    border-color: color-mix(in srgb, var(--link) 30%, transparent);
 }
 
 .perm-allow-session:hover {
-    background: rgba(80, 140, 220, 0.22) !important;
-    border-color: #5b9bd5 !important;
+    background: color-mix(in srgb, var(--link) 22%, transparent);
+    border-color: var(--link);
 }
 
 .perm-deny {
-    background: rgba(220, 80, 80, 0.10) !important;
-    color: #d9534f !important;
-    border-color: rgba(220, 80, 80, 0.25) !important;
+    background: color-mix(in srgb, var(--danger) 10%, transparent);
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
 .perm-deny:hover {
-    background: rgba(220, 80, 80, 0.20) !important;
-    border-color: #d9534f !important;
+    background: color-mix(in srgb, var(--danger) 20%, transparent);
+    border-color: var(--danger);
 }
 
 .perm-result {
@@ -1150,7 +1165,7 @@ permission-request {
 .inspection-result, .search-result, .outline-result,
 .blame-result, .branch-result, .project-info,
 .coverage-result, .http-result {
-    border-radius: 6px;
+    border-radius: var(--r-pill);
     border: 1px solid var(--fg-a08);
     overflow: hidden;
 }
@@ -1169,7 +1184,7 @@ permission-request {
 }
 
 .git-commit-hash {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
     font-weight: 600;
 }
@@ -1261,7 +1276,7 @@ permission-request {
 }
 
 .git-file-path {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
     word-break: break-all;
 }
@@ -1378,14 +1393,14 @@ permission-request {
 }
 
 .git-diff-hunks {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
     overflow-x: auto;
 }
 
 .git-diff-hunk-header {
     color: var(--think);
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.9em;
     padding: 2px var(--sp-3);
     background: var(--fg-a05);
@@ -1406,7 +1421,7 @@ permission-request {
     padding: 0 var(--sp-3);
     white-space: pre-wrap;
     word-break: break-all;
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .git-diff-add {
@@ -1444,7 +1459,7 @@ permission-request {
 }
 
 .git-diff-stat-count {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.9em;
     color: var(--think);
     min-width: 2ch;
@@ -1452,7 +1467,7 @@ permission-request {
 }
 
 .git-diff-stat-bar {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.9em;
 }
 
@@ -1466,12 +1481,12 @@ permission-request {
     display: flex;
     align-items: baseline;
     gap: var(--sp-3);
-    padding: 2px 0;
+    padding: var(--sp-1) 0;
     flex-wrap: wrap;
 }
 
 .git-log-hash {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
     font-weight: 600;
     color: var(--link);
@@ -1560,7 +1575,7 @@ permission-request {
 }
 
 .build-msg {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.88em;
     padding: 1px 0;
     white-space: pre-wrap;
@@ -1585,8 +1600,8 @@ permission-request {
 .inspection-header, .search-header, .blame-header {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-6);
     font-size: 0.92em;
 }
 
@@ -1636,7 +1651,7 @@ permission-request {
 }
 
 .inspection-files, .search-files {
-    padding: 4px 0;
+    padding: var(--sp-2) 0;
 }
 
 .inspection-file, .search-file {
@@ -1647,28 +1662,28 @@ permission-request {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 6px 12px;
+    padding: var(--sp-3) var(--sp-6);
     background: var(--fg-a05);
 }
 
 .inspection-file-count, .search-file-count {
     font-size: 0.8em;
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     background: var(--fg-a05);
-    border-radius: 8px;
-    padding: 1px 6px;
+    border-radius: var(--r-md);
+    padding: 1px var(--sp-3);
     min-width: 18px;
     text-align: center;
 }
 
 .inspection-file-findings {
-    padding: 2px 12px 4px;
+    padding: var(--sp-1) var(--sp-6) var(--sp-2);
 }
 
 .inspection-finding {
-    padding: 2px 0;
+    padding: var(--sp-1) 0;
     font-size: 0.88em;
-    font-family: monospace;
+    font-family: var(--code-font);
     white-space: pre-wrap;
     word-break: break-all;
 }
@@ -1677,7 +1692,7 @@ permission-request {
     display: inline-block;
     width: 16px;
     text-align: center;
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     font-size: 0.82em;
     font-weight: 700;
 }
@@ -1698,12 +1713,12 @@ permission-request {
 }
 
 .severity-info {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     background: var(--fg-a05);
 }
 
 .inspection-line {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     font-size: 0.9em;
 }
 
@@ -1720,23 +1735,23 @@ permission-request {
 /* ── Search Results ──────────────────────────────────────── */
 
 .search-empty {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
 }
 
 .search-file-matches {
-    padding: 2px 12px 4px;
+    padding: var(--sp-1) var(--sp-6) var(--sp-2);
 }
 
 .search-match {
-    padding: 2px 0;
+    padding: var(--sp-1) 0;
     font-size: 0.88em;
-    font-family: monospace;
+    font-family: var(--code-font);
     white-space: pre-wrap;
     word-break: break-all;
 }
 
 .search-line {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     font-size: 0.9em;
 }
 
@@ -1754,16 +1769,16 @@ permission-request {
 
 .test-stats {
     display: flex;
-    gap: 8px;
-    padding: 6px 12px;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-6);
     flex-wrap: wrap;
 }
 
 .test-badge {
     font-size: 0.82em;
     font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
+    padding: var(--sp-1) var(--sp-4);
+    border-radius: var(--r-lg);
 }
 
 .test-passed {
@@ -1778,7 +1793,7 @@ permission-request {
 
 .test-skipped {
     background: var(--fg-a05);
-    color: var(--fg-a08);
+    color: var(--fg-muted);
 }
 
 .test-name {
@@ -1791,24 +1806,24 @@ permission-request {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
+    padding: var(--sp-4) var(--sp-6);
     background: var(--fg-a05);
 }
 
 .outline-entries {
-    padding: 4px 12px 6px;
+    padding: var(--sp-2) var(--sp-6) var(--sp-3);
 }
 
 .outline-entry {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 2px 0;
+    gap: var(--sp-3);
+    padding: var(--sp-1) 0;
     font-size: 0.88em;
 }
 
 .outline-name {
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .outline-badge-class {
@@ -1833,7 +1848,7 @@ permission-request {
 
 .outline-badge-field {
     background: var(--fg-a05);
-    color: var(--fg-a08);
+    color: var(--fg-muted);
 }
 
 /* ── Git Blame ───────────────────────────────────────────── */
@@ -1843,19 +1858,19 @@ permission-request {
 }
 
 .blame-authors {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
 }
 
 .blame-lines {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.85em;
     overflow-x: auto;
 }
 
 .blame-line {
     display: flex;
-    gap: 8px;
-    padding: 1px 12px;
+    gap: var(--sp-4);
+    padding: 1px var(--sp-6);
     white-space: pre;
 }
 
@@ -1872,7 +1887,7 @@ permission-request {
 }
 
 .blame-date {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     flex-shrink: 0;
     width: 80px;
 }
@@ -1884,13 +1899,13 @@ permission-request {
 /* ── Git Show (extends git-commit-result) ────────────────── */
 
 .git-show-author {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     font-weight: 400;
     font-size: 0.9em;
 }
 
 .git-show-date {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     font-size: 0.85em;
     padding: 0 var(--sp-4);
 }
@@ -1898,14 +1913,14 @@ permission-request {
 /* ── Git Branch ──────────────────────────────────────────── */
 
 .branch-entries {
-    padding: 4px 12px 6px;
+    padding: var(--sp-2) var(--sp-6) var(--sp-3);
 }
 
 .branch-entry {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 2px 0;
+    gap: var(--sp-3);
+    padding: var(--sp-1) 0;
     font-size: 0.88em;
 }
 
@@ -1914,12 +1929,12 @@ permission-request {
 }
 
 .branch-name {
-    font-family: monospace;
+    font-family: var(--code-font);
     min-width: 120px;
 }
 
 .branch-msg {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1928,26 +1943,26 @@ permission-request {
 /* ── Project Info ────────────────────────────────────────── */
 
 .project-info-header {
-    padding: 8px 12px;
+    padding: var(--sp-4) var(--sp-6);
     font-weight: 700;
     font-size: 1em;
 }
 
 .project-info-kv {
     display: flex;
-    gap: 8px;
-    padding: 2px 12px;
+    gap: var(--sp-4);
+    padding: var(--sp-1) var(--sp-6);
     font-size: 0.88em;
 }
 
 .project-info-key {
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     min-width: 100px;
     flex-shrink: 0;
 }
 
 .project-info-value {
-    font-family: monospace;
+    font-family: var(--code-font);
     word-break: break-all;
 }
 
@@ -1956,18 +1971,18 @@ permission-request {
 }
 
 .project-info-item {
-    padding: 2px 12px 2px 24px;
+    padding: var(--sp-1) var(--sp-6) var(--sp-1) calc(var(--sp-6) * 2);
     font-size: 0.88em;
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 /* ── Coverage result ─────────────────────────────────── */
 .coverage-entries {
-    padding: 4px 0;
+    padding: var(--sp-2) 0;
 }
 
 .coverage-entry {
-    padding: 6px 12px;
+    padding: var(--sp-3) var(--sp-6);
     border-top: 1px solid var(--fg-a05);
 }
 
@@ -1979,7 +1994,7 @@ permission-request {
 }
 
 .coverage-name {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.9em;
 }
 
@@ -1991,20 +2006,20 @@ permission-request {
 .coverage-bar {
     height: 6px;
     background: var(--fg-a08);
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     overflow: hidden;
     margin-bottom: 2px;
 }
 
 .coverage-bar-fill {
     height: 100%;
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     transition: width 0.3s ease;
 }
 
 .coverage-detail {
     font-size: 0.78em;
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     text-align: right;
 }
 
@@ -2012,8 +2027,8 @@ permission-request {
 .http-status {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--sp-4);
+    padding: var(--sp-4) var(--sp-6);
     font-weight: 600;
 }
 
@@ -2042,23 +2057,23 @@ permission-request {
 }
 
 .http-section-title {
-    padding: 4px 12px;
+    padding: var(--sp-2) var(--sp-6);
     font-size: 0.85em;
     font-weight: 600;
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     background: var(--fg-a05);
 }
 
 .http-headers {
-    padding: 4px 12px;
+    padding: var(--sp-2) var(--sp-6);
 }
 
 .http-header {
     display: flex;
-    gap: 8px;
+    gap: var(--sp-4);
     padding: 1px 0;
     font-size: 0.85em;
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .http-header-key {
@@ -2077,7 +2092,7 @@ permission-request {
 
 .http-body {
     margin: 0;
-    padding: 8px 12px;
+    padding: var(--sp-4) var(--sp-6);
     font-size: 0.85em;
     max-height: 300px;
     overflow: auto;
@@ -2085,10 +2100,10 @@ permission-request {
 
 /* ── Class outline extras ────────────────────────────── */
 .class-outline-inheritance {
-    padding: 2px 12px 6px;
+    padding: var(--sp-1) var(--sp-6) var(--sp-3);
     font-size: 0.85em;
     font-style: italic;
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     border-bottom: 1px solid var(--fg-a05);
 }
 
@@ -2099,17 +2114,17 @@ permission-request {
 .outline-section-title {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 12px;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-6);
     font-weight: 600;
     font-size: 0.85em;
-    color: var(--fg-a08);
+    color: var(--fg-muted);
     background: var(--fg-a05);
 }
 
 /* ── File list (list_project_files) ─────────────────── */
 .file-list-result {
-    border-radius: 6px;
+    border-radius: var(--r-pill);
     border: 1px solid var(--fg-a08);
     overflow: hidden;
 }
@@ -2118,7 +2133,7 @@ permission-request {
     display: flex;
     align-items: center;
     gap: var(--sp-3);
-    padding: 6px 12px;
+    padding: var(--sp-3) var(--sp-6);
     border-bottom: 1px solid var(--fg-a08);
 }
 
@@ -2133,7 +2148,7 @@ permission-request {
 }
 
 .file-list-entries {
-    padding: 4px 0;
+    padding: var(--sp-2) 0;
     max-height: 400px;
     overflow-y: auto;
 }
@@ -2141,23 +2156,23 @@ permission-request {
 .file-list-dir {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 3px 12px 1px;
-    margin-top: 4px;
+    gap: var(--sp-3);
+    padding: var(--sp-2) var(--sp-6) 1px;
+    margin-top: var(--sp-2);
 }
 
 .file-list-dir-name {
     font-size: 0.85em;
     font-weight: 600;
     color: var(--fg-muted);
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .file-list-entry {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 1px 12px 1px 24px;
+    gap: var(--sp-3);
+    padding: 1px var(--sp-6) 1px calc(var(--sp-6) * 2);
     font-size: 0.88em;
 }
 
@@ -2223,43 +2238,43 @@ permission-request {
 
 /* ── Go to declaration ──────────────────────────────── */
 .decl-result {
-    border-radius: 6px;
+    border-radius: var(--r-pill);
     border: 1px solid var(--fg-a08);
     overflow: hidden;
     font-size: 0.9em;
 }
 
 .decl-header {
-    padding: 6px 12px;
+    padding: var(--sp-3) var(--sp-6);
     border-bottom: 1px solid var(--fg-a08);
 }
 
 .decl-symbol {
     font-weight: 700;
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .decl-location {
     display: flex;
     align-items: center;
     gap: 2px;
-    padding: 4px 12px;
+    padding: var(--sp-2) var(--sp-6);
     font-size: 0.9em;
 }
 
 .decl-context {
     border-top: 1px solid var(--fg-a05);
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.88em;
     line-height: 1.6;
-    padding: 4px 0;
+    padding: var(--sp-2) 0;
     background: var(--fg-a05);
 }
 
 .decl-line {
     display: flex;
-    padding: 0 12px;
-    gap: 8px;
+    padding: 0 var(--sp-6);
+    gap: var(--sp-4);
 }
 
 .decl-target {
@@ -2303,7 +2318,7 @@ permission-request {
 }
 
 .refactor-symbol {
-    font-family: monospace;
+    font-family: var(--code-font);
     font-weight: 600;
     font-size: 0.92em;
 }
@@ -2311,9 +2326,9 @@ permission-request {
 .refactor-detail {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--sp-3);
     margin-top: var(--sp-2);
-    font-family: monospace;
+    font-family: var(--code-font);
     font-size: 0.92em;
 }
 
@@ -2334,7 +2349,7 @@ permission-request {
 .refactor-meta {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--sp-4);
     margin-top: var(--sp-2);
     font-size: 0.88em;
 }
@@ -2355,7 +2370,7 @@ permission-request {
 
 /* ── Type hierarchy ─────────────────────────────────── */
 .hierarchy-result {
-    border-radius: 6px;
+    border-radius: var(--r-pill);
     border: 1px solid var(--fg-a08);
     overflow: hidden;
     font-size: 0.9em;
@@ -2370,14 +2385,14 @@ permission-request {
 }
 
 .hierarchy-entries {
-    padding: 2px 0;
+    padding: var(--sp-1) 0;
 }
 
 .hierarchy-center {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-6);
     font-weight: 700;
     background: var(--agent-a08);
     border-top: 1px solid var(--fg-a08);
@@ -2387,8 +2402,8 @@ permission-request {
 .hierarchy-entry {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 2px 12px;
+    gap: var(--sp-3);
+    padding: var(--sp-1) var(--sp-6);
     font-size: 0.92em;
 }
 
@@ -2398,7 +2413,7 @@ permission-request {
     justify-content: center;
     width: 18px;
     height: 18px;
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     font-size: 0.75em;
     font-weight: 700;
     flex-shrink: 0;
@@ -2425,11 +2440,11 @@ permission-request {
 }
 
 .hierarchy-name {
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .hierarchy-type-name {
-    font-family: monospace;
+    font-family: var(--code-font);
 }
 
 .hierarchy-location {
@@ -2464,7 +2479,7 @@ permission-request {
     max-height: 300px;
     overflow-y: auto;
     background: var(--code-bg);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     padding: var(--sp-2) 0;
 }
 
@@ -2541,7 +2556,7 @@ permission-request {
 .file-write-warning {
     margin-top: var(--sp-2);
     padding: var(--sp-2) var(--sp-3);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     background: rgba(var(--warning-rgb, 190, 132, 46), 0.12);
     color: var(--warning);
     font-size: 0.85em;
@@ -2553,7 +2568,7 @@ permission-request {
     max-height: 200px;
     overflow-y: auto;
     background: var(--code-bg);
-    border-radius: 4px;
+    border-radius: var(--r-sm);
     padding: var(--sp-2) 0;
     margin-top: var(--sp-2);
 }

@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -13,12 +12,6 @@ import javax.swing.JComponent
  * staged/unstaged/untracked sections, and colored file badges.
  */
 internal object GitStatusRenderer : ToolResultRenderer {
-
-    private val ADD_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val DEL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
-    private val MOD_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
-    private val CONFLICT_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
-    private val UNTRACKED_COLOR = JBColor(Color(0x6E, 0x77, 0x81), Color(0x8B, 0x94, 0x9E))
 
     private data class StatusFiles(
         val staged: List<Pair<Char, String>>,
@@ -44,10 +37,10 @@ internal object GitStatusRenderer : ToolResultRenderer {
             return panel
         }
 
-        addBadgedSection(panel, "Conflicts", files.conflicted.map { 'U' to it }, CONFLICT_COLOR)
-        addBadgedSection(panel, "Staged", files.staged, ADD_COLOR)
-        addBadgedSection(panel, "Changes", files.unstaged, MOD_COLOR)
-        addBadgedSection(panel, "Untracked", files.untracked.map { '?' to it }, UNTRACKED_COLOR)
+        addBadgedSection(panel, "Conflicts", files.conflicted.map { 'U' to it }, ToolRenderers.FAIL_COLOR)
+        addBadgedSection(panel, "Staged", files.staged, ToolRenderers.ADD_COLOR)
+        addBadgedSection(panel, "Changes", files.unstaged, ToolRenderers.MOD_COLOR)
+        addBadgedSection(panel, "Untracked", files.untracked.map { '?' to it }, ToolRenderers.MUTED_COLOR)
         return panel
     }
 
@@ -125,11 +118,11 @@ internal object GitStatusRenderer : ToolResultRenderer {
     }
 
     private fun badgeColor(code: Char): Color = when (code) {
-        'M', 'T' -> MOD_COLOR
-        'A' -> ADD_COLOR
-        'D' -> DEL_COLOR
-        'R', 'C' -> MOD_COLOR
-        'U' -> CONFLICT_COLOR
-        else -> MOD_COLOR
+        'M', 'T' -> ToolRenderers.MOD_COLOR
+        'A' -> ToolRenderers.ADD_COLOR
+        'D' -> ToolRenderers.DEL_COLOR
+        'R', 'C' -> ToolRenderers.MOD_COLOR
+        'U' -> ToolRenderers.FAIL_COLOR
+        else -> ToolRenderers.MOD_COLOR
     }
 }

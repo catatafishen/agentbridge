@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.Gson;
@@ -29,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -127,9 +129,8 @@ public class AcpClient implements Closeable {
         "edit", "create", KIND_BASH, "write", KIND_EXECUTE, "runInTerminal"
     );
 
-    // Permission request listener and pending ASK map
-    private volatile java.util.function.Consumer<PermissionRequest> permissionRequestListener;
-    private final ConcurrentHashMap<Long, CompletableFuture<PermissionResponse>> pendingPermissionAsks = new ConcurrentHashMap<>();
+    // Permission request listener
+    private final AtomicReference<java.util.function.Consumer<PermissionRequest>> permissionRequestListener = new AtomicReference<>();
     private final java.util.Set<String> sessionAllowedTools = ConcurrentHashMap.newKeySet();
 
     // PermissionRequest is in separate file: PermissionRequest.java
@@ -138,24 +139,12 @@ public class AcpClient implements Closeable {
      * Register a listener that is called when a tool with ASK permission needs user approval.
      */
     public void setPermissionRequestListener(java.util.function.Consumer<PermissionRequest> listener) {
-        this.permissionRequestListener = listener;
+        this.permissionRequestListener.set(listener);
     }
 
     // Activity tracking for inactivity-based timeout
     private volatile long lastActivityTimestamp = System.currentTimeMillis();
     private final AtomicInteger toolCallsInTurn = new AtomicInteger(0);
-
-    // Debug event listeners for UI debug tab
-    private final CopyOnWriteArrayList<Consumer<DebugEvent>> debugListeners = new CopyOnWriteArrayList<>();
-
-    // DebugEvent is in separate file: DebugEvent.java
-
-    /**
-     * Register a debug event listener for the UI debug tab.
-     */
-    public void addDebugListener(Consumer<DebugEvent> listener) {
-        debugListeners.add(listener);
-    }
 
     /**
      * Set whether a sub-agent (Task tool) is currently active.
@@ -173,14 +162,7 @@ public class AcpClient implements Closeable {
      * Fire a debug event to all listeners.
      */
     private void fireDebugEvent(String type, String message, String details) {
-        DebugEvent event = new DebugEvent(type, message, details);
-        for (Consumer<DebugEvent> listener : debugListeners) {
-            try {
-                listener.accept(event);
-            } catch (Exception e) {
-                LOG.warn("Debug listener threw exception", e);
-            }
-        }
+        // No registered debug listeners — retained for future extensibility.
     }
 
     /**
@@ -375,18 +357,6 @@ public class AcpClient implements Closeable {
         if (availableModels == null) {
             createSession(projectBasePath);
         }
-        return availableModels != null ? availableModels : List.of();
-    }
-
-    /**
-     * Force-refresh the model list by creating a new session.
-     * Useful after authentication changes to pick up fresh tokens.
-     */
-    @NotNull
-    public List<Model> refreshModels() throws AcpException {
-        availableModels = null;
-        currentSessionId = null;
-        createSession();
         return availableModels != null ? availableModels : List.of();
     }
 
@@ -736,14 +706,6 @@ public class AcpClient implements Closeable {
     }
 
     /**
-     * Get the resolved path to the agent binary (for logout, auth commands).
-     */
-    @Nullable
-    public String getAgentBinaryPath() {
-        return agentConfig.getAgentBinaryPath();
-    }
-
-    /**
      * Get the auth method info from the initialization response (for the login button).
      */
     @Nullable
@@ -1058,77 +1020,11 @@ public class AcpClient implements Closeable {
         String formattedPermission = formatPermissionDisplay(permKind, permTitle);
         fireDebugEvent("PERMISSION_REQUEST", formattedPermission,
             toolCall != null ? toolCall.toString() : "");
-
-        // Track activity and tool call count
         lastActivityTimestamp = System.currentTimeMillis();
         toolCallsInTurn.incrementAndGet();
 
-        // Check if run_command is trying to do something we have a dedicated tool for
-        String commandAbuse = detectCommandAbuse(toolCall);
-        if (commandAbuse != null) {
-            String rejectOptionId = findRejectOption(reqParams);
-            LOG.info("ACP request_permission: DENYING run_command abuse: " + commandAbuse);
+        if (checkAbuseAndDeny(reqId, reqParams, toolCall)) return;
 
-            // Send guidance BEFORE rejecting so agent sees it while still in turn
-            Map<String, Object> retryParams = buildRetryParams(RUN_COMMAND_ABUSE_PREFIX + commandAbuse);
-            String retryMessage = (String) retryParams.get(MESSAGE);
-            fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
-            sendPromptMessage(retryMessage);
-
-            fireDebugEvent(PERMISSION_DENIED_EVENT, "run_command abuse: " + commandAbuse,
-                toolCall.toString());
-            builtInActionDeniedDuringTurn = true;
-            lastDeniedKind = RUN_COMMAND_ABUSE_PREFIX + commandAbuse;
-            sendPermissionResponse(reqId, rejectOptionId);
-            return;
-        }
-
-        // Note: Built-in CLI tools (view, grep, glob) bypass request_permission entirely —
-        // they auto-execute without asking. They are handled by interceptBuiltInToolCall() in the
-        // stream handler, which sends corrective guidance. Only kind=execute (bash) comes through
-        // permission, and it's handled by the per-tool permission system + buildRetryParams.
-
-        // Check if a sub-agent is trying to use git write tools
-        String gitWriteAbuse = detectSubAgentGitWrite(toolCall);
-        if (gitWriteAbuse != null) {
-            String rejectOptionId = findRejectOption(reqParams);
-            LOG.info("ACP request_permission: DENYING sub-agent git write: " + gitWriteAbuse);
-
-            Map<String, Object> retryParams = buildRetryParams(GIT_WRITE_ABUSE_PREFIX + gitWriteAbuse);
-            String retryMessage = (String) retryParams.get(MESSAGE);
-            fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
-            sendPromptMessage(retryMessage);
-
-            fireDebugEvent(PERMISSION_DENIED_EVENT, "Sub-agent git write: " + gitWriteAbuse,
-                toolCall.toString());
-            builtInActionDeniedDuringTurn = true;
-            lastDeniedKind = GIT_WRITE_ABUSE_PREFIX + gitWriteAbuse;
-            sendPermissionResponse(reqId, rejectOptionId);
-            return;
-        }
-
-        // Check if a sub-agent is trying to use built-in write/execute tools
-        // (edit, create, bash, etc.) — these bypass IntelliJ's editor buffer.
-        // Sub-agents can't receive session/message guidance, so denial is the only signal.
-        String writeAbuse = detectSubAgentWriteTool(toolCall);
-        if (writeAbuse != null) {
-            String rejectOptionId = findRejectOption(reqParams);
-            LOG.info("ACP request_permission: DENYING sub-agent built-in write tool: " + writeAbuse);
-
-            Map<String, Object> retryParams = buildRetryParams(SUBAGENT_WRITE_ABUSE_PREFIX + writeAbuse);
-            String retryMessage = (String) retryParams.get(MESSAGE);
-            fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
-            sendPromptMessage(retryMessage);
-
-            fireDebugEvent(PERMISSION_DENIED_EVENT, "Sub-agent write tool: " + writeAbuse,
-                toolCall != null ? toolCall.toString() : "");
-            builtInActionDeniedDuringTurn = true;
-            lastDeniedKind = SUBAGENT_WRITE_ABUSE_PREFIX + writeAbuse;
-            sendPermissionResponse(reqId, rejectOptionId);
-            return;
-        }
-
-        // Use per-tool permission settings (DENY / ASK / ALLOW)
         String toolId = resolveToolId(permKind, toolCall);
         ToolPermission perm = resolveEffectivePermission(toolId, toolCall);
 
@@ -1137,79 +1033,136 @@ public class AcpClient implements Closeable {
             LOG.info("ACP request_permission: auto-approve promoting ASK→ALLOW for " + toolId);
             perm = ToolPermission.ALLOW;
         }
-
         // Session-scoped allow: if user previously chose "Allow for session", skip the prompt
         if (perm == ToolPermission.ASK && sessionAllowedTools.contains(toolId)) {
             LOG.info("ACP request_permission: session-allowed for " + toolId);
             perm = ToolPermission.ALLOW;
         }
 
-        if (perm == ToolPermission.DENY) {
-            String rejectOptionId = findRejectOption(reqParams);
-            LOG.info("ACP request_permission: DENYING " + permKind + TOOL_PREFIX + toolId + "), option=" + rejectOptionId);
+        switch (perm) {
+            case DENY -> denyPermission(reqId, reqParams, permKind, toolId);
+            case ASK -> handleAskPermission(reqId, reqParams, toolId, permKind, formattedPermission);
+            default -> allowPermission(reqId, reqParams, permKind, toolId, formattedPermission);
+        }
+    }
 
-            // Send guidance BEFORE rejecting so agent sees it while still in turn
-            Map<String, Object> retryParams = buildRetryParams(permKind);
-            String retryMessage = (String) retryParams.get(MESSAGE);
-            fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
-            sendPromptMessage(retryMessage);
+    /**
+     * Check for known abuse patterns (run_command abuse, sub-agent git/write tools) and deny the
+     * request if one is detected. Returns true if the request was denied.
+     * <p>
+     * Note: built-in CLI read tools (view, grep, glob) bypass request_permission entirely — they
+     * are handled by {@code interceptBuiltInToolCall()} in the stream handler.
+     */
+    private boolean checkAbuseAndDeny(long reqId, @Nullable JsonObject reqParams, @Nullable JsonObject toolCall) {
+        String commandAbuse = detectCommandAbuse(toolCall);
+        if (commandAbuse != null) {
+            denyForAbuse(reqId, reqParams, toolCall, "run_command abuse: " + commandAbuse,
+                RUN_COMMAND_ABUSE_PREFIX + commandAbuse);
+            return true;
+        }
+        String gitWriteAbuse = detectSubAgentGitWrite(toolCall);
+        if (gitWriteAbuse != null) {
+            denyForAbuse(reqId, reqParams, toolCall, "Sub-agent git write: " + gitWriteAbuse,
+                GIT_WRITE_ABUSE_PREFIX + gitWriteAbuse);
+            return true;
+        }
+        String writeAbuse = detectSubAgentWriteTool(toolCall);
+        if (writeAbuse != null) {
+            denyForAbuse(reqId, reqParams, toolCall, "Sub-agent write tool: " + writeAbuse,
+                SUBAGENT_WRITE_ABUSE_PREFIX + writeAbuse);
+            return true;
+        }
+        return false;
+    }
 
-            fireDebugEvent(PERMISSION_DENIED_EVENT, "Denied: " + permKind + TOOL_PREFIX + toolId + ")",
-                "Permission mode: DENY");
-            builtInActionDeniedDuringTurn = true;
-            lastDeniedKind = permKind;
-            sendPermissionResponse(reqId, rejectOptionId);
-        } else if (perm == ToolPermission.ASK) {
-            // ASK: fire permission request to UI and block until user responds (120s timeout)
-            var listener = permissionRequestListener;
-            if (listener == null) {
-                // No UI listener registered — fall back to auto-deny for safety
-                LOG.warn("ACP request_permission: ASK for " + toolId + " but no listener — auto-denying");
-                String rejectOptionId = findRejectOption(reqParams);
-                sendPermissionResponse(reqId, rejectOptionId);
-                return;
-            }
-            CompletableFuture<PermissionResponse> future = new CompletableFuture<>();
-            pendingPermissionAsks.put(reqId, future);
-            ToolRegistry.ToolEntry toolEntry = ToolRegistry.findById(toolId);
-            String displayName = toolEntry != null ? toolEntry.displayName : permKind;
-            PermissionRequest req = new PermissionRequest(reqId, toolId, displayName, formattedPermission,
-                future::complete);
-            listener.accept(req);
-            PermissionResponse response;
-            try {
-                response = future.get(120, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (Exception e) {
-                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                LOG.info("ACP request_permission: ASK timed out / cancelled for " + toolId + " — denying");
-                response = PermissionResponse.DENY;
-            } finally {
-                pendingPermissionAsks.remove(reqId);
-            }
-            if (response == PermissionResponse.ALLOW_SESSION) {
+    /**
+     * Deny a permission request for a detected abuse pattern, sending pre-rejection guidance first.
+     */
+    private void denyForAbuse(long reqId, @Nullable JsonObject reqParams, @Nullable JsonObject toolCall,
+                              String logSuffix, String abusePrefixedKind) {
+        String rejectOptionId = findRejectOption(reqParams);
+        LOG.info("ACP request_permission: DENYING " + logSuffix);
+        Map<String, Object> retryParams = buildRetryParams(abusePrefixedKind);
+        String retryMessage = (String) retryParams.get(MESSAGE);
+        fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
+        sendPromptMessage(retryMessage);
+        fireDebugEvent(PERMISSION_DENIED_EVENT, logSuffix, toolCall != null ? toolCall.toString() : "");
+        builtInActionDeniedDuringTurn = true;
+        lastDeniedKind = abusePrefixedKind;
+        sendPermissionResponse(reqId, rejectOptionId);
+    }
+
+    /**
+     * Handle a DENY permission: send guidance before rejecting so the agent can retry.
+     */
+    private void denyPermission(long reqId, @Nullable JsonObject reqParams, String permKind, String toolId) {
+        String rejectOptionId = findRejectOption(reqParams);
+        LOG.info("ACP request_permission: DENYING " + permKind + TOOL_PREFIX + toolId + "), option=" + rejectOptionId);
+        Map<String, Object> retryParams = buildRetryParams(permKind);
+        String retryMessage = (String) retryParams.get(MESSAGE);
+        fireDebugEvent(PRE_REJECTION_GUIDANCE_EVENT, SENDING_GUIDANCE_DESC, retryMessage);
+        sendPromptMessage(retryMessage);
+        fireDebugEvent(PERMISSION_DENIED_EVENT, "Denied: " + permKind + TOOL_PREFIX + toolId + ")",
+            "Permission mode: DENY");
+        builtInActionDeniedDuringTurn = true;
+        lastDeniedKind = permKind;
+        sendPermissionResponse(reqId, rejectOptionId);
+    }
+
+    /**
+     * Handle an ASK permission: prompt the UI and block until user responds (120s timeout).
+     */
+    private void handleAskPermission(long reqId, @Nullable JsonObject reqParams,
+                                     String toolId, String permKind, String formattedPermission) {
+        var listener = permissionRequestListener.get();
+        if (listener == null) {
+            LOG.warn("ACP request_permission: ASK for " + toolId + " but no listener — auto-denying");
+            sendPermissionResponse(reqId, findRejectOption(reqParams));
+            return;
+        }
+        CompletableFuture<PermissionResponse> future = new CompletableFuture<>();
+        ToolRegistry.ToolEntry toolEntry = ToolRegistry.findById(toolId);
+        String displayName = toolEntry != null ? toolEntry.displayName : permKind;
+        listener.accept(new PermissionRequest(reqId, toolId, displayName, formattedPermission, future::complete));
+        PermissionResponse response;
+        try {
+            response = future.get(120, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            LOG.info("ACP request_permission: ASK timed out / cancelled for " + toolId + " — denying");
+            response = PermissionResponse.DENY;
+        }
+        switch (response) {
+            case ALLOW_SESSION -> {
                 sessionAllowedTools.add(toolId);
                 LOG.info("ACP request_permission: ASK approved for session for " + toolId);
                 fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "session-approved");
                 sendPermissionResponse(reqId, findAllowOption(reqParams));
-            } else if (response == PermissionResponse.ALLOW_ONCE) {
+            }
+            case ALLOW_ONCE -> {
                 LOG.info("ACP request_permission: ASK approved (once) for " + toolId);
                 fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "user-approved");
                 sendPermissionResponse(reqId, findAllowOption(reqParams));
-            } else {
-                String rejectOptionId = findRejectOption(reqParams);
+            }
+            default -> {
                 LOG.info("ACP request_permission: ASK denied by user for " + toolId);
                 fireDebugEvent(PERMISSION_DENIED_EVENT, "ASK denied by user: " + toolId, "");
                 builtInActionDeniedDuringTurn = true;
                 lastDeniedKind = permKind;
-                sendPermissionResponse(reqId, rejectOptionId);
+                sendPermissionResponse(reqId, findRejectOption(reqParams));
             }
-        } else {
-            // ALLOW
-            String allowOptionId = findAllowOption(reqParams);
-            LOG.info("ACP request_permission: auto-approving " + permKind + TOOL_PREFIX + toolId + "), option=" + allowOptionId);
-            fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "");
-            sendPermissionResponse(reqId, allowOptionId);
         }
+    }
+
+    /**
+     * Handle an ALLOW permission: auto-approve the tool call.
+     */
+    private void allowPermission(long reqId, @Nullable JsonObject reqParams,
+                                 String permKind, String toolId, String formattedPermission) {
+        String allowOptionId = findAllowOption(reqParams);
+        LOG.info("ACP request_permission: auto-approving " + permKind + TOOL_PREFIX + toolId + "), option=" + allowOptionId);
+        fireDebugEvent(PERMISSION_APPROVED_EVENT, formattedPermission, "");
+        sendPermissionResponse(reqId, allowOptionId);
     }
 
     /**
@@ -1252,37 +1205,32 @@ public class AcpClient implements Closeable {
      */
     private @Nullable String extractPathFromToolCall(@Nullable JsonObject toolCall) {
         if (toolCall == null) return null;
-        for (String key : new String[]{"path", "file", "file1", "file2"}) {
-            if (toolCall.has(key) && toolCall.get(key).isJsonPrimitive()) {
-                return toolCall.get(key).getAsString();
-            }
-        }
+        String direct = findPathInJson(toolCall);
+        if (direct != null) return direct;
         // Also check inside a nested "arguments" / "input" object
         for (String wrapper : new String[]{"arguments", "input", PARAMS}) {
             if (toolCall.has(wrapper) && toolCall.get(wrapper).isJsonObject()) {
-                JsonObject inner = toolCall.getAsJsonObject(wrapper);
-                for (String key : new String[]{"path", "file", "file1", "file2"}) {
-                    if (inner.has(key) && inner.get(key).isJsonPrimitive()) {
-                        return inner.get(key).getAsString();
-                    }
-                }
+                String nested = findPathInJson(toolCall.getAsJsonObject(wrapper));
+                if (nested != null) return nested;
             }
         }
         return null;
     }
 
     /**
-     * Returns true if the given absolute-or-relative path falls inside the current project root.
+     * Returns the first path-like value found in the given JSON object, or null if none.
      */
-    private boolean isPathInsideProject(String path) {
-        if (projectBasePath == null) return true;
-        java.io.File f = new java.io.File(path);
-        if (!f.isAbsolute()) return true; // relative paths assumed in-project
-        try {
-            return f.getCanonicalPath().startsWith(new java.io.File(projectBasePath).getCanonicalPath());
-        } catch (java.io.IOException e) {
-            return true;
+    private static @Nullable String findPathInJson(@NotNull JsonObject obj) {
+        for (String key : new String[]{"path", "file", "file1", "file2"}) {
+            if (obj.has(key) && obj.get(key).isJsonPrimitive()) {
+                return obj.get(key).getAsString();
+            }
         }
+        return null;
+    }
+
+    private boolean isPathInsideProject(String path) {
+        return PsiBridgeService.isPathUnderBase(path, projectBasePath);
     }
 
     private String formatPermissionDisplay(String permKind, String permTitle) {

@@ -34,7 +34,9 @@ internal object GlobRenderer : ToolResultRenderer {
         val panel = ToolRenderers.listPanel()
         panel.add(ToolRenderers.headerPanel(ToolIcons.FOLDER, paths.size, "files"))
 
-        val grouped = paths.groupBy { path ->
+        val displayPaths = paths.take(ToolRenderers.MAX_LIST_ENTRIES)
+
+        val grouped = displayPaths.groupBy { path ->
             val lastSlash = path.lastIndexOf('/')
             if (lastSlash >= 0) path.substring(0, lastSlash) else ""
         }
@@ -56,6 +58,11 @@ internal object GlobRenderer : ToolResultRenderer {
                 row.add(ToolRenderers.fileLink(fileName, filePath))
                 panel.add(row)
             }
+        }
+
+        val remaining = paths.size - displayPaths.size
+        if (remaining > 0) {
+            ToolRenderers.addTruncationIndicator(panel, remaining, "files")
         }
 
         return panel

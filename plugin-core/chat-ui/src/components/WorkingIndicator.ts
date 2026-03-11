@@ -8,6 +8,9 @@ export default class WorkingIndicator extends HTMLElement {
         this._span.className = 'working-text';
         this.appendChild(this._span);
         this.hidden = true;
+        this.setAttribute('role', 'status');
+        this.setAttribute('aria-live', 'polite');
+        this.setAttribute('aria-label', 'Working');
     }
 
     show(): void {

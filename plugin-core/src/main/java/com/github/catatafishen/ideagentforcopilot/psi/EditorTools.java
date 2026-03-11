@@ -13,8 +13,8 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -241,87 +241,62 @@ class EditorTools extends AbstractToolHandler {
         }
     }
 
-    /**
-     * List all scratch files visible to the IDE.
-     * Returns paths that can be used with intellij_read_file.
-     */
-    @SuppressWarnings("unused")
     private String listScratchFiles(JsonObject args) {
         try {
-            StringBuilder result = new StringBuilder();
-            final int[] count = {0};
-            final Set<String> seenPaths = new HashSet<>();
+            final List<String> lines = new ArrayList<>();
+            final String[] errorMsg = new String[1];
 
             EdtUtil.invokeAndWait(() -> {
                 try {
-                    result.append("Scratch files:\n");
-
-                    // First, check currently open files in editors (catches files open but not in VFS yet)
-                    com.intellij.openapi.fileEditor.FileEditorManager editorManager =
-                        com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project);
-                    VirtualFile[] openFiles = editorManager.getOpenFiles();
-
-                    for (VirtualFile file : openFiles) {
-                        // Check if this is a scratch file (path contains "scratches")
-                        String path = file.getPath();
-                        if (path.contains("scratches") && !file.isDirectory()) {
-                            seenPaths.add(path);
-                            long sizeKB = file.getLength() / 1024;
-                            result.append("- ").append(path)
-                                .append(" (").append(sizeKB).append(" KB) [OPEN]\n");
-                            count[0]++;
-                        }
-                    }
-
-                    // Then, list files from scratch root directory (catches files on disk)
+                    com.intellij.ide.scratch.ScratchFileService scratchService =
+                        com.intellij.ide.scratch.ScratchFileService.getInstance();
                     com.intellij.ide.scratch.ScratchRootType scratchRoot =
                         com.intellij.ide.scratch.ScratchRootType.getInstance();
 
-                    // Get scratch root directory
-                    VirtualFile scratchesDir = scratchRoot.findFile(null, "",
-                        com.intellij.ide.scratch.ScratchFileService.Option.existing_only);
+                    VirtualFile scratchesDir = scratchService.findFile(
+                        scratchRoot, "",
+                        com.intellij.ide.scratch.ScratchFileService.Option.existing_only
+                    );
 
-                    if (scratchesDir != null && scratchesDir.exists()) {
-                        listScratchFilesRecursive(scratchesDir, result, count, 0, seenPaths);
-                    }
+                    if (scratchesDir == null) return;
+
+                    // Refresh VFS to pick up files created outside the current session
+                    com.intellij.openapi.vfs.VfsUtil.markDirtyAndRefresh(false, true, true, scratchesDir);
+
+                    collectScratchEntries(scratchesDir, "", lines);
                 } catch (Exception e) {
                     LOG.warn("Failed to list scratch files", e);
-                    result.append("Error listing scratch files: ").append(e.getMessage());
+                    errorMsg[0] = e.getMessage();
                 }
             });
 
-            if (count[0] == 0 && !result.toString().contains("Error")) {
-                result.append("\nTotal: 0 scratch files\n");
-                result.append("Use create_scratch_file to create one.");
-            } else {
-                result.append("\nTotal: ").append(count[0]).append(" scratch file(s)\n");
-                result.append("Use intellij_read_file with these paths to read content.");
+            if (errorMsg[0] != null) return "Error listing scratch files: " + errorMsg[0];
+
+            if (lines.isEmpty()) {
+                return "0 scratch files\nUse create_scratch_file to create one.";
             }
 
-            return result.toString();
+            lines.sort(String::compareTo);
+            return lines.size() + " scratch files:\n" + String.join("\n", lines);
         } catch (Exception e) {
             LOG.warn("Failed to list scratch files", e);
             return "Error listing scratch files: " + e.getMessage();
         }
     }
 
-    private void listScratchFilesRecursive(VirtualFile dir, StringBuilder result, int[] count, int depth, Set<
-        String> seenPaths) {
-        if (depth > 3) return; // Prevent excessive recursion
+    private void collectScratchEntries(VirtualFile dir, String prefix, List<String> lines) {
+        if (prefix.chars().filter(c -> c == '/').count() > 3) return; // cap recursion depth
 
         for (VirtualFile child : dir.getChildren()) {
+            String relPath = prefix.isEmpty() ? child.getName() : prefix + "/" + child.getName();
             if (child.isDirectory()) {
-                listScratchFilesRecursive(child, result, count, depth + 1, seenPaths);
+                collectScratchEntries(child, relPath, lines);
             } else {
-                String path = child.getPath();
-                if (!seenPaths.contains(path)) {  // Skip if already listed from open files
-                    seenPaths.add(path);
-                    String indent = "  ".repeat(depth);
-                    long sizeKB = child.getLength() / 1024;
-                    result.append(indent).append("- ").append(path)
-                        .append(" (").append(sizeKB).append(" KB)\n");
-                    count[0]++;
-                }
+                lines.add(String.format("%s [%s, %s, %s]",
+                    relPath,
+                    ToolUtils.fileType(child.getName()),
+                    ToolUtils.formatFileSize(child.getLength()),
+                    ToolUtils.formatFileTimestamp(child.getTimeStamp())));
             }
         }
     }
