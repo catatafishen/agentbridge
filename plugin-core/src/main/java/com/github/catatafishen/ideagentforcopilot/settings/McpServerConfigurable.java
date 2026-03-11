@@ -11,6 +11,7 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.ui.SimpleListCellRenderer;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBPanel;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
@@ -64,10 +65,10 @@ public final class McpServerConfigurable implements Configurable {
             settings.isAutoStart());
 
         followModeCheckbox = new JBCheckBox(
-            "Follow Agent \u2014 open files and highlight regions as the agent reads or edits them",
+            "Follow Agent — open files and highlight regions as the agent reads or edits them",
             ActiveAgentManager.getFollowAgentFiles(project));
         followModeCheckbox.setToolTipText(
-            "Works independently of the connected agent \u2014 any external agent accessing "
+            "Works independently of the connected agent — any external agent accessing "
                 + "the MCP server will trigger follow-mode when this is enabled.");
 
         JButton restartButton = new JButton("Restart MCP Server");
@@ -78,7 +79,7 @@ public final class McpServerConfigurable implements Configurable {
         copyConfigButton.setToolTipText("Copy JSON config for Claude Desktop, Cursor, etc.");
         copyConfigButton.addActionListener(e -> copyMcpConfig(copyConfigButton));
 
-        JPanel buttonRow = new JPanel();
+        JPanel buttonRow = new JBPanel<>();
         buttonRow.setLayout(new BoxLayout(buttonRow, BoxLayout.X_AXIS));
         buttonRow.add(restartButton);
         buttonRow.add(Box.createHorizontalStrut(JBUI.scale(8)));

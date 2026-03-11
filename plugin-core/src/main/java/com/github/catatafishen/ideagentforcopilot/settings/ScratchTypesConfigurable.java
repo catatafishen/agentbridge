@@ -11,6 +11,7 @@ import com.intellij.ui.CheckBoxList;
 import com.intellij.ui.JBSplitter;
 import com.intellij.ui.ToolbarDecorator;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
@@ -46,11 +47,11 @@ public final class ScratchTypesConfigurable implements Configurable {
         return "Scratch File Types";
     }
 
-    @Nullable
+    @NotNull
     @Override
     public JComponent createComponent() {
-        JPanel languagePanel = createLanguagePanel();
-        JPanel aliasPanel = createAliasPanel();
+        JBPanel<?> languagePanel = createLanguagePanel();
+        JBPanel<?> aliasPanel = createAliasPanel();
 
         JBSplitter splitter = new JBSplitter(true, 0.65f);
         splitter.setShowDividerControls(true);
@@ -59,8 +60,8 @@ public final class ScratchTypesConfigurable implements Configurable {
         return splitter;
     }
 
-    private JPanel createLanguagePanel() {
-        languageList = new CheckBoxList<Language>() {
+    private JBPanel<?> createLanguagePanel() {
+        languageList = new CheckBoxList<>() {
             @Override
             protected @Nullable JComponent adjustRendering(
                 JComponent rootComponent, JCheckBox checkBox, int index,
@@ -83,7 +84,7 @@ public final class ScratchTypesConfigurable implements Configurable {
             .addExtraAction(resetDefaultsAction())
             .createPanel();
 
-        JPanel panel = new JPanel(new BorderLayout());
+        JBPanel<?> panel = new JBPanel<>(new BorderLayout());
         JBLabel hint = new JBLabel("Languages shown in the \"New Scratch File\" dropdown:");
         hint.setBorder(JBUI.Borders.empty(0, 0, 4, 0));
         panel.add(hint, BorderLayout.NORTH);
@@ -91,7 +92,7 @@ public final class ScratchTypesConfigurable implements Configurable {
         return panel;
     }
 
-    private JPanel createAliasPanel() {
+    private JBPanel<?> createAliasPanel() {
         tableModel = new MappingsTableModel();
         loadAliasTable();
 
@@ -112,7 +113,7 @@ public final class ScratchTypesConfigurable implements Configurable {
             })
             .createPanel();
 
-        JPanel panel = new JPanel(new BorderLayout());
+        JBPanel<?> panel = new JBPanel<>(new BorderLayout());
         JBLabel hint = new JBLabel(
             "<html>Extra aliases for the \"Open in Scratch\" button in chat code blocks.<br>"
                 + "Languages recognized by IntelliJ are resolved automatically — only add aliases "

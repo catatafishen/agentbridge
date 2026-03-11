@@ -3,10 +3,11 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.ui.ToolbarDecorator;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBPanel;
 import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
@@ -30,7 +31,7 @@ public final class ProjectFilesConfigurable implements Configurable {
         return "Project Files";
     }
 
-    @Nullable
+    @NotNull
     @Override
     public JComponent createComponent() {
         tableModel = new EntriesTableModel();
@@ -54,7 +55,7 @@ public final class ProjectFilesConfigurable implements Configurable {
             })
             .createPanel();
 
-        JPanel panel = new JPanel(new BorderLayout());
+        JBPanel<?> panel = new JBPanel<>(new BorderLayout());
         JBLabel hint = new JBLabel(
             "<html>Configure file shortcuts shown in the Project Files toolbar menu.<br>"
                 + "Paths are relative to the project root. Enable <b>Glob</b> to list matching files "
