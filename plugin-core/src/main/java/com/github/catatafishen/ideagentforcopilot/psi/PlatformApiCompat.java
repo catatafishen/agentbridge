@@ -809,4 +809,46 @@ public final class PlatformApiCompat {
         connection.subscribe(com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC, listener);
         return connection::disconnect;
     }
+
+    /**
+     * Launches a full IDE inspection run ({@code GlobalInspectionContextImpl}) against the given
+     * scope and profile, opens the IDE Inspection Results tool window, and invokes {@code onFinished}
+     * with the populated context once analysis is complete.
+     *
+     * <p><b>Why extracted:</b> {@code GlobalInspectionContextEx} is the offline/export context
+     * whose {@code launchInspections} and {@code runTools} are no-ops — calling {@code doInspections}
+     * on it completes instantly with 0 results and never shows the IDE window.
+     * {@code GlobalInspectionContextImpl} is the full UI context, but it and several of its
+     * collaborating methods ({@code InspectionManagerEx.getContentManager()},
+     * {@code setExternalProfile()}, {@code doInspections()}) are {@code @ApiStatus.Internal} or
+     * produce false-positive "cannot resolve" errors in the IDE daemon.
+     * All such calls are centralised here.</p>
+     *
+     * @param project    the current project
+     * @param scope      the analysis scope to inspect
+     * @param profile    the inspection profile to use
+     * @param onFinished callback invoked (on a background thread) after analysis completes;
+     *                   receives the fully-populated {@code GlobalInspectionContextEx}
+     */
+    static void runFullInspections(
+        @NotNull Project project,
+        @NotNull com.intellij.analysis.AnalysisScope scope,
+        @NotNull com.intellij.codeInspection.ex.InspectionProfileImpl profile,
+        @NotNull java.util.function.Consumer<com.intellij.codeInspection.ex.GlobalInspectionContextEx> onFinished) {
+        com.intellij.codeInspection.ex.InspectionManagerEx manager =
+            (com.intellij.codeInspection.ex.InspectionManagerEx) com.intellij.codeInspection.InspectionManager.getInstance(project);
+        com.intellij.codeInspection.ex.GlobalInspectionContextImpl context =
+            new com.intellij.codeInspection.ex.GlobalInspectionContextImpl(project, manager.getContentManager()) {
+                @Override
+                protected void notifyInspectionsFinished(@NotNull com.intellij.analysis.AnalysisScope finishedScope) {
+                    super.notifyInspectionsFinished(finishedScope);
+                    onFinished.accept(this);
+                }
+            };
+        context.setExternalProfile(profile);
+        // doInspections asserts EDT — launch it there; the actual file analysis runs on a
+        // background thread inside the backgroundable task that doInspections creates.
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+            context.doInspections(scope));
+    }
 }

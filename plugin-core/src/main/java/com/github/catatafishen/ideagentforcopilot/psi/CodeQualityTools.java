@@ -478,34 +478,15 @@ class CodeQualityTools extends AbstractToolHandler {
             String basePath = project.getBasePath();
             String profileName = currentProfile.getName();
 
-            com.intellij.codeInspection.ex.GlobalInspectionContextEx context =
-                new com.intellij.codeInspection.ex.GlobalInspectionContextEx(project) {
-
-                    @Override
-                    protected void notifyInspectionsFinished(@NotNull com.intellij.analysis.AnalysisScope scope) {
-                        super.notifyInspectionsFinished(scope);
-                        LOG.info("Inspection analysis completed, collecting results...");
-                        LOG.info("Used tools count: " + this.getUsedTools().size());
-
-                        // Use scheduled retries instead of Thread.sleep to allow inspection tool
-                        // presentations to fully populate before collecting results.
-                        scheduleInspectionCollection(this, severityRank, requiredRank, basePath,
-                            new InspectionPageParams(profileName, offset, limit), resultFuture, 0);
-                    }
-                };
-
-            context.setExternalProfile(currentProfile);
-
-            // doInspections calls launchInspections which asserts EDT — must be invoked on EDT.
-            // The backgroundable task it creates runs the actual analysis on a pooled thread,
-            // so this invokeLater does not block the EDT.
-            ApplicationManager.getApplication().invokeLater(() -> {
-                try {
-                    context.doInspections(scope);
-                } catch (Exception e) {
-                    LOG.error("Error running inspections on EDT", e);
-                    resultFuture.complete("Error running inspections: " + e.getMessage());
-                }
+            // PlatformApiCompat.runFullInspections creates a GlobalInspectionContextImpl (the full
+            // UI context). Using GlobalInspectionContextEx directly would invoke the offline/export
+            // launchInspections which is a no-op: it completes instantly with 0 results and never
+            // opens the IDE Inspection Results window.
+            PlatformApiCompat.runFullInspections(project, scope, currentProfile, ctx -> {
+                LOG.info("Inspection analysis completed, collecting results...");
+                LOG.info("Used tools count: " + ctx.getUsedTools().size());
+                scheduleInspectionCollection(ctx, severityRank, requiredRank, basePath,
+                    new InspectionPageParams(profileName, offset, limit), resultFuture, 0);
             });
 
         } catch (Exception e) {
