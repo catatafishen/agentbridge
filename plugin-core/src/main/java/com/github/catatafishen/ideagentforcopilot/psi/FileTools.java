@@ -1,5 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
+import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
+import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
+import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
+import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
@@ -22,6 +26,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -44,6 +49,8 @@ class FileTools extends AbstractToolHandler {
     static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
     static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
     private static final int MAX_READ_LINES = 2000;
+
+    private final List<ToolDefinition> definitions;
 
     /**
      * Returns a label like "ui-reviewer", "claude-sonnet-4.5", or "Agent" as fallback.
@@ -91,18 +98,74 @@ class FileTools extends AbstractToolHandler {
 
     FileTools(Project project) {
         super(project);
-        register("read_file", this::readFile);
-        register("intellij_read_file", this::readFile);
-        register("write_file", this::writeFile);
-        register("intellij_write_file", this::writeFile);
-        register("edit_text", this::writeFile);
-        register("create_file", this::createFile);
-        register("delete_file", this::deleteFile);
-        register("rename_file", this::renameFile);
-        register("move_file", this::moveFile);
-        register("undo", this::undo);
-        register("redo", this::redo);
-        register("reload_from_disk", this::reloadFromDisk);
+
+        definitions = List.of(
+            // Read-only file tools
+            file("read_file", "Read File",
+                "Read a file via IntelliJ's editor buffer -- always returns the current in-memory content",
+                this::readFile)
+                .readOnly().pathSubPermissions().build(),
+            file("intellij_read_file", "Read File",
+                "Read a file via IntelliJ's editor buffer -- always returns the current in-memory content",
+                this::readFile)
+                .readOnly().pathSubPermissions().build(),
+            file("reload_from_disk", "Reload from Disk",
+                "Force IntelliJ to refresh a file or directory from disk, picking up changes made by external tools",
+                this::reloadFromDisk)
+                .readOnly().pathSubPermissions().build(),
+
+            // Write file tools
+            file("write_file", "Write File",
+                "Write full file content or create a new file through IntelliJ's editor buffer. Auto-format and import optimization is deferred until turn end (controlled by auto_format_and_optimize_imports param)",
+                this::writeFile)
+                .pathSubPermissions().permissionTemplate("Write {path}").build(),
+            file("intellij_write_file", "Write File",
+                "Write full file content or create a new file through IntelliJ's editor buffer. Auto-format and import optimization is deferred until turn end (controlled by auto_format_and_optimize_imports param)",
+                this::writeFile)
+                .pathSubPermissions().permissionTemplate("Write {path}").build(),
+            file("edit_text", "Edit Text",
+                "Surgical find-and-replace edit within a file -- for small changes inside methods, imports, or config. Auto-format and import optimization is deferred until turn end (controlled by auto_format_and_optimize_imports param)",
+                this::writeFile)
+                .pathSubPermissions().permissionTemplate("Edit {path}").build(),
+            file("create_file", "Create File",
+                "Create a new file and register it in IntelliJ's VFS",
+                this::createFile)
+                .pathSubPermissions().permissionTemplate("Create {path}").build(),
+            file("rename_file", "Rename File",
+                "Rename a file in place without moving it to a different directory",
+                this::renameFile)
+                .pathSubPermissions().permissionTemplate("Rename {path} → {new_name}").build(),
+            file("move_file", "Move File",
+                "Move a file to a different directory",
+                this::moveFile)
+                .pathSubPermissions().permissionTemplate("Move {path} → {destination}").build(),
+
+            // Destructive file tools
+            file("delete_file", "Delete File",
+                "Delete a file from the project via IntelliJ",
+                this::deleteFile)
+                .destructive().pathSubPermissions().permissionTemplate("Delete {path}").build(),
+
+            // Undo/redo
+            file("undo", "Undo",
+                "Undo the last N edit actions on a file using IntelliJ's UndoManager",
+                this::undo)
+                .pathSubPermissions().build(),
+            file("redo", "Redo",
+                "Redo the last N undone actions on a file using IntelliJ's UndoManager",
+                this::redo)
+                .pathSubPermissions().build()
+        );
+
+        // Still register in legacy map for backward compatibility
+        for (ToolDefinition def : definitions) {
+            register(def.id(), def::execute);
+        }
+    }
+
+    @Override
+    List<ToolDefinition> getDefinitions() {
+        return definitions;
     }
 
     private String readFile(JsonObject args) {
@@ -1089,5 +1152,12 @@ class FileTools extends AbstractToolHandler {
 
         VfsUtil.markDirtyAndRefresh(false, vf.isDirectory(), true, vf);
         return "Reloaded from disk: " + vf.getPath();
+    }
+
+    private static ToolBuilder file(String id, String displayName, String description,
+                                    ToolHandler handler) {
+        return ToolBuilder.create(id, displayName, description, Category.FILE)
+            .schema(ToolSchemas.getInputSchema(id))
+            .handler(handler);
     }
 }
