@@ -301,7 +301,14 @@ public final class PsiBridgeService implements Disposable {
     }
 
     private boolean isInsideProject(String path) {
-        String basePath = project.getBasePath();
+        return isPathUnderBase(path, project.getBasePath());
+    }
+
+    /**
+     * Returns true if the given path (absolute or relative) falls under the given base path,
+     * or if either is null/non-absolute (treating such cases as in-project for safety).
+     */
+    public static boolean isPathUnderBase(String path, @Nullable String basePath) {
         if (basePath == null) return true;
         java.io.File f = new java.io.File(path);
         if (!f.isAbsolute()) return true;
