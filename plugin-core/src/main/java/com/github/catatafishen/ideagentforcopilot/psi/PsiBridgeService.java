@@ -446,14 +446,39 @@ public final class PsiBridgeService implements Disposable {
         }
     }
 
+    /**
+     * Subscribes to {@code DaemonCodeAnalyzer.DaemonListener} and waits until daemon analysis
+     * has settled for the target file.
+     *
+     * <h3>Why debounce instead of a single latch?</h3>
+     * IntelliJ fires multiple consecutive {@code daemonFinished} events for a single edit:
+     * <ol>
+     *   <li>A fast built-in pass (syntax, annotations) — fires first, within ~300ms</li>
+     *   <li>A slow external-annotator pass (e.g. SonarLint) — fires ~800ms later once the
+     *       Sonar analysis server responds</li>
+     * </ol>
+     * A single {@link java.util.concurrent.CountDownLatch} would trigger on the first (fast) pass and
+     * read highlights before SonarLint has updated the markup model with fresh results.
+     * The debounce approach keeps resetting a timer on every {@code daemonFinished} event, only
+     * proceeding once there has been 600ms of silence — ensuring all passes have settled.
+     */
     private static final class DaemonWaiter implements AutoCloseable {
-        private final java.util.concurrent.CountDownLatch latch =
+
+        /**
+         * How long (ms) to wait after the last {@code daemonFinished} event before considering
+         * analysis settled. 600ms is long enough to bridge the gap between IntelliJ's fast pass
+         * and SonarLint's follow-up external-annotator pass.
+         */
+        private static final long SETTLE_MS = 600L;
+
+        private final java.util.concurrent.CountDownLatch firstPassLatch =
             new java.util.concurrent.CountDownLatch(1);
+        private volatile long lastFinishedAt = 0L;
         private final Runnable disconnect;
 
         /**
          * @param preWriteStamp the document modificationStamp recorded BEFORE the write, or -1 to
-         *                      accept any daemon pass (e.g., for freshly created files where the write
+         *                      accept any daemon pass (e.g. for freshly created files where the write
          *                      has already happened before this waiter is constructed).
          */
         DaemonWaiter(Project proj, @Nullable com.intellij.openapi.vfs.VirtualFile targetFile,
@@ -461,43 +486,60 @@ public final class PsiBridgeService implements Disposable {
             disconnect = PlatformApiCompat.subscribeDaemonListener(proj,
                 new com.intellij.codeInsight.daemon.DaemonCodeAnalyzer.DaemonListener() {
                     @Override
-                    public void daemonFinished(@NotNull java.util.Collection<? extends com.intellij.openapi.fileEditor.FileEditor> fileEditors) {
-                        if (targetFile == null) {
-                            latch.countDown();
-                            return;
-                        }
-                        boolean included = fileEditors.stream().anyMatch(fe -> targetFile.equals(fe.getFile()));
-                        if (!included) return;
+                    public void daemonFinished(
+                        @NotNull java.util.Collection<? extends com.intellij.openapi.fileEditor.FileEditor> fileEditors) {
+                        if (targetFile != null) {
+                            boolean included = fileEditors.stream()
+                                .anyMatch(fe -> targetFile.equals(fe.getFile()));
+                            if (!included) return;
 
-                        // Reject pre-write in-flight passes: only accept a daemon pass that
-                        // analyzed a version of the document AFTER the write was applied.
-                        if (preWriteStamp >= 0) {
-                            long currentStamp = getDocumentStamp(targetFile);
-                            if (currentStamp <= preWriteStamp) {
-                                LOG.info("Auto-highlights: ignoring pre-write daemon pass (stamp "
-                                    + currentStamp + " <= " + preWriteStamp + ")");
-                                return;
+                            // Reject pre-write in-flight passes: only accept a daemon pass that
+                            // analyzed a version of the document AFTER the write was applied.
+                            if (preWriteStamp >= 0) {
+                                long currentStamp = getDocumentStamp(targetFile);
+                                if (currentStamp <= preWriteStamp) {
+                                    LOG.info("Auto-highlights: ignoring pre-write daemon pass (stamp "
+                                        + currentStamp + " <= " + preWriteStamp + ")");
+                                    return;
+                                }
                             }
                         }
-                        latch.countDown();
+                        lastFinishedAt = System.currentTimeMillis();
+                        firstPassLatch.countDown();
                     }
 
                     @Override
                     public void daemonFinished() {
-                        // Only trigger in any-file mode; file-specific mode is handled above.
                         if (targetFile == null) {
-                            latch.countDown();
+                            lastFinishedAt = System.currentTimeMillis();
+                            firstPassLatch.countDown();
                         }
                     }
                 });
         }
 
         void await() throws InterruptedException {
-            if (latch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                LOG.info("Auto-highlights: daemon pass completed (event-driven)");
-            } else {
-                LOG.info("Auto-highlights: daemon wait timed out (5s)");
+            // Phase 1: wait for the first qualifying daemon pass (up to 5s)
+            if (!firstPassLatch.await(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                LOG.info("Auto-highlights: daemon wait timed out (5s), reading available highlights");
+                return;
             }
+            LOG.info("Auto-highlights: first daemon pass completed, settling for external annotators");
+
+            // Phase 2: sleep for SETTLE_MS — gives SonarLint (and other external annotators)
+            // time to complete their follow-up pass and update the markup model.
+            long snapshotAt = lastFinishedAt;
+            Thread.sleep(SETTLE_MS);
+
+            // If a second pass fired while we slept (e.g. SonarLint's external annotator),
+            // wait out the remaining settle time from that latest event.
+            if (lastFinishedAt != snapshotAt) {
+                long extraSleep = (lastFinishedAt + SETTLE_MS) - System.currentTimeMillis();
+                if (extraSleep > 0) {
+                    Thread.sleep(extraSleep);
+                }
+            }
+            LOG.info("Auto-highlights: daemon settled");
         }
 
         @Override
