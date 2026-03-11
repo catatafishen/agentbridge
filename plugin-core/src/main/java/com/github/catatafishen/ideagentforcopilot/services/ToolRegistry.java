@@ -22,6 +22,8 @@ public final class ToolRegistry {
         TESTING("Testing"),
         PROJECT("Project"),
         INFRASTRUCTURE("Infrastructure"),
+        TERMINAL("Terminal"),
+        EDITOR("Editor"),
         SHELL("Shell (built-in)"),
         OTHER("Other"),
         MACRO("Recorded Macros");
