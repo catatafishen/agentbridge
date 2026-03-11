@@ -4,7 +4,6 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -19,10 +18,6 @@ internal object GitCommitRenderer : ToolResultRenderer {
     private val CREATE_PATTERN = Regex("""create mode \d+ (.+)""")
     private val DELETE_PATTERN = Regex("""delete mode \d+ (.+)""")
     private val RENAME_PATTERN = Regex("""rename (.+) => (.+) \((\d+)%\)""")
-
-    private val ADD_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val DEL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
-    private val RENAME_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -67,10 +62,10 @@ internal object GitCommitRenderer : ToolResultRenderer {
             statsRow.border = JBUI.Borders.emptyTop(4)
             statsRow.add(ToolRenderers.mutedLabel(stats.files))
             if (stats.insertions.isNotEmpty()) {
-                statsRow.add(JBLabel("+${stats.insertions}").apply { foreground = ADD_COLOR })
+                statsRow.add(JBLabel("+${stats.insertions}").apply { foreground = ToolRenderers.ADD_COLOR })
             }
             if (stats.deletions.isNotEmpty()) {
-                statsRow.add(JBLabel("-${stats.deletions}").apply { foreground = DEL_COLOR })
+                statsRow.add(JBLabel("-${stats.deletions}").apply { foreground = ToolRenderers.DEL_COLOR })
             }
             panel.add(statsRow)
         }
@@ -91,20 +86,34 @@ internal object GitCommitRenderer : ToolResultRenderer {
 
         when {
             createMatch != null -> {
-                row.add(ToolRenderers.badgeLabel("A", ADD_COLOR))
-                row.add(ToolRenderers.monoLabel(createMatch.groupValues[1].trim()))
+                val path = createMatch.groupValues[1].trim()
+                row.add(ToolRenderers.badgeLabel("A", ToolRenderers.ADD_COLOR))
+                row.add(ToolRenderers.fileLink(path, path))
             }
+
             deleteMatch != null -> {
-                row.add(ToolRenderers.badgeLabel("D", DEL_COLOR))
-                row.add(ToolRenderers.monoLabel(deleteMatch.groupValues[1].trim()))
+                val path = deleteMatch.groupValues[1].trim()
+                row.add(ToolRenderers.badgeLabel("D", ToolRenderers.DEL_COLOR))
+                row.add(ToolRenderers.fileLink(path, path))
             }
+
             renameMatch != null -> {
-                row.add(ToolRenderers.badgeLabel("R", RENAME_COLOR))
-                row.add(ToolRenderers.monoLabel("${renameMatch.groupValues[1].trim()} → ${renameMatch.groupValues[2].trim()}"))
+                val from = renameMatch.groupValues[1].trim()
+                val to = renameMatch.groupValues[2].trim()
+                row.add(ToolRenderers.badgeLabel("R", ToolRenderers.MOD_COLOR))
+                row.add(ToolRenderers.monoLabel("$from →"))
+                row.add(ToolRenderers.fileLink(to, to))
             }
+
             else -> {
-                row.add(ToolRenderers.badgeLabel("M", JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())))
-                row.add(ToolRenderers.monoLabel(line.trim()))
+                val path = line.trim()
+                row.add(
+                    ToolRenderers.badgeLabel(
+                        "M",
+                        JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
+                    )
+                )
+                row.add(ToolRenderers.fileLink(path, path))
             }
         }
         return row

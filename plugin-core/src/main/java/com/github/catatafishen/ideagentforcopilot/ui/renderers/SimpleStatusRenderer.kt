@@ -1,9 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -16,9 +14,6 @@ import javax.swing.JComponent
  * mark_directory, download_sources, reload_from_disk.
  */
 internal object SimpleStatusRenderer : ToolResultRenderer {
-
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
 
     private val DELETE_FILE = Regex("""^Deleted file:\s+(.+)""")
     private val UNDO = Regex("""^Undid (\d+) action\(s\) on (.+?):\s*(.*)""")
@@ -60,7 +55,7 @@ internal object SimpleStatusRenderer : ToolResultRenderer {
         row.add(JBLabel(action).apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         if (filePath != null) {
             row.add(ToolRenderers.fileLink(filePath.substringAfterLast('/'), filePath))
@@ -80,7 +75,7 @@ internal object SimpleStatusRenderer : ToolResultRenderer {
         row.add(JBLabel("Error").apply {
             icon = ToolIcons.FAILURE
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = FAIL_COLOR
+            foreground = ToolRenderers.FAIL_COLOR
         })
         panel.add(row)
         panel.add(ToolRenderers.mutedLabel(message).apply {

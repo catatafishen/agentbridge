@@ -1,9 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -12,9 +10,6 @@ import javax.swing.JComponent
  * as a status card with the operation summary.
  */
 internal object RunConfigCrudRenderer : ToolResultRenderer {
-
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
 
     private val CREATED = Regex("""^Created run configuration '(.+?)'\s*(?:\[(.+?)])?""")
     private val UPDATED = Regex("""^Updated run configuration '(.+?)'""")
@@ -46,7 +41,7 @@ internal object RunConfigCrudRenderer : ToolResultRenderer {
         row.add(JBLabel("Created").apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         row.add(JBLabel(name).apply { font = UIUtil.getLabelFont().deriveFont(Font.BOLD) })
         if (type != null) row.add(ToolRenderers.mutedLabel(type))
@@ -62,7 +57,7 @@ internal object RunConfigCrudRenderer : ToolResultRenderer {
         row.add(JBLabel("Updated").apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         row.add(JBLabel(m.groupValues[1]).apply { font = UIUtil.getLabelFont().deriveFont(Font.BOLD) })
         panel.add(row)
@@ -76,7 +71,7 @@ internal object RunConfigCrudRenderer : ToolResultRenderer {
         row.add(JBLabel("Deleted").apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         row.add(JBLabel(m.groupValues[1]).apply { font = UIUtil.getLabelFont().deriveFont(Font.BOLD) })
         panel.add(row)
@@ -90,7 +85,7 @@ internal object RunConfigCrudRenderer : ToolResultRenderer {
         row.add(JBLabel("Started").apply {
             icon = ToolIcons.EXECUTE
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         row.add(JBLabel(m.groupValues[1]).apply { font = UIUtil.getLabelFont().deriveFont(Font.BOLD) })
         panel.add(row)
@@ -119,7 +114,7 @@ internal object RunConfigCrudRenderer : ToolResultRenderer {
         row.add(JBLabel("Error").apply {
             icon = ToolIcons.FAILURE
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = FAIL_COLOR
+            foreground = ToolRenderers.FAIL_COLOR
         })
         panel.add(row)
         panel.add(ToolRenderers.mutedLabel(m.groupValues[1]).apply {

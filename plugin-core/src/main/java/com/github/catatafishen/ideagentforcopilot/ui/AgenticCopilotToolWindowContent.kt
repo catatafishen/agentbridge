@@ -82,7 +82,7 @@ class AgenticCopilotToolWindowContent(
 
     // Billing/usage management (extracted to BillingManager)
     private val billing = BillingManager()
-    private val authService = AuthLoginService(project)
+    private val authService = trAuthLoginService(project)
     private lateinit var consolePanel: ChatPanelApi
     private lateinit var responsePanelContainer: JBPanel<JBPanel<*>>
     private var copilotBanner: AuthSetupBanner? = null

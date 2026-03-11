@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -17,10 +16,6 @@ internal object ListProjectFilesRenderer : ToolResultRenderer {
     private val COUNT_HEADER = Regex("""^(\d+)\s+files?:?\s*$""")
     private val FILE_ENTRY = Regex("""^(.+?)\s+\[([^]]+)]$""")
 
-    private val TEST_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val GENERATED_COLOR = JBColor(Color(0x6E, 0x77, 0x81), Color(0x8B, 0x94, 0x9E))
-    private val EXCLUDED_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
-
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
         if (lines.size < 2) return null
@@ -31,7 +26,8 @@ internal object ListProjectFilesRenderer : ToolResultRenderer {
         val entries = lines.drop(1).mapNotNull { parseEntry(it.trim()) }
         if (entries.isEmpty()) return null
 
-        val grouped = entries.groupBy { it.dir }
+        val displayEntries = entries.take(ToolRenderers.MAX_LIST_ENTRIES)
+        val grouped = displayEntries.groupBy { it.dir }
 
         val panel = ToolRenderers.listPanel()
         panel.add(ToolRenderers.headerPanel(ToolIcons.FOLDER, fileCount, "files"))
@@ -61,6 +57,11 @@ internal object ListProjectFilesRenderer : ToolResultRenderer {
             }
         }
 
+        val remaining = entries.size - displayEntries.size
+        if (remaining > 0) {
+            ToolRenderers.addTruncationIndicator(panel, remaining, "files")
+        }
+
         return panel
     }
 
@@ -85,9 +86,9 @@ internal object ListProjectFilesRenderer : ToolResultRenderer {
     }
 
     private fun tagColor(tag: String): Color = when (tag.lowercase()) {
-        "test" -> TEST_COLOR
-        "generated" -> GENERATED_COLOR
-        "excluded" -> EXCLUDED_COLOR
+        "test" -> ToolRenderers.SUCCESS_COLOR
+        "generated" -> ToolRenderers.MUTED_COLOR
+        "excluded" -> ToolRenderers.FAIL_COLOR
         else -> UIUtil.getLabelForeground()
     }
 }

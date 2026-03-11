@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -15,9 +14,6 @@ import javax.swing.JComponent
 internal object BuildResultRenderer : ToolResultRenderer {
 
     private val COUNTS_PATTERN = Regex("""\((\d+) errors?,\s*(\d+) warnings?,\s*([\d.]+)s\)""")
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
-    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -42,8 +38,10 @@ internal object BuildResultRenderer : ToolResultRenderer {
             val warnings = countsMatch.groupValues[2]
             val duration = countsMatch.groupValues[3]
             headerRow.add(ToolRenderers.mutedLabel("${duration}s"))
-            if (errors != "0") headerRow.add(JBLabel("$errors errors").apply { foreground = FAIL_COLOR })
-            if (warnings != "0") headerRow.add(JBLabel("$warnings warnings").apply { foreground = WARN_COLOR })
+            if (errors != "0") headerRow.add(JBLabel("$errors errors").apply { foreground = ToolRenderers.FAIL_COLOR })
+            if (warnings != "0") headerRow.add(JBLabel("$warnings warnings").apply {
+                foreground = ToolRenderers.WARN_COLOR
+            })
         }
         panel.add(headerRow)
 
@@ -52,8 +50,8 @@ internal object BuildResultRenderer : ToolResultRenderer {
         for (msg in messages) {
             val trimmed = msg.trim()
             val msgColor = when {
-                trimmed.startsWith("ERROR") -> FAIL_COLOR
-                trimmed.startsWith("WARN") -> WARN_COLOR
+                trimmed.startsWith("ERROR") -> ToolRenderers.FAIL_COLOR
+                trimmed.startsWith("WARN") -> ToolRenderers.WARN_COLOR
                 else -> UIUtil.getLabelForeground()
             }
             val msgRow = ToolRenderers.rowPanel()
@@ -66,9 +64,9 @@ internal object BuildResultRenderer : ToolResultRenderer {
     }
 
     private fun classifyStatus(line: String): Triple<javax.swing.Icon, String, Color>? = when {
-        line.startsWith("✓") -> Triple(ToolIcons.SUCCESS, "Build succeeded", SUCCESS_COLOR)
-        line.startsWith("✗") -> Triple(ToolIcons.FAILURE, "Build failed", FAIL_COLOR)
-        line.startsWith("Build aborted") -> Triple(ToolIcons.WARNING, "Build aborted", WARN_COLOR)
+        line.startsWith("✓") -> Triple(ToolIcons.SUCCESS, "Build succeeded", ToolRenderers.SUCCESS_COLOR)
+        line.startsWith("✗") -> Triple(ToolIcons.FAILURE, "Build failed", ToolRenderers.FAIL_COLOR)
+        line.startsWith("Build aborted") -> Triple(ToolIcons.WARNING, "Build aborted", ToolRenderers.WARN_COLOR)
         else -> null
     }
 }

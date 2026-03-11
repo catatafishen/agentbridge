@@ -1,9 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -14,9 +12,6 @@ import javax.swing.JComponent
 internal object CoverageRenderer : ToolResultRenderer {
 
     private val COVERAGE_LINE = Regex("""^(.+?):\s+([\d.]+)%\s+covered\s+\((\d+)\s*/\s*(\d+)\s+lines\)""")
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val WARN_COLOR = JBColor(Color(0x9A, 0x6D, 0x00), Color(0xD2, 0x9B, 0x22))
-    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
 
     override fun render(output: String): JComponent? {
         val lines = output.lines()
@@ -42,9 +37,9 @@ internal object CoverageRenderer : ToolResultRenderer {
             val total = m.groupValues[4]
 
             val pctColor = when {
-                pct >= 80 -> SUCCESS_COLOR
-                pct >= 50 -> WARN_COLOR
-                else -> FAIL_COLOR
+                pct >= 80 -> ToolRenderers.SUCCESS_COLOR
+                pct >= 50 -> ToolRenderers.WARN_COLOR
+                else -> ToolRenderers.FAIL_COLOR
             }
 
             val row = ToolRenderers.rowPanel()

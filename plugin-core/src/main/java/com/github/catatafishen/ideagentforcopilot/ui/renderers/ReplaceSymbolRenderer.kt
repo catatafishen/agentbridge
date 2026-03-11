@@ -1,9 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -15,7 +13,6 @@ internal object ReplaceSymbolRenderer : ToolResultRenderer {
 
     private val REPLACED = Regex("""^Replaced lines (\d+)-(\d+) \((\d+) lines?\) with (\d+) lines? in (.+)$""")
     private val INSERTED = Regex("""^Inserted (\d+) lines? (before|after) (.+?) in (.+)$""")
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
 
     override fun render(output: String): JComponent? {
         val text = output.trimEnd()
@@ -44,7 +41,7 @@ internal object ReplaceSymbolRenderer : ToolResultRenderer {
         headerRow.add(JBLabel("Replaced").apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         headerRow.add(ToolRenderers.fileLink(fileName, path))
         panel.add(headerRow)
@@ -74,7 +71,7 @@ internal object ReplaceSymbolRenderer : ToolResultRenderer {
         headerRow.add(JBLabel("Inserted").apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         headerRow.add(ToolRenderers.fileLink(fileName, path))
         panel.add(headerRow)

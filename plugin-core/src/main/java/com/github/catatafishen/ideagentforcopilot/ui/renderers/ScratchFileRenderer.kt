@@ -1,9 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -14,8 +12,6 @@ internal object ScratchFileRenderer : ToolResultRenderer {
 
     private val CREATED = Regex("""^Created scratch file:\s*(.+)""")
     private val EXIT_CODE = Regex("""Exit code:\s*(\d+)""")
-    private val SUCCESS_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val FAIL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
 
     override fun render(output: String): JComponent? {
         val text = output.trimEnd()
@@ -35,7 +31,7 @@ internal object ScratchFileRenderer : ToolResultRenderer {
         row.add(JBLabel("Created").apply {
             icon = ToolIcons.SUCCESS
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = SUCCESS_COLOR
+            foreground = ToolRenderers.SUCCESS_COLOR
         })
         row.add(JBLabel(fileName).apply { font = UIUtil.getLabelFont().deriveFont(Font.BOLD) })
         panel.add(row)
@@ -56,13 +52,13 @@ internal object ScratchFileRenderer : ToolResultRenderer {
             headerRow.add(JBLabel("Executed").apply {
                 icon = ToolIcons.SUCCESS
                 font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-                foreground = SUCCESS_COLOR
+                foreground = ToolRenderers.SUCCESS_COLOR
             })
         } else {
             headerRow.add(JBLabel("Failed").apply {
                 icon = ToolIcons.FAILURE
                 font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-                foreground = FAIL_COLOR
+                foreground = ToolRenderers.FAIL_COLOR
             })
             headerRow.add(ToolRenderers.mutedLabel("exit code $exitCode"))
         }

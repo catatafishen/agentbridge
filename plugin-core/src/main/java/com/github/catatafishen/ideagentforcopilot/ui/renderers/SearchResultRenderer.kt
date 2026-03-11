@@ -62,7 +62,13 @@ internal object SearchResultRenderer : ToolResultRenderer {
 
         val panel = ToolRenderers.listPanel()
         addHeader(panel, headerLine, results.size)
-        addGroupedResults(panel, results)
+
+        val displayResults = results.take(ToolRenderers.MAX_LIST_ENTRIES)
+        addGroupedResults(panel, displayResults)
+        val remaining = results.size - displayResults.size
+        if (remaining > 0) {
+            ToolRenderers.addTruncationIndicator(panel, remaining, "results")
+        }
         return panel
     }
 

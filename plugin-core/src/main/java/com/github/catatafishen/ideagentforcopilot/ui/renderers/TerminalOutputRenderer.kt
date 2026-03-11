@@ -1,10 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.Color
 import java.awt.Font
 import javax.swing.JComponent
 
@@ -20,9 +18,8 @@ internal object TerminalOutputRenderer : ToolResultRenderer {
     private val TAB_HEADER = Regex("""^Tab:\s*(.+)""")
     private val TOTAL_LENGTH = Regex("""^Total length:\s*(\d+)\s*chars""")
     private val TERMINAL_OUTPUT = Regex("""^Terminal '(.+?)' output:""")
-    private val TERMINAL_RUNNING = Regex("""^Running in terminal '(.+?)':?\s*(.*)""")
+    private val TERMINAL_RUNNING = Regex("""^Running in terminal '(.+?)':\s*(.*)""")
     private val TERMINAL_SENT = Regex("""^Sent to terminal '(.+?)':\s*(.*)""")
-    private val TERMINAL_COLOR = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
 
     override fun render(output: String): JComponent? {
         val text = output.trimEnd()
@@ -45,7 +42,7 @@ internal object TerminalOutputRenderer : ToolResultRenderer {
         headerRow.add(JBLabel(tabName).apply {
             icon = ToolIcons.EXECUTE
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = TERMINAL_COLOR
+            foreground = ToolRenderers.INFO_COLOR
         })
 
         val lengthLine = lines.getOrNull(1)?.trim()
@@ -74,7 +71,7 @@ internal object TerminalOutputRenderer : ToolResultRenderer {
         headerRow.add(JBLabel(tabName).apply {
             icon = ToolIcons.EXECUTE
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = TERMINAL_COLOR
+            foreground = ToolRenderers.INFO_COLOR
         })
         panel.add(headerRow)
 
@@ -97,7 +94,7 @@ internal object TerminalOutputRenderer : ToolResultRenderer {
         headerRow.add(JBLabel("Running").apply {
             icon = ToolIcons.EXECUTE
             font = UIUtil.getLabelFont().deriveFont(Font.BOLD)
-            foreground = TERMINAL_COLOR
+            foreground = ToolRenderers.INFO_COLOR
         })
         headerRow.add(JBLabel(tabName).apply { font = UIUtil.getLabelFont().deriveFont(Font.BOLD) })
         panel.add(headerRow)

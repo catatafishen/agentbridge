@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
 import com.intellij.ui.JBColor
+import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.UIUtil
 import javax.swing.JComponent
 
@@ -19,7 +20,8 @@ internal object GitStashRenderer : ToolResultRenderer {
         if (stashes.isEmpty()) return null
 
         val panel = ToolRenderers.listPanel()
-        val header = ToolRenderers.headerPanel(ToolIcons.STASH, stashes.size, if (stashes.size == 1) "stash" else "stashes")
+        val header =
+            ToolRenderers.headerPanel(ToolIcons.STASH, stashes.size, if (stashes.size == 1) "stash" else "stashes")
         panel.add(header)
 
         for (m in stashes) {
@@ -29,12 +31,17 @@ internal object GitStashRenderer : ToolResultRenderer {
             val message = m.groupValues[4]
 
             val row = ToolRenderers.rowPanel()
-            row.add(ToolRenderers.badgeLabel(index, JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())))
+            row.add(
+                ToolRenderers.badgeLabel(
+                    index,
+                    JBColor.namedColor("Link.activeForeground", UIUtil.getLabelForeground())
+                )
+            )
             if (message.isNotEmpty()) {
-                row.add(javax.swing.JLabel(message))
+                row.add(JBLabel(message))
                 row.add(ToolRenderers.mutedLabel(description))
             } else {
-                row.add(javax.swing.JLabel(description))
+                row.add(JBLabel(description))
             }
             if (hash.isNotEmpty()) {
                 row.add(ToolRenderers.monoLabel(hash.take(7)).apply {

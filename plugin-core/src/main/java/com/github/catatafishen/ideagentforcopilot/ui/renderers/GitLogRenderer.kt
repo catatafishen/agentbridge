@@ -31,21 +31,33 @@ internal object GitLogRenderer : ToolResultRenderer {
 
     private fun renderOnelineLog(lines: List<String>): JComponent {
         val panel = ToolRenderers.listPanel()
+        var count = 0
         for (line in lines) {
             if (line.isBlank()) continue
             val spaceIdx = line.indexOf(' ')
             if (spaceIdx < 0) continue
+            if (count >= ToolRenderers.MAX_LIST_ENTRIES) {
+                val remaining = lines.count { it.isNotBlank() && it.indexOf(' ') >= 0 } - count
+                if (remaining > 0) ToolRenderers.addTruncationIndicator(panel, remaining, "commits")
+                break
+            }
             val hash = line.substring(0, spaceIdx).trim()
             val message = line.substring(spaceIdx + 1).trim()
             addEntry(panel, hash, message, null)
+            count++
         }
         return panel
     }
 
     private fun renderShortLog(lines: List<String>): JComponent {
         val panel = ToolRenderers.listPanel()
-        for (line in lines) {
-            if (line.isBlank()) continue
+        var count = 0
+        val nonBlankLines = lines.filter { it.isNotBlank() }
+        for (line in nonBlankLines) {
+            if (count >= ToolRenderers.MAX_LIST_ENTRIES) {
+                ToolRenderers.addTruncationIndicator(panel, nonBlankLines.size - count, "commits")
+                break
+            }
             val match = MEDIUM_ENTRY.find(line.trim())
             if (match != null) {
                 val hash = match.groupValues[1]
@@ -55,36 +67,62 @@ internal object GitLogRenderer : ToolResultRenderer {
             } else {
                 panel.add(JBLabel(line.trim()).apply { alignmentX = JComponent.LEFT_ALIGNMENT })
             }
+            count++
         }
         return panel
     }
 
     private fun renderMediumLog(lines: List<String>): JComponent {
-        data class Entry(var hash: String = "", var author: String = "", var date: String = "", val message: StringBuilder = StringBuilder())
+        data class Entry(
+            var hash: String = "",
+            var author: String = "",
+            var date: String = "",
+            val message: StringBuilder = StringBuilder()
+        )
 
         val panel = ToolRenderers.listPanel()
         var current = Entry()
         var inMessage = false
+        var count = 0
 
         fun flush() {
             if (current.hash.isEmpty()) return
+            if (count >= ToolRenderers.MAX_LIST_ENTRIES) return
             val shortHash = if (current.hash.length > 7) current.hash.substring(0, 7) else current.hash
             val msg = current.message.toString().trim().lines().firstOrNull() ?: ""
             val meta = listOf(current.author, current.date).filter { it.isNotEmpty() }.joinToString(", ")
             addEntry(panel, shortHash, msg, meta.ifEmpty { null })
+            count++
             current = Entry()
             inMessage = false
         }
 
+        var totalCommits = 0
+        for (line in lines) {
+            if (line.startsWith(COMMIT_PREFIX)) totalCommits++
+        }
+
         for (line in lines) {
             when {
-                line.startsWith(COMMIT_PREFIX) -> { flush(); current.hash = line.removePrefix(COMMIT_PREFIX).trim() }
-                line.startsWith("Author:") -> current.author = line.removePrefix("Author:").trim().replace(Regex("""<.*>"""), "").trim()
-                line.startsWith("Date:") -> { current.date = line.removePrefix("Date:").trim(); inMessage = true }
+                line.startsWith(COMMIT_PREFIX) -> {
+                    flush(); current.hash = line.removePrefix(COMMIT_PREFIX).trim()
+                }
+
+                line.startsWith("Author:") -> current.author =
+                    line.removePrefix("Author:").trim().replace(Regex("""<.*>"""), "").trim()
+
+                line.startsWith("Date:") -> {
+                    current.date = line.removePrefix("Date:").trim(); inMessage = true
+                }
+
                 inMessage -> current.message.appendLine(line.trimStart())
             }
         }
         flush()
+
+        if (totalCommits > count) {
+            ToolRenderers.addTruncationIndicator(panel, totalCommits - count, "commits")
+        }
         return panel
     }
 

@@ -38,7 +38,7 @@ internal object ListTestsRenderer : ToolResultRenderer {
         val grouped = tests.groupBy { it.className }
 
         val panel = ToolRenderers.listPanel()
-        panel.add(ToolRenderers.headerPanel(ToolIcons.SUCCESS, count, "tests"))
+        panel.add(ToolRenderers.headerPanel(ToolIcons.TEST, count, "tests"))
 
         for ((className, methods) in grouped) {
             val section = ToolRenderers.listPanel().apply {

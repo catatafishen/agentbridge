@@ -1,9 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
-import java.awt.Color
 import javax.swing.JComponent
 
 /**
@@ -15,9 +13,6 @@ internal object GitDiffRenderer : ToolResultRenderer {
     private val STAT_SUMMARY = Regex("""\s*\d+ files? changed.*""")
     private val STAT_FILE = Regex("""^\s*(.+?)\s*\|\s*(\d+)\s*([+\-]*)\s*$""")
     private val DIFF_GIT = Regex("""^diff --git a/(.+) b/(.+)""")
-
-    private val ADD_COLOR = JBColor(Color(0x1A, 0x7F, 0x37), Color(0x3F, 0xB9, 0x50))
-    private val DEL_COLOR = JBColor(Color(0xCF, 0x22, 0x2E), Color(0xF8, 0x53, 0x49))
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -46,8 +41,12 @@ internal object GitDiffRenderer : ToolResultRenderer {
         val stats = ToolRenderers.parseDiffStats(trimmed)
         val row = ToolRenderers.rowPanel()
         row.add(ToolRenderers.mutedLabel(stats.files))
-        if (stats.insertions.isNotEmpty()) row.add(JBLabel("+${stats.insertions}").apply { foreground = ADD_COLOR })
-        if (stats.deletions.isNotEmpty()) row.add(JBLabel("-${stats.deletions}").apply { foreground = DEL_COLOR })
+        if (stats.insertions.isNotEmpty()) row.add(JBLabel("+${stats.insertions}").apply {
+            foreground = ToolRenderers.ADD_COLOR
+        })
+        if (stats.deletions.isNotEmpty()) row.add(JBLabel("-${stats.deletions}").apply {
+            foreground = ToolRenderers.DEL_COLOR
+        })
         return row
     }
 
@@ -68,7 +67,7 @@ internal object GitDiffRenderer : ToolResultRenderer {
         val adds = bar.count { it == '+' }
         val dels = bar.count { it == '-' }
         return JBLabel("+$adds -$dels").apply {
-            foreground = if (dels > adds) DEL_COLOR else ADD_COLOR
+            foreground = if (dels > adds) ToolRenderers.DEL_COLOR else ToolRenderers.ADD_COLOR
         }
     }
 
@@ -111,7 +110,7 @@ internal object GitDiffRenderer : ToolResultRenderer {
 
     private fun isMetaLine(line: String): Boolean =
         line.startsWith("---") || line.startsWith("+++") ||
-                line.startsWith("index ") || line.startsWith("new file") ||
-                line.startsWith("deleted file") || line.startsWith("similarity") ||
-                line.startsWith("rename") || line.startsWith("old mode") || line.startsWith("new mode")
+            line.startsWith("index ") || line.startsWith("new file") ||
+            line.startsWith("deleted file") || line.startsWith("similarity") ||
+            line.startsWith("rename") || line.startsWith("old mode") || line.startsWith("new mode")
 }
