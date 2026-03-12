@@ -59,7 +59,10 @@ object ToolRenderers {
      * Resolves a renderer for a tool by looking up its definition in the registry.
      * Falls back to null if the tool has no custom renderer.
      */
-    fun get(toolName: String, registry: com.github.catatafishen.ideagentforcopilot.services.ToolRegistry?): ToolResultRenderer? {
+    fun get(
+        toolName: String,
+        registry: com.github.catatafishen.ideagentforcopilot.services.ToolRegistry?
+    ): ToolResultRenderer? {
         val def = registry?.findById(toolName) ?: return null
         return def.resultRenderer() as? ToolResultRenderer
     }
@@ -67,7 +70,10 @@ object ToolRenderers {
     /**
      * Checks whether a tool has a custom renderer via its definition.
      */
-    fun hasRenderer(toolName: String, registry: com.github.catatafishen.ideagentforcopilot.services.ToolRegistry?): Boolean {
+    fun hasRenderer(
+        toolName: String,
+        registry: com.github.catatafishen.ideagentforcopilot.services.ToolRegistry?
+    ): Boolean {
         val def = registry?.findById(toolName) ?: return false
         return def.resultRenderer() != null
     }

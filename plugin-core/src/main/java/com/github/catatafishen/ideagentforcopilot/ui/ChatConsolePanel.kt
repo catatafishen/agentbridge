@@ -566,10 +566,19 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             for (i in 0 until splitAt) deferredRestoreJson.add(arr[i])
             executeJs("ChatController.showLoadMore(${deferredRestoreJson.size})")
         }
-        for (i in splitAt until arr.size()) {
-            val obj = arr[i].asJsonObject
-            addEntryFromJson(obj)
-            renderRestoredEntry(obj)
+
+        // Batch-render the recent entries as a single HTML payload.
+        // Previously this fired one executeJs per entry (100-300+ calls), which flooded
+        // JCEF's IPC queue and caused the renderer to appear completely frozen until
+        // all messages were processed. One restoreBatch call is processed as a single
+        // script execution, allowing the browser to render a frame immediately after.
+        val recentEntries = (splitAt until arr.size()).map { arr[it].asJsonObject }
+        recentEntries.forEach { addEntryFromJson(it) }
+        turnCounter = recentEntries.count { it["type"]?.asString == "prompt" }
+        val html = renderBatchGroupedHtml(recentEntries)
+        if (html.isNotEmpty()) {
+            val encoded = b64(html)
+            executeJs("ChatController.restoreBatch('$encoded')")
         }
     }
 

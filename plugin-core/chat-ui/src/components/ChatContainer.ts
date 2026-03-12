@@ -4,6 +4,7 @@ export default class ChatContainer extends HTMLElement {
     private _messages!: HTMLDivElement;
     private _workingIndicator!: HTMLElement;
     private _scrollRAF: number | null = null;
+    private _copyRAF: number | null = null;
     private _observer!: MutationObserver;
     private _copyObs!: MutationObserver;
     private _prevScrollY = 0;
@@ -65,68 +66,79 @@ export default class ChatContainer extends HTMLElement {
         });
         this._observer.observe(this._messages, {childList: true, subtree: true, characterData: true});
 
-        // Copy & wrap & scratch button observer
+        // Copy & wrap & scratch button observer — debounced via rAF to avoid running
+        // querySelectorAll on every individual DOM mutation during history restore or
+        // streaming, which could fire hundreds of times per second.
         this._copyObs = new MutationObserver(() => {
-            this._messages.querySelectorAll('pre:not([data-copy-btn]):not(.streaming)').forEach(pre => {
-                (pre as HTMLElement).dataset.copyBtn = '1';
-
-                // Language label from data-lang attribute on <code>
-                const codeEl = pre.querySelector('code');
-                const lang = codeEl?.getAttribute('data-lang') || '';
-                if (lang) {
-                    const langLabel = document.createElement('span');
-                    langLabel.className = 'code-lang-label';
-                    langLabel.textContent = lang;
-                    pre.prepend(langLabel);
-                }
-
-                // Wrap toggle button
-                const wrapBtn = document.createElement('button');
-                wrapBtn.className = 'code-action-btn wrap-btn';
-                wrapBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M3 8h7a2 2 0 0 1 0 4H8"/><polyline points="9.5 10.5 8 12 9.5 13.5"/></svg>';
-                wrapBtn.title = 'Toggle word wrap';
-                wrapBtn.onclick = () => {
-                    pre.classList.toggle('word-wrap');
-                    wrapBtn.classList.toggle('active', pre.classList.contains('word-wrap'));
-                };
-
-                // Copy button
-                const copyBtn = document.createElement('button');
-                copyBtn.className = 'code-action-btn copy-btn';
-                copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
-                copyBtn.title = 'Copy';
-                copyBtn.onclick = () => {
-                    const code = pre.querySelector('code');
-                    navigator.clipboard.writeText(code ? code.textContent! : pre.textContent!).then(() => {
-                        copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
-                        copyBtn.title = 'Copied!';
-                        setTimeout(() => {
-                            copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
-                            copyBtn.title = 'Copy';
-                        }, 1500);
-                    });
-                };
-
-                // Open in scratch file button
-                const scratchBtn = document.createElement('button');
-                scratchBtn.className = 'code-action-btn scratch-btn';
-                scratchBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4a1.5 1.5 0 0 0-1.5 1.5v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V6L9 1.5z"/><polyline points="9 1.5 9 6 13.5 6"/></svg>';
-                scratchBtn.title = 'Open in scratch file';
-                scratchBtn.onclick = () => {
-                    const code = pre.querySelector('code');
-                    const text = code ? code.textContent! : pre.textContent!;
-                    const codeLang = code?.getAttribute('data-lang') || '';
-                    globalThis._bridge?.openScratch(codeLang, text);
-                };
-
-                // Insert buttons: scratch first (leftmost), then wrap, then copy (rightmost)
-                const toolbar = document.createElement('div');
-                toolbar.className = 'code-actions';
-                toolbar.append(scratchBtn, wrapBtn, copyBtn);
-                pre.prepend(toolbar);
-            });
+            if (!this._copyRAF) {
+                this._copyRAF = requestAnimationFrame(() => {
+                    this._copyRAF = null;
+                    this._setupCodeBlocks();
+                });
+            }
         });
         this._copyObs.observe(this._messages, {childList: true, subtree: true});
+    }
+
+    private _setupCodeBlocks(): void {
+        this._messages.querySelectorAll('pre:not([data-copy-btn]):not(.streaming)').forEach(pre => {
+            (pre as HTMLElement).dataset.copyBtn = '1';
+
+            // Language label from data-lang attribute on <code>
+            const codeEl = pre.querySelector('code');
+            const lang = codeEl?.getAttribute('data-lang') || '';
+            if (lang) {
+                const langLabel = document.createElement('span');
+                langLabel.className = 'code-lang-label';
+                langLabel.textContent = lang;
+                pre.prepend(langLabel);
+            }
+
+            // Wrap toggle button
+            const wrapBtn = document.createElement('button');
+            wrapBtn.className = 'code-action-btn wrap-btn';
+            wrapBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h10M3 8h7a2 2 0 0 1 0 4H8"/><polyline points="9.5 10.5 8 12 9.5 13.5"/></svg>';
+            wrapBtn.title = 'Toggle word wrap';
+            wrapBtn.onclick = () => {
+                pre.classList.toggle('word-wrap');
+                wrapBtn.classList.toggle('active', pre.classList.contains('word-wrap'));
+            };
+
+            // Copy button
+            const copyBtn = document.createElement('button');
+            copyBtn.className = 'code-action-btn copy-btn';
+            copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
+            copyBtn.title = 'Copy';
+            copyBtn.onclick = () => {
+                const code = pre.querySelector('code');
+                navigator.clipboard.writeText(code ? code.textContent! : pre.textContent!).then(() => {
+                    copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
+                    copyBtn.title = 'Copied!';
+                    setTimeout(() => {
+                        copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
+                        copyBtn.title = 'Copy';
+                    }, 1500);
+                });
+            };
+
+            // Open in scratch file button
+            const scratchBtn = document.createElement('button');
+            scratchBtn.className = 'code-action-btn scratch-btn';
+            scratchBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4a1.5 1.5 0 0 0-1.5 1.5v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V6L9 1.5z"/><polyline points="9 1.5 9 6 13.5 6"/></svg>';
+            scratchBtn.title = 'Open in scratch file';
+            scratchBtn.onclick = () => {
+                const code = pre.querySelector('code');
+                const text = code ? code.textContent! : pre.textContent!;
+                const codeLang = code?.getAttribute('data-lang') || '';
+                globalThis._bridge?.openScratch(codeLang, text);
+            };
+
+            // Insert buttons: scratch first (leftmost), then wrap, then copy (rightmost)
+            const toolbar = document.createElement('div');
+            toolbar.className = 'code-actions';
+            toolbar.append(scratchBtn, wrapBtn, copyBtn);
+            pre.prepend(toolbar);
+        });
     }
 
     get messages(): HTMLDivElement {
@@ -158,6 +170,10 @@ export default class ChatContainer extends HTMLElement {
         if (this._scrollRAF) {
             cancelAnimationFrame(this._scrollRAF);
             this._scrollRAF = null;
+        }
+        if (this._copyRAF) {
+            cancelAnimationFrame(this._copyRAF);
+            this._copyRAF = null;
         }
     }
 }
