@@ -21,5 +21,5 @@ export function collapseAllChips(container: Element | null, except?: Element): v
 
 /** HTML-escape a string. */
 export function escHtml(s: string | null | undefined): string {
-    return s ? s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '';
+    return s ? s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;') : '';
 }

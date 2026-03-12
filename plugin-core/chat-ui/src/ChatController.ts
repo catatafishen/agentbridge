@@ -1,11 +1,6 @@
 import {b64, escHtml} from './helpers';
 import type {TurnContext} from './types';
 
-interface TurnStats {
-    model?: string;
-    mult?: string;
-}
-
 const ChatController = {
     _msgs(): HTMLElement {
         return document.querySelector('#messages')!;
@@ -213,8 +208,8 @@ const ChatController = {
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
         if (kind) chip.setAttribute('kind', kind);
-        (chip as HTMLElement).dataset.chipFor = id;
-        if (paramsJson) (chip as HTMLElement).dataset.params = paramsJson;
+        chip.dataset.chipFor = id;
+        if (paramsJson) chip.dataset.params = paramsJson;
         ctx.meta!.appendChild(chip);
         ctx.meta!.classList.add('show');
         this._container()?.scrollIfNeeded();
@@ -235,7 +230,7 @@ const ChatController = {
         chip.setAttribute('label', displayName);
         chip.setAttribute('status', 'running');
         chip.setAttribute('color-index', String(colorIndex));
-        (chip as HTMLElement).dataset.chipFor = 'sa-' + sectionId;
+        chip.dataset.chipFor = 'sa-' + sectionId;
         ctx.meta!.appendChild(chip);
         ctx.meta!.classList.add('show');
         const promptBubble = document.createElement('message-bubble');
@@ -323,15 +318,6 @@ const ChatController = {
         const ctx = this._ctx[turnId + '-main'];
         if (ctx?.textBubble && !ctx.textBubble.textContent?.trim()) {
             ctx.textBubble.remove();
-        }
-        let meta: Element | null = ctx?.meta ?? null;
-        if (!meta) {
-            const rows = this._msgs().querySelectorAll('chat-message[type="agent"]:not(.subagent-indent)');
-            if (rows.length) meta = rows[rows.length - 1].querySelector('message-meta');
-        }
-        if (statsJson && meta) {
-            const stats: TurnStats = typeof statsJson === 'string' ? JSON.parse(statsJson) : statsJson;
-            // Model multiplier is shown on the user prompt only, not on agent responses
         }
         if (ctx) {
             ctx.thinkingBlock = null;

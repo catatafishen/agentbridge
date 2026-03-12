@@ -36,7 +36,7 @@ export default class ToolChip extends HTMLElement {
         const display = toolDisplayName(rawLabel, paramsStr);
         const truncated = display.length > 50 ? display.substring(0, 47) + '\u2026' : display;
         // Remove any previous kind class and apply current one
-        this.className = this.className.replace(/\bkind-\S+/g, '').trim();
+        this.className = this.className.replaceAll(/\bkind-\S+/g, '').trim();
         this.classList.add('turn-chip', 'tool', `kind-${kind}`);
         let iconHtml = '';
         if (status === 'running') iconHtml = '<span class="chip-spinner"></span> ';

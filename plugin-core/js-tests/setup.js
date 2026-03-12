@@ -1,6 +1,6 @@
 // Setup: load the web components into the happy-dom environment
-import {readFileSync} from 'fs';
-import {resolve} from 'path';
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
 
 const componentsPath = resolve(__dirname, '../src/main/resources/chat/chat-components.js');
 const code = readFileSync(componentsPath, 'utf-8');

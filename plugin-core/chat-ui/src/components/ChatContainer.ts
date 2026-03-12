@@ -86,7 +86,7 @@ export default class ChatContainer extends HTMLElement {
 
             // Language label from data-lang attribute on <code>
             const codeEl = pre.querySelector('code');
-            const lang = codeEl?.getAttribute('data-lang') || '';
+            const lang = codeEl?.dataset.lang || '';
             if (lang) {
                 const langLabel = document.createElement('span');
                 langLabel.className = 'code-lang-label';
@@ -111,14 +111,9 @@ export default class ChatContainer extends HTMLElement {
             copyBtn.title = 'Copy';
             copyBtn.onclick = () => {
                 const code = pre.querySelector('code');
-                navigator.clipboard.writeText(code ? code.textContent! : pre.textContent!).then(() => {
-                    copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
-                    copyBtn.title = 'Copied!';
-                    setTimeout(() => {
-                        copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
-                        copyBtn.title = 'Copy';
-                    }, 1500);
-                });
+                navigator.clipboard.writeText(code ? code.textContent ?? '' : pre.textContent ?? '').then(
+                    () => this._resetCopyButton(copyBtn)
+                );
             };
 
             // Open in scratch file button
@@ -128,8 +123,8 @@ export default class ChatContainer extends HTMLElement {
             scratchBtn.title = 'Open in scratch file';
             scratchBtn.onclick = () => {
                 const code = pre.querySelector('code');
-                const text = code ? code.textContent! : pre.textContent!;
-                const codeLang = code?.getAttribute('data-lang') || '';
+                const text = code ? code.textContent ?? '' : pre.textContent ?? '';
+                const codeLang = code?.dataset.lang || '';
                 globalThis._bridge?.openScratch(codeLang, text);
             };
 
@@ -139,6 +134,15 @@ export default class ChatContainer extends HTMLElement {
             toolbar.append(scratchBtn, wrapBtn, copyBtn);
             pre.prepend(toolbar);
         });
+    }
+
+    private _resetCopyButton(btn: HTMLButtonElement): void {
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
+        btn.title = 'Copied!';
+        setTimeout(() => {
+            btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
+            btn.title = 'Copy';
+        }, 1500);
     }
 
     get messages(): HTMLDivElement {

@@ -78,7 +78,9 @@ export default class PermissionRequest extends HTMLElement {
     }
 
     private _respond(reqId: string, mode: 'deny' | 'once' | 'session', label: string): void {
-        this.querySelectorAll('button').forEach(b => (b as HTMLButtonElement).disabled = true);
+        this.querySelectorAll('button').forEach(b => {
+            b.disabled = true;
+        });
 
         const result = document.createElement('div');
         const allowed = mode !== 'deny';

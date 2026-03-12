@@ -19,7 +19,7 @@ var __chatUI = (() => {
     });
   }
   function escHtml(s) {
-    return s ? s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") : "";
+    return s ? s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;") : "";
   }
 
   // src/components/ChatContainer.ts
@@ -94,7 +94,7 @@ var __chatUI = (() => {
       this._messages.querySelectorAll("pre:not([data-copy-btn]):not(.streaming)").forEach((pre) => {
         pre.dataset.copyBtn = "1";
         const codeEl = pre.querySelector("code");
-        const lang = codeEl?.getAttribute("data-lang") || "";
+        const lang = codeEl?.dataset.lang || "";
         if (lang) {
           const langLabel = document.createElement("span");
           langLabel.className = "code-lang-label";
@@ -115,14 +115,9 @@ var __chatUI = (() => {
         copyBtn.title = "Copy";
         copyBtn.onclick = () => {
           const code = pre.querySelector("code");
-          navigator.clipboard.writeText(code ? code.textContent : pre.textContent).then(() => {
-            copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
-            copyBtn.title = "Copied!";
-            setTimeout(() => {
-              copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
-              copyBtn.title = "Copy";
-            }, 1500);
-          });
+          navigator.clipboard.writeText(code ? code.textContent ?? "" : pre.textContent ?? "").then(
+            () => this._resetCopyButton(copyBtn)
+          );
         };
         const scratchBtn = document.createElement("button");
         scratchBtn.className = "code-action-btn scratch-btn";
@@ -130,8 +125,8 @@ var __chatUI = (() => {
         scratchBtn.title = "Open in scratch file";
         scratchBtn.onclick = () => {
           const code = pre.querySelector("code");
-          const text = code ? code.textContent : pre.textContent;
-          const codeLang = code?.getAttribute("data-lang") || "";
+          const text = code ? code.textContent ?? "" : pre.textContent ?? "";
+          const codeLang = code?.dataset.lang || "";
           globalThis._bridge?.openScratch(codeLang, text);
         };
         const toolbar = document.createElement("div");
@@ -139,6 +134,14 @@ var __chatUI = (() => {
         toolbar.append(scratchBtn, wrapBtn, copyBtn);
         pre.prepend(toolbar);
       });
+    }
+    _resetCopyButton(btn) {
+      btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 8.5 6.5 11.5 12.5 4.5"/></svg>';
+      btn.title = "Copied!";
+      setTimeout(() => {
+        btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5.5" y="5.5" width="9" height="9" rx="1.5"/><path d="M3.5 10.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h6A1.5 1.5 0 0 1 10.5 3v.5"/></svg>';
+        btn.title = "Copy";
+      }, 1500);
     }
     get messages() {
       return this._messages;
@@ -418,8 +421,8 @@ var __chatUI = (() => {
   // src/toolDisplayName.ts
   function shortPath(p) {
     if (!p) return "";
-    const parts = p.replace(/\\/g, "/").split("/");
-    return parts[parts.length - 1];
+    const parts = p.replaceAll("\\", "/").split("/");
+    return parts.at(-1) ?? "";
   }
   function trunc(s, max = 24) {
     return s.length > max ? s.substring(0, max - 1) + "\u2026" : s;
@@ -471,10 +474,16 @@ var __chatUI = (() => {
       "run_qodana": () => "Running Qodana",
       "run_sonarqube_analysis": () => "Running SonarQube",
       // Refactoring
-      "refactor": () => p.operation === "rename" ? `Renaming ${p.symbol || ""}` : p.operation ? `Refactor: ${p.operation}` : "Refactoring",
+      "refactor": () => {
+        if (p.operation === "rename") return `Renaming ${p.symbol || ""}`;
+        return p.operation ? `Refactor: ${p.operation}` : "Refactoring";
+      },
       // Build & run
       "build_project": () => "Building project",
-      "run_command": () => p.title ? trunc(p.title, 32) : p.command ? `Running ${trunc(p.command, 24)}` : "Running command",
+      "run_command": () => {
+        if (p.title) return trunc(p.title, 32);
+        return p.command ? `Running ${trunc(p.command, 24)}` : "Running command";
+      },
       "run_tests": () => p.target ? `Testing ${trunc(p.target, 24)}` : "Running tests",
       "get_test_results": () => "Test results",
       "get_coverage": () => "Getting coverage",
@@ -491,7 +500,10 @@ var __chatUI = (() => {
       "git_log": () => "Git log",
       "git_blame": () => file ? `Blame ${file}` : "Git blame",
       "git_show": () => "Git show",
-      "git_branch": () => p.action === "switch" ? `Switch to ${p.name}` : p.action === "create" ? `Create branch ${p.name}` : "Git branch",
+      "git_branch": () => {
+        if (p.action === "switch") return `Switch to ${p.name}`;
+        return p.action === "create" ? `Create branch ${p.name}` : "Git branch";
+      },
       "git_stash": () => p.action ? `Git stash ${p.action}` : "Git stash",
       // IDE
       "get_project_info": () => "Project info",
@@ -561,7 +573,7 @@ var __chatUI = (() => {
       const paramsStr = this.dataset.params || void 0;
       const display = toolDisplayName(rawLabel, paramsStr);
       const truncated = display.length > 50 ? display.substring(0, 47) + "\u2026" : display;
-      this.className = this.className.replace(/\bkind-\S+/g, "").trim();
+      this.className = this.className.replaceAll(/\bkind-\S+/g, "").trim();
       this.classList.add("turn-chip", "tool", `kind-${kind}`);
       let iconHtml = "";
       if (status === "running") iconHtml = '<span class="chip-spinner"></span> ';
@@ -1136,14 +1148,6 @@ var __chatUI = (() => {
       if (ctx?.textBubble && !ctx.textBubble.textContent?.trim()) {
         ctx.textBubble.remove();
       }
-      let meta = ctx?.meta ?? null;
-      if (!meta) {
-        const rows = this._msgs().querySelectorAll('chat-message[type="agent"]:not(.subagent-indent)');
-        if (rows.length) meta = rows[rows.length - 1].querySelector("message-meta");
-      }
-      if (statsJson && meta) {
-        const stats = typeof statsJson === "string" ? JSON.parse(statsJson) : statsJson;
-      }
       if (ctx) {
         ctx.thinkingBlock = null;
         ctx.textBubble = null;
@@ -1324,7 +1328,9 @@ var __chatUI = (() => {
       this.appendChild(sessionBtn);
     }
     _respond(reqId, mode, label) {
-      this.querySelectorAll("button").forEach((b) => b.disabled = true);
+      this.querySelectorAll("button").forEach((b) => {
+        b.disabled = true;
+      });
       const result = document.createElement("div");
       const allowed = mode !== "deny";
       result.className = "perm-result " + (allowed ? "perm-allowed" : "perm-denied");
@@ -1395,9 +1401,9 @@ var __chatUI = (() => {
   customElements.define("turn-details", TurnDetails);
   customElements.define("permission-request", PermissionRequest);
   customElements.define("working-indicator", WorkingIndicator);
-  window.ChatController = ChatController_default;
-  window.b64 = b64;
-  window.showPermissionRequest = (turnId, agentId, reqId, toolDisplayName2, argsJson) => {
+  globalThis.ChatController = ChatController_default;
+  globalThis.b64 = b64;
+  globalThis.showPermissionRequest = (turnId, agentId, reqId, toolDisplayName2, argsJson) => {
     ChatController_default.showPermissionRequest(turnId, agentId, reqId, toolDisplayName2, argsJson);
   };
   document.addEventListener("click", (e) => {

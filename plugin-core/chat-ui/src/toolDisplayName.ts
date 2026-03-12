@@ -2,8 +2,8 @@
 
 function shortPath(p: string): string {
     if (!p) return '';
-    const parts = p.replace(/\\/g, '/').split('/');
-    return parts[parts.length - 1];
+    const parts = p.replaceAll('\\', '/').split('/');
+    return parts.at(-1) ?? '';
 }
 
 function trunc(s: string, max = 24): string {
@@ -67,13 +67,17 @@ export function toolDisplayName(rawTitle: string, paramsJson?: string): string {
         'run_sonarqube_analysis': () => 'Running SonarQube',
 
         // Refactoring
-        'refactor': () => p.operation === 'rename' ? `Renaming ${p.symbol || ''}` :
-            p.operation ? `Refactor: ${p.operation}` : 'Refactoring',
+        'refactor': () => {
+            if (p.operation === 'rename') return `Renaming ${p.symbol || ''}`;
+            return p.operation ? `Refactor: ${p.operation}` : 'Refactoring';
+        },
 
         // Build & run
         'build_project': () => 'Building project',
-        'run_command': () => p.title ? trunc(p.title, 32) :
-            p.command ? `Running ${trunc(p.command, 24)}` : 'Running command',
+        'run_command': () => {
+            if (p.title) return trunc(p.title, 32);
+            return p.command ? `Running ${trunc(p.command, 24)}` : 'Running command';
+        },
         'run_tests': () => p.target ? `Testing ${trunc(p.target, 24)}` : 'Running tests',
         'get_test_results': () => 'Test results',
         'get_coverage': () => 'Getting coverage',
@@ -91,8 +95,10 @@ export function toolDisplayName(rawTitle: string, paramsJson?: string): string {
         'git_log': () => 'Git log',
         'git_blame': () => file ? `Blame ${file}` : 'Git blame',
         'git_show': () => 'Git show',
-        'git_branch': () => p.action === 'switch' ? `Switch to ${p.name}` :
-            p.action === 'create' ? `Create branch ${p.name}` : 'Git branch',
+        'git_branch': () => {
+            if (p.action === 'switch') return `Switch to ${p.name}`;
+            return p.action === 'create' ? `Create branch ${p.name}` : 'Git branch';
+        },
         'git_stash': () => p.action ? `Git stash ${p.action}` : 'Git stash',
 
         // IDE
