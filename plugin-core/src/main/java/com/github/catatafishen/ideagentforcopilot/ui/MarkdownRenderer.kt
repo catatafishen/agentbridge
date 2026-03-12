@@ -9,6 +9,7 @@ internal object MarkdownRenderer {
 
     private const val HTML_TABLE_CLOSE = "</table>"
     private const val HTML_BLOCKQUOTE_CLOSE = "</blockquote>"
+    private const val HTML_CODE_BLOCK_CLOSE = "</code></pre>"
     private val FILE_PATH_REGEX = Regex(
         """(?<![:\w])(?:/[\w.\-]+(?:/[\w.\-]+)*\.\w+|(?:\.\.?/)?[\w.\-]+(?:/[\w.\-]+)+\.\w+)(?::\d+(?::\d+)?)?"""
     )
@@ -20,7 +21,8 @@ internal object MarkdownRenderer {
         var inTable: Boolean = false,
         var firstTR: Boolean = true,
         var inList: Boolean = false,
-        var inBlockquote: Boolean = false
+        var inBlockquote: Boolean = false,
+        var inImplicitCode: Boolean = false
     )
 
     fun markdownToHtml(
@@ -36,8 +38,25 @@ internal object MarkdownRenderer {
         for (line in lines) {
             val t = line.trim()
             when {
-                t.startsWith("```") -> handleCodeFence(sb, state, t)
+                t.startsWith("```") -> {
+                    closeImplicitCode(sb, state)
+                    handleCodeFence(sb, state, t)
+                }
+
                 state.inCode -> sb.append(escapeHtml(line)).append("\n")
+
+                t.isEmpty() -> closeImplicitCode(sb, state)
+
+                state.inImplicitCode -> {
+                    // Continue the implicit code block unless a major block element starts
+                    if (isMajorBlockElement(t)) {
+                        closeImplicitCode(sb, state)
+                        processBlockElement(sb, state, t, resolveFileReference, resolveFilePath, isGitCommit)
+                    } else {
+                        sb.append(escapeHtml(t)).append("\n")
+                    }
+                }
+
                 processBlockElement(
                     sb,
                     state,
@@ -48,7 +67,11 @@ internal object MarkdownRenderer {
                 ) -> { /* handled by helper */
                 }
 
-                t.isEmpty() -> { /* skip blank lines */
+                isCodeLikeLine(t) -> {
+                    closeAllInlineBlocks(sb, state)
+                    sb.append("<pre><code>")
+                    state.inImplicitCode = true
+                    sb.append(escapeHtml(t)).append("\n")
                 }
 
                 else -> sb.append("<p>").append(formatInline(line, resolveFileReference, resolveFilePath, isGitCommit))
@@ -62,7 +85,7 @@ internal object MarkdownRenderer {
 
     private fun handleCodeFence(sb: StringBuilder, state: MarkdownState, fenceLine: String) {
         if (state.inCode) {
-            sb.append("</code></pre>"); state.inCode = false
+            sb.append(HTML_CODE_BLOCK_CLOSE); state.inCode = false
         } else {
             closeListAndTable(sb, state)
             val lang = fenceLine.trim().removePrefix("```").trim().lowercase()
@@ -201,8 +224,33 @@ internal object MarkdownRenderer {
         }
     }
 
+    private fun closeImplicitCode(sb: StringBuilder, state: MarkdownState) {
+        if (state.inImplicitCode) {
+            sb.append(HTML_CODE_BLOCK_CLOSE)
+            state.inImplicitCode = false
+        }
+    }
+
+    /** Returns true if [line] is a code-comment that should be auto-wrapped in a `<pre><code>` block. */
+    private fun isCodeLikeLine(line: String): Boolean =
+        line.startsWith("//") || line.startsWith("/*") || line.startsWith("*/")
+
+    /**
+     * Returns true if [line] starts a major block element (heading or HR) that should break an
+     * in-progress implicit code block even without a blank line separator.
+     */
+    private fun isMajorBlockElement(line: String): Boolean =
+        line.matches(Regex("^#{1,4}\\s+.+")) ||
+            line.matches(Regex("^-{3,}$")) ||
+            line.matches(Regex("^\\*{3,}$")) ||
+            line.matches(Regex("^_{3,}$")) ||
+            line.startsWith("> ")
+
     private fun closeAllBlocks(sb: StringBuilder, state: MarkdownState) {
-        if (state.inCode) sb.append("</code></pre>")
+        if (state.inImplicitCode) {
+            sb.append(HTML_CODE_BLOCK_CLOSE); state.inImplicitCode = false
+        }
+        if (state.inCode) sb.append(HTML_CODE_BLOCK_CLOSE)
         if (state.inTable) sb.append(HTML_TABLE_CLOSE)
         if (state.inList) sb.append("</ul>")
         if (state.inBlockquote) sb.append(HTML_BLOCKQUOTE_CLOSE)
