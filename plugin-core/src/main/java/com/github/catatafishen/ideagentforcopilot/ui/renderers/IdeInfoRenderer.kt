@@ -8,7 +8,8 @@ import javax.swing.JComponent
  *
  * Handles: get_active_file, get_open_editors, get_indexing_status,
  * get_notifications, list_themes, list_scratch_files, get_documentation,
- * read_ide_log, show_diff, edit_project_structure, search_conversation_history.
+ * read_ide_log, show_diff, edit_project_structure, search_conversation_history,
+ * get_action_options.
  */
 object IdeInfoRenderer : ToolResultRenderer {
 

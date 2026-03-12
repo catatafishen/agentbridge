@@ -26,6 +26,7 @@ public final class QualityToolFactory {
         tools.add(new GetProblemsTool(project));
         tools.add(new GetHighlightsTool(project));
         tools.add(new GetAvailableActionsTool(project));
+        tools.add(new GetActionOptionsTool(project));
         tools.add(new RunInspectionsTool(project));
         tools.add(new ApplyQuickfixTool(project));
         tools.add(new ApplyActionTool(project));

@@ -11,7 +11,7 @@ import javax.swing.JComponent
  *
  * Handles: delete_file, undo, format_code, optimize_imports,
  * add_to_dictionary, suppress_inspection, open_in_editor, set_theme,
- * mark_directory, download_sources, reload_from_disk.
+ * mark_directory, download_sources, reload_from_disk, apply_action.
  */
 object SimpleStatusRenderer : ToolResultRenderer {
 

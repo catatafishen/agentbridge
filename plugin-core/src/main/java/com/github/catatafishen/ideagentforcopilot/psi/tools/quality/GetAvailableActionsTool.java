@@ -22,19 +22,11 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Returns quick-fix and intention action names available at a specific file and line.
- *
- * <p>Without {@code column}: returns only highlight-based quick-fixes (errors/warnings with
- * attached fixes). Uses cached daemon data — no extra analysis is triggered.</p>
- *
- * <p>With {@code column}: additionally returns context-aware intention actions available at that
- * exact symbol position (the full Alt+Enter menu). Requires opening an editor to position the caret.</p>
- */
 public final class GetAvailableActionsTool extends QualityTool {
 
     private static final Logger LOG = Logger.getInstance(GetAvailableActionsTool.class);
     private static final String PARAM_COLUMN = "column";
+    private static final String PARAM_SYMBOL = "symbol";
     private static final String LINE_LABEL = " line ";
 
     public GetAvailableActionsTool(Project project) {
@@ -54,9 +46,10 @@ public final class GetAvailableActionsTool extends QualityTool {
     @Override
     public @NotNull String description() {
         return "Get quick-fix and intention action names available at a specific file and line. "
-            + "Without 'column': returns highlight-based quick-fixes (errors/warnings with fixes). "
-            + "With 'column': also returns context-aware intention actions at that symbol position "
+            + "Without 'column'/'symbol': returns highlight-based quick-fixes (errors/warnings with fixes). "
+            + "With 'symbol' or 'column': also returns context-aware intention actions at that symbol position "
             + "(refactoring, conversions, etc. — the full Alt+Enter menu). "
+            + "Use 'symbol' (preferred) to auto-detect the column from the symbol name. "
             + "Use apply_action to invoke one, or optimize_imports to fix all missing imports at once.";
     }
 
@@ -70,7 +63,11 @@ public final class GetAvailableActionsTool extends QualityTool {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file"},
             {"line", TYPE_INTEGER, "Line number (1-based)"},
-            {PARAM_COLUMN, TYPE_INTEGER, "Column number (1-based, optional). When provided, also returns "
+            {PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
+                + "Auto-detects the column and returns intention actions at that symbol. "
+                + "Preferred over specifying 'column' manually."},
+            {PARAM_COLUMN, TYPE_INTEGER, "Column number (1-based, optional). "
+                + "Use 'symbol' instead when possible. When provided, also returns "
                 + "intention actions available at that exact symbol position (refactoring, conversions, etc.)"}
         }, "file", "line");
     }
@@ -82,17 +79,17 @@ public final class GetAvailableActionsTool extends QualityTool {
         }
         String pathStr = args.get("file").getAsString();
         int targetLine = args.get("line").getAsInt();
+        String symbol = args.has(PARAM_SYMBOL) ? args.get(PARAM_SYMBOL).getAsString() : null;
         Integer targetCol = args.has(PARAM_COLUMN) ? args.get(PARAM_COLUMN).getAsInt() : null;
 
-        if (targetCol != null) {
-            // Must run on EDT to position the caret and evaluate intention availability
+        // If symbol or column provided, collect intentions on EDT
+        if (symbol != null || targetCol != null) {
             CompletableFuture<String> future = new CompletableFuture<>();
-            int col = targetCol;
             EdtUtil.invokeLater(() -> {
                 try {
-                    future.complete(collectActionsWithIntentions(pathStr, targetLine, col));
+                    future.complete(collectActionsWithIntentions(pathStr, targetLine, symbol, targetCol));
                 } catch (Exception e) {
-                    LOG.warn("Error collecting actions at " + pathStr + ":" + targetLine + ":" + col, e);
+                    LOG.warn("Error collecting actions at " + pathStr + ":" + targetLine, e);
                     future.complete("Error: " + e.getMessage());
                 }
             });
@@ -113,7 +110,7 @@ public final class GetAvailableActionsTool extends QualityTool {
         return future.get(15, TimeUnit.SECONDS);
     }
 
-    // ── Quick-fixes only (no column) ─────────────────────────
+    // ── Quick-fixes only (no symbol/column) ─────────────────────────
 
     private String collectQuickFixesOnly(String pathStr, int targetLine) {
         VirtualFile vf = resolveVirtualFile(pathStr);
@@ -149,22 +146,23 @@ public final class GetAvailableActionsTool extends QualityTool {
         if (entries.isEmpty()) {
             return "No highlights found at " + pathStr + LINE_LABEL + targetLine + ". "
                 + "The daemon may not have analyzed this file yet — open it in the editor or call get_highlights first. "
-                + "Tip: provide a 'column' to also query intention actions (refactoring, conversions, etc.).";
+                + "Tip: provide 'symbol' or 'column' to also query intention actions (refactoring, conversions, etc.).";
         }
 
         StringBuilder sb = new StringBuilder();
         sb.append("[QUICK FIX] at ").append(pathStr).append(LINE_LABEL).append(targetLine).append(":\n\n");
         sb.append(String.join("\n", entries));
         if (!allFixNames.isEmpty()) {
-            sb.append("\n\nTip: provide 'column' to also see intention actions at a specific symbol. "
+            sb.append("\n\nTip: provide 'symbol' or 'column' to also see intention actions at a specific symbol. "
                 + "Use apply_action(file, line, action_name) to invoke a fix.");
         }
         return sb.toString();
     }
 
-    // ── Quick-fixes + intentions (with column) ───────────────
+    // ── Quick-fixes + intentions (with symbol or column) ───────────────────
 
-    private String collectActionsWithIntentions(String pathStr, int targetLine, int targetCol) {
+    private String collectActionsWithIntentions(String pathStr, int targetLine,
+                                                @Nullable String symbol, @Nullable Integer targetCol) {
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) return "Error: File not found: " + pathStr;
 
@@ -178,30 +176,33 @@ public final class GetAvailableActionsTool extends QualityTool {
         Editor editor = getOrOpenEditor(vf);
         if (editor == null) return "Error: Could not open editor for " + pathStr;
 
-        // Position caret at the requested symbol
-        int clampedCol = Math.max(0, targetCol - 1);
-        editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, clampedCol));
+        // Resolve column from symbol name or explicit column
+        int col = resolveColumn(doc, targetLine, symbol, targetCol);
+        editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, col));
 
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return "Error: Cannot parse file: " + pathStr;
 
-        // Quick-fix names from daemon highlights on the line
         List<String> quickFixes = highlightsOnLine(doc, targetLine).stream()
             .flatMap(h -> collectQuickFixNames(h).stream())
             .distinct()
             .toList();
 
-        // Intention actions available at the caret (EDT has implicit read access)
         List<String> intentions = collectIntentionNames(editor, psiFile);
 
         if (quickFixes.isEmpty() && intentions.isEmpty()) {
-            return "No actions available at " + pathStr + LINE_LABEL + targetLine + " col " + targetCol + ".";
+            return "No actions available at " + pathStr + LINE_LABEL + targetLine
+                + (symbol != null ? " (symbol: '" + symbol + "')" : " col " + (col + 1)) + ".";
         }
 
         StringBuilder sb = new StringBuilder();
-        sb.append("Actions at ").append(pathStr)
-            .append(LINE_LABEL).append(targetLine)
-            .append(" col ").append(targetCol).append(":\n");
+        sb.append("Actions at ").append(pathStr).append(LINE_LABEL).append(targetLine);
+        if (symbol != null) {
+            sb.append(" (symbol: '").append(symbol).append("', col ").append(col + 1).append(')');
+        } else {
+            sb.append(" col ").append(col + 1);
+        }
+        sb.append(":\n");
 
         if (!quickFixes.isEmpty()) {
             sb.append("\n[QUICK FIX]\n");
@@ -216,4 +217,19 @@ public final class GetAvailableActionsTool extends QualityTool {
         return sb.toString();
     }
 
+    /**
+     * Resolves the 0-based caret column from a symbol name or an explicit column.
+     * Falls back to column 0 if neither resolves successfully.
+     */
+    private static int resolveColumn(Document doc, int targetLine,
+                                     @Nullable String symbol, @Nullable Integer targetCol) {
+        if (symbol != null && !symbol.isBlank()) {
+            int lineStart = doc.getLineStartOffset(targetLine - 1);
+            int lineEnd = doc.getLineEndOffset(targetLine - 1);
+            String lineText = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, lineEnd));
+            int idx = lineText.indexOf(symbol);
+            if (idx >= 0) return idx;
+        }
+        return targetCol != null ? Math.max(0, targetCol - 1) : 0;
+    }
 }

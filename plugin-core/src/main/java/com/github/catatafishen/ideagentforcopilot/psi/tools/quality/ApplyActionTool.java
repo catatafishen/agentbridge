@@ -11,7 +11,10 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.LogicalPosition;
+import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
@@ -25,22 +28,14 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Invokes a named IDE quick-fix or intention action at a specific file and line.
- * Action names come from {@code get_highlights} or {@code get_available_actions} output.
- *
- * <p>For highlight-based quick-fixes, the action is looked up in the cached daemon highlight data.
- * For intention actions (refactoring, conversions, etc.), an optional {@code column} positions the
- * caret precisely so that only actions relevant to that symbol are considered.</p>
- *
- * <p>Unlike {@code apply_quickfix} (which requires an inspection ID), this tool invokes the action
- * directly via IntelliJ's {@link IntentionAction} API — the same path as clicking the light-bulb.</p>
- */
 public final class ApplyActionTool extends QualityTool {
 
     private static final Logger LOG = Logger.getInstance(ApplyActionTool.class);
     private static final String PARAM_COLUMN = "column";
+    private static final String PARAM_SYMBOL = "symbol";
     private static final String PARAM_ACTION_NAME = "action_name";
+    private static final String PARAM_OPTION = "option";
+    private static final String PARAM_DRY_RUN = "dry_run";
     private static final String LINE_LABEL = " line ";
 
     public ApplyActionTool(Project project) {
@@ -61,8 +56,10 @@ public final class ApplyActionTool extends QualityTool {
     public @NotNull String description() {
         return "Invoke a named IDE quick-fix or intention action at a specific file and line. "
             + "Action names come from get_highlights or get_available_actions output. "
-            + "Provide 'column' when applying an intention action to ensure the caret is positioned "
-            + "at the correct symbol (required for refactoring intentions). "
+            + "Use 'symbol' (preferred) or 'column' to position the caret at the correct symbol. "
+            + "Use 'option' to select a radio-button or checkbox in a dialog the action may show "
+            + "(get options first with get_action_options). "
+            + "Use 'dry_run: true' to preview changes as a diff without applying them. "
             + "Tip: use optimize_imports to fix all missing imports at once.";
     }
 
@@ -72,8 +69,13 @@ public final class ApplyActionTool extends QualityTool {
             {"file", TYPE_STRING, "Path to the file"},
             {"line", TYPE_INTEGER, "Line number (1-based)"},
             {PARAM_ACTION_NAME, TYPE_STRING, "Exact action name from get_highlights / get_available_actions output"},
-            {PARAM_COLUMN, TYPE_INTEGER, "Column number (1-based, optional). Required when applying "
-                + "intention actions to position the caret at the correct symbol."}
+            {PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
+                + "Auto-detects the column — preferred over specifying 'column' manually."},
+            {PARAM_COLUMN, TYPE_INTEGER, "Column number (1-based, optional). Use 'symbol' instead when possible."},
+            {PARAM_OPTION, TYPE_STRING, "Option to select in a dialog the action may show "
+                + "(radio button or checkbox text, from get_action_options output)."},
+            {PARAM_DRY_RUN, TYPE_BOOLEAN, "If true, shows a diff of what the action would change "
+                + "without actually applying it. The change is applied then immediately undone."}
         }, "file", "line", PARAM_ACTION_NAME);
     }
 
@@ -85,12 +87,15 @@ public final class ApplyActionTool extends QualityTool {
         String pathStr = args.get("file").getAsString();
         int targetLine = args.get("line").getAsInt();
         String actionName = args.get(PARAM_ACTION_NAME).getAsString();
+        String symbol = args.has(PARAM_SYMBOL) ? args.get(PARAM_SYMBOL).getAsString() : null;
         Integer targetCol = args.has(PARAM_COLUMN) ? args.get(PARAM_COLUMN).getAsInt() : null;
+        String option = args.has(PARAM_OPTION) ? args.get(PARAM_OPTION).getAsString() : null;
+        boolean dryRun = args.has(PARAM_DRY_RUN) && args.get(PARAM_DRY_RUN).getAsBoolean();
 
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                future.complete(invokeAction(pathStr, targetLine, actionName, targetCol));
+                future.complete(invokeAction(pathStr, targetLine, actionName, symbol, targetCol, option, dryRun));
             } catch (Exception e) {
                 LOG.warn("Error invoking action '" + actionName + "' at " + pathStr + ":" + targetLine, e);
                 future.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
@@ -98,7 +103,8 @@ public final class ApplyActionTool extends QualityTool {
         });
 
         String result = future.get(30, TimeUnit.SECONDS);
-        if (result != null && !result.startsWith("Error") && !result.startsWith("No ")) {
+        if (result != null && !dryRun && !result.startsWith("Error") && !result.startsWith("No ")
+            && !result.startsWith("Action '") && !result.startsWith("Preview")) {
             FileTool.followFileIfEnabled(project, pathStr, targetLine, targetLine,
                 FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " applied action");
         }
@@ -112,7 +118,9 @@ public final class ApplyActionTool extends QualityTool {
 
     // ── Private helpers ──────────────────────────────────────
 
-    private String invokeAction(String pathStr, int targetLine, String actionName, @Nullable Integer targetCol) {
+    private String invokeAction(String pathStr, int targetLine, String actionName,
+                                @Nullable String symbol, @Nullable Integer targetCol,
+                                @Nullable String option, boolean dryRun) {
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -131,8 +139,7 @@ public final class ApplyActionTool extends QualityTool {
             return "Error: Could not open editor for " + pathStr + ". Ensure the file is open in the IDE.";
         }
 
-        // Position caret — use column if provided, otherwise start of line
-        int caretCol = (targetCol != null) ? Math.max(0, targetCol - 1) : 0;
+        int caretCol = resolveColumn(doc, targetLine, symbol, targetCol);
         editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, caretCol));
 
         IntentionAction action = findActionToApply(doc, targetLine, actionName, editor, psiFile);
@@ -148,13 +155,86 @@ public final class ApplyActionTool extends QualityTool {
                 + LINE_LABEL + targetLine + ".";
         }
 
+        String before = doc.getText();
+
+        if (option != null) {
+            // Option-selection mode: intercept dialog and choose the matching option
+            boolean selected = DialogInterceptor.runAndSelectOption(
+                () -> WriteCommandAction.runWriteCommandAction(project, actionName, null,
+                    () -> action.invoke(project, editor, psiFile)),
+                option
+            );
+            PsiDocumentManager.getInstance(project).commitAllDocuments();
+            FileDocumentManager.getInstance().saveAllDocuments();
+
+            String after = doc.getText();
+            String diff = DiffUtils.unifiedDiff(before, after, pathStr);
+            if (!selected) {
+                return "Option '" + option + "' not found in dialog for action '" + actionName + "'. "
+                    + "Use get_action_options to see available options.";
+            }
+            return formatApplyResult(actionName, pathStr, targetLine, diff, false);
+        }
+
+        if (dryRun) {
+            // Dry-run mode: apply, capture diff, undo
+            WriteCommandAction.runWriteCommandAction(project, actionName, null,
+                () -> action.invoke(project, editor, psiFile));
+            PsiDocumentManager.getInstance(project).commitAllDocuments();
+            String after = doc.getText();
+            String diff = DiffUtils.unifiedDiff(before, after, pathStr);
+            undoLastAction(vf);
+            if (diff.isEmpty()) {
+                return "Preview: action '" + actionName + "' would make no changes (it may require a dialog — "
+                    + "use get_action_options to check).";
+            }
+            return "Preview (not applied):\n\n" + diff;
+        }
+
+        // Normal apply
         WriteCommandAction.runWriteCommandAction(project, actionName, null,
             () -> action.invoke(project, editor, psiFile));
-
         PsiDocumentManager.getInstance(project).commitAllDocuments();
         FileDocumentManager.getInstance().saveAllDocuments();
 
-        return "Applied action: " + actionName + "\n  File: " + pathStr + LINE_LABEL + targetLine;
+        String after = doc.getText();
+        String diff = DiffUtils.unifiedDiff(before, after, pathStr);
+
+        if (diff.isEmpty()) {
+            // Document unchanged — likely a dialog appeared but wasn't handled
+            return "Action '" + actionName + "' made no changes. It may require user input via a dialog. "
+                + "Try get_action_options to inspect what dialog options it shows.";
+        }
+
+        return formatApplyResult(actionName, pathStr, targetLine, diff, true);
+    }
+
+    private String formatApplyResult(String actionName, String pathStr, int line,
+                                     String diff, boolean applied) {
+        if (diff.isEmpty()) {
+            return (applied ? "Applied" : "Selected option for") + " action: " + actionName
+                + "\n  File: " + pathStr + LINE_LABEL + line + "\n  (no file changes)";
+        }
+        return (applied ? "Applied" : "Applied with option") + " action: " + actionName
+            + "\n  File: " + pathStr + LINE_LABEL + line + "\n\n" + diff;
+    }
+
+    private void undoLastAction(VirtualFile vf) {
+        try {
+            var fem = FileEditorManager.getInstance(project);
+            for (var fe : fem.getEditors(vf)) {
+                if (fe instanceof TextEditor) {
+                    var undoMgr = UndoManager.getInstance(project);
+                    if (undoMgr.isUndoAvailable(fe)) {
+                        undoMgr.undo(fe);
+                        FileDocumentManager.getInstance().saveAllDocuments();
+                    }
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Could not undo dry-run action", e);
+        }
     }
 
     /**
@@ -164,7 +244,6 @@ public final class ApplyActionTool extends QualityTool {
     @Nullable
     private IntentionAction findActionToApply(Document doc, int targetLine, String name,
                                               Editor editor, PsiFile psiFile) {
-        // 1. Search highlight quick-fixes
         for (var h : highlightsOnLine(doc, targetLine)) {
             IntentionAction found = h.findRegisteredQuickFix((descriptor, range) -> {
                 IntentionAction a = descriptor.getAction();
@@ -173,8 +252,6 @@ public final class ApplyActionTool extends QualityTool {
             });
             if (found != null) return found;
         }
-
-        // 2. Fall back to IntentionManager (handles refactoring / conversion intentions)
         return findIntentionByName(name, editor, psiFile);
     }
 
@@ -188,5 +265,20 @@ public final class ApplyActionTool extends QualityTool {
         highlightsOnLine(doc, targetLine).forEach(h -> names.addAll(collectQuickFixNames(h)));
         names.addAll(collectIntentionNames(editor, psiFile));
         return names;
+    }
+
+    /**
+     * Resolves the 0-based caret column from a symbol name, an explicit column, or defaults to 0.
+     */
+    private static int resolveColumn(Document doc, int targetLine,
+                                     @Nullable String symbol, @Nullable Integer targetCol) {
+        if (symbol != null && !symbol.isBlank()) {
+            int lineStart = doc.getLineStartOffset(targetLine - 1);
+            int lineEnd = doc.getLineEndOffset(targetLine - 1);
+            String lineText = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, lineEnd));
+            int idx = lineText.indexOf(symbol);
+            if (idx >= 0) return idx;
+        }
+        return targetCol != null ? Math.max(0, targetCol - 1) : 0;
     }
 }
