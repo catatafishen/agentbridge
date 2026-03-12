@@ -16,10 +16,10 @@ function shortClass(fqn: string): string {
 }
 
 export function toolDisplayName(rawTitle: string, paramsJson?: string): string {
-    // Strip MCP server prefixes
+    // Strip MCP server prefixes (handles both dash and underscore variants, case-insensitive)
     const name = rawTitle
-        .replace(/^[Ii]ntellij-code-tools[-_]/, '')
-        .replace(/^github-mcp-server[-_]/, 'gh:');
+        .replace(/^intellij[-_]code[-_]tools[-_]/i, '')
+        .replace(/^github[-_]mcp[-_]server[-_]/i, 'gh:');
 
     let p: Record<string, any> = {};
     if (paramsJson) {

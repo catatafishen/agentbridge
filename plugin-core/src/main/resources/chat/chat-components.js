@@ -429,7 +429,7 @@ var __chatUI = (() => {
     return i >= 0 ? fqn.substring(i + 1) : fqn;
   }
   function toolDisplayName(rawTitle, paramsJson) {
-    const name = rawTitle.replace(/^[Ii]ntellij-code-tools[-_]/, "").replace(/^github-mcp-server[-_]/, "gh:");
+    const name = rawTitle.replace(/^intellij[-_]code[-_]tools[-_]/i, "").replace(/^github[-_]mcp[-_]server[-_]/i, "gh:");
     let p = {};
     if (paramsJson) {
       try {
