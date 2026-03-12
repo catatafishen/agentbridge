@@ -1,20 +1,20 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 
-import com.github.catatafishen.ideagentforcopilot.psi.CodeNavigationTools;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
-import org.jetbrains.annotations.NotNull;
+import com.intellij.openapi.util.Computable;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ClassOutlineRenderer;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * Gets the full API of any class by fully-qualified name, including library and JDK classes.
  */
-@SuppressWarnings("java:S112")
 public final class GetClassOutlineTool extends NavigationTool {
 
-    public GetClassOutlineTool(Project project, CodeNavigationTools navTools) {
-        super(project, navTools);
+    public GetClassOutlineTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -51,7 +51,14 @@ public final class GetClassOutlineTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return navTools.getClassOutline(args);
+    public @Nullable String execute(@NotNull JsonObject args) {
+        String className = args.has("class_name") ? args.get("class_name").getAsString() : "";
+        if (className.isEmpty()) return "Error: 'class_name' parameter is required";
+        boolean includeInherited = args.has("include_inherited")
+            && args.get("include_inherited").getAsBoolean();
+
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+            com.github.catatafishen.ideagentforcopilot.psi.java.CodeNavigationJavaSupport.computeClassOutline(project, className, includeInherited)
+        );
     }
 }

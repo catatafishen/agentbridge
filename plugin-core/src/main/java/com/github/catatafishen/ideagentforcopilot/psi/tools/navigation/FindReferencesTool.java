@@ -1,20 +1,30 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 
-import com.github.catatafishen.ideagentforcopilot.psi.CodeNavigationTools;
-import com.google.gson.JsonObject;
-import com.intellij.openapi.project.Project;
-import org.jetbrains.annotations.NotNull;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
+import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
+import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.PsiSearchHelper;
+import com.intellij.psi.search.UsageSearchContext;
+import com.intellij.psi.search.searches.ReferencesSearch;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Finds all usages of a symbol throughout the project.
  */
-@SuppressWarnings("java:S112")
 public final class FindReferencesTool extends NavigationTool {
 
-    public FindReferencesTool(Project project, CodeNavigationTools navTools) {
-        super(project, navTools);
+    public FindReferencesTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -51,7 +61,62 @@ public final class FindReferencesTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return navTools.findReferences(args);
+    public @Nullable String execute(@NotNull JsonObject args) {
+        if (!args.has(PARAM_SYMBOL) || args.get(PARAM_SYMBOL).isJsonNull())
+            return "Error: 'symbol' parameter is required";
+        String symbol = args.get(PARAM_SYMBOL).getAsString();
+        String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
+
+        showSearchFeedback("🔍 Finding references: " + symbol);
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+            List<String> results = new ArrayList<>();
+            String basePath = project.getBasePath();
+            GlobalSearchScope scope = GlobalSearchScope.projectScope(project);
+
+            PsiElement definition = findDefinition(symbol, scope);
+
+            if (definition != null) {
+                for (PsiReference ref : ReferencesSearch.search(definition, scope).findAll()) {
+                    if (results.size() >= 100) break;
+                    String entry = buildReferenceEntry(ref, filePattern, basePath);
+                    if (entry != null) results.add(entry);
+                }
+            }
+
+            if (results.isEmpty()) {
+                collectWordReferences(symbol, scope, filePattern, basePath, results);
+            }
+
+            if (results.isEmpty()) return "No references found for '" + symbol + "'";
+            return results.size() + " references found:\n" + String.join("\n", results);
+        });
+        showSearchFeedback("✓ Reference search complete: " + symbol);
+        return result;
+    }
+
+    private void collectWordReferences(String symbol, GlobalSearchScope scope,
+                                       String filePattern, String basePath, List<String> results) {
+        PsiSearchHelper.getInstance(project).processElementsWithWord(
+            (element, offsetInElement) -> {
+                com.intellij.psi.PsiFile file = element.getContainingFile();
+                if (file == null || file.getVirtualFile() == null) return true;
+                String relPath = basePath != null
+                    ? relativize(basePath, file.getVirtualFile().getPath())
+                    : file.getVirtualFile().getPath();
+                if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern))
+                    return true;
+
+                com.intellij.openapi.editor.Document doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+                    .getDocument(file.getVirtualFile());
+                if (doc != null) {
+                    int line = doc.getLineNumber(element.getTextOffset()) + 1;
+                    String lineText = ToolUtils.getLineText(doc, line - 1);
+                    String entry = String.format(FORMAT_LINE_REF, relPath, line, lineText);
+                    if (!results.contains(entry)) results.add(entry);
+                }
+                return results.size() < 100;
+            },
+            scope, symbol, UsageSearchContext.IN_CODE, true
+        );
     }
 }

@@ -1,20 +1,28 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 
-import com.github.catatafishen.ideagentforcopilot.psi.CodeNavigationTools;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
-import org.jetbrains.annotations.NotNull;
+import com.intellij.openapi.util.Computable;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.FileOutlineRenderer;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 /**
  * Gets the structure of a file — classes, methods, and fields with line numbers.
  */
-@SuppressWarnings("java:S112")
 public final class GetFileOutlineTool extends NavigationTool {
 
-    public GetFileOutlineTool(Project project, CodeNavigationTools navTools) {
-        super(project, navTools);
+    public GetFileOutlineTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -50,7 +58,28 @@ public final class GetFileOutlineTool extends NavigationTool {
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return navTools.getFileOutline(args);
+    public @Nullable String execute(@NotNull JsonObject args) {
+        if (!args.has("path") || args.get("path").isJsonNull())
+            return ToolUtils.ERROR_PATH_REQUIRED;
+        String pathStr = args.get("path").getAsString();
+
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+            VirtualFile vf = resolveVirtualFile(pathStr);
+            if (vf == null) return ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (psiFile == null) return "Cannot parse file: " + pathStr;
+
+            Document document = FileDocumentManager.getInstance().getDocument(vf);
+            if (document == null) return "Cannot read file: " + pathStr;
+
+            List<String> outline = collectOutlineEntries(psiFile, document);
+
+            if (outline.isEmpty()) return "No structural elements found in " + pathStr;
+            String basePath = project.getBasePath();
+            String display = basePath != null ? relativize(basePath, vf.getPath()) : pathStr;
+            return "Outline of " + (display != null ? display : pathStr) + ":\n"
+                + String.join("\n", outline);
+        });
     }
 }

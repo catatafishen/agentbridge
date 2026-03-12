@@ -58,7 +58,6 @@ public final class PsiBridgeService implements Disposable {
         RefactoringTools refactoringTools = new RefactoringTools(project);
         RunConfigurationService runConfigService = new RunConfigurationService(project, refactoringTools::resolveClass);
 
-        CodeNavigationTools navTools = new CodeNavigationTools(project);
         CodeQualityTools qualityTools = new CodeQualityTools(project);
 
         TestTools testTools = new TestTools(project, refactoringTools);
@@ -71,7 +70,7 @@ public final class PsiBridgeService implements Disposable {
         var allTools = new java.util.ArrayList<com.github.catatafishen.ideagentforcopilot.psi.tools.Tool>();
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileToolFactory.create(project, fileTools));
-        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.navigation.NavigationToolFactory.create(project, navTools, hasJava));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.navigation.NavigationToolFactory.create(project, hasJava));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, qualityTools, SonarQubeIntegration.isInstalled()));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring.RefactoringToolFactory.create(project, refactoringTools, hasJava));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editing.EditingToolFactory.create(project));

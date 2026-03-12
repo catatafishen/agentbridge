@@ -17,14 +17,14 @@ public final class ToolUtils {
     public static final String ERROR_FILE_NOT_FOUND = "File not found: ";
     static final String ERROR_CANNOT_PARSE = "Cannot parse file: ";
     public static final String ERROR_PATH_REQUIRED = "Error: 'path' parameter is required";
-    static final String JAVA_EXTENSION = ".java";
+    public static final String JAVA_EXTENSION = ".java";
     static final String BUILD_DIR = "build";
 
     // Element type constants
     static final String ELEMENT_TYPE_CLASS = "class";
     static final String ELEMENT_TYPE_INTERFACE = "interface";
     static final String ELEMENT_TYPE_ENUM = "enum";
-    static final String ELEMENT_TYPE_FIELD = "field";
+    public static final String ELEMENT_TYPE_FIELD = "field";
     static final String ELEMENT_TYPE_FUNCTION = "function";
     static final String ELEMENT_TYPE_METHOD = "method";
 
@@ -106,7 +106,7 @@ public final class ToolUtils {
         return file.startsWith(base + "/") ? file.substring(base.length() + 1) : file;
     }
 
-    static String getLineText(Document doc, int lineIndex) {
+    public static String getLineText(Document doc, int lineIndex) {
         if (lineIndex < 0 || lineIndex >= doc.getLineCount()) return "";
         int start = doc.getLineStartOffset(lineIndex);
         int end = doc.getLineEndOffset(lineIndex);
@@ -128,7 +128,7 @@ public final class ToolUtils {
      * Examples: {@code src/**}{@code /*.java} matches {@code src/main/Foo.java};
      * {@code *.java} matches {@code Foo.java} (filename only).
      */
-    static boolean doesNotMatchGlob(String path, String pattern) {
+    public static boolean doesNotMatchGlob(String path, String pattern) {
         if (pattern.isEmpty()) return false;
         String normalizedPath = path.replace('\\', '/');
         boolean isPathPattern = pattern.contains("/") || pattern.contains("**");
@@ -171,7 +171,7 @@ public final class ToolUtils {
         return java.util.regex.Pattern.compile(sb.toString());
     }
 
-    static String fileType(String name) {
+    public static String fileType(String name) {
         String l = name.toLowerCase();
         if (l.endsWith(JAVA_EXTENSION)) return "Java";
         if (l.endsWith(".gradle") || l.endsWith(".gradle.kts")) return "Gradle";
@@ -186,13 +186,13 @@ public final class ToolUtils {
         return "Other";
     }
 
-    static String formatFileSize(long bytes) {
+    public static String formatFileSize(long bytes) {
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
         return String.format("%.1f MB", bytes / (1024.0 * 1024));
     }
 
-    static String formatFileTimestamp(long epochMs) {
+    public static String formatFileTimestamp(long epochMs) {
         if (epochMs == 0) return "unknown";
         return new java.text.SimpleDateFormat("yyyy-MM-dd").format(new java.util.Date(epochMs));
     }
@@ -201,7 +201,7 @@ public final class ToolUtils {
      * Parses a date string like "2026-01-15" into epoch milliseconds (start of day UTC).
      * Returns -1 if blank or unparseable.
      */
-    static long parseDateParam(String date) {
+    public static long parseDateParam(String date) {
         if (date == null || date.isBlank()) return -1;
         try {
             java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
