@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui.renderers
 
+// Terminal output renderer for run_in_terminal tool results.
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil

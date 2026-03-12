@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.terminal;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -14,6 +15,10 @@ import java.util.concurrent.TimeUnit;
  * Runs a command in IntelliJ's integrated terminal.
  */
 public final class RunInTerminalTool extends TerminalTool {
+
+    private static final String JSON_COMMAND = "command";
+    private static final String JSON_NEW_TAB = "new_tab";
+    private static final String JSON_SHELL = "shell";
 
     public RunInTerminalTool(Project project) {
         super(project);
@@ -45,21 +50,46 @@ public final class RunInTerminalTool extends TerminalTool {
     }
 
     @Override
-    public @Nullable JsonObject inputSchema() {
+    public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-            {"command", TYPE_STRING, "The command to run in the terminal"},
-            {"tab_name", TYPE_STRING, "Name for the terminal tab. If omitted, reuses the most recent agent-created tab or creates a new one"},
-            {"new_tab", TYPE_BOOLEAN, "If true, always create a new terminal tab instead of reusing an existing one"},
-            {"shell", TYPE_STRING, "Shell to use (e.g., 'bash', 'zsh'). If omitted, uses the default shell"}
-        }, "command");
+            {JSON_COMMAND, TYPE_STRING, "The command to run in the terminal"},
+            {JSON_TAB_NAME, TYPE_STRING, "Name for the terminal tab. If omitted, reuses the most recent agent-created tab or creates a new one"},
+            {JSON_NEW_TAB, TYPE_BOOLEAN, "If true, always create a new terminal tab instead of reusing an existing one"},
+            {JSON_SHELL, TYPE_STRING, "Shell to use (e.g., 'bash', 'zsh'). If omitted, uses the default shell"}
+        }, JSON_COMMAND);
+    }
+
+    @Override
+    public @Nullable String detectPermissionAbuse(@Nullable JsonObject toolCall) {
+        if (toolCall == null) return null;
+        String command = extractCommand(toolCall);
+        if (command == null) return null;
+        return ToolUtils.detectCommandAbuseType(command);
+    }
+
+    private static @Nullable String extractCommand(@NotNull JsonObject toolCall) {
+        for (String wrapper : new String[]{"parameters", "arguments", "input"}) {
+            if (toolCall.has(wrapper) && toolCall.get(wrapper).isJsonObject()) {
+                var nested = toolCall.getAsJsonObject(wrapper);
+                if (nested.has(JSON_COMMAND) && nested.get(JSON_COMMAND).isJsonPrimitive()) {
+                    return nested.get(JSON_COMMAND).getAsString().toLowerCase().trim();
+                }
+            }
+        }
+        return null;
     }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        String command = args.get("command").getAsString();
+        String command = args.get(JSON_COMMAND).getAsString();
+
+        // Runtime guard: reject abuse patterns even if the pre-check was skipped
+        String abuseType = ToolUtils.detectCommandAbuseType(command);
+        if (abuseType != null) return ToolUtils.getCommandAbuseMessage(abuseType);
+
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
-        boolean newTab = args.has("new_tab") && args.get("new_tab").getAsBoolean();
-        String shell = args.has("shell") ? args.get("shell").getAsString() : null;
+        boolean newTab = args.has(JSON_NEW_TAB) && args.get(JSON_NEW_TAB).getAsBoolean();
+        String shell = args.has(JSON_SHELL) ? args.get(JSON_SHELL).getAsString() : null;
 
         // Flush all editor buffers to disk so terminal commands see current content
         EdtUtil.invokeAndWait(() ->
