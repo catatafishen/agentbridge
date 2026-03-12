@@ -11,7 +11,7 @@ import javax.swing.JComponent
  * Renders inspection, compilation error, and highlight results as grouped
  * file cards with severity badges.
  */
-internal object InspectionResultRenderer : ToolResultRenderer {
+object InspectionResultRenderer : ToolResultRenderer {
 
     private val FINDING_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^]]+)]\s+(.+)$""")
     private val SUMMARY_PATTERN = Regex("""Found\s+(\d+)\s+(?:total\s+)?(?:problems?|compilation errors?)""")

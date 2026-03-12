@@ -11,7 +11,7 @@ import javax.swing.JComponent
  * Renderer for get_class_outline output.
  * Input: "class/interface QName [extends X] [implements Y]\n\nSection:\n  signature\n..."
  */
-internal object ClassOutlineRenderer : ToolResultRenderer {
+object ClassOutlineRenderer : ToolResultRenderer {
 
     private val HEADER = Regex("""^(class|interface|enum|record|annotation)\s+(\S+)(.*)""")
     private val SECTION = Regex("""^(Constructors|Methods|Fields|Inner classes):$""")

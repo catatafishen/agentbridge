@@ -286,9 +286,9 @@ public class AcpClient implements Closeable {
         // Tool filtering: for agents that support it (e.g., OpenCode), send excludedTools
         // to remove built-in tools so only IntelliJ MCP tools are available.
         // Copilot CLI ignores this (bug #556) — those tools are denied via permissions instead.
-        if (agentConfig.shouldExcludeBuiltInTools()) {
+        if (agentConfig.shouldExcludeBuiltInTools() && registry != null) {
             JsonArray excluded = new JsonArray();
-            for (String toolId : com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getBuiltInToolIds()) {
+            for (String toolId : registry.getBuiltInToolIds()) {
                 excluded.add(toolId);
             }
             params.add("excludedTools", excluded);
@@ -1143,8 +1143,8 @@ public class AcpClient implements Closeable {
         }
 
         // Build structured context JSON for the permission bubble
-        String resolvedQuestion = registry != null
-            ? registry.resolvePermissionQuestion(toolId, toolArgs) : null;
+        ToolDefinition def = registry != null ? registry.findById(toolId) : null;
+        String resolvedQuestion = def != null ? def.resolvePermissionQuestion(toolArgs) : null;
         JsonObject context = new JsonObject();
         context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
             : "Can I use " + displayName + "?");

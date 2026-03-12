@@ -11,7 +11,7 @@ import javax.swing.JComponent
  * Renders build results as a status card with success/fail indicator,
  * error/warning counts, duration, and colored error/warning message list.
  */
-internal object BuildResultRenderer : ToolResultRenderer {
+object BuildResultRenderer : ToolResultRenderer {
 
     private val COUNTS_PATTERN = Regex("""\((\d+) errors?,\s*(\d+) warnings?,\s*([\d.]+)s\)""")
 

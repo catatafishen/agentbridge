@@ -9,7 +9,7 @@ import javax.swing.JComponent
  * Renders git log output as a structured commit list.
  * Supports oneline, short, and medium formats.
  */
-internal object GitLogRenderer : ToolResultRenderer {
+object GitLogRenderer : ToolResultRenderer {
 
     private const val COMMIT_PREFIX = "commit "
     private val SHORT_PATTERN = Regex("""^[a-f0-9]{7,40}\s+.+\(.+,\s*.+\)$""")

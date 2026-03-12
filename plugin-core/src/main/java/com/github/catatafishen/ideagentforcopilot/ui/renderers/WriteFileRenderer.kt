@@ -21,7 +21,7 @@ import javax.swing.text.StyleContext
  * when old_str/new_str are available in the arguments, otherwise falls back
  * to context lines.
  */
-internal object WriteFileRenderer : ArgumentAwareRenderer {
+object WriteFileRenderer : ArgumentAwareRenderer {
 
     private val WRITTEN = Regex("""^Written:\s+(.+?)\s+\((\d+)\s+chars\)""")
     private val CREATED = Regex("""^Created:\s+(.+)$""")

@@ -12,7 +12,7 @@ import javax.swing.JComponent
  * Renders git blame output as a compact listing with author coloring,
  * line numbers, and code content.
  */
-internal object GitBlameRenderer : ToolResultRenderer {
+object GitBlameRenderer : ToolResultRenderer {
 
     private val BLAME_LINE = Regex(
         """^([a-f0-9]+)\s+\((.+?)\s+(\d{4}-\d{2}-\d{2})\s+[\d:]+\s+[+-]\d{4}\s+(\d+)\)\s?(.*)$"""

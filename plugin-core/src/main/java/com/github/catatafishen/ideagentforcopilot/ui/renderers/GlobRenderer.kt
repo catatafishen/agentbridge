@@ -8,7 +8,7 @@ import javax.swing.JComponent
  * Renders glob / file-finding tool output as a grouped file tree
  * with a count header and clickable paths.
  */
-internal object GlobRenderer : ToolResultRenderer {
+object GlobRenderer : ToolResultRenderer {
 
     private val NO_FILES = Regex("""^No files matched""", RegexOption.IGNORE_CASE)
 

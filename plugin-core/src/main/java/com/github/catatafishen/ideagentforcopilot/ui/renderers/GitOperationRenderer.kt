@@ -10,7 +10,7 @@ import javax.swing.JComponent
  * cherry-pick, reset, revert, unstage, remote) as a status header
  * with the raw git output in a monospace code block.
  */
-internal object GitOperationRenderer : ToolResultRenderer {
+object GitOperationRenderer : ToolResultRenderer {
 
     private val SUCCESS_LINE = Regex("""^✓\s+(.+)""")
     private val ERROR_LINE = Regex("""^Error:\s+(.+)""", RegexOption.DOT_MATCHES_ALL)

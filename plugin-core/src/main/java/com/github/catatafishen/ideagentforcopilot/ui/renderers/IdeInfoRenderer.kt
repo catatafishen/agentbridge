@@ -10,7 +10,7 @@ import javax.swing.JComponent
  * get_notifications, list_themes, list_scratch_files, get_documentation,
  * read_ide_log, show_diff, edit_project_structure, search_conversation_history.
  */
-internal object IdeInfoRenderer : ToolResultRenderer {
+object IdeInfoRenderer : ToolResultRenderer {
 
     private val ACTIVE_FILE = Regex("""^(.+?)\s+\(line (\d+),\s*column (\d+)\)""")
     private val NO_EDITOR = Regex("""^No active editor""")

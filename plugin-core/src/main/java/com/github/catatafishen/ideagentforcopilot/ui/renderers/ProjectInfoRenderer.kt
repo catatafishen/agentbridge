@@ -10,7 +10,7 @@ import javax.swing.JComponent
  * Renders get_project_info output as a structured info card with
  * sections for IDE, SDK, modules, build system, and run configs.
  */
-internal object ProjectInfoRenderer : ToolResultRenderer {
+object ProjectInfoRenderer : ToolResultRenderer {
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()

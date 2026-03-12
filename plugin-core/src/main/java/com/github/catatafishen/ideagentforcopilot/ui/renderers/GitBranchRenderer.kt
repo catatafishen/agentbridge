@@ -10,7 +10,7 @@ import javax.swing.JComponent
 /**
  * Renders git branch list output with the current branch highlighted.
  */
-internal object GitBranchRenderer : ToolResultRenderer {
+object GitBranchRenderer : ToolResultRenderer {
 
     private val BRANCH_LINE = Regex("""^([* ])\s+(\S+)\s+([a-f0-9]+)\s+(.*)$""")
     private val REMOTE_PREFIX = Regex("""^remotes?/""")

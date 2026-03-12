@@ -9,7 +9,7 @@ import javax.swing.JComponent
  * Renders run configuration CRUD results (create, edit, delete, run)
  * as a status card with the operation summary.
  */
-internal object RunConfigCrudRenderer : ToolResultRenderer {
+object RunConfigCrudRenderer : ToolResultRenderer {
 
     private val CREATED = Regex("""^Created run configuration '(.+?)'\s*(?:\[(.+?)])?""")
     private val UPDATED = Regex("""^Updated run configuration '(.+?)'""")

@@ -46,6 +46,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var toolJustCompleted = false
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
     private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
+    private val toolRegistry = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project)
 
     // ── JCEF ───────────────────────────────────────────────────────
     private val browser: JBCefBrowser?
@@ -308,7 +309,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
-        val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(baseName, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
         executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind')")
@@ -341,7 +342,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(baseName, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
-        val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(baseName, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
         executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson','$safeKind')")
@@ -692,7 +693,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val status = obj["status"]?.asString ?: "completed"
                 toolCallNames[did] = baseName
                 toolCallEntries[did] = EntryData.ToolCall(title, args, kind, result, status)
-                val hasCustomRenderer = ToolRenderers.hasRenderer(baseName)
+                val hasCustomRenderer = ToolRenderers.hasRenderer(baseName, toolRegistry)
                 val paramsJson = if (!args.isNullOrBlank() && !hasCustomRenderer) escJs(args) else ""
                 executeJs(
                     "ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','${
@@ -1138,7 +1139,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             return JBLabel(if (status != "failed") "Completed" else "✖ Failed")
         }
         if (status != "failed" && baseName != null) {
-            val renderer = ToolRenderers.get(baseName)
+            val renderer = ToolRenderers.get(baseName, toolRegistry)
             val panel = when (renderer) {
                 is ArgumentAwareRenderer -> renderer.render(details, arguments)
                 else -> renderer?.render(details)

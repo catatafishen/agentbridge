@@ -11,7 +11,7 @@ import javax.swing.JComponent
  * Renders list_project_files output as a compact file listing grouped by directory,
  * with type badges and a count header.
  */
-internal object ListProjectFilesRenderer : ToolResultRenderer {
+object ListProjectFilesRenderer : ToolResultRenderer {
 
     private val COUNT_HEADER = Regex("""^(\d+)\s+files?:?\s*$""")
     private val FILE_ENTRY = Regex("""^(.+?)\s+\[([^]]+)]$""")

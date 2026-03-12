@@ -9,7 +9,7 @@ import javax.swing.JComponent
  * Renders search results (text search, symbol search, find references) as
  * grouped file cards with line numbers and match highlights.
  */
-internal object SearchResultRenderer : ToolResultRenderer {
+object SearchResultRenderer : ToolResultRenderer {
 
     private val LINE_REF_PATTERN = Regex("""^(.+?):(\d+):\s+(.+)$""")
     private val LOCATION_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^]]+)]\s+(.+)$""")

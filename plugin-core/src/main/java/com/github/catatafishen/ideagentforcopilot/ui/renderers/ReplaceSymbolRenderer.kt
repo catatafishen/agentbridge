@@ -9,7 +9,7 @@ import javax.swing.JComponent
  * Renders replace_symbol_body / insert_before_symbol / insert_after_symbol
  * output as a compact status card.
  */
-internal object ReplaceSymbolRenderer : ToolResultRenderer {
+object ReplaceSymbolRenderer : ToolResultRenderer {
 
     private val REPLACED = Regex("""^Replaced lines (\d+)-(\d+) \((\d+) lines?\) with (\d+) lines? in (.+)$""")
     private val INSERTED = Regex("""^Inserted (\d+) lines? (before|after) (.+?) in (.+)$""")

@@ -4,7 +4,7 @@ import com.intellij.ui.JBColor
 import com.intellij.util.ui.UIUtil
 import javax.swing.JComponent
 
-internal object GitTagRenderer : ToolResultRenderer {
+object GitTagRenderer : ToolResultRenderer {
 
     private val ANNOTATED = Regex("""^(.+?)\s+(.+)$""")
 

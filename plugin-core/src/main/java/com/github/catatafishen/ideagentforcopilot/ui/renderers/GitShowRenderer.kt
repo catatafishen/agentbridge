@@ -10,7 +10,7 @@ import javax.swing.JComponent
 /**
  * Renders git show output as a commit card with metadata and optional diff stats.
  */
-internal object GitShowRenderer : ToolResultRenderer {
+object GitShowRenderer : ToolResultRenderer {
 
     private val SUMMARY_PATTERN = Regex(""".*\d+ files? changed.*""")
     private const val COMMIT_PREFIX = "commit "

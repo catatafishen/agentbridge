@@ -9,7 +9,7 @@ import javax.swing.JComponent
  * Renders go_to_declaration output as a compact card with the file path,
  * line number, and a code context snippet.
  */
-internal object GoToDeclarationRenderer : ToolResultRenderer {
+object GoToDeclarationRenderer : ToolResultRenderer {
 
     private val HEADER = Regex("""^Declaration of '(.+)':""")
     private val FILE_LINE = Regex("""^\s*File:\s+(.+)$""")

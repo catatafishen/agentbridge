@@ -10,7 +10,7 @@ import javax.swing.JComponent
  * Renders intellij_read_file output as a code block with line numbers
  * and automatic truncation for very large files.
  */
-internal object ReadFileRenderer : ToolResultRenderer {
+object ReadFileRenderer : ToolResultRenderer {
 
     private const val MAX_DISPLAY_LINES = 80
     private val NUMBERED_LINE = Regex("""^(\d+): (.*)""")

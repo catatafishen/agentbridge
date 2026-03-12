@@ -10,7 +10,7 @@ import javax.swing.JComponent
  * Renders file outline results as a structured list with type badges
  * and line numbers.
  */
-internal object FileOutlineRenderer : ToolResultRenderer {
+object FileOutlineRenderer : ToolResultRenderer {
 
     private val ENTRY_PATTERN = Regex("""^\s*(\d+):\s+(\w+)\s+(.+)$""")
     private val HEADER_PATTERN = Regex("""^Outline of (.+):$""")

@@ -10,7 +10,7 @@ import javax.swing.JComponent
  * Input (list): "stash@{0}: WIP on main: 1234567 Commit message" per line.
  * Input (push/pop/apply/drop): single-line result message.
  */
-internal object GitStashRenderer : ToolResultRenderer {
+object GitStashRenderer : ToolResultRenderer {
 
     private val STASH_LINE = Regex("""^stash@\{(\d+)}:\s*(.*?)(?::\s+([0-9a-f]+)\s+(.*))?$""")
 

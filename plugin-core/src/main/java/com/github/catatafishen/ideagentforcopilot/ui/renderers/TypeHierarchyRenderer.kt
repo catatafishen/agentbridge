@@ -11,7 +11,7 @@ import javax.swing.JComponent
  * Renders get_type_hierarchy output as a visual class hierarchy with
  * supertypes above and subtypes below the queried type.
  */
-internal object TypeHierarchyRenderer : ToolResultRenderer {
+object TypeHierarchyRenderer : ToolResultRenderer {
 
     private val HEADER = Regex("""^Type hierarchy for:\s+(.+?)\s+\((class|interface)\)""")
     private val SECTION_HEADER = Regex("""^(Supertypes|Subtypes|Implementations):""")

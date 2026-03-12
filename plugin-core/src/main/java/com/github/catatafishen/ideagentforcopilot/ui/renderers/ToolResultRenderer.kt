@@ -22,7 +22,7 @@ import javax.swing.JPanel
  * Interface for custom tool-result renderers in the tool-call popup.
  * Each implementation transforms raw tool output text into a Swing component.
  */
-internal fun interface ToolResultRenderer {
+fun interface ToolResultRenderer {
     /**
      * Render tool output as a Swing component, or return null to fall back
      * to a default monospace text area.
@@ -34,12 +34,12 @@ internal fun interface ToolResultRenderer {
  * Extended renderer that can access the tool's JSON arguments for richer
  * rendering (e.g. showing a diff of old_str → new_str for write operations).
  */
-internal interface ArgumentAwareRenderer : ToolResultRenderer {
+interface ArgumentAwareRenderer : ToolResultRenderer {
     fun render(output: String, arguments: String?): JComponent?
     override fun render(output: String): JComponent? = render(output, null)
 }
 
-internal object ToolIcons {
+object ToolIcons {
     val SUCCESS: Icon = AllIcons.RunConfigurations.TestPassed
     val FAILURE: Icon = AllIcons.RunConfigurations.TestFailed
     val WARNING: Icon = AllIcons.General.Warning
@@ -53,119 +53,24 @@ internal object ToolIcons {
     val TAG: Icon = AllIcons.General.Pin_tab
 }
 
-internal object ToolRenderers {
+object ToolRenderers {
 
-    private val registry: Map<String, ToolResultRenderer> = mapOf(
-        // Git
-        "git_commit" to GitCommitRenderer,
-        "git_status" to GitStatusRenderer,
-        "git_diff" to GitDiffRenderer,
-        "git_log" to GitLogRenderer,
-        "git_show" to GitShowRenderer,
-        "git_blame" to GitBlameRenderer,
-        "git_branch" to GitBranchRenderer,
-        "git_tag" to GitTagRenderer,
-        "git_stash" to GitStashRenderer,
-        "git_stage" to GitStageRenderer,
-        "git_unstage" to GitOperationRenderer,
-        "git_push" to GitOperationRenderer,
-        "git_pull" to GitOperationRenderer,
-        "git_fetch" to GitOperationRenderer,
-        "git_merge" to GitOperationRenderer,
-        "git_rebase" to GitOperationRenderer,
-        "git_cherry_pick" to GitOperationRenderer,
-        "git_reset" to GitOperationRenderer,
-        "git_revert" to GitOperationRenderer,
-        "git_remote" to GitOperationRenderer,
-        // Build & test
-        "build_project" to BuildResultRenderer,
-        "run_tests" to TestResultRenderer,
-        "list_tests" to ListTestsRenderer,
-        "list_run_configurations" to RunConfigRenderer,
-        "get_coverage" to CoverageRenderer,
-        // Run configuration CRUD
-        "create_run_configuration" to RunConfigCrudRenderer,
-        "edit_run_configuration" to RunConfigCrudRenderer,
-        "delete_run_configuration" to RunConfigCrudRenderer,
-        "run_configuration" to RunConfigCrudRenderer,
-        // Code quality
-        "run_inspections" to InspectionResultRenderer,
-        "get_compilation_errors" to InspectionResultRenderer,
-        "get_highlights" to InspectionResultRenderer,
-        "get_problems" to InspectionResultRenderer,
-        "run_qodana" to InspectionResultRenderer,
-        "run_sonarqube_analysis" to InspectionResultRenderer,
-        // Search & navigation
-        "search_text" to SearchResultRenderer,
-        "search_symbols" to SearchResultRenderer,
-        "find_references" to SearchResultRenderer,
-        "get_file_outline" to FileOutlineRenderer,
-        "get_class_outline" to ClassOutlineRenderer,
-        // Navigation
-        "go_to_declaration" to GoToDeclarationRenderer,
-        "get_type_hierarchy" to TypeHierarchyRenderer,
-        // Refactoring
-        "refactor" to RefactorRenderer,
-        // Project & files
-        "list_project_files" to ListProjectFilesRenderer,
-        "glob" to GlobRenderer,
-        "get_project_info" to ProjectInfoRenderer,
-        // Infrastructure
-        "run_command" to RunCommandRenderer,
-        // HTTP
-        "http_request" to HttpRequestRenderer,
-        // File I/O
-        "intellij_read_file" to ReadFileRenderer,
-        "read_file" to ReadFileRenderer,
-        "intellij_write_file" to WriteFileRenderer,
-        "write_file" to WriteFileRenderer,
-        "create_file" to WriteFileRenderer,
-        "edit_text" to WriteFileRenderer,
-        // Symbol editing
-        "replace_symbol_body" to ReplaceSymbolRenderer,
-        "insert_before_symbol" to ReplaceSymbolRenderer,
-        "insert_after_symbol" to ReplaceSymbolRenderer,
-        // Simple status operations
-        "delete_file" to SimpleStatusRenderer,
-        "undo" to SimpleStatusRenderer,
-        "format_code" to SimpleStatusRenderer,
-        "optimize_imports" to SimpleStatusRenderer,
-        "add_to_dictionary" to SimpleStatusRenderer,
-        "suppress_inspection" to SimpleStatusRenderer,
-        "open_in_editor" to SimpleStatusRenderer,
-        "set_theme" to SimpleStatusRenderer,
-        "mark_directory" to SimpleStatusRenderer,
-        "download_sources" to SimpleStatusRenderer,
-        "reload_from_disk" to SimpleStatusRenderer,
-        "apply_quickfix" to SimpleStatusRenderer,
-        // Terminal & run output
-        "read_run_output" to TerminalOutputRenderer,
-        "run_in_terminal" to TerminalOutputRenderer,
-        "read_terminal_output" to TerminalOutputRenderer,
-        "write_terminal_input" to TerminalOutputRenderer,
-        // Scratch files
-        "create_scratch_file" to ScratchFileRenderer,
-        "run_scratch_file" to ScratchFileRenderer,
-        // IDE info
-        "get_active_file" to IdeInfoRenderer,
-        "get_open_editors" to IdeInfoRenderer,
-        "get_indexing_status" to IdeInfoRenderer,
-        "get_notifications" to IdeInfoRenderer,
-        "list_themes" to IdeInfoRenderer,
-        "list_scratch_files" to IdeInfoRenderer,
-        "get_documentation" to IdeInfoRenderer,
-        "read_ide_log" to IdeInfoRenderer,
-        "show_diff" to IdeInfoRenderer,
-        "edit_project_structure" to IdeInfoRenderer,
-        "get_chat_html" to IdeInfoRenderer,
-        "search_conversation_history" to IdeInfoRenderer,
-        // Agent meta
-        "update_todo" to TodoRenderer,
-    )
+    /**
+     * Resolves a renderer for a tool by looking up its definition in the registry.
+     * Falls back to null if the tool has no custom renderer.
+     */
+    fun get(toolName: String, registry: com.github.catatafishen.ideagentforcopilot.services.ToolRegistry?): ToolResultRenderer? {
+        val def = registry?.findById(toolName) ?: return null
+        return def.resultRenderer() as? ToolResultRenderer
+    }
 
-    fun get(toolName: String): ToolResultRenderer? = registry[toolName]
-
-    fun hasRenderer(toolName: String): Boolean = toolName in registry
+    /**
+     * Checks whether a tool has a custom renderer via its definition.
+     */
+    fun hasRenderer(toolName: String, registry: com.github.catatafishen.ideagentforcopilot.services.ToolRegistry?): Boolean {
+        val def = registry?.findById(toolName) ?: return false
+        return def.resultRenderer() != null
+    }
 
     // ── Semantic colors — shared across all renderers ────────
 

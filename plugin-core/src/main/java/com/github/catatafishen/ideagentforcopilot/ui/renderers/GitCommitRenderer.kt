@@ -11,7 +11,7 @@ import javax.swing.JComponent
  * Renders a git commit result as a card with commit metadata,
  * message, changed files with stats.
  */
-internal object GitCommitRenderer : ToolResultRenderer {
+object GitCommitRenderer : ToolResultRenderer {
 
     private val HEADER_PATTERN = Regex("""\[(\S+)\s+([a-f0-9]+)]\s+(.+)""")
     private val SUMMARY_PATTERN = Regex("""\d+ files? changed.*""")

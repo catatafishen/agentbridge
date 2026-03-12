@@ -81,6 +81,7 @@ public final class PsiBridgeService implements Disposable {
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure.InfrastructureToolFactory.create(project, infraTools));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.terminal.TerminalToolFactory.create(project, terminalTools));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editor.EditorToolFactory.create(project, editorTools));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.builtin.BuiltInToolFactory.create(project));
         registry.registerAll(allTools);
     }
 
@@ -221,7 +222,7 @@ public final class PsiBridgeService implements Disposable {
         String reqId = java.util.UUID.randomUUID().toString();
 
         // Build a structured context JSON for the permission bubble: {question, args}
-        String resolvedQuestion = registry.resolvePermissionQuestion(toolName, arguments);
+        String resolvedQuestion = entry != null ? entry.resolvePermissionQuestion(arguments) : null;
         com.google.gson.JsonObject context = new com.google.gson.JsonObject();
         context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
             : "Can I use " + displayName + "?");

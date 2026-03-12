@@ -9,7 +9,7 @@ import javax.swing.JComponent
 /**
  * Renders list_tests output as grouped test classes with method counts.
  */
-internal object ListTestsRenderer : ToolResultRenderer {
+object ListTestsRenderer : ToolResultRenderer {
 
     private val ENTRY_PATTERN = Regex("""^(\S+)\.(\S+)\s+\((.+?):(\d+)\)$""")
     private val COUNT_HEADER = Regex("""^(\d+)\s+tests?:""")

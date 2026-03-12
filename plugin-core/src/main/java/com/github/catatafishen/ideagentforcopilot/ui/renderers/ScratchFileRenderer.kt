@@ -8,7 +8,7 @@ import javax.swing.JComponent
 /**
  * Renders scratch file operation results (create, run).
  */
-internal object ScratchFileRenderer : ToolResultRenderer {
+object ScratchFileRenderer : ToolResultRenderer {
 
     private val CREATED = Regex("""^Created scratch file:\s*(.+)""")
     private val EXIT_CODE = Regex("""Exit code:\s*(\d+)""")

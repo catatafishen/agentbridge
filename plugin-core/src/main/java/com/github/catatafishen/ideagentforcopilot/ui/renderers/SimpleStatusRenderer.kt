@@ -13,7 +13,7 @@ import javax.swing.JComponent
  * add_to_dictionary, suppress_inspection, open_in_editor, set_theme,
  * mark_directory, download_sources, reload_from_disk.
  */
-internal object SimpleStatusRenderer : ToolResultRenderer {
+object SimpleStatusRenderer : ToolResultRenderer {
 
     private val DELETE_FILE = Regex("""^Deleted file:\s+(.+)""")
     private val UNDO = Regex("""^Undid (\d+) action\(s\) on (.+?):\s*(.*)""")

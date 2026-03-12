@@ -10,7 +10,7 @@ import javax.swing.JComponent
  * Renders refactor results (rename, safe_delete, extract_method, inline)
  * as a status card with the operation summary and affected files.
  */
-internal object RefactorRenderer : ToolResultRenderer {
+object RefactorRenderer : ToolResultRenderer {
 
     private val RENAME = Regex("""^Renamed '(.+)' to '(.+)'""")
     private val DELETE_OK = Regex("""^Safely deleted '(.+)'""")

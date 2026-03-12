@@ -9,7 +9,7 @@ import javax.swing.JComponent
  * Renderer for get_coverage output.
  * Input: "ClassName: 85.2% covered (42 / 49 lines)" per line.
  */
-internal object CoverageRenderer : ToolResultRenderer {
+object CoverageRenderer : ToolResultRenderer {
 
     private val COVERAGE_LINE = Regex("""^(.+?):\s+([\d.]+)%\s+covered\s+\((\d+)\s*/\s*(\d+)\s+lines\)""")
 

@@ -10,7 +10,7 @@ import javax.swing.JComponent
  * Renderer for http_request output.
  * Input: "HTTP {code} {message}\n\n--- Headers ---\n...\n\n--- Body ---\n..."
  */
-internal object HttpRequestRenderer : ToolResultRenderer {
+object HttpRequestRenderer : ToolResultRenderer {
 
     private val STATUS_LINE = Regex("""^HTTP\s+(\d+)\s+(.*)""")
     private const val MAX_BODY_LINES = 100

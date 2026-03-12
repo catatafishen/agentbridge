@@ -13,7 +13,7 @@ import javax.swing.JComponent
  * Parses markdown checkbox syntax and renders each item with status
  * icons and a progress summary header.
  */
-internal object TodoRenderer : ArgumentAwareRenderer {
+object TodoRenderer : ArgumentAwareRenderer {
 
     private val CHECKBOX_LINE = Regex("""^-\s+\[([ xX])]\s+(.+)$""")
     private val HEADER_LINE = Regex("""^#{1,4}\s+(.+)$""")

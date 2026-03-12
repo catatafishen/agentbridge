@@ -9,7 +9,7 @@ import javax.swing.JComponent
  * Renderer for list_run_configurations output.
  * Input: "N run configurations:\nName [Type][ (temporary)]"
  */
-internal object RunConfigRenderer : ToolResultRenderer {
+object RunConfigRenderer : ToolResultRenderer {
 
     private val CONFIG_LINE = Regex("""^(.+?)\s+\[(.+?)](.*)$""")
     private val HEADER = Regex("""^(\d+)\s+run\s+configurations?:""")

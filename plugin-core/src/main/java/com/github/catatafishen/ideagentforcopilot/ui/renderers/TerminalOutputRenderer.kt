@@ -13,7 +13,7 @@ import javax.swing.JComponent
  * Handles: read_run_output, run_in_terminal, read_terminal_output,
  * write_terminal_input.
  */
-internal object TerminalOutputRenderer : ToolResultRenderer {
+object TerminalOutputRenderer : ToolResultRenderer {
 
     private val TAB_HEADER = Regex("""^Tab:\s*(.+)""")
     private val TOTAL_LENGTH = Regex("""^Total length:\s*(\d+)\s*chars""")

@@ -8,7 +8,7 @@ import javax.swing.JComponent
  * Renders unified diff output with syntax-highlighted additions/deletions,
  * file headers, and hunk markers. Also handles stat-only output.
  */
-internal object GitDiffRenderer : ToolResultRenderer {
+object GitDiffRenderer : ToolResultRenderer {
 
     private val STAT_SUMMARY = Regex("""\s*\d+ files? changed.*""")
     private val STAT_FILE = Regex("""^\s*(.+?)\s*\|\s*(\d+)\s*([+\-]*)\s*$""")

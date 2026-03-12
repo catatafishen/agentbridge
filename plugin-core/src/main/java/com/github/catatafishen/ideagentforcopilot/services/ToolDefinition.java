@@ -115,6 +115,43 @@ public interface ToolDefinition {
         return null;
     }
 
+    /**
+     * Resolves a human-readable permission question for this tool with the given arguments.
+     * Substitutes {@code {paramName}} placeholders in {@link #permissionTemplate()} with
+     * the corresponding argument values.
+     */
+    default @Nullable String resolvePermissionQuestion(@Nullable JsonObject args) {
+        String template = permissionTemplate();
+        if (template == null) return null;
+        if (args == null) return PermissionTemplateUtil.stripPlaceholders(template);
+        String q = PermissionTemplateUtil.substituteArgs(template, args);
+        return PermissionTemplateUtil.stripPlaceholders(q);
+    }
+
+    // ── MCP Annotations ────────────────────────────────────────
+
+    /**
+     * Returns MCP tool annotations built from this tool's metadata.
+     */
+    default @NotNull JsonObject mcpAnnotations() {
+        JsonObject ann = new JsonObject();
+        ann.addProperty("title", displayName());
+        ann.addProperty("readOnlyHint", isReadOnly());
+        ann.addProperty("destructiveHint", isDestructive());
+        ann.addProperty("openWorldHint", isOpenWorld());
+        return ann;
+    }
+
+    // ── Renderer (optional — for custom tool-result rendering in popups) ──
+
+    /**
+     * Returns a custom result renderer for this tool's output in tool-call popups.
+     * Returns null to use the default monospace text fallback.
+     */
+    default @Nullable Object resultRenderer() {
+        return null;
+    }
+
     // ── Execution (optional — null for built-in agent tools) ─
 
     /**

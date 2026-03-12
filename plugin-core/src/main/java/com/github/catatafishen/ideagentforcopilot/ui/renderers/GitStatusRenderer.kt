@@ -11,7 +11,7 @@ import javax.swing.JComponent
  * Renders git status output as a structured card with branch header,
  * staged/unstaged/untracked sections, and colored file badges.
  */
-internal object GitStatusRenderer : ToolResultRenderer {
+object GitStatusRenderer : ToolResultRenderer {
 
     private data class StatusFiles(
         val staged: List<Pair<Char, String>>,

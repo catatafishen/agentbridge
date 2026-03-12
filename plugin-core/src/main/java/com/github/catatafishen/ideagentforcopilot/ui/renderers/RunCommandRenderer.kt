@@ -9,7 +9,7 @@ import javax.swing.JComponent
  * Renders run_command output with a status header (success/fail),
  * exit code, and the command output in a monospace block.
  */
-internal object RunCommandRenderer : ToolResultRenderer {
+object RunCommandRenderer : ToolResultRenderer {
 
     private val SUCCESS_HEADER = Regex("""^Command succeeded""")
     private val FAIL_HEADER = Regex("""^Command failed\s*\(exit code (\d+)\)""")

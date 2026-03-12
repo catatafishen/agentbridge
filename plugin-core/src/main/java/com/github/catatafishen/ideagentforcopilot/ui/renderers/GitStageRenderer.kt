@@ -16,7 +16,7 @@ import javax.swing.JComponent
  * - `✓ Nothing to stage`
  * - Error output (fallback)
  */
-internal object GitStageRenderer : ToolResultRenderer {
+object GitStageRenderer : ToolResultRenderer {
 
     private val SUCCESS_PATTERN = Regex("""^✓\s+(.+)""")
 
