@@ -16,10 +16,32 @@ public final class DownloadSourcesTool extends ProjectTool {
         super(project, projectTools);
     }
 
-    @Override public @NotNull String id() { return "download_sources"; }
-    @Override public @NotNull String displayName() { return "Download Sources"; }
-    @Override public @NotNull String description() { return "Download library sources to enable source navigation and debugging"; }
-    @Override public boolean isReadOnly() { return true; }
+    @Override
+    public @NotNull String id() {
+        return "download_sources";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Download Sources";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Download library sources to enable source navigation and debugging";
+    }
+
+    @Override
+    public boolean isReadOnly() {
+        return true;
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"library", TYPE_STRING, "Optional library name filter (e.g. 'junit')"}
+        });
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

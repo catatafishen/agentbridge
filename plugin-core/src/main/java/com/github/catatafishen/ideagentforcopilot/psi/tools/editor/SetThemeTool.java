@@ -16,10 +16,32 @@ public final class SetThemeTool extends EditorTool {
         super(project, editorTools);
     }
 
-    @Override public @NotNull String id() { return "set_theme"; }
-    @Override public @NotNull String displayName() { return "Set Theme"; }
-    @Override public @NotNull String description() { return "Change the IDE theme by name (e.g., 'Darcula', 'Light')"; }
-    @Override public @NotNull String permissionTemplate() { return "Set theme: {theme}"; }
+    @Override
+    public @NotNull String id() {
+        return "set_theme";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Set Theme";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Change the IDE theme by name (e.g., 'Darcula', 'Light')";
+    }
+
+    @Override
+    public @NotNull String permissionTemplate() {
+        return "Set theme: {theme}";
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"theme", TYPE_STRING, "Theme name or partial name (e.g., 'Darcula', 'Light')"}
+        }, "theme");
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

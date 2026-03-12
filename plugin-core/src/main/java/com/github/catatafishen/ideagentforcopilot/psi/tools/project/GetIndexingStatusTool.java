@@ -16,10 +16,33 @@ public final class GetIndexingStatusTool extends ProjectTool {
         super(project, projectTools);
     }
 
-    @Override public @NotNull String id() { return "get_indexing_status"; }
-    @Override public @NotNull String displayName() { return "Get Indexing Status"; }
-    @Override public @NotNull String description() { return "Check whether IntelliJ indexing is in progress; optionally wait until it finishes"; }
-    @Override public boolean isReadOnly() { return true; }
+    @Override
+    public @NotNull String id() {
+        return "get_indexing_status";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Get Indexing Status";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Check whether IntelliJ indexing is in progress; optionally wait until it finishes";
+    }
+
+    @Override
+    public boolean isReadOnly() {
+        return true;
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"wait", TYPE_BOOLEAN, "If true, blocks until indexing finishes"},
+            {"timeout", TYPE_INTEGER, "Max seconds to wait when wait=true (default: 30)"}
+        });
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

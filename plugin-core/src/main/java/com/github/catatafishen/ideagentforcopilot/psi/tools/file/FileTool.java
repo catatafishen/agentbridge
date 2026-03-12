@@ -2,7 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
 import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
-import com.github.catatafishen.ideagentforcopilot.psi.tools.ToolCategory;
+import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
@@ -20,7 +20,7 @@ public abstract class FileTool extends Tool {
     }
 
     @Override
-    public @NotNull ToolCategory toolCategory() {
-        return ToolCategory.FILE;
+    public @NotNull ToolRegistry.Category category() {
+        return ToolRegistry.Category.FILE;
     }
 }

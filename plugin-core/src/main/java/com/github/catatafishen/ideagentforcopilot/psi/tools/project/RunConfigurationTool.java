@@ -20,10 +20,32 @@ public final class RunConfigurationTool extends ProjectTool {
         this.runConfigService = runConfigService;
     }
 
-    @Override public @NotNull String id() { return "run_configuration"; }
-    @Override public @NotNull String displayName() { return "Run Configuration"; }
-    @Override public @NotNull String description() { return "Execute an existing run configuration by name"; }
-    @Override public @NotNull String permissionTemplate() { return "Run: {name}"; }
+    @Override
+    public @NotNull String id() {
+        return "run_configuration";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Run Configuration";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Execute an existing run configuration by name";
+    }
+
+    @Override
+    public @NotNull String permissionTemplate() {
+        return "Run: {name}";
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"name", TYPE_STRING, "Exact name of the run configuration"}
+        }, "name");
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

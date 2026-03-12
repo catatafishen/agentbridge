@@ -16,10 +16,33 @@ public final class ReadTerminalOutputTool extends TerminalTool {
         super(project, terminalTools);
     }
 
-    @Override public @NotNull String id() { return "read_terminal_output"; }
-    @Override public @NotNull String displayName() { return "Read Terminal Output"; }
-    @Override public @NotNull String description() { return "Read output from an integrated terminal tab"; }
-    @Override public boolean isReadOnly() { return true; }
+    @Override
+    public @NotNull String id() {
+        return "read_terminal_output";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Read Terminal Output";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Read output from an integrated terminal tab";
+    }
+
+    @Override
+    public boolean isReadOnly() {
+        return true;
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"tab_name", TYPE_STRING, "Name of the terminal tab to read from"},
+            {"max_lines", TYPE_INTEGER, "Maximum number of lines to return from the end of the terminal buffer (default: 50). Use 0 for the full buffer."}
+        });
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

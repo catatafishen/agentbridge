@@ -16,9 +16,28 @@ public final class CreateScratchFileTool extends EditorTool {
         super(project, editorTools);
     }
 
-    @Override public @NotNull String id() { return "create_scratch_file"; }
-    @Override public @NotNull String displayName() { return "Create Scratch File"; }
-    @Override public @NotNull String description() { return "Create a temporary scratch file with the given name and content"; }
+    @Override
+    public @NotNull String id() {
+        return "create_scratch_file";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Create Scratch File";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Create a temporary scratch file with the given name and content";
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.py', 'notes.md')"},
+            {"content", TYPE_STRING, "The content to write to the scratch file"}
+        }, "name", "content");
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

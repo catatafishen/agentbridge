@@ -2,7 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.editor;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EditorTools;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
-import com.github.catatafishen.ideagentforcopilot.psi.tools.ToolCategory;
+import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
@@ -20,7 +20,7 @@ public abstract class EditorTool extends Tool {
     }
 
     @Override
-    public @NotNull ToolCategory toolCategory() {
-        return ToolCategory.EDITOR;
+    public @NotNull ToolRegistry.Category category() {
+        return ToolRegistry.Category.EDITOR;
     }
 }

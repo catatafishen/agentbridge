@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import com.intellij.execution.RunContentExecutor;
 import com.intellij.execution.process.OSProcessHandler;
@@ -34,16 +33,7 @@ public abstract class Tool implements ToolDefinition {
         this.project = project;
     }
 
-    /**
-     * The tool's functional category. Subclasses override this.
-     * Mapped to the legacy {@link ToolRegistry.Category} via {@link #category()}.
-     */
-    public abstract @NotNull ToolCategory toolCategory();
-
-    @Override
-    public @NotNull ToolRegistry.Category category() {
-        return mapCategory(toolCategory());
-    }
+    // category() is inherited from ToolDefinition — subclasses must implement it
 
     @Override
     public @Nullable JsonObject inputSchema() {
@@ -101,7 +91,7 @@ public abstract class Tool implements ToolDefinition {
         com.google.gson.JsonObject prop = new com.google.gson.JsonObject();
         prop.addProperty(KEY_TYPE, "object");
         prop.addProperty(KEY_DESCRIPTION, description);
-        prop.add("properties", new com.google.gson.JsonObject());
+        prop.add(KEY_PROPERTIES, new com.google.gson.JsonObject());
         com.google.gson.JsonObject additionalProps = new com.google.gson.JsonObject();
         additionalProps.addProperty(KEY_TYPE, TYPE_STRING);
         prop.add("additionalProperties", additionalProps);
@@ -160,21 +150,4 @@ public abstract class Tool implements ToolDefinition {
         }
     }
 
-    // ── Category mapping ─────────────────────────────────────
-
-    private static ToolRegistry.Category mapCategory(ToolCategory cat) {
-        return switch (cat) {
-            case FILE -> ToolRegistry.Category.FILE;
-            case GIT -> ToolRegistry.Category.GIT;
-            case NAVIGATION -> ToolRegistry.Category.SEARCH;
-            case QUALITY -> ToolRegistry.Category.CODE_QUALITY;
-            case REFACTORING, EDITING -> ToolRegistry.Category.REFACTOR;
-            case TESTING -> ToolRegistry.Category.TESTING;
-            case PROJECT -> ToolRegistry.Category.PROJECT;
-            case INFRASTRUCTURE -> ToolRegistry.Category.INFRASTRUCTURE;
-            case TERMINAL -> ToolRegistry.Category.TERMINAL;
-            case EDITOR -> ToolRegistry.Category.EDITOR;
-            case OTHER -> ToolRegistry.Category.OTHER;
-        };
-    }
 }

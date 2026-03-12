@@ -30,12 +30,22 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
     @Override
     public @NotNull String description() {
         return "Replace the entire definition of a symbol (method, class, field) by name -- no line numbers needed. "
-                + "Auto-formats and optimizes imports immediately on every call";
+            + "Auto-formats and optimizes imports immediately on every call";
     }
 
     @Override
     public @NotNull String permissionTemplate() {
         return "Replace {symbol} in {file}";
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
+            {"symbol", TYPE_STRING, "Name of the symbol to replace (method, class, function, or field)"},
+            {"new_body", TYPE_STRING, "The complete new definition to replace the symbol with"},
+            {"line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name"}
+        }, "file", "symbol", "new_body");
     }
 
     @Override
