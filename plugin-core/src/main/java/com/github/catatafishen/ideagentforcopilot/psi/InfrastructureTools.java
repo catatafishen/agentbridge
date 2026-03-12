@@ -1,9 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
-import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.application.ApplicationManager;
@@ -48,29 +44,8 @@ public final class InfrastructureTools extends AbstractToolHandler {
     private static final String IDEA_LOG_FILENAME = "idea.log";
     private static final String METHOD_GET_CONSOLE = "getConsole";
 
-    private final List<ToolDefinition> definitions;
-
     InfrastructureTools(Project project) {
         super(project);
-
-        definitions = List.of(
-            infra("http_request", "HTTP Request", "Make an HTTP request (GET/POST/PUT/PATCH/DELETE) to a URL", this::httpRequest)
-                .openWorld().permissionTemplate("{method} {url}").build(),
-            infra("run_command", "Run Command", "Run a shell command with paginated output", this::runCommand)
-                .openWorld().permissionTemplate("Run: {command}").build(),
-            infra("read_ide_log", "Read IDE Log", "Read recent IntelliJ IDE log entries, optionally filtered by level or text", this::readIdeLog)
-                .readOnly().build(),
-            infra("get_notifications", "Get Notifications", "Get recent IntelliJ balloon notifications", this::getNotifications)
-                .readOnly().build(),
-            infra("read_run_output", "Read Run Output", "Read output from a recent Run panel tab by name", this::readRunOutput)
-                .readOnly().build(),
-            infra("read_build_output", "Read Build Output", "Read output from a tab in the Build tool window", this::readBuildOutput)
-                .readOnly().build()
-        );
-
-        for (ToolDefinition def : definitions) {
-            register(def.id(), def::execute);
-        }
     }
 
     public String httpRequest(JsonObject args) throws Exception {
@@ -784,18 +759,5 @@ public final class InfrastructureTools extends AbstractToolHandler {
         }
         return System.getenv(JAVA_HOME_ENV);
     }
-
-    @Override
-    List<ToolDefinition> getDefinitions() {
-        return definitions;
-    }
-
-    private static ToolBuilder infra(String id, String displayName, String description,
-                                     ToolHandler handler) {
-        return ToolBuilder.create(id, displayName, description, Category.INFRASTRUCTURE)
-            .schema(ToolSchemas.getInputSchema(id))
-            .handler(handler);
-    }
-
 }
 

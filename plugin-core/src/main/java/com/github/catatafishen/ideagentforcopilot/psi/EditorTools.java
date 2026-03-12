@@ -1,9 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
-import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -39,51 +35,10 @@ public class EditorTools extends AbstractToolHandler {
     private static final String DIFF_LABEL_CURRENT = "Current";
     private static final String JSON_TITLE = "title";
 
-    private final List<ToolDefinition> definitions;
-
     EditorTools(Project project) {
         super(project);
-        definitions = List.of(
-            editor("open_in_editor", "Open in Editor", "Open a file in the editor, optionally navigating to a specific line", this::openInEditor)
-                .readOnly().build(),
-            editor("show_diff", "Show Diff", "Show a diff viewer comparing a file to proposed content or another file", this::showDiff)
-                .readOnly().build(),
-            editor("create_scratch_file", "Create Scratch File", "Create a temporary scratch file with the given name and content", this::createScratchFile)
-                .build(),
-            editor("list_scratch_files", "List Scratch Files", "List existing scratch files in the IDE scratch directory", this::listScratchFiles)
-                .readOnly().build(),
-            editor("run_scratch_file", "Run Scratch File", "Run a scratch file using an appropriate run configuration", this::runScratchFile)
-                .build(),
-            editor("get_chat_html", "Get Chat HTML", "Get the path and content of the currently active chat HTML", this::getChatHtml)
-                .readOnly().build(),
-            editor("get_active_file", "Get Active File", "Get the path and content of the currently active editor file", this::getActiveFile)
-                .readOnly().build(),
-            editor("get_open_editors", "Get Open Editors", "List all currently open editor tabs", this::getOpenEditors)
-                .readOnly().build(),
-            editor("list_themes", "List Themes", "List all available IDE themes with their dark/light type", this::listThemes)
-                .readOnly().build(),
-            editor("set_theme", "Set Theme", "Change the IDE theme by name", this::setTheme)
-                .permissionTemplate("Set theme: {theme}").build(),
-            editor("search_conversation_history", "Search Conversation History", "List, read, and search past conversation sessions from the chat history", this::searchConversationHistory)
-                .readOnly().build()
-        );
-
-        for (ToolDefinition def : definitions) {
-            register(def.id(), def::execute);
-        }
     }
 
-    @Override
-    List<ToolDefinition> getDefinitions() {
-        return definitions;
-    }
-
-    private static ToolBuilder editor(String id, String displayName, String description,
-                                      ToolHandler handler) {
-        return ToolBuilder.create(id, displayName, description, Category.EDITOR)
-            .schema(ToolSchemas.getInputSchema(id))
-            .handler(handler);
-    }
 
     public String openInEditor(JsonObject args) throws Exception {
         if (!args.has("file")) {

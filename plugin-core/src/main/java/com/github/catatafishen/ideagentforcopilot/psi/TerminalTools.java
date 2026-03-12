@@ -1,14 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
-import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -30,42 +25,10 @@ public final class TerminalTools extends AbstractToolHandler {
     private static final String TTY_CONNECTOR_CLASS = "com.jediterm.terminal.TtyConnector";
     private static final int DEFAULT_MAX_LINES = 50;
 
-    private final List<ToolDefinition> definitions;
-
     TerminalTools(Project project) {
         super(project);
-        if (isPluginInstalled("org.jetbrains.plugins.terminal")) {
-            definitions = List.of(
-                term("run_in_terminal", "Run in Terminal", "Run a command in IntelliJ's integrated terminal", this::runInTerminal)
-                    .openWorld().permissionTemplate("Run in terminal: {command}").build(),
-                term("write_terminal_input", "Write Terminal Input", "Send raw text or keystrokes to a running terminal", this::writeTerminalInput)
-                    .openWorld().build(),
-                term("read_terminal_output", "Read Terminal Output", "Read output from an integrated terminal tab", this::readTerminalOutput)
-                    .readOnly().build(),
-                term("list_terminals", "List Terminals", "List active terminal tabs", args -> listTerminals())
-                    .readOnly().build()
-            );
-
-            for (ToolDefinition def : definitions) {
-                register(def.id(), def::execute);
-            }
-            LOG.info("Terminal plugin detected — terminal tools registered");
-        } else {
-            definitions = Collections.emptyList();
-        }
     }
 
-    @Override
-    List<ToolDefinition> getDefinitions() {
-        return definitions;
-    }
-
-    private static ToolBuilder term(String id, String displayName, String description,
-                                    ToolHandler handler) {
-        return ToolBuilder.create(id, displayName, description, Category.TERMINAL)
-            .schema(ToolSchemas.getInputSchema(id))
-            .handler(handler);
-    }
 
     public String runInTerminal(JsonObject args) {
         String command = args.get("command").getAsString();

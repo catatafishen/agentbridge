@@ -1,9 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
-import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -46,8 +42,6 @@ public final class RefactoringTools extends AbstractToolHandler {
     private static final String GET_INSTANCE_METHOD = "getInstance";
     private static final String TEST_TYPE_CLASS = "class";
 
-    private final List<ToolDefinition> definitions;
-
     /**
      * Functional interface for class resolution, used by RunConfigurationService.
      */
@@ -62,31 +56,6 @@ public final class RefactoringTools extends AbstractToolHandler {
 
     RefactoringTools(Project project) {
         super(project);
-
-        boolean hasJava = isPluginInstalled("com.intellij.modules.java");
-        var defs = new ArrayList<ToolDefinition>();
-
-        defs.add(refact("refactor", "Refactor", "Rename, extract method, inline, or safe-delete a symbol", this::refactor)
-            .permissionTemplate("{operation} {symbol}").build());
-        defs.add(refact("go_to_declaration", "Go to Declaration", "Navigate to the declaration of a symbol", this::goToDeclaration)
-            .readOnly().build());
-        if (hasJava) {
-            defs.add(refact("get_type_hierarchy", "Get Type Hierarchy", "Show supertypes and/or subtypes of a class or interface", this::getTypeHierarchyWrapper)
-                .readOnly().build());
-            defs.add(refact("find_implementations", "Find Implementations", "Find all implementations of a class/interface or overrides of a method", this::findImplementationsWrapper)
-                .readOnly().build());
-            defs.add(refact("get_call_hierarchy", "Get Call Hierarchy", "Find all callers of a method", this::getCallHierarchyWrapper)
-                .readOnly().build());
-        }
-        defs.add(refact("get_documentation", "Get Documentation", "Get Javadoc or KDoc for a symbol", this::getDocumentation)
-            .readOnly().build());
-
-        definitions = List.copyOf(defs);
-
-        // Still register in legacy map for backward compatibility
-        for (ToolDefinition def : definitions) {
-            register(def.id(), def::execute);
-        }
     }
 
     // ---- Class Resolution ----
@@ -686,15 +655,4 @@ public final class RefactoringTools extends AbstractToolHandler {
         return "...(truncated)\n" + output.substring(output.length() - 8000);
     }
 
-    @Override
-    List<ToolDefinition> getDefinitions() {
-        return definitions;
-    }
-
-    private static ToolBuilder refact(String id, String displayName, String description,
-                                      ToolHandler handler) {
-        return ToolBuilder.create(id, displayName, description, Category.REFACTOR)
-            .schema(ToolSchemas.getInputSchema(id))
-            .handler(handler);
-    }
 }

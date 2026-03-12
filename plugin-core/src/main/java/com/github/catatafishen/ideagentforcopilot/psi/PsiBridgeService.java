@@ -17,7 +17,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
@@ -69,25 +68,7 @@ public final class PsiBridgeService implements Disposable {
         TerminalTools terminalTools = new TerminalTools(project);
         EditorTools editorTools = new EditorTools(project);
 
-        // Register all tools from handler groups (legacy handler map)
-        var handlerGroups = List.of(
-            navTools,
-            fileTools,
-            qualityTools,
-            refactoringTools,
-            editingTools,
-            testTools,
-            projectTools,
-            new GitTools(project, gitToolHandler),
-            infraTools,
-            terminalTools,
-            editorTools
-        );
-        for (AbstractToolHandler handler : handlerGroups) {
-            toolRegistry.putAll(handler.getTools());
-        }
-
-        // Register new OO-style individual tool classes
+        // Register OO-style individual tool classes (primary registration path)
         boolean hasJava = AbstractToolHandler.isPluginInstalled("com.intellij.modules.java");
         var allTools = new java.util.ArrayList<com.github.catatafishen.ideagentforcopilot.psi.tools.Tool>();
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler));
@@ -139,13 +120,13 @@ public final class PsiBridgeService implements Disposable {
     }
 
     public String callTool(String toolName, JsonObject arguments) {
-        // Check new-style ToolDefinition first, then legacy handler map
-        ToolHandler handler = toolRegistry.get(toolName);
-        if (handler == null) {
-            ToolDefinition def = ToolRegistry.findDefinition(toolName);
-            if (def != null && def.hasExecutionHandler()) {
-                handler = def::execute;
-            }
+        // Check new-style ToolDefinition first, then fall back to legacy handler map
+        ToolDefinition def = ToolRegistry.findDefinition(toolName);
+        ToolHandler handler;
+        if (def != null && def.hasExecutionHandler()) {
+            handler = def::execute;
+        } else {
+            handler = toolRegistry.get(toolName);
         }
         if (handler == null) {
             fireToolCallEvent(toolName, System.currentTimeMillis(), false);
@@ -432,13 +413,13 @@ public final class PsiBridgeService implements Disposable {
         try (DaemonWaiter activeWaiter = resolveActiveWaiter(preWriteWaiter, vf, path)) {
             activeWaiter.await();
 
-            ToolHandler highlightHandler = toolRegistry.get("get_highlights");
-            if (highlightHandler == null) return writeResult;
+            ToolDefinition highlightDef = ToolRegistry.findDefinition("get_highlights");
+            if (highlightDef == null || !highlightDef.hasExecutionHandler()) return writeResult;
 
             JsonObject highlightArgs = new JsonObject();
             highlightArgs.addProperty("path", path);
             highlightArgs.addProperty("include_unindexed", true);
-            String highlights = highlightHandler.handle(highlightArgs);
+            String highlights = highlightDef.execute(highlightArgs);
             LOG.info("Auto-highlights: appended " + highlights.split("\n").length + " lines for " + path);
 
             return writeResult + "\n\n--- Highlights (auto) ---\n" + highlights;

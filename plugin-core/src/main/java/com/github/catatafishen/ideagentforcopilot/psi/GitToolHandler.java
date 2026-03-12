@@ -15,7 +15,8 @@ import java.util.regex.Pattern;
 
 /**
  * Git infrastructure — process execution, VCS refresh, IDE follow-along helpers.
- * Individual git command implementations live in {@link GitCommands}.
+ * Individual git command implementations live in the OO tool classes under
+ * {@code com.github.catatafishen.ideagentforcopilot.psi.tools.git}.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 public final class GitToolHandler {
@@ -44,7 +45,7 @@ public final class GitToolHandler {
 
     /**
      * Convenience method: flush pending auto-format and save all documents to disk.
-     * Called by {@link GitCommands} before commands that need the working tree up-to-date.
+     * Called by git tool classes before commands that need the working tree up-to-date.
      */
     public void flushAndSave() {
         fileTools.flushPendingAutoFormat();

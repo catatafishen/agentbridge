@@ -1,9 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
-import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
@@ -41,27 +37,8 @@ public final class SymbolEditingTools extends AbstractToolHandler {
     private static final String FORMATTED_SUFFIX = " (formatted & imports optimized)";
     private static final String SYMBOL_PREFIX = "Symbol '";
 
-    private final List<ToolDefinition> definitions;
-
     SymbolEditingTools(Project project) {
         super(project);
-
-        definitions = List.of(
-            sym("replace_symbol_body", "Replace Symbol Body",
-                "Replace the entire definition of a symbol by name", this::replaceSymbolBody)
-                .permissionTemplate("Replace {symbol} in {file}").build(),
-            sym("insert_before_symbol", "Insert Before Symbol",
-                "Insert content before a symbol definition", this::insertBeforeSymbol)
-                .permissionTemplate("Insert before {symbol} in {file}").build(),
-            sym("insert_after_symbol", "Insert After Symbol",
-                "Insert content after a symbol definition", this::insertAfterSymbol)
-                .permissionTemplate("Insert after {symbol} in {file}").build()
-        );
-
-        // Still register in legacy map for backward compatibility
-        for (ToolDefinition def : definitions) {
-            register(def.id(), def::execute);
-        }
     }
 
     // ---- replace_symbol_body ----
@@ -421,15 +398,4 @@ public final class SymbolEditingTools extends AbstractToolHandler {
         return msg + available;
     }
 
-    @Override
-    List<ToolDefinition> getDefinitions() {
-        return definitions;
-    }
-
-    private static ToolBuilder sym(String id, String displayName, String description,
-                                   ToolHandler handler) {
-        return ToolBuilder.create(id, displayName, description, Category.REFACTOR)
-            .schema(ToolSchemas.getInputSchema(id))
-            .handler(handler);
-    }
 }

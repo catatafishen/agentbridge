@@ -1,9 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
-import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
@@ -36,8 +32,6 @@ import java.util.Set;
  */
 public final class CodeNavigationTools extends AbstractToolHandler {
 
-    private final List<ToolDefinition> definitions;
-
     private static final String ERROR_NO_PROJECT_PATH = "No project base path";
     private static final String PARAM_SYMBOL = "symbol";
     private static final String PARAM_FILE_PATTERN = "file_pattern";
@@ -47,22 +41,6 @@ public final class CodeNavigationTools extends AbstractToolHandler {
 
     CodeNavigationTools(Project project) {
         super(project);
-
-        var defs = new ArrayList<ToolDefinition>();
-        defs.add(nav("search_symbols", "Search Symbols", "Search for classes, methods, or fields by name", this::searchSymbols).build());
-        defs.add(nav("get_file_outline", "Get File Outline", "Get the structure of a file", this::getFileOutline).build());
-        if (isPluginInstalled("com.intellij.modules.java")) {
-            defs.add(nav("get_class_outline", "Get Class Outline", "Get the full API of any class by fully-qualified name", this::getClassOutline).build());
-        }
-        defs.add(nav("find_references", "Find References", "Find all usages of a symbol throughout the project", this::findReferences).build());
-        defs.add(nav("list_project_files", "List Project Files", "List files in a project directory", this::listProjectFiles).build());
-        defs.add(nav("search_text", "Search Text", "Search for text or regex patterns across project files", this::searchText).build());
-        definitions = List.copyOf(defs);
-
-        // Still register in legacy map for backward compatibility
-        for (ToolDefinition def : definitions) {
-            register(def.id(), def::execute);
-        }
     }
 
     // ---- list_project_files ----
@@ -512,16 +490,4 @@ public final class CodeNavigationTools extends AbstractToolHandler {
         }
     }
 
-    @Override
-    List<ToolDefinition> getDefinitions() {
-        return definitions;
-    }
-
-    private static ToolBuilder nav(String id, String displayName, String description,
-                                   ToolHandler handler) {
-        return ToolBuilder.create(id, displayName, description, Category.SEARCH)
-            .schema(ToolSchemas.getInputSchema(id))
-            .handler(handler)
-            .readOnly();
-    }
 }

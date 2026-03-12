@@ -3,24 +3,16 @@ package com.github.catatafishen.ideagentforcopilot.psi;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
-
 /**
- * Base class for tool handler groups. Each subclass registers its tools
- * in the constructor via {@link #register(String, ToolHandler)}.
+ * Base class for tool handler groups. Provides shared utilities
+ * (plugin detection, file resolution, run panel execution).
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 abstract class AbstractToolHandler {
     protected final Project project;
-    private final Map<String, ToolHandler> tools = new LinkedHashMap<>();
 
     protected AbstractToolHandler(Project project) {
         this.project = project;
-    }
-
-    protected final void register(String name, ToolHandler handler) {
-        tools.put(name, handler);
     }
 
     /**
@@ -29,44 +21,6 @@ abstract class AbstractToolHandler {
      */
     protected static boolean isPluginInstalled(String pluginId) {
         return PlatformApiCompat.isPluginInstalled(pluginId);
-    }
-
-    /**
-     * Returns the tool registry for this handler group.
-     */
-    Map<String, ToolHandler> getTools() {
-        return tools;
-    }
-
-    /**
-     * Returns tool definitions for this handler group using the new
-     * {@link com.github.catatafishen.ideagentforcopilot.services.ToolDefinition} interface.
-     * <p>
-     * Subclasses should override this to provide full metadata (schema, category,
-     * permission template, flags). The default wraps each registered handler as
-     * a minimal definition looked up from the legacy
-     * {@link com.github.catatafishen.ideagentforcopilot.services.ToolRegistry}.
-     */
-    java.util.List<com.github.catatafishen.ideagentforcopilot.services.ToolDefinition> getDefinitions() {
-        var defs = new java.util.ArrayList<com.github.catatafishen.ideagentforcopilot.services.ToolDefinition>();
-        for (var entry : tools.entrySet()) {
-            String id = entry.getKey();
-            ToolHandler handler = entry.getValue();
-            // Look up legacy metadata from ToolRegistry
-            var legacyEntry = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.findById(id);
-            var builder = com.github.catatafishen.ideagentforcopilot.services.ToolBuilder.create(
-                id,
-                legacyEntry != null ? legacyEntry.displayName : id,
-                legacyEntry != null ? legacyEntry.description : "",
-                legacyEntry != null ? legacyEntry.category
-                    : com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category.OTHER
-            ).handler(handler);
-            // Carry over legacy schema
-            var schema = com.github.catatafishen.ideagentforcopilot.services.ToolSchemas.getInputSchema(id);
-            if (schema != null) builder.schema(schema);
-            defs.add(builder.build());
-        }
-        return defs;
     }
 
     // Convenience delegates to ToolUtils

@@ -1,9 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi;
 
-import com.github.catatafishen.ideagentforcopilot.services.ToolBuilder;
-import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
-import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -39,7 +35,6 @@ import java.util.concurrent.TimeUnit;
 public final class CodeQualityTools extends AbstractToolHandler {
 
     private static final Logger LOG = Logger.getInstance(CodeQualityTools.class);
-    private final List<ToolDefinition> definitions;
     private QodanaAnalyzer qodanaAnalyzer;
 
     // Constants duplicated from PsiBridgeService for use within this handler
@@ -67,50 +62,12 @@ public final class CodeQualityTools extends AbstractToolHandler {
 
     CodeQualityTools(Project project) {
         super(project);
-
-        var defs = new ArrayList<ToolDefinition>();
-        defs.add(quality("get_problems", "Get Problems", "Get cached editor problems (errors/warnings) for open files", this::getProblems)
-            .readOnly().build());
-        defs.add(quality("get_highlights", "Get Highlights", "Get cached editor highlights for open files", this::getHighlights)
-            .readOnly().build());
-        defs.add(quality("run_inspections", "Run Inspections", "Run IntelliJ's full inspection engine on the project or a specific scope", this::runInspections)
-            .readOnly().build());
-        defs.add(quality("apply_quickfix", "Apply Quickfix", "Apply an IntelliJ quick-fix at a specific file and line", this::applyQuickfix)
-            .build());
-        defs.add(quality("suppress_inspection", LABEL_SUPPRESS_INSPECTION, "Insert a suppress annotation or comment for a specific inspection at a given line", this::suppressInspection)
-            .build());
         if (isPluginInstalled("org.jetbrains.qodana")) {
             qodanaAnalyzer = new QodanaAnalyzer(project);
-            defs.add(quality("run_qodana", "Run Qodana", "Run Qodana static analysis and return findings", qodanaAnalyzer::runQodana)
-                .readOnly().build());
             LOG.info("Qodana plugin detected — run_qodana tool registered");
         }
-        defs.add(quality("optimize_imports", "Optimize Imports", "Manually remove unused imports and organize them according to code style", this::optimizeImports)
-            .build());
-        defs.add(quality("format_code", "Format Code", "Manually format a file using IntelliJ's configured code style", this::formatCode)
-            .build());
-        defs.add(quality("add_to_dictionary", "Add to Dictionary", "Add a word to the project spell-check dictionary", this::addToDictionary)
-            .build());
-        defs.add(quality("get_compilation_errors", "Get Compilation Errors", "Fast compilation error check using cached daemon results", this::getCompilationErrors)
-            .readOnly().build());
-        if (SonarQubeIntegration.isInstalled()) {
-            defs.add(quality("run_sonarqube_analysis", "Run SonarQube Analysis", "Run SonarQube for IDE (SonarLint) analysis on the full project or changed files", this::runSonarQubeAnalysis)
-                .readOnly().build());
-            LOG.info("SonarQube for IDE plugin detected — run_sonarqube_analysis tool registered");
-        }
-
-        definitions = List.copyOf(defs);
-
-        // Still register in legacy map for backward compatibility
-        for (ToolDefinition def : definitions) {
-            register(def.id(), def::execute);
-        }
     }
 
-    @Override
-    List<ToolDefinition> getDefinitions() {
-        return definitions;
-    }
 
     public QodanaAnalyzer getQodanaAnalyzer() {
         return qodanaAnalyzer;
@@ -1332,10 +1289,4 @@ public final class CodeQualityTools extends AbstractToolHandler {
         return sb.toString();
     }
 
-    private static ToolBuilder quality(String id, String displayName, String description,
-                                       ToolHandler handler) {
-        return ToolBuilder.create(id, displayName, description, Category.CODE_QUALITY)
-            .schema(ToolSchemas.getInputSchema(id))
-            .handler(handler);
-    }
 }
