@@ -12,8 +12,8 @@ import org.jetbrains.annotations.Nullable;
  * {@code ToolRenderers} (popup renderers), and the handler registration
  * in {@code PsiBridgeService}.
  * <p>
- * Implementations can be created via {@link ToolBuilder} for simple tools,
- * or by subclassing for tools that need complex logic.
+ * Implementations are created by subclassing {@link com.github.catatafishen.ideagentforcopilot.psi.tools.Tool}
+ * for tools that need execution logic.
  */
 public interface ToolDefinition {
 
