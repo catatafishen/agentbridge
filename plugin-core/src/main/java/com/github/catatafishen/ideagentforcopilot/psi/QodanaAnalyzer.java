@@ -19,8 +19,6 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Handles Qodana analysis execution and SARIF result parsing.
- * Extracted from {@link CodeQualityTools} to keep that class focused on
- * inspection, highlight, and formatting operations.
  */
 public final class QodanaAnalyzer {
 
@@ -36,7 +34,7 @@ public final class QodanaAnalyzer {
 
     private final Project project;
 
-    QodanaAnalyzer(Project project) {
+    public QodanaAnalyzer(Project project) {
         this.project = project;
     }
 

@@ -1,20 +1,25 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
-import com.github.catatafishen.ideagentforcopilot.psi.CodeQualityTools;
+import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.project.Project;
+import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Manually removes unused imports and organizes them according to code style.
  */
-@SuppressWarnings("java:S112")
 public final class OptimizeImportsTool extends QualityTool {
 
-    public OptimizeImportsTool(Project project, CodeQualityTools qualityTools) {
-        super(project, qualityTools);
+    public OptimizeImportsTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -41,7 +46,26 @@ public final class OptimizeImportsTool extends QualityTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return qualityTools.optimizeImports(args);
+        String pathStr = args.get("path").getAsString();
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                FilePair pair = resolveFilePair(pathStr, resultFuture);
+                if (pair == null) return;
+                ApplicationManager.getApplication().runWriteAction(() ->
+                    CommandProcessor.getInstance().executeCommand(project, () -> {
+                        PsiDocumentManager.getInstance(project).commitAllDocuments();
+                        new com.intellij.codeInsight.actions.OptimizeImportsProcessor(project, pair.psiFile()).run();
+                    }, "Optimize Imports", null)
+                );
+                String relPath = project.getBasePath() != null
+                    ? relativize(project.getBasePath(), pair.vf().getPath()) : pathStr;
+                resultFuture.complete("Imports optimized: " + relPath);
+            } catch (Exception e) {
+                resultFuture.complete("Error optimizing imports: " + e.getMessage());
+            }
+        });
+        return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
     @Override

@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
-import com.github.catatafishen.ideagentforcopilot.psi.CodeQualityTools;
+import com.github.catatafishen.ideagentforcopilot.psi.SonarQubeIntegration;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -9,11 +9,10 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Runs SonarQube for IDE (SonarLint) analysis on the full project or changed files.
  */
-@SuppressWarnings("java:S112")
 public final class RunSonarQubeAnalysisTool extends QualityTool {
 
-    public RunSonarQubeAnalysisTool(Project project, CodeQualityTools qualityTools) {
-        super(project, qualityTools);
+    public RunSonarQubeAnalysisTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -39,14 +38,19 @@ public final class RunSonarQubeAnalysisTool extends QualityTool {
     @Override
     public @Nullable JsonObject inputSchema() {
         return schema(new Object[][]{
-            {"scope", TYPE_STRING, "Analysis scope: 'all' (full project) or 'changed' (VCS changed files only). Default: 'all'"},
-            {"limit", TYPE_INTEGER, "Maximum number of findings to return. Default: 100"},
-            {"offset", TYPE_INTEGER, "Pagination offset. Default: 0"}
+            {PARAM_SCOPE, TYPE_STRING, "Analysis scope: 'all' (full project) or 'changed' (VCS changed files only). Default: 'all'"},
+            {PARAM_LIMIT, TYPE_INTEGER, "Maximum number of findings to return. Default: 100"},
+            {PARAM_OFFSET, TYPE_INTEGER, "Pagination offset. Default: 0"}
         });
     }
 
     @Override
-    public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return qualityTools.runSonarQubeAnalysis(args);
+    public @Nullable String execute(@NotNull JsonObject args) {
+        String scope = args.has(PARAM_SCOPE) ? args.get(PARAM_SCOPE).getAsString() : "all";
+        int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
+        int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
+
+        SonarQubeIntegration sonar = new SonarQubeIntegration(project);
+        return sonar.runAnalysis(scope, limit, offset);
     }
 }

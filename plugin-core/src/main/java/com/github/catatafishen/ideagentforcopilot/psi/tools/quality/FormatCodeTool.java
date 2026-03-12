@@ -1,20 +1,26 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
-import com.github.catatafishen.ideagentforcopilot.psi.CodeQualityTools;
+import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.project.Project;
+import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Formats a file using IntelliJ's configured code style.
  */
-@SuppressWarnings("java:S112")
 public final class FormatCodeTool extends QualityTool {
 
-    public FormatCodeTool(Project project, CodeQualityTools qualityTools) {
-        super(project, qualityTools);
+    public FormatCodeTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -41,7 +47,31 @@ public final class FormatCodeTool extends QualityTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return qualityTools.formatCode(args);
+        String pathStr = args.get("path").getAsString();
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                FilePair pair = resolveFilePair(pathStr, resultFuture);
+                if (pair == null) return;
+                ApplicationManager.getApplication().runWriteAction(() ->
+                    CommandProcessor.getInstance().executeCommand(project, () -> {
+                        PsiDocumentManager.getInstance(project).commitAllDocuments();
+                        new com.intellij.codeInsight.actions.ReformatCodeProcessor(pair.psiFile(), false).run();
+                    }, "Reformat Code", null)
+                );
+                String relPath = project.getBasePath() != null
+                    ? relativize(project.getBasePath(), pair.vf().getPath()) : pathStr;
+                resultFuture.complete("Code formatted: " + relPath);
+            } catch (Exception e) {
+                resultFuture.complete("Error formatting code: " + e.getMessage());
+            }
+        });
+        String result = resultFuture.get(30, TimeUnit.SECONDS);
+        if (result.startsWith("Code formatted")) {
+            FileTool.followFileIfEnabled(project, pathStr, 1, 1,
+                FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " formatted");
+        }
+        return result;
     }
 
     @Override

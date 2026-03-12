@@ -56,15 +56,13 @@ public final class PsiBridgeService implements Disposable {
         RunConfigurationService runConfigService = new RunConfigurationService(
             project, className -> ClassResolverUtil.resolveClass(project, className));
 
-        CodeQualityTools qualityTools = new CodeQualityTools(project);
-
         // Register OO-style individual tool classes
         boolean hasJava = PlatformApiCompat.isPluginInstalled("com.intellij.modules.java");
         var allTools = new java.util.ArrayList<com.github.catatafishen.ideagentforcopilot.psi.tools.Tool>();
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.navigation.NavigationToolFactory.create(project, hasJava));
-        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, qualityTools, SonarQubeIntegration.isInstalled()));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, SonarQubeIntegration.isInstalled()));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring.RefactoringToolFactory.create(project, hasJava));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editing.EditingToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.testing.TestingToolFactory.create(project));

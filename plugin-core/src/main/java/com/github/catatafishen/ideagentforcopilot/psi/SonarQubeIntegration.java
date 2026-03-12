@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Gracefully handles the plugin being absent or API changes.
  */
 @SuppressWarnings("java:S3011") // setAccessible is inherent to this reflection-based integration
-final class SonarQubeIntegration {
+public final class SonarQubeIntegration {
 
     private static final Logger LOG = Logger.getInstance(SonarQubeIntegration.class);
     private static final String SONAR_PLUGIN_ID = "org.sonarlint.idea";
@@ -36,7 +36,7 @@ final class SonarQubeIntegration {
 
     private final Project project;
 
-    SonarQubeIntegration(Project project) {
+    public SonarQubeIntegration(Project project) {
         this.project = project;
     }
 
@@ -50,7 +50,7 @@ final class SonarQubeIntegration {
         return Class.forName(className, true, cl);
     }
 
-    static boolean isInstalled() {
+    public static boolean isInstalled() {
         return PlatformApiCompat.isPluginInstalled(SONAR_PLUGIN_ID);
     }
 
@@ -73,7 +73,7 @@ final class SonarQubeIntegration {
      * The trigger is fire-and-forget — no arbitrary timeout.
      * Completion is detected via RunningAnalysesTracker polling.
      */
-    String runAnalysis(String scope, int limit, int offset) {
+    public String runAnalysis(String scope, int limit, int offset) {
         if (!isInstalled()) {
             return "Error: SonarQube for IDE plugin is not installed.";
         }

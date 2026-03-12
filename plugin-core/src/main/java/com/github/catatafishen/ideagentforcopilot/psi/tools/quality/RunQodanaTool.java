@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
-import com.github.catatafishen.ideagentforcopilot.psi.CodeQualityTools;
 import com.github.catatafishen.ideagentforcopilot.psi.QodanaAnalyzer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -10,13 +9,12 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Runs Qodana static analysis and returns findings.
  */
-@SuppressWarnings("java:S112")
 public final class RunQodanaTool extends QualityTool {
 
     private final QodanaAnalyzer qodanaAnalyzer;
 
-    public RunQodanaTool(Project project, CodeQualityTools qualityTools, QodanaAnalyzer qodanaAnalyzer) {
-        super(project, qualityTools);
+    public RunQodanaTool(Project project, QodanaAnalyzer qodanaAnalyzer) {
+        super(project);
         this.qodanaAnalyzer = qodanaAnalyzer;
     }
 
@@ -43,7 +41,7 @@ public final class RunQodanaTool extends QualityTool {
     @Override
     public @Nullable JsonObject inputSchema() {
         return schema(new Object[][]{
-            {"limit", TYPE_INTEGER, "Maximum number of problems to return (default: 100)"}
+            {PARAM_LIMIT, TYPE_INTEGER, "Maximum number of problems to return (default: 100)"}
         });
     }
 

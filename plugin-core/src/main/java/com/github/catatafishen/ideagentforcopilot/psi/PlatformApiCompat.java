@@ -49,7 +49,7 @@ public final class PlatformApiCompat {
      * "cannot be applied to (PluginId)" even though the types are identical. The Gradle build
      * compiles without errors.</p>
      */
-    static boolean isPluginInstalled(@NotNull String pluginId) {
+    public static boolean isPluginInstalled(@NotNull String pluginId) {
         return com.intellij.ide.plugins.PluginManagerCore.isPluginInstalled(
             com.intellij.openapi.extensions.PluginId.getId(pluginId));
     }
@@ -99,7 +99,7 @@ public final class PlatformApiCompat {
      *
      * <p>All three methods exist and work correctly at runtime. The Gradle build compiles without errors.</p>
      */
-    static @NotNull List<String> collectEditorNotificationTexts(
+    public static @NotNull List<String> collectEditorNotificationTexts(
         @NotNull Project project, @NotNull VirtualFile vf, @NotNull FileEditor editor) {
         List<String> notifications = new ArrayList<>();
         for (var provider : EditorNotificationProvider.EP_NAME.getExtensions(project)) {
@@ -143,7 +143,7 @@ public final class PlatformApiCompat {
      * failures not caught by the pre-check (e.g., {@code ExceptionInInitializerError},
      * {@code NoClassDefFoundError}).</p>
      */
-    static @Nullable InspectionToolResultExporter getInspectionPresentation(
+    public static @Nullable InspectionToolResultExporter getInspectionPresentation(
         @NotNull GlobalInspectionContextEx ctx, @NotNull InspectionToolWrapper<?, ?> toolWrapper) {
         if (!hasPresentationConstructor(toolWrapper)) {
             return null;
@@ -828,7 +828,7 @@ public final class PlatformApiCompat {
      * @param onFinished callback invoked (on a background thread) after analysis completes;
      *                   receives the fully-populated {@code GlobalInspectionContextEx}
      */
-    static void runFullInspections(
+    public static void runFullInspections(
         @NotNull Project project,
         @NotNull com.intellij.analysis.AnalysisScope scope,
         @NotNull com.intellij.codeInspection.ex.InspectionProfileImpl profile,
