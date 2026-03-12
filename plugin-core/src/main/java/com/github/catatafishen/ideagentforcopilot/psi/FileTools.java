@@ -42,13 +42,13 @@ public final class FileTools extends AbstractToolHandler {
     private static final String PARAM_COUNT = "count";
     private static final String AUTO_FORMAT_SUFFIX = " (auto-format queued)";
     public static final java.awt.Color HIGHLIGHT_EDIT = new java.awt.Color(80, 160, 80, 40);
-    static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
+    public static final java.awt.Color HIGHLIGHT_READ = new java.awt.Color(80, 120, 200, 35);
     private static final int MAX_READ_LINES = 2000;
 
     /**
      * Returns a label like "ui-reviewer", "claude-sonnet-4.5", or "Agent" as fallback.
      */
-    static String agentLabel(Project project) {
+    public static String agentLabel(Project project) {
         ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
         String agent = settings.getActiveAgentLabel();
         if (agent != null) return agent;

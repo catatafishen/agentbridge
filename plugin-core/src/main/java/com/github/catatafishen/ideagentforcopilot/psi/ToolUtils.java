@@ -15,7 +15,7 @@ public final class ToolUtils {
     // Error message constants
     public static final String ERROR_PREFIX = "Error: ";
     public static final String ERROR_FILE_NOT_FOUND = "File not found: ";
-    static final String ERROR_CANNOT_PARSE = "Cannot parse file: ";
+    public static final String ERROR_CANNOT_PARSE = "Cannot parse file: ";
     public static final String ERROR_PATH_REQUIRED = "Error: 'path' parameter is required";
     public static final String JAVA_EXTENSION = ".java";
     static final String BUILD_DIR = "build";

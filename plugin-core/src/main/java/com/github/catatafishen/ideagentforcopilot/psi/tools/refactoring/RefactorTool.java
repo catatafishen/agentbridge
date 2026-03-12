@@ -1,11 +1,30 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
-import com.github.catatafishen.ideagentforcopilot.psi.RefactoringTools;
+import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.FileTools;
+import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.editor.Document;
+import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiDocumentManager;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiNamedElement;
+import com.intellij.psi.PsiReference;
+import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.searches.ReferencesSearch;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.RefactorRenderer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.Collection;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Renames, extracts method, inlines, or safe-deletes a symbol using IntelliJ's refactoring engine.
@@ -13,8 +32,11 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("java:S112")
 public final class RefactorTool extends RefactoringTool {
 
-    public RefactorTool(Project project, RefactoringTools refactoringTools) {
-        super(project, refactoringTools);
+    private static final Logger LOG = Logger.getInstance(RefactorTool.class);
+    private static final String PARAM_SYMBOL = "symbol";
+
+    public RefactorTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -42,10 +64,10 @@ public final class RefactorTool extends RefactoringTool {
         return schema(new Object[][]{
             {"operation", TYPE_STRING, "Refactoring type: 'rename', 'extract_method', 'inline', or 'safe_delete'"},
             {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
-            {"symbol", TYPE_STRING, "Name of the symbol to refactor (class, method, field, or variable)"},
+            {PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to refactor (class, method, field, or variable)"},
             {"line", TYPE_INTEGER, "Line number to disambiguate if multiple symbols share the same name"},
             {"new_name", TYPE_STRING, "New name for 'rename' operation. Required when operation is 'rename'"}
-        }, "operation", "file", "symbol");
+        }, "operation", "file", PARAM_SYMBOL);
     }
 
     @Override
@@ -55,6 +77,148 @@ public final class RefactorTool extends RefactoringTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return refactoringTools.refactor(args);
+        if (!args.has("operation") || !args.has("file") || !args.has(PARAM_SYMBOL)) {
+            return "Error: 'operation', 'file', and 'symbol' parameters are required";
+        }
+        String operation = args.get("operation").getAsString();
+        String pathStr = args.get("file").getAsString();
+        String symbolName = args.get(PARAM_SYMBOL).getAsString();
+        int targetLine = args.has("line") ? args.get("line").getAsInt() : -1;
+        String newName = args.has("new_name") ? args.get("new_name").getAsString() : null;
+
+        if ("rename".equals(operation) && (newName == null || newName.isEmpty())) {
+            return "Error: 'new_name' is required for rename operation";
+        }
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+
+        EdtUtil.invokeLater(() -> {
+            try {
+                String result = resolveAndRefactor(operation, pathStr, symbolName, targetLine, newName);
+                resultFuture.complete(result);
+            } catch (Exception e) {
+                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+            }
+        });
+
+        String result = resultFuture.get(30, TimeUnit.SECONDS);
+        if (!result.startsWith("Error")) {
+            FileTools.followFileIfEnabled(project, pathStr, Math.max(targetLine, 1), Math.max(targetLine, 1),
+                FileTools.HIGHLIGHT_EDIT, FileTools.agentLabel(project) + " refactored");
+        }
+        return result;
+    }
+
+    private String resolveAndRefactor(String operation, String pathStr, String symbolName,
+                                      int targetLine, String newName) {
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+
+        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
+
+        Document document = FileDocumentManager.getInstance().getDocument(vf);
+        PsiNamedElement targetElement = findNamedElement(psiFile, document, symbolName, targetLine);
+        if (targetElement == null) {
+            return "Error: Symbol '" + symbolName + "' not found in " + pathStr +
+                (targetLine > 0 ? " at line " + targetLine : "") +
+                ". Use search_symbols to find the correct name and location.";
+        }
+
+        String[] result = new String[1];
+        ApplicationManager.getApplication().runWriteAction(() -> {
+            try {
+                result[0] = executeRefactoring(operation, targetElement, symbolName, newName, pathStr);
+            } catch (Exception e) {
+                LOG.warn("Refactoring error", e);
+                result[0] = "Error during refactoring: " + e.getMessage();
+            }
+        });
+        return result[0];
+    }
+
+    private String executeRefactoring(String operation, PsiNamedElement targetElement,
+                                      String symbolName, String newName, String pathStr) {
+        return switch (operation) {
+            case "rename" -> performRename(targetElement, symbolName, newName, pathStr);
+            case "safe_delete" -> performSafeDelete(targetElement, symbolName, pathStr);
+            case "inline" -> "Error: 'inline' refactoring is not yet supported via this tool. " +
+                "Use edit_text to manually inline the code.";
+            case "extract_method" -> "Error: 'extract_method' requires a code selection range " +
+                "which is not well-suited for tool-based invocation. " +
+                "Use edit_text to manually extract the method.";
+            default -> "Error: Unknown operation '" + operation + "'. Supported: rename, safe_delete";
+        };
+    }
+
+    private String performRename(PsiNamedElement targetElement, String symbolName,
+                                 String newName, String pathStr) {
+        var refs = ReferencesSearch.search(targetElement, GlobalSearchScope.projectScope(project)).findAll();
+        int refCount = refs.size();
+
+        var factory = com.intellij.refactoring.RefactoringFactory.getInstance(project);
+        var rename = factory.createRename(targetElement, newName);
+        rename.setSearchInComments(true);
+        rename.setSearchInNonJavaFiles(true);
+        CommandProcessor.getInstance().executeCommand(
+            project,
+            () -> {
+                var usages = rename.findUsages();
+                rename.doRefactoring(usages);
+            },
+            "Rename " + symbolName + " to " + newName,
+            null
+        );
+
+        PsiDocumentManager.getInstance(project).commitAllDocuments();
+        FileDocumentManager.getInstance().saveAllDocuments();
+
+        return "Renamed '" + symbolName + "' to '" + newName + "'\n" +
+            "  Updated " + refCount + " references across the project.\n" +
+            "  File: " + pathStr;
+    }
+
+    private String performSafeDelete(PsiNamedElement targetElement, String symbolName, String pathStr) {
+        var refs = ReferencesSearch.search(targetElement, GlobalSearchScope.projectScope(project)).findAll();
+
+        if (!refs.isEmpty()) {
+            return formatUsageReport(symbolName, refs);
+        }
+
+        CommandProcessor.getInstance().executeCommand(
+            project,
+            targetElement::delete,
+            "Safe Delete " + symbolName,
+            null
+        );
+        PsiDocumentManager.getInstance(project).commitAllDocuments();
+        FileDocumentManager.getInstance().saveAllDocuments();
+
+        return "Safely deleted '" + symbolName + "' (no usages found).\n  File: " + pathStr;
+    }
+
+    private String formatUsageReport(String symbolName, Collection<PsiReference> refs) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Cannot safely delete '").append(symbolName)
+            .append("' — it has ").append(refs.size()).append(" usages:\n");
+        int shown = 0;
+        for (var ref : refs) {
+            if (shown++ >= 10) {
+                sb.append("  ... and ").append(refs.size() - 10).append(" more\n");
+                break;
+            }
+            PsiFile refFile = ref.getElement().getContainingFile();
+            int line = -1;
+            if (refFile != null) {
+                Document refDoc = FileDocumentManager.getInstance()
+                    .getDocument(refFile.getVirtualFile());
+                if (refDoc != null) {
+                    line = refDoc.getLineNumber(ref.getElement().getTextOffset()) + 1;
+                }
+            }
+            sb.append("  ").append(refFile != null ? refFile.getName() : "?")
+                .append(":").append(line).append("\n");
+        }
+        return sb.toString();
     }
 }

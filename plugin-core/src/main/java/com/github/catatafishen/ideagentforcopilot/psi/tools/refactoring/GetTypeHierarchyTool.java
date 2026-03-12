@@ -1,8 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
-import com.github.catatafishen.ideagentforcopilot.psi.RefactoringTools;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.TypeHierarchyRenderer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -13,8 +14,10 @@ import org.jetbrains.annotations.Nullable;
 @SuppressWarnings("java:S112")
 public final class GetTypeHierarchyTool extends RefactoringTool {
 
-    public GetTypeHierarchyTool(Project project, RefactoringTools refactoringTools) {
-        super(project, refactoringTools);
+    private static final String PARAM_SYMBOL = "symbol";
+
+    public GetTypeHierarchyTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -40,9 +43,9 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
     @Override
     public @Nullable JsonObject inputSchema() {
         return schema(new Object[][]{
-            {"symbol", TYPE_STRING, "Fully qualified or simple class/interface name"},
+            {PARAM_SYMBOL, TYPE_STRING, "Fully qualified or simple class/interface name"},
             {"direction", TYPE_STRING, "Direction: 'supertypes' (ancestors) or 'subtypes' (descendants). Default: both"}
-        }, "symbol");
+        }, PARAM_SYMBOL);
     }
 
     @Override
@@ -52,6 +55,13 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        return refactoringTools.getTypeHierarchyWrapper(args);
+        if (!args.has(PARAM_SYMBOL)) return "Error: 'symbol' parameter is required";
+        String symbolName = args.get(PARAM_SYMBOL).getAsString();
+        String direction = args.has("direction") ? args.get("direction").getAsString() : "both";
+
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
+            com.github.catatafishen.ideagentforcopilot.psi.java.RefactoringJavaSupport
+                .getTypeHierarchy(project, symbolName, direction)
+        );
     }
 }

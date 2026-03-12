@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
-import com.github.catatafishen.ideagentforcopilot.psi.RefactoringTools;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -18,19 +17,16 @@ public final class RefactoringToolFactory {
     private RefactoringToolFactory() {
     }
 
-    public static @NotNull List<Tool> create(
-            @NotNull Project project,
-            @NotNull RefactoringTools refactoringTools,
-            boolean hasJava) {
+    public static @NotNull List<Tool> create(@NotNull Project project, boolean hasJava) {
         var tools = new ArrayList<Tool>();
-        tools.add(new RefactorTool(project, refactoringTools));
-        tools.add(new GoToDeclarationTool(project, refactoringTools));
+        tools.add(new RefactorTool(project));
+        tools.add(new GoToDeclarationTool(project));
         if (hasJava) {
-            tools.add(new GetTypeHierarchyTool(project, refactoringTools));
-            tools.add(new FindImplementationsTool(project, refactoringTools));
-            tools.add(new GetCallHierarchyTool(project, refactoringTools));
+            tools.add(new GetTypeHierarchyTool(project));
+            tools.add(new FindImplementationsTool(project));
+            tools.add(new GetCallHierarchyTool(project));
         }
-        tools.add(new GetDocumentationTool(project, refactoringTools));
+        tools.add(new GetDocumentationTool(project));
         return List.copyOf(tools);
     }
 }

@@ -52,9 +52,9 @@ public final class RunConfigurationService {
     private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
 
     private final Project project;
-    private final RefactoringTools.ClassResolver classResolver;
+    private final ClassResolverUtil.ClassResolver classResolver;
 
-    public RunConfigurationService(Project project, RefactoringTools.ClassResolver classResolver) {
+    public RunConfigurationService(Project project, ClassResolverUtil.ClassResolver classResolver) {
         this.project = project;
         this.classResolver = classResolver;
     }
@@ -359,7 +359,7 @@ public final class RunConfigurationService {
 
     private void applyTestClass(RunConfiguration config, JsonObject args, Object data) throws ReflectiveOperationException {
         String testClass = args.get(PARAM_TEST_CLASS).getAsString();
-        RefactoringTools.ClassInfo classInfo = classResolver.resolveClass(testClass);
+        ClassResolverUtil.ClassInfo classInfo = classResolver.resolveClass(testClass);
         setJUnitField(data, "MAIN_CLASS_NAME", classInfo.fqn());
         setJUnitField(data, FIELD_TEST_OBJECT,
             args.has(PARAM_TEST_METHOD) ? TEST_TYPE_METHOD : TEST_TYPE_CLASS);

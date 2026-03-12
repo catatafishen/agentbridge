@@ -55,12 +55,12 @@ public final class PsiBridgeService implements Disposable {
         GitToolHandler gitToolHandler = new GitToolHandler(project, fileTools);
 
         // Initialize handler groups
-        RefactoringTools refactoringTools = new RefactoringTools(project);
-        RunConfigurationService runConfigService = new RunConfigurationService(project, refactoringTools::resolveClass);
+        RunConfigurationService runConfigService = new RunConfigurationService(
+                project, className -> ClassResolverUtil.resolveClass(project, className));
 
         CodeQualityTools qualityTools = new CodeQualityTools(project);
 
-        TestTools testTools = new TestTools(project, refactoringTools);
+        TestTools testTools = new TestTools(project);
         ProjectTools projectTools = new ProjectTools(project);
         InfrastructureTools infraTools = new InfrastructureTools(project);
         EditorTools editorTools = new EditorTools(project);
@@ -72,7 +72,7 @@ public final class PsiBridgeService implements Disposable {
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileToolFactory.create(project, fileTools));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.navigation.NavigationToolFactory.create(project, hasJava));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, qualityTools, SonarQubeIntegration.isInstalled()));
-        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring.RefactoringToolFactory.create(project, refactoringTools, hasJava));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring.RefactoringToolFactory.create(project, hasJava));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editing.EditingToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.testing.TestingToolFactory.create(project, testTools));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.project.ProjectToolFactory.create(project, projectTools, runConfigService, hasJava));

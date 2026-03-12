@@ -59,11 +59,8 @@ public final class TestTools extends AbstractToolHandler {
     private static final String STARTED_TESTS_MSG = "Started tests via IntelliJ JUnit runner: ";
     private static final String RESULTS_IN_RUNNER_PANEL = "\nResults are visible in the IntelliJ test runner panel.";
 
-    private final RefactoringTools refactoringTools;
-
-    TestTools(Project project, RefactoringTools refactoringTools) {
+    TestTools(Project project) {
         super(project);
-        this.refactoringTools = refactoringTools;
     }
 
     // ---- Run Configuration Helper (local copy for test configs) ----
@@ -251,7 +248,7 @@ public final class TestTools extends AbstractToolHandler {
             String testClass = parsed[0];
             String testMethod = parsed[1];
 
-            RefactoringTools.ClassInfo classInfo = refactoringTools.resolveClass(testClass);
+            ClassResolverUtil.ClassInfo classInfo = ClassResolverUtil.resolveClass(project, testClass);
             if (classInfo.fqn() == null) return null;
 
             final String resolvedClass = classInfo.fqn();
