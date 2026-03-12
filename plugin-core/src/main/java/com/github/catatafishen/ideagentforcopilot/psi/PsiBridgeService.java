@@ -80,6 +80,11 @@ public final class PsiBridgeService implements Disposable {
             ToolRegistry.registerAll(handler.getDefinitions());
         }
 
+        // Register new OO-style individual tool classes (override legacy definitions)
+        ToolRegistry.registerAll(
+            com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler)
+        );
+
         // RunConfigurationService tools (not an AbstractToolHandler)
         toolRegistry.put("list_run_configurations", args -> runConfigService.listRunConfigurations());
         toolRegistry.put("run_configuration", runConfigService::runConfiguration);
