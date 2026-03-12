@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -18,8 +17,8 @@ public final class GitCherryPickTool extends GitTool {
     private static final String CHERRY_PICK = "cherry-pick";
     private static final String PARAM_COMMITS = "commits";
 
-    public GitCherryPickTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitCherryPickTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -56,14 +55,14 @@ public final class GitCherryPickTool extends GitTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        git.saveAllDocuments();
+        flushAndSave();
 
         if (args.has("abort") && args.get("abort").getAsBoolean()) {
-            return git.runGit(CHERRY_PICK, "--abort");
+            return runGit(CHERRY_PICK, "--abort");
         }
 
         if (args.has("continue_pick") && args.get("continue_pick").getAsBoolean()) {
-            return git.runGit(CHERRY_PICK, "--continue");
+            return runGit(CHERRY_PICK, "--continue");
         }
 
         if (!args.has(PARAM_COMMITS) || !args.get(PARAM_COMMITS).isJsonArray()) {
@@ -82,6 +81,6 @@ public final class GitCherryPickTool extends GitTool {
             cmdArgs.add(commit.getAsString());
         }
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 }

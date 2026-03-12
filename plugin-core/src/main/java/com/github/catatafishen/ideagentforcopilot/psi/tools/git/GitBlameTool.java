@@ -1,12 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitBlameRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitBlameRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,8 +15,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitBlameTool extends GitTool {
 
-    public GitBlameTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitBlameTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -70,7 +68,7 @@ public final class GitBlameTool extends GitTool {
         cmdArgs.add("--");
         cmdArgs.add(path);
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 
     @Override

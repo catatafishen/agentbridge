@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -15,8 +14,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitPushTool extends GitTool {
 
-    public GitPushTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitPushTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -82,7 +81,7 @@ public final class GitPushTool extends GitTool {
                 remote = "origin";
             }
             if (branch == null) {
-                branch = git.runGit("rev-parse", "--abbrev-ref", "HEAD").trim();
+                branch = runGit("rev-parse", "--abbrev-ref", "HEAD").trim();
             }
         }
 
@@ -96,6 +95,6 @@ public final class GitPushTool extends GitTool {
             cmdArgs.add("--tags");
         }
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 }

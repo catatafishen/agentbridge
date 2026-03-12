@@ -1,12 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitTagRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitTagRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,8 +19,8 @@ public final class GitTagTool extends GitTool {
     private static final String PARAM_MESSAGE = "message";
     private static final String PARAM_PATTERN = "pattern";
 
-    public GitTagTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitTagTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -78,7 +76,7 @@ public final class GitTagTool extends GitTool {
                     cmdArgs.add("--sort=" + args.get("sort").getAsString());
                 }
 
-                yield git.runGit(cmdArgs.toArray(String[]::new));
+                yield runGit(cmdArgs.toArray(String[]::new));
             }
             case "create" -> {
                 String name = requireName(args);
@@ -102,12 +100,12 @@ public final class GitTagTool extends GitTool {
                     cmdArgs.add(args.get(PARAM_MESSAGE).getAsString());
                 }
 
-                yield git.runGit(cmdArgs.toArray(String[]::new));
+                yield runGit(cmdArgs.toArray(String[]::new));
             }
             case "delete" -> {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'delete'";
-                yield git.runGit("tag", "-d", name);
+                yield runGit("tag", "-d", name);
             }
             default -> "Error: unknown action '" + action + "'. Use: list, create, delete";
         };

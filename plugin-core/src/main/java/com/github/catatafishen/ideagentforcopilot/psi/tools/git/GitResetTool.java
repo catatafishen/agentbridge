@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -15,8 +14,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitResetTool extends GitTool {
 
-    public GitResetTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitResetTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -55,7 +54,7 @@ public final class GitResetTool extends GitTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        git.saveAllDocuments();
+        flushAndSave();
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("reset");
@@ -80,7 +79,7 @@ public final class GitResetTool extends GitTool {
             }
         }
 
-        String result = git.runGit(cmdArgs.toArray(String[]::new));
+        String result = runGit(cmdArgs.toArray(String[]::new));
         return result.isBlank() ? "Reset completed successfully." : result;
     }
 }

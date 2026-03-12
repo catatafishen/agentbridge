@@ -1,12 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitDiffRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitDiffRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,8 +15,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitDiffTool extends GitTool {
 
-    public GitDiffTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitDiffTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -53,7 +51,7 @@ public final class GitDiffTool extends GitTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        git.flushAndSave();
+        flushAndSave();
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("diff");
@@ -79,7 +77,7 @@ public final class GitDiffTool extends GitTool {
             cmdArgs.add(args.get("path").getAsString());
         }
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 
     @Override

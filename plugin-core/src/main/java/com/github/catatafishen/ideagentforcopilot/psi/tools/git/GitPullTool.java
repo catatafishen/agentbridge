@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -15,8 +14,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitPullTool extends GitTool {
 
-    public GitPullTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitPullTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -56,7 +55,7 @@ public final class GitPullTool extends GitTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        git.saveAllDocuments();
+        flushAndSave();
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("pull");
@@ -77,6 +76,6 @@ public final class GitPullTool extends GitTool {
             cmdArgs.add(args.get("branch").getAsString());
         }
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 }

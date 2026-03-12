@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -15,8 +14,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitRebaseTool extends GitTool {
 
-    public GitRebaseTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitRebaseTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -59,18 +58,18 @@ public final class GitRebaseTool extends GitTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        git.saveAllDocuments();
+        flushAndSave();
 
         if (args.has("abort") && args.get("abort").getAsBoolean()) {
-            return git.runGit("rebase", "--abort");
+            return runGit("rebase", "--abort");
         }
 
         if (args.has("continue_rebase") && args.get("continue_rebase").getAsBoolean()) {
-            return git.runGit("rebase", "--continue");
+            return runGit("rebase", "--continue");
         }
 
         if (args.has("skip") && args.get("skip").getAsBoolean()) {
-            return git.runGit("rebase", "--skip");
+            return runGit("rebase", "--skip");
         }
 
         List<String> cmdArgs = new ArrayList<>();
@@ -93,6 +92,6 @@ public final class GitRebaseTool extends GitTool {
             cmdArgs.add(args.get("branch").getAsString());
         }
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 }

@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -15,8 +14,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitMergeTool extends GitTool {
 
-    public GitMergeTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitMergeTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -60,10 +59,10 @@ public final class GitMergeTool extends GitTool {
             return "Error: 'branch' parameter is required (or use 'abort' to abort an in-progress merge)";
         }
 
-        git.saveAllDocuments();
+        flushAndSave();
 
         if (hasAbort) {
-            return git.runGit("merge", "--abort");
+            return runGit("merge", "--abort");
         }
 
         List<String> cmdArgs = new ArrayList<>();
@@ -88,6 +87,6 @@ public final class GitMergeTool extends GitTool {
 
         cmdArgs.add(args.get("branch").getAsString());
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 }

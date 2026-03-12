@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -17,8 +16,8 @@ public final class GitUnstageTool extends GitTool {
 
     private static final String PARAM_PATHS = "paths";
 
-    public GitUnstageTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitUnstageTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -68,6 +67,6 @@ public final class GitUnstageTool extends GitTool {
             return "Error: provide 'path' or 'paths' parameter";
         }
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 }

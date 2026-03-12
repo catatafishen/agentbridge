@@ -1,12 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitCommitRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitCommitRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,8 +15,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitCommitTool extends GitTool {
 
-    public GitCommitTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitCommitTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -52,7 +50,7 @@ public final class GitCommitTool extends GitTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        git.flushAndSave();
+        flushAndSave();
 
         if (!args.has("message") || args.get("message").getAsString().isEmpty()) {
             return "Error: 'message' parameter is required";
@@ -72,8 +70,8 @@ public final class GitCommitTool extends GitTool {
         cmdArgs.add("-m");
         cmdArgs.add(args.get("message").getAsString());
 
-        String result = git.runGit(cmdArgs.toArray(String[]::new));
-        git.showNewCommitInLog();
+        String result = runGit(cmdArgs.toArray(String[]::new));
+        showNewCommitInLog();
         return result;
     }
 

@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -14,8 +13,8 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitStatusRenderer
 @SuppressWarnings("java:S112")
 public final class GitStatusTool extends GitTool {
 
-    public GitStatusTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitStatusTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -47,15 +46,15 @@ public final class GitStatusTool extends GitTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        git.flushAndSave();
+        flushAndSave();
 
         boolean verbose = args.has("verbose")
             && args.get("verbose").getAsBoolean();
 
         if (verbose) {
-            return git.runGit("status");
+            return runGit("status");
         }
-        return git.runGit("status", "--short", "--branch");
+        return runGit("status", "--short", "--branch");
     }
 
     @Override

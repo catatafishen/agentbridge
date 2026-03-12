@@ -1,12 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitStageRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitStageRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,8 +17,8 @@ public final class GitStageTool extends GitTool {
 
     private static final String PARAM_PATHS = "paths";
 
-    public GitStageTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitStageTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -56,7 +54,7 @@ public final class GitStageTool extends GitTool {
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
-        git.flushAndSave();
+        flushAndSave();
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("add");
@@ -81,7 +79,7 @@ public final class GitStageTool extends GitTool {
             return "Error: provide 'path', 'paths', or 'all' parameter";
         }
 
-        String result = git.runGit(cmdArgs.toArray(String[]::new));
+        String result = runGit(cmdArgs.toArray(String[]::new));
 
         if (result == null || result.isBlank()) {
             return "Staged: " + String.join(", ", stagedFiles);

@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -15,8 +14,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitFetchTool extends GitTool {
 
-    public GitFetchTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitFetchTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -75,7 +74,7 @@ public final class GitFetchTool extends GitTool {
             cmdArgs.add(args.get("branch").getAsString());
         }
 
-        String result = git.runGit(cmdArgs.toArray(String[]::new));
+        String result = runGit(cmdArgs.toArray(String[]::new));
         return result.isBlank() ? "Fetch completed successfully." : result;
     }
 }

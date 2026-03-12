@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -14,8 +13,8 @@ public final class GetFileHistoryTool extends GitTool {
 
     private static final int DEFAULT_MAX_COUNT = 20;
 
-    public GetFileHistoryTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GetFileHistoryTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -58,7 +57,7 @@ public final class GetFileHistoryTool extends GitTool {
                 ? args.get("max_count").getAsInt()
                 : DEFAULT_MAX_COUNT);
 
-        return git.runGit("log", "--follow",
+        return runGit("log", "--follow",
             "--format=%H %ai %an%n  %s",
             "-n", maxCount, "--", path);
     }

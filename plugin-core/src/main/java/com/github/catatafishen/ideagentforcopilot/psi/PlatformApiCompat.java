@@ -289,7 +289,7 @@ public final class PlatformApiCompat {
      * The IDE daemon reports "Unknown class: com.intellij.vcs.log.Hash" and cascading resolution
      * failures on {@code showRevisionInMainLog}. The Gradle build compiles without errors.</p>
      */
-    static void showRevisionInLog(@NotNull Project project, @NotNull String fullHash) {
+    public static void showRevisionInLog(@NotNull Project project, @NotNull String fullHash) {
         var vcsHash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
         com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, vcsHash);
     }
@@ -314,7 +314,7 @@ public final class PlatformApiCompat {
      * @param project  the current project
      * @param fullHash the full 40-character commit SHA
      */
-    static void showRevisionInLogAfterRefresh(@NotNull Project project, @NotNull String fullHash) {
+    public static void showRevisionInLogAfterRefresh(@NotNull Project project, @NotNull String fullHash) {
         var hash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
         var vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project);
         var data = vcsLog.getDataManager();
@@ -373,7 +373,7 @@ public final class PlatformApiCompat {
      * Isolated in this class so Git4Idea class loading is deferred until first use; if Git4Idea
      * is disabled, the caller catches {@code NoClassDefFoundError} and falls back.</p>
      */
-    static @Nullable String runIdeGitCommand(@NotNull Project project, @NotNull String[] args) {
+    public static @Nullable String runIdeGitCommand(@NotNull Project project, @NotNull String[] args) {
         if (args.length == 0) return null;
 
         git4idea.commands.GitCommand command = IDE_GIT_COMMAND_MAP.get(args[0]);

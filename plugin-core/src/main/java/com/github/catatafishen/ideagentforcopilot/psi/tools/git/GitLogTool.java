@@ -1,12 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitLogRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitLogRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,8 +17,8 @@ public final class GitLogTool extends GitTool {
 
     private static final int DEFAULT_MAX_COUNT = 20;
 
-    public GitLogTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitLogTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -93,8 +91,8 @@ public final class GitLogTool extends GitTool {
             cmdArgs.add(args.get("path").getAsString());
         }
 
-        String result = git.runGit(cmdArgs.toArray(String[]::new));
-        git.showFirstCommitInLog(result);
+        String result = runGit(cmdArgs.toArray(String[]::new));
+        showFirstCommitInLog(result);
         return result;
     }
 

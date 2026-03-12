@@ -50,7 +50,6 @@ public final class PsiBridgeService implements Disposable {
     public PsiBridgeService(@NotNull Project project) {
         this.project = project;
         this.registry = ToolRegistry.getInstance(project);
-        GitToolHandler gitToolHandler = new GitToolHandler(project);
 
         // Initialize handler groups
         RunConfigurationService runConfigService = new RunConfigurationService(
@@ -59,7 +58,7 @@ public final class PsiBridgeService implements Disposable {
         // Register OO-style individual tool classes
         boolean hasJava = PlatformApiCompat.isPluginInstalled("com.intellij.modules.java");
         var allTools = new java.util.ArrayList<com.github.catatafishen.ideagentforcopilot.psi.tools.Tool>();
-        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project, gitToolHandler));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.git.GitToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.navigation.NavigationToolFactory.create(project, hasJava));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.quality.QualityToolFactory.create(project, SonarQubeIntegration.isInstalled()));

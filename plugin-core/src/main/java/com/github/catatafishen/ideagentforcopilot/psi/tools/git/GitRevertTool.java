@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -15,8 +14,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitRevertTool extends GitTool {
 
-    public GitRevertTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitRevertTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -62,6 +61,6 @@ public final class GitRevertTool extends GitTool {
 
         cmdArgs.add(args.get("commit").getAsString());
 
-        return git.runGit(cmdArgs.toArray(String[]::new));
+        return runGit(cmdArgs.toArray(String[]::new));
     }
 }

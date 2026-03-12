@@ -1,12 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 
-import com.github.catatafishen.ideagentforcopilot.psi.GitToolHandler;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitShowRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitShowRenderer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,8 +15,8 @@ import java.util.List;
 @SuppressWarnings("java:S112")
 public final class GitShowTool extends GitTool {
 
-    public GitShowTool(Project project, GitToolHandler git) {
-        super(project, git);
+    public GitShowTool(Project project) {
+        super(project);
     }
 
     @Override
@@ -71,8 +69,8 @@ public final class GitShowTool extends GitTool {
             cmdArgs.add(args.get("path").getAsString());
         }
 
-        String result = git.runGit(cmdArgs.toArray(String[]::new));
-        git.showFirstCommitInLog(result);
+        String result = runGit(cmdArgs.toArray(String[]::new));
+        showFirstCommitInLog(result);
         return result;
     }
 
