@@ -37,6 +37,14 @@ public final class SearchSymbolsTool extends NavigationTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"query", TYPE_STRING, "Symbol name to search for, or '*' to list all symbols in the project"},
+            {"type", TYPE_STRING, "Optional: filter by type (class, method, field, property). Default: all types", ""}
+        }, "query");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return navTools.searchSymbols(args);
     }

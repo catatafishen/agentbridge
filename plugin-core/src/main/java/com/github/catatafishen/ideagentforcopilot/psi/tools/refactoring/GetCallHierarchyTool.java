@@ -37,6 +37,15 @@ public final class GetCallHierarchyTool extends RefactoringTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"symbol", TYPE_STRING, "Method name to find callers for"},
+            {"file", TYPE_STRING, "Path to the file containing the method definition"},
+            {"line", TYPE_INTEGER, "Line number where the method is defined"}
+        }, "symbol", "file", "line");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return refactoringTools.getCallHierarchyWrapper(args);
     }

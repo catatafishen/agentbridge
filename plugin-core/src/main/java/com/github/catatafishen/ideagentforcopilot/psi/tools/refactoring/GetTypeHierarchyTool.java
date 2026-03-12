@@ -37,6 +37,14 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"symbol", TYPE_STRING, "Fully qualified or simple class/interface name"},
+            {"direction", TYPE_STRING, "Direction: 'supertypes' (ancestors) or 'subtypes' (descendants). Default: both"}
+        }, "symbol");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return refactoringTools.getTypeHierarchyWrapper(args);
     }

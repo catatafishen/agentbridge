@@ -40,17 +40,26 @@ public final class GitShowTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"ref", TYPE_STRING, "Commit SHA, branch, tag, or ref (default: HEAD)"},
+            {"stat_only", TYPE_BOOLEAN, "If true, show only file stats, not full diff content"},
+            {"path", TYPE_STRING, "Limit output to this file path"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("show");
 
         String ref = args.has("ref") && !args.get("ref").getAsString().isEmpty()
-                ? args.get("ref").getAsString()
-                : "HEAD";
+            ? args.get("ref").getAsString()
+            : "HEAD";
         cmdArgs.add(ref);
 
         boolean statOnly = args.has("stat_only")
-                && args.get("stat_only").getAsBoolean();
+            && args.get("stat_only").getAsBoolean();
         if (statOnly) {
             cmdArgs.add("--stat");
         }

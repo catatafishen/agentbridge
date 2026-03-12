@@ -8,8 +8,7 @@ import org.jetbrains.annotations.Nullable;
  * Unified definition for a tool the agent can use.
  * <p>
  * Co-locates all metadata that was previously scattered across
- * {@link ToolRegistry} (entries), {@link ToolSchemas} (schemas),
- * {@code ToolRenderers} (popup renderers), and the handler registration
+ * {@link ToolRegistry} (entries), popup renderers, and the handler registration
  * in {@code PsiBridgeService}.
  * <p>
  * Implementations are created by subclassing {@link com.github.catatafishen.ideagentforcopilot.psi.tools.Tool}
@@ -95,8 +94,8 @@ public interface ToolDefinition {
     // ── Schema ───────────────────────────────────────────────
 
     /**
-     * MCP input schema for this tool. Returns null for tools that define
-     * their schema via the legacy {@link ToolSchemas} map.
+     * MCP input schema for this tool. Each tool class overrides this
+     * to define its own schema inline.
      */
     default @Nullable JsonObject inputSchema() {
         return null;

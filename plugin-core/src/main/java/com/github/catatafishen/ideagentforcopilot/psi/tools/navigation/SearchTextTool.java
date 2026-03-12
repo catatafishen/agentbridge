@@ -37,6 +37,17 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"query", TYPE_STRING, "Text or regex pattern to search for"},
+            {"file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.kt', '*.java')", ""},
+            {"regex", TYPE_BOOLEAN, "If true, treat query as regex. Default: false (literal match)"},
+            {"case_sensitive", TYPE_BOOLEAN, "Case-sensitive search. Default: true"},
+            {"max_results", TYPE_INTEGER, "Maximum results to return (default: 100)"}
+        }, "query");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return navTools.searchText(args);
     }

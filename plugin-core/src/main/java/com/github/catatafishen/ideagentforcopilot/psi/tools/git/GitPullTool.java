@@ -45,6 +45,16 @@ public final class GitPullTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"remote", TYPE_STRING, "Remote name (default: origin)"},
+            {"branch", TYPE_STRING, "Branch to pull (default: current tracking branch)"},
+            {"rebase", TYPE_BOOLEAN, "If true, rebase instead of merge when pulling"},
+            {"ff_only", TYPE_BOOLEAN, "If true, only fast-forward (abort if not possible)"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         git.saveAllDocuments();
 

@@ -42,6 +42,17 @@ public final class GitStageTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        JsonObject s = schema(new Object[][]{
+            {"path", TYPE_STRING, "Single file path to stage"},
+            {"paths", TYPE_ARRAY, "Multiple file paths to stage"},
+            {"all", TYPE_BOOLEAN, "If true, stage all changes (including untracked files)"}
+        });
+        addArrayItems(s, "paths");
+        return s;
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         git.flushAndSave();
 

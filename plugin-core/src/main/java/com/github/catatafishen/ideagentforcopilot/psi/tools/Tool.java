@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
-import com.github.catatafishen.ideagentforcopilot.services.ToolSchemas;
 import com.google.gson.JsonObject;
 import com.intellij.execution.RunContentExecutor;
 import com.intellij.execution.process.OSProcessHandler;
@@ -48,7 +47,7 @@ public abstract class Tool implements ToolDefinition {
 
     @Override
     public @Nullable JsonObject inputSchema() {
-        return ToolSchemas.getInputSchema(id());
+        return schema(new Object[][]{});
     }
 
     @Override
@@ -57,6 +56,57 @@ public abstract class Tool implements ToolDefinition {
     }
 
     // ── Shared utilities ─────────────────────────────────────
+
+    // ── Schema builder helpers (moved from ToolSchemas) ──────
+
+    protected static final String TYPE_STRING = "string";
+    protected static final String TYPE_BOOLEAN = "boolean";
+    protected static final String TYPE_INTEGER = "integer";
+    protected static final String TYPE_ARRAY = "array";
+
+    private static final String KEY_TYPE = "type";
+    private static final String KEY_PROPERTIES = "properties";
+    private static final String KEY_REQUIRED = "required";
+    private static final String KEY_DESCRIPTION = "description";
+    private static final String KEY_DEFAULT = "default";
+
+    protected static com.google.gson.JsonObject schema(Object[][] params, String... required) {
+        com.google.gson.JsonObject s = new com.google.gson.JsonObject();
+        s.addProperty(KEY_TYPE, "object");
+        com.google.gson.JsonObject props = new com.google.gson.JsonObject();
+        for (Object[] p : params) {
+            com.google.gson.JsonObject prop = new com.google.gson.JsonObject();
+            prop.addProperty(KEY_TYPE, (String) p[1]);
+            prop.addProperty(KEY_DESCRIPTION, (String) p[2]);
+            if (p.length > 3 && p[3] != null) {
+                prop.addProperty(KEY_DEFAULT, (String) p[3]);
+            }
+            props.add((String) p[0], prop);
+        }
+        s.add(KEY_PROPERTIES, props);
+        com.google.gson.JsonArray req = new com.google.gson.JsonArray();
+        for (String r : required) req.add(r);
+        s.add(KEY_REQUIRED, req);
+        return s;
+    }
+
+    protected static void addArrayItems(com.google.gson.JsonObject schema, String propName) {
+        com.google.gson.JsonObject prop = schema.getAsJsonObject(KEY_PROPERTIES).getAsJsonObject(propName);
+        com.google.gson.JsonObject items = new com.google.gson.JsonObject();
+        items.addProperty(KEY_TYPE, TYPE_STRING);
+        prop.add("items", items);
+    }
+
+    protected static void addDictProperty(com.google.gson.JsonObject schema, String name, String description) {
+        com.google.gson.JsonObject prop = new com.google.gson.JsonObject();
+        prop.addProperty(KEY_TYPE, "object");
+        prop.addProperty(KEY_DESCRIPTION, description);
+        prop.add("properties", new com.google.gson.JsonObject());
+        com.google.gson.JsonObject additionalProps = new com.google.gson.JsonObject();
+        additionalProps.addProperty(KEY_TYPE, TYPE_STRING);
+        prop.add("additionalProperties", additionalProps);
+        schema.getAsJsonObject(KEY_PROPERTIES).add(name, prop);
+    }
 
     protected VirtualFile resolveVirtualFile(String path) {
         return ToolUtils.resolveVirtualFile(project, path);

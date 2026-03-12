@@ -20,10 +20,32 @@ public final class RunQodanaTool extends QualityTool {
         this.qodanaAnalyzer = qodanaAnalyzer;
     }
 
-    @Override public @NotNull String id() { return "run_qodana"; }
-    @Override public @NotNull String displayName() { return "Run Qodana"; }
-    @Override public @NotNull String description() { return "Run Qodana static analysis and return findings"; }
-    @Override public boolean isReadOnly() { return true; }
+    @Override
+    public @NotNull String id() {
+        return "run_qodana";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Run Qodana";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Run Qodana static analysis and return findings";
+    }
+
+    @Override
+    public boolean isReadOnly() {
+        return true;
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"limit", TYPE_INTEGER, "Maximum number of problems to return (default: 100)"}
+        });
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

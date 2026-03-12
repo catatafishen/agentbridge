@@ -16,9 +16,27 @@ public final class OptimizeImportsTool extends QualityTool {
         super(project, qualityTools);
     }
 
-    @Override public @NotNull String id() { return "optimize_imports"; }
-    @Override public @NotNull String displayName() { return "Optimize Imports"; }
-    @Override public @NotNull String description() { return "Manually remove unused imports and organize them according to code style"; }
+    @Override
+    public @NotNull String id() {
+        return "optimize_imports";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Optimize Imports";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Manually remove unused imports and organize them according to code style";
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Absolute or project-relative path to the file to optimize imports"}
+        }, "path");
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

@@ -39,10 +39,21 @@ public final class GitBranchTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"action", TYPE_STRING, "Action: 'list' (default), 'create', 'switch', 'delete'"},
+            {"name", TYPE_STRING, "Branch name (required for create/switch/delete)"},
+            {"base", TYPE_STRING, "Base ref for create (default: HEAD)"},
+            {"all", TYPE_BOOLEAN, "For list: include remote branches"},
+            {"force", TYPE_BOOLEAN, "For delete: force delete unmerged branches"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has("action")
-                ? args.get("action").getAsString()
-                : "list";
+            ? args.get("action").getAsString()
+            : "list";
 
         return switch (action) {
             case "list" -> {
@@ -53,8 +64,8 @@ public final class GitBranchTool extends GitTool {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'create'";
                 String base = args.has("base") && !args.get("base").getAsString().isEmpty()
-                        ? args.get("base").getAsString()
-                        : "HEAD";
+                    ? args.get("base").getAsString()
+                    : "HEAD";
                 yield git.runGit(CMD_BRANCH, name, base);
             }
             case "switch", "checkout" -> {

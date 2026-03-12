@@ -35,6 +35,15 @@ public final class GitRevertTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"commit", TYPE_STRING, "Commit SHA to revert"},
+            {"no_commit", TYPE_BOOLEAN, "If true, revert changes to working tree without creating a commit"},
+            {"no_edit", TYPE_BOOLEAN, "If true, use the default commit message without editing"}
+        }, "commit");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("commit") || args.get("commit").getAsString().isEmpty()) {
             return "Error: 'commit' parameter is required";

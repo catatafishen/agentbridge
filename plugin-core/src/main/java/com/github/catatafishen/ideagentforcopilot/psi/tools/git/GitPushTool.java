@@ -50,6 +50,17 @@ public final class GitPushTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"remote", TYPE_STRING, "Remote name (default: origin)"},
+            {"branch", TYPE_STRING, "Branch to push (default: current)"},
+            {"force", TYPE_BOOLEAN, "Force push"},
+            {"set_upstream", TYPE_BOOLEAN, "Set upstream tracking reference"},
+            {"tags", TYPE_BOOLEAN, "Push all tags"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("push");

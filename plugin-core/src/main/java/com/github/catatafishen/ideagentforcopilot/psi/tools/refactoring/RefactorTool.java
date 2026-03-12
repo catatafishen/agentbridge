@@ -37,6 +37,17 @@ public final class RefactorTool extends RefactoringTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"operation", TYPE_STRING, "Refactoring type: 'rename', 'extract_method', 'inline', or 'safe_delete'"},
+            {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
+            {"symbol", TYPE_STRING, "Name of the symbol to refactor (class, method, field, or variable)"},
+            {"line", TYPE_INTEGER, "Line number to disambiguate if multiple symbols share the same name"},
+            {"new_name", TYPE_STRING, "New name for 'rename' operation. Required when operation is 'rename'"}
+        }, "operation", "file", "symbol");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return refactoringTools.refactor(args);
     }

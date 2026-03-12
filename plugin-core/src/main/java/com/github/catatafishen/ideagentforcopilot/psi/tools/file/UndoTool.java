@@ -32,6 +32,14 @@ public final class UndoTool extends FileTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Path to the file to undo changes on"},
+            {"count", TYPE_INTEGER, "Number of undo steps (default: 1). Each write + auto-format counts as 2 steps"}
+        }, "path");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return fileTools.undo(args);
     }

@@ -43,6 +43,18 @@ public final class GitCherryPickTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        JsonObject s = schema(new Object[][]{
+            {"commits", TYPE_ARRAY, "One or more commit SHAs to cherry-pick"},
+            {"no_commit", TYPE_BOOLEAN, "Apply changes without creating commits"},
+            {"abort", TYPE_BOOLEAN, "Abort an in-progress cherry-pick"},
+            {"continue_pick", TYPE_BOOLEAN, "Continue cherry-pick after resolving conflicts"}
+        });
+        addArrayItems(s, "commits");
+        return s;
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         git.saveAllDocuments();
 

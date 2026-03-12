@@ -40,6 +40,18 @@ public final class GitMergeTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"branch", TYPE_STRING, "Branch to merge into current branch"},
+            {"message", TYPE_STRING, "Custom merge commit message"},
+            {"no_ff", TYPE_BOOLEAN, "Create a merge commit even for fast-forward merges"},
+            {"ff_only", TYPE_BOOLEAN, "Only merge if fast-forward is possible"},
+            {"squash", TYPE_BOOLEAN, "Squash all commits into a single commit (requires manual commit after)"},
+            {"abort", TYPE_BOOLEAN, "Abort an in-progress merge"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         boolean hasAbort = args.has("abort") && args.get("abort").getAsBoolean();
         boolean hasBranch = args.has("branch") && !args.get("branch").getAsString().isEmpty();

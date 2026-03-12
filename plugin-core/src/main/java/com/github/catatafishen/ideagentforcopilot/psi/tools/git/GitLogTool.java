@@ -42,19 +42,31 @@ public final class GitLogTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"max_count", TYPE_INTEGER, "Maximum number of commits to show (default: 10)"},
+            {"format", TYPE_STRING, "Output format: 'oneline', 'short', 'medium', 'full'"},
+            {"author", TYPE_STRING, "Filter commits by author name or email"},
+            {"since", TYPE_STRING, "Show commits after this date (e.g., '2024-01-01')"},
+            {"path", TYPE_STRING, "Show only commits touching this file"},
+            {"branch", TYPE_STRING, "Show commits from this branch (default: current)"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("log");
 
         int maxCount = args.has("max_count")
-                ? args.get("max_count").getAsInt()
-                : DEFAULT_MAX_COUNT;
+            ? args.get("max_count").getAsInt()
+            : DEFAULT_MAX_COUNT;
         cmdArgs.add("-n");
         cmdArgs.add(String.valueOf(maxCount));
 
         String format = args.has("format")
-                ? args.get("format").getAsString()
-                : "medium";
+            ? args.get("format").getAsString()
+            : "medium";
         cmdArgs.add("--format=" + switch (format) {
             case "oneline" -> "oneline";
             case "short" -> "short";

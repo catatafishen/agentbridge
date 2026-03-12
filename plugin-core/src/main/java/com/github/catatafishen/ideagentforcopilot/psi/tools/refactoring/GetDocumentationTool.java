@@ -37,6 +37,13 @@ public final class GetDocumentationTool extends RefactoringTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"symbol", TYPE_STRING, "Fully qualified symbol name (e.g. java.util.List)"}
+        }, "symbol");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return refactoringTools.getDocumentation(args);
     }

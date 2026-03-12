@@ -45,6 +45,16 @@ public final class GitFetchTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"remote", TYPE_STRING, "Remote name (default: origin)"},
+            {"branch", TYPE_STRING, "Specific branch to fetch"},
+            {"prune", TYPE_BOOLEAN, "Remove remote-tracking refs that no longer exist on the remote"},
+            {"tags", TYPE_BOOLEAN, "Fetch all tags from the remote"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("fetch");

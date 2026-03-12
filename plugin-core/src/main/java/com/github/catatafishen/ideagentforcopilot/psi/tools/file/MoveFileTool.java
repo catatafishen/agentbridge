@@ -37,6 +37,14 @@ public final class MoveFileTool extends FileTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Path to the file to move (absolute or project-relative)"},
+            {"destination", TYPE_STRING, "Destination directory path (absolute or project-relative)"}
+        }, "path", "destination");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return fileTools.moveFile(args);
     }

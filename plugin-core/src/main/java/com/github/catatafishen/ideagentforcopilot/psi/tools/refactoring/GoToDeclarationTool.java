@@ -37,6 +37,15 @@ public final class GoToDeclarationTool extends RefactoringTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"file", TYPE_STRING, "Path to the file containing the symbol usage"},
+            {"symbol", TYPE_STRING, "Name of the symbol to look up"},
+            {"line", TYPE_INTEGER, "Line number where the symbol appears"}
+        }, "file", "symbol", "line");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return refactoringTools.goToDeclaration(args);
     }

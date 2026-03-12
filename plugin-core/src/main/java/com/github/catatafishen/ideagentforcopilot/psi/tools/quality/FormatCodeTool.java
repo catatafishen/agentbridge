@@ -16,9 +16,27 @@ public final class FormatCodeTool extends QualityTool {
         super(project, qualityTools);
     }
 
-    @Override public @NotNull String id() { return "format_code"; }
-    @Override public @NotNull String displayName() { return "Format Code"; }
-    @Override public @NotNull String description() { return "Manually format a file using IntelliJ's configured code style"; }
+    @Override
+    public @NotNull String id() {
+        return "format_code";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Format Code";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Manually format a file using IntelliJ's configured code style";
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Absolute or project-relative path to the file to format"}
+        }, "path");
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

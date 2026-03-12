@@ -42,6 +42,13 @@ public final class DeleteFileTool extends FileTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Path to the file to delete (absolute or project-relative)"}
+        }, "path");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return fileTools.deleteFile(args);
     }

@@ -44,10 +44,23 @@ public final class GitTagTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"action", TYPE_STRING, "Action: 'list' (default), 'create', 'delete'"},
+            {"name", TYPE_STRING, "Tag name (required for create/delete)"},
+            {"commit", TYPE_STRING, "Commit to tag (default: HEAD, for create)"},
+            {"message", TYPE_STRING, "Tag message (for annotated tags)"},
+            {"annotate", TYPE_BOOLEAN, "Create an annotated tag (requires message)"},
+            {"pattern", TYPE_STRING, "Glob pattern to filter tags (for list)"},
+            {"sort", TYPE_STRING, "Sort field for list (e.g., '-creatordate' for newest first)"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has("action")
-                ? args.get("action").getAsString()
-                : "list";
+            ? args.get("action").getAsString()
+            : "list";
 
         return switch (action) {
             case "list" -> {

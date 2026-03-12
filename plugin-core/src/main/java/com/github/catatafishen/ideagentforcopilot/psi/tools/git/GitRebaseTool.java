@@ -45,6 +45,19 @@ public final class GitRebaseTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"branch", TYPE_STRING, "Branch to rebase onto"},
+            {"onto", TYPE_STRING, "Rebase onto a specific commit (used with --onto)"},
+            {"interactive", TYPE_BOOLEAN, "Start an interactive rebase"},
+            {"autosquash", TYPE_BOOLEAN, "Automatically squash fixup! and squash! commits (requires interactive)"},
+            {"abort", TYPE_BOOLEAN, "Abort an in-progress rebase"},
+            {"continue_rebase", TYPE_BOOLEAN, "Continue a paused rebase after resolving conflicts"},
+            {"skip", TYPE_BOOLEAN, "Skip the current patch and continue rebase"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         git.saveAllDocuments();
 

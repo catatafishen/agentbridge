@@ -37,6 +37,14 @@ public final class RenameFileTool extends FileTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Path to the file to rename (absolute or project-relative)"},
+            {"new_name", TYPE_STRING, "New file name (just the filename, not a full path)"}
+        }, "path", "new_name");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return fileTools.renameFile(args);
     }

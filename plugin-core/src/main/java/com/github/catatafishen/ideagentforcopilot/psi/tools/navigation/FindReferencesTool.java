@@ -37,6 +37,14 @@ public final class FindReferencesTool extends NavigationTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"symbol", TYPE_STRING, "The exact symbol name to search for"},
+            {"file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.java')", ""}
+        }, "symbol");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return navTools.findReferences(args);
     }

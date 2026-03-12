@@ -40,10 +40,20 @@ public final class GitStashTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"action", TYPE_STRING, "Action: 'list' (default), 'push', 'pop', 'apply', 'drop'"},
+            {"message", TYPE_STRING, "Stash message (for push action)"},
+            {"index", TYPE_STRING, "Stash index (for pop/apply/drop, e.g., 'stash@{0}')"},
+            {"include_untracked", TYPE_BOOLEAN, "For push: include untracked files"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has("action")
-                ? args.get("action").getAsString()
-                : "list";
+            ? args.get("action").getAsString()
+            : "list";
 
         return switch (action) {
             case "list" -> git.runGit("stash", "list");
@@ -66,20 +76,20 @@ public final class GitStashTool extends GitTool {
             case "pop" -> {
                 String index = stashRef(args);
                 yield index != null
-                        ? git.runGit("stash", "pop", index)
-                        : git.runGit("stash", "pop");
+                    ? git.runGit("stash", "pop", index)
+                    : git.runGit("stash", "pop");
             }
             case "apply" -> {
                 String index = stashRef(args);
                 yield index != null
-                        ? git.runGit("stash", "apply", index)
-                        : git.runGit("stash", "apply");
+                    ? git.runGit("stash", "apply", index)
+                    : git.runGit("stash", "apply");
             }
             case "drop" -> {
                 String index = stashRef(args);
                 yield index != null
-                        ? git.runGit("stash", "drop", index)
-                        : git.runGit("stash", "drop");
+                    ? git.runGit("stash", "drop", index)
+                    : git.runGit("stash", "drop");
             }
             default -> "Error: unknown action '" + action + "'. Use: list, push, pop, apply, drop";
         };

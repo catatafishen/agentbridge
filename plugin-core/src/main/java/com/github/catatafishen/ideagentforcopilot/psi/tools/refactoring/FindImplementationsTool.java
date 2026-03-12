@@ -37,6 +37,15 @@ public final class FindImplementationsTool extends RefactoringTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"symbol", TYPE_STRING, "Class, interface, or method name to find implementations for"},
+            {"file", TYPE_STRING, "Optional: file path for method context (required when searching for method overrides)"},
+            {"line", TYPE_INTEGER, "Optional: line number to disambiguate the method (required when searching for method overrides)"}
+        }, "symbol");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return refactoringTools.findImplementationsWrapper(args);
     }

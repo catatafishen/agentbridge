@@ -39,6 +39,14 @@ public final class GetFileHistoryTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Path to the file to get history for (absolute or project-relative)"},
+            {"max_count", TYPE_INTEGER, "Maximum number of commits to show (default: 20)"}
+        }, "path");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || args.get("path").getAsString().isEmpty()) {
             return "Error: 'path' parameter is required";
@@ -46,12 +54,12 @@ public final class GetFileHistoryTool extends GitTool {
         String path = args.get("path").getAsString();
 
         String maxCount = String.valueOf(
-                args.has("max_count")
-                        ? args.get("max_count").getAsInt()
-                        : DEFAULT_MAX_COUNT);
+            args.has("max_count")
+                ? args.get("max_count").getAsInt()
+                : DEFAULT_MAX_COUNT);
 
         return git.runGit("log", "--follow",
-                "--format=%H %ai %an%n  %s",
-                "-n", maxCount, "--", path);
+            "--format=%H %ai %an%n  %s",
+            "-n", maxCount, "--", path);
     }
 }

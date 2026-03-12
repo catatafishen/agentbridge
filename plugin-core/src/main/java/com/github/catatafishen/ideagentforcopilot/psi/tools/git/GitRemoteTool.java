@@ -37,10 +37,19 @@ public final class GitRemoteTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"action", TYPE_STRING, "Action: 'list' (default), 'add', 'remove', 'set_url', 'get_url'"},
+            {"name", TYPE_STRING, "Remote name (required for add/remove/set_url/get_url)"},
+            {"url", TYPE_STRING, "Remote URL (required for add/set_url)"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         String action = args.has("action")
-                ? args.get("action").getAsString()
-                : "list";
+            ? args.get("action").getAsString()
+            : "list";
 
         return switch (action) {
             case "list" -> git.runGit("remote", "-v");

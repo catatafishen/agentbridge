@@ -37,6 +37,14 @@ public final class CreateFileTool extends FileTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Path for the new file (absolute or project-relative). File must not already exist"},
+            {"content", TYPE_STRING, "Content to write to the file"}
+        }, "path", "content");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return fileTools.createFile(args);
     }

@@ -40,6 +40,16 @@ public final class GitDiffTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"staged", TYPE_BOOLEAN, "If true, show staged (cached) changes only"},
+            {"commit", TYPE_STRING, "Compare against this commit (e.g., 'HEAD~1', branch name)"},
+            {"path", TYPE_STRING, "Limit diff to this file path"},
+            {"stat_only", TYPE_BOOLEAN, "If true, show only file stats (insertions/deletions), not full diff"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         git.flushAndSave();
 
@@ -47,7 +57,7 @@ public final class GitDiffTool extends GitTool {
         cmdArgs.add("diff");
 
         boolean staged = args.has("staged")
-                && args.get("staged").getAsBoolean();
+            && args.get("staged").getAsBoolean();
         if (staged) {
             cmdArgs.add("--cached");
         }
@@ -57,7 +67,7 @@ public final class GitDiffTool extends GitTool {
         }
 
         boolean statOnly = args.has("stat_only")
-                && args.get("stat_only").getAsBoolean();
+            && args.get("stat_only").getAsBoolean();
         if (statOnly) {
             cmdArgs.add(1, "--stat");
         }

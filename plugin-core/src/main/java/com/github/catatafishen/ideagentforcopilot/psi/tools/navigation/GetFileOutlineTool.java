@@ -37,6 +37,13 @@ public final class GetFileOutlineTool extends NavigationTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"path", TYPE_STRING, "Absolute or project-relative path to the file to outline"}
+        }, "path");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return navTools.getFileOutline(args);
     }

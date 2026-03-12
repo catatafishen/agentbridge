@@ -16,9 +16,27 @@ public final class AddToDictionaryTool extends QualityTool {
         super(project, qualityTools);
     }
 
-    @Override public @NotNull String id() { return "add_to_dictionary"; }
-    @Override public @NotNull String displayName() { return "Add to Dictionary"; }
-    @Override public @NotNull String description() { return "Add a word to the project spell-check dictionary"; }
+    @Override
+    public @NotNull String id() {
+        return "add_to_dictionary";
+    }
+
+    @Override
+    public @NotNull String displayName() {
+        return "Add to Dictionary";
+    }
+
+    @Override
+    public @NotNull String description() {
+        return "Add a word to the project spell-check dictionary";
+    }
+
+    @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"word", TYPE_STRING, "The word to add to the project dictionary"}
+        }, "word");
+    }
 
     @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {

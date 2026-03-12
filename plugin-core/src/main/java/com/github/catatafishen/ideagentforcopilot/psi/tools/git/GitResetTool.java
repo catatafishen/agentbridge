@@ -45,6 +45,15 @@ public final class GitResetTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"commit", TYPE_STRING, "Target commit (default: HEAD)"},
+            {"mode", TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"},
+            {"path", TYPE_STRING, "Reset a specific file path (unstages it)"}
+        });
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         git.saveAllDocuments();
 

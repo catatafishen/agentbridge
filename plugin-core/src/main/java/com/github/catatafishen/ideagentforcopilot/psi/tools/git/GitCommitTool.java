@@ -40,6 +40,15 @@ public final class GitCommitTool extends GitTool {
     }
 
     @Override
+    public @Nullable JsonObject inputSchema() {
+        return schema(new Object[][]{
+            {"message", TYPE_STRING, "Commit message (use conventional commit format)"},
+            {"amend", TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"},
+            {"all", TYPE_BOOLEAN, "If true, automatically stage all modified and deleted files"}
+        }, "message");
+    }
+
+    @Override
     public @Nullable String execute(@NotNull JsonObject args) throws Exception {
         git.flushAndSave();
 
