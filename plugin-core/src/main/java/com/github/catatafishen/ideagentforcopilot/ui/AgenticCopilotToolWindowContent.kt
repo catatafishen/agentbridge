@@ -110,6 +110,11 @@ class AgenticCopilotToolWindowContent(
         // Chat panel — created lazily on first connect
         if (agentManager.isAutoConnect) {
             buildAndShowChatPanel()
+            loadModelsAsync { models ->
+                loadedModels = models
+                restoreModelSelection(models)
+                statusBanner?.showInfo("Connected to ${agentManager.activeProfile.displayName}")
+            }
         } else {
             cardLayout.show(mainPanel, CARD_CONNECT)
         }
@@ -144,16 +149,6 @@ class AgenticCopilotToolWindowContent(
         cardLayout.show(mainPanel, CARD_CHAT)
         agentManager.isAcpConnected = true
         updatePromptPlaceholder()
-
-        // If called from auto-connect, kick off model loading
-        if (loadedModels.isEmpty() && modelsStatusText == MSG_LOADING) {
-            loadModelsAsync { models ->
-                loadedModels = models
-                restoreModelSelection(models)
-                val agentName = agentManager.activeProfile.displayName
-                statusBanner?.showInfo("Connected to $agentName")
-            }
-        }
     }
 
     /**

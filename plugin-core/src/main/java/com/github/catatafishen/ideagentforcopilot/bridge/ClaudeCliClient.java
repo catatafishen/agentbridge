@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
@@ -144,8 +145,16 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.redirectErrorStream(true);
             Process proc = pb.start();
+
+            // Read output with a timeout: if 'claude models' hangs (e.g. waiting for network),
+            // fall back to built-in models rather than blocking the model-loading thread forever.
+            if (!proc.waitFor(10, TimeUnit.SECONDS)) {
+                proc.destroyForcibly();
+                LOG.info("'claude models' timed out — using built-in model list");
+                return List.of();
+            }
+
             String output = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-            proc.waitFor();
             if (!output.startsWith("[")) return List.of();
             List<Model> models = new ArrayList<>();
             for (JsonElement el : JsonParser.parseString(output).getAsJsonArray()) {
