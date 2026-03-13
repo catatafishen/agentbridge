@@ -10,7 +10,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
-import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -162,49 +161,19 @@ public final class RunInspectionsTool extends QualityTool {
             PlatformApiCompat.runFullInspections(project, scope, currentProfile, ctx -> {
                 LOG.info("Inspection analysis completed, collecting results...");
                 LOG.info("Used tools count: " + ctx.getUsedTools().size());
-                scheduleInspectionCollection(ctx, severityRank, requiredRank, basePath,
-                    new InspectionPageParams(profileName, offset, limit), resultFuture, 0);
+                // Collect synchronously while the context is still valid — the callback is
+                // invoked BEFORE super.notifyInspectionsFinished which calls cleanup().
+                //noinspection RedundantCast - required to disambiguate Computable<T> vs ThrowableComputable<T,E> overloads
+                InspectionCollectionResult collected = ApplicationManager.getApplication().runReadAction(
+                    (com.intellij.openapi.util.Computable<InspectionCollectionResult>) () ->
+                        collectInspectionProblems(ctx, severityRank, requiredRank, basePath));
+                cacheAndCompleteInspection(collected, new InspectionPageParams(profileName, offset, limit), resultFuture);
             });
 
         } catch (Exception e) {
             LOG.error("Error setting up inspections", e);
             resultFuture.complete("Error setting up inspections: " + e.getMessage());
         }
-    }
-
-    /**
-     * Schedule inspection result collection with retries using the app scheduler.
-     * Retries up to 3 times with increasing delay (0ms, 500ms, 1000ms) to allow
-     * tool presentations to populate.
-     */
-    private void scheduleInspectionCollection(
-        com.intellij.codeInspection.ex.GlobalInspectionContextEx ctx, Map<String, Integer> severityRank, int requiredRank,
-        String basePath, InspectionPageParams pageParams,
-        CompletableFuture<String> resultFuture, int attempt) {
-
-        long delayMs = attempt > 0 ? 500L * attempt : 0;
-
-        AppExecutorUtil.getAppScheduledExecutorService().schedule(() -> {
-            try {
-                //noinspection RedundantCast - required to disambiguate Computable<T> vs ThrowableComputable<T,E> overloads
-                InspectionCollectionResult collected = ApplicationManager.getApplication().runReadAction(
-                    (com.intellij.openapi.util.Computable<InspectionCollectionResult>) () ->
-                        collectInspectionProblems(ctx, severityRank, requiredRank, basePath));
-
-                if (collected.problems.isEmpty() && attempt < 2) {
-                    LOG.info("Inspection collection attempt " + (attempt + 1) +
-                        " found 0 problems, scheduling retry...");
-                    scheduleInspectionCollection(ctx, severityRank, requiredRank, basePath,
-                        pageParams, resultFuture, attempt + 1);
-                    return;
-                }
-
-                cacheAndCompleteInspection(collected, pageParams, resultFuture);
-            } catch (Exception e) {
-                LOG.error("Error collecting inspection results", e);
-                resultFuture.completeExceptionally(e);
-            }
-        }, delayMs, TimeUnit.MILLISECONDS);
     }
 
     private void cacheAndCompleteInspection(InspectionCollectionResult collected,

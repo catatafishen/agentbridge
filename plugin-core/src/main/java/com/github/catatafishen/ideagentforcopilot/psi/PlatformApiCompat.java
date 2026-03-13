@@ -859,36 +859,49 @@ public final class PlatformApiCompat {
     /**
      * Runs the full inspection engine on the given scope using the supplied profile.
      * <p>
-     * <b>Why extracted:</b> The inspection API has been stable across 2024.3–2025.2, but the
-     * method must be invoked on the EDT and uses {@link com.intellij.openapi.project.DumbService}
-     * to wait until indexing finishes — this guard was missing from call sites and caused the
-     * analysis to silently no-op when dumb mode was active (the context's
-     * {@code notifyInspectionsFinished} fires immediately with 0 used tools).
+     * <b>Why extracted:</b> The actual analysis requires {@code GlobalInspectionContextImpl}
+     * (obtained via {@code InspectionManagerEx.createNewGlobalContext()}), NOT a raw
+     * {@code GlobalInspectionContextEx}. {@code GlobalInspectionContextBase.runTools()} is a
+     * no-op; only {@code GlobalInspectionContextImpl.runTools()} performs real file-by-file
+     * inspection. Using {@code GlobalInspectionContextEx} directly completes in ~40ms with 0
+     * results because {@code runTools()} is never overridden in {@code GlobalInspectionContextEx}.
+     * <p>
+     * {@code InspectionManagerEx} is an internal class but is the only way to obtain a
+     * {@code GlobalInspectionContextImpl} with the correct {@code ContentManager}; confined here
+     * to keep internal API usage out of business code.
+     * <p>
+     * The {@code onFinished} callback is invoked <b>synchronously</b> before
+     * {@code super.notifyInspectionsFinished}, which calls {@code cleanup()} and disposes the
+     * context. Callers must therefore collect all results inside the callback before returning.
      *
      * @param project    the current project
      * @param scope      the analysis scope to inspect
      * @param profile    the inspection profile to use
-     * @param onFinished callback invoked (on a background thread) after analysis completes;
-     *                   receives the fully-populated {@code GlobalInspectionContextEx}
+     * @param onFinished callback invoked synchronously before cleanup; context is still valid
      */
     public static void runFullInspections(
         @NotNull Project project,
         @NotNull com.intellij.analysis.AnalysisScope scope,
         @NotNull com.intellij.codeInspection.ex.InspectionProfileImpl profile,
         @NotNull java.util.function.Consumer<com.intellij.codeInspection.ex.GlobalInspectionContextEx> onFinished) {
-        com.intellij.codeInspection.ex.GlobalInspectionContextEx context =
-            new com.intellij.codeInspection.ex.GlobalInspectionContextEx(project) {
+        // GlobalInspectionContextImpl extends GlobalInspectionContextEx and is the only concrete
+        // class with a real runTools() implementation.  InspectionManagerEx provides the
+        // ContentManager required by its constructor.
+        com.intellij.codeInspection.ex.InspectionManagerEx mgr =
+            (com.intellij.codeInspection.ex.InspectionManagerEx)
+                com.intellij.codeInspection.InspectionManager.getInstance(project);
+        com.intellij.codeInspection.ex.GlobalInspectionContextImpl context =
+            new com.intellij.codeInspection.ex.GlobalInspectionContextImpl(project, mgr.getContentManager()) {
                 @Override
-                protected void notifyInspectionsFinished(@NotNull com.intellij.analysis.AnalysisScope finishedScope) {
-                    super.notifyInspectionsFinished(finishedScope);
+                protected void notifyInspectionsFinished(
+                    @NotNull com.intellij.analysis.AnalysisScope finishedScope) {
+                    // Collect results BEFORE super, which calls cleanup() and disposes the context
                     onFinished.accept(this);
+                    super.notifyInspectionsFinished(finishedScope);
                 }
             };
         context.setExternalProfile(profile);
-        // doInspections asserts EDT and internally calls canRunInspections(), which returns false
-        // when the project is in dumb mode (indexing). Use runWhenSmart() so we wait for indexing
-        // to finish before triggering the analysis; it dispatches on EDT like invokeLater().
-        com.intellij.openapi.project.DumbService.getInstance(project).runWhenSmart(() ->
-            context.doInspections(scope));
+        com.intellij.openapi.project.DumbService.getInstance(project).runWhenSmart(
+            () -> context.doInspections(scope));
     }
 }
