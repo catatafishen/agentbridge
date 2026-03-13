@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
+import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicKeyStore;
+import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
@@ -80,6 +82,10 @@ public final class AgentProfilesConfigurable implements Configurable {
     // ── Permissions tab ──
     private JBCheckBox usePluginPermissionsCb;
     private JBCheckBox excludeAgentBuiltInToolsCb;
+
+    // ── Claude Code (direct API) ──
+    private JPasswordField anthropicApiKeyField;
+    private JPanel anthropicApiKeySection;
 
     private List<AgentProfile> workingCopies;
     private int currentIndex = -1;
@@ -211,6 +217,9 @@ public final class AgentProfilesConfigurable implements Configurable {
         usePluginPermissionsCb = new JBCheckBox("Use plugin-level tool permissions");
         excludeAgentBuiltInToolsCb = new JBCheckBox("Exclude agent's built-in tools at session start");
 
+        anthropicApiKeyField = new JPasswordField();
+        anthropicApiKeyField.setEchoChar('•');
+
         editorCards = new CardLayout();
         editorPanel = new JBPanel<>(editorCards);
 
@@ -240,9 +249,16 @@ public final class AgentProfilesConfigurable implements Configurable {
     }
 
     private JPanel buildGeneralTab() {
+        anthropicApiKeySection = FormBuilder.createFormBuilder()
+            .addComponent(new TitledSeparator("Claude Code API"))
+            .addLabeledComponent("Anthropic API key:", anthropicApiKeyField)
+            .addTooltip("Your Anthropic API key (sk-ant-...). Stored securely in the IDE keystore.")
+            .getPanel();
+
         FormBuilder builder = FormBuilder.createFormBuilder()
             .addLabeledComponent("Display name:", nameField);
         builder.addLabeledComponent("Notes:", new JBScrollPane(descriptionArea));
+        builder.addComponent(anthropicApiKeySection);
         builder.addComponent(new TitledSeparator("Binary Discovery"))
             .addLabeledComponent("Binary name:", binaryNameField)
             .addTooltip("Primary executable name to search for (e.g., \"copilot\", \"opencode\")")
@@ -395,6 +411,7 @@ public final class AgentProfilesConfigurable implements Configurable {
     private void loadProfileIntoEditor(@NotNull AgentProfile p) {
         loading = true;
         try {
+            boolean isDirect = p.getTransportType() == TransportType.ANTHROPIC_DIRECT;
             nameField.setText(p.getDisplayName());
             descriptionArea.setText(p.getDescription() != null ? p.getDescription() : "");
             descriptionArea.setEditable(!p.isBuiltIn());
@@ -418,6 +435,14 @@ public final class AgentProfilesConfigurable implements Configurable {
             bundledAgentFilesField.setText(String.join(",", p.getBundledAgentFiles()));
             usePluginPermissionsCb.setSelected(p.isUsePluginPermissions());
             excludeAgentBuiltInToolsCb.setSelected(p.isExcludeAgentBuiltInTools());
+
+            if (isDirect) {
+                String stored = AnthropicKeyStore.getApiKey(p.getId());
+                anthropicApiKeyField.setText(stored != null ? stored : "");
+            } else {
+                anthropicApiKeyField.setText("");
+            }
+            anthropicApiKeySection.setVisible(isDirect);
         } finally {
             loading = false;
         }
@@ -489,7 +514,17 @@ public final class AgentProfilesConfigurable implements Configurable {
                 ? formSnapshot : workingCopies.get(i);
             if (!profileEquals(toCompare, persisted.get(i))) return true;
         }
-        return false;
+
+        // Check if the API key field has been edited for the current ANTHROPIC_DIRECT profile
+        return currentIndex >= 0 && currentIndex < workingCopies.size() && !loading
+            && isApiKeyModified(workingCopies.get(currentIndex));
+    }
+
+    private boolean isApiKeyModified(@NotNull AgentProfile profile) {
+        if (profile.getTransportType() != TransportType.ANTHROPIC_DIRECT) return false;
+        String fieldKey = new String(anthropicApiKeyField.getPassword());
+        String storedKey = AnthropicKeyStore.getApiKey(profile.getId());
+        return !fieldKey.equals(storedKey != null ? storedKey : "");
     }
 
     @Override
@@ -516,6 +551,15 @@ public final class AgentProfilesConfigurable implements Configurable {
                 fresh.setId(working.getId());
                 fresh.copyFrom(working);
                 mgr.addProfile(fresh);
+            }
+        }
+
+        // Save API key for the currently-displayed ANTHROPIC_DIRECT profile
+        if (currentIndex >= 0 && currentIndex < workingCopies.size()) {
+            AgentProfile current = workingCopies.get(currentIndex);
+            if (current.getTransportType() == TransportType.ANTHROPIC_DIRECT) {
+                String key = new String(anthropicApiKeyField.getPassword()).trim();
+                AnthropicKeyStore.setApiKey(current.getId(), key.isEmpty() ? null : key);
             }
         }
     }
