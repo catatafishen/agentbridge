@@ -1058,7 +1058,13 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         arguments: String? = null
     ): JComponent {
         if (details.isNullOrBlank()) {
-            return JBLabel(if (status != "failed") "Completed" else "✖ Failed")
+            return JBLabel(
+                when (status) {
+                    "failed" -> "✖ Failed"
+                    "running" -> "⏳ Running…"
+                    else -> "Completed"
+                }
+            )
         }
         if (status != "failed" && baseName != null) {
             val renderer = ToolRenderers.get(baseName, toolRegistry)
