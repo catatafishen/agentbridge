@@ -11,6 +11,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,7 +33,7 @@ public final class SonarQubeIntegration {
     private static final String UNKNOWN = "unknown";
     private static final String FINDING_FORMAT = "%s:%d [%s/%s] %s";
     private static final int POLL_INTERVAL_MS = 500;
-    private static final int MAX_WAIT_SECONDS = 120;
+    private static final int MAX_WAIT_SECONDS = 60;
 
     private final Project project;
 
@@ -68,11 +69,6 @@ public final class SonarQubeIntegration {
         return false;
     }
 
-    /**
-     * Trigger SonarQube analysis and collect results.
-     * The trigger is fire-and-forget — no arbitrary timeout.
-     * Completion is detected via RunningAnalysesTracker polling.
-     */
     public String runAnalysis(String scope, int limit, int offset) {
         if (!isInstalled()) {
             return "Error: SonarQube for IDE plugin is not installed.";
@@ -81,12 +77,22 @@ public final class SonarQubeIntegration {
         try {
             String basePath = project.getBasePath();
 
+            // If an analysis is currently running, wait for it to finish then return those results
             if (isAnalysisRunning()) {
                 LOG.info("SonarQube analysis already in progress, waiting for completion");
                 List<String> findings = waitForNewResults(basePath, null);
                 return formatOutput(findings, limit, offset);
             }
 
+            // Fast path: return existing cached results without re-triggering analysis
+            List<String> existing = collectViaEdt(basePath);
+            if (!existing.isEmpty()) {
+                LOG.info("Returning " + existing.size() + " cached SonarQube findings");
+                return formatOutput(existing, limit, offset);
+            }
+
+            // No cached results found — trigger a new analysis
+            LOG.info("No cached results found, triggering SonarLint analysis for scope: " + scope);
             String actionId = resolveActionId(scope);
             CompletableFuture<Boolean> triggerResult = triggerAction(actionId);
 
@@ -271,11 +277,16 @@ public final class SonarQubeIntegration {
     }
 
     private List<String> collectAllFindings(String basePath) {
-        List<String> results = collectFromReportTab(basePath);
-        if (results.isEmpty()) {
-            results = collectFromOnTheFlyHolder(basePath);
-        }
-        return results;
+        List<String> reportResults = collectFromReportTab(basePath);
+        List<String> onTheFlyResults = collectFromOnTheFlyHolder(basePath);
+
+        if (onTheFlyResults.isEmpty()) return reportResults;
+        if (reportResults.isEmpty()) return onTheFlyResults;
+
+        // Merge and deduplicate: report tab findings take precedence
+        LinkedHashSet<String> merged = new LinkedHashSet<>(reportResults);
+        merged.addAll(onTheFlyResults);
+        return new ArrayList<>(merged);
     }
 
     /**
@@ -364,36 +375,30 @@ public final class SonarQubeIntegration {
                                            List<String> results, Set<String> seen)
         throws ReflectiveOperationException {
         Method getIssuesMethod = liveFindings.getClass().getMethod("getIssuesPerFile");
-        Map<?, ?> issuesPerFile = (Map<?, ?>) getIssuesMethod.invoke(liveFindings);
-        if (issuesPerFile == null) return;
-
-        for (Map.Entry<?, ?> entry : issuesPerFile.entrySet()) {
-            Collection<?> issues = (Collection<?>) entry.getValue();
-            for (Object issue : issues) {
-                String formatted = formatLiveFinding(issue, basePath);
-                if (formatted != null && seen.add(formatted)) results.add(formatted);
-            }
-        }
+        collectFromPerFileMap(getIssuesMethod.invoke(liveFindings), basePath, results, seen);
     }
 
     private void collectHotspotsFromFindings(Object liveFindings, String basePath,
                                              List<String> results, Set<String> seen) {
         try {
             Method getHotspotsMethod = liveFindings.getClass().getMethod("getSecurityHotspotsPerFile");
-            Map<?, ?> hotspotsPerFile = (Map<?, ?>) getHotspotsMethod.invoke(liveFindings);
-            if (hotspotsPerFile == null) return;
-
-            for (Map.Entry<?, ?> entry : hotspotsPerFile.entrySet()) {
-                Collection<?> hotspots = (Collection<?>) entry.getValue();
-                for (Object hotspot : hotspots) {
-                    String formatted = formatLiveFinding(hotspot, basePath);
-                    if (formatted != null && seen.add(formatted)) results.add(formatted);
-                }
-            }
+            collectFromPerFileMap(getHotspotsMethod.invoke(liveFindings), basePath, results, seen);
         } catch (NoSuchMethodException e) {
             LOG.info("getSecurityHotspotsPerFile not available");
         } catch (Exception e) {
             LOG.debug("Error collecting hotspots: " + e.getMessage());
+        }
+    }
+
+    private void collectFromPerFileMap(Object perFileMap, String basePath,
+                                       List<String> results, Set<String> seen) {
+        if (!(perFileMap instanceof Map<?, ?> map)) return;
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (!(entry.getValue() instanceof Collection<?> findings)) continue;
+            for (Object finding : findings) {
+                String formatted = formatLiveFinding(finding, basePath);
+                if (formatted != null && seen.add(formatted)) results.add(formatted);
+            }
         }
     }
 
@@ -527,8 +532,11 @@ public final class SonarQubeIntegration {
             if (getRangeMethod != null) {
                 Object rangeObj = getRangeMethod.invoke(finding);
                 if (rangeObj instanceof com.intellij.openapi.editor.RangeMarker rm && rm.isValid()) {
-                    return com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction((com.intellij.openapi.util.Computable<Integer>) () ->
-                        rm.getDocument().getLineNumber(rm.getStartOffset()) + 1
+                    // Cast required: disambiguates runReadAction(Computable) from runReadAction(ThrowableComputable)
+                    //noinspection RedundantCast
+                    return com.intellij.openapi.application.ApplicationManager.getApplication().runReadAction(
+                        (com.intellij.openapi.util.Computable<Integer>) () ->
+                            rm.getDocument().getLineNumber(rm.getStartOffset()) + 1
                     );
                 }
             }
