@@ -28,7 +28,6 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
@@ -94,7 +93,7 @@ public final class AgentProfilesConfigurable implements Configurable {
     }
 
     @Override
-    public @Nullable JComponent createComponent() {
+    public @NotNull JComponent createComponent() {
         workingCopies = new ArrayList<>();
         for (AgentProfile p : AgentProfileManager.getInstance().getAllProfiles()) {
             workingCopies.add(p.copyForEditing());

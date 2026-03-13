@@ -1273,8 +1273,8 @@ class AgenticCopilotToolWindowContent(
                 if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return@EventDispatcher false
                 if (KeyStroke.getKeyStrokeForEvent(event) !in pasteStrokes) return@EventDispatcher false
                 // Only intercept when our prompt editor is in the focus hierarchy
-                val focused = java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
-                if (!javax.swing.SwingUtilities.isDescendingFrom(
+                val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+                if (!SwingUtilities.isDescendingFrom(
                         focused,
                         contentComponent
                     )

@@ -6,7 +6,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.WriteFileRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -20,7 +19,6 @@ import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -85,7 +83,7 @@ public class WriteFileTool extends FileTool {
                 "Auto-format code AND optimize imports after writing (default: true). "
                     + "Formatting is DEFERRED until the end of the current turn or before git commit — "
                     + "safe for multi-step edits within a single turn. "
-                    + "\u26A0\uFE0F Import optimization REMOVES imports it considers unused — "
+                    + "⚠️ Import optimization REMOVES imports it considers unused — "
                     + "if you add imports in one edit and reference them in a later edit, "
                     + "set this to false or combine both changes in one edit"}
         }, "path", PARAM_CONTENT);
@@ -290,7 +288,7 @@ public class WriteFileTool extends FileTool {
         WriteAction.run(() ->
             CommandProcessor.getInstance().executeCommand(
                 project, () -> doc.replaceString(fStart, fEnd, fNew),
-                "Edit File (line range)", null)
+                "Edit File (Line Range)", null)
         );
         FileDocumentManager.getInstance().saveDocument(doc);
         String syntaxWarning = checkSyntaxErrors(pathStr);

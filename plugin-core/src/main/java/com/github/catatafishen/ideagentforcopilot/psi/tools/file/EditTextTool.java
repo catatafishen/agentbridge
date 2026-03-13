@@ -1,10 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.WriteFileRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Surgical find-and-replace edit within a file.
@@ -48,14 +46,10 @@ public final class EditTextTool extends WriteFileTool {
                 "Auto-format code AND optimize imports after editing (default: true). "
                     + "Formatting is DEFERRED until the end of the current turn or before git commit — "
                     + "safe for multi-step edits within a single turn. "
-                    + "\u26A0\uFE0F Import optimization REMOVES imports it considers unused — "
+                    + "⚠️ Import optimization REMOVES imports it considers unused — "
                     + "if you add imports in one edit and reference them in a later edit, "
                     + "set this to false or combine both changes in one edit"}
         }, "path", "old_str", "new_str");
     }
 
-    @Override
-    public @NotNull Object resultRenderer() {
-        return WriteFileRenderer.INSTANCE;
-    }
 }

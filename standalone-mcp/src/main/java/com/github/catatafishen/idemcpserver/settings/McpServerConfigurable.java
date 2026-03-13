@@ -6,7 +6,6 @@ import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -30,7 +29,7 @@ public final class McpServerConfigurable implements Configurable {
     }
 
     @Override
-    public @Nullable JComponent createComponent() {
+    public @NotNull JComponent createComponent() {
         JPanel panel = new JPanel(new BorderLayout());
         JBLabel label = new JBLabel(
             "<html><b>MCP Server</b><br><br>"

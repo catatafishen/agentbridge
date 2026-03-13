@@ -2,7 +2,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.codeInsight.daemon.impl.HighlightInfo;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;

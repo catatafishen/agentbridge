@@ -11,7 +11,6 @@ import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -38,7 +37,7 @@ public final class ToolsConfigurable implements Configurable {
         return "Tools";
     }
 
-    @Nullable
+    @NotNull
     @Override
     public JComponent createComponent() {
         McpServerSettings settings = McpServerSettings.getInstance(project);

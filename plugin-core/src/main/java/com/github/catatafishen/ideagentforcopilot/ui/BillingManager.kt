@@ -90,7 +90,7 @@ internal class BillingManager {
         localSessionPremiumRequests += parseMultiplier(multiplier)
         LOG.info("recordTurnCompleted: localSessionRequests=$localSessionRequests, premium=$localSessionPremiumRequests (mult=$multiplier)")
         val estimated = estimatedUsed()
-        val shouldAnimate = previousUsedCount >= 0 && estimated > previousUsedCount
+        val shouldAnimate = previousUsedCount in 0..<estimated
         previousUsedCount = estimated
         ApplicationManager.getApplication().invokeLater {
             refreshUsageDisplay()
@@ -167,7 +167,7 @@ internal class BillingManager {
         if (billingCycleStartUsed < 0) billingCycleStartUsed = snapshot.used
 
         val estimated = estimatedUsed()
-        val shouldAnimate = previousUsedCount >= 0 && estimated > previousUsedCount
+        val shouldAnimate = previousUsedCount in 0..<estimated
         previousUsedCount = estimated
 
         ApplicationManager.getApplication().invokeLater {
@@ -250,7 +250,7 @@ internal class BillingManager {
             if (overage > 0) {
                 val cost = overage * OVERAGE_COST_PER_REQ
                 append(
-                    "<font color='${errorHex()}'>Overage: $overage reqs (\$${
+                    "<font color='${errorHex()}'>Overage: $overage reqs ($${
                         String.format(
                             "%.2f",
                             cost
@@ -262,7 +262,7 @@ internal class BillingManager {
             if (projectedOverage > 0) {
                 val projCost = projectedOverage * OVERAGE_COST_PER_REQ
                 append(
-                    "<font color='${errorHex()}'>Projected overage: ~$projectedOverage (\$${
+                    "<font color='${errorHex()}'>Projected overage: ~$projectedOverage ($${
                         String.format(
                             "%.2f",
                             projCost

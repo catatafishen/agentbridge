@@ -41,7 +41,7 @@ object ScratchFileRenderer : ToolResultRenderer {
         return panel
     }
 
-    private fun tryRunOutput(text: String, lines: List<String>): JComponent? {
+    private fun tryRunOutput(text: String, lines: List<String>): JComponent {
         val exitMatch = EXIT_CODE.find(text)
         val exitCode = exitMatch?.groupValues?.get(1)?.toIntOrNull()
         val succeeded = exitCode == null || exitCode == 0

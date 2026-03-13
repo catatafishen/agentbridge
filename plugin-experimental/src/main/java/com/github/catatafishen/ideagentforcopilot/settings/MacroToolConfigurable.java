@@ -14,11 +14,11 @@ import com.intellij.ui.table.JBTable;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 import java.awt.*;
+import java.io.Serial;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -53,7 +53,7 @@ public final class MacroToolConfigurable implements Configurable {
     }
 
     @Override
-    public @Nullable JComponent createComponent() {
+    public @NotNull JComponent createComponent() {
         JPanel panel = new JPanel(new BorderLayout(0, JBUI.scale(8)));
 
         JBLabel info = new JBLabel(
@@ -171,6 +171,7 @@ public final class MacroToolConfigurable implements Configurable {
 
     private static final class MacroTableModel extends AbstractTableModel {
         private static final String[] COLUMNS = {"Enabled", "Macro", "Tool Name", "Description"};
+        @Serial
         private static final long serialVersionUID = 1L;
         transient List<MacroRegistration> rows = new ArrayList<>();
 

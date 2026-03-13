@@ -1,7 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.psi.java;
 
 import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.TextRange;

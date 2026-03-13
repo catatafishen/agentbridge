@@ -155,7 +155,7 @@ class ToolUtilsTest {
         @Test
         void replacesNonAsciiWithQuestionMark() {
             // em-dash → ?
-            assertEquals("a?b", ToolUtils.normalizeForMatch("a\u2014b"));
+            assertEquals("a?b", ToolUtils.normalizeForMatch("a—b"));
         }
 
         @Test

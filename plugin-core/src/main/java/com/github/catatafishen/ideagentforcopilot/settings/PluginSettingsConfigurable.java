@@ -7,7 +7,6 @@ import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -21,10 +20,7 @@ public final class PluginSettingsConfigurable implements Configurable {
     public static final String ID = "com.github.catatafishen.ideagentforcopilot.settings";
     public static final String DISPLAY_NAME = "AgentBridge";
 
-    private final Project project;
-
-    public PluginSettingsConfigurable(@NotNull Project project) {
-        this.project = project;
+    public PluginSettingsConfigurable(@NotNull Project ignoredProject) {
     }
 
     /**
@@ -40,7 +36,7 @@ public final class PluginSettingsConfigurable implements Configurable {
     }
 
     @Override
-    public @Nullable JComponent createComponent() {
+    public @NotNull JComponent createComponent() {
         JPanel panel = new JPanel(new BorderLayout());
         JBLabel label = new JBLabel(
             "<html><b>" + DISPLAY_NAME + "</b><br><br>"

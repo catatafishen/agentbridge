@@ -50,7 +50,7 @@ public final class McpServerConfigurable implements Configurable {
         return "Server";
     }
 
-    @Nullable
+    @NotNull
     @Override
     public JComponent createComponent() {
         McpServerSettings settings = McpServerSettings.getInstance(project);

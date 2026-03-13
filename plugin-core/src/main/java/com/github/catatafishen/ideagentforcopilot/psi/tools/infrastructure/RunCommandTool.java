@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunCommandRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;

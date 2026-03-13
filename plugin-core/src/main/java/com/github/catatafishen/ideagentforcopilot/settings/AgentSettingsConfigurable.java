@@ -9,7 +9,6 @@ import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -37,7 +36,7 @@ public final class AgentSettingsConfigurable implements Configurable {
     }
 
     @Override
-    public @Nullable JComponent createComponent() {
+    public @NotNull JComponent createComponent() {
         var agentManager = ActiveAgentManager.getInstance(project);
         String agentName = agentManager.getActiveProfile().getDisplayName();
 
@@ -54,7 +53,7 @@ public final class AgentSettingsConfigurable implements Configurable {
                 + "Switch agents by disconnecting and reconnecting from the Connect screen.</html>"))
             .addSeparator()
             .addLabeledComponent("Prompt timeout (seconds):", timeoutSpinner)
-            .addTooltip("Time before an inactive agent session is considered timed out (30\u20133600).")
+            .addTooltip("Time before an inactive agent session is considered timed out (30–3600).")
             .addLabeledComponent("Max tool calls per turn:", maxToolCallsSpinner)
             .addTooltip("Limit how many tools the agent can call in a single turn. 0 = unlimited.")
             .addComponentFillVertically(new JPanel(), 0)

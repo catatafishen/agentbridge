@@ -6,7 +6,7 @@ import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.Nls;
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 
@@ -24,7 +24,7 @@ public final class BillingConfigurable implements Configurable {
     }
 
     @Override
-    public @Nullable JComponent createComponent() {
+    public @NotNull JComponent createComponent() {
         settings = BillingSettings.getInstance();
 
         showCopilotUsageCb = new JBCheckBox("Show Copilot usage graph in toolbar");

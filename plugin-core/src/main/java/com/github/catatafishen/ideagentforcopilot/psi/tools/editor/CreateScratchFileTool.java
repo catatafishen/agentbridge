@@ -92,8 +92,6 @@ public final class CreateScratchFileTool extends EditorTool {
             ScratchFileService scratchService = ScratchFileService.getInstance();
             ScratchRootType scratchRoot = ScratchRootType.getInstance();
 
-            // Cast needed: runWriteAction is overloaded (Computable vs. ThrowableComputable)
-            //noinspection RedundantCast
             resultFile[0] = WriteAction.compute(
                 () -> {
                     try {

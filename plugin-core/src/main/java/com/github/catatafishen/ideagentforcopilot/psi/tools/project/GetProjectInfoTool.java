@@ -1,22 +1,19 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.ProjectInfoRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.execution.RunManager;
 import com.intellij.openapi.application.ApplicationInfo;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.projectRoots.Sdk;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.ProjectRootManager;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.ProjectInfoRenderer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

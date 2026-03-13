@@ -7,7 +7,6 @@ import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 
@@ -30,7 +29,7 @@ public final class ToolPermissionsConfigurable implements Configurable {
     }
 
     @Override
-    public @Nullable JComponent createComponent() {
+    public @NotNull JComponent createComponent() {
         var settings = ActiveAgentManager.getInstance(project).getSettings();
         permissionsPanel = new PermissionsPanel(settings, ToolRegistry.getInstance(project));
         return permissionsPanel.getComponent();
