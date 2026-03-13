@@ -315,23 +315,43 @@ class AgenticCopilotToolWindowContent(
             diagnosticsFn = { authService.copilotSetupDiagnostics() },
             onFixed = onFixed,
         ) { diag ->
+            val isClaudeCli = agentManager.activeProfile.transportType ==
+                TransportType.CLAUDE_CLI
             val isCLINotFound = "copilot cli not found" in diag.lowercase() ||
-                ("not found" in diag.lowercase() && "copilot" in diag.lowercase())
+                ("not found" in diag.lowercase() && ("copilot" in diag.lowercase() || "claude" in diag.lowercase()))
             when {
+                isCLINotFound && isClaudeCli -> {
+                    val installUrl = "https://code.claude.com"
+                    updateState(
+                        "Claude CLI is not installed \u2014 install from $installUrl and run 'claude auth login'",
+                        showInstall = true,
+                    )
+                }
+
                 isCLINotFound -> {
                     val cmd = if (System.getProperty("os.name").lowercase().contains("win"))
                         "winget install GitHub.Copilot" else "npm install -g @github/copilot-cli"
                     updateState("Copilot CLI is not installed \u2014 install with: $cmd", showInstall = true)
                 }
 
+                isClaudeCli && authService.isAuthenticationError(diag) ->
+                    updateState(
+                        "Not signed in to Claude \u2014 run 'claude auth login' in a terminal, then click Retry.",
+                        showSignIn = false,
+                    )
+
                 authService.isAuthenticationError(diag) ->
                     updateState("Not signed in to Copilot \u2014 click Sign In, then click Retry.", showSignIn = true)
 
-                else -> updateState("Copilot CLI unavailable")
+                else -> updateState(if (isClaudeCli) "Claude CLI unavailable" else "Copilot CLI unavailable")
             }
         }
         banner.installHandler = {
-            com.intellij.ide.BrowserUtil.browse("https://github.com/github/copilot-cli#installation")
+            if (agentManager.activeProfile.transportType == TransportType.CLAUDE_CLI) {
+                com.intellij.ide.BrowserUtil.browse("https://code.claude.com")
+            } else {
+                com.intellij.ide.BrowserUtil.browse("https://github.com/github/copilot-cli#installation")
+            }
         }
         // Clear pending auth error on Retry so diagnostics re-verifies from scratch
         banner.retryHandler = { authService.clearPendingAuthError() }

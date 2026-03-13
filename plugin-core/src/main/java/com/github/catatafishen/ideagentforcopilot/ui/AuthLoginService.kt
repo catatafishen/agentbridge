@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliCredentials
+import com.github.catatafishen.ideagentforcopilot.bridge.TransportType
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -41,15 +43,25 @@ internal class AuthLoginService(private val project: Project) {
 
     // ── Diagnostics ──────────────────────────────────────────────────────────
 
-    /** Returns null if Copilot CLI is installed and authenticated, or an error description. */
+    /** Returns null if the active agent is installed and authenticated, or an error description. */
     fun copilotSetupDiagnostics(): String? {
         // If there's a pending auth error, return it immediately
         // without calling getClient() — which would auto-restart the ACP process.
         // Cleared by the sign-in flow (onAuthComplete) or by clearPendingAuthError().
         pendingAuthError?.let { return it }
 
+        val agentManager = ActiveAgentManager.getInstance(project)
+
+        // For Claude CLI mode, check credentials directly — listModels() always succeeds
+        // (it falls back to built-in models), so it cannot be used as an auth check.
+        if (agentManager.activeProfile.transportType == TransportType.CLAUDE_CLI) {
+            val creds = ClaudeCliCredentials.read()
+            return if (creds.isLoggedIn) null
+            else "Not authenticated with Claude. Run 'claude auth login' in a terminal, then retry."
+        }
+
         return try {
-            val client = ActiveAgentManager.getInstance(project).client
+            val client = agentManager.client
             client.listModels()
             null
         } catch (e: Exception) {

@@ -72,21 +72,19 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     @Override
     public void start() throws AcpException {
         resolvedBinaryPath = resolveBinary();
-        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
-        if (!creds.isLoggedIn()) {
-            throw new AcpException(
-                "Not logged in to Claude. Run 'claude auth login' in a terminal, then retry.",
-                null, true);
-        }
         started = true;
+        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
         String name = creds.getDisplayName();
+        if (!creds.isLoggedIn()) {
+            LOG.warn("Claude CLI credentials not found or expired — prompts will fail until 'claude auth login' is run");
+        }
         LOG.info("ClaudeCliClient started for profile: " + profile.getDisplayName()
             + (name != null ? " (account: " + name + ")" : ""));
     }
 
     @Override
     public boolean isHealthy() {
-        return started && ClaudeCliCredentials.read().isLoggedIn();
+        return started;
     }
 
     @Override
