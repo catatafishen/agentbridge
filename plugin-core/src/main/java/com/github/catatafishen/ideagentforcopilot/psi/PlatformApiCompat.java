@@ -925,7 +925,17 @@ public final class PlatformApiCompat {
                 }
             };
         context.setExternalProfile(profile);
-        com.intellij.openapi.project.DumbService.getInstance(project).runWhenSmart(
-            () -> context.doInspections(scope));
+        // Run doInspections on a pooled thread, never the EDT.
+        // DumbService.runWhenSmart() can dispatch its callback to the EDT when indexing is active;
+        // running doInspections() on the EDT causes ProgressManager to show a modal dialog (Task.Modal),
+        // which locks the EDT in a modal event loop. Any invokeLater() calls posted with NON_MODAL
+        // modality state (which is all MCP tool lambdas from background HTTP threads) are then held
+        // back until the modal dialog closes — causing cascading 30-second timeouts and an IDE freeze.
+        // By always running on a pooled thread, doInspections() runs synchronously in that thread
+        // without a modal dialog, leaving the EDT free to process write-tool lambdas normally.
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            com.intellij.openapi.project.DumbService.getInstance(project).waitForSmartMode();
+            context.doInspections(scope);
+        });
     }
 }
