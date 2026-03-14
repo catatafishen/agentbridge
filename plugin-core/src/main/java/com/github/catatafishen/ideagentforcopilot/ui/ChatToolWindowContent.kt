@@ -699,7 +699,7 @@ class ChatToolWindowContent(
     }
 
     private inner class ProcessingTimerPanel : JBPanel<ProcessingTimerPanel>(), com.intellij.openapi.Disposable {
-        private val spinner = AsyncProcessIcon("CopilotProcessing")
+        private val spinner = AsyncProcessIcon("AgentProcessing")
         private val doneIcon = JBLabel(AllIcons.Actions.Checked)
         private val timerLabel = JBLabel("")
         private val toolsLabel = JBLabel("")
@@ -1837,7 +1837,7 @@ class ChatToolWindowContent(
             "tool_call" -> handleStreamingToolCall(update)
             "tool_call_update" -> handleStreamingToolCallUpdate(update)
             "agent_thought_chunk" -> handleStreamingAgentThought(update)
-            "claude_usage" -> {
+            AgentClient.SESSION_UPDATE_TURN_USAGE -> {
                 turnInputTokens = update["inputTokens"]?.asInt ?: 0
                 turnOutputTokens = update["outputTokens"]?.asInt ?: 0
                 turnCostUsd = update["costUsd"]?.asDouble ?: 0.0

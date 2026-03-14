@@ -114,6 +114,15 @@ public interface AgentClient extends Closeable {
     }
 
     /**
+     * {@code sessionUpdate} event type emitted by clients that support turn-level usage tracking.
+     * The event carries {@code inputTokens} (int), {@code outputTokens} (int), and
+     * {@code costUsd} (double) fields. Clients that do not track usage simply never emit
+     * this event type. Defined here so both emitters and consumers share the same constant
+     * and neither layer hard-codes a client-specific string.
+     */
+    String SESSION_UPDATE_TURN_USAGE = "turn_usage";
+
+    /**
      * Whether this client supports per-model premium-request multipliers.
      *
      * <p>When {@code true} (e.g. GitHub Copilot), a multiplier chip is shown on each

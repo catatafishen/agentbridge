@@ -541,7 +541,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         if (!resultEvent.has(FIELD_TOTAL_INPUT_TOKENS) && !resultEvent.has(FIELD_COST_USD)) return;
 
         JsonObject update = new JsonObject();
-        update.addProperty("sessionUpdate", "claude_usage");
+        update.addProperty("sessionUpdate", SESSION_UPDATE_TURN_USAGE);
         update.addProperty("inputTokens",
             resultEvent.has(FIELD_TOTAL_INPUT_TOKENS) ? resultEvent.get(FIELD_TOTAL_INPUT_TOKENS).getAsInt() : 0);
         update.addProperty("outputTokens",
