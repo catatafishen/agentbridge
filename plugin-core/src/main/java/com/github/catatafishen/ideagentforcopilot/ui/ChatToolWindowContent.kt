@@ -75,10 +75,14 @@ class ChatToolWindowContent(
     private val billing = BillingManager()
     private val authService = AuthLoginService(project)
     private lateinit var consolePanel: ChatPanelApi
+    private lateinit var chatConsolePanel: ChatConsolePanel
     private lateinit var responsePanelContainer: JBPanel<JBPanel<*>>
     private var copilotBanner: AuthSetupBanner? = null
     private var statusBanner: StatusBanner? = null
     private var inlineAuthProcess: Process? = null
+
+    private val conversationStore = ConversationStore()
+    private val conversationReplayer = ConversationReplayer()
 
     // Per-turn tracking
     private var turnToolCallCount = 0
@@ -1312,7 +1316,9 @@ class ChatToolWindowContent(
     }
 
     private fun createResponsePanel(): JComponent {
-        consolePanel = ChatConsolePanel(project)
+        chatConsolePanel = ChatConsolePanel(project)
+        consolePanel = chatConsolePanel
+        chatConsolePanel.onLoadMoreRequested = ::onLoadMoreHistory
         consolePanel.onQuickReply = { text -> ApplicationManager.getApplication().invokeLater { sendQuickReply(text) } }
         // Register for proper JCEF browser disposal
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
@@ -2040,25 +2046,8 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun conversationFile(): java.io.File {
-        val dir = java.io.File(project.basePath ?: "", AGENT_WORK_DIR)
-        dir.mkdirs()
-        return java.io.File(dir, "conversation.json")
-    }
-
-    /** Move conversation.json to conversations/conversation-<timestamp>.json for future restore. */
     private fun archiveConversation() {
-        try {
-            val src = conversationFile()
-            if (!src.exists() || src.length() < 10) return
-            val archiveDir = java.io.File(src.parentFile, "conversations")
-            archiveDir.mkdirs()
-            val stamp = java.time.LocalDateTime.now()
-                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH-mm-ss"))
-            val renamed = src.renameTo(java.io.File(archiveDir, "conversation-$stamp.json"))
-            if (!renamed) LOG.debug("Could not archive conversation file")
-        } catch (_: Exception) { /* best-effort */
-        }
+        conversationStore.archive(project.basePath)
     }
 
     private fun notifyIfUnfocused(toolCallCount: Int) {
@@ -2098,12 +2087,7 @@ class ChatToolWindowContent(
 
     private fun saveConversation() {
         lastIncrementalSaveMs = System.currentTimeMillis()
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                conversationFile().writeText(consolePanel.serializeEntries())
-            } catch (_: Exception) { /* best-effort */
-            }
-        }
+        conversationStore.saveAsync(project.basePath, ConversationSerializer.serialize(chatConsolePanel.getEntries()))
     }
 
     /**
@@ -2120,30 +2104,25 @@ class ChatToolWindowContent(
 
     private fun restoreConversation(onComplete: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                // Primary: current session file. Fallback: most recent archive (e.g. after startup archive).
-                val file = conversationFile().takeIf { it.exists() && it.length() >= 10 }
-                    ?: run {
-                        val archiveDir = java.io.File(
-                            java.io.File(project.basePath ?: return@executeOnPooledThread, AGENT_WORK_DIR),
-                            "conversations"
-                        )
-                        archiveDir.listFiles { _, n -> n.startsWith("conversation-") && n.endsWith(".json") }
-                            ?.maxByOrNull { it.name }
-                    }
-                if (file == null) {
-                    ApplicationManager.getApplication().invokeLater { onComplete() }
-                    return@executeOnPooledThread
+            val json = conversationStore.loadJson(project.basePath)
+            ApplicationManager.getApplication().invokeLater {
+                if (json != null) {
+                    conversationReplayer.loadAndSplit(json)
+                    chatConsolePanel.appendEntries(conversationReplayer.recentEntries())
+                    val deferred = conversationReplayer.deferredCount()
+                    if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
                 }
-                val json = file.readText()
-                ApplicationManager.getApplication().invokeLater {
-                    consolePanel.restoreEntries(json)
-                    onComplete()
-                }
-            } catch (_: Exception) {
-                ApplicationManager.getApplication().invokeLater { onComplete() }
+                onComplete()
             }
         }
+    }
+
+    private fun onLoadMoreHistory() {
+        val batch = conversationReplayer.loadNextBatch()
+        if (batch.isNotEmpty()) chatConsolePanel.prependEntries(batch)
+        val remaining = conversationReplayer.deferredCount()
+        if (remaining > 0) chatConsolePanel.showLoadMore(remaining)
+        else chatConsolePanel.hideLoadMore()
     }
 
     private fun handlePasteToScratch(text: String) {

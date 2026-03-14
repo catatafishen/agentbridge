@@ -51,7 +51,14 @@ interface ChatPanelApi : Disposable {
 
     // ── Sub-agent internal tool calls ──────────────────────────────
 
-    fun addSubAgentToolCall(subAgentId: String, toolId: String, title: String, arguments: String? = null, kind: String? = null)
+    fun addSubAgentToolCall(
+        subAgentId: String,
+        toolId: String,
+        title: String,
+        arguments: String? = null,
+        kind: String? = null
+    )
+
     fun updateSubAgentToolCall(toolId: String, status: String, details: String? = null)
 
     // ── Status / errors ────────────────────────────────────────────
@@ -82,8 +89,6 @@ interface ChatPanelApi : Disposable {
     fun getCompressedSummary(maxChars: Int = 8000): String
     fun getConversationHtml(): String
     fun getLastResponseText(): String
-    fun serializeEntries(): String
-    fun restoreEntries(json: String)
 
     // ── Debug / introspection ──────────────────────────────────────
 

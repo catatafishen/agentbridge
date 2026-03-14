@@ -64,7 +64,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
-    private val deferredRestoreJson = mutableListOf<com.google.gson.JsonElement>()
     private val pendingPermissionCallbacks =
         java.util.concurrent.ConcurrentHashMap<String, (com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse) -> Unit>()
 
@@ -86,9 +85,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         fun getInstance(project: Project): ChatConsolePanel? = instances[project]
 
         private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
-        private const val DEFAULT_AGENT_TYPE = "general-purpose"
 
-        private val LINK_COLOR_KEY = "Link.activeForeground"
+        private const val LINK_COLOR_KEY = "Link.activeForeground"
         private val USER_COLOR = JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214))
         private val AGENT_COLOR = JBColor(Color(0x2A, 0x80, 0x2A), Color(150, 200, 150))
         private val TOOL_COLOR = JBColor(Color(0x6A, 0x4C, 0xB0), Color(180, 160, 220))
@@ -148,7 +146,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             cursorBridgeJs = cursorQuery.inject("c")
 
             val loadMoreQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
-            loadMoreQuery.addHandler { loadMoreEntries(); null }
+            loadMoreQuery.addHandler { onLoadMoreRequested?.invoke(); null }
             Disposer.register(this, loadMoreQuery)
             loadMoreBridgeJs = loadMoreQuery.inject("'load'")
 
@@ -419,7 +417,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun showPlaceholder(text: String) {
-        entries.clear(); deferredRestoreJson.clear()
+        entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
         executeJs("ChatController.showPlaceholder('${escJs(text)}')")
@@ -427,7 +425,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun clear() {
-        entries.clear(); deferredRestoreJson.clear()
+        entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
         executeJs("ChatController.clear()")
@@ -469,184 +467,45 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun getLastResponseText(): String =
         entries.filterIsInstance<EntryData.Text>().lastOrNull()?.raw?.toString() ?: ""
 
-    override fun serializeEntries(): String {
-        val arr = com.google.gson.JsonArray()
-        for (e in entries) {
-            val obj = com.google.gson.JsonObject()
-            when (e) {
-                is EntryData.Prompt -> {
-                    obj.addProperty("type", "prompt"); obj.addProperty("text", e.text)
-                    if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
-                    if (!e.contextFiles.isNullOrEmpty()) {
-                        val fa = com.google.gson.JsonArray()
-                        e.contextFiles.forEach { (name, path, line) ->
-                            val fo = com.google.gson.JsonObject()
-                            fo.addProperty("name", name)
-                            fo.addProperty("path", path)
-                            fo.addProperty("line", line)
-                            fa.add(fo)
-                        }
-                        obj.add("ctxFiles", fa)
-                    }
-                }
+    // ── History / persistence API ──────────────────────────────────
 
-                is EntryData.Text -> {
-                    obj.addProperty("type", "text"); obj.addProperty("raw", e.raw.toString())
-                }
+    var onLoadMoreRequested: (() -> Unit)? = null
 
-                is EntryData.Thinking -> {
-                    obj.addProperty("type", "thinking"); obj.addProperty("raw", e.raw.toString())
-                }
+    fun getEntries(): List<EntryData> = entries.toList()
 
-                is EntryData.ToolCall -> {
-                    obj.addProperty("type", "tool"); obj.addProperty("title", e.title); obj.addProperty(
-                        "args",
-                        e.arguments ?: ""
-                    )
-                    obj.addProperty("kind", e.kind)
-                    if (!e.result.isNullOrEmpty()) obj.addProperty("result", e.result)
-                    if (!e.status.isNullOrEmpty()) obj.addProperty("status", e.status)
-                }
-
-                is EntryData.SubAgent -> {
-                    obj.addProperty("type", "subagent"); obj.addProperty("agentType", e.agentType)
-                    obj.addProperty("description", e.description); obj.addProperty("prompt", e.prompt ?: "")
-                    obj.addProperty("result", e.result ?: ""); obj.addProperty("status", e.status ?: "")
-                    obj.addProperty("colorIndex", e.colorIndex)
-                }
-
-                is EntryData.ContextFiles -> {
-                    obj.addProperty("type", "context")
-                    val fa = com.google.gson.JsonArray()
-                    e.files.forEach { f ->
-                        val fo = com.google.gson.JsonObject(); fo.addProperty(
-                        "name",
-                        f.first
-                    ); fo.addProperty("path", f.second); fa.add(fo)
-                    }
-                    obj.add("files", fa)
-                }
-
-                is EntryData.Status -> {
-                    obj.addProperty("type", "status"); obj.addProperty("icon", e.icon); obj.addProperty(
-                        "message",
-                        e.message
-                    )
-                }
-
-                is EntryData.SessionSeparator -> {
-                    obj.addProperty("type", "separator"); obj.addProperty(
-                        "timestamp",
-                        e.timestamp
-                    ); obj.addProperty("agent", e.agent)
-                }
-            }
-            arr.add(obj)
-        }
-        return arr.toString()
+    fun showLoadMore(deferredCount: Int) {
+        executeJs("ChatController.showLoadMore($deferredCount)")
     }
 
-    override fun restoreEntries(json: String) {
-        entries.clear(); deferredRestoreJson.clear()
-        currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
-        turnCounter = 0; currentTurnId = ""
-        val arr = try {
-            com.google.gson.JsonParser.parseString(json).asJsonArray
-        } catch (_: Exception) {
-            return
-        }
-        if (arr.size() == 0) return
+    fun hideLoadMore() {
+        executeJs("ChatController.removeLoadMore()")
+    }
 
-        // Split: show last N prompt turns immediately, defer the rest
-        val turnsToShow = 5
-        val splitAt = findSplitIndex(arr, turnsToShow)
-        if (splitAt > 0) {
-            for (i in 0 until splitAt) deferredRestoreJson.add(arr[i])
-            executeJs("ChatController.showLoadMore(${deferredRestoreJson.size})")
-        }
-
-        // Batch-render the recent entries as a single HTML payload.
-        // Previously this fired one executeJs per entry (100-300+ calls), which flooded
-        // JCEF's IPC queue and caused the renderer to appear completely frozen until
-        // all messages were processed. One restoreBatch call is processed as a single
-        // script execution, allowing the browser to render a frame immediately after.
-        val recentEntries = (splitAt until arr.size()).map { arr[it].asJsonObject }
-        recentEntries.forEach { addEntryFromJson(it) }
-        turnCounter = recentEntries.count { it["type"]?.asString == "prompt" }
-        val html = renderBatchGroupedHtml(recentEntries)
+    fun appendEntries(entries: List<EntryData>) {
+        if (entries.isEmpty()) return
+        for (e in entries) addEntryFromData(e)
+        val turnCount = entries.count { it is EntryData.Prompt }
+        if (turnCount > 0) turnCounter += turnCount
+        val html = renderBatchGroupedHtml(entries)
         if (html.isNotEmpty()) {
             val encoded = b64(html)
             executeJs("ChatController.restoreBatch('$encoded')")
         }
     }
 
-    private fun findSplitIndex(arr: com.google.gson.JsonArray, turnsFromEnd: Int): Int {
-        var promptCount = 0
-        for (i in arr.size() - 1 downTo 0) {
-            if (arr[i].asJsonObject["type"]?.asString == "prompt") promptCount++
-            if (promptCount >= turnsFromEnd) return i
+    fun prependEntries(entries: List<EntryData>) {
+        if (entries.isEmpty()) return
+        for ((idx, e) in entries.withIndex()) this.entries.add(idx, e)
+        val html = renderBatchGroupedHtml(entries)
+        if (html.isNotEmpty()) {
+            val encoded = b64(html)
+            executeJs("ChatController.prependBatch('$encoded')")
         }
-        return 0
     }
 
-    private fun addEntryFromJson(obj: com.google.gson.JsonObject) {
-        when (obj["type"]?.asString) {
-            "prompt" -> {
-                val ctxFiles = obj["ctxFiles"]?.asJsonArray?.map { f ->
-                    val fo = f.asJsonObject
-                    Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
-                }
-                entries.add(EntryData.Prompt(obj["text"]?.asString ?: "", obj["ts"]?.asString ?: "", ctxFiles))
-            }
-
-            "text" -> entries.add(EntryData.Text(StringBuilder(obj["raw"]?.asString ?: "")))
-            "thinking" -> entries.add(EntryData.Thinking(StringBuilder(obj["raw"]?.asString ?: "")))
-            "tool" -> entries.add(
-                EntryData.ToolCall(
-                    obj["title"]?.asString ?: "",
-                    obj["args"]?.asString,
-                    obj["kind"]?.asString ?: "other",
-                    obj["result"]?.asString,
-                    obj["status"]?.asString
-                )
-            )
-
-            "subagent" -> {
-                val ci = obj["colorIndex"]?.asInt ?: (nextSubAgentColor++ % SA_COLOR_COUNT)
-                entries.add(
-                    EntryData.SubAgent(
-                        obj["agentType"]?.asString ?: DEFAULT_AGENT_TYPE,
-                        obj["description"]?.asString ?: "",
-                        obj["prompt"]?.asString?.ifEmpty { null },
-                        obj["result"]?.asString?.ifEmpty { null },
-                        obj["status"]?.asString?.ifEmpty { null } ?: "completed",
-                        ci
-                    ))
-            }
-
-            "context" -> {
-                val files = mutableListOf<Pair<String, String>>()
-                obj["files"]?.asJsonArray?.forEach { f ->
-                    val fo = f.asJsonObject
-                    files.add(Pair(fo["name"]?.asString ?: "", fo["path"]?.asString ?: ""))
-                }
-                entries.add(EntryData.ContextFiles(files))
-            }
-
-            "status" -> entries.add(
-                EntryData.Status(
-                    obj["icon"]?.asString ?: "ℹ",
-                    obj["message"]?.asString ?: ""
-                )
-            )
-
-            "separator" -> entries.add(
-                EntryData.SessionSeparator(
-                    obj["timestamp"]?.asString ?: "",
-                    obj["agent"]?.asString ?: ""
-                )
-            )
-        }
+    private fun addEntryFromData(e: EntryData) {
+        this.entries.add(e)
+        if (e is EntryData.ToolCall) toolCallEntries["batch-tool-${batchIdCounter}"] = e
     }
 
     private fun buildRestoredBubbleHtml(text: String, ctxFiles: List<Triple<String, String, Int>>): String {
@@ -660,91 +519,50 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         return result
     }
 
-    private fun loadMoreEntries() {
-        if (deferredRestoreJson.isEmpty()) return
-        val turnsToLoad = 3
-        var promptCount = 0
-        var start = deferredRestoreJson.size - 1
-        while (start >= 0) {
-            if (deferredRestoreJson[start].asJsonObject["type"]?.asString == "prompt") promptCount++
-            if (promptCount >= turnsToLoad) break
-            start--
-        }
-        if (start < 0) start = 0
-        val batch = deferredRestoreJson.subList(start, deferredRestoreJson.size)
-        val entries = batch.map { it.asJsonObject }
-        for (obj in entries) addEntryFromJson(obj)
-        val html = renderBatchGroupedHtml(entries)
-        batch.clear()
-        if (html.isNotEmpty()) {
-            val encoded = b64(html)
-            executeJs("ChatController.restoreBatch('$encoded')")
-        }
-        if (deferredRestoreJson.isEmpty()) {
-            executeJs("ChatController.removeLoadMore()")
-        } else {
-            executeJs("ChatController.showLoadMore(${deferredRestoreJson.size})")
-        }
-    }
-
     private var batchIdCounter = 0
 
-    private fun renderBatchGroupedHtml(entries: List<com.google.gson.JsonObject>): String {
+    private fun renderBatchGroupedHtml(entries: List<EntryData>): String {
         val sb = StringBuilder()
         var i = 0
         while (i < entries.size) {
-            val obj = entries[i]
-            when (obj["type"]?.asString) {
-                "prompt" -> {
-                    sb.append(buildPromptHtml(obj)); i++
+            when (val e = entries[i]) {
+                is EntryData.Prompt -> {
+                    sb.append(buildPromptHtml(e)); i++
                 }
 
-                "separator" -> {
-                    sb.append("<session-divider timestamp='${esc(obj["timestamp"]?.asString ?: "")}' agent='${esc(obj["agent"]?.asString ?: "")}'></session-divider>")
+                is EntryData.SessionSeparator -> {
+                    sb.append("<session-divider timestamp='${esc(e.timestamp)}' agent='${esc(e.agent)}'></session-divider>")
                     i++
                 }
 
-                "status" -> i++ // transient Swing banners — skip in HTML rendering
-                "context" -> i++
-                else -> {
-                    i = appendAgentTurn(entries, i, sb)
-                }
+                is EntryData.Status, is EntryData.ContextFiles -> i++ // transient / non-visual in restored HTML
+                else -> i = appendAgentTurn(entries, i, sb)
             }
         }
         return sb.toString()
     }
 
-    private fun buildPromptHtml(obj: com.google.gson.JsonObject): String {
-        val text = obj["text"]?.asString ?: ""
-        val ts = obj["ts"]?.asString ?: ""
-        val ctxArr = obj["ctxFiles"]?.asJsonArray
-        val ctxFiles = ctxArr?.map { f ->
-            val fo = f.asJsonObject
-            Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
-        }
+    private fun buildPromptHtml(e: EntryData.Prompt): String {
         val sb = StringBuilder()
         sb.append("<chat-message type='user'>")
-        sb.append("<message-meta><span class='ts'>${esc(ts)}</span></message-meta>")
+        sb.append("<message-meta><span class='ts'>${esc(e.timestamp)}</span></message-meta>")
         sb.append("<message-bubble type='user'>")
-        if (!ctxFiles.isNullOrEmpty()) {
-            sb.append(buildRestoredBubbleHtml(text, ctxFiles))
+        if (!e.contextFiles.isNullOrEmpty()) {
+            sb.append(buildRestoredBubbleHtml(e.text, e.contextFiles))
         } else {
-            sb.append(esc(text))
+            sb.append(esc(e.text))
         }
         sb.append("</message-bubble>")
         sb.append("</chat-message>")
         return sb.toString()
     }
 
-    private fun appendAgentTurn(entries: List<com.google.gson.JsonObject>, startI: Int, sb: StringBuilder): Int {
+    private fun appendAgentTurn(entries: List<EntryData>, startI: Int, sb: StringBuilder): Int {
         var i = startI
         var segmentMetaChips = StringBuilder()
         var segmentDetailsContent = StringBuilder()
         var segmentAfterDetails = StringBuilder()
         var segmentStarted = false
-        // True once the current segment contains at least one tool or subagent chip.
-        // When the next text/thinking entry arrives, we close this segment and begin a new
-        // one — mirroring what ChatController.newSegment() does in the live session.
         var hadToolOrSubagent = false
 
         fun flushSegment() {
@@ -763,20 +581,13 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         while (i < entries.size) {
             val e = entries[i]
-            val t = e["type"]?.asString
-            if (t == "prompt" || t == "separator" || t == "status") break
-            // context entries carry no visual content in restored HTML
-            if (t == "context") {
-                i++
-                continue
+            if (e is EntryData.Prompt || e is EntryData.SessionSeparator || e is EntryData.Status) break
+            if (e is EntryData.ContextFiles) {
+                i++; continue
             }
-            // After a tool/subagent, the next text or thinking block starts a fresh
-            // chat-message (equivalent to ChatController.newSegment in the live path).
-            if (hadToolOrSubagent && (t == "text" || t == "thinking")) {
-                flushSegment()
-            }
+            if (hadToolOrSubagent && (e is EntryData.Text || e is EntryData.Thinking)) flushSegment()
             appendAgentEntry(e, segmentMetaChips, segmentDetailsContent, segmentAfterDetails)
-            if (t == "tool" || t == "subagent") hadToolOrSubagent = true
+            if (e is EntryData.ToolCall || e is EntryData.SubAgent) hadToolOrSubagent = true
             segmentStarted = true
             i++
         }
@@ -785,14 +596,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     private fun appendAgentEntry(
-        e: com.google.gson.JsonObject,
+        e: EntryData,
         metaChips: StringBuilder,
         detailsContent: StringBuilder,
         afterDetails: StringBuilder
     ) {
-        when (e["type"]?.asString) {
-            "thinking" -> {
-                val raw = e["raw"]?.asString ?: ""
+        when (e) {
+            is EntryData.Thinking -> {
+                val raw = e.raw.toString()
                 if (raw.isNotBlank()) {
                     val id = "batch-think-${batchIdCounter++}"
                     metaChips.append("<thinking-chip status='complete' data-chip-for='$id'></thinking-chip>")
@@ -806,48 +617,42 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 }
             }
 
-            "tool" -> appendToolEntry(e, metaChips)
-            "text" -> {
-                val raw = e["raw"]?.asString ?: ""
+            is EntryData.ToolCall -> appendToolEntry(e, metaChips)
+
+            is EntryData.Text -> {
+                val raw = e.raw.toString()
                 if (raw.isNotBlank()) {
                     val clean = raw.replace(QUICK_REPLY_TAG_REGEX, "").trimEnd()
-                    val html = markdownToHtml(clean)
-                    afterDetails.append("<message-bubble>$html</message-bubble>")
+                    afterDetails.append("<message-bubble>${markdownToHtml(clean)}</message-bubble>")
                 }
             }
 
-            "subagent" -> {
-                val agentType = e["agentType"]?.asString ?: DEFAULT_AGENT_TYPE
-                val saInfo = SUB_AGENT_INFO[agentType]
-                val dn = saInfo?.displayName ?: agentType.replaceFirstChar { it.uppercaseChar() }
-                val result = e["result"]?.asString?.ifEmpty { null }
-                val ci = e["colorIndex"]?.asInt ?: 0
-                val resultHtml = if (!result.isNullOrBlank()) markdownToHtml(result) else "Completed"
+            is EntryData.SubAgent -> {
+                val saInfo = SUB_AGENT_INFO[e.agentType]
+                val dn = saInfo?.displayName ?: e.agentType.replaceFirstChar { it.uppercaseChar() }
+                val resultHtml = if (!e.result.isNullOrBlank()) markdownToHtml(e.result!!) else "Completed"
                 val id = "batch-sa-${batchIdCounter++}"
-                metaChips.append("<subagent-chip label='${esc(dn)}' status='complete' color-index='$ci' data-chip-for='$id'></subagent-chip>")
-                afterDetails.append("<div id='$id' class='subagent-indent subagent-c$ci turn-hidden'><message-bubble>$resultHtml</message-bubble></div>")
+                metaChips.append("<subagent-chip label='${esc(dn)}' status='complete' color-index='${e.colorIndex}' data-chip-for='$id'></subagent-chip>")
+                afterDetails.append("<div id='$id' class='subagent-indent subagent-c${e.colorIndex} turn-hidden'><message-bubble>$resultHtml</message-bubble></div>")
             }
 
-            else -> { /* exhaustive: no action for unknown entry types */
+            else -> { /* Prompt, ContextFiles, Status, SessionSeparator are handled by the caller */
             }
         }
     }
 
-    private fun appendToolEntry(e: com.google.gson.JsonObject, metaChips: StringBuilder) {
-        val title = e["title"]?.asString ?: ""
-        val args = e["args"]?.asString
-        val kind = e["kind"]?.asString ?: "other"
-        val info = TOOL_DISPLAY_INFO[title]
-        val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(title, args)
+    private fun appendToolEntry(e: EntryData.ToolCall, metaChips: StringBuilder) {
+        val info = TOOL_DISPLAY_INFO[e.title]
+        val displayName = info?.displayName ?: e.title.replaceFirstChar { it.uppercaseChar() }
+        val short = formatToolSubtitle(e.title, e.arguments)
         val label = if (short != null) "$displayName — $short" else displayName
         val id = "batch-tool-${batchIdCounter++}"
-        val result = e["result"]?.asString
-        val status = e["status"]?.asString ?: "completed"
-        toolCallNames[id] = title
-        toolCallEntries[id] = EntryData.ToolCall(title, args, kind, result, status)
-        val paramsAttr = if (args != null) " data-params='${esc(args)}'" else ""
-        metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'$paramsAttr></tool-chip>")
+        val result = e.result
+        val status = e.status ?: "completed"
+        toolCallNames[id] = e.title
+        toolCallEntries[id] = EntryData.ToolCall(e.title, e.arguments, e.kind, result, status)
+        val paramsAttr = if (e.arguments != null) " data-params='${esc(e.arguments)}'" else ""
+        metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(e.kind)}' data-chip-for='$id'$paramsAttr></tool-chip>")
     }
 
     @Suppress("kotlin:S6518") // False positive: CompletableFuture.get(long, TimeUnit) is not an indexed accessor
