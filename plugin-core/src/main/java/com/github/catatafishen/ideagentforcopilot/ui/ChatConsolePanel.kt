@@ -302,14 +302,13 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val entry = EntryData.ToolCall(title, arguments, resolvedKind)
         entries.add(entry)
         val did = domId(id)
-        val baseName = stripMcpPrefix(title)
-        toolCallNames[did] = baseName
+        toolCallNames[did] = title
         toolCallEntries[did] = entry
-        val info = TOOL_DISPLAY_INFO[baseName]
+        val info = TOOL_DISPLAY_INFO[title]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(baseName, arguments)
+        val short = formatToolSubtitle(title, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
-        val hasCustomRenderer = ToolRenderers.hasRenderer(baseName, toolRegistry)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(title, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
         executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind')")
@@ -333,16 +332,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     ) {
         val saDid = domId(subAgentId)
         val toolDid = domId(toolId)
-        val baseName = stripMcpPrefix(title)
         val resolvedKind = kind ?: "other"
         val entry = EntryData.ToolCall(title, arguments, resolvedKind)
-        toolCallNames[toolDid] = baseName
+        toolCallNames[toolDid] = title
         toolCallEntries[toolDid] = entry
-        val info = TOOL_DISPLAY_INFO[baseName]
+        val info = TOOL_DISPLAY_INFO[title]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(baseName, arguments)
+        val short = formatToolSubtitle(title, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
-        val hasCustomRenderer = ToolRenderers.hasRenderer(baseName, toolRegistry)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(title, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
         executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson','$safeKind')")
@@ -813,15 +811,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val title = e["title"]?.asString ?: ""
         val args = e["args"]?.asString
         val kind = e["kind"]?.asString ?: "other"
-        val baseName = stripMcpPrefix(title)
-        val info = TOOL_DISPLAY_INFO[baseName]
+        val info = TOOL_DISPLAY_INFO[title]
         val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(baseName, args)
+        val short = formatToolSubtitle(title, args)
         val label = if (short != null) "$displayName — $short" else displayName
         val id = "batch-tool-${batchIdCounter++}"
         val result = e["result"]?.asString
         val status = e["status"]?.asString ?: "completed"
-        toolCallNames[id] = baseName
+        toolCallNames[id] = title
         toolCallEntries[id] = EntryData.ToolCall(title, args, kind, result, status)
         val paramsAttr = if (args != null) " data-params='${esc(args)}'" else ""
         metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(kind)}' data-chip-for='$id'$paramsAttr></tool-chip>")

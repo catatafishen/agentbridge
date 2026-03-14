@@ -23,8 +23,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
 
             is EntryData.Thinking -> sb.appendLine("[thinking] ${e.raw}")
             is EntryData.ToolCall -> {
-                val baseName = stripMcpPrefix(e.title)
-                val info = TOOL_DISPLAY_INFO[e.title] ?: TOOL_DISPLAY_INFO[baseName]
+                val info = TOOL_DISPLAY_INFO[e.title]
                 val name = info?.displayName ?: e.title
                 sb.appendLine("\uD83D\uDD27 $name")
                 if (e.arguments != null) sb.appendLine("  params: ${e.arguments}")
@@ -68,8 +67,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
             }
 
             is EntryData.ToolCall -> {
-                val baseName = stripMcpPrefix(e.title)
-                val info = TOOL_DISPLAY_INFO[e.title] ?: TOOL_DISPLAY_INFO[baseName]
+                val info = TOOL_DISPLAY_INFO[e.title]
                 val name = info?.displayName ?: e.title
                 sb.appendLine("Tool: $name")
             }
@@ -177,8 +175,7 @@ ul,ol{margin:4px 0;padding-left:22px}
     }
 
     private fun renderExportToolCall(e: EntryData.ToolCall): String {
-        val baseName = stripMcpPrefix(e.title)
-        val info = TOOL_DISPLAY_INFO[e.title] ?: TOOL_DISPLAY_INFO[baseName]
+        val info = TOOL_DISPLAY_INFO[e.title]
         val displayName = info?.displayName ?: e.title
         val sb = StringBuilder("<details class='tool'><summary>\u2692 ${escapeHtml(displayName)}</summary>")
         if (info?.description != null) sb.append("<div style='font-style:italic;margin:4px 0'>${escapeHtml(info.description)}</div>")

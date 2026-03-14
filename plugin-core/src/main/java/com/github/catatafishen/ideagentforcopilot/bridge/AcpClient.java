@@ -605,10 +605,37 @@ public class AcpClient implements AgentClient, Closeable {
             }
         }
 
+        // Normalize tool name in tool_call events so the UI receives clean, prefix-free names.
+        if ("tool_call".equals(updateType) && update.has(TITLE_KEY)) {
+            String rawTitle = update.get(TITLE_KEY).getAsString();
+            String normalized = normalizeAcpToolName(rawTitle);
+            if (!normalized.equals(rawTitle)) {
+                update = update.deepCopy();
+                update.addProperty(TITLE_KEY, normalized);
+            }
+        }
+
         // Forward all updates to onUpdate listener (plan events, tool calls, etc.)
         if (onUpdate != null) {
             onUpdate.accept(update);
         }
+    }
+
+    /**
+     * Strips the MCP server-name prefix from a tool name received via the ACP protocol.
+     * The effective prefix is determined dynamically from the server registration name
+     * so it works regardless of what the user named their MCP server.
+     */
+    private String normalizeAcpToolName(String name) {
+        if (!effectiveMcpPrefix.isEmpty() && name.startsWith(effectiveMcpPrefix)) {
+            return name.substring(effectiveMcpPrefix.length());
+        }
+        // Handle mcp__server__tool format (double-underscore)
+        if (name.startsWith("mcp__")) {
+            int second = name.indexOf("__", 5);
+            if (second > 0) return name.substring(second + 2);
+        }
+        return name;
     }
 
     // Note: interceptBuiltInToolCall and classifyBuiltInTool were removed — session/message

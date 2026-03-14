@@ -6,9 +6,12 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Shared base for Claude-based {@link AgentClient} implementations.
@@ -112,11 +115,75 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
         if (!started) throw new AcpException(getClass().getSimpleName() + " not started", null, false);
     }
 
+    // ── Tool name normalisation ──────────────────────────────────────────────
+
+    /**
+     * Strips MCP server-name prefixes from a raw tool name so the UI always
+     * receives a clean, registry-compatible name.
+     *
+     * <p>Handles two formats:
+     * <ul>
+     *   <li>{@code mcp__server-name__tool_name} — Claude CLI double-underscore format</li>
+     *   <li>{@code server-name-tool_name} / {@code server_name_tool_name} — dash/underscore format</li>
+     * </ul>
+     */
+    protected static String normalizeToolName(@NotNull String name) {
+        // Claude CLI format: mcp__server-name__tool_name
+        if (name.startsWith("mcp__")) {
+            int second = name.indexOf("__", 5);
+            if (second > 0) return name.substring(second + 2);
+        }
+        // Dash/underscore format: intellij-code-tools-tool_name
+        Matcher m = MCP_SERVER_PREFIX_PATTERN.matcher(name);
+        return m.find() ? name.substring(m.end()) : name;
+    }
+
+    private static final Pattern MCP_SERVER_PREFIX_PATTERN =
+        Pattern.compile("^(?i)(intellij[-_]code[-_]tools|github[-_]mcp[-_]server)[-_]");
+
+    // ── Tool kind resolution ─────────────────────────────────────────────────
+
+    private static final Set<String> EXECUTE_TOOLS = Set.of(
+        "bash", "run_command", "run_in_terminal", "run_tests", "build_project",
+        "run_configuration", "run_scratch_file", "run_inspections", "run_sonarqube_analysis",
+        "run_qodana", "git_commit", "git_push", "git_pull", "git_merge", "git_rebase",
+        "git_reset", "git_fetch", "git_stash", "git_cherry_pick", "git_tag"
+    );
+
+    /**
+     * Returns the UI kind string ({@code "read"}, {@code "edit"}, {@code "execute"},
+     * {@code "search"}, or {@code "other"}) for a normalized tool name.
+     */
+    protected static String resolveToolKind(@NotNull String name) {
+        String lower = name.toLowerCase();
+        if (EXECUTE_TOOLS.contains(lower)
+            || lower.startsWith("run_") || lower.startsWith("build_")) return "execute";
+        if (lower.startsWith("write_") || lower.startsWith("create_") || lower.startsWith("delete_")
+            || lower.startsWith("edit_") || lower.startsWith("move_") || lower.startsWith("rename_")
+            || lower.startsWith("replace_") || lower.startsWith("insert_") || lower.startsWith("format_")
+            || lower.startsWith("apply_") || lower.startsWith("suppress_") || lower.startsWith("intellij_write")
+            || lower.startsWith("optimize_") || lower.startsWith("update_") || lower.startsWith("add_to")
+            || lower.equals("undo") || lower.equals("redo") || lower.equals("refactor")) return "edit";
+        if (lower.startsWith("search_") || lower.startsWith("find_")
+            || lower.equals("grep") || lower.equals("glob")) return "search";
+        if (lower.startsWith("read_") || lower.startsWith("get_") || lower.startsWith("list_")
+            || lower.startsWith("intellij_read") || lower.equals("view")
+            || lower.equals("web_fetch") || lower.equals("web_search")
+            || lower.startsWith("git_status") || lower.startsWith("git_diff")
+            || lower.startsWith("git_log") || lower.startsWith("git_blame")
+            || lower.startsWith("git_show")) return "read";
+        return "other";
+    }
+
+    // ── sessionUpdate emission ───────────────────────────────────────────────
+
     /**
      * Emits a {@code tool_call} sessionUpdate event to the UI layer.
+     * The tool name is normalised (MCP prefix stripped) and the kind resolved
+     * before the event is forwarded.
      *
      * @param toolUseId unique tool-call ID
-     * @param toolName  tool name (displayed in UI)
+     * @param toolName  raw tool name (may include MCP server prefix)
      * @param input     tool input arguments
      * @param onUpdate  update consumer (no-op if null)
      */
@@ -124,12 +191,13 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
                                      @NotNull JsonObject input,
                                      @Nullable Consumer<JsonObject> onUpdate) {
         if (onUpdate == null) return;
+        String normalized = normalizeToolName(toolName);
         JsonObject update = new JsonObject();
         update.addProperty(FIELD_SESSION_UPDATE, SESSION_UPDATE_TOOL_CALL);
         update.addProperty("toolCallId", toolUseId);
-        update.addProperty("title", toolName);
+        update.addProperty("title", normalized);
         update.addProperty("status", "in_progress");
-        update.addProperty("kind", "other");
+        update.addProperty("kind", resolveToolKind(normalized));
         update.add(FIELD_INPUT, input);
         onUpdate.accept(update);
     }

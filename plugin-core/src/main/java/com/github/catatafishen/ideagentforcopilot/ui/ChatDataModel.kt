@@ -134,11 +134,6 @@ internal val TOOL_SUBTITLE_KEY = mapOf(
     "web_fetch" to "url",
 )
 
-private val MCP_PREFIX_REGEX = Regex("^(?i)(intellij[-_]code[-_]tools|github[-_]mcp[-_]server)[-_]")
-
-/** Strips MCP server name prefixes from a raw tool name, handling both dash and underscore separators. */
-internal fun stripMcpPrefix(title: String): String = title.replace(MCP_PREFIX_REGEX, "")
-
 internal val TOOL_DISPLAY_INFO = mapOf(
     // Code Navigation
     "search_symbols" to ToolInfo(
