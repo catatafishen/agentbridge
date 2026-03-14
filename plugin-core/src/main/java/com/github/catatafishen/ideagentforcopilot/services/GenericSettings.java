@@ -66,6 +66,20 @@ public final class GenericSettings {
         PropertiesComponent.getInstance().setValue(key("selectedAgent"), agentName, "");
     }
 
+    // ── Session options ──────────────────────────────────────────────────────
+
+    /**
+     * Returns the persisted value for a session option (e.g. "effort"), or empty string.
+     */
+    @NotNull
+    public String getSessionOptionValue(@NotNull String optionKey) {
+        return PropertiesComponent.getInstance().getValue(key("sessionOpt." + optionKey), "");
+    }
+
+    public void setSessionOptionValue(@NotNull String optionKey, @NotNull String value) {
+        PropertiesComponent.getInstance().setValue(key("sessionOpt." + optionKey), value, "");
+    }
+
     // ── Active agent label (runtime-only) ────────────────────────────────────
 
     @Nullable

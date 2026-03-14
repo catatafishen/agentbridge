@@ -31,6 +31,16 @@ public interface AgentUiSettings {
 
     void setSelectedAgent(@NotNull String agentName);
 
+    // ── Session options ──────────────────────────────────────────────────────
+
+    /**
+     * Returns the persisted value for a named session option (e.g. "effort"), or empty string.
+     */
+    @NotNull
+    String getSessionOptionValue(@NotNull String optionKey);
+
+    void setSessionOptionValue(@NotNull String optionKey, @NotNull String value);
+
     // ── Active sub-agent label (runtime-only) ────────────────────────────────
 
     @Nullable

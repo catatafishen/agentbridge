@@ -123,6 +123,25 @@ public interface AgentClient extends Closeable {
     }
 
     /**
+     * Returns session option descriptors that this client supports beyond model selection.
+     * Each descriptor results in a dropdown rendered in the chat toolbar.
+     * Default: empty — override for clients that support additional options (e.g. effort level).
+     */
+    @NotNull
+    default List<SessionOption> listSessionOptions() {
+        return List.of();
+    }
+
+    /**
+     * Apply a session option value for the given session.
+     * Implementations store the value so it is used on the next prompt invocation.
+     * Default: no-op.
+     */
+    default void setSessionOption(@NotNull String sessionId, @NotNull String key, @NotNull String value) {
+        // no-op
+    }
+
+    /**
      * Closes and releases all resources.
      */
     @Override

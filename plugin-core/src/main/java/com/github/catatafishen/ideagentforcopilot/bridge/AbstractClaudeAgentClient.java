@@ -51,6 +51,11 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
     protected final Map<String, String> sessionModels = new ConcurrentHashMap<>();
 
     /**
+     * Per-session option overrides: sessionId → (optionKey → value).
+     */
+    private final Map<String, Map<String, String>> sessionOptions = new ConcurrentHashMap<>();
+
+    /**
      * Per-session cancellation flag.
      */
     protected final Map<String, AtomicBoolean> sessionCancelled = new ConcurrentHashMap<>();
@@ -66,6 +71,21 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
     public void setModel(@NotNull String sessionId, @NotNull String modelId) {
         sessionModels.put(sessionId, modelId);
         LOG.info("Model set to " + modelId + " for session " + sessionId);
+    }
+
+    @Override
+    public void setSessionOption(@NotNull String sessionId, @NotNull String key, @NotNull String value) {
+        sessionOptions.computeIfAbsent(sessionId, k -> new ConcurrentHashMap<>()).put(key, value);
+        LOG.info("Session option [" + key + "] set to '" + value + "' for session " + sessionId);
+    }
+
+    /**
+     * Returns the current value of a session option, or {@code null} if not set.
+     */
+    @Nullable
+    protected String getSessionOption(@NotNull String sessionId, @NotNull String key) {
+        Map<String, String> opts = sessionOptions.get(sessionId);
+        return opts != null ? opts.get(key) : null;
     }
 
     // ── Shared utilities ─────────────────────────────────────────────────────

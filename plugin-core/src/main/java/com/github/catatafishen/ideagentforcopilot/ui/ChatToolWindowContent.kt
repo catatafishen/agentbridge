@@ -654,6 +654,7 @@ class ChatToolWindowContent(
         leftGroup.addSeparator()
         leftGroup.add(ModelSelectorAction())
         leftGroup.add(AgentSelectorAction())
+        leftGroup.add(SessionOptionsGroup())
         leftGroup.addSeparator()
         leftGroup.add(RestartSessionGroup())
 
@@ -1211,6 +1212,63 @@ class ChatToolWindowContent(
         }
     }
 
+    /**
+     * Inline action group that dynamically renders one [SessionOptionSelectorAction] dropdown
+     * per option declared by the active client's [AgentClient.listSessionOptions].
+     * Invisible when the client exposes no options or the agent is disconnected.
+     *
+     * Extends [DefaultActionGroup] with popup=false so children appear inline in the toolbar.
+     */
+    private inner class SessionOptionsGroup : DefaultActionGroup() {
+        init {
+            isPopup = false
+        }
+
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun getChildren(e: AnActionEvent?): Array<AnAction> {
+            if (!agentManager.isAcpConnected) return AnAction.EMPTY_ARRAY
+            val options = agentManager.client.listSessionOptions()
+            if (options.isEmpty()) return AnAction.EMPTY_ARRAY
+            return options.map { SessionOptionSelectorAction(it) }.toTypedArray()
+        }
+    }
+
+    /** ComboBox dropdown for a single [SessionOption] — mirrors the pattern of [ModelSelectorAction]. */
+    private inner class SessionOptionSelectorAction(
+        private val option: SessionOption
+    ) : ComboBoxAction() {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
+            val group = DefaultActionGroup()
+            for (value in option.values) {
+                val label = option.labelFor(value)
+                group.add(object : AnAction(label) {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        agentManager.settings.setSessionOptionValue(option.key, value)
+                        val sessionId = currentSessionId ?: return
+                        ApplicationManager.getApplication().executeOnPooledThread {
+                            try {
+                                agentManager.client.setSessionOption(sessionId, option.key, value)
+                            } catch (ex: Exception) {
+                                LOG.warn("Failed to set session option ${option.key}=$value", ex)
+                            }
+                        }
+                    }
+
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+                })
+            }
+            return group
+        }
+
+        override fun update(e: AnActionEvent) {
+            val stored = agentManager.settings.getSessionOptionValue(option.key)
+            e.presentation.text = "${option.displayName}: ${option.labelFor(stored)}"
+        }
+    }
+
     private fun createResponsePanel(): JComponent {
         consolePanel = ChatConsolePanel(project)
         consolePanel.onQuickReply = { text -> ApplicationManager.getApplication().invokeLater { sendQuickReply(text) } }
@@ -1457,6 +1515,16 @@ class ChatToolWindowContent(
                     client.setModel(currentSessionId!!, savedModel)
                 } catch (ex: Exception) {
                     LOG.warn("Failed to set model $savedModel on new session", ex)
+                }
+            }
+            for (option in client.listSessionOptions()) {
+                val savedValue = agentManager.settings.getSessionOptionValue(option.key)
+                if (savedValue.isNotEmpty()) {
+                    try {
+                        client.setSessionOption(currentSessionId!!, option.key, savedValue)
+                    } catch (ex: Exception) {
+                        LOG.warn("Failed to restore session option ${option.key}=$savedValue", ex)
+                    }
                 }
             }
         }

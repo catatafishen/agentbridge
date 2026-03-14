@@ -123,6 +123,21 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         if (proc != null) proc.destroyForcibly();
     }
 
+    // ── Session options ──────────────────────────────────────────────────────
+
+    /**
+     * Effort levels supported by the {@code --effort} flag.
+     */
+    private static final SessionOption EFFORT_OPTION = new SessionOption(
+        "effort", "Effort",
+        List.of("", "low", "medium", "high", "max")
+    );
+
+    @Override
+    public @NotNull List<SessionOption> listSessionOptions() {
+        return List.of(EFFORT_OPTION);
+    }
+
     // ── Model listing ────────────────────────────────────────────────────────
 
     /**
@@ -267,6 +282,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 cmd.add("--disallowed-tools");
                 cmd.add(tool);
             }
+        }
+
+        String effort = getSessionOption(sessionId, "effort");
+        if (effort != null && !effort.isEmpty()) {
+            cmd.add("--effort");
+            cmd.add(effort);
         }
 
         String cliSessionId = cliSessionIds.get(sessionId);
