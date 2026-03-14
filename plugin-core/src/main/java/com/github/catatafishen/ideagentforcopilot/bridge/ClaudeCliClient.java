@@ -459,7 +459,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 if (isError && event.has(SUBTYPE_ERROR)) {
                     String errorText = extractErrorText(event.get(SUBTYPE_ERROR));
                     if (onChunk != null) onChunk.accept("\n[Error: " + errorText + "]");
-                    if (isRateLimitError(errorText)) emitBannerEvent(errorText, "warning", "next_success", onUpdate);
+                    if (isRateLimitError(errorText)) emitRateLimitBanner(errorText, onUpdate);
                 }
                 // Emit token/cost usage so the UI can display it in the toolbar
                 if (!isError) emitUsageStats(event, onUpdate);

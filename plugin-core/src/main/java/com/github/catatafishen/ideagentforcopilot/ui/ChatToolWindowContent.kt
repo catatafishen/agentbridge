@@ -219,7 +219,7 @@ class ChatToolWindowContent(
     private var activeSubAgentId: String? = null // non-null while a sub-agent is running
 
     /** Non-null when an agent banner with {@code clearOn="next_success"} is pending re-display. */
-    private data class PendingBanner(val message: String, val level: String)
+    private data class PendingBanner(val message: String, val level: SessionUpdate.BannerLevel)
 
     private var pendingBanner: PendingBanner? = null
 
@@ -242,11 +242,10 @@ class ChatToolWindowContent(
 
     private fun handleToolCallUpdate(update: SessionUpdate.ToolCallUpdate) {
         val status = update.status()
-        val toolCallId = update.toolCallId()
-        if (status != "completed" && status != "failed") return
+        if (status != SessionUpdate.ToolCallStatus.COMPLETED && status != SessionUpdate.ToolCallStatus.FAILED) return
 
-        val filePath = toolCallFiles[toolCallId]
-        if (status == "completed" && filePath != null) {
+        val filePath = toolCallFiles[update.toolCallId()]
+        if (status == SessionUpdate.ToolCallStatus.COMPLETED && filePath != null) {
             loadCompletedToolFile(filePath)
         }
     }
@@ -1684,7 +1683,7 @@ class ChatToolWindowContent(
             val pending = pendingBanner
             if (pending != null) {
                 ApplicationManager.getApplication().invokeLater {
-                    if (pending.level == "error") statusBanner?.showError(pending.message)
+                    if (pending.level == SessionUpdate.BannerLevel.ERROR) statusBanner?.showError(pending.message)
                     else statusBanner?.showWarning(pending.message)
                 }
             }
@@ -1866,10 +1865,11 @@ class ChatToolWindowContent(
 
     private fun handleStreamingBanner(banner: SessionUpdate.Banner) {
         val msg = banner.message()
-        val level = banner.level()
-        if (banner.clearOn() == "next_success") pendingBanner = PendingBanner(msg, level)
+        if (banner.clearOn() == SessionUpdate.ClearOn.NEXT_SUCCESS) {
+            pendingBanner = PendingBanner(msg, banner.level())
+        }
         ApplicationManager.getApplication().invokeLater {
-            if (level == "error") statusBanner?.showError(msg)
+            if (banner.level() == SessionUpdate.BannerLevel.ERROR) statusBanner?.showError(msg)
             else statusBanner?.showWarning(msg)
         }
     }
@@ -1877,7 +1877,7 @@ class ChatToolWindowContent(
     private fun handleStreamingToolCall(toolCall: SessionUpdate.ToolCall) {
         val title = toolCall.title()
         val toolCallId = toolCall.toolCallId()
-        val kind = toolCall.kind()
+        val kind = toolCall.kind().value()
         val arguments = toolCall.arguments()
         if (toolCallId.isEmpty()) return
         val agentType = extractJsonField(arguments, "agent_type")
@@ -1920,7 +1920,7 @@ class ChatToolWindowContent(
         val callType = toolCallTitles[toolCallId]
         val isSubAgent = callType == "task"
         val isInternal = callType == "subagent_internal"
-        if (status == "completed") {
+        if (status == SessionUpdate.ToolCallStatus.COMPLETED) {
             if (isSubAgent) {
                 activeSubAgentId = null
                 agentManager.client.setSubAgentActive(false)
@@ -1931,7 +1931,7 @@ class ChatToolWindowContent(
             } else {
                 consolePanel.updateToolCall(toolCallId, "completed", result)
             }
-        } else if (status == "failed") {
+        } else if (status == SessionUpdate.ToolCallStatus.FAILED) {
             val error = update.error() ?: result ?: "Unknown error"
             if (isSubAgent) {
                 activeSubAgentId = null
@@ -1944,7 +1944,7 @@ class ChatToolWindowContent(
                 consolePanel.updateToolCall(toolCallId, "failed", error)
             }
         }
-        if (status == "completed" || status == "failed") {
+        if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
             saveConversationThrottled()
         }
     }

@@ -13,51 +13,186 @@ import java.util.List;
  * always correlates to a {@link AgentClient.SessionUpdateType} enum value.</p>
  */
 public sealed interface SessionUpdate
-        permits SessionUpdate.ToolCall,
-                SessionUpdate.ToolCallUpdate,
-                SessionUpdate.AgentThought,
-                SessionUpdate.TurnUsage,
-                SessionUpdate.Banner,
-                SessionUpdate.Plan {
+    permits SessionUpdate.ToolCall,
+    SessionUpdate.ToolCallUpdate,
+    SessionUpdate.AgentThought,
+    SessionUpdate.TurnUsage,
+    SessionUpdate.Banner,
+    SessionUpdate.Plan {
+
+    // ── Enums ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Functional category of a tool call, used for UI styling.
+     */
+    enum ToolKind {
+        READ("read"),
+        EDIT("edit"),
+        EXECUTE("execute"),
+        SEARCH("search"),
+        OTHER("other");
+
+        private final String value;
+
+        ToolKind(String value) {
+            this.value = value;
+        }
+
+        /**
+         * Wire value passed to the JS chat panel.
+         */
+        public String value() {
+            return value;
+        }
+
+        /**
+         * Returns the matching constant, or {@link #OTHER} for unknown values.
+         */
+        public static ToolKind fromString(@Nullable String s) {
+            if (s == null) return OTHER;
+            for (ToolKind k : values()) {
+                if (k.value.equalsIgnoreCase(s)) return k;
+            }
+            return OTHER;
+        }
+    }
+
+    /**
+     * Terminal outcome of a tool call.
+     */
+    enum ToolCallStatus {
+        COMPLETED("completed"),
+        FAILED("failed");
+
+        private final String value;
+
+        ToolCallStatus(String value) {
+            this.value = value;
+        }
+
+        public String value() {
+            return value;
+        }
+
+        /**
+         * Returns the matching constant, or {@link #FAILED} for unknown values.
+         */
+        public static ToolCallStatus fromString(@Nullable String s) {
+            if (s == null) return FAILED;
+            for (ToolCallStatus st : values()) {
+                if (st.value.equalsIgnoreCase(s)) return st;
+            }
+            return FAILED;
+        }
+    }
+
+    /**
+     * Visual severity of a banner notification.
+     */
+    enum BannerLevel {
+        WARNING("warning"),
+        ERROR("error");
+
+        private final String value;
+
+        BannerLevel(String value) {
+            this.value = value;
+        }
+
+        public String value() {
+            return value;
+        }
+
+        /**
+         * Returns the matching constant, or {@link #WARNING} for unknown values.
+         */
+        public static BannerLevel fromString(@Nullable String s) {
+            if (s == null) return WARNING;
+            for (BannerLevel l : values()) {
+                if (l.value.equalsIgnoreCase(s)) return l;
+            }
+            return WARNING;
+        }
+    }
+
+    /**
+     * Determines when a banner notification is automatically dismissed.
+     */
+    enum ClearOn {
+        /**
+         * Banner persists until the next successful prompt turn.
+         */
+        NEXT_SUCCESS("next_success"),
+        /**
+         * Banner is shown once and not re-shown automatically.
+         */
+        MANUAL("manual");
+
+        private final String value;
+
+        ClearOn(String value) {
+            this.value = value;
+        }
+
+        public String value() {
+            return value;
+        }
+
+        /**
+         * Returns the matching constant, or {@link #MANUAL} for unknown values.
+         */
+        public static ClearOn fromString(@Nullable String s) {
+            if (s == null) return MANUAL;
+            for (ClearOn c : values()) {
+                if (c.value.equalsIgnoreCase(s)) return c;
+            }
+            return MANUAL;
+        }
+    }
+
+    // ── Event records ─────────────────────────────────────────────────────────
 
     /**
      * A new tool call has started.
      *
      * @param toolCallId unique ID used to correlate with the matching {@link ToolCallUpdate}
      * @param title      normalised tool name (MCP prefix stripped)
-     * @param kind       tool kind: {@code "read"}, {@code "edit"}, {@code "execute"}, {@code "search"}, or {@code "other"}
+     * @param kind       functional category of the tool
      * @param arguments  serialised JSON string of the tool arguments, or {@code null} if empty
      * @param filePaths  file paths extracted from the tool event (may be empty)
      */
     record ToolCall(
-            @NotNull String toolCallId,
-            @NotNull String title,
-            @NotNull String kind,
-            @Nullable String arguments,
-            @NotNull List<String> filePaths
-    ) implements SessionUpdate {}
+        @NotNull String toolCallId,
+        @NotNull String title,
+        @NotNull ToolKind kind,
+        @Nullable String arguments,
+        @NotNull List<String> filePaths
+    ) implements SessionUpdate {
+    }
 
     /**
      * A tool call has completed or failed.
      *
      * @param toolCallId ID matching the originating {@link ToolCall}
-     * @param status     {@code "completed"} or {@code "failed"}
+     * @param status     terminal outcome of the call
      * @param result     result text for a completed call (may be {@code null})
      * @param error      error message for a failed call (may be {@code null})
      */
     record ToolCallUpdate(
-            @NotNull String toolCallId,
-            @NotNull String status,
-            @Nullable String result,
-            @Nullable String error
-    ) implements SessionUpdate {}
+        @NotNull String toolCallId,
+        @NotNull ToolCallStatus status,
+        @Nullable String result,
+        @Nullable String error
+    ) implements SessionUpdate {
+    }
 
     /**
      * A reasoning/thinking chunk from the model.
      *
      * @param text the thinking text fragment
      */
-    record AgentThought(@NotNull String text) implements SessionUpdate {}
+    record AgentThought(@NotNull String text) implements SessionUpdate {
+    }
 
     /**
      * Turn-level token and cost statistics, emitted once per completed turn.
@@ -66,21 +201,22 @@ public sealed interface SessionUpdate
      * @param outputTokens total output tokens generated
      * @param costUsd      estimated cost in USD
      */
-    record TurnUsage(int inputTokens, int outputTokens, double costUsd) implements SessionUpdate {}
+    record TurnUsage(int inputTokens, int outputTokens, double costUsd) implements SessionUpdate {
+    }
 
     /**
      * An agent-initiated banner notification.
      *
-     * @param message  human-readable text to display
-     * @param level    {@code "warning"} (yellow) or {@code "error"} (red)
-     * @param clearOn  {@code "next_success"} to re-show until a successful turn, or
-     *                 {@code "manual"} to show once (default)
+     * @param message human-readable text to display
+     * @param level   visual severity ({@link BannerLevel#WARNING} = yellow, {@link BannerLevel#ERROR} = red)
+     * @param clearOn when the banner should be auto-dismissed
      */
     record Banner(
-            @NotNull String message,
-            @NotNull String level,
-            @NotNull String clearOn
-    ) implements SessionUpdate {}
+        @NotNull String message,
+        @NotNull BannerLevel level,
+        @NotNull ClearOn clearOn
+    ) implements SessionUpdate {
+    }
 
     /**
      * A plan update from the ACP agent, carrying a list of plan entries.
@@ -93,13 +229,16 @@ public sealed interface SessionUpdate
          * A single entry in the agent plan.
          *
          * @param content  description of the step
-         * @param status   step status (e.g. {@code "pending"}, {@code "in_progress"}, {@code "done"})
+         * @param status   step status string from the ACP protocol (e.g. {@code "pending"},
+         *                 {@code "in_progress"}, {@code "done"}) — kept as {@code String}
+         *                 because the ACP protocol may send values outside a fixed set
          * @param priority optional priority string, empty if not set
          */
         public record PlanEntry(
-                @NotNull String content,
-                @NotNull String status,
-                @NotNull String priority
-        ) {}
+            @NotNull String content,
+            @NotNull String status,
+            @NotNull String priority
+        ) {
+        }
     }
 }

@@ -282,7 +282,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
                     String errorBody = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
                     if (resp.statusCode() == 429 || isRateLimitError(errorBody)) {
                         String userMessage = extractAnthropicErrorMessage(errorBody);
-                        emitBannerEvent(userMessage, "warning", "next_success", onUpdate);
+                        emitRateLimitBanner(userMessage, onUpdate);
                     }
                     throw new AcpException(
                         "Anthropic API error " + resp.statusCode() + ": " + errorBody, null, false);

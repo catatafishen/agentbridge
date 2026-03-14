@@ -636,7 +636,7 @@ public class AcpClient implements AgentClient {
         String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
         String rawTitle = update.has(TITLE_KEY) ? update.get(TITLE_KEY).getAsString() : "tool";
         String title = normalizeAcpToolName(rawTitle);
-        String kind = update.has(KIND_KEY) ? update.get(KIND_KEY).getAsString() : "other";
+        SessionUpdate.ToolKind kind = SessionUpdate.ToolKind.fromString(update.has(KIND_KEY) ? update.get(KIND_KEY).getAsString() : null);
         String args = extractAcpArguments(update);
         List<String> filePaths = extractFilePaths(update, title);
         return new SessionUpdate.ToolCall(toolCallId, title, kind, args, filePaths);
@@ -645,7 +645,7 @@ public class AcpClient implements AgentClient {
     @NotNull
     private SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull JsonObject update) {
         String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
-        String status = update.has(STATUS_KEY) ? update.get(STATUS_KEY).getAsString() : "";
+        SessionUpdate.ToolCallStatus status = SessionUpdate.ToolCallStatus.fromString(update.has(STATUS_KEY) ? update.get(STATUS_KEY).getAsString() : null);
         String result = extractAcpResult(update);
         String error = update.has(ERROR) ? update.get(ERROR).getAsString() : null;
         return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error);

@@ -35,11 +35,6 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
     protected static final String FIELD_CONTENT = "content";
     protected static final String FIELD_INPUT = "input";
 
-    // ── Tool call status values ───────────────────────────────────────────────
-
-    protected static final String STATUS_COMPLETED = "completed";
-    protected static final String STATUS_FAILED = "failed";
-
     // ── Session state ────────────────────────────────────────────────────────
 
     /**
@@ -140,29 +135,26 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
         "git_reset", "git_fetch", "git_stash", "git_cherry_pick", "git_tag"
     );
 
-    /**
-     * Returns the UI kind string ({@code "read"}, {@code "edit"}, {@code "execute"},
-     * {@code "search"}, or {@code "other"}) for a normalized tool name.
-     */
-    protected static String resolveToolKind(@NotNull String name) {
+    protected static SessionUpdate.ToolKind resolveToolKind(@NotNull String name) {
         String lower = name.toLowerCase();
         if (EXECUTE_TOOLS.contains(lower)
-            || lower.startsWith("run_") || lower.startsWith("build_")) return "execute";
+            || lower.startsWith("run_") || lower.startsWith("build_")) return SessionUpdate.ToolKind.EXECUTE;
         if (lower.startsWith("write_") || lower.startsWith("create_") || lower.startsWith("delete_")
             || lower.startsWith("edit_") || lower.startsWith("move_") || lower.startsWith("rename_")
             || lower.startsWith("replace_") || lower.startsWith("insert_") || lower.startsWith("format_")
             || lower.startsWith("apply_") || lower.startsWith("suppress_") || lower.startsWith("intellij_write")
             || lower.startsWith("optimize_") || lower.startsWith("update_") || lower.startsWith("add_to")
-            || lower.equals("undo") || lower.equals("redo") || lower.equals("refactor")) return "edit";
+            || lower.equals("undo") || lower.equals("redo") || lower.equals("refactor"))
+            return SessionUpdate.ToolKind.EDIT;
         if (lower.startsWith("search_") || lower.startsWith("find_")
-            || lower.equals("grep") || lower.equals("glob")) return "search";
+            || lower.equals("grep") || lower.equals("glob")) return SessionUpdate.ToolKind.SEARCH;
         if (lower.startsWith("read_") || lower.startsWith("get_") || lower.startsWith("list_")
             || lower.startsWith("intellij_read") || lower.equals("view")
             || lower.equals("web_fetch") || lower.equals("web_search")
             || lower.startsWith("git_status") || lower.startsWith("git_diff")
             || lower.startsWith("git_log") || lower.startsWith("git_blame")
-            || lower.startsWith("git_show")) return "read";
-        return "other";
+            || lower.startsWith("git_show")) return SessionUpdate.ToolKind.READ;
+        return SessionUpdate.ToolKind.OTHER;
     }
 
     // ── sessionUpdate emission ───────────────────────────────────────────────
@@ -181,9 +173,9 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
                                    @Nullable Consumer<SessionUpdate> onUpdate) {
         if (onUpdate == null) return;
         if (isError) {
-            onUpdate.accept(new SessionUpdate.ToolCallUpdate(toolUseId, STATUS_FAILED, null, result));
+            onUpdate.accept(new SessionUpdate.ToolCallUpdate(toolUseId, SessionUpdate.ToolCallStatus.FAILED, null, result));
         } else {
-            onUpdate.accept(new SessionUpdate.ToolCallUpdate(toolUseId, STATUS_COMPLETED, result, null));
+            onUpdate.accept(new SessionUpdate.ToolCallUpdate(toolUseId, SessionUpdate.ToolCallStatus.COMPLETED, result, null));
         }
     }
 
@@ -197,11 +189,19 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
         return RATE_LIMIT_PATTERN.matcher(errorText).find();
     }
 
-    protected void emitBannerEvent(@NotNull String message, @NotNull String level,
-                                   @NotNull String clearOn,
+    protected void emitBannerEvent(@NotNull String message, @NotNull SessionUpdate.BannerLevel level,
+                                   @NotNull SessionUpdate.ClearOn clearOn,
                                    @Nullable Consumer<SessionUpdate> onUpdate) {
         if (onUpdate == null) return;
         onUpdate.accept(new SessionUpdate.Banner(message, level, clearOn));
+    }
+
+    /**
+     * Convenience overload for the common rate-limit / usage-limit case.
+     */
+    protected void emitRateLimitBanner(@NotNull String message,
+                                       @Nullable Consumer<SessionUpdate> onUpdate) {
+        emitBannerEvent(message, SessionUpdate.BannerLevel.WARNING, SessionUpdate.ClearOn.NEXT_SUCCESS, onUpdate);
     }
 
     protected void emitThought(@NotNull String text, @Nullable Consumer<SessionUpdate> onUpdate) {
