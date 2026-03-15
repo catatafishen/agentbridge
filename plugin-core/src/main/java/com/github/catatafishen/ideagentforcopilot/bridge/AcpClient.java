@@ -212,6 +212,7 @@ public class AcpClient implements AgentClient {
             LOG.info("Starting " + agentConfig.getDisplayName() + " ACP: " + binaryPath);
 
             ProcessBuilder pb = agentConfig.buildAcpProcess(binaryPath, projectBasePath, mcpPort);
+            customizeProcessBuilder(pb);
             effectiveMcpPrefix = agentConfig.getEffectiveMcpServerName() + "-";
             pb.redirectErrorStream(false);
             process = pb.start();
@@ -234,6 +235,13 @@ public class AcpClient implements AgentClient {
         } catch (IOException e) {
             throw new AcpException("Failed to start " + agentConfig.getDisplayName() + " ACP process", e);
         }
+    }
+
+    /**
+     * Hook to allow subclasses to modify the ProcessBuilder before the process starts.
+     */
+    protected void customizeProcessBuilder(@NotNull ProcessBuilder pb) {
+        // Default implementation does nothing
     }
 
     /**
@@ -1599,25 +1607,6 @@ public class AcpClient implements AgentClient {
 
     // ---- End agent request handlers ----
 
-    @Override
-    public boolean supportsMultiplier() {
-        return true;
-    }
-
-    /**
-     * Get the usage multiplier for a model ID (e.g., "1x", "3x", "0.33x").
-     * Returns "1x" if the model is not found.
-     */
-    @NotNull
-    @Override
-    public String getModelMultiplier(@NotNull String modelId) {
-        if (availableModels == null) return "1x";
-        return availableModels.stream()
-            .filter(m -> modelId.equals(m.getId()))
-            .findFirst()
-            .map(m -> m.getUsage() != null ? m.getUsage() : "1x")
-            .orElse("1x");
-    }
 
     private String findAllowOption(JsonObject reqParams) {
         if (reqParams != null && reqParams.has(OPTIONS)) {

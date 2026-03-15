@@ -1245,6 +1245,20 @@ var __chatUI = (() => {
     removeLoadMore() {
       document.querySelector("load-more")?.remove();
     },
+    prependBatch(encodedHtml) {
+      const html = b64(encodedHtml);
+      const temp = document.createElement("div");
+      temp.innerHTML = html;
+      const msgs = this._msgs();
+      const loadMore = msgs.querySelector("load-more");
+      const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
+      const prevHeight = document.body.scrollHeight;
+      while (temp.firstChild) {
+        msgs.insertBefore(temp.firstChild, insertBefore);
+      }
+      const addedHeight = document.body.scrollHeight - prevHeight;
+      if (addedHeight > 0) window.scrollBy(0, addedHeight);
+    },
     showWorkingIndicator() {
       this._container()?.workingIndicator?.show();
       this._container()?.scrollIfNeeded();

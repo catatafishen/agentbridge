@@ -8,6 +8,8 @@ import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicDirectClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.CopilotAcpClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.GenericAgentSettings;
+import com.github.catatafishen.ideagentforcopilot.bridge.JunieAcpClient;
+import com.github.catatafishen.ideagentforcopilot.bridge.KiroAcpClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.OpenCodeAcpClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
@@ -309,6 +311,10 @@ public final class ActiveAgentManager implements Disposable {
                 new CopilotAcpClient(config, settings, registry, projectBasePath, mcpPort);
             case AgentProfileManager.OPENCODE_PROFILE_ID ->
                 new OpenCodeAcpClient(config, settings, registry, projectBasePath, mcpPort);
+            case AgentProfileManager.JUNIE_PROFILE_ID ->
+                new JunieAcpClient(config, settings, registry, projectBasePath, mcpPort);
+            case AgentProfileManager.KIRO_PROFILE_ID ->
+                new KiroAcpClient(config, settings, registry, projectBasePath, mcpPort);
             default ->
                 new AcpClient(config, settings, registry, projectBasePath, mcpPort);
         };

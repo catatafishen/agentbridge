@@ -23,8 +23,7 @@ import java.util.Map;
 
 /**
  * Generic {@link AgentConfig} implementation driven entirely by an {@link AgentProfile}.
- * Replaces all agent-specific config classes (CopilotAgentConfig, ClaudeAgentConfig,
- * OpenCodeAgentConfig, etc.) with a single data-driven implementation.
+ * Primarily intended for custom agents that the end user might want to add manually.
  */
 public final class ProfileBasedAgentConfig implements AgentConfig {
 

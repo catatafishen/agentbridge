@@ -34,6 +34,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String CLAUDE_CODE_PROFILE_ID = "claude-code";
     public static final String CLAUDE_CLI_PROFILE_ID = "claude-cli";
     public static final String JUNIE_PROFILE_ID = "junie";
+    public static final String KIRO_PROFILE_ID = "kiro";
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
 
@@ -161,6 +162,11 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         } else {
             refreshBuiltInProfile(JUNIE_PROFILE_ID);
         }
+        if (!profiles.containsKey(KIRO_PROFILE_ID)) {
+            profiles.put(KIRO_PROFILE_ID, createKiroProfile());
+        } else {
+            refreshBuiltInProfile(KIRO_PROFILE_ID);
+        }
     }
 
     private void refreshBuiltInProfile(@NotNull String id) {
@@ -208,6 +214,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             case CLAUDE_CODE_PROFILE_ID -> createClaudeCodeProfile();
             case CLAUDE_CLI_PROFILE_ID -> createClaudeCliProfile();
             case JUNIE_PROFILE_ID -> createJunieProfile();
+            case KIRO_PROFILE_ID -> createKiroProfile();
             default -> null;
         };
     }
@@ -392,6 +399,33 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         // Junie reads guidelines from AGENTS.md (checked as .junie/AGENTS.md first)
         p.setPrependInstructionsTo("AGENTS.md");
+        return p;
+    }
+
+    @NotNull
+    private static AgentProfile createKiroProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(KIRO_PROFILE_ID);
+        p.setDisplayName("Kiro");
+        p.setBuiltIn(true);
+        p.setExperimental(false);
+        p.setTransportType(TransportType.ACP);
+        p.setDescription("Kiro CLI. Ensure 'kiro-cli' is in your PATH.");
+        p.setBinaryName("kiro-cli");
+        p.setAlternateNames(List.of("kiro"));
+        p.setInstallHint("Install Kiro CLI and ensure it's available on your PATH.");
+        p.setInstallUrl("https://kiro.dev/docs/cli/acp/");
+        p.setSupportsOAuthSignIn(false);
+        p.setAcpArgs(List.of("acp"));
+        // Kiro supports MCP via standard standard configuration
+        p.setMcpMethod(McpInjectionMethod.CONFIG_FLAG);
+        p.setSupportsMcpConfigFlag(true);
+        p.setSupportsModelFlag(true);
+        p.setSupportsConfigDir(false);
+        p.setRequiresResourceDuplication(false);
+        p.setExcludeAgentBuiltInTools(false);
+        p.setUsePluginPermissions(true);
+        p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         return p;
     }
 

@@ -449,6 +449,25 @@ const ChatController = {
         document.querySelector('load-more')?.remove();
     },
 
+    prependBatch(encodedHtml: string): void {
+        const html = b64(encodedHtml);
+        const temp = document.createElement('div');
+        temp.innerHTML = html;
+        const msgs = this._msgs();
+        const loadMore = msgs.querySelector('load-more');
+        const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
+
+        const prevHeight = document.body.scrollHeight;
+
+        while (temp.firstChild) {
+            msgs.insertBefore(temp.firstChild, insertBefore);
+        }
+
+        // Compensate scroll so user stays at same visual position
+        const addedHeight = document.body.scrollHeight - prevHeight;
+        if (addedHeight > 0) window.scrollBy(0, addedHeight);
+    },
+
     showWorkingIndicator(): void {
         this._container()?.workingIndicator?.show();
         this._container()?.scrollIfNeeded();
