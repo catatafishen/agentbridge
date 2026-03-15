@@ -101,6 +101,19 @@ public abstract class Tool implements ToolDefinition {
         return ToolUtils.resolveVirtualFile(project, path);
     }
 
+    /**
+     * Resolves a VirtualFile by path, falling back to a synchronous VFS refresh when
+     * {@code findFileByPath} returns null.
+     * This handles the case where IntelliJ's VFS cache is stale (e.g. a file was just
+     * created by another tool and the file-watcher event hasn't fired yet).
+     * <p>
+     * Must be called from a background thread (not the EDT) and outside any ReadAction,
+     * because {@link com.intellij.openapi.vfs.LocalFileSystem#refreshAndFindFileByPath} emits VFS events that require a write lock.
+     */
+    protected VirtualFile refreshAndFindVirtualFile(String path) {
+        return ToolUtils.refreshAndFindVirtualFile(project, path);
+    }
+
     protected String relativize(String basePath, String filePath) {
         return ToolUtils.relativize(basePath, filePath);
     }

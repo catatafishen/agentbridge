@@ -3,11 +3,8 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ReadAction;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
@@ -61,45 +58,42 @@ public final class RenameFileTool extends FileTool {
         String pathStr = args.get("path").getAsString();
         String newName = args.get(PARAM_NEW_NAME).getAsString();
 
+        // Resolve the file outside ReadAction so refreshAndFindFileByPath can be used as a fallback.
+        // findFileByPath reads from the VFS cache only; if the cache is stale (e.g. the file was just
+        // created by another tool and the file-watcher event hasn't fired yet) it returns null.
+        // refreshAndFindFileByPath forces a synchronous VFS refresh for that specific path.
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) vf = refreshAndFindVirtualFile(pathStr);
+        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        final RenameFileTool requestor = this;
-
-        ReadAction.nonBlocking(() -> {
-            try {
-                VirtualFile vf = resolveVirtualFile(pathStr);
-                if (vf == null) {
-                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
-                    return null;
-                }
-                String oldName = vf.getName();
-                EdtUtil.invokeLater(() ->
-                    WriteAction.run(() -> {
-                        try {
-                            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
-                                project,
-                                () -> {
-                                    try {
-                                        vf.rename(requestor, newName);
-                                    } catch (IOException e) {
-                                        throw new RuntimeException(e);
-                                    }
-                                },
-                                "Rename File: " + oldName + " to " + newName,
-                                null
-                            );
-                            resultFuture.complete("Renamed " + oldName + " to " + newName);
-                        } catch (Exception e) {
-                            resultFuture.complete("Error renaming file: " + e.getMessage());
-                        }
-                    })
-                );
-                return null;
-            } catch (Exception e) {
-                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
-                return null;
-            }
-        }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());
-
+        performRenameOnEdt(vf, newName, resultFuture);
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private void performRenameOnEdt(VirtualFile vf, String newName, CompletableFuture<String> resultFuture) {
+        String oldName = vf.getName();
+        RenameFileTool requestor = this;
+        EdtUtil.invokeLater(() ->
+            com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() -> {
+                try {
+                    com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                        project,
+                        () -> {
+                            try {
+                                vf.rename(requestor, newName);
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        },
+                        "Rename File: " + oldName + " to " + newName,
+                        null
+                    );
+                    resultFuture.complete("Renamed " + oldName + " to " + newName);
+                } catch (Exception e) {
+                    resultFuture.complete("Error renaming file: " + e.getMessage());
+                }
+            })
+        );
     }
 }

@@ -3,14 +3,10 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.file;
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -62,27 +58,19 @@ public final class MoveFileTool extends FileTool {
         String pathStr = args.get("path").getAsString();
         String destStr = args.get(PARAM_DESTINATION).getAsString();
 
-        CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        ReadAction.nonBlocking(() -> {
-            try {
-                VirtualFile vf = resolveVirtualFile(pathStr);
-                if (vf == null) {
-                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
-                    return null;
-                }
-                VirtualFile destDir = resolveVirtualFile(destStr);
-                if (destDir == null || !destDir.isDirectory()) {
-                    resultFuture.complete(ToolUtils.ERROR_PREFIX + "Destination directory not found: " + destStr);
-                    return null;
-                }
-                performMoveOnEdt(vf, destDir, resultFuture);
-                return null;
-            } catch (Exception e) {
-                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
-                return null;
-            }
-        }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());
+        // Resolve files outside ReadAction so refreshAndFindFileByPath can be used as a fallback
+        // when the VFS cache is stale (same fix as RenameFileTool).
+        VirtualFile vf = resolveVirtualFile(pathStr);
+        if (vf == null) vf = refreshAndFindVirtualFile(pathStr);
+        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
+        VirtualFile destDir = resolveVirtualFile(destStr);
+        if (destDir == null) destDir = refreshAndFindVirtualFile(destStr);
+        if (destDir == null || !destDir.isDirectory())
+            return ToolUtils.ERROR_PREFIX + "Destination directory not found: " + destStr;
+
+        CompletableFuture<String> resultFuture = new CompletableFuture<>();
+        performMoveOnEdt(vf, destDir, resultFuture);
         return resultFuture.get(10, TimeUnit.SECONDS);
     }
 
@@ -90,7 +78,7 @@ public final class MoveFileTool extends FileTool {
         String oldPath = vf.getPath();
         MoveFileTool requestor = this;
         EdtUtil.invokeLater(() ->
-            WriteAction.run(() -> {
+            ApplicationManager.getApplication().runWriteAction(() -> {
                 try {
                     com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
                         project,

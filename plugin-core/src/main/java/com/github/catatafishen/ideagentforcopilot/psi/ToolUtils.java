@@ -100,6 +100,22 @@ public final class ToolUtils {
         return vf;
     }
 
+    /**
+     * Like {@link #resolveVirtualFile(Project, String)}, but falls back to a synchronous VFS refresh
+     * when {@code findFileByPath} returns null. Use this when the VFS cache may be stale.
+     * <p>
+     * Must be called from a background thread outside any ReadAction.
+     */
+    public static VirtualFile refreshAndFindVirtualFile(Project project, String path) {
+        String normalized = path.replace('\\', '/');
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath + "/" + normalized);
+            if (vf != null) return vf;
+        }
+        return LocalFileSystem.getInstance().refreshAndFindFileByPath(normalized);
+    }
+
     public static String relativize(String basePath, String filePath) {
         String base = basePath.replace('\\', '/');
         String file = filePath.replace('\\', '/');
