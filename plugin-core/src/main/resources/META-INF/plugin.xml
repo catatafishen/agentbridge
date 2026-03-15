@@ -298,6 +298,42 @@
       id="com.github.catatafishen.ideagentforcopilot.clientAgents"
       displayName="Client Agents"/>
 
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.CopilotClientConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.copilot"
+      displayName="GitHub Copilot"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.OpenCodeClientConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.opencode"
+      displayName="OpenCode"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.AnthropicDirectClientConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.anthropicDirect"
+      displayName="Claude Code"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ClaudeCliClientConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.claudeCli"
+      displayName="Claude CLI"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.AgentSettingsConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.agentSettings"
+      displayName="Agent Settings"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.toolPermissions"
+      displayName="Tool Permissions"/>
+
     <!-- ── Other section ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"

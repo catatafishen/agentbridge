@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
+import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
@@ -13,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -21,13 +23,11 @@ import java.util.UUID;
  * Root settings group for all AI agent clients.
  * Registered in plugin.xml under the main plugin settings node.
  * <p>
- * Built-in clients ({@link CopilotClientConfigurable}, {@link OpenCodeClientConfigurable},
- * {@link AnthropicDirectClientConfigurable}, {@link ClaudeCliClientConfigurable}) are always
- * present. User-added generic ACP profiles are listed after them as
- * {@link GenericAcpClientConfigurable} children.
+ * Built-in clients (GitHub Copilot, OpenCode, Claude Code, Claude CLI) are registered
+ * as static children in plugin.xml. User-added generic ACP profiles are listed after
+ * them via {@link Configurable.Composite#getConfigurables()}.
  * <p>
- * The group page itself contains an "Add Generic ACP Client" form so users can create
- * new custom profiles without navigating elsewhere.
+ * The group overview page shows a brief description and an "Add Custom ACP Client" form.
  */
 public final class ClientAgentsGroupConfigurable implements Configurable, Configurable.Composite {
 
@@ -50,17 +50,29 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
     @Override
     public @Nullable JComponent createComponent() {
         newClientNameField = new JBTextField();
-        newClientNameField.getEmptyText().setText("My Custom Agent");
+        newClientNameField.setColumns(24);
+        newClientNameField.getEmptyText().setText("Name for your custom agent");
 
-        JButton addBtn = new JButton("Add Generic ACP Client");
+        JButton addBtn = new JButton("Add");
         addBtn.addActionListener(e -> addGenericClient());
 
+        JPanel addRow = new JPanel(new BorderLayout(6, 0));
+        addRow.add(newClientNameField, BorderLayout.CENTER);
+        addRow.add(addBtn, BorderLayout.EAST);
+
         panel = FormBuilder.createFormBuilder()
-            .addComponent(new JLabel(
-                "<html>Select a client below to configure it, or add a custom ACP client here.</html>"))
-            .addSeparator(8)
-            .addLabeledComponent("New client name:", newClientNameField)
-            .addComponent(addBtn)
+            .addComponent(new JBLabel(
+                "<html>"
+                    + "<b>Client Agents</b><br><br>"
+                    + "Choose a built-in agent client from the list on the left to configure it.<br><br>"
+                    + "Built-in clients: <b>GitHub Copilot</b>, <b>OpenCode</b>, "
+                    + "<b>Claude Code</b>, <b>Claude CLI</b>.<br><br>"
+                    + "<b>Custom ACP clients</b> let you connect to any ACP-compatible agent.<br>"
+                    + "Give it a name and click <i>Add</i> — it will appear in the list on "
+                    + "the left after you reopen Settings."
+                    + "</html>"))
+            .addSeparator(12)
+            .addLabeledComponent("New custom client:", addRow)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -74,7 +86,7 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
 
     @Override
     public void apply() {
-        // Nothing to apply on the group page — the name field is consumed immediately on Add.
+        // Nothing to apply — the name field is consumed immediately on Add.
     }
 
     @Override
@@ -83,34 +95,20 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
         panel = null;
     }
 
-    // ── Dynamic children ─────────────────────────────────────────────────────
+    // ── Dynamic children (user-added generic ACP profiles) ───────────────────
 
     /**
-     * Called each time the Settings dialog opens. Returns:
-     * <ol>
-     *   <li>{@link AgentSettingsConfigurable} — timeout/tool call limits</li>
-     *   <li>Built-in clients: Copilot, OpenCode, Claude Code, Claude CLI</li>
-     *   <li>{@link ToolPermissionsConfigurable} — tool allow/ask/deny</li>
-     *   <li>One {@link GenericAcpClientConfigurable} per user-added profile</li>
-     * </ol>
+     * Returns one {@link GenericAcpClientConfigurable} per user-added generic ACP profile.
+     * Built-in client pages are registered statically in plugin.xml.
      */
     @Override
     public Configurable @NotNull [] getConfigurables() {
         List<Configurable> children = new ArrayList<>();
-
-        children.add(new AgentSettingsConfigurable(project));
-        children.add(new CopilotClientConfigurable(project));
-        children.add(new OpenCodeClientConfigurable(project));
-        children.add(new AnthropicDirectClientConfigurable(project));
-        children.add(new ClaudeCliClientConfigurable(project));
-        children.add(new ToolPermissionsConfigurable(project));
-
         for (AgentProfile p : AgentProfileManager.getInstance().getAllProfiles()) {
             if (!p.isBuiltIn()) {
                 children.add(new GenericAcpClientConfigurable(project, p.getId()));
             }
         }
-
         return children.toArray(new Configurable[0]);
     }
 
@@ -134,7 +132,7 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
 
         if (newClientNameField != null) newClientNameField.setText("");
         JOptionPane.showMessageDialog(panel,
-            "\"" + name + "\" added. Reopen Settings to configure it.",
+            "\"" + name + "\" has been added.\nReopen Settings to configure it.",
             "Client added", JOptionPane.INFORMATION_MESSAGE);
     }
 }
