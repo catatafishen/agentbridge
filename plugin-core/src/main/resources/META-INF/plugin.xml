@@ -328,6 +328,12 @@
       id="com.github.catatafishen.ideagentforcopilot.clientAgents.junie"
       displayName="Junie"/>
 
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.KiroClientConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.clientAgents.kiro"
+      displayName="Kiro"/>
+
     <!-- ── Tool Permissions ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
