@@ -1049,7 +1049,12 @@ class ChatToolWindowContent(
 
         override fun getChildren(e: AnActionEvent?): Array<AnAction> {
             if (!agentManager.isConnected) return EMPTY_ARRAY
-            val options = agentManager.client.listSessionOptions()
+            val options = try {
+                agentManager.client.listSessionOptions()
+            } catch (ex: Exception) {
+                LOG.warn("Failed to retrieve session options for toolbar", ex)
+                return EMPTY_ARRAY
+            }
             if (options.isEmpty()) return EMPTY_ARRAY
             if (options != cachedOptions) {
                 cachedOptions = options

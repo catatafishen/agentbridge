@@ -179,6 +179,12 @@ public class AcpClient implements AgentClient {
      * Start the ACP process and perform the initialization handshake.
      */
     public synchronized void start() throws AcpException {
+        // If already running healthy (e.g. getClient() restarted us before the scheduled retry fires), skip.
+        if (isHealthy()) {
+            LOG.debug("ACP client is already running and healthy — skipping redundant start()");
+            return;
+        }
+
         // Clean up the previous process if it died
         if (process != null) {
             LOG.info("Restarting ACP client (previous process died)");
