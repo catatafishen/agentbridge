@@ -73,6 +73,8 @@ public abstract class AcpClient implements AgentClient {
     private static final String RAW_INPUT_KEY = "rawInput";
     private static final String AGENT_TYPE_KEY = "agent_type";
     private static final String PROMPT = "prompt";
+    private static final String OUTPUT_KEY = "output";
+    private static final String TOOL_RESULT_KEY = "toolResult";
 
     private static final String TOOL_PREFIX = " (tool=";
     private static final String TOOL_CALL_KEY = "toolCall";
@@ -88,7 +90,7 @@ public abstract class AcpClient implements AgentClient {
     private final Object writerLock = new Object();
     private final String projectBasePath; // Project path for config-dir
     @Nullable
-    private final ToolRegistry registry;
+    protected final ToolRegistry registry;
     private final AgentConfig agentConfig;
     private final AgentSettings agentSettings;
     private final int mcpPort;
@@ -685,6 +687,8 @@ public abstract class AcpClient implements AgentClient {
         String agentType = extractSubAgentField(args, AGENT_TYPE_KEY);
         String subAgentDesc = agentType != null ? extractSubAgentField(args, DESCRIPTION) : null;
         String subAgentPrompt = agentType != null ? extractSubAgentField(args, PROMPT) : null;
+        LOG.debug("Tool call: id=" + toolCallId + ", title=" + title + ", kind=" + kind + ", hasArgs=" + (args != null));
+
         return new SessionUpdate.ToolCall(toolCallId, title, kind, args, filePaths, agentType, subAgentDesc, subAgentPrompt);
     }
 
@@ -710,6 +714,11 @@ public abstract class AcpClient implements AgentClient {
         SessionUpdate.ToolCallStatus status = SessionUpdate.ToolCallStatus.fromString(update.has(STATUS_KEY) ? update.get(STATUS_KEY).getAsString() : null);
         String result = extractAcpResult(update);
         String error = update.has(ERROR) ? update.get(ERROR).getAsString() : null;
+        int resultLen = result != null ? result.length() : 0;
+        LOG.debug("Tool update: id=" + toolCallId + ", status=" + status + ", resultLen=" + resultLen + ", hasError=" + (error != null));
+        if (resultLen == 0 && error == null) {
+            LOG.warn("Tool update with empty result: " + update);
+        }
         return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error);
     }
 
@@ -726,27 +735,47 @@ public abstract class AcpClient implements AgentClient {
 
     @NotNull
     private List<String> extractFilePaths(@NotNull JsonObject update, @NotNull String title) {
+        List<String> paths = new java.util.ArrayList<>();
         if (update.has("locations")) {
             com.google.gson.JsonArray locations = update.getAsJsonArray("locations");
-            List<String> paths = new java.util.ArrayList<>();
             for (com.google.gson.JsonElement loc : locations) {
                 if (loc.isJsonObject()) {
                     com.google.gson.JsonElement path = loc.getAsJsonObject().get("path");
                     if (path != null && path.isJsonPrimitive()) paths.add(path.getAsString());
                 }
             }
-            if (!paths.isEmpty()) return paths;
         }
-        java.util.regex.Matcher m = java.util.regex.Pattern
-            .compile("(?:Creating|Writing|Editing|Reading)\\s+(.+\\.\\w+)")
-            .matcher(title);
-        return m.find() ? List.of(m.group(1)) : List.of();
+        if (paths.isEmpty()) {
+            // Look into arguments
+            String argsJson = extractAcpArguments(update);
+            if (argsJson != null) {
+                for (String key : new String[]{"path", "file", "filename", "filepath"}) {
+                    String val = extractSubAgentField(argsJson, key);
+                    if (val != null && !val.isEmpty()) {
+                        paths.add(val);
+                        break;
+                    }
+                }
+            }
+        }
+        if (paths.isEmpty()) {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?:Creating|Writing|Editing|Reading|Opening|Viewing)\\s+(.+\\.\\w+)")
+                .matcher(title);
+            if (m.find()) paths.add(m.group(1));
+        }
+        return paths;
     }
 
     @Nullable
     private String extractAcpResult(@NotNull JsonObject update) {
-        if (update.has(RESULT)) return update.get(RESULT).getAsString();
-        if (update.has(CONTENT)) return extractContentText(update);
+        for (String key : new String[]{RESULT, CONTENT, OUTPUT_KEY, TOOL_RESULT_KEY, "result_text", "resultText"}) {
+            if (!update.has(key)) continue;
+            if (CONTENT.equals(key)) return extractContentText(update);
+            com.google.gson.JsonElement el = update.get(key);
+            if (el.isJsonPrimitive()) return el.getAsString();
+            if (el.isJsonObject() || el.isJsonArray()) return el.toString();
+        }
         return null;
     }
 
@@ -1437,6 +1466,14 @@ public abstract class AcpClient implements AgentClient {
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
     private ToolPermission resolveEffectivePermission(String toolId, @Nullable JsonObject toolCall) {
+        // Enforce exclusion of agent built-in tools (view, edit, bash, etc.)
+        // GitHub Copilot CLI ignores the excludedTools parameter in session/new, so we
+        // must deny them here during the request_permission handshake.
+        if (agentConfig.shouldExcludeBuiltInTools() && ToolRegistry.getBuiltInToolIds().contains(toolId)) {
+            LOG.info("ACP request_permission: blocking excluded built-in tool " + toolId);
+            return ToolPermission.DENY;
+        }
+
         ToolDefinition entry = registry != null ? registry.findById(toolId) : null;
 
         // Path-based sub-permissions for file tools (ceiling enforced by AgentSettings)
@@ -1546,8 +1583,16 @@ public abstract class AcpClient implements AgentClient {
         String p = effectiveMcpPrefix; // shorthand for tool name prefixing
         String instruction;
 
-        // Specific guidance for run_command abuse
-        if (deniedKind.startsWith(RUN_COMMAND_ABUSE_PREFIX)) {
+        // Specific guidance for excluded built-in tools
+        if (ToolRegistry.getBuiltInToolIds().contains(deniedKind)) {
+            instruction = "⚠ Don't use built-in '" + deniedKind + "' — it bypasses " +
+                "IntelliJ's editor buffer and may cause desync. Use '" + p + "' prefixed tools instead: " +
+                "'" + p + "intellij_read_file' to read files, " +
+                "'" + p + "edit_text' for surgical edits, " +
+                "'" + p + "create_file' to create files, " +
+                "'" + p + "run_command' for shell commands. " +
+                "These tools write through IntelliJ's Document API (undo/redo, live buffers, no desync).";
+        } else if (deniedKind.startsWith(RUN_COMMAND_ABUSE_PREFIX)) {
             String abuseType = deniedKind.substring(RUN_COMMAND_ABUSE_PREFIX.length());
             instruction = switch (abuseType) {
                 case "compile" -> "⚠ Don't run Gradle compile tasks directly. Use '" + p + "build_project' instead. "

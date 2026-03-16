@@ -46,8 +46,9 @@ public final class ToolRegistry {
      * in the session configuration and to build permission deny lists.
      */
     private static final List<String> BUILT_IN_TOOL_IDS = List.of(
-        "view", "read", "grep", "glob", "list",
-        "bash", "edit", "write", "create", "execute", "runInTerminal"
+        "view", "read", "grep", "glob", "list", "search_contents_by_grep", "search_paths_by_glob",
+        "bash", "edit", "write", "create", "execute", "runInTerminal", "open", "open_entire_file",
+        "web_search", "multi_edit", "search_replace", "update_status", "submit", "answer"
     );
     private final Map<String, ToolDefinition> definitions = new LinkedHashMap<>();
 

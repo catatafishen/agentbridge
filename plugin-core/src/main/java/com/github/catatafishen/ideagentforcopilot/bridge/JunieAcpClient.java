@@ -43,7 +43,7 @@ public class JunieAcpClient extends AcpClient {
                 + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"]}}}");
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(false);
-        p.setRequiresResourceDuplication(false);
+        p.setRequiresResourceDuplication(true);
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
@@ -80,7 +80,23 @@ public class JunieAcpClient extends AcpClient {
     public String normalizeToolName(@NotNull String name) {
         // Junie uses the standard slash format for MCP tool names:
         // "intellij-code-tools/tool_name" -> "tool_name"
-        return name.replaceFirst("^intellij-code-tools/", "");
+        // Also strip "Tool: " prefix if present (seen in some Junie versions)
+        String normalized = name.replaceFirst("^intellij-code-tools/", "")
+            .replaceFirst("^Tool: ", "");
+
+        if (!name.equals(normalized)) {
+            LOG.debug("Junie tool name normalization: '" + name + "' -> '" + normalized + "'");
+        }
+
+        // If Junie uses a built-in like 'bash' but it was supposed to be excluded,
+        // it won't be found in the registry.
+        if (registry != null && registry.findDefinition(normalized) == null) {
+            if (ToolRegistry.getBuiltInToolIds().contains(normalized)) {
+                LOG.warn("Junie is using excluded built-in tool: " + normalized);
+            }
+        }
+
+        return normalized;
     }
 
     /**
@@ -95,6 +111,22 @@ public class JunieAcpClient extends AcpClient {
             LOG.info("Junie model mapping: " + modelId + " -> " + mappedModel);
         }
         super.setModel(sessionId, mappedModel);
+    }
+
+    @Override
+    public @NotNull String sendPrompt(@NotNull String sessionId, @NotNull String prompt,
+                                      @Nullable String model, @Nullable List<ResourceReference> references,
+                                      @Nullable java.util.function.Consumer<String> onChunk,
+                                      @Nullable java.util.function.Consumer<SessionUpdate> onUpdate,
+                                      @Nullable Runnable onRequest) throws AcpException {
+        // Prepend a space if the prompt starts with '/' OR if it contains code snippets (indicated by code fences),
+        // to avoid it being misinterpreted as a command by Junie CLI.
+        String safePrompt = prompt;
+        if (safePrompt.startsWith("/") || safePrompt.contains("`") || safePrompt.contains("```")) {
+            safePrompt = " " + safePrompt;
+        }
+
+        return super.sendPrompt(sessionId, safePrompt, model, references, onChunk, onUpdate, onRequest);
     }
 
     private String mapToCliModel(String modelId) {
