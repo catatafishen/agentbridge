@@ -101,15 +101,18 @@ public final class PsiBridgeService implements Disposable {
     /**
      * Requests focus restoration to the chat input after a tool call completes.
      * This prevents focus from staying in the editor when files are opened in follow mode.
+     * Adds a small delay to allow editor scrolling/navigation to complete first.
      */
     private void restoreChatFocus() {
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+        // Wait briefly for editor operations (scrolling, navigation) to complete
+        // before stealing focus back to the chat input
+        com.intellij.util.concurrency.EdtExecutorService.getScheduledExecutorInstance().schedule(() -> {
             try {
                 PlatformApiCompat.syncPublisher(project, FOCUS_RESTORE_TOPIC).restoreFocus();
             } catch (Exception e) {
                 LOG.debug("Failed to request focus restoration", e);
             }
-        });
+        }, 150, java.util.concurrent.TimeUnit.MILLISECONDS);
     }
 
     @SuppressWarnings("java:S1905") // Cast needed: IDE doesn't resolve Project→ComponentManager supertype
