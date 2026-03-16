@@ -37,10 +37,23 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
+     * Listener notified to request focus restoration to the chat input.
+     */
+    public interface FocusRestoreListener {
+        void restoreFocus();
+    }
+
+    /**
      * Project-level message bus topic for tool call events (fire-and-forget notifications).
      */
     public static final Topic<ToolCallListener> TOOL_CALL_TOPIC =
         Topic.create("PsiBridgeService.ToolCall", ToolCallListener.class);
+
+    /**
+     * Project-level message bus topic for requesting focus restoration to chat input.
+     */
+    public static final Topic<FocusRestoreListener> FOCUS_RESTORE_TOPIC =
+        Topic.create("PsiBridgeService.FocusRestore", FocusRestoreListener.class);
 
     /**
      * Serializes write tool calls (non-read-only) to prevent EDT flooding.
@@ -86,15 +99,15 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
-     * Restores keyboard focus to the Agent tool window after a tool call completes.
+     * Requests focus restoration to the chat input after a tool call completes.
      * This prevents focus from staying in the editor when files are opened in follow mode.
      */
     private void restoreChatFocus() {
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-            var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
-            var tw = twm.getToolWindow("AgentBridge");
-            if (tw != null && tw.isVisible()) {
-                tw.activate(null);
+            try {
+                PlatformApiCompat.syncPublisher(project, FOCUS_RESTORE_TOPIC).restoreFocus();
+            } catch (Exception e) {
+                LOG.debug("Failed to request focus restoration", e);
             }
         });
     }

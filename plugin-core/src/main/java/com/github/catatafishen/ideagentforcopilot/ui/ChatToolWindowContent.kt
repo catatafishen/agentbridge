@@ -88,6 +88,25 @@ class ChatToolWindowContent(
 
     init {
         setupUI()
+        subscribeToFocusRestoreEvents()
+    }
+
+    /**
+     * Subscribes to focus restore events published by PsiBridgeService after tool calls complete.
+     * Restores keyboard focus to the chat input after files are opened in follow mode.
+     */
+    private fun subscribeToFocusRestoreEvents() {
+        val connection = project.messageBus.connect()
+        connection.subscribe(
+            com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.FOCUS_RESTORE_TOPIC,
+            com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.FocusRestoreListener {
+                ApplicationManager.getApplication().invokeLater {
+                    if (::promptTextArea.isInitialized) {
+                        promptTextArea.requestFocusInWindow()
+                    }
+                }
+            }
+        )
     }
 
     private fun setupUI() {
