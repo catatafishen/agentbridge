@@ -59,10 +59,20 @@ public final class JunieClientConfigurable implements Configurable {
         authNote.setForeground(UIUtil.getContextHelpForeground());
         authNote.setFont(JBUI.Fonts.smallFont());
 
+        JBLabel toolWarning = new JBLabel(
+            "<html><b>⚠ Tool Selection Limitation:</b> Junie ignores <code>excludedTools</code> and does not send "
+                + "<code>request_permission</code> for any tools. Built-in tools (Edit, View, Bash) may bypass "
+                + "IntelliJ's editor buffer. The plugin uses prompt engineering to encourage MCP tool usage, but "
+                + "compliance depends on the LLM. See <code>docs/JUNIE-TOOL-WORKAROUND.md</code> for details.</html>");
+        toolWarning.setForeground(new Color(184, 134, 11)); // Dark goldenrod for warning
+        toolWarning.setFont(JBUI.Fonts.smallFont());
+
         panel = FormBuilder.createFormBuilder()
             .addLabeledComponent("Status:", statusLabel)
             .addComponent(authNote, 2)
             .addComponent(authLink, 2)
+            .addSeparator(8)
+            .addComponent(toolWarning, 2)
             .addSeparator(8)
             .addLabeledComponent("Junie binary:", binaryPathField)
             .addTooltip("Leave empty to auto-detect on PATH.")

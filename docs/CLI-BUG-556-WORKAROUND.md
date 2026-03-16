@@ -1,5 +1,7 @@
 # CLI Bug #556 Workaround
 
+> **See Also:** [Junie Built-In Tool Workaround](JUNIE-TOOL-WORKAROUND.md) — A similar but more severe limitation where Junie doesn't send permission requests at all, making protocol-level blocking impossible.
+
 ## The Bug
 
 **GitHub Issue:** https://github.com/github/copilot-cli/issues/556  
