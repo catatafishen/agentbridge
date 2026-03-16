@@ -346,13 +346,13 @@ class ChatToolWindowContent(
             banner.showSignInPending()
             inlineAuthProcess?.destroy()
             inlineAuthProcess = authService.startInlineAuth(
-                onDeviceCode = { info ->
+                onDeviceCode = { info: AuthLoginService.DeviceCodeInfo ->
                     banner.showDeviceCode(info.code, info.url)
                 },
                 onAuthComplete = {
                     banner.hideDeviceCode()
                     inlineAuthProcess = null
-                    authService.pendingAuthError = null
+                    authService.clearPendingAuthError()
                     banner.triggerCheck()
                 },
                 onFallback = {
@@ -667,6 +667,7 @@ class ChatToolWindowContent(
 
         val wrapper = JBPanel<JBPanel<*>>(GridBagLayout())
         wrapper.isOpaque = false
+        wrapper.border = JBUI.Borders.empty(2, 0) // Balance vertical padding
         val c = GridBagConstraints()
         c.fill = GridBagConstraints.VERTICAL
         c.weighty = 1.0

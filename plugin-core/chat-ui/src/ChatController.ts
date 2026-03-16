@@ -204,7 +204,7 @@ const ChatController = {
         this._collapseThinkingFor(ctx);
     },
 
-    addToolCall(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string): void {
+    addToolCall(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string, isExternal?: boolean): void {
         this._resetWorkingTimer();
         const ctx = this._ensureMsg(turnId, agentId);
         this._collapseThinkingFor(ctx);
@@ -212,6 +212,7 @@ const ChatController = {
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
         if (kind) chip.setAttribute('kind', kind);
+        if (isExternal) chip.setAttribute('external', 'true');
         chip.dataset.chipFor = id;
         if (paramsJson) chip.dataset.params = paramsJson;
         ctx.meta!.appendChild(chip);
@@ -278,7 +279,7 @@ const ChatController = {
         this._container()?.scrollIfNeeded();
     },
 
-    addSubAgentToolCall(subAgentDomId: string, toolDomId: string, title: string, paramsJson?: string, kind?: string): void {
+    addSubAgentToolCall(subAgentDomId: string, toolDomId: string, title: string, paramsJson?: string, kind?: string, isExternal?: boolean): void {
         const msg = document.getElementById('sa-' + subAgentDomId);
         if (!msg) return;
         const meta = msg.querySelector('message-meta');
@@ -286,6 +287,7 @@ const ChatController = {
         chip.setAttribute('label', title);
         chip.setAttribute('status', 'running');
         if (kind) chip.setAttribute('kind', kind);
+        if (isExternal) chip.setAttribute('external', 'true');
         chip.dataset.chipFor = toolDomId;
         if (paramsJson) chip.dataset.params = paramsJson;
         if (meta) {

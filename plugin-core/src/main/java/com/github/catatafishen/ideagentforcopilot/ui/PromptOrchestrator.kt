@@ -389,6 +389,14 @@ internal class PromptOrchestrator(
             toolCallTitles[toolCallId] = title
             consolePanel().addToolCallEntry(toolCallId, title, arguments, kind)
         }
+
+        // Automatic file navigation for "follow agent" feature.
+        // We trigger it here when the tool call starts so the UI responds immediately.
+        if (ActiveAgentManager.getFollowAgentFiles(project) && toolCall.filePaths().isNotEmpty()) {
+            ApplicationManager.getApplication().invokeLater {
+                FileNavigator(project).handleFileLink(toolCall.filePaths()[0])
+            }
+        }
     }
 
     private fun handleStreamingToolCallUpdate(update: SessionUpdate.ToolCallUpdate) {

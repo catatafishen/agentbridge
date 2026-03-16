@@ -103,6 +103,8 @@ internal val TOOL_SUBTITLE_KEY = mapOf(
     "intellij_read_file" to "path",
     "write_file" to "path",
     "intellij_write_file" to "path",
+    "edit_text" to "path",
+    "intellij_edit_text" to "path",
     "create_file" to "path",
     "delete_file" to "path",
     "open_in_editor" to "file",
@@ -149,88 +151,6 @@ internal val TOOL_SUBTITLE_KEY = mapOf(
 )
 
 internal val TOOL_DISPLAY_INFO = mapOf(
-    // Code Navigation
-    "search_symbols" to ToolInfo(
-        "Search Symbols",
-        "Search for classes, methods, and fields across the project"
-    ),
-    "get_file_outline" to ToolInfo(
-        "File Outline",
-        "Get the structure outline of a file (classes, methods, fields)"
-    ),
-    "find_references" to ToolInfo("Find References", "Find all usages of a symbol across the project"),
-    "list_project_files" to ToolInfo("List Project Files", "List files and directories in the project tree"),
-    // File Operations
-    "read_file" to ToolInfo("Read File", "Read the contents of a file"),
-    "intellij_read_file" to ToolInfo("Read File", "Read the contents of a file via IntelliJ"),
-    "write_file" to ToolInfo("Write File", "Write or overwrite the contents of a file"),
-    "intellij_write_file" to ToolInfo("Write File", "Write or overwrite file contents via IntelliJ"),
-    "create_file" to ToolInfo("Create File", "Create a new file with the given content"),
-    "delete_file" to ToolInfo("Delete File", "Delete a file from the project"),
-    // Code Quality
-    "get_problems" to ToolInfo("Get Problems", "Get current problems/warnings from the Problems panel"),
-    "get_highlights" to ToolInfo("Get Highlights", "Get cached editor highlights for open files"),
-    "run_inspections" to ToolInfo("Run Inspections", "Run the full IntelliJ inspection engine on the project"),
-    "get_compilation_errors" to ToolInfo(
-        "Check Compilation",
-        "Fast compilation error check using cached daemon results"
-    ),
-    "apply_quickfix" to ToolInfo("Apply Quick Fix", "Apply an IntelliJ quick-fix to resolve an issue"),
-    "suppress_inspection" to ToolInfo("Suppress Inspection", "Suppress an inspection warning"),
-    "optimize_imports" to ToolInfo("Optimize Imports", "Remove unused imports and organize remaining ones"),
-    "format_code" to ToolInfo("Format Code", "Reformat code according to project style settings"),
-    "add_to_dictionary" to ToolInfo("Add to Dictionary", "Add a word to the spell-check dictionary"),
-    "run_qodana" to ToolInfo("Run Qodana", "Run Qodana static analysis on the project"),
-    "run_sonarqube_analysis" to ToolInfo("Run SonarQube", "Run SonarQube for IDE analysis on the project"),
-    "get_sonar_rule_description" to ToolInfo("Get SonarQube Rule", "Fetch SonarQube rule descriptions by rule ID"),
-    // Refactoring
-    "refactor" to ToolInfo("Refactor", "Refactor code (rename, extract method, inline, safe delete)"),
-    "go_to_declaration" to ToolInfo("Go to Declaration", "Navigate to the declaration of a symbol"),
-    "get_type_hierarchy" to ToolInfo("Type Hierarchy", "Show supertypes and subtypes of a class"),
-    "get_documentation" to ToolInfo("Get Documentation", "Retrieve documentation for a symbol"),
-    // Tests
-    "list_tests" to ToolInfo("List Tests", "List available test classes and methods"),
-    "run_tests" to ToolInfo("Run Tests", "Execute tests and return results"),
-    "get_test_results" to ToolInfo("Test Results", "Get results from the last test run"),
-    "get_coverage" to ToolInfo("Get Coverage", "Get code coverage data from the last run"),
-    // Git
-    "git_status" to ToolInfo("Git Status", "Show working tree status"),
-    "git_diff" to ToolInfo("Git Diff", "Show changes between commits, working tree, etc."),
-    "git_log" to ToolInfo("Git Log", "Show commit history"),
-    "git_blame" to ToolInfo("Git Blame", "Show line-by-line authorship of a file"),
-    "git_commit" to ToolInfo("Git Commit", "Record changes to the repository"),
-    "git_stage" to ToolInfo("Git Stage", "Stage files for commit"),
-    "git_unstage" to ToolInfo("Git Unstage", "Unstage files from the index"),
-    "git_branch" to ToolInfo("Git Branch", "List, create, or switch branches"),
-    "git_stash" to ToolInfo("Git Stash", "Stash changes in working directory"),
-    "git_show" to ToolInfo("Git Show", "Show details of a commit"),
-    // Project
-    "get_project_info" to ToolInfo("Project Info", "Get project name, SDK, modules, and settings"),
-    "build_project" to ToolInfo("Build Project", "Trigger incremental compilation of the project"),
-    "get_indexing_status" to ToolInfo("Indexing Status", "Check if IntelliJ is currently indexing"),
-    "download_sources" to ToolInfo("Download Sources", "Download source jars for dependencies"),
-    // Infrastructure
-    "http_request" to ToolInfo("HTTP Request", "Make an HTTP request"),
-    "run_command" to ToolInfo("Run Command", "Run a shell command"),
-    "read_ide_log" to ToolInfo("Read IDE Log", "Read recent entries from the IDE log"),
-    "get_notifications" to ToolInfo("Get Notifications", "Get IDE notification messages"),
-    "read_run_output" to ToolInfo("Read Run Output", "Read output from a run configuration"),
-    // Terminal
-    "run_in_terminal" to ToolInfo("Run in Terminal", "Run a command in the IDE terminal"),
-    "read_terminal_output" to ToolInfo("Terminal Output", "Read output from a terminal session"),
-    "list_terminals" to ToolInfo("List Terminals", "List active terminal sessions"),
-    // Editor
-    "open_in_editor" to ToolInfo("Open in Editor", "Open a file in the editor"),
-    "show_diff" to ToolInfo("Show Diff", "Show a diff view between two contents"),
-    "create_scratch_file" to ToolInfo("Create Scratch", "Create a scratch file for quick experiments"),
-    "list_scratch_files" to ToolInfo("List Scratches", "List available scratch files"),
-    // Run Configurations
-    "list_run_configurations" to ToolInfo("List Run Configs", "List available run/debug configurations"),
-    "run_configuration" to ToolInfo("Run Configuration", "Execute a run/debug configuration"),
-    "create_run_configuration" to ToolInfo("Create Run Config", "Create a new run/debug configuration"),
-    "edit_run_configuration" to ToolInfo("Edit Run Config", "Modify an existing run/debug configuration"),
-    // Display / Presentation
-    "show_file" to ToolInfo("Show File", "Display a file to the user"),
     // Agent Meta
     "update_todo" to ToolInfo("Update TODO", "Update the agent's task checklist"),
     "report_intent" to ToolInfo("Intent", "Report current task intent"),
@@ -248,6 +168,15 @@ internal val TOOL_DISPLAY_INFO = mapOf(
     "list_bash" to ToolInfo("List Bash", "List active shell sessions"),
     "web_search" to ToolInfo("Web Search", "AI-powered web search with citations"),
     "web_fetch" to ToolInfo("Fetch URL", "Fetch a web page and return its content"),
+    // Common intellij-code-tools
+    "read_file" to ToolInfo("Read File", "Read file content"),
+    "write_file" to ToolInfo("Write File", "Write file content"),
+    "create_file" to ToolInfo("Create File", "Create a new file"),
+    "edit_text" to ToolInfo("Edit Text", "Edit text in a file"),
+    "search_text" to ToolInfo("Search Text", "Search text in the project"),
+    "search_symbols" to ToolInfo("Search Symbols", "Search for symbols"),
+    "run_command" to ToolInfo("Run Command", "Execute a shell command"),
+    "list_files" to ToolInfo("List Files", "List files in a directory"),
     // GitHub MCP tools
     "actions_get" to ToolInfo("GitHub Actions", "Get details about a GitHub Actions resource"),
     "actions_list" to ToolInfo("GitHub Actions", "List GitHub Actions workflows, runs, or jobs"),
@@ -265,8 +194,4 @@ internal val TOOL_DISPLAY_INFO = mapOf(
     "search_pull_requests" to ToolInfo("Search PRs", "Search for GitHub pull requests"),
     "search_repositories" to ToolInfo("Search Repos", "Search for GitHub repositories"),
     "search_users" to ToolInfo("Search Users", "Search for GitHub users"),
-    // IntelliJ extras
-    "get_class_outline" to ToolInfo("Class Outline", "Show constructors, methods, and fields of a class"),
-    "search_text" to ToolInfo("Search Text", "Search text or regex patterns across project files"),
-    "undo" to ToolInfo("Undo", "Undo last edit action on a file"),
 )

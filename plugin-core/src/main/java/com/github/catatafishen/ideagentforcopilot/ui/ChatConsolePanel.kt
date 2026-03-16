@@ -70,6 +70,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private val fallbackArea: JBTextArea?
 
     companion object {
+        private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
         private val QUICK_REPLY_TAG_REGEX = Regex("\\[quick-reply:\\s*([^]]+)]")
 
         /** Active panels keyed by project — used by MCP tool to retrieve page HTML. */
@@ -267,7 +268,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.append(text) } }
     }
 
-    override fun addToolCallEntry(id: String, title: String, arguments: String?, kind: String?) {
+    override fun addToolCallEntry(
+        id: String,
+        title: String,
+        arguments: String?,
+        kind: String?
+    ) {
         finalizeCurrentText()
         val resolvedKind = kind ?: "other"
         val entry = EntryData.ToolCall(title, arguments, resolvedKind, null, null, timestamp(), currentAgent)
@@ -275,18 +281,24 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val did = domId(id)
         toolCallNames[did] = title
         toolCallEntries[did] = entry
+
+        val def = toolRegistry?.findById(title)
         val info = TOOL_DISPLAY_INFO[title]
-        val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
+        val displayName = def?.displayName() ?: info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(title, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
         val hasCustomRenderer = ToolRenderers.hasRenderer(title, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
-        executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind')")
+        val isExternal = def == null  // Not from our MCP plugin
+        executeJs("ChatController.addToolCall('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind',$isExternal)")
     }
 
     override fun updateToolCall(id: String, status: String, details: String?) {
         val did = domId(id)
+        val toolName = toolCallNames[did]
+        val resultLen = details?.length ?: 0
+        LOG.debug("updateToolCall: id=$id, toolName=$toolName, status=$status, resultLen=$resultLen")
         toolCallEntries[did]?.let { it.result = details; it.status = status }
         val failed = if (status == "failed") "failed" else "completed"
         executeJs("ChatController.updateToolCall('$did','$failed','$failed')")
@@ -307,14 +319,17 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val entry = EntryData.ToolCall(title, arguments, resolvedKind)
         toolCallNames[toolDid] = title
         toolCallEntries[toolDid] = entry
+
+        val def = toolRegistry?.findById(title)
         val info = TOOL_DISPLAY_INFO[title]
-        val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
+        val displayName = def?.displayName() ?: info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
         val short = formatToolSubtitle(title, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
         val hasCustomRenderer = ToolRenderers.hasRenderer(title, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
-        executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson','$safeKind')")
+        val isExternal = def == null  // Not from our MCP plugin
+        executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson','$safeKind',$isExternal)")
     }
 
     /** Update a sub-agent internal tool call (no segment break). */
@@ -766,12 +781,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         details: String?,
         arguments: String? = null
     ): JComponent {
+        LOG.debug("renderToolResultPanel: baseName=$baseName, status=$status, detailsLen=${details?.length ?: 0}")
         if (details.isNullOrBlank()) {
             val label = when (status) {
                 "failed" -> "✖ Failed"
                 "running" -> "⏳ Running…"
                 else -> if (baseName != null) "Tool $baseName completed with no output." else "Completed"
             }
+            LOG.warn("Tool $baseName has no output (status=$status)")
             return JBLabel(label).apply {
                 foreground = if (status == "failed") ToolRenderers.FAIL_COLOR else ToolRenderers.MUTED_COLOR
                 border = com.intellij.util.ui.JBUI.Borders.empty(4, 0)
@@ -780,6 +797,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
         if (status != "failed" && baseName != null) {
             val renderer = ToolRenderers.get(baseName, toolRegistry)
+            LOG.debug("Renderer for $baseName: ${renderer?.javaClass?.simpleName ?: "null"}")
             val panel = when (renderer) {
                 is ArgumentAwareRenderer -> renderer.render(details, arguments)
                 else -> renderer?.render(details)

@@ -413,6 +413,17 @@ working-indicator .working-text {
     border-color: color-mix(in srgb, var(--kind-other) 18%, transparent);
 }
 
+/* External (non-MCP) tool indicator */
+.turn-chip.external-tool {
+    border-style: dashed;
+}
+
+.external-badge {
+    color: var(--warning);
+    font-size: 0.85em;
+    margin-right: 2px;
+}
+
 .turn-chip.kind-read:hover {
     background: color-mix(in srgb, var(--kind-read) 18%, transparent);
     border-color: color-mix(in srgb, var(--kind-read) 32%, transparent);
