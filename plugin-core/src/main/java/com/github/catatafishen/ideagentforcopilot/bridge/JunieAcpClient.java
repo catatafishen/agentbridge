@@ -36,8 +36,8 @@ public class JunieAcpClient extends AcpClient {
         p.setMcpConfigTemplate(
             "{\"mcpServers\":{\"intellij-code-tools\":"
                 + "{\"type\":\"stdio\","
-                + "\"command\":\"{mcpCommand}\","
-                + "\"args\":[\"{mcpPort}\"]}}}");
+                + "\"command\":\"{javaPath}\","
+                + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"]}}}");
         p.setSupportsModelFlag(true);
         p.setSupportsConfigDir(false);
         p.setRequiresResourceDuplication(false);

@@ -214,6 +214,9 @@ public class AcpClient implements AgentClient {
             ProcessBuilder pb = agentConfig.buildAcpProcess(binaryPath, projectBasePath, mcpPort);
             customizeProcessBuilder(pb);
             effectiveMcpPrefix = agentConfig.getEffectiveMcpServerName() + "-";
+            if (projectBasePath != null) {
+                pb.directory(new java.io.File(projectBasePath));
+            }
             pb.redirectErrorStream(false);
             process = pb.start();
 
@@ -1606,7 +1609,6 @@ public class AcpClient implements AgentClient {
     }
 
     // ---- End agent request handlers ----
-
 
     private String findAllowOption(JsonObject reqParams) {
         if (reqParams != null && reqParams.has(OPTIONS)) {
