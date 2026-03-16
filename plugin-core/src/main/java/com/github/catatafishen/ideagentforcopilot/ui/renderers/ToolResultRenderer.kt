@@ -13,10 +13,7 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
-import javax.swing.BoxLayout
-import javax.swing.Icon
-import javax.swing.JComponent
-import javax.swing.JPanel
+import javax.swing.*
 
 /**
  * Interface for custom tool-result renderers in the tool-call popup.
@@ -64,6 +61,16 @@ object ToolRenderers {
     private val BUILTIN_RENDERERS: Map<String, ToolResultRenderer> = mapOf(
         "update_todo" to TodoRenderer,
         "glob" to GlobRenderer,
+        "view" to WriteFileRenderer,
+        "edit" to WriteFileRenderer,
+        "write" to WriteFileRenderer,
+        "edit_text" to WriteFileRenderer,
+        "read_file" to WriteFileRenderer,
+        "write_file" to WriteFileRenderer,
+        "create_file" to WriteFileRenderer,
+        "intellij_read_file" to WriteFileRenderer,
+        "intellij_edit_text" to WriteFileRenderer,
+        "intellij_write_file" to WriteFileRenderer,
     )
 
     /**
