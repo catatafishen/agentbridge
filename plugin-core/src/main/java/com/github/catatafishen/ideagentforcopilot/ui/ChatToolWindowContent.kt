@@ -101,8 +101,11 @@ class ChatToolWindowContent(
             com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.FOCUS_RESTORE_TOPIC,
             com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.FocusRestoreListener {
                 // Only triggered when chat was active before tool call, so just request focus
+                // Must run on EDT since EditorTextField.requestFocusInWindow() requires it
                 if (::promptTextArea.isInitialized) {
-                    promptTextArea.requestFocusInWindow()
+                    ApplicationManager.getApplication().invokeLater {
+                        promptTextArea.requestFocusInWindow()
+                    }
                 }
             }
         )
