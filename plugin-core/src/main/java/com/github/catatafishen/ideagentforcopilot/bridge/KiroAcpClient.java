@@ -87,19 +87,19 @@ public class KiroAcpClient extends AcpClient {
 
     /**
      * Builds the MCP config template for Kiro.
-     * Kiro expects mcpServers as an array of server configurations.
+     * Kiro expects mcpServers as an object (same format as mcp.json).
      * See: https://kiro.dev/docs/cli/acp/#agent-capabilities
      */
     @NotNull
     private static String buildMcpConfigTemplate() {
         return "{"
-            + "\"mcpServers\":["
-            + "{"
+            + "\"mcpServers\":{"
+            + "\"intellij-code-tools\":{"
             + "\"command\":\"{javaPath}\","
             + "\"args\":[\"-jar\",\"{mcpJarPath}\",\"--port\",\"{mcpPort}\"],"
             + "\"env\":{}"
             + "}"
-            + "]"
+            + "}"
             + "}";
     }
 
