@@ -1,3 +1,16 @@
+/*
+ * ⚠️  AUTO-GENERATED FILE - DO NOT EDIT DIRECTLY!
+ *
+ * This file is built from TypeScript sources in plugin-core/chat-ui/src/
+ *
+ * To make changes:
+ *   1. Edit the TypeScript files in plugin-core/chat-ui/src/
+ *   2. Run: cd plugin-core/chat-ui && npm run build
+ *   3. The changes will be compiled into this file
+ *
+ * See plugin-core/chat-ui/README.md for more information.
+ */
+
 "use strict";
 var __chatUI = (() => {
   // src/helpers.ts
@@ -56,9 +69,11 @@ var __chatUI = (() => {
           this._autoScroll = true;
         } else if (window.scrollY < this._prevScrollY) {
           this._autoScroll = false;
-          if (window.scrollY <= 80) {
+          if (window.scrollY <= 30) {
             const lm = this._messages.querySelector("load-more:not([loading])");
-            if (lm) lm.click();
+            if (lm) {
+              lm.click();
+            }
           }
         }
         this._prevScrollY = window.scrollY;
@@ -446,9 +461,28 @@ var __chatUI = (() => {
     }
     const file = shortPath(p.path || p.file || p.scope || "");
     const map = {
+      // OpenCode / Claude built-in agent tools
+      "todowrite": () => "Updating TODO",
+      "TodoWrite": () => "Updating TODO",
+      "codesearch": () => p.query ? `Code search: ${trunc(p.query, 20)}` : "Code search",
+      "CodeSearch": () => p.query ? `Code search: ${trunc(p.query, 20)}` : "Code search",
+      "webfetch": () => p.url ? `Fetch: ${trunc(p.url, 24)}` : "Fetching URL",
+      "WebFetch": () => p.url ? `Fetch: ${trunc(p.url, 24)}` : "Fetching URL",
+      "websearch": () => p.query ? `Search: ${trunc(p.query, 20)}` : "Web search",
+      "WebSearch": () => p.query ? `Search: ${trunc(p.query, 20)}` : "Web search",
+      "task": () => p.agent_type || p.agentType ? `Sub-agent: ${p.agent_type || p.agentType}` : "Sub-agent task",
+      "Task": () => p.agent_type || p.agentType ? `Sub-agent: ${p.agent_type || p.agentType}` : "Sub-agent task",
+      "skill": () => p.name ? `Skill: ${p.name}` : "Using skill",
+      "Skill": () => p.name ? `Skill: ${p.name}` : "Using skill",
+      "Read": () => file ? `Reading ${file}` : "Reading file",
+      "Write": () => file ? `Writing ${file}` : "Writing file",
+      "Edit": () => file ? `Editing ${file}` : "Editing file",
+      "Bash": () => p.command ? `Bash: ${trunc(p.command, 24)}` : "Running bash",
+      "Glob": () => p.pattern ? `Glob: ${trunc(p.pattern, 20)}` : "Finding files",
+      "Grep": () => p.pattern ? `Grep: ${trunc(p.pattern, 20)}` : "Searching files",
       // File operations
-      "intellij_read_file": () => file ? `Reading ${file}` : "Reading file",
-      "intellij_write_file": () => file ? `Editing ${file}` : "Editing file",
+      "read_file": () => file ? `Reading ${file}` : "Reading file",
+      "write_file": () => file ? `Editing ${file}` : "Editing file",
       "create_file": () => file ? `Creating ${file}` : "Creating file",
       "delete_file": () => file ? `Deleting ${file}` : "Deleting file",
       "open_in_editor": () => file ? `Opening ${file}` : "Opening file",
@@ -546,6 +580,29 @@ var __chatUI = (() => {
   }
 
   // src/components/ToolChip.ts
+  var SAFE_EXTERNAL_TOOLS = /* @__PURE__ */ new Set([
+    // OpenCode / Claude agent tools - read/search operations
+    "todowrite",
+    "TodoWrite",
+    "codesearch",
+    "CodeSearch",
+    "webfetch",
+    "WebFetch",
+    "websearch",
+    "WebSearch",
+    "skill",
+    "Skill",
+    "task",
+    "Task",
+    // Built-in CLI read-only tools
+    "view",
+    "View",
+    "Read",
+    "grep",
+    "Grep",
+    "glob",
+    "Glob"
+  ]);
   var ToolChip = class extends HTMLElement {
     static get observedAttributes() {
       return ["label", "status", "expanded", "kind", "external"];
@@ -584,7 +641,9 @@ var __chatUI = (() => {
       let iconHtml = "";
       if (status === "running") iconHtml = '<span class="chip-spinner"></span> ';
       else if (status === "failed") this.classList.add("failed");
-      const externalBadge = isExternal ? '<span class="external-badge" title="Built-in agent tool (not from MCP plugin)">\u26A0</span> ' : "";
+      const baseToolName = rawLabel.split(" \u2014 ")[0].trim();
+      const showWarning = isExternal && !SAFE_EXTERNAL_TOOLS.has(baseToolName);
+      const externalBadge = showWarning ? '<span class="external-badge" title="Built-in agent tool (not from MCP plugin)">\u26A0</span> ' : "";
       this.innerHTML = iconHtml + externalBadge + escHtml(truncated);
       if (display.length > 50) this.dataset.tip = display;
       else if (rawLabel !== display) this.dataset.tip = rawLabel;
@@ -1161,6 +1220,8 @@ var __chatUI = (() => {
         ctx.thinkingBlock = null;
         ctx.textBubble = null;
       }
+      document.querySelectorAll('subagent-chip[status="running"]').forEach((c) => c.setAttribute("status", "complete"));
+      document.querySelectorAll('tool-chip[status="running"]').forEach((c) => c.setAttribute("status", "complete"));
       this._container()?.scrollIfNeeded();
       this._trimMessages();
     },
@@ -1237,7 +1298,7 @@ var __chatUI = (() => {
       while (temp.firstChild) {
         msgs.insertBefore(temp.firstChild, insertBefore);
       }
-      if (prevScrollY <= 80) {
+      if (prevScrollY <= 30) {
         const addedHeight = document.body.scrollHeight - prevHeight;
         if (addedHeight > 0) {
           const targetScroll = Math.max(10, prevScrollY + addedHeight);
@@ -1266,7 +1327,7 @@ var __chatUI = (() => {
       const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
       const prevHeight = document.body.scrollHeight;
       const prevScrollY = window.scrollY;
-      const wasNearTop = prevScrollY <= 80;
+      const wasNearTop = prevScrollY <= 30;
       while (temp.firstChild) {
         msgs.insertBefore(temp.firstChild, insertBefore);
       }
@@ -1280,7 +1341,7 @@ var __chatUI = (() => {
           window.scrollTo(0, targetScroll);
         }
       }
-      if (wasNearTop && window.scrollY <= 100) {
+      if (wasNearTop && window.scrollY <= 30) {
         requestAnimationFrame(() => {
           const lm = msgs.querySelector("load-more:not([loading])");
           if (lm) lm.click();

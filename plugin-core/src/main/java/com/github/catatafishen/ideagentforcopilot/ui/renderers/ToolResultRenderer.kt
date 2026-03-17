@@ -13,7 +13,10 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Color
-import javax.swing.*
+import javax.swing.BoxLayout
+import javax.swing.Icon
+import javax.swing.JComponent
+import javax.swing.JPanel
 
 /**
  * Interface for custom tool-result renderers in the tool-call popup.
@@ -59,18 +62,26 @@ object ToolRenderers {
      * and the caller falls back to codePanel().
      */
     private val BUILTIN_RENDERERS: Map<String, ToolResultRenderer> = mapOf(
+        // Copilot CLI built-in tools
         "update_todo" to TodoRenderer,
         "glob" to GlobRenderer,
+        "Glob" to GlobRenderer,
         "view" to WriteFileRenderer,
+        "View" to WriteFileRenderer,
         "edit" to WriteFileRenderer,
+        "Edit" to WriteFileRenderer,
         "write" to WriteFileRenderer,
+        "Write" to WriteFileRenderer,
+        "Read" to WriteFileRenderer,
         "edit_text" to WriteFileRenderer,
         "read_file" to WriteFileRenderer,
         "write_file" to WriteFileRenderer,
         "create_file" to WriteFileRenderer,
-        "intellij_read_file" to WriteFileRenderer,
-        "intellij_edit_text" to WriteFileRenderer,
-        "intellij_write_file" to WriteFileRenderer,
+        // OpenCode / Claude built-in tools
+        "todowrite" to TodoRenderer,
+        "TodoWrite" to TodoRenderer,
+        "grep" to GlobRenderer,  // similar list output format
+        "Grep" to GlobRenderer,
     )
 
     /**

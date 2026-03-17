@@ -301,18 +301,6 @@ public abstract class AcpClient implements AgentClient {
         // Empty array here because servers are loaded from the config file
         params.add("mcpServers", new JsonArray());
 
-        // Tool filtering: for agents that support it (e.g., OpenCode), send excludedTools
-        // to remove built-in tools so only IntelliJ MCP tools are available.
-        // Copilot CLI ignores this (bug #556) — those tools are denied via permissions instead.
-        if (agentConfig.shouldExcludeBuiltInTools()) {
-            JsonArray excluded = new JsonArray();
-            for (String toolId : com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getBuiltInToolIds()) {
-                excluded.add(toolId);
-            }
-            params.add("excludedTools", excluded);
-            LOG.info("Excluding built-in tools from session: " + excluded);
-        }
-
         LOG.info("Creating session (MCP servers configured via --additional-mcp-config)");
 
         JsonObject result = sendRequest("session/new", params);
@@ -769,7 +757,9 @@ public abstract class AcpClient implements AgentClient {
 
     @Nullable
     private String extractAcpResult(@NotNull JsonObject update) {
-        for (String key : new String[]{RESULT, CONTENT, OUTPUT_KEY, TOOL_RESULT_KEY, "result_text", "resultText"}) {
+        // Try various keys that different agents use for tool results
+        for (String key : new String[]{RESULT, CONTENT, OUTPUT_KEY, TOOL_RESULT_KEY, "result_text", "resultText",
+                "text", "response", "data", "value", "message"}) {
             if (!update.has(key)) continue;
             if (CONTENT.equals(key)) return extractContentText(update);
             com.google.gson.JsonElement el = update.get(key);
@@ -1466,11 +1456,10 @@ public abstract class AcpClient implements AgentClient {
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
     private ToolPermission resolveEffectivePermission(String toolId, @Nullable JsonObject toolCall) {
-        // Enforce exclusion of agent built-in tools (view, edit, bash, etc.)
-        // GitHub Copilot CLI ignores the excludedTools parameter in session/new, so we
-        // must deny them here during the request_permission handshake.
-        if (agentConfig.shouldExcludeBuiltInTools() && ToolRegistry.getBuiltInToolIds().contains(toolId)) {
-            LOG.info("ACP request_permission: blocking excluded built-in tool " + toolId);
+        // Deny agent built-in tools via permission system when configured.
+        // This forces agents to use IntelliJ MCP tools instead of their built-ins (view, edit, bash, etc.)
+        if (agentConfig.denyBuiltInToolsViaPermissions() && ToolRegistry.getBuiltInToolIds().contains(toolId)) {
+            LOG.info("ACP request_permission: denying built-in tool " + toolId + " (forcing MCP alternative)");
             return ToolPermission.DENY;
         }
 

@@ -331,6 +331,10 @@ const ChatController = {
             ctx.thinkingBlock = null;
             ctx.textBubble = null;
         }
+        // Mark any still-running sub-agent chips as complete (not failed)
+        document.querySelectorAll('subagent-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
+        // Mark any still-running tool chips as complete (not failed)
+        document.querySelectorAll('tool-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
         this._container()?.scrollIfNeeded();
         this._trimMessages();
     },
@@ -435,7 +439,7 @@ const ChatController = {
         // height so they are no longer pinned at scrollY=0 and can scroll up again.
         // We ensure a minimum scroll offset of 10px so JCEF always detects subsequent
         // scroll-up gestures, preventing the user from getting stuck at the absolute top.
-        if (prevScrollY <= 80) {
+        if (prevScrollY <= 30) {
             const addedHeight = document.body.scrollHeight - prevHeight;
             if (addedHeight > 0) {
                 const targetScroll = Math.max(10, prevScrollY + addedHeight);
@@ -468,7 +472,7 @@ const ChatController = {
 
         const prevHeight = document.body.scrollHeight;
         const prevScrollY = window.scrollY;
-        const wasNearTop = prevScrollY <= 80;
+        const wasNearTop = prevScrollY <= 30;
 
         while (temp.firstChild) {
             msgs.insertBefore(temp.firstChild, insertBefore);
@@ -489,9 +493,9 @@ const ChatController = {
         }
 
         // Continue loading if user was near top before scroll adjustment AND
-        // the compensated scroll is still near the top (within 100px).
+        // the compensated scroll is still near the top (within 50px).
         // This prevents rapid auto-loading when there's enough content loaded.
-        if (wasNearTop && window.scrollY <= 100) {
+        if (wasNearTop && window.scrollY <= 30) {
             requestAnimationFrame(() => {
                 const lm = msgs.querySelector<HTMLElement>('load-more:not([loading])');
                 if (lm) lm.click();

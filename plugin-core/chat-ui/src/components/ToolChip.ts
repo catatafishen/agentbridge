@@ -1,6 +1,25 @@
 import {escHtml} from '../helpers';
 import {toolDisplayName} from '../toolDisplayName';
 
+/**
+ * External (non-MCP) tools that are considered safe and should not show warning badge.
+ * These are useful agent built-in tools that don't pose security concerns.
+ */
+const SAFE_EXTERNAL_TOOLS = new Set([
+    // OpenCode / Claude agent tools - read/search operations
+    'todowrite', 'TodoWrite',
+    'codesearch', 'CodeSearch',
+    'webfetch', 'WebFetch',
+    'websearch', 'WebSearch',
+    'skill', 'Skill',
+    'task', 'Task',
+    // Built-in CLI read-only tools
+    'view', 'View',
+    'Read',
+    'grep', 'Grep',
+    'glob', 'Glob',
+]);
+
 export default class ToolChip extends HTMLElement {
     static get observedAttributes(): string[] {
         return ['label', 'status', 'expanded', 'kind', 'external'];
@@ -43,8 +62,11 @@ export default class ToolChip extends HTMLElement {
         let iconHtml = '';
         if (status === 'running') iconHtml = '<span class="chip-spinner"></span> ';
         else if (status === 'failed') this.classList.add('failed');
-        // Add external badge for non-MCP tools
-        const externalBadge = isExternal ? '<span class="external-badge" title="Built-in agent tool (not from MCP plugin)">⚠</span> ' : '';
+        // Add external badge for non-MCP tools, unless it's a known safe tool
+        // Extract base tool name (before any " — " subtitle)
+        const baseToolName = rawLabel.split(' — ')[0].trim();
+        const showWarning = isExternal && !SAFE_EXTERNAL_TOOLS.has(baseToolName);
+        const externalBadge = showWarning ? '<span class="external-badge" title="Built-in agent tool (not from MCP plugin)">⚠</span> ' : '';
         this.innerHTML = iconHtml + externalBadge + escHtml(truncated);
         if (display.length > 50) this.dataset.tip = display;
         else if (rawLabel !== display) this.dataset.tip = rawLabel;

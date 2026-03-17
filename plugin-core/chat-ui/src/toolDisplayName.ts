@@ -29,9 +29,29 @@ export function toolDisplayName(rawTitle: string, paramsJson?: string): string {
     const file = shortPath(p.path || p.file || p.scope || '');
 
     const map: Record<string, () => string> = {
+        // OpenCode / Claude built-in agent tools
+        'todowrite': () => 'Updating TODO',
+        'TodoWrite': () => 'Updating TODO',
+        'codesearch': () => p.query ? `Code search: ${trunc(p.query, 20)}` : 'Code search',
+        'CodeSearch': () => p.query ? `Code search: ${trunc(p.query, 20)}` : 'Code search',
+        'webfetch': () => p.url ? `Fetch: ${trunc(p.url, 24)}` : 'Fetching URL',
+        'WebFetch': () => p.url ? `Fetch: ${trunc(p.url, 24)}` : 'Fetching URL',
+        'websearch': () => p.query ? `Search: ${trunc(p.query, 20)}` : 'Web search',
+        'WebSearch': () => p.query ? `Search: ${trunc(p.query, 20)}` : 'Web search',
+        'task': () => p.agent_type || p.agentType ? `Sub-agent: ${p.agent_type || p.agentType}` : 'Sub-agent task',
+        'Task': () => p.agent_type || p.agentType ? `Sub-agent: ${p.agent_type || p.agentType}` : 'Sub-agent task',
+        'skill': () => p.name ? `Skill: ${p.name}` : 'Using skill',
+        'Skill': () => p.name ? `Skill: ${p.name}` : 'Using skill',
+        'Read': () => file ? `Reading ${file}` : 'Reading file',
+        'Write': () => file ? `Writing ${file}` : 'Writing file',
+        'Edit': () => file ? `Editing ${file}` : 'Editing file',
+        'Bash': () => p.command ? `Bash: ${trunc(p.command, 24)}` : 'Running bash',
+        'Glob': () => p.pattern ? `Glob: ${trunc(p.pattern, 20)}` : 'Finding files',
+        'Grep': () => p.pattern ? `Grep: ${trunc(p.pattern, 20)}` : 'Searching files',
+
         // File operations
-        'intellij_read_file': () => file ? `Reading ${file}` : 'Reading file',
-        'intellij_write_file': () => file ? `Editing ${file}` : 'Editing file',
+        'read_file': () => file ? `Reading ${file}` : 'Reading file',
+        'write_file': () => file ? `Editing ${file}` : 'Editing file',
         'create_file': () => file ? `Creating ${file}` : 'Creating file',
         'delete_file': () => file ? `Deleting ${file}` : 'Deleting file',
         'open_in_editor': () => file ? `Opening ${file}` : 'Opening file',
