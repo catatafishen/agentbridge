@@ -1262,6 +1262,7 @@ public abstract class AcpClient implements AgentClient {
         int code = error.has("code") ? error.get("code").getAsInt() : 0;
         String message = error.has(MESSAGE) ? error.get(MESSAGE).getAsString() : "Unknown error";
         String data = null;
+        Integer httpStatusCode = null;
 
         LOG.warn("ACP error response for request id=" + id + ": " + gson.toJson(error));
 
@@ -1270,6 +1271,35 @@ public abstract class AcpClient implements AgentClient {
                 JsonElement dataElem = error.get("data");
                 if (dataElem.isJsonPrimitive() && dataElem.getAsJsonPrimitive().isString()) {
                     data = dataElem.getAsString();
+                } else if (dataElem.isJsonObject()) {
+                    // Try to extract structured error information
+                    JsonObject dataObj = dataElem.getAsJsonObject();
+
+                    // Extract HTTP status code if present
+                    if (dataObj.has("statusCode")) {
+                        httpStatusCode = dataObj.get("statusCode").getAsInt();
+                    } else if (dataObj.has("status")) {
+                        httpStatusCode = dataObj.get("status").getAsInt();
+                    }
+
+                    // Extract the actual error message from nested fields
+                    String detailedMessage = null;
+                    if (dataObj.has("error") && dataObj.get("error").isJsonObject()) {
+                        JsonObject errorObj = dataObj.getAsJsonObject("error");
+                        if (errorObj.has("message")) {
+                            detailedMessage = errorObj.get("message").getAsString();
+                        }
+                    } else if (dataObj.has("error") && dataObj.get("error").isJsonPrimitive()) {
+                        detailedMessage = dataObj.get("error").getAsString();
+                    } else if (dataObj.has("message")) {
+                        detailedMessage = dataObj.get("message").getAsString();
+                    }
+
+                    if (detailedMessage != null && !detailedMessage.isEmpty()) {
+                        data = detailedMessage;
+                    } else {
+                        data = gson.toJson(dataElem);
+                    }
                 } else {
                     data = gson.toJson(dataElem);
                 }
@@ -1279,6 +1309,9 @@ public abstract class AcpClient implements AgentClient {
         }
 
         StringBuilder fullMessage = new StringBuilder();
+        if (httpStatusCode != null) {
+            fullMessage.append("[HTTP ").append(httpStatusCode).append("] ");
+        }
         if (code != 0) {
             fullMessage.append("(").append(code).append(") ");
         }
