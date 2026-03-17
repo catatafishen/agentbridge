@@ -46,22 +46,22 @@ graph TD
         subgraph mcp["MCP Layer"]
             PSI["PsiBridgeService\n(HTTP server)\n92 MCP tools"]
         end
-        TW -->|"prompts /\ncontext"| AS
-        AC -->|"streaming\nresponses"| TW
+        TW -->|" prompts /\ncontext "| AS
+        AC -->|" streaming\nresponses "| TW
     end
 
-    AC <-->|"stdin / stdout"| CLI["Agent CLI\n(Copilot, opencode, etc.)"]
+    AC <-->|" stdin / stdout "| CLI["Agent CLI\n(Copilot, opencode, etc.)"]
     CLI -->|stdio| MCP["MCP Server (JAR)\nintelij-code-tools"]
     MCP -->|HTTP| PSI
 ```
 
 ### Three Layers
 
-| Layer | Package | Purpose |
-|-------|---------|---------|
-| **UI** | `ui/` | Tool window, chat panel, model selector — agent-agnostic |
-| **ACP** | `bridge/` | Generic Agent Client Protocol: `AcpClient` (JSON-RPC), `AgentService` (lifecycle), `AgentConfig` / `AgentSettings` (strategy interfaces) |
-| **MCP** | `mcp-server/`, `psi/` | IDE tools exposed via Model Context Protocol over stdio + HTTP |
+| Layer   | Package               | Purpose                                                                                                                                  |
+|---------|-----------------------|------------------------------------------------------------------------------------------------------------------------------------------|
+| **UI**  | `ui/`                 | Tool window, chat panel, model selector — agent-agnostic                                                                                 |
+| **ACP** | `bridge/`             | Generic Agent Client Protocol: `AcpClient` (JSON-RPC), `AgentService` (lifecycle), `AgentConfig` / `AgentSettings` (strategy interfaces) |
+| **MCP** | `mcp-server/`, `psi/` | IDE tools exposed via Model Context Protocol over stdio + HTTP                                                                           |
 
 ### Extending for New Agents
 
@@ -69,7 +69,8 @@ To add a new agent backend, implement two interfaces and extend one base class:
 
 1. **`AgentConfig`** — Agent binary discovery, process building, initialize response parsing, auth
 2. **`AgentSettings`** — Runtime settings: prompt timeout, max tool calls per turn, permission resolution
-3. **`AgentService`** (extend) — Provides `createAgentConfig()` + `createAgentSettings()`, inherits full lifecycle (start/stop/restart/dispose)
+3. **`AgentService`** (extend) — Provides `createAgentConfig()` + `createAgentSettings()`, inherits full lifecycle (
+   start/stop/restart/dispose)
 
 The `AcpClient` and UI code require no changes — they program against the interfaces.
 
@@ -102,18 +103,18 @@ intellij-copilot-plugin/
 
 ## MCP Tools (92 tools)
 
-| Category            | Tools                                                                                                                                                                                                                   |
-|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Code Navigation** | `search_symbols`, `get_file_outline`, `get_class_outline`, `find_references`, `list_project_files`, `search_text`, `go_to_declaration`, `get_type_hierarchy`, `find_implementations`, `get_call_hierarchy`, `get_documentation`, `download_sources` |
-| **File I/O**        | `intellij_read_file`, `intellij_write_file`, `edit_text`, `create_file`, `delete_file`, `rename_file`, `move_file`, `undo`, `redo`, `reload_from_disk`, `open_in_editor`, `show_diff`                                   |
-| **Code Quality**    | `get_problems`, `get_highlights`, `run_inspections`, `apply_quickfix`, `suppress_inspection`, `optimize_imports`, `format_code`, `add_to_dictionary`, `get_compilation_errors`, `run_qodana`, `run_sonarqube_analysis`*  |
-| **Refactoring**     | `refactor`, `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`                                                                                                                                        |
-| **Testing**         | `list_tests`, `run_tests`, `get_coverage`                                                                                                                                                                               |
-| **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `mark_directory`, `edit_project_structure`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`, `delete_run_configuration` |
+| Category            | Tools                                                                                                                                                                                                                                                                                        |
+|---------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Code Navigation** | `search_symbols`, `get_file_outline`, `get_class_outline`, `find_references`, `list_project_files`, `search_text`, `go_to_declaration`, `get_type_hierarchy`, `find_implementations`, `get_call_hierarchy`, `get_documentation`, `download_sources`                                          |
+| **File I/O**        | `intellij_read_file`, `intellij_write_file`, `edit_text`, `create_file`, `delete_file`, `rename_file`, `move_file`, `undo`, `redo`, `reload_from_disk`, `open_in_editor`, `show_diff`                                                                                                        |
+| **Code Quality**    | `get_problems`, `get_highlights`, `run_inspections`, `apply_quickfix`, `suppress_inspection`, `optimize_imports`, `format_code`, `add_to_dictionary`, `get_compilation_errors`, `run_qodana`, `run_sonarqube_analysis`*                                                                      |
+| **Refactoring**     | `refactor`, `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`                                                                                                                                                                                                             |
+| **Testing**         | `list_tests`, `run_tests`, `get_coverage`                                                                                                                                                                                                                                                    |
+| **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `mark_directory`, `edit_project_structure`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`, `delete_run_configuration`                                                     |
 | **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_revert`, `git_show`, `git_push`, `git_remote`, `git_fetch`, `git_pull`, `git_merge`, `git_rebase`, `git_cherry_pick`, `git_tag`, `git_reset`, `get_file_history` |
-| **Infrastructure**  | `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `read_run_output`, `read_build_output`                                                                                                              |
-| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`, `list_terminals`                                                                                                                                     |
-| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `run_scratch_file`, `get_active_file`, `get_open_editors`, `search_conversation_history`, `get_chat_html`, `list_themes`, `set_theme`        |
+| **Infrastructure**  | `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `read_run_output`, `read_build_output`                                                                                                                                                                                   |
+| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`, `list_terminals`                                                                                                                                                                                                          |
+| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `run_scratch_file`, `get_active_file`, `get_open_editors`, `search_conversation_history`, `get_chat_html`, `list_themes`, `set_theme`                                                                            |
 
 *\* `run_sonarqube_analysis` only available when SonarLint plugin is installed.*
 
@@ -121,7 +122,8 @@ intellij-copilot-plugin/
 
 - **JDK 21** (for plugin development)
 - **IntelliJ IDEA 2025.3+** (any JetBrains IDE)
-- **An ACP-compatible agent CLI** (e.g., GitHub Copilot CLI, opencode, Claude Code via [claude-code-acp](https://www.npmjs.com/package/@zed-industries/claude-code-acp))
+- **An ACP-compatible agent CLI** (e.g., GitHub Copilot CLI, opencode, Claude Code
+  via [claude-code-acp](https://www.npmjs.com/package/@zed-industries/claude-code-acp))
 
 ## Quick Start
 
@@ -168,16 +170,33 @@ Expand-Archive "plugin-core\build\distributions\plugin-core-*.zip" `
 - **Build**: Gradle 8.x with Kotlin DSL
 - **Testing**: JUnit 5
 
-## Known Copilot Platform Issues
+## Known Platform Issues
 
-Tracked issues on the Copilot CLI side that affect this plugin. When an issue is resolved upstream, the workaround can
+Tracked issues on the agent CLI side that affect this plugin. When an issue is resolved upstream, the workaround can
 be removed and the entry marked as ✅.
 
-| # | Issue                                                                                         | Status  | Impact                                                                                                                                                                                                                                                         | Workaround                                                                                                                                                                                                                        |
-|---|-----------------------------------------------------------------------------------------------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 | [#1486](https://github.com/github/copilot-cli/issues/1486) — MCP `instructions` field ignored | 🔴 Open | Copilot ignores the `instructions` field from the MCP `initialize` response, so the agent never sees our tool-usage guidance.                                                                                                                                  | Plugin prepends instructions to `copilot-instructions.md` on project open ([PsiBridgeStartup.kt](plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/psi/PsiBridgeStartup.kt)).                                  |
-| 2 | [#556](https://github.com/github/copilot-cli/issues/556) — Tool filtering not respected       | 🔴 Open | `--available-tools` / `--excluded-tools` CLI flags and `tools/remove` MCP capability are all ignored in ACP mode. Re-validated on CLI v1.0.3 GA (Mar 2026): all four mechanisms still broken. Built-in tools (`view`, `edit`, `bash`, etc.) cannot be removed.  | Permission denial via ACP + sub-agent write blocking. See [CLI-BUG-556-WORKAROUND.md](docs/CLI-BUG-556-WORKAROUND.md).                                                                                                           |
-| 3 | Sub-agents ignore custom instructions and agent definitions                                   | 🔴 Open | Sub-agents (explore, task, general-purpose) spawned via the `task` tool don't receive `.github/copilot-instructions.md` or `session/message` guidance. Read-only built-in tools (`view`, `grep`, `glob`) auto-execute without permission and can't be blocked. | Plugin bundles a custom [ide-explore agent](plugin-core/src/main/resources/agents/ide-explore.md) with instruction-based guidance to prefer IntelliJ MCP tools. Write tools (`edit`, `create`, `bash`) are blocked via permission denial. |
+| # | Issue                                                                                         | Status  | Impact                                                                                                                                                                                                                                                             | Workaround                                                                                                                                                                                                                                |
+|---|-----------------------------------------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 1 | [#1486](https://github.com/github/copilot-cli/issues/1486) — MCP `instructions` field ignored | 🔴 Open | Copilot ignores the `instructions` field from the MCP `initialize` response, so the agent never sees our tool-usage guidance.                                                                                                                                      | Plugin prepends instructions to `copilot-instructions.md` on project open ([PsiBridgeStartup.kt](plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/psi/PsiBridgeStartup.kt)).                                          |
+| 2 | [#556](https://github.com/github/copilot-cli/issues/556) — Tool filtering not respected       | 🔴 Open | `--available-tools` / `--excluded-tools` CLI flags and `tools/remove` MCP capability are all ignored in ACP mode. Re-validated on CLI v1.0.3 GA (Mar 2026): all four mechanisms still broken. Built-in tools (`view`, `edit`, `bash`, etc.) cannot be removed.     | Permission denial via ACP + sub-agent write blocking. See [CLI-BUG-556-WORKAROUND.md](docs/CLI-BUG-556-WORKAROUND.md).                                                                                                                    |
+| 3 | Sub-agents ignore custom instructions and agent definitions                                   | 🔴 Open | Sub-agents (explore, task, general-purpose) spawned via the `task` tool don't receive `.github/copilot-instructions.md` or `session/message` guidance. Read-only built-in tools (`view`, `grep`, `glob`) auto-execute without permission and can't be blocked.     | Plugin bundles a custom [ide-explore agent](plugin-core/src/main/resources/agents/ide-explore.md) with instruction-based guidance to prefer IntelliJ MCP tools. Write tools (`edit`, `create`, `bash`) are blocked via permission denial. |
+| 4 | Junie built-in tool filtering not supported                                                   | 🔴 Open | Junie provides no built-in tool filtering mechanism AND does NOT send `session/request_permission` for ANY tools (built-in or MCP). All tools auto-execute without permission — protocol-level blocking impossible. (ACP spec has no standard filtering mechanism) | Prompt engineering via `session/message` startup instructions. See [JUNIE-TOOL-WORKAROUND.md](docs/JUNIE-TOOL-WORKAROUND.md). Warning emoji shown when Junie uses built-in tools.                                                         |
+
+### Quick Comparison
+
+| Aspect                     | Copilot CLI                  | Junie CLI          | Kiro CLI  | OpenCode                  |
+|----------------------------|------------------------------|--------------------|-----------|---------------------------|
+| Built-in tool filtering¹   | `--excluded-tools` (broken²) | ❌ None             | ❓ Unknown | `permission` config field |
+| Sends permission requests³ | ✅ For write tools            | ❌ No (none)        | ❓ Unknown | ✅ Yes                     |
+| Blocking viable?           | ✅ Deny + retry               | ❌ No permission    | ❓ Unknown | ✅ Config + permissions    |
+| Workaround                 | Permission denial            | Prompt engineering | N/A       | None needed               |
+
+¹ Agent-specific mechanisms — NOT part of ACP protocol  
+² Copilot CLI has `--excluded-tools` and `--available-tools` flags, but they're ignored in ACP
+mode ([bug #556](https://github.com/github/copilot-cli/issues/556))  
+³ `session/request_permission` is **optional per ACP spec** — agents may auto-execute tools without asking
+
+See [PERMISSIONS.md](docs/PERMISSIONS.md) for the full architecture.
 
 ## Documentation
 
