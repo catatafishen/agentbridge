@@ -795,20 +795,69 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 alignmentX = JComponent.LEFT_ALIGNMENT
             }
         }
+
+        // Some agents (like Junie) wrap tool output in natural language explanations.
+        // We attempt to split them to show both the explanation and the custom renderer.
+        val (explanation, rawOutput) = splitAgentOutput(details)
+
         if (status != "failed" && baseName != null) {
             val renderer = ToolRenderers.get(baseName, toolRegistry)
             LOG.debug("Renderer for $baseName: ${renderer?.javaClass?.simpleName ?: "null"}")
-            val panel = when (renderer) {
-                is ArgumentAwareRenderer -> renderer.render(details, arguments)
-                else -> renderer?.render(details)
+
+            // Try rendering rawOutput first if we split it, otherwise use details
+            val toRender = rawOutput ?: details
+            val rendered = when (renderer) {
+                is ArgumentAwareRenderer -> renderer.render(toRender, arguments)
+                else -> renderer?.render(toRender)
             }
-            if (panel != null) return panel
+
+            if (rendered != null) {
+                if (explanation != null) {
+                    val container = ToolRenderers.listPanel()
+                    container.add(JBLabel("<html><body style='width: 450px'>${markdownToHtml(explanation)}</body></html>").apply {
+                        border = com.intellij.util.ui.JBUI.Borders.empty(0, 0, 8, 0)
+                        alignmentX = JComponent.LEFT_ALIGNMENT
+                    })
+                    container.add(rendered)
+                    return container
+                }
+                return rendered
+            }
         }
+
         return if (isJson(details)) {
             ToolRenderers.jsonEditor(prettyJson(details), project)
         } else {
             ToolRenderers.codePanel(details)
         }
+    }
+
+    private fun splitAgentOutput(details: String): Pair<String?, String?> {
+        val lines = details.lines()
+        if (lines.size < 2) return null to null
+
+        // Markers that commonly indicate the start of a raw tool output in Junie/OpenCode
+        val markers = listOf(
+            "Written:", "Created:", "Edited:", "Context after edit",
+            "Test Results:", "diff --git", "Changes:", "Matches:",
+            "Symbol:", "Declaration:", "Type hierarchy:", "Documentation:"
+        )
+
+        for (i in lines.indices) {
+            val line = lines[i].trim()
+            if (markers.any { line.startsWith(it) }) {
+                // Found a marker. If it's not the first line, we split.
+                if (i > 0) {
+                    val explanation = lines.subList(0, i).joinToString("\n").trim()
+                    val rawOutput = lines.subList(i, lines.size).joinToString("\n").trim()
+                    if (explanation.isNotEmpty() && rawOutput.isNotEmpty()) {
+                        return explanation to rawOutput
+                    }
+                }
+                break
+            }
+        }
+        return null to null
     }
 
     // ── Helpers ────────────────────────────────────────────────────
