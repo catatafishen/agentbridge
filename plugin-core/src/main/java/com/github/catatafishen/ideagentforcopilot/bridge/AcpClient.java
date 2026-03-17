@@ -797,7 +797,7 @@ public abstract class AcpClient implements AgentClient {
             if (!update.has(key)) continue;
             com.google.gson.JsonElement el = update.get(key);
             if (el.isJsonPrimitive()) return el.getAsString();
-            if (el.isJsonObject() || el.isJsonArray()) return el.toString();
+            if (el.isJsonObject() || el.isJsonArray()) return gson.toJson(el);
         }
         return null;
     }
@@ -846,18 +846,18 @@ public abstract class AcpClient implements AgentClient {
                 if (rawOutputObj.has(OUTPUT_KEY)) {
                     JsonElement output = rawOutputObj.get(OUTPUT_KEY);
                     if (output.isJsonPrimitive()) return output.getAsString();
-                    if (output.isJsonObject() || output.isJsonArray()) return output.toString();
+                    if (output.isJsonObject() || output.isJsonArray()) return gson.toJson(output);
                 }
             }
         }
         // Try various keys that different agents use for tool results
         for (String key : new String[]{RESULT, CONTENT, OUTPUT_KEY, TOOL_RESULT_KEY, "result_text", "resultText",
-            "text", "response", "data", "value", "message"}) {
+            "text", "response", "data", "value", "message", "rawInput"}) {
             if (!update.has(key)) continue;
             if (CONTENT.equals(key)) return extractContentText(update);
             com.google.gson.JsonElement el = update.get(key);
             if (el.isJsonPrimitive()) return el.getAsString();
-            if (el.isJsonObject() || el.isJsonArray()) return el.toString();
+            if (el.isJsonObject() || el.isJsonArray()) return gson.toJson(el);
         }
         return null;
     }

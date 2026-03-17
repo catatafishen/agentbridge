@@ -155,7 +155,7 @@ public final class CopilotClientConfigurable implements Configurable {
                 boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
                 ProcessBuilder pb = isWindows
                     ? new ProcessBuilder("cmd", "/c", binary + " --version")
-                    : new ProcessBuilder("bash", "-i", "-c", binary + " --version");
+                    : new ProcessBuilder("bash", "-c", binary + " --version");
                 pb.redirectErrorStream(true);
                 Process process = pb.start();
                 String output = new String(process.getInputStream().readAllBytes()).trim();

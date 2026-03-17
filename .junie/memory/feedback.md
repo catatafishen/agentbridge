@@ -374,3 +374,11 @@
     "NEW INSTRUCTION": "WHEN agent is Junie AND labels are empty THEN trace settings sources and logs"
 }
 
+[2026-03-17 19:02] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Newline in tool payload",
+    "EXPECTATION": "Junie tool_call_update payloads containing trailing newlines in text/rawInput should not break rendering; the popup should still render input/output normally.",
+    "NEW INSTRUCTION": "WHEN parsing Junie tool_call_update text fields THEN safely handle trailing newlines and render"
+}
+
