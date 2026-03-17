@@ -11,7 +11,7 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /** Handles file and git-commit link navigation from the chat JCEF panel. */
-internal class FileNavigator(private val project: Project) {
+class FileNavigator(private val project: Project) {
 
     private val log = Logger.getInstance(FileNavigator::class.java)
 

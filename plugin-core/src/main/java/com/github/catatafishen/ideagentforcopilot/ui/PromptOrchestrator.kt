@@ -11,7 +11,7 @@ import com.intellij.openapi.project.Project
  * Callbacks the orchestrator invokes back into the UI layer for side-effects it cannot own.
  * Implemented by ChatToolWindowContent.
  */
-internal data class PromptOrchestratorCallbacks(
+data class PromptOrchestratorCallbacks(
     val onSendingStateChanged: (Boolean) -> Unit,
     val saveConversation: () -> Unit,
     val saveConversationThrottled: () -> Unit,
@@ -32,7 +32,7 @@ internal data class PendingBanner(val message: String, val level: SessionUpdate.
  * Owns prompt dispatch, streaming update handling, and error recovery.
  * Extracted from ChatToolWindowContent to separate protocol logic from UI wiring.
  */
-internal class PromptOrchestrator(
+class PromptOrchestrator(
     private val project: Project,
     private val agentManager: ActiveAgentManager,
     private val billing: BillingManager,
@@ -403,6 +403,7 @@ internal class PromptOrchestrator(
         val status = update.status()
         val toolCallId = update.toolCallId()
         val result = update.result()
+        val description = update.description()
         val callType = toolCallTitles[toolCallId]
         val isSubAgent = callType == "task"
         val isInternal = callType == "subagent_internal"
@@ -411,11 +412,11 @@ internal class PromptOrchestrator(
                 activeSubAgentId = null
                 agentManager.client.setSubAgentActive(false)
                 agentManager.settings.setActiveAgentLabel(null)
-                consolePanel().updateSubAgentResult(toolCallId, "completed", result)
+                consolePanel().updateSubAgentResult(toolCallId, "completed", result, description)
             } else if (isInternal) {
-                consolePanel().updateSubAgentToolCall(toolCallId, "completed", result)
+                consolePanel().updateSubAgentToolCall(toolCallId, "completed", result, description)
             } else {
-                consolePanel().updateToolCall(toolCallId, "completed", result)
+                consolePanel().updateToolCall(toolCallId, "completed", result, description)
             }
         } else if (status == SessionUpdate.ToolCallStatus.FAILED) {
             val error = update.error() ?: result ?: "Unknown error"
@@ -423,11 +424,11 @@ internal class PromptOrchestrator(
                 activeSubAgentId = null
                 agentManager.client.setSubAgentActive(false)
                 agentManager.settings.setActiveAgentLabel(null)
-                consolePanel().updateSubAgentResult(toolCallId, "failed", error)
+                consolePanel().updateSubAgentResult(toolCallId, "failed", error, description)
             } else if (isInternal) {
-                consolePanel().updateSubAgentToolCall(toolCallId, "failed", error)
+                consolePanel().updateSubAgentToolCall(toolCallId, "failed", error, description)
             } else {
-                consolePanel().updateToolCall(toolCallId, "failed", error)
+                consolePanel().updateToolCall(toolCallId, "failed", error, description)
             }
         }
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {

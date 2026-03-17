@@ -5,7 +5,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
  * All methods are pure functions with no external state dependencies;
  * file-resolution behaviour is injected via optional lambda parameters.
  */
-internal object MarkdownRenderer {
+object MarkdownRenderer {
 
     private const val HTML_TABLE_CLOSE = "</table>"
     private const val HTML_BLOCKQUOTE_CLOSE = "</blockquote>"

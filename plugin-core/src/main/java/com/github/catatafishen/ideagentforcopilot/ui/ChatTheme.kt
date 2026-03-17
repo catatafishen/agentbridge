@@ -7,7 +7,7 @@ import java.awt.Color
 import javax.swing.UIManager
 
 /** Theme colors and CSS variable generation for the chat JCEF panel. */
-internal object ChatTheme {
+object ChatTheme {
 
     const val SA_COLOR_COUNT = 8
     const val LINK_COLOR_KEY = "Link.activeForeground"

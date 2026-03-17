@@ -191,7 +191,7 @@ class UsageGraphPanel : JBPanel<UsageGraphPanel>() {
  * Toolbar action that embeds a [UsageGraphPanel] as a clickable custom component.
  * Clicking the graph opens a popup with detailed usage information.
  */
-internal class UsageGraphAction(
+class UsageGraphAction(
     private val onGraphClicked: (JComponent) -> Unit,
     private val graphPanelSetter: (UsageGraphPanel) -> Unit,
 ) : AnAction("Usage Graph"), CustomComponentAction {

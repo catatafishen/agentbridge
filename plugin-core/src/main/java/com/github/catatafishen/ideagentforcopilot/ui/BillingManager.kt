@@ -24,7 +24,7 @@ import javax.swing.JComponent
  * [UsageGraphPanel].  Maintains local session counters that are overlaid on
  * the last-polled API data so the UI stays responsive between API calls.
  */
-internal class BillingManager {
+class BillingManager {
 
     val usageLabel: JBLabel = JBLabel("").apply {
         cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)

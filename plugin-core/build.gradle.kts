@@ -4,8 +4,19 @@ import java.util.zip.ZipInputStream
 
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "2.3.10"
+    kotlin("jvm") version "2.3.10"
     id("org.jetbrains.intellij.platform") version "2.11.0"
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs("src/main/java")
+        }
+        kotlin {
+            srcDirs("src/main/java")
+        }
+    }
 }
 
 repositories {

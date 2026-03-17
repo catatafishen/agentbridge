@@ -10,7 +10,7 @@ import com.intellij.openapi.ui.Messages
  * Encapsulates all authentication login logic for Copilot CLI and GitHub CLI.
  * Extracted from AgenticCopilotToolWindowContent to keep the tool window lean.
  */
-internal class AuthLoginService(private val project: Project) {
+class AuthLoginService(private val project: Project) {
 
     private companion object {
         private val LOG = Logger.getInstance(AuthLoginService::class.java)
