@@ -138,15 +138,33 @@ public final class OpenCodeClientConfigurable implements Configurable {
             boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
             ProcessBuilder pb = isWindows
                 ? new ProcessBuilder("cmd", "/c", "opencode --version")
-                : new ProcessBuilder("bash", "-l", "-c", "opencode --version");
-            pb.redirectErrorStream(true);
+                : new ProcessBuilder("bash", "-c", "opencode --version 2>/dev/null");
+
+            processBuilderRedirectError(pb);
             Process process = pb.start();
             String output = new String(process.getInputStream().readAllBytes()).trim();
             int exit = process.waitFor();
-            if (exit == 0 && !output.isEmpty()) return output;
+            if (exit == 0 && !output.isEmpty()) {
+                // Filter out any remaining shell noise
+                return output.lines()
+                    .filter(l -> !l.toLowerCase().contains("bash:"))
+                    .findFirst()
+                    .orElse(output)
+                    .trim();
+            }
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();
         }
         return null;
+    }
+
+    private static void processBuilderRedirectError(ProcessBuilder pb) {
+        boolean isWindows = System.getProperty("os.name").toLowerCase().contains("win");
+        if (isWindows) {
+            pb.redirectErrorStream(true);
+        } else {
+            // On Linux/Mac, we want to keep stderr separate to avoid bash noise
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        }
     }
 }
