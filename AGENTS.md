@@ -36,10 +36,10 @@ BEST PRACTICES:
 SUB-AGENT TOOL GUIDANCE:
   Sub-agents do not see these instructions. When launching sub-agents via the Task tool, \
 include relevant tool guidance in the prompt you write for them: \
-  - All agents: "ONLY use intellij-code-tools_* for file operations, git, terminal, and search — NEVER use bash, glob, grep, read, write, edit, or run_command." \
-  - All sub-agents: "Do NOT use git write commands (git_commit, git_stage, etc.) — only the main agent may write." \
-  - Explore agents: "Use intellij_search_text to search code." \
-  - Task agents: "Use intellij_run_command for shell commands."
+                                                                   - All agents: "ONLY use intellij-code-tools_* for file operations, git, terminal, and search — NEVER use bash, glob, grep, read, write, edit, or run_command." \
+                                                                   - All sub-agents: "Do NOT use git write commands (git_commit, git_stage, etc.) — only the main agent may write." \
+                                                                   - Explore agents: "Use intellij_search_text to search code." \
+                                                                   - Task agents: "Use intellij_run_command for shell commands."
 
 QUICK-REPLY BUTTONS:
 You may append a `[quick-reply: ...]` tag at the end of your response to render clickable buttons. \
@@ -52,7 +52,7 @@ Semantic color suffixes: `:danger` (red, for destructive actions), `:primary` (b
 Examples: `[ quick-reply: Yes | No ]`  `[ quick-reply: Keep | Delete all:danger ]`
 
 
-  > End of auto-generated instructions
+            > End of auto-generated instructions
 ---
 
 # Agent Definition Formats
@@ -134,7 +134,12 @@ System prompt goes here...
 - Prefers `permission:` field over deprecated `tools:` field
 - Permission values: `"allow"`, `"deny"`, `"ask"`
 
-**Bundled Agents**: None (OpenCode loads from `.opencode/agent/` in project)
+**Bundled Agents**:
+
+- `ide-general` — general-purpose agent with most IntelliJ tools enabled (default)
+- `ide-explore` — read-only exploration agent with code intelligence
+
+Injected via `OPENCODE_CONFIG_CONTENT` JSON config (not `.md` files).
 
 **Status**: ✅ Working (permission config + agent definitions fully supported)
 
@@ -155,12 +160,12 @@ See [JUNIE-TOOL-WORKAROUND.md](docs/JUNIE-TOOL-WORKAROUND.md).
 
 ## Summary Table
 
-| Agent    | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests  | Status                     |
-|----------|----------------------------------|------------------------------------------------------------|----------------------|----------------------------|
-| Copilot  | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools    | Working (filtering broken) |
-| OpenCode | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | ✅ Working                  |
-| Junie    | ❌ No support                     | N/A                                                        | ❌ No (auto-executes) | Prompt workaround only     |
-| Kiro     | ❓ Unknown                        | ❓ Unknown                                                  | ❓ Unknown            | Not investigated           |
+| Agent    | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests  | Bundled Agents               | Status                     |
+|----------|----------------------------------|------------------------------------------------------------|----------------------|------------------------------|----------------------------|
+| Copilot  | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools    | 2 (ide-explore, ide-task)    | Working (filtering broken) |
+| OpenCode | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | 2 (ide-general, ide-explore) | ✅ Working                  |
+| Junie    | ❌ No support                     | N/A                                                        | ❌ No (auto-executes) | 0                            | Prompt workaround only     |
+| Kiro     | ❓ Unknown                        | ❓ Unknown                                                  | ❓ Unknown            | ❓                            | Not investigated           |
 
 See [.agent-work/OPENCODE-AGENT-FINDINGS.md](.agent-work/OPENCODE-AGENT-FINDINGS.md) for detailed OpenCode
 investigation.
