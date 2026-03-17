@@ -302,3 +302,43 @@
     "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'intellij-code-tools-'"
 }
 
+[2026-03-17 13:42] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Junie tool popup rendering",
+    "EXPECTATION": "Both the natural language explanation and the raw input/output should be shown using our custom renderers for all Junie tools (e.g., git_diff), not just git_status.",
+    "NEW INSTRUCTION": "WHEN rendering a known Junie tool result with payload THEN show explanation and custom-render raw input/output"
+}
+
+[2026-03-17 13:45] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Junie client normalization",
+    "EXPECTATION": "Handle explanation/raw split inside JunieAcpClient by normalizing tool results to the standard renderer schema and exposing an optional description field.",
+    "NEW INSTRUCTION": "WHEN processing Junie tool result THEN normalize payload for standard renderer and set optional description"
+}
+
+[2026-03-17 13:52] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Junie tool parsing",
+    "EXPECTATION": "Use current IDE logs to inspect the real Junie tool result format and adjust JunieAcpClient normalization so raw parameters/results render, not just the description.",
+    "NEW INSTRUCTION": "WHEN fixing Junie tool popups THEN inspect IDE logs and adapt parser to logged format"
+}
+
+[2026-03-17 15:11] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Junie tool rendering",
+    "EXPECTATION": "Tool popups should display custom-rendered raw input/output alongside the description, and always fall back to showing the actual parameters and response if the tool is unmapped or payload parsing fails.",
+    "NEW INSTRUCTION": "WHEN rendering Junie tool popup THEN show custom payload and description; else show params and response"
+}
+
+[2026-03-17 15:14] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "JunieAcpClient parsing rewrite",
+    "EXPECTATION": "Rewrite JunieAcpClient.java lines 138-178 to parse the actual tool result format from IDE logs and correctly separate raw result from description for renderer mapping.",
+    "NEW INSTRUCTION": "WHEN parsing Junie tool results THEN derive fields from current IDE logs and parse accordingly"
+}
+
