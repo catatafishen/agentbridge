@@ -286,3 +286,19 @@
     "NEW INSTRUCTION": "WHEN suggesting Junie CLI flags THEN verify support in injected docs and avoid unsupported recommendations"
 }
 
+[2026-03-17 13:35] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Search method selection",
+    "EXPECTATION": "When asked to find release information about a JetBrains Junie feature, the agent should use web search rather than local IDE tools.",
+    "NEW INSTRUCTION": "WHEN user requests web search for feature availability THEN use web search and cite sources"
+}
+
+[2026-03-17 13:37] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool prefix requirement",
+    "EXPECTATION": "Use the IDE MCP tools with the 'intellij-code-tools-' prefix; non-prefixed calls were denied.",
+    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'intellij-code-tools-'"
+}
+

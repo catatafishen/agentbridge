@@ -83,7 +83,7 @@ public class JunieAcpClient extends AcpClient {
         // Junie uses the standard slash format for MCP tool names:
         // "intellij-code-tools/tool_name" -> "tool_name"
         // Also strip "Tool: " prefix if present (seen in some Junie versions)
-        String normalized = name.replaceFirst("^Tool:intellij-code-tools/", "");
+        String normalized = name.replaceFirst("^Tool: intellij-code-tools/", "");
 
         if (!name.equals(normalized)) {
             LOG.debug("Junie tool name normalization: '" + name + "' -> '" + normalized + "'");
