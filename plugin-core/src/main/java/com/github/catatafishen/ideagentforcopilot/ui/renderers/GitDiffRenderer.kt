@@ -84,11 +84,12 @@ object GitDiffRenderer : ToolResultRenderer {
         }
 
         for (line in lines) {
-            val diffMatch = DIFF_GIT.find(line)
+            val trimmedLine = line.trim()
+            val diffMatch = DIFF_GIT.find(trimmedLine)
             if (diffMatch != null) {
                 flushFile()
                 currentFile = diffMatch.groupValues[2]
-            } else if (currentFile.isNotEmpty() && !isMetaLine(line)) {
+            } else if (currentFile.isNotEmpty() && !isMetaLine(trimmedLine)) {
                 currentFileLines.add(line)
             }
         }

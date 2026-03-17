@@ -9,7 +9,6 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 
 public final class ReadIdeLogTool extends InfrastructureTool {
 
@@ -49,7 +48,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
             {PARAM_LINES, TYPE_INTEGER, "Number of recent lines to return (default: 50)"},
             {PARAM_FILTER, TYPE_STRING, "Only return lines matching this text or regex"},
             {PARAM_REGEX, TYPE_BOOLEAN, "If true, treat filter as a regular expression (default: false)"},
-            {PARAM_LEVEL, TYPE_STRING, "Filter by log level: INFO, WARN, ERROR"}
+            {PARAM_LEVEL, TYPE_STRING, "Filter by log level: INFO, WARN, ERROR (comma-separated for multiple)"}
         });
     }
 
@@ -58,7 +57,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         int lines = args.has(PARAM_LINES) ? args.get(PARAM_LINES).getAsInt() : 50;
         String filter = args.has(PARAM_FILTER) ? args.get(PARAM_FILTER).getAsString() : null;
         boolean useRegex = args.has(PARAM_REGEX) && args.get(PARAM_REGEX).getAsBoolean();
-        String level = args.has(PARAM_LEVEL) ? args.get(PARAM_LEVEL).getAsString().toUpperCase() : null;
+        String levelParam = args.has(PARAM_LEVEL) ? args.get(PARAM_LEVEL).getAsString().toUpperCase() : null;
 
         Path logFile = findIdeLogFile();
         if (logFile == null) {
@@ -76,13 +75,28 @@ public final class ReadIdeLogTool extends InfrastructureTool {
 
         final java.util.regex.Pattern finalPattern = pattern;
         final String finalFilter = filter;
-        final String finalLevel = level;
+        final java.util.List<String> levels = levelParam != null
+            ? java.util.Arrays.stream(levelParam.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .collect(java.util.stream.Collectors.toList())
+            : null;
 
         java.util.Deque<String> buffer = new java.util.ArrayDeque<>(lines);
 
         try (java.util.stream.Stream<String> stream = Files.lines(logFile)) {
             stream.filter(line -> {
-                if (finalLevel != null && !line.contains(finalLevel)) return false;
+                if (levels != null) {
+                    boolean match = false;
+                    for (String level : levels) {
+                        // Standard IntelliJ log format: timestamp [  thread]   LEVEL - ...
+                        if (line.contains(" " + level + " ")) {
+                            match = true;
+                            break;
+                        }
+                    }
+                    if (!match) return false;
+                }
                 if (finalFilter != null) {
                     if (finalPattern != null) {
                         return finalPattern.matcher(line).find();

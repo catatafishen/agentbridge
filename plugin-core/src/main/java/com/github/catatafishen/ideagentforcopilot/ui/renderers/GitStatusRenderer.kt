@@ -66,8 +66,24 @@ object GitStatusRenderer : ToolResultRenderer {
         val conflicted = mutableListOf<String>()
 
         for (line in lines) {
-            if (line.startsWith("##") || line.isBlank() || line.length < 4) continue
-            categorizeFile(line[0], line[1], line.substring(3).trim(), staged, unstaged, untracked, conflicted)
+            val trimmed = line.trim()
+            if (trimmed.startsWith("##") || trimmed.isBlank() || trimmed.length < 4) continue
+            // Git status format is "XY path"
+            // If it's trimmed, we might lose the X space.
+            // But if it's NOT trimmed, we might have leading spaces if it's from some tool output.
+            // Let's use the untrimmed line if it looks like a status line, otherwise try to find the status.
+            val statusLine = if (line.length >= 4 && (line[2] == ' ' || line[3] == ' ')) line else trimmed
+            if (statusLine.length < 4) continue
+
+            categorizeFile(
+                statusLine[0],
+                statusLine[1],
+                statusLine.substring(3).trim(),
+                staged,
+                unstaged,
+                untracked,
+                conflicted
+            )
         }
         return StatusFiles(staged, unstaged, untracked, conflicted)
     }
