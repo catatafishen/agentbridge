@@ -154,9 +154,9 @@ abstract class AbstractClaudeAgentClient implements AgentClient {
                                    @Nullable Consumer<SessionUpdate> onUpdate) {
         if (onUpdate == null) return;
         if (success) {
-            onUpdate.accept(new SessionUpdate.ToolCallUpdate(toolUseId, SessionUpdate.ToolCallStatus.COMPLETED, result, null));
+            onUpdate.accept(new SessionUpdate.ToolCallUpdate(toolUseId, SessionUpdate.ToolCallStatus.COMPLETED, result, null, null));
         } else {
-            onUpdate.accept(new SessionUpdate.ToolCallUpdate(toolUseId, SessionUpdate.ToolCallStatus.FAILED, null, result));
+            onUpdate.accept(new SessionUpdate.ToolCallUpdate(toolUseId, SessionUpdate.ToolCallStatus.FAILED, null, result, null));
         }
     }
 

@@ -759,7 +759,7 @@ public abstract class AcpClient implements AgentClient {
     }
 
     @NotNull
-    private SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull JsonObject update) {
+    protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull JsonObject update) {
         LOG.info("[ACP tool_call_update event] raw: " + update);
         String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
         SessionUpdate.ToolCallStatus status = SessionUpdate.ToolCallStatus.fromString(update.has(STATUS_KEY) ? update.get(STATUS_KEY).getAsString() : null);
@@ -770,7 +770,7 @@ public abstract class AcpClient implements AgentClient {
         if (resultLen == 0 && error == null) {
             LOG.warn("Tool update with empty result: " + update);
         }
-        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error);
+        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, null);
     }
 
     @Nullable

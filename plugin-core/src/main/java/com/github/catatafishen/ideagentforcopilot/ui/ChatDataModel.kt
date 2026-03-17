@@ -58,6 +58,7 @@ sealed class EntryData {
         val kind: String = "other",
         var result: String? = null,
         var status: String? = null,
+        var description: String? = null,
         val timestamp: String = "",
         val agent: String = ""
     ) : EntryData()

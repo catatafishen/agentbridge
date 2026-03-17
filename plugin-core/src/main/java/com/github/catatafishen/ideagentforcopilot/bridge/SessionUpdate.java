@@ -204,16 +204,18 @@ public sealed interface SessionUpdate
     /**
      * A tool call has completed or failed.
      *
-     * @param toolCallId ID matching the originating {@link ToolCall}
-     * @param status     terminal outcome of the call
-     * @param result     result text for a completed call (may be {@code null})
-     * @param error      error message for a failed call (may be {@code null})
+     * @param toolCallId  ID matching the originating {@link ToolCall}
+     * @param status      terminal outcome of the call
+     * @param result      result text for a completed call (may be {@code null})
+     * @param error       error message for a failed call (may be {@code null})
+     * @param description optional natural language explanation of the result (may be {@code null})
      */
     record ToolCallUpdate(
         @NotNull String toolCallId,
         @NotNull ToolCallStatus status,
         @Nullable String result,
-        @Nullable String error
+        @Nullable String error,
+        @Nullable String description
     ) implements SessionUpdate {
     }
 

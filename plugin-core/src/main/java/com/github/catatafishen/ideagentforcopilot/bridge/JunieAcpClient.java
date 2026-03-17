@@ -9,12 +9,17 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class JunieAcpClient extends AcpClient {
 
     private static final Logger LOG = Logger.getInstance(JunieAcpClient.class);
 
     public static final String PROFILE_ID = "junie";
+
+    // Track raw tool results that are sent in IN_PROGRESS updates before the final description
+    private final Map<String, String> rawToolResults = new ConcurrentHashMap<>();
 
     @NotNull
     public static AgentProfile createDefaultProfile() {
@@ -128,6 +133,90 @@ public class JunieAcpClient extends AcpClient {
         }
 
         return super.sendPrompt(sessionId, safePrompt, model, references, onChunk, onUpdate, onRequest);
+    }
+
+    @Override
+    @NotNull
+    protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull com.google.gson.JsonObject update) {
+        SessionUpdate.ToolCallUpdate base = super.buildToolCallUpdateEvent(update);
+        String toolCallId = base.toolCallId();
+
+        // If it's an IN_PROGRESS update, check if it's a raw payload (starts with '{' or '[', or looks like code/diff)
+        if (base.status() == null || base.status().value().equals("in_progress")) {
+            String details = base.result();
+            if (details != null && !details.isEmpty()) {
+                String trimmed = details.trim();
+                if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("diff --git") || trimmed.startsWith("Written:") || trimmed.startsWith("Created:")) {
+                    rawToolResults.put(toolCallId, details);
+                }
+            }
+            return base;
+        }
+
+        // If it's COMPLETED, the result is often the final natural language description.
+        // We retrieve the raw output we stored earlier.
+        if (base.status() == SessionUpdate.ToolCallStatus.COMPLETED) {
+            String details = base.result();
+            String rawOutput = rawToolResults.remove(toolCallId);
+            if (rawOutput != null && (details == null || !rawOutput.equals(details))) {
+                LOG.debug("Junie tool result merged: rawOutputLen=" + rawOutput.length() + ", descriptionLen=" + (details != null ? details.length() : 0));
+                return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), rawOutput, base.error(), details);
+            }
+            if (details == null || details.isEmpty()) return base;
+
+            LOG.debug("Junie tool result format (original): " + details.substring(0, Math.min(details.length(), 200)).replace("\n", "\\n") + (details.length() > 200 ? "..." : ""));
+            String[] lines = details.split("\n");
+            if (lines.length < 2) return base;
+
+            // Markers that commonly indicate the start of a raw tool output in Junie
+            java.util.List<String> markers = java.util.List.of(
+                "Written:", "Created:", "Edited:", "Context after edit",
+                "Test Results:", "diff --git", "Changes:", "Matches:",
+                "Symbol:", "Declaration:", "Type hierarchy:", "Documentation:",
+                "## ", "--- ", "  ", "  - ", "* ", "    ", "[", "{"
+            );
+
+            for (int i = 0; i < lines.length; i++) {
+                String line = lines[i].trim();
+                if (line.isEmpty()) continue;
+                boolean found = false;
+                for (String marker : markers) {
+                    if (line.startsWith(marker)) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) {
+                    // Found a marker. If it's not the first line, we split.
+                    if (i > 0) {
+                        java.util.StringJoiner explanationJoiner = new java.util.StringJoiner("\n");
+                        for (int j = 0; j < i; j++) {
+                            explanationJoiner.add(lines[j]);
+                        }
+                        String explanation = explanationJoiner.toString().trim();
+
+                        java.util.StringJoiner rawOutputJoiner = new java.util.StringJoiner("\n");
+                        for (int j = i; j < lines.length; j++) {
+                            rawOutputJoiner.add(lines[j]);
+                        }
+                        String rawOutputSplitted = rawOutputJoiner.toString().trim();
+
+                        if (!explanation.isEmpty() && !rawOutputSplitted.isEmpty()) {
+                            LOG.debug("Junie tool result split: explanationLen=" + explanation.length() + ", rawOutputLen=" + rawOutputSplitted.length());
+                            return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), rawOutputSplitted, base.error(), explanation);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Cleanup on failure
+        if (base.status() == SessionUpdate.ToolCallStatus.FAILED) {
+            rawToolResults.remove(toolCallId);
+        }
+
+        return base;
     }
 
     private String mapToCliModel(String modelId) {
