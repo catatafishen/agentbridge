@@ -693,7 +693,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val result = e.result
         val status = e.status ?: "completed"
         toolCallNames[id] = e.title
-        toolCallEntries[id] = EntryData.ToolCall(e.title, e.arguments, e.kind, result, status)
+        toolCallEntries[id] = EntryData.ToolCall(
+            e.title, e.arguments, e.kind,
+            result = result, status = status, description = e.description
+        )
         val paramsAttr = if (e.arguments != null) " data-params='${esc(e.arguments)}'" else ""
         metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(e.kind)}' data-chip-for='$id'$paramsAttr></tool-chip>")
     }
@@ -798,55 +801,65 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val detailsLen = details?.length ?: 0
         val descLen = description?.length ?: 0
         LOG.debug("renderToolResultPanel: baseName=$baseName, status=$status, detailsLen=$detailsLen, descLen=$descLen")
-        if (descLen > 0) {
-            LOG.debug("renderToolResultPanel description: " + description?.take(100)?.replace("\n", "\\n") + (if (descLen > 100) "..." else ""))
+        
+        val container = ToolRenderers.listPanel()
+
+        // 1. Show natural language description/explanation if available
+        if (!description.isNullOrBlank()) {
+            container.add(JBLabel("<html><body style='width: 450px'>${markdownToHtml(description)}</body></html>").apply {
+                border = com.intellij.util.ui.JBUI.Borders.empty(0, 0, 8, 0)
+                alignmentX = JComponent.LEFT_ALIGNMENT
+            })
         }
-        if (detailsLen > 0) {
-            LOG.debug("renderToolResultPanel details: " + details?.take(100)?.replace("\n", "\\n") + (if (detailsLen > 100) "..." else ""))
+
+        // 2. Determine if we have a real tool result or if we should fallback to showing arguments
+        val finalDetails = if (details.isNullOrBlank() && !arguments.isNullOrBlank()) {
+            // No result but we have arguments? Junie often doesn't stream the raw tool output.
+            // As a fallback, we show the parameters so the user knows what was called.
+            "Parameters: $arguments"
+        } else {
+            details
         }
-        if (details.isNullOrBlank()) {
+
+        if (finalDetails.isNullOrBlank()) {
             val label = when (status) {
                 "failed" -> "✖ Failed"
                 "running" -> "⏳ Running…"
                 else -> if (baseName != null) "Tool $baseName completed with no output." else "Completed"
             }
-            LOG.warn("Tool $baseName has no output (status=$status)")
-            return JBLabel(label).apply {
+            container.add(JBLabel(label).apply {
                 foreground = if (status == "failed") ToolRenderers.FAIL_COLOR else ToolRenderers.MUTED_COLOR
                 border = com.intellij.util.ui.JBUI.Borders.empty(4, 0)
                 alignmentX = JComponent.LEFT_ALIGNMENT
-            }
+            })
+            return container
         }
 
+        // 3. Attempt to use a custom renderer for the result
         if (status != "failed" && baseName != null) {
             val renderer = ToolRenderers.get(baseName, toolRegistry)
             LOG.debug("Renderer for $baseName: ${renderer?.javaClass?.simpleName ?: "null"}")
-
+            
             val rendered = when (renderer) {
-                is ArgumentAwareRenderer -> renderer.render(details, arguments)
-                else -> renderer?.render(details)
+                is ArgumentAwareRenderer -> renderer.render(finalDetails, arguments)
+                else -> renderer?.render(finalDetails)
             }
-
+            
             if (rendered != null) {
-                if (description != null) {
-                    val container = ToolRenderers.listPanel()
-                    container.add(JBLabel("<html><body style='width: 450px'>${markdownToHtml(description)}</body></html>").apply {
-                        border = com.intellij.util.ui.JBUI.Borders.empty(0, 0, 8, 0)
-                        alignmentX = JComponent.LEFT_ALIGNMENT
-                    })
-                    container.add(rendered)
-                    return container
-                }
-                return rendered
+                container.add(rendered)
+                return container
             }
         }
-
-        val toRender = if (description != null) "$description\n\n$details" else details
-        return if (isJson(toRender)) {
-            ToolRenderers.jsonEditor(prettyJson(toRender), project)
+        
+        // 4. Fallback: monospace code or JSON editor
+        val fallbackContent = if (isJson(finalDetails)) {
+            ToolRenderers.jsonEditor(prettyJson(finalDetails), project)
         } else {
-            ToolRenderers.codePanel(toRender)
+            ToolRenderers.codePanel(finalDetails)
         }
+        container.add(fallbackContent)
+        
+        return container
     }
 
     // ── Helpers ────────────────────────────────────────────────────

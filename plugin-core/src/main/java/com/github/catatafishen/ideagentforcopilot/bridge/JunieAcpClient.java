@@ -135,79 +135,91 @@ public class JunieAcpClient extends AcpClient {
         return super.sendPrompt(sessionId, safePrompt, model, references, onChunk, onUpdate, onRequest);
     }
 
-    @Override
     @NotNull
     protected SessionUpdate.ToolCallUpdate buildToolCallUpdateEvent(@NotNull com.google.gson.JsonObject update) {
         SessionUpdate.ToolCallUpdate base = super.buildToolCallUpdateEvent(update);
         String toolCallId = base.toolCallId();
+        String currentResult = base.result();
 
-        // If it's an IN_PROGRESS update, check if it's a raw payload (starts with '{' or '[', or looks like code/diff)
+        // If it's an IN_PROGRESS update, we try to capture the raw tool output.
+        // Junie often streams the tool arguments first as JSON, then the actual output.
         if (base.status() == null || base.status().value().equals("in_progress")) {
-            String details = base.result();
-            if (details != null && !details.isEmpty()) {
-                String trimmed = details.trim();
-                if (trimmed.startsWith("{") || trimmed.startsWith("[") || trimmed.startsWith("diff --git") || trimmed.startsWith("Written:") || trimmed.startsWith("Created:")) {
-                    rawToolResults.put(toolCallId, details);
+            if (currentResult != null && !currentResult.isEmpty()) {
+                String trimmed = currentResult.trim();
+                // Check if it's NOT just JSON arguments (starts with { and contains path/file keys)
+                // Junie arguments examples: {"path":"..."}, {"query":"..."}, {"file":"..."}
+                boolean isArguments = (trimmed.startsWith("{") || trimmed.startsWith("[")) 
+                        && (trimmed.contains("\"path\"") || trimmed.contains("\"file\"") || trimmed.contains("\"query\"") || trimmed.contains("\"target\""));
+                
+                if (!isArguments) {
+                    // It looks like actual tool output (e.g. diff, file content, search matches)
+                    // We accumulate it because it might be streamed in chunks.
+                    rawToolResults.merge(toolCallId, currentResult, (old, val) -> old + val);
+                    LOG.debug("Junie accumulated raw output for " + toolCallId + ", len=" + rawToolResults.get(toolCallId).length());
                 }
             }
             return base;
         }
 
-        // If it's COMPLETED, the result is often the final natural language description.
-        // We retrieve the raw output we stored earlier.
+        // If it's COMPLETED, Junie often sends a natural language summary in the 'content' field.
+        // The actual tool result might have been captured during IN_PROGRESS, or it might be
+        // part of this final update, concatenated with the summary.
         if (base.status() == SessionUpdate.ToolCallStatus.COMPLETED) {
-            String details = base.result();
             String rawOutput = rawToolResults.remove(toolCallId);
-            if (rawOutput != null && (details == null || !rawOutput.equals(details))) {
-                LOG.debug("Junie tool result merged: rawOutputLen=" + rawOutput.length() + ", descriptionLen=" + (details != null ? details.length() : 0));
-                return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), rawOutput, base.error(), details);
+            String finalContent = currentResult;
+
+            // 1. If we have a stored raw output AND it's different from the final summary
+            if (rawOutput != null && finalContent != null && !finalContent.contains(rawOutput) && !rawOutput.contains(finalContent)) {
+                LOG.debug("Junie tool result merged: rawOutputLen=" + rawOutput.length() + ", descriptionLen=" + finalContent.length());
+                return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), rawOutput, base.error(), finalContent);
             }
-            if (details == null || details.isEmpty()) return base;
 
-            LOG.debug("Junie tool result format (original): " + details.substring(0, Math.min(details.length(), 200)).replace("\n", "\\n") + (details.length() > 200 ? "..." : ""));
-            String[] lines = details.split("\n");
-            if (lines.length < 2) return base;
+            // 2. If no raw output was captured, or it's similar to finalContent,
+            // try to split finalContent if it contains both summary and raw data.
+            if (finalContent != null && !finalContent.isEmpty()) {
+                String[] lines = finalContent.split("\n");
+                if (lines.length >= 2) {
+                    // Markers that commonly indicate the start of a raw tool output in Junie
+                    java.util.List<String> markers = java.util.List.of(
+                        "Written:", "Created:", "Edited:", "Context after edit",
+                        "Test Results:", "diff --git", "Changes:", "Matches:",
+                        "Symbol:", "Declaration:", "Type hierarchy:", "Documentation:",
+                        "## ", "--- ", "  ", "  - ", "* ", "    ", "[", "{"
+                    );
 
-            // Markers that commonly indicate the start of a raw tool output in Junie
-            java.util.List<String> markers = java.util.List.of(
-                "Written:", "Created:", "Edited:", "Context after edit",
-                "Test Results:", "diff --git", "Changes:", "Matches:",
-                "Symbol:", "Declaration:", "Type hierarchy:", "Documentation:",
-                "## ", "--- ", "  ", "  - ", "* ", "    ", "[", "{"
-            );
-
-            for (int i = 0; i < lines.length; i++) {
-                String line = lines[i].trim();
-                if (line.isEmpty()) continue;
-                boolean found = false;
-                for (String marker : markers) {
-                    if (line.startsWith(marker)) {
-                        found = true;
-                        break;
-                    }
-                }
-                if (found) {
-                    // Found a marker. If it's not the first line, we split.
-                    if (i > 0) {
-                        java.util.StringJoiner explanationJoiner = new java.util.StringJoiner("\n");
-                        for (int j = 0; j < i; j++) {
-                            explanationJoiner.add(lines[j]);
+                    for (int i = 0; i < lines.length; i++) {
+                        String line = lines[i].trim();
+                        if (line.isEmpty()) continue;
+                        boolean found = false;
+                        for (String marker : markers) {
+                            if (line.startsWith(marker)) {
+                                found = true;
+                                break;
+                            }
                         }
-                        String explanation = explanationJoiner.toString().trim();
+                        if (found && i > 0) {
+                            java.util.StringJoiner explanationJoiner = new java.util.StringJoiner("\n");
+                            for (int j = 0; j < i; j++) explanationJoiner.add(lines[j]);
+                            String explanation = explanationJoiner.toString().trim();
 
-                        java.util.StringJoiner rawOutputJoiner = new java.util.StringJoiner("\n");
-                        for (int j = i; j < lines.length; j++) {
-                            rawOutputJoiner.add(lines[j]);
-                        }
-                        String rawOutputSplitted = rawOutputJoiner.toString().trim();
+                            java.util.StringJoiner rawOutputJoiner = new java.util.StringJoiner("\n");
+                            for (int j = i; j < lines.length; j++) rawOutputJoiner.add(lines[j]);
+                            String rawOutputSplitted = rawOutputJoiner.toString().trim();
 
-                        if (!explanation.isEmpty() && !rawOutputSplitted.isEmpty()) {
-                            LOG.debug("Junie tool result split: explanationLen=" + explanation.length() + ", rawOutputLen=" + rawOutputSplitted.length());
-                            return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), rawOutputSplitted, base.error(), explanation);
+                            if (!explanation.isEmpty() && !rawOutputSplitted.isEmpty()) {
+                                LOG.debug("Junie tool result split from final content: explanationLen="
+                                    + explanation.length() + ", rawOutputLen=" + rawOutputSplitted.length());
+                                return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), rawOutputSplitted, base.error(), explanation);
+                            }
                         }
                     }
-                    break;
                 }
+            }
+
+            // 3. Fallback: if we have rawOutput, use it as result and finalContent as description
+            if (rawOutput != null) {
+                LOG.debug("Junie using captured raw output for " + toolCallId + ", len=" + rawOutput.length());
+                return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), rawOutput, base.error(), finalContent);
             }
         }
 
