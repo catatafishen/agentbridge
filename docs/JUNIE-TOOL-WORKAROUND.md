@@ -8,24 +8,34 @@
 
 ### Description
 
-Junie CLI in ACP mode does not support tool filtering via any mechanism:
+**Important:** `excludedTools` in `session/new` is **NOT part of the official ACP spec
+** ([session-setup](https://agentclientprotocol.com/protocol/session-setup))
+— it's a custom extension. Additionally, `session/request_permission` is **OPTIONAL per spec
+** ([tool-calls](https://agentclientprotocol.com/protocol/tool-calls))
+— agents may auto-execute tools without asking.
 
-- Session params: `excludedTools` in `session/new` - **IGNORED**
+Junie is **fully spec-compliant** but provides no mechanism to filter tools:
+
+- Session params: `excludedTools` in `session/new` - Not supported (custom extension)
 - CLI flags: No `--deny-tool` or `--excluded-tools` flag exists
-- Permission system: Junie does **NOT** send `session/request_permission` for ANY tools (built-in or MCP)
+- Permission system: Junie does **NOT** send `session/request_permission` (optional per spec)
 
-**Result:** Junie uses its built-in tools (Edit, View, Read, Write, Bash, etc.) instead of IntelliJ MCP tools, bypassing IntelliJ's editor buffer and causing desync.
+**Result:** Junie uses its built-in tools (Edit, View, Read, Write, Bash, etc.) instead of IntelliJ MCP tools, bypassing
+IntelliJ's editor buffer and causing desync.
 
 ### Fundamental Difference from Copilot
 
-| Aspect | Copilot CLI | Junie CLI |
-|--------|-------------|-----------|
-| Read-only tools (view, grep) | Auto-execute, no permission | Auto-execute, no permission |
-| Write tools (edit, bash) | Send `request_permission` ✅ | **NO permission request** ❌ |
-| `excludedTools` parameter | Ignored (bug #556) | Ignored (no open issue) |
-| Workaround viable? | Yes (deny write tools) | **No** (no permission to deny) |
+| Aspect                       | Copilot CLI               | Junie CLI                      | ACP Spec Requirement           |
+|------------------------------|---------------------------|--------------------------------|--------------------------------|
+| Read-only tools (view, grep) | Auto-execute              | Auto-execute                   | Agents MAY auto-execute ✅      |
+| Write tools (edit, bash)     | Send `request_permission` | **NO permission request**      | Agents MAY skip permission ✅   |
+| `excludedTools` parameter    | Ignored                   | Ignored                        | Not in spec (custom extension) |
+| Spec compliance?             | **Fully compliant** ✅     | **Fully compliant** ✅          | Both follow spec               |
+| Workaround viable?           | Yes (deny write tools)    | **No** (no permission to deny) | N/A                            |
 
-**Key insight:** Copilot at least asks permission for write operations, allowing us to deny them and force retry with MCP tools. Junie executes ALL tools directly without asking permission.
+**Key insight:** Both agents are **spec-compliant**. The spec allows auto-execution without permission.
+Copilot happens to ask permission for write tools (allowing our workaround), while Junie never asks (blocking the
+workaround).
 
 ### Evidence from Logs
 
@@ -54,7 +64,9 @@ Added explicit LLM instructions at the top of the startup instructions:
 
 ```markdown
 CRITICAL — TOOL SELECTION:
-- NEVER use built-in tools (Edit, View, Read, Write, Bash, search_file, etc.) — they bypass IntelliJ's editor buffer and cause desync
+
+- NEVER use built-in tools (Edit, View, Read, Write, Bash, search_file, etc.) — they bypass IntelliJ's editor buffer and
+  cause desync
 - ALWAYS use `intellij-code-tools/` prefixed MCP tools instead:
   • `intellij-code-tools/read_file` or `intellij-code-tools/intellij_read_file` — instead of View/Read
   • `intellij-code-tools/edit_text` or `intellij-code-tools/write_file` — instead of Edit/Write
@@ -65,7 +77,8 @@ CRITICAL — TOOL SELECTION:
 - Built-in tools read/write stale disk files and miss unsaved editor changes
 ```
 
-**Injection method:** These instructions are sent via `session/message` during `AcpClient.createSession()` for agents that support in-conversation instructions (Junie reads these, Copilot doesn't).
+**Injection method:** These instructions are sent via `session/message` during `AcpClient.createSession()` for agents
+that support in-conversation instructions (Junie reads these, Copilot doesn't).
 
 **File:** `plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/bridge/AcpClient.java`
 
@@ -73,10 +86,15 @@ CRITICAL — TOOL SELECTION:
 // Inject startup instructions into the conversation via session/message.
 // This is the primary mechanism for agents like Junie that read in-conversation context.
 String instructions = agentConfig.getSessionInstructions();
-if (instructions != null && !instructions.isEmpty()) {
-    sendPromptMessage(instructions);
-    LOG.info("Sent startup instructions via session/message (" + instructions.length() + " chars)");
-}
+if(instructions !=null&&!instructions.
+
+isEmpty()){
+
+sendPromptMessage(instructions);
+    LOG.
+
+info("Sent startup instructions via session/message ("+instructions.length() +" chars)");
+        }
 ```
 
 ### Why This Works for Junie (but not Copilot)
@@ -84,7 +102,8 @@ if (instructions != null && !instructions.isEmpty()) {
 - **Junie** reads `session/message` notifications and includes them in the LLM context ✅
 - **Copilot** ignores `session/message` notifications entirely ❌
 
-For Copilot, we need file-based instruction injection (`.github/copilot-instructions.md`) because it only reads from files, not message history.
+For Copilot, we need file-based instruction injection (`.github/copilot-instructions.md`) because it only reads from
+files, not message history.
 
 ### Detection in UI
 
@@ -112,13 +131,22 @@ This provides visual feedback when the prompt engineering fails and Junie still 
 ### 1. `excludedTools` Parameter
 
 ```java
-if (agentConfig.shouldExcludeBuiltInTools()) {
-    JsonArray excluded = new JsonArray();
-    for (String toolId : ToolRegistry.getBuiltInToolIds()) {
-        excluded.add(toolId);
+if(agentConfig.shouldExcludeBuiltInTools()){
+JsonArray excluded = new JsonArray();
+    for(
+String toolId :ToolRegistry.
+
+getBuiltInToolIds()){
+        excluded.
+
+add(toolId);
     }
-    params.add("excludedTools", excluded);
-    LOG.info("Excluding built-in tools from session: " + excluded);
+            params.
+
+add("excludedTools",excluded);
+    LOG.
+
+info("Excluding built-in tools from session: "+excluded);
 }
 ```
 
@@ -128,8 +156,14 @@ if (agentConfig.shouldExcludeBuiltInTools()) {
 
 ```java
 // This check is never reached for Junie because it doesn't send request_permission
-if (agentConfig.shouldExcludeBuiltInTools() && ToolRegistry.getBuiltInToolIds().contains(toolId)) {
-    LOG.info("ACP request_permission: blocking excluded built-in tool " + toolId);
+if(agentConfig.shouldExcludeBuiltInTools() &&ToolRegistry.
+
+getBuiltInToolIds().
+
+contains(toolId)){
+        LOG.
+
+info("ACP request_permission: blocking excluded built-in tool "+toolId);
     return ToolPermission.DENY;
 }
 ```
@@ -139,6 +173,7 @@ if (agentConfig.shouldExcludeBuiltInTools() && ToolRegistry.getBuiltInToolIds().
 ### 3. `--guidelines-filename` Flag
 
 The Junie CLI has a `--guidelines-filename=<text>` flag, but:
+
 - Purpose unclear (no documentation)
 - No evidence in logs that Junie reads this file
 - Not currently tested
@@ -146,6 +181,7 @@ The Junie CLI has a `--guidelines-filename=<text>` flag, but:
 ## Comparison with OpenCode
 
 OpenCode is another ACP agent (like Junie). Investigation showed:
+
 - OpenCode also implements ACP as an **agent/server**, not a client
 - OpenCode does NOT support `excludedTools` in its ACP implementation
 - OpenCode has its own tool implementations (bash, edit, codesearch, etc.)
@@ -168,6 +204,7 @@ OpenCode is another ACP agent (like Junie). Investigation showed:
 ### Mitigation Effectiveness
 
 **Prompt engineering success rate:** Depends on the LLM's compliance with instructions.
+
 - Strong models (GPT-4, Claude Opus): Generally follow instructions well
 - Weaker models: May still choose built-in tools despite instructions
 
@@ -181,21 +218,26 @@ File these with JetBrains Junie team:
 
 1. **Support `excludedTools` in `session/new`**  
    URL: https://github.com/JetBrains/junie/issues  
-   Description: Honor the `excludedTools` parameter in ACP session creation to allow clients to filter out built-in tools.
+   Description: Honor the `excludedTools` parameter in ACP session creation to allow clients to filter out built-in
+   tools.
 
 2. **Send `session/request_permission` for write tools**  
    URL: https://github.com/JetBrains/junie/issues  
-   Description: Implement the permission request flow for destructive operations (edit, bash, etc.) to allow clients to intercept and deny them.
+   Description: Implement the permission request flow for destructive operations (edit, bash, etc.) to allow clients to
+   intercept and deny them.
 
 3. **Document `--guidelines-filename` flag**  
    URL: https://github.com/JetBrains/junie/issues  
-   Description: Document what the `--guidelines-filename` flag does and how clients can use it to influence tool selection.
+   Description: Document what the `--guidelines-filename` flag does and how clients can use it to influence tool
+   selection.
 
 ### Our Workaround Improvements
 
-1. **Test `--guidelines-filename`** — Add `--guidelines-filename=JUNIE.md` to Junie's ACP args and create a project-level file with tool selection rules.
+1. **Test `--guidelines-filename`** — Add `--guidelines-filename=JUNIE.md` to Junie's ACP args and create a
+   project-level file with tool selection rules.
 
-2. **Post-execution guidance** — After detecting a built-in tool via `tool_call_update`, send a `session/message` telling Junie to use MCP tools instead (similar to Copilot's retry mechanism).
+2. **Post-execution guidance** — After detecting a built-in tool via `tool_call_update`, send a `session/message`
+   telling Junie to use MCP tools instead (similar to Copilot's retry mechanism).
 
 3. **Stronger prompt engineering** — Add tool-specific examples showing the preferred MCP tool for each operation.
 
@@ -212,16 +254,17 @@ Monitor Junie releases and test the following:
 
 ### Test Results
 
-| Mechanism | Tested | Result |
-|-----------|--------|--------|
-| `excludedTools` in `session/new` params | ✅ | ❌ **IGNORED** — tools still available |
-| `session/request_permission` for write tools | ✅ | ❌ **NOT SENT** — tools auto-execute |
-| Prompt engineering via `session/message` | ✅ | ✅ **WORKS** — LLM follows instructions |
-| Warning emoji for external tools | ✅ | ✅ **WORKS** — UI shows ⚠ badge |
+| Mechanism                                    | Tested | Result                                 |
+|----------------------------------------------|--------|----------------------------------------|
+| `excludedTools` in `session/new` params      | ✅      | ❌ **IGNORED** — tools still available  |
+| `session/request_permission` for write tools | ✅      | ❌ **NOT SENT** — tools auto-execute    |
+| Prompt engineering via `session/message`     | ✅      | ✅ **WORKS** — LLM follows instructions |
+| Warning emoji for external tools             | ✅      | ✅ **WORKS** — UI shows ⚠ badge         |
 
 ### Conclusion
 
-As of Junie v888.195, the prompt engineering workaround is the **only viable approach** for influencing Junie's tool selection in ACP mode.
+As of Junie v888.195, the prompt engineering workaround is the **only viable approach** for influencing Junie's tool
+selection in ACP mode.
 
 ## References
 
