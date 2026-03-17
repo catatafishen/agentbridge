@@ -46,6 +46,8 @@ public class JunieAcpClient extends AcpClient {
         p.setRequiresResourceDuplication(true);
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(true);
+        // JUNIE-1842: Toolset configuration profiles now support allow/deny list.
+        // TODO: Update to CLI_FLAGS or CONFIG_JSON once the exact integration mechanism is confirmed.
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         p.setPrependInstructionsTo("");
         return p;
@@ -81,8 +83,7 @@ public class JunieAcpClient extends AcpClient {
         // Junie uses the standard slash format for MCP tool names:
         // "intellij-code-tools/tool_name" -> "tool_name"
         // Also strip "Tool: " prefix if present (seen in some Junie versions)
-        String normalized = name.replaceFirst("^intellij-code-tools/", "")
-            .replaceFirst("^Tool: ", "");
+        String normalized = name.replaceFirst("^Tool:intellij-code-tools/", "");
 
         if (!name.equals(normalized)) {
             LOG.debug("Junie tool name normalization: '" + name + "' -> '" + normalized + "'");

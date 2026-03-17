@@ -67,6 +67,7 @@ public final class AgentProfile {
     private boolean supportsConfigDir;
     private boolean supportsMcpConfigFlag;
     private boolean requiresResourceDuplication;
+    private boolean sendResourceReferences = true;
     private String modelUsageField;
 
     // ── Modes ────────────────────────────────────────────────────────────────
@@ -164,6 +165,7 @@ public final class AgentProfile {
         copy.supportsConfigDir = supportsConfigDir;
         copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
         copy.requiresResourceDuplication = requiresResourceDuplication;
+        copy.sendResourceReferences = sendResourceReferences;
         copy.modelUsageField = modelUsageField;
         copy.agentsDirectory = agentsDirectory;
         copy.usePluginPermissions = usePluginPermissions;
@@ -201,6 +203,7 @@ public final class AgentProfile {
         copy.supportsConfigDir = supportsConfigDir;
         copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
         copy.requiresResourceDuplication = requiresResourceDuplication;
+        copy.sendResourceReferences = sendResourceReferences;
         copy.modelUsageField = modelUsageField;
         copy.agentsDirectory = agentsDirectory;
         copy.usePluginPermissions = usePluginPermissions;
@@ -238,6 +241,7 @@ public final class AgentProfile {
         this.supportsConfigDir = other.supportsConfigDir;
         this.supportsMcpConfigFlag = other.supportsMcpConfigFlag;
         this.requiresResourceDuplication = other.requiresResourceDuplication;
+        this.sendResourceReferences = other.sendResourceReferences;
         this.modelUsageField = other.modelUsageField;
         this.agentsDirectory = other.agentsDirectory;
         this.usePluginPermissions = other.usePluginPermissions;
@@ -425,6 +429,14 @@ public final class AgentProfile {
 
     public void setRequiresResourceDuplication(boolean requiresResourceDuplication) {
         this.requiresResourceDuplication = requiresResourceDuplication;
+    }
+
+    public boolean isSendResourceReferences() {
+        return sendResourceReferences;
+    }
+
+    public void setSendResourceReferences(boolean sendResourceReferences) {
+        this.sendResourceReferences = sendResourceReferences;
     }
 
     @Nullable

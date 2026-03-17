@@ -168,6 +168,17 @@ public interface AgentConfig {
     }
 
     /**
+     * Whether to send resource references in the prompt array.
+     * When {@code true}, file references are sent as structured ACP resource blocks.
+     * When {@code false}, resource references are skipped (content is already inlined via
+     * {@link #requiresResourceDuplication()}).
+     * Defaults to {@code true} for backwards compatibility.
+     */
+    default boolean sendResourceReferences() {
+        return true;
+    }
+
+    /**
      * Whether this agent supports {@code session/message} JSON-RPC notifications.
      * When {@code true}, startup instructions and retry guidance are sent via {@code session/message}.
      * When {@code false}, those messages are skipped (agent reads instructions from config files or MCP prompt).

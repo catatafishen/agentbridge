@@ -923,9 +923,14 @@ public abstract class AcpClient implements AgentClient {
 
         // Add resource references before the text prompt
         StringBuilder fullPrompt = new StringBuilder();
+        boolean sendResourceRefs = agentConfig.sendResourceReferences();
         if (references != null) {
             for (ResourceReference ref : references) {
-                promptArray.add(createResourceReference(ref));
+                // Some agents (e.g. OpenCode) don't support ACP resource references;
+                // for those, skip sending them and rely on inlined content instead.
+                if (sendResourceRefs) {
+                    promptArray.add(createResourceReference(ref));
+                }
 
                 // Some agents (Copilot, OpenCode) require resource content to be duplicated
                 // in the text prompt, not just sent as references

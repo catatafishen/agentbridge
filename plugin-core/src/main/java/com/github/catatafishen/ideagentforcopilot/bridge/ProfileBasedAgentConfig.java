@@ -277,6 +277,11 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         return profile.isRequiresResourceDuplication();
     }
 
+    @Override
+    public boolean sendResourceReferences() {
+        return profile.isSendResourceReferences();
+    }
+
     /**
      * Search for a binary by name on PATH and common installation locations.
      */

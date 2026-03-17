@@ -51,6 +51,7 @@ public class OpenCodeAcpClient extends AcpClient {
         p.setSupportsModelFlag(false);
         p.setSupportsConfigDir(false);
         p.setRequiresResourceDuplication(true);
+        p.setSendResourceReferences(false);  // OpenCode doesn't support ACP resource references; content is inlined
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(false);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.CONFIG_JSON);

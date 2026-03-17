@@ -262,3 +262,27 @@
     "NEW INSTRUCTION": "WHEN defining read_ide_log tool THEN add optional include/exclude regex and tail/limit params"
 }
 
+[2026-03-17 12:36] - Updated by Junie
+{
+    "TYPE": "positive",
+    "CATEGORY": "Startup customization success",
+    "EXPECTATION": "Removing built-in tools by defining custom agents at startup worked and matched their goal.",
+    "NEW INSTRUCTION": "WHEN discussing disabling built-ins for any agent THEN propose startup-time custom agent configuration approach"
+}
+
+[2026-03-17 12:38] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Unsupported CLI flags source",
+    "EXPECTATION": "User expects any CLI flags or configuration details to be backed by an injected source or clearly labeled as an assumption, not stated as facts without provenance.",
+    "NEW INSTRUCTION": "WHEN providing CLI flags or config details THEN cite injected source or state assumption explicitly"
+}
+
+[2026-03-17 12:40] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "CLI flag recommendation provenance",
+    "EXPECTATION": "Do not recommend the --exclude-tools flag for Junie without a cited source; existing docs only say it is unsupported/ignored.",
+    "NEW INSTRUCTION": "WHEN suggesting Junie CLI flags THEN verify support in injected docs and avoid unsupported recommendations"
+}
+

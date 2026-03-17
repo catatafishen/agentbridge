@@ -14,13 +14,15 @@
 ** ([tool-calls](https://agentclientprotocol.com/protocol/tool-calls))
 — agents may auto-execute tools without asking.
 
-Junie is **fully spec-compliant** but provides no mechanism to filter tools:
+Junie is **fully spec-compliant** but provided no mechanism to filter tools until recently:
 
 - Session params: `excludedTools` in `session/new` - Not supported (custom extension)
-- CLI flags: No `--deny-tool` or `--excluded-tools` flag exists
+- CLI flags: No `--deny-tool` or `--excluded-tools` flag existed
 - Permission system: Junie does **NOT** send `session/request_permission` (optional per spec)
 
-**Result:** Junie uses its built-in tools (Edit, View, Read, Write, Bash, etc.) instead of IntelliJ MCP tools, bypassing
+> **UPDATE (March 17, 2026):** According to [JUNIE-1842](https://youtrack.jetbrains.com/issue/JUNIE-1842/Toolset-configuration-profiles-allow-deny-list), toolset configuration profiles with allow/deny lists are now supported. This should allow for a native mechanism to exclude tools at launch time.
+
+**Result (prior to fix):** Junie used its built-in tools (Edit, View, Read, Write, Bash, etc.) instead of IntelliJ MCP tools, bypassing
 IntelliJ's editor buffer and causing desync.
 
 ### Fundamental Difference from Copilot

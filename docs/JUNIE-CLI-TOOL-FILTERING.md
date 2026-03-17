@@ -4,7 +4,9 @@
 
 Similar to GitHub Copilot CLI (see `CLI-BUG-556-WORKAROUND.md`), the Junie CLI does not currently respect the `excludedTools` parameter in the `session/new` Agent Communication Protocol (ACP) payload. 
 
-Even when the plugin explicitly requests the exclusion of built-in tools (e.g. `view`, `edit`, `bash`, `create`, `open`, etc.) by passing them in the `session/new` request, the Junie agent will ignore this configuration and still register and have access to these built-in tools. Additionally, there are no CLI flags available on the Junie binary (like `--exclude-tools`) to work around this behavior at launch time.
+Even when the plugin explicitly requests the exclusion of built-in tools (e.g. `view`, `edit`, `bash`, `create`, `open`, etc.) by passing them in the `session/new` request, the Junie agent will ignore this configuration and still register and have access to these built-in tools.
+
+> **UPDATE (March 17, 2026):** According to [JUNIE-1842](https://youtrack.jetbrains.com/issue/JUNIE-1842/Toolset-configuration-profiles-allow-deny-list), toolset configuration profiles with allow/deny lists are now supported. This should allow for a native mechanism to exclude tools at launch time instead of relying purely on runtime permission denial.
 
 ## Our Workaround
 
