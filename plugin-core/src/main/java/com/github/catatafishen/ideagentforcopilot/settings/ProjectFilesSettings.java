@@ -61,19 +61,26 @@ public final class ProjectFilesSettings implements PersistentStateComponent<Proj
      * @see #getPath()    Relative path from project root (supports glob for directory scanning)
      * @see #isGlob()     If true, path is a glob pattern (e.g., ".github/agents/*.md") and
      * matching files are listed individually in the menu
+     * @see #getGroup()   Display group/category for organizing in dropdown menu (e.g., "Claude", "Junie")
      */
     public static class FileEntry {
         private String label = "";
         private String path = "";
         private boolean glob = false;
+        private String group = "";
 
         public FileEntry() {
         }
 
         public FileEntry(String label, String path, boolean isGlob) {
+            this(label, path, isGlob, "");
+        }
+
+        public FileEntry(String label, String path, boolean isGlob, String group) {
             this.label = label;
             this.path = path;
             this.glob = isGlob;
+            this.group = group;
         }
 
         public String getLabel() {
@@ -99,41 +106,49 @@ public final class ProjectFilesSettings implements PersistentStateComponent<Proj
         public void setGlob(boolean glob) {
             this.glob = glob;
         }
+
+        public String getGroup() {
+            return group;
+        }
+
+        public void setGroup(String group) {
+            this.group = group;
+        }
     }
 
     public static List<FileEntry> getDefaults() {
         List<FileEntry> entries = new ArrayList<>();
 
         // Project-level config files
-        entries.add(new FileEntry("TODO", "TODO.md", false));
-        entries.add(new FileEntry("CLAUDE.md", "CLAUDE.md", false));
+        entries.add(new FileEntry("TODO", "TODO.md", false, "Project"));
+        entries.add(new FileEntry("CLAUDE.md", "CLAUDE.md", false, "Project"));
 
         // Claude agent files
-        entries.add(new FileEntry("Claude Settings", ".agent-work/claude/settings.json", false));
-        entries.add(new FileEntry("Claude Instructions", ".copilot/copilot-instructions.md", false));
+        entries.add(new FileEntry("Settings", ".agent-work/claude/settings.json", false, "Claude"));
+        entries.add(new FileEntry("Instructions", ".copilot/copilot-instructions.md", false, "Claude"));
+        entries.add(new FileEntry("Agents", ".agent-work/claude/agents/*.md", true, "Claude"));
 
         // Junie agent files (Junie expects .junie/ in project root)
-        entries.add(new FileEntry("Junie Guidelines", ".junie/guidelines.md", false));
-        entries.add(new FileEntry("Junie Agents", ".junie/AGENTS.md", false));
+        entries.add(new FileEntry("Guidelines", ".junie/guidelines.md", false, "Junie"));
+        entries.add(new FileEntry("Agents", ".junie/AGENTS.md", false, "Junie"));
 
         // Kiro agent files
-        entries.add(new FileEntry("Kiro Settings", ".agent-work/kiro/settings/cli.json", false));
-        entries.add(new FileEntry("Kiro Steering", ".agent-work/kiro/steering/*.md", true));
+        entries.add(new FileEntry("Settings", ".agent-work/kiro/settings/cli.json", false, "Kiro"));
+        entries.add(new FileEntry("Steering", ".agent-work/kiro/steering/*.md", true, "Kiro"));
+        entries.add(new FileEntry("Agents", ".agent-work/kiro/agents/*.md", true, "Kiro"));
 
         // GitHub Copilot agent files
-        entries.add(new FileEntry("Copilot Settings", ".agent-work/copilot/config.json", false));
-        entries.add(new FileEntry("Copilot Instructions", ".github/copilot-instructions.md", false));
-        entries.add(new FileEntry("Copilot Project Settings", ".github/copilot/settings.local.json", false));
+        entries.add(new FileEntry("Settings", ".agent-work/copilot/config.json", false, "Copilot"));
+        entries.add(new FileEntry("Instructions", ".github/copilot-instructions.md", false, "Copilot"));
+        entries.add(new FileEntry("Project Settings", ".github/copilot/settings.local.json", false, "Copilot"));
+        entries.add(new FileEntry("Agents", ".agent-work/copilot/agents/*.md", true, "Copilot"));
 
         // OpenCode agent files
-        entries.add(new FileEntry("OpenCode Config", ".agent-work/opencode/opencode.json", false));
+        entries.add(new FileEntry("Config", ".agent-work/opencode/opencode.json", false, "OpenCode"));
+        entries.add(new FileEntry("Agents", ".agent-work/opencode/agents/*.md", true, "OpenCode"));
 
         // Shared agent definitions
-        entries.add(new FileEntry("Agent Definitions", ".github/agents/*.md", true));
-        entries.add(new FileEntry("Claude Agents", ".agent-work/claude/agents/*.md", true));
-        entries.add(new FileEntry("Kiro Agents", ".agent-work/kiro/agents/*.md", true));
-        entries.add(new FileEntry("Copilot Agents", ".agent-work/copilot/agents/*.md", true));
-        entries.add(new FileEntry("OpenCode Agents", ".agent-work/opencode/agents/*.md", true));
+        entries.add(new FileEntry("Agent Definitions", ".github/agents/*.md", true, "Shared"));
 
         return entries;
     }

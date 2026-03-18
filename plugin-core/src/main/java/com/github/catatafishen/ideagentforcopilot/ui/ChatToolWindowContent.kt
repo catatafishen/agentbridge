@@ -890,11 +890,26 @@ class ChatToolWindowContent(
             val base = project.basePath
 
             val entries = ProjectFilesSettings.getInstance().entries
-            for (entry in entries) {
-                if (entry.isGlob) {
-                    addGlobEntries(group, base, entry)
-                } else {
-                    addFileEntry(group, base, entry)
+            // Group entries by their group field
+            val groupedEntries = entries.groupBy { it.group }.toSortedMap()
+
+            var firstGroup = true
+            for ((groupName, groupEntries) in groupedEntries) {
+                if (!firstGroup) {
+                    group.addSeparator()
+                }
+                firstGroup = false
+
+                if (groupName.isNotEmpty()) {
+                    group.addSeparator(groupName)
+                }
+
+                for (entry in groupEntries) {
+                    if (entry.isGlob) {
+                        addGlobEntries(group, base, entry)
+                    } else {
+                        addFileEntry(group, base, entry)
+                    }
                 }
             }
 

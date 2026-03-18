@@ -41,10 +41,11 @@ public final class ProjectFilesConfigurable implements Configurable {
         table.getColumnModel().getColumn(0).setPreferredWidth(JBUI.scale(150));
         table.getColumnModel().getColumn(1).setPreferredWidth(JBUI.scale(300));
         table.getColumnModel().getColumn(2).setPreferredWidth(JBUI.scale(60));
+        table.getColumnModel().getColumn(3).setPreferredWidth(JBUI.scale(100));
 
         JPanel decorated = ToolbarDecorator.createDecorator(table)
             .setAddAction(b -> {
-                tableModel.addRow("", "", false);
+                tableModel.addRow("", "", false, "");
                 int row = tableModel.getRowCount() - 1;
                 table.editCellAt(row, 0);
                 table.getSelectionModel().setSelectionInterval(row, row);
@@ -102,13 +103,13 @@ public final class ProjectFilesConfigurable implements Configurable {
         if (tableModel == null) return;
         tableModel.clear();
         for (ProjectFilesSettings.FileEntry entry : ProjectFilesSettings.getInstance().getEntries()) {
-            tableModel.addRow(entry.getLabel(), entry.getPath(), entry.isGlob());
+            tableModel.addRow(entry.getLabel(), entry.getPath(), entry.isGlob(), entry.getGroup());
         }
     }
 
     private static final class EntriesTableModel extends AbstractTableModel {
         private final List<Object[]> rows = new ArrayList<>();
-        private static final String[] COLUMNS = {"Label", "Path", "Glob"};
+        private static final String[] COLUMNS = {"Label", "Path", "Glob", "Group"};
 
         @Override
         public int getRowCount() {
@@ -117,7 +118,7 @@ public final class ProjectFilesConfigurable implements Configurable {
 
         @Override
         public int getColumnCount() {
-            return 3;
+            return 4;
         }
 
         @Override
@@ -146,8 +147,8 @@ public final class ProjectFilesConfigurable implements Configurable {
             fireTableCellUpdated(row, column);
         }
 
-        void addRow(String label, String path, boolean isGlob) {
-            rows.add(new Object[]{label, path, isGlob});
+        void addRow(String label, String path, boolean isGlob, String group) {
+            rows.add(new Object[]{label, path, isGlob, group});
             fireTableRowsInserted(rows.size() - 1, rows.size() - 1);
         }
 
@@ -170,8 +171,9 @@ public final class ProjectFilesConfigurable implements Configurable {
                 String label = ((String) row[0]).trim();
                 String path = ((String) row[1]).trim();
                 boolean isGlob = (Boolean) row[2];
+                String group = ((String) row[3]).trim();
                 if (!label.isEmpty() && !path.isEmpty()) {
-                    entries.add(new ProjectFilesSettings.FileEntry(label, path, isGlob));
+                    entries.add(new ProjectFilesSettings.FileEntry(label, path, isGlob, group));
                 }
             }
             return entries;
