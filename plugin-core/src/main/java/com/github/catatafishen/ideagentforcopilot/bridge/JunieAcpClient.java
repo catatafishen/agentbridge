@@ -160,13 +160,14 @@ public class JunieAcpClient extends AcpClient {
         SessionUpdate.ToolCallUpdate base = super.buildToolCallUpdateEvent(update);
         String toolCallId = base.toolCallId();
         String naturalLanguageSummary = base.result();
+        String description = base.description();
 
         // IN_PROGRESS: Just tool arguments, not useful - return with null result to avoid showing JSON args in UI
         if (base.status() == SessionUpdate.ToolCallStatus.IN_PROGRESS) {
-            return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), null, null, null);
+            return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), null, null, description);
         }
 
-        // FAILED: Return as-is
+        // FAILED: Return as-is (super already handled "(Denied)" in description if applicable)
         if (base.status() == SessionUpdate.ToolCallStatus.FAILED) {
             return base;
         }
@@ -193,7 +194,7 @@ public class JunieAcpClient extends AcpClient {
                                 base.status(),
                                 rawResult,           // Raw tool output (diffs, file contents, etc.)
                                 base.error(),
-                                naturalLanguageSummary // Natural language explanation
+                                combineDescription(description, naturalLanguageSummary) // Natural language explanation
                             );
                         } else {
                             // No match - log for debugging
@@ -208,11 +209,20 @@ public class JunieAcpClient extends AcpClient {
 
             // Fallback: Just use Junie's natural language summary as description
             LOG.debug("Junie completed (fallback): using summary only, len=" + naturalLanguageSummary.length());
-            return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), null, base.error(), naturalLanguageSummary);
+            return new SessionUpdate.ToolCallUpdate(toolCallId, base.status(), null, base.error(), combineDescription(description, naturalLanguageSummary));
         }
 
         // Empty or null content - return as-is
         return base;
+    }
+
+    /**
+     * Combines a base description (e.g. "(Denied)") with a natural language summary.
+     */
+    private String combineDescription(@Nullable String base, @Nullable String summary) {
+        if (base == null) return summary;
+        if (summary == null) return base;
+        return base + " " + summary;
     }
 
     /**

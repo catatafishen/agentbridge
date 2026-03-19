@@ -129,6 +129,8 @@ public abstract class AcpClient implements AgentClient {
 
     // Permission tracking: set when a built-in permission is denied during a prompt turn
     private volatile boolean builtInActionDeniedDuringTurn = false;
+    // Track tool calls that were explicitly denied during this turn to update UI chips accordingly
+    protected final java.util.Set<String> deniedToolCallIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     // Sub-agent tracking: set by UI layer when a Task tool call is active
     private volatile boolean subAgentActive = false;
@@ -621,6 +623,7 @@ public abstract class AcpClient implements AgentClient {
 
                 // Reset turn tracking
                 builtInActionDeniedDuringTurn = false;
+                deniedToolCallIds.clear();
                 lastActivityTimestamp = System.currentTimeMillis();
                 toolCallsInTurn.set(0);
 
@@ -926,11 +929,22 @@ public abstract class AcpClient implements AgentClient {
         String result = extractAcpResult(update);
         String error = update.has(ERROR) ? update.get(ERROR).getAsString() : null;
         int resultLen = result != null ? result.length() : 0;
+
+        // If the tool call was denied by our permission system, ensure the UI clearly shows it
+        String description = null;
+        if (deniedToolCallIds.contains(toolCallId)) {
+            description = "(Denied)";
+            if (status == SessionUpdate.ToolCallStatus.COMPLETED) {
+                // If it was denied but somehow marked completed, force it to failed status for the UI
+                status = SessionUpdate.ToolCallStatus.FAILED;
+            }
+        }
+
         LOG.info("[ACP tool_call_update event] extracted: id=" + toolCallId + ", status=" + status + ", resultLen=" + resultLen + ", result=" + (result != null ? result.substring(0, Math.min(200, result.length())) : null));
         if (resultLen == 0 && error == null) {
             LOG.warn("Tool update with empty result: " + update);
         }
-        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, null);
+        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description);
     }
 
     @Nullable
@@ -1603,7 +1617,10 @@ public abstract class AcpClient implements AgentClient {
         lastActivityTimestamp = System.currentTimeMillis();
         toolCallsInTurn.incrementAndGet();
 
-        if (checkAbuseAndDeny(reqId, reqParams, toolCall)) return;
+        String toolCallId = toolCall != null && toolCall.has(TOOL_CALL_ID_KEY)
+            ? toolCall.get(TOOL_CALL_ID_KEY).getAsString() : "";
+
+        if (checkAbuseAndDeny(reqId, reqParams, toolCall, toolCallId)) return;
 
         String toolId = getToolId(toolCall);
         ToolPermission perm = resolveEffectivePermission(toolId, toolCall);
@@ -1620,8 +1637,8 @@ public abstract class AcpClient implements AgentClient {
         }
 
         switch (perm) {
-            case DENY -> denyPermission(reqId, reqParams, permKind, toolId);
-            case ASK -> handleAskPermission(reqId, reqParams, toolId, permKind);
+            case DENY -> denyPermission(reqId, reqParams, permKind, toolId, toolCallId);
+            case ASK -> handleAskPermission(reqId, reqParams, toolId, permKind, toolCallId);
             default -> allowPermission(reqId, reqParams, permKind, toolId);
         }
     }
@@ -1637,7 +1654,8 @@ public abstract class AcpClient implements AgentClient {
      *   <li>Built-in write tool blocking for sub-agents (fallback for unknown tools)</li>
      * </ol>
      */
-    private boolean checkAbuseAndDeny(JsonElement reqId, @Nullable JsonObject reqParams, @Nullable JsonObject toolCall) {
+    private boolean checkAbuseAndDeny(JsonElement reqId, @Nullable JsonObject reqParams,
+                                      @Nullable JsonObject toolCall, String toolCallId) {
         String toolId = getToolId(toolCall);
         ToolDefinition tool = registry != null ? registry.findById(toolId) : null;
 
@@ -1646,7 +1664,7 @@ public abstract class AcpClient implements AgentClient {
             String abuse = tool.detectPermissionAbuse(toolCall);
             if (abuse != null) {
                 denyForAbuse(reqId, reqParams, "Tool abuse (" + toolId + "): " + abuse,
-                    RUN_COMMAND_ABUSE_PREFIX + abuse);
+                    RUN_COMMAND_ABUSE_PREFIX + abuse, toolCallId);
                 return true;
             }
         } else {
@@ -1654,7 +1672,7 @@ public abstract class AcpClient implements AgentClient {
             String commandAbuse = detectCommandAbuse(toolCall);
             if (commandAbuse != null) {
                 denyForAbuse(reqId, reqParams, "run_command abuse: " + commandAbuse,
-                    RUN_COMMAND_ABUSE_PREFIX + commandAbuse);
+                    RUN_COMMAND_ABUSE_PREFIX + commandAbuse, toolCallId);
                 return true;
             }
         }
@@ -1662,7 +1680,7 @@ public abstract class AcpClient implements AgentClient {
         // 2. Sub-agent denial via tool definition
         if (subAgentActive && tool != null && tool.denyForSubAgent()) {
             denyForAbuse(reqId, reqParams, "Sub-agent denied: " + toolId,
-                GIT_WRITE_ABUSE_PREFIX + toolId);
+                GIT_WRITE_ABUSE_PREFIX + toolId, toolCallId);
             return true;
         }
 
@@ -1671,7 +1689,7 @@ public abstract class AcpClient implements AgentClient {
             String writeAbuse = detectSubAgentWriteTool(toolCall);
             if (writeAbuse != null) {
                 denyForAbuse(reqId, reqParams, "Sub-agent write tool: " + writeAbuse,
-                    SUBAGENT_WRITE_ABUSE_PREFIX + writeAbuse);
+                    SUBAGENT_WRITE_ABUSE_PREFIX + writeAbuse, toolCallId);
                 return true;
             }
         }
@@ -1683,26 +1701,33 @@ public abstract class AcpClient implements AgentClient {
      * Deny a permission request for a detected abuse pattern, sending pre-rejection guidance first.
      */
     private void denyForAbuse(JsonElement reqId, @Nullable JsonObject reqParams,
-                              String logSuffix, String abusePrefixedKind) {
+                              String logSuffix, String abusePrefixedKind, String toolCallId) {
         String rejectOptionId = findRejectOption(reqParams);
         LOG.info("ACP request_permission: DENYING " + logSuffix);
         Map<String, Object> retryParams = buildRetryParams(abusePrefixedKind);
         String retryMessage = (String) retryParams.get(MESSAGE);
         sendSessionMessageIfSupported(retryMessage);
         builtInActionDeniedDuringTurn = true;
+        if (toolCallId != null && !toolCallId.isEmpty()) {
+            deniedToolCallIds.add(toolCallId);
+        }
         sendPermissionResponse(reqId, rejectOptionId);
     }
 
     /**
      * Handle a DENY permission: send guidance before rejecting so the agent can retry.
      */
-    private void denyPermission(JsonElement reqId, @Nullable JsonObject reqParams, String permKind, String toolId) {
+    private void denyPermission(JsonElement reqId, @Nullable JsonObject reqParams,
+                                String permKind, String toolId, String toolCallId) {
         String rejectOptionId = findRejectOption(reqParams);
         LOG.info("ACP request_permission: DENYING " + permKind + TOOL_PREFIX + toolId + "), option=" + rejectOptionId);
         Map<String, Object> retryParams = buildRetryParams(permKind);
         String retryMessage = (String) retryParams.get(MESSAGE);
         sendSessionMessageIfSupported(retryMessage);
         builtInActionDeniedDuringTurn = true;
+        if (toolCallId != null && !toolCallId.isEmpty()) {
+            deniedToolCallIds.add(toolCallId);
+        }
         sendPermissionResponse(reqId, rejectOptionId);
     }
 
@@ -1710,10 +1735,13 @@ public abstract class AcpClient implements AgentClient {
      * Handle an ASK permission: prompt the UI and block until user responds (120s timeout).
      */
     private void handleAskPermission(JsonElement reqId, @Nullable JsonObject reqParams,
-                                     String toolId, String permKind) {
+                                     String toolId, String permKind, String toolCallId) {
         var listener = permissionRequestListener.get();
         if (listener == null) {
             LOG.warn("ACP request_permission: ASK for " + toolId + " but no listener — auto-denying");
+            if (toolCallId != null && !toolCallId.isEmpty()) {
+                deniedToolCallIds.add(toolCallId);
+            }
             sendPermissionResponse(reqId, findRejectOption(reqParams));
             return;
         }
@@ -1733,7 +1761,7 @@ public abstract class AcpClient implements AgentClient {
             LOG.info("ACP request_permission: ASK timed out / cancelled for " + toolId + " — denying");
             response = PermissionResponse.DENY;
         }
-        dispatchPermissionResponse(response, reqId, reqParams, toolId);
+        dispatchPermissionResponse(response, reqId, reqParams, toolId, toolCallId);
     }
 
     @Nullable
@@ -1759,7 +1787,7 @@ public abstract class AcpClient implements AgentClient {
     }
 
     private void dispatchPermissionResponse(PermissionResponse response, JsonElement reqId,
-                                            @Nullable JsonObject reqParams, String toolId) {
+                                            @Nullable JsonObject reqParams, String toolId, String toolCallId) {
         switch (response) {
             case ALLOW_SESSION -> {
                 sessionAllowedTools.add(toolId);
@@ -1773,6 +1801,9 @@ public abstract class AcpClient implements AgentClient {
             default -> {
                 LOG.info("ACP request_permission: ASK denied by user for " + toolId);
                 builtInActionDeniedDuringTurn = true;
+                if (toolCallId != null && !toolCallId.isEmpty()) {
+                    deniedToolCallIds.add(toolCallId);
+                }
                 sendPermissionResponse(reqId, findRejectOption(reqParams));
             }
         }
