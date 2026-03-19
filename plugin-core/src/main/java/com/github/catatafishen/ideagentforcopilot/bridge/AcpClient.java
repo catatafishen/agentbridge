@@ -1939,7 +1939,7 @@ public abstract class AcpClient implements AgentClient {
         String instruction;
 
         // Specific guidance for excluded built-in tools
-        if (ToolRegistry.getBuiltInToolIds().contains(deniedKind)) {
+        if (getDuplicatedTools().contains(deniedKind)) {
             instruction = "⚠ Don't use built-in '" + deniedKind + "' — it bypasses " +
                 "IntelliJ's editor buffer and may cause desync. Use '" + p + "' prefixed tools instead: " +
                 "'" + p + "intellij_read_file' to read files, " +
