@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -19,9 +20,7 @@ public class DefaultAcpClient extends AcpClient {
     }
 
     @Override
-    @NotNull
-    public String normalizeToolName(@NotNull String name) {
-        // Fallback to simple slash-based stripping for generic ACP clients
-        return name.replaceFirst("^[^/]+/", "");
+    public @NotNull String getToolId(@NotNull JsonObject toolCall) {
+        return toolCall.toString();
     }
 }

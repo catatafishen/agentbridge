@@ -566,3 +566,107 @@
     "NEW INSTRUCTION": "WHEN claiming Junie built-ins are excluded THEN implement code changes and verify runtime uses agentbridge-* tools"
 }
 
+[2026-03-19 11:00] - Updated by Junie
+{
+    "TYPE": "positive",
+    "CATEGORY": "Client-specific logic placement",
+    "EXPECTATION": "Junie-specific tool filtering should live in JunieAcpClient, with the base AcpClient remaining a no-op so other clients are unaffected.",
+    "NEW INSTRUCTION": "WHEN adding Junie-specific session params THEN override addExtraSessionParams in JunieAcpClient; keep base no-op"
+}
+
+[2026-03-19 11:23] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Built-in tools not excluded",
+    "EXPECTATION": "Only MCP tools (agentbridge- prefixed) should be available and used; native built-in tools must be excluded at startup as intended by commit 2c39da31.",
+    "NEW INSTRUCTION": "WHEN tool list includes non agentbridge- tools THEN reinitialize session with built-ins excluded and notify user"
+}
+
+[2026-03-19 15:56] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Built-in list misclassification",
+    "EXPECTATION": "Do not classify plugin-provided MCP tools (e.g., undo, build_project, get_compilation_errors) as native built-ins in ToolRegistry or exclusion lists.",
+    "NEW INSTRUCTION": "WHEN modifying built-in exclusion lists THEN exclude plugin-provided MCP tools from denial"
+}
+
+[2026-03-19 16:17] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Provenance verification",
+    "EXPECTATION": "Evidence for excludedTools support must come from Junie’s upstream codebase or runtime traces, not our docs.",
+    "NEW INSTRUCTION": "WHEN claiming Junie supports excludedTools THEN cite Junie source file/commit or show runtime trace"
+}
+
+[2026-03-19 16:27] - Updated by Junie
+{
+    "TYPE": "positive",
+    "CATEGORY": "Evidence-based confirmation",
+    "EXPECTATION": "Assistant verified via Junie binary/code that protocol-level tool filtering is not supported and updated code/docs to match reality.",
+    "NEW INSTRUCTION": "WHEN asserting Junie feature support THEN cite binary/code inspection or direct runtime test"
+}
+
+[2026-03-19 16:39] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool prefix requirement",
+    "EXPECTATION": "Use only tools whose names start with 'agentbridge-' so calls are not denied.",
+    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'agentbridge-'"
+}
+
+[2026-03-19 16:46] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Premature continuation",
+    "EXPECTATION": "Wait for the user's confirmation that Junie was restarted with the restricted allowlist before proceeding with verification steps.",
+    "NEW INSTRUCTION": "WHEN user mentions pending restart or config change THEN wait for explicit confirmation before continuing"
+}
+
+[2026-03-19 16:56] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool prefix requirement",
+    "EXPECTATION": "Use only tools with the 'agentbridge-' prefix; previous non-prefixed calls were denied.",
+    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'agentbridge-'"
+}
+
+[2026-03-19 16:57] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Premature continuation",
+    "EXPECTATION": "Wait for explicit confirmation after restart with restricted allowlist before proceeding.",
+    "NEW INSTRUCTION": "WHEN user mentions pending restart or config change THEN pause and request explicit confirmation before continuing"
+}
+
+[2026-03-19 17:02] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool prefix usage",
+    "EXPECTATION": "Use only tools with the 'agentbridge-' prefix to avoid denials.",
+    "NEW INSTRUCTION": "WHEN invoking any tool here THEN use names starting with 'agentbridge-'"
+}
+
+[2026-03-19 17:28] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool prefix requirement",
+    "EXPECTATION": "Use only tools with the 'agentbridge-' prefix to avoid denials.",
+    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'agentbridge-'"
+}
+
+[2026-03-19 17:38] - Updated by Junie
+{
+    "TYPE": "positive",
+    "CATEGORY": "Tool permission fix confirmed",
+    "EXPECTATION": "Agentbridge-prefixed MCP tools are allowed again and no longer blanket-denied, while Junie built-ins remain blocked.",
+    "NEW INSTRUCTION": "WHEN testing Junie tool permissions THEN verify agentbridge- tools allowed and built-ins denied"
+}
+
+[2026-03-19 17:39] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool prefix requirement",
+    "EXPECTATION": "Use only tools with the 'agentbridge-' prefix; prior non-prefixed calls were denied.",
+    "NEW INSTRUCTION": "WHEN invoking any tool in this workspace THEN use names starting with 'agentbridge-'"
+}
+

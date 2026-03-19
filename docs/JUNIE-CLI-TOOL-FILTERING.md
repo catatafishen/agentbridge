@@ -1,65 +1,92 @@
-# Junie CLI Tool Filtering Limitation
+# Junie CLI Tool Filtering
 
-## The Bug
+## Status: Protocol-level filtering NOT supported
 
-Similar to GitHub Copilot CLI (see `CLI-BUG-556-WORKAROUND.md`), the Junie CLI does not currently respect the
-`excludedTools` parameter in the `session/new` Agent Communication Protocol (ACP) payload.
+As of Junie v888.212, there is **NO verified support** for filtering tools via parameters in the ACP `session/new`
+payload.
 
-Even when the plugin explicitly requests the exclusion of built-in tools (e.g. `view`, `edit`, `bash`, `create`, `open`,
-etc.) by passing them in the `session/new` request, the Junie agent will ignore this configuration and still register
-and have access to these built-in tools.
+Investigations into the Junie 888.212 binary (`NewSessionRequest.class`) show that the protocol only accepts the
+following fields:
 
-> **UPDATE (March 17, 2026):** According
-> to [JUNIE-1842](https://youtrack.jetbrains.com/issue/JUNIE-1842/Toolset-configuration-profiles-allow-deny-list), toolset
-> configuration profiles with allow/deny lists are now supported. This should allow for a native mechanism to exclude
-> tools at launch time instead of relying purely on runtime permission denial.
+- `cwd`: Current working directory.
+- `mcpServers`: List of MCP server configurations.
+- `_meta`: Metadata.
 
-## Our Workaround
+Parameters like `excludedTools`, `denyList`, or `toolFilter` are **silently ignored** by the Junie ACP server.
 
-Since we cannot filter the tools natively via the CLI startup or session parameters, we rely on the same **runtime
-permission denial** mechanism used for the Copilot CLI.
+---
 
-### Implementation
+## Alternative: Action Allowlist (allowlist.json)
 
-**File:** `plugin-core/src/main/java/com/github/catatafishen/ideagentforcopilot/bridge/JunieAcpClient.java`
+Junie CLI supports a configuration file named `allowlist.json` to manage tool execution permissions without user
+confirmation. This is a CLI-specific feature that allows for fine-grained control over which actions (terminal commands,
+file edits, MCP tools) are allowed or denied.
 
-We have updated the profile configuration for Junie to enforce plugin-level tool permissions:
+### Configuration Locations
 
-```java
-p.setExcludeAgentBuiltInTools(true);
-p.
+Junie CLI looks for `allowlist.json` in the following locations:
 
-setUsePluginPermissions(true);
-p.
+1. **User Scope**: `~/.junie/allowlist.json` (for global rules across all projects).
+2. **Project Scope**: `.junie/allowlist.json` (at the root of your project).
 
-setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
+### Configuration Schema
+
+The configuration follows a JSON schema that allows defining default behaviors and specific rules for different action
+types.
+
+**Example: Deny all by default, allow only specific MCP tools**
+
+```json
+{
+  "defaultBehavior": "deny",
+  "allowReadonlyCommands": false,
+  "rules": {
+    "mcpTools": {
+      "rules": [
+        {
+          "prefix": "agentbridge",
+          "action": "allow"
+        }
+      ]
+    }
+  }
+}
 ```
 
-By enabling `usePluginPermissions = true`, the plugin actively intercepts permission requests for built-in tools (such
-as write/execute operations) and denies them, forcing Junie to use the IntelliJ MCP alternatives which are far superior
-for editor contexts.
+### Supported Action Types in Rules
 
-> **UPDATE (March 19, 2026):** Native tool filtering is now implemented following the resolution
-> of [JUNIE-1842](https://youtrack.jetbrains.com/issue/JUNIE-1842/Toolset-configuration-profiles-allow-deny-list). The
-> plugin now sends multiple tool-filtering parameters in the `session/new` request to ensure compatibility with Junie
-> v888.212+:
-> - `excludedTools`: `["glob", "grep", ...]` (Legacy Copilot format)
-> - `toolFilter.denyList`: `["glob", "grep", ...]` (Structured format)
-> - `allowList.deny`: `["glob", "grep", ...]` (Explicit allow-list system format)
->
-> This multi-layered injection ensures that Junie correctly identifies and disables its built-in tools in favor of the
-> IntelliJ MCP alternatives.
+- `mcpTools`: Rules for Model Context Protocol tools.
+- `terminal`: Rules for terminal command execution.
+- `fileEditing`: Rules for file modifications.
+- `readOutsideProject`: Rules for reading files outside the project root.
 
-### Limitations
+---
 
-- **No CLI Flags:** Junie v888.212 was tested with `--help`, and it does not support any native CLI flags for tool
-  exclusion (e.g., `--deny-tool` or `--exclude-tool`). Filtering MUST be done via the `session/new` ACP payload.
-- **Legacy versions:** Junie versions older than 888.212 still ignore the `excludedTools` parameter. For these versions,
-  we rely on the prompt engineering workaround (see `JUNIE-TOOL-WORKAROUND.md`) and runtime permission denial (for
-  agents that support it).
+## Workaround: Runtime Permission Denial
 
-## Tracking Changes
+Since protocol-level filtering is unavailable, the current strategy for the IntelliJ plugin is to **deny tool execution
+at runtime** when Junie attempts to call a built-in tool that should be handled by the IDE's MCP server.
 
-This file exists to track the limitation. If JetBrains releases a future version of the Junie CLI that successfully
-honors the `excludedTools` field in the ACP `session/new` payload, we should verify it and eventually remove this
-workaround.
+1. **Deny in `call_tool`**: The `AcpClient` (or `JunieAcpClient`) should return an error or a "permission denied"
+   message if a built-in tool is requested.
+2. **Prompt Guidance**: When initializing the session, include instructions in the initial prompt or guidelines to
+   prefer `agentbridge` tools over built-in ones.
+
+```java
+// Example of runtime denial in JunieAcpClient
+if(isBuiltInTool(toolName)){
+        return CompletableFuture.
+
+completedFuture(
+        new ToolCallResult("Error: This tool is disabled. Please use the equivalent 'agentbridge' tool instead.")
+    );
+            }
+```
+
+---
+
+## Summary of Findings (v888.212)
+
+- **`excludedTools` in `session/new`**: ❌ Not supported (ignored).
+- **`allowlist.json` in `~/.junie/`**: ✅ Supported (internal `AllowListConfig` confirmed).
+- **Runtime Tool Steering**: ✅ Recommended (via prompt and `call_tool` denial).

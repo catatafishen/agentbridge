@@ -843,8 +843,7 @@ public abstract class AcpClient implements AgentClient {
     protected SessionUpdate.ToolCall buildToolCallEvent(@NotNull JsonObject update) {
         LOG.info("[ACP tool_call event] raw: " + update);
         String toolCallId = update.has(TOOL_CALL_ID_KEY) ? update.get(TOOL_CALL_ID_KEY).getAsString() : "";
-        String rawTitle = update.has(TITLE_KEY) ? update.get(TITLE_KEY).getAsString() : "tool";
-        String title = normalizeToolName(rawTitle);
+        String toolId = getToolId(update);
         // Use protocol's kind if present and specific, otherwise get from tool registry.
         // Some ACP implementations (e.g., OpenCode) send "kind":"other" for all tools.
         String kindStr = update.has(KIND_KEY) ? update.get(KIND_KEY).getAsString() : null;
@@ -852,13 +851,13 @@ public abstract class AcpClient implements AgentClient {
             ? SessionUpdate.ToolKind.fromString(kindStr)
             : SessionUpdate.ToolKind.OTHER;
         if (kind == SessionUpdate.ToolKind.OTHER && registry != null) {
-            ToolDefinition tool = registry.findById(title);
+            ToolDefinition tool = registry.findById(toolId);
             if (tool != null) {
                 kind = SessionUpdate.ToolKind.fromCategory(tool.category());
             }
         }
         String args = extractAcpArguments(update);
-        List<String> filePaths = extractFilePaths(update, title);
+        List<String> filePaths = extractFilePaths(update, toolId);
         String agentType = extractSubAgentField(args, AGENT_TYPE_KEY);
 
         // Update active agent label in settings if a sub-agent is active
@@ -868,12 +867,12 @@ public abstract class AcpClient implements AgentClient {
 
         String subAgentDesc = agentType != null ? extractSubAgentField(args, DESCRIPTION) : null;
         String subAgentPrompt = agentType != null ? extractSubAgentField(args, PROMPT) : null;
-        LOG.info("[ACP tool_call event] extracted: id=" + toolCallId + ", title=" + title + ", kind=" + kind + ", args=" + args);
+        LOG.info("[ACP tool_call event] extracted: id=" + toolCallId + ", toolId=" + toolId + ", kind=" + kind + ", args=" + args);
 
         // Allow subclasses to extract and process additional metadata from the tool call
         onToolCallEventReceived(toolCallId, update, args);
 
-        return new SessionUpdate.ToolCall(toolCallId, title, kind, args, filePaths, agentType, subAgentDesc, subAgentPrompt);
+        return new SessionUpdate.ToolCall(toolCallId, toolId, kind, args, filePaths, agentType, subAgentDesc, subAgentPrompt);
     }
 
     /**
@@ -1095,7 +1094,7 @@ public abstract class AcpClient implements AgentClient {
      * Normalize tool name before checking permissions or displaying it.
      */
     @NotNull
-    public abstract String normalizeToolName(@NotNull String name);
+    public abstract String getToolId(@NotNull JsonObject toolCall);
 
     // Note: interceptBuiltInToolCall and classifyBuiltInTool were removed — session/message
     // notifications never reach sub-agents (they run in their own CLI context). Tested with
@@ -1606,7 +1605,7 @@ public abstract class AcpClient implements AgentClient {
 
         if (checkAbuseAndDeny(reqId, reqParams, toolCall)) return;
 
-        String toolId = resolveToolId(permKind, toolCall);
+        String toolId = getToolId(toolCall);
         ToolPermission perm = resolveEffectivePermission(toolId, toolCall);
 
         // Auto-approve: profile's usePluginPermissions=false promotes ASK → ALLOW (DENY stays DENY)
@@ -1639,9 +1638,7 @@ public abstract class AcpClient implements AgentClient {
      * </ol>
      */
     private boolean checkAbuseAndDeny(JsonElement reqId, @Nullable JsonObject reqParams, @Nullable JsonObject toolCall) {
-        String toolId = resolveToolId(
-            toolCall != null && toolCall.has("kind") ? toolCall.get("kind").getAsString() : null,
-            toolCall);
+        String toolId = getToolId(toolCall);
         ToolDefinition tool = registry != null ? registry.findById(toolId) : null;
 
         // 1. Tool-specific abuse detection (e.g., RunCommandTool detects shell abuse)
@@ -1791,20 +1788,6 @@ public abstract class AcpClient implements AgentClient {
         sendPermissionResponse(reqId, allowOptionId);
     }
 
-    /**
-     * Strip the MCP server-name prefix and normalise the tool ID from permKind / toolCall name.
-     * The prefix is determined dynamically ({@link #effectiveMcpPrefix}) so it works regardless
-     * of the name the user registered the server under.
-     */
-    protected String resolveToolId(@Nullable String permKind, @Nullable JsonObject toolCall) {
-        String name = "";
-        if (toolCall != null && toolCall.has("name")) {
-            name = toolCall.get("name").getAsString();
-        }
-        name = normalizeToolName(name);
-        String fallback = permKind != null ? permKind : "";
-        return name.isEmpty() ? fallback : name;
-    }
 
     /**
      * @return the list of well-known built-in agent tool IDs that should be excluded
@@ -1818,7 +1801,7 @@ public abstract class AcpClient implements AgentClient {
      * Look up the effective ToolPermission for a tool call.
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
-    private ToolPermission resolveEffectivePermission(String toolId, @Nullable JsonObject toolCall) {
+    protected ToolPermission resolveEffectivePermission(String toolId, @NotNull JsonObject toolCall) {
         // Deny agent built-in tools via permission system when configured.
         // This forces agents to use IntelliJ MCP tools instead of their built-ins (view, edit, bash, etc.)
         // IMPORTANT: We only deny if the call is "external" (no MCP server prefix),
@@ -1884,9 +1867,9 @@ public abstract class AcpClient implements AgentClient {
 
         String toolName = toolCall.has("name") ? toolCall.get("name").getAsString() : "";
         String permKind = toolCall.has("kind") ? toolCall.get("kind").getAsString() : "";
-        String normalizedName = normalizeToolName(toolName);
+        String toolId = getToolId(toolCall);
 
-        boolean isRunCommand = "run_command".equals(normalizedName);
+        boolean isRunCommand = "run_command".equals(toolId);
         // Also intercept the bash built-in tool (kind=execute or kind=bash)
         boolean isBashTool = KIND_BASH.equals(permKind) || KIND_EXECUTE.equals(permKind)
             || KIND_BASH.equals(toolName);

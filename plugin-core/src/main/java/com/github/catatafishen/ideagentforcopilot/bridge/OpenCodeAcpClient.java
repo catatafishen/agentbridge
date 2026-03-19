@@ -190,8 +190,8 @@ public class OpenCodeAcpClient extends AcpClient {
 
     @Override
     @NotNull
-    public String normalizeToolName(@NotNull String name) {
-        return name.replaceFirst("^agentbridge_", "");
+    public String getToolId(@NotNull JsonObject toolCall) {
+        return toolCall.get("title").getAsString().trim().replaceFirst("^agentbridge_", "");
     }
 
     /**

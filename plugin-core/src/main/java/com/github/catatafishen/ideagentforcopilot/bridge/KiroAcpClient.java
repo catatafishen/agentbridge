@@ -88,10 +88,8 @@ public class KiroAcpClient extends AcpClient {
 
     @Override
     @NotNull
-    public String normalizeToolName(@NotNull String name) {
-        return name.trim()
-            .replaceFirst("Running: @agentbridge/", "")
-            .replaceFirst("Running: ", "");
+    public String getToolId(@NotNull JsonObject toolCall) {
+        return toolCall.get("title").getAsString().trim().replaceFirst("^Running: @agentbridge/", "");
     }
 
     @Override

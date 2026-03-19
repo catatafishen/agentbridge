@@ -79,15 +79,6 @@ public interface AgentClient extends Closeable {
     boolean isHealthy();
 
     /**
-     * Normalizes a raw tool name from the agent into a clean, human-friendly name
-     * (e.g. stripping MCP server prefixes).
-     */
-    @NotNull
-    default String normalizeToolName(@NotNull String rawName) {
-        return rawName;
-    }
-
-    /**
      * Whether file/selection resource references need their content duplicated as plain text
      * in the prompt (some agents don't inline resource content natively).
      * Default: {@code false} — override for agents that require it (e.g. GitHub Copilot CLI).

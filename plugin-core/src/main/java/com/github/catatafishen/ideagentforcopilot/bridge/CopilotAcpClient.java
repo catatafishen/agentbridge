@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -113,8 +114,8 @@ public class CopilotAcpClient extends AcpClient {
 
     @Override
     @NotNull
-    public String normalizeToolName(@NotNull String name) {
-        return name.replaceFirst("^agentbridge-", "agentbridge/");
+    public String getToolId(@NotNull JsonObject toolCall) {
+        return toolCall.get("title").getAsString().trim().replaceFirst("^agentbridge-", "");
     }
 
     @Override

@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolExecutionCorrelator;
+import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
@@ -77,11 +78,7 @@ public class JunieAcpClient extends AcpClient {
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         p.setPrependInstructionsTo("");
-        p.setAdditionalInstructions("""
-            TOOL USAGE:
-            You are running inside an IntelliJ IDEA plugin with IDE tools accessible via MCP.
-            CRITICAL: ALWAYS use IntelliJ MCP tools (agentbridge/*) for file operations, git, search, and terminal.
-            If a built-in tool is blocked, retry using the corresponding agentbridge/* tool.""");
+        p.setAdditionalInstructions("");
         return p;
     }
 
@@ -95,49 +92,54 @@ public class JunieAcpClient extends AcpClient {
 
     @Override
     protected void addExtraSessionParams(@NotNull JsonObject params) {
-        if (agentConfig.denyBuiltInToolsViaPermissions()) {
-            com.google.gson.JsonArray excluded = new com.google.gson.JsonArray();
-            for (String toolId : getDuplicatedTools()) {
-                excluded.add(toolId);
-            }
-            // Primary key used by older Copilot CLI versions
-            params.add("excludedTools", excluded);
+        // NOTE: As of Junie v888.212, there is no verified protocol-level parameter
+        // for tool filtering (e.g., 'excludedTools', 'denyList', 'toolFilter' are NOT supported).
+        // Tool filtering is handled internally by Junie's CapabilityFilterAgentTask.
+    }
 
-            // New structured toolFilter key - more compatible with newer agents like Junie (JUNIE-1842)
-            JsonObject toolFilter = new JsonObject();
-            toolFilter.add("denyList", excluded);
-            params.add("toolFilter", toolFilter);
+    @Override
+    protected List<String> getDuplicatedTools() {
+        // List of Junie's built-in tools that should be excluded (denied via permission system).
+        // This forces Junie to use our MCP alternatives (agentbridge/read_file, etc.)
+        return List.of(
+            "execute", "read_file", "write_file", "list_files",
+            "view_file", "grep", "glob", "bash", "run_command"
+        );
+    }
 
-            // AllowList-based system (explicit deny)
-            JsonObject allowList = new JsonObject();
-            allowList.add("deny", excluded);
-            params.add("allowList", allowList);
-
-            LOG.info("Excluding built-in tools from session (keys: excludedTools, toolFilter.denyList, allowList.deny): " + excluded);
+    /**
+     * Stricter tool filtering for Junie: only allow MCP tools (prefixed with 'agentbridge-')
+     * or those explicitly in our whitelist. All other built-in tools are denied to ensure
+     * they don't bypass IntelliJ's editor buffer API.
+     */
+    @Override
+    protected ToolPermission resolveEffectivePermission(String toolId, @NotNull JsonObject toolCall) {
+        LOG.info("Resolving permissions for Junie tool '" + toolId);
+        // 1. Always allow MCP tools (those starting with agentbridge- after normalization)
+        if (isAgentBridgeTool(toolCall)) {
+            return super.resolveEffectivePermission(toolId, toolCall);
         }
+
+        // 2. Deny any tool in the duplicatedTools list (known problematic built-ins)
+        if (getDuplicatedTools().contains(toolId)) {
+            LOG.info("Junie tool '" + toolId + "' is a duplicated built-in - DENYING to force MCP alternative");
+            return ToolPermission.DENY;
+        }
+
+        // 3. For any other built-in tool, only allow if explicitly whitelisted as safe
+        // (Currently, we don't have any safe built-ins we want Junie to use directly)
+        LOG.warn("Junie tool '" + toolId + "' is an unknown built-in - DENYING by default");
+        return ToolPermission.DENY;
+    }
+
+    public boolean isAgentBridgeTool(@NotNull JsonObject toolCall) {
+        return toolCall.get("title").getAsString().trim().toLowerCase().contains("agentbridge");
     }
 
     @Override
     @NotNull
-    public String normalizeToolName(@NotNull String name) {
-        return name.trim()
-            .replaceFirst("Tool: agentbridge/", "")
-            .replaceFirst("Tool: ", "");
-    }
-
-    @Override
-    protected String resolveToolId(@Nullable String permKind, @Nullable JsonObject toolCall) {
-        String name = "";
-        if (toolCall != null) {
-            if (toolCall.has("name")) {
-                name = toolCall.get("name").getAsString();
-            } else if (toolCall.has("title")) {
-                name = toolCall.get("title").getAsString();
-            }
-        }
-        name = normalizeToolName(name);
-        String fallback = permKind != null ? permKind : "";
-        return name.isEmpty() ? fallback : name;
+    public String getToolId(@NotNull JsonObject toolCall) {
+        return toolCall.get("title").getAsString().trim().replaceFirst("Tool: agentbridge/", "");
     }
 
     @Override
@@ -171,26 +173,19 @@ public class JunieAcpClient extends AcpClient {
 
         // COMPLETED: Try to correlate with actual MCP execution to get raw result
         if (naturalLanguageSummary != null && !naturalLanguageSummary.isEmpty()) {
-            // Extract and normalize tool name from the update event
-            String rawToolName = update.has("title") ? update.get("title").getAsString() : null;
-            String normalizedToolName = rawToolName != null ? normalizeToolName(rawToolName) : null;
-
-            // Extract arguments from the update event (if available)
-            // Junie sometimes includes the arguments in the content during IN_PROGRESS,
-            // but by COMPLETED they're not in the update. We'll try to match without them.
-            JsonObject args = null; // TODO: extract if available in future Junie versions
+            String toolId = getToolId(update);
 
             // Look up the matching tool execution
-            if (normalizedToolName != null && projectBasePath != null) {
+            if (projectBasePath != null) {
                 try {
                     com.intellij.openapi.project.Project project = findProject(projectBasePath);
                     if (project != null) {
                         ToolExecutionCorrelator correlator = ToolExecutionCorrelator.getInstance(project);
-                        String rawResult = correlator.consumeResult(normalizedToolName, args);
+                        String rawResult = correlator.consumeResult(toolId, null);
 
                         if (rawResult != null) {
                             // Success: we have both raw result and natural language summary
-                            LOG.debug("Junie completed with correlation: tool=" + normalizedToolName
+                            LOG.debug("Junie completed with correlation: tool=" + toolId
                                 + ", rawLen=" + rawResult.length()
                                 + ", descLen=" + naturalLanguageSummary.length());
                             return new SessionUpdate.ToolCallUpdate(
@@ -202,12 +197,12 @@ public class JunieAcpClient extends AcpClient {
                             );
                         } else {
                             // No match - log for debugging
-                            LOG.debug("Junie completed without correlation: tool=" + normalizedToolName
+                            LOG.debug("Junie completed without correlation: tool=" + toolId
                                 + " (no matching execution found, using summary only)");
                         }
                     }
                 } catch (Exception e) {
-                    LOG.warn("Failed to correlate Junie tool result for " + normalizedToolName, e);
+                    LOG.warn("Failed to correlate Junie tool result for " + toolId, e);
                 }
             }
 
