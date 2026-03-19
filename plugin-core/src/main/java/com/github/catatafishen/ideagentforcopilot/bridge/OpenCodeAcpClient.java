@@ -195,7 +195,6 @@ public class OpenCodeAcpClient extends AcpClient {
      */
     @Override
     protected void addExtraSessionParams(@NotNull JsonObject params) {
-        super.addExtraSessionParams(params);
         if (!params.has("mcpServers")) {
             params.add("mcpServers", new com.google.gson.JsonArray());
         }

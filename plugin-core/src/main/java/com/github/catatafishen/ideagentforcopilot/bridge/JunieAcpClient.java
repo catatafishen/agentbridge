@@ -95,6 +95,30 @@ public class JunieAcpClient extends AcpClient {
     }
 
     @Override
+    protected void addExtraSessionParams(@NotNull JsonObject params) {
+        if (agentConfig.denyBuiltInToolsViaPermissions()) {
+            com.google.gson.JsonArray excluded = new com.google.gson.JsonArray();
+            for (String toolId : ToolRegistry.getBuiltInToolIds()) {
+                excluded.add(toolId);
+            }
+            // Primary key used by older Copilot CLI versions
+            params.add("excludedTools", excluded);
+
+            // New structured toolFilter key - more compatible with newer agents like Junie (JUNIE-1842)
+            JsonObject toolFilter = new JsonObject();
+            toolFilter.add("denyList", excluded);
+            params.add("toolFilter", toolFilter);
+
+            // AllowList-based system (explicit deny)
+            JsonObject allowList = new JsonObject();
+            allowList.add("deny", excluded);
+            params.add("allowList", allowList);
+
+            LOG.info("Excluding built-in tools from session (keys: excludedTools, toolFilter.denyList, allowList.deny): " + excluded);
+        }
+    }
+
+    @Override
     @NotNull
     public String normalizeToolName(@NotNull String name) {
         return name.trim()
