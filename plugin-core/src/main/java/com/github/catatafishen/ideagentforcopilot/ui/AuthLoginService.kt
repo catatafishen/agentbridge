@@ -290,7 +290,7 @@ class AuthLoginService(private val project: Project) {
     private fun configureAuthEnvironment(pb: ProcessBuilder) {
         try {
             val agentManager = ActiveAgentManager.getInstance(project)
-            val profile = agentManager.getActiveProfile() ?: return
+            val profile = agentManager.getActiveProfile()
 
             // Use the same environment configuration as agent processes
             val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
@@ -307,7 +307,7 @@ class AuthLoginService(private val project: Project) {
     private fun getAuthEnvironmentVars(): Map<String, String> {
         return try {
             val agentManager = ActiveAgentManager.getInstance(project)
-            val profile = agentManager.getActiveProfile() ?: return emptyMap()
+            val profile = agentManager.getActiveProfile()
 
             // Get environment configuration as agent processes would use
             val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
