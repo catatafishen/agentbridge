@@ -79,6 +79,10 @@ public class CopilotAcpClient extends AcpClient {
         super(config, settings, registry, projectBasePath, mcpPort);
     }
 
+    @Override
+    protected List<String> getDuplicatedTools() {
+        return List.of("execute", "read", "edit", "search");
+    }
     /**
      * Copilot bills by premium-request multiplier, not by token count.
      */
@@ -110,7 +114,7 @@ public class CopilotAcpClient extends AcpClient {
     @Override
     @NotNull
     public String normalizeToolName(@NotNull String name) {
-        return name.replaceFirst("^agentbridge-", "");
+        return name.replaceFirst("^agentbridge-", "agentbridge/");
     }
 
     @Override

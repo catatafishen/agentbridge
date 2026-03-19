@@ -82,6 +82,11 @@ public class KiroAcpClient extends AcpClient {
     }
 
     @Override
+    protected List<String> getDuplicatedTools() {
+        return List.of(   "read", "glob", "grep", "write", "shell", "aws", "code");
+    }
+
+    @Override
     @NotNull
     public String normalizeToolName(@NotNull String name) {
         return name.trim()

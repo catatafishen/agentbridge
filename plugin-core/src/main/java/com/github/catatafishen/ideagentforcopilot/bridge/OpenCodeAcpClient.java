@@ -71,6 +71,11 @@ public class OpenCodeAcpClient extends AcpClient {
         return p;
     }
 
+    @Override
+    protected List<String> getDuplicatedTools() {
+        return List.of("bash", "edit", "write", "read", "grep", "glob", "list", "lsp", "patch", "question");
+    }
+
     /**
      * Builds the OpenCode config JSON template with bundled agents.
      * Includes ACP-standard mcpServers array + custom IDE-aware agent definitions.

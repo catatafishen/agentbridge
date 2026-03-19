@@ -1807,13 +1807,24 @@ public abstract class AcpClient implements AgentClient {
     }
 
     /**
+     * @return the list of well-known built-in agent tool IDs that should be excluded
+     * from the agent session when the profile enables built-in tool exclusion.
+     */
+    protected List<String> getDuplicatedTools() {
+        return List.of();
+    }
+
+    /**
      * Look up the effective ToolPermission for a tool call.
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
     private ToolPermission resolveEffectivePermission(String toolId, @Nullable JsonObject toolCall) {
         // Deny agent built-in tools via permission system when configured.
         // This forces agents to use IntelliJ MCP tools instead of their built-ins (view, edit, bash, etc.)
-        if (agentConfig.denyBuiltInToolsViaPermissions() && ToolRegistry.getBuiltInToolIds().contains(toolId)) {
+        // IMPORTANT: We only deny if the call is "external" (no MCP server prefix),
+        // to avoid blocking our own plugin tools that might share the same base ID (like read_file).
+        if (agentConfig.denyBuiltInToolsViaPermissions()
+            && getDuplicatedTools().contains(toolId)) {
             LOG.info("ACP request_permission: denying built-in tool " + toolId + " (forcing MCP alternative)");
             return ToolPermission.DENY;
         }

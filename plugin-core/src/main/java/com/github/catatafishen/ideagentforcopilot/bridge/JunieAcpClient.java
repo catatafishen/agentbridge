@@ -98,7 +98,7 @@ public class JunieAcpClient extends AcpClient {
     protected void addExtraSessionParams(@NotNull JsonObject params) {
         if (agentConfig.denyBuiltInToolsViaPermissions()) {
             com.google.gson.JsonArray excluded = new com.google.gson.JsonArray();
-            for (String toolId : ToolRegistry.getBuiltInToolIds()) {
+            for (String toolId : getDuplicatedTools()) {
                 excluded.add(toolId);
             }
             // Primary key used by older Copilot CLI versions
