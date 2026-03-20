@@ -709,11 +709,40 @@ public abstract class AcpClient implements AgentConnector {
     }
 
     private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
+        String optionId = "allow_once";
+        JsonObject chosenOption = findOption(params, optionId);
         JsonObject result = new JsonObject();
-        JsonObject outcome = new JsonObject();
-        outcome.addProperty("optionId", "allow_once");
-        result.add("outcome", outcome);
+        result.add("outcome", buildPermissionOutcome(optionId, chosenOption));
         transport.sendResponse(id, result);
+    }
+
+    /**
+     * Build the outcome object sent back in the {@code session/request_permission} response.
+     * Override to add agent-specific fields (e.g. a {@code type} discriminator for kotlinx.serialization).
+     *
+     * @param optionId     the chosen option ID (e.g. {@code "allow_once"})
+     * @param chosenOption the matching option object from the request params, or {@code null} if not found
+     */
+    protected JsonObject buildPermissionOutcome(String optionId, @Nullable JsonObject chosenOption) {
+        JsonObject outcome = new JsonObject();
+        outcome.addProperty("optionId", optionId);
+        return outcome;
+    }
+
+    @Nullable
+    private static JsonObject findOption(@Nullable JsonObject params, String optionId) {
+        if (params == null || !params.has("options")) return null;
+        JsonElement options = params.get("options");
+        if (!options.isJsonArray()) return null;
+        for (JsonElement el : options.getAsJsonArray()) {
+            if (el.isJsonObject()) {
+                JsonObject opt = el.getAsJsonObject();
+                if (opt.has("optionId") && optionId.equals(opt.get("optionId").getAsString())) {
+                    return opt;
+                }
+            }
+        }
+        return null;
     }
 
     private void destroyProcess() {

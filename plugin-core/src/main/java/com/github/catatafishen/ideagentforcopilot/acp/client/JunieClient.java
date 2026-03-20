@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
@@ -58,8 +59,19 @@ public final class JunieClient extends AcpClient {
     }
 
     @Override
+    protected JsonObject buildPermissionOutcome(String optionId, @Nullable JsonObject chosenOption) {
+        // Junie uses kotlinx.serialization polymorphic for RequestPermissionOutcome,
+        // which requires a "type" class discriminator matching the option's "kind" value.
+        JsonObject outcome = new JsonObject();
+        String kind = chosenOption != null && chosenOption.has("kind")
+            ? chosenOption.get("kind").getAsString() : optionId;
+        outcome.addProperty("type", kind);
+        outcome.addProperty("optionId", optionId);
+        return outcome;
+    }
+
+    @Override
     protected JsonObject normalizeSessionUpdateParams(JsonObject params) {
-        // Junie wraps the update payload in an "update" sub-object:
         //   {sessionId, update: {sessionUpdate, content, ...}}
         // Unwrap it so the base class parser sees standard ACP fields at the top level.
         if (params.has("update") && params.get("update").isJsonObject()) {
