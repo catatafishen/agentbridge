@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.acp.model.Model
 import com.github.catatafishen.ideagentforcopilot.bridge.*
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
@@ -599,7 +600,7 @@ class ChatToolWindowContent(
         consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
         promptTextArea.text = ""
 
-        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id ?: ""
+        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id() ?: ""
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(prompt, contextItems, selectedModelId)
         }
@@ -1044,20 +1045,20 @@ class ChatToolWindowContent(
             val group = DefaultActionGroup()
             val supportsMultiplier = agentManager.client.supportsMultiplier()
             loadedModels.forEachIndexed { index, model ->
-                val cost = model.usage ?: "1x"
-                val label = if (supportsMultiplier) "${model.name}  ($cost)" else model.name
+                val cost = if (supportsMultiplier) getModelMultiplier(model.id()) else "1x"
+                val label = if (supportsMultiplier) "${model.name()}  ($cost)" else model.name()
                 group.add(object : AnAction(label) {
                     override fun actionPerformed(e: AnActionEvent) {
                         if (index == selectedModelIndex) return
 
                         selectedModelIndex = index
-                        agentManager.settings.setSelectedModel(model.id)
-                        LOG.info("Model selected: ${model.id} (index=$index)")
+                        agentManager.settings.setSelectedModel(model.id())
+                        LOG.info("Model selected: ${model.id()} (index=$index)")
                         ApplicationManager.getApplication().invokeLater {
-                            consolePanel.setCurrentModel(model.id)
+                            consolePanel.setCurrentModel(model.id())
                             if (supportsMultiplier) {
-                                val multiplier = getModelMultiplier(model.id)
-                                consolePanel.setPromptStats(model.id, multiplier)
+                                val multiplier = getModelMultiplier(model.id())
+                                consolePanel.setPromptStats(model.id(), multiplier)
                             }
                         }
                         ApplicationManager.getApplication().executeOnPooledThread {
@@ -1065,13 +1066,13 @@ class ChatToolWindowContent(
                                 val client = agentManager.client
                                 val sessionId = promptOrchestrator.currentSessionId
                                 if (sessionId != null) {
-                                    client.setModel(sessionId, model.id)
-                                    LOG.info("Model switched to ${model.id} on session $sessionId")
+                                    client.setModel(sessionId, model.id())
+                                    LOG.info("Model switched to ${model.id()} on session $sessionId")
                                 } else {
-                                    LOG.info("No active session; model ${model.id} will be used on next session")
+                                    LOG.info("No active session; model ${model.id()} will be used on next session")
                                 }
                             } catch (ex: Exception) {
-                                LOG.warn("Failed to set model ${model.id} via session/set_model", ex)
+                                LOG.warn("Failed to set model ${model.id()} via session/set_model", ex)
                             }
                         }
                     }
@@ -1084,7 +1085,7 @@ class ChatToolWindowContent(
 
         override fun update(e: AnActionEvent) {
             val text = modelsStatusText
-                ?: loadedModels.getOrNull(selectedModelIndex)?.name
+                ?: loadedModels.getOrNull(selectedModelIndex)?.name()
                 ?: MSG_LOADING
             e.presentation.text = text
             e.presentation.isEnabled = modelsStatusText == null && loadedModels.isNotEmpty()
@@ -1468,7 +1469,7 @@ class ChatToolWindowContent(
         statusBanner?.dismissCurrent()
         setSendingState(true)
         consolePanel.addPromptEntry(trimmed, null)
-        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id ?: ""
+        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id() ?: ""
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(trimmed, emptyList(), selectedModelId)
         }
@@ -1571,9 +1572,9 @@ class ChatToolWindowContent(
 
     private fun restoreModelSelection(models: List<Model>) {
         val savedModel = agentManager.settings.selectedModel
-        LOG.info("Restoring model selection: saved='$savedModel', available=${models.map { it.id }}")
+        LOG.info("Restoring model selection: saved='$savedModel', available=${models.map { it.id() }}")
         if (savedModel != null) {
-            val idx = models.indexOfFirst { it.id == savedModel }
+            val idx = models.indexOfFirst { it.id() == savedModel }
             if (idx >= 0) {
                 selectedModelIndex = idx; LOG.info("Restored model index=$idx"); return
             }

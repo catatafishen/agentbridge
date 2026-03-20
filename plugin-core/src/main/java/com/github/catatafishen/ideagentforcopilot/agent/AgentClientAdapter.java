@@ -82,10 +82,8 @@ public class AgentClientAdapter implements AgentClient {
 
     @NotNull
     @Override
-    public List<com.github.catatafishen.ideagentforcopilot.bridge.Model> listModels() {
-        List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> newModels =
-            connector.getAvailableModels();
-        return newModels.stream().map(AgentClientAdapter::convertModel).toList();
+    public List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> listModels() {
+        return connector.getAvailableModels();
     }
 
     @Override
@@ -280,15 +278,6 @@ public class AgentClientAdapter implements AgentClient {
             }).toList();
         }
         return new com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.Plan(protoPlan);
-    }
-
-    private static com.github.catatafishen.ideagentforcopilot.bridge.Model convertModel(
-        com.github.catatafishen.ideagentforcopilot.acp.model.Model newModel) {
-        var old = new com.github.catatafishen.ideagentforcopilot.bridge.Model();
-        old.setId(newModel.id());
-        old.setName(newModel.name());
-        old.setDescription(newModel.description());
-        return old;
     }
 
     private static void deliverTurnUsage(PromptResponse response,

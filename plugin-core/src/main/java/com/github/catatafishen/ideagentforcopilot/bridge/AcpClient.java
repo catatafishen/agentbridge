@@ -540,11 +540,16 @@ public abstract class AcpClient implements AgentClient {
      * mess
      */
     @NotNull
-    public synchronized List<Model> listModels() throws AcpException {
+    public synchronized List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> listModels()
+            throws AcpException {
         if (availableModels == null) {
             createSession(projectBasePath);
         }
-        return availableModels != null ? availableModels : List.of();
+        if (availableModels == null) return List.of();
+        return availableModels.stream()
+                .map(m -> new com.github.catatafishen.ideagentforcopilot.acp.model.Model(
+                        m.getId(), m.getName(), m.getDescription(), null))
+                .toList();
     }
 
     /**

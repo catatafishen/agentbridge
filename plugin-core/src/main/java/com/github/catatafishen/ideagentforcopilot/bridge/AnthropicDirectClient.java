@@ -226,8 +226,9 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
     // ── Model listing ────────────────────────────────────────────────────────
 
-    @Override
-    public @NotNull List<Model> listModels() throws AcpException {
+        @Override
+    public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> listModels()
+            throws AcpException {
         ensureStarted();
         String apiKey = getApiKey();
         try {
@@ -254,7 +255,8 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     }
 
     @NotNull
-    private List<Model> parseModelsFromResponse(@NotNull String responseBody) {
+    private List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> parseModelsFromResponse(
+            @NotNull String responseBody) {
         JsonObject body = JsonParser.parseString(responseBody).getAsJsonObject();
         JsonArray data = body.getAsJsonArray("data");
         if (data == null) return List.of();
@@ -262,18 +264,15 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
         // both undated aliases (e.g. "claude-opus-4-6") and dated snapshots
         // (e.g. "claude-opus-4-6-20251101") with identical display names. Keep the first
         // occurrence, which is the alias and is the more stable identifier to send.
-        java.util.LinkedHashMap<String, Model> seen = new java.util.LinkedHashMap<>();
+        java.util.LinkedHashMap<String, com.github.catatafishen.ideagentforcopilot.acp.model.Model> seen =
+                new java.util.LinkedHashMap<>();
         for (var elem : data) {
             JsonObject m = elem.getAsJsonObject();
             String id = m.has("id") ? m.get("id").getAsString() : "";
             if (id.isEmpty()) continue;
             String displayName = m.has("display_name") ? m.get("display_name").getAsString() : id;
-            seen.computeIfAbsent(displayName, k -> {
-                Model model = new Model();
-                model.setId(id);
-                model.setName(k);
-                return model;
-            });
+            seen.computeIfAbsent(displayName,
+                    k -> new com.github.catatafishen.ideagentforcopilot.acp.model.Model(id, k, null, null));
         }
         return new ArrayList<>(seen.values());
     }
