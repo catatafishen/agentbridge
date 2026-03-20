@@ -58,6 +58,17 @@ public final class JunieClient extends AcpClient {
     }
 
     @Override
+    protected JsonObject normalizeSessionUpdateParams(JsonObject params) {
+        // Junie wraps the update payload in an "update" sub-object:
+        //   {sessionId, update: {sessionUpdate, content, ...}}
+        // Unwrap it so the base class parser sees standard ACP fields at the top level.
+        if (params.has("update") && params.get("update").isJsonObject()) {
+            return params.getAsJsonObject("update");
+        }
+        return params;
+    }
+
+    @Override
     protected SessionUpdate processUpdate(SessionUpdate update) {
         // TODO: Wire up ToolExecutionCorrelator for Junie-specific result matching
         return update;

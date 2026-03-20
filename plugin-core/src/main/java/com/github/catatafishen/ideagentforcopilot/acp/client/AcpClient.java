@@ -508,11 +508,7 @@ public abstract class AcpClient implements AgentConnector {
     private void handleSessionUpdate(@Nullable JsonObject params) {
         if (params == null) return;
 
-        // Junie (and some agents) wrap the update under an "update" sub-object:
-        //   {sessionId, update: {sessionUpdate, content, ...}}
-        // Others send the fields directly at the top level.
-        JsonObject updateObj = params.has("update") && params.get("update").isJsonObject()
-            ? params.getAsJsonObject("update") : params;
+        JsonObject updateObj = normalizeSessionUpdateParams(params);
 
         Consumer<SessionUpdate> consumer = updateConsumer;
         if (consumer == null) {
@@ -525,6 +521,15 @@ public abstract class AcpClient implements AgentConnector {
             update = processUpdate(update);
             consumer.accept(update);
         }
+    }
+
+    /**
+     * Normalize the raw {@code session/update} notification params before parsing.
+     * Override in agent subclasses that wrap the update payload in a non-standard envelope.
+     * The default implementation returns {@code params} unchanged (standard ACP format).
+     */
+    protected JsonObject normalizeSessionUpdateParams(JsonObject params) {
+        return params;
     }
 
     /**
