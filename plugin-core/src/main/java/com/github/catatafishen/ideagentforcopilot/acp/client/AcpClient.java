@@ -72,6 +72,7 @@ public abstract class AcpClient implements AgentConnector {
 
     protected final Gson gson = new GsonBuilder()
             .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
+            .registerTypeHierarchyAdapter(ContentBlock.class, new ContentBlockSerializer())
             .create();
     protected final JsonRpcTransport transport = new JsonRpcTransport();
     protected final Project project;
