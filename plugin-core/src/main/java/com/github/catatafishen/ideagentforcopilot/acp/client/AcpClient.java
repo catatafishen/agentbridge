@@ -20,6 +20,7 @@ import com.github.catatafishen.ideagentforcopilot.agent.AgentConnector;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentPromptException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentSessionException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentStartException;
+import com.github.catatafishen.ideagentforcopilot.bridge.McpServerJarLocator;
 import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -388,6 +389,10 @@ public abstract class AcpClient implements AgentConnector {
     }
 
     private void authenticate() throws Exception {
+        if (!supportsAuthenticate()) {
+            LOG.info(displayName() + " does not support authenticate — skipping");
+            return;
+        }
         if (capabilities == null || capabilities.authMethods() == null
             || capabilities.authMethods().isEmpty()) {
             return;
@@ -415,6 +420,50 @@ public abstract class AcpClient implements AgentConnector {
     }
 
     /**
+     * Whether this agent supports the {@code authenticate} ACP method.
+     * Override to return {@code false} for agents that handle auth internally
+     * and respond with an error when authenticate is called.
+     */
+    protected boolean supportsAuthenticate() {
+        return true;
+    }
+
+    /**
+     * Builds a JsonObject for a stdio MCP server entry for use in the {@code mcpServers} array
+     * of {@code session/new} params. Uses separate {@code command} (string) and {@code args}
+     * (array) fields as required by Junie and Kiro.
+     *
+     * @return the server entry, or {@code null} if the jar or Java binary cannot be located
+     */
+    @Nullable
+    protected final JsonObject buildMcpStdioServer(String serverName, int mcpPort) {
+        String javaExe = System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java";
+        String javaPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + javaExe;
+        if (!new File(javaPath).exists()) {
+            LOG.warn("Java binary not found at " + javaPath + " — cannot build stdio MCP server config");
+            return null;
+        }
+        String jarPath = McpServerJarLocator.findMcpServerJar();
+        if (jarPath == null) {
+            LOG.warn("mcp-server.jar not found — cannot build stdio MCP server config");
+            return null;
+        }
+
+        JsonArray args = new JsonArray();
+        args.add("-jar");
+        args.add(jarPath);
+        args.add("--port");
+        args.add(String.valueOf(mcpPort));
+
+        JsonObject server = new JsonObject();
+        server.addProperty("name", serverName);
+        server.addProperty("command", javaPath);
+        server.add("args", args);
+        server.add("env", new JsonArray());
+        return server;
+    }
+
+    /**
      * Creates a temporary session immediately after startup to populate the available-models
      * list. The session is cancelled right after so it does not interfere with the first
      * real user session. If the call fails, the failure is logged and swallowed — the agent
@@ -429,7 +478,9 @@ public abstract class AcpClient implements AgentConnector {
             currentSessionId = null;
             LOG.info(displayName() + ": eagerly loaded " + availableModels.size() + " model(s)");
         } catch (Exception e) {
-            LOG.warn(displayName() + ": eager model fetch failed (models will be empty): " + e.getMessage());
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            LOG.warn(displayName() + ": eager model fetch failed (models will be empty): "
+                + e.getMessage() + (cause != e ? " — caused by: " + cause.getMessage() : ""));
         }
     }
 

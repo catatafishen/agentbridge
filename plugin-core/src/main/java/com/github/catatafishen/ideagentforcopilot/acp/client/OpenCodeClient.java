@@ -65,6 +65,12 @@ public final class OpenCodeClient extends AcpClient {
         return true;
     }
 
+    @Override
+    protected boolean supportsAuthenticate() {
+        // OpenCode returns -32603 "Authentication not implemented" — skip the call entirely.
+        return false;
+    }
+
     /**
      * Writes the OpenCode config JSON to {@code {cwd}/.agent-work/opencode/opencode.json}.
      * Uses {@code type: "local"} with the mcp-server.jar (stdio MCP server process).

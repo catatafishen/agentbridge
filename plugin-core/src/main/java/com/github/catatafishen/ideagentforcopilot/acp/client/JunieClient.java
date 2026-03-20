@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.acp.client;
 
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 
@@ -37,14 +38,11 @@ public final class JunieClient extends AcpClient {
 
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        // Inject MCP server in session/new mcpServers array
-        JsonObject mcpServer = new JsonObject();
-        mcpServer.addProperty("name", "agentbridge");
-        mcpServer.addProperty("transport", "http");
-        mcpServer.addProperty("url", "http://127.0.0.1:" + mcpPort);
-
-        com.google.gson.JsonArray servers = new com.google.gson.JsonArray();
-        servers.add(mcpServer);
+        // Junie injects MCP via session/new mcpServers array using stdio (command + args)
+        JsonObject server = buildMcpStdioServer("agentbridge", mcpPort);
+        if (server == null) return;
+        JsonArray servers = new JsonArray();
+        servers.add(server);
         params.add("mcpServers", servers);
     }
 
