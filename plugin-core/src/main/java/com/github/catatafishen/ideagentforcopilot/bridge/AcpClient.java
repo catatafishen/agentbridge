@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
-import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
@@ -1623,7 +1622,7 @@ public abstract class AcpClient implements AgentClient {
         if (checkAbuseAndDeny(reqId, reqParams, toolCall, toolCallId)) return;
 
         String toolId = getToolId(toolCall);
-        ToolPermission perm = resolveEffectivePermission(toolId, toolCall);
+        ToolPermission perm = resolveEffectivePermission(toolCall);
 
         // Auto-approve: profile's usePluginPermissions=false promotes ASK → ALLOW (DENY stays DENY)
         if (perm == ToolPermission.ASK && agentSettings.isAutoApprovePermissions()) {
@@ -1819,58 +1818,35 @@ public abstract class AcpClient implements AgentClient {
         sendPermissionResponse(reqId, allowOptionId);
     }
 
+    protected boolean isBlackListed(JsonObject tooCall) {
+        return false;
+    }
 
-    /**
-     * @return the list of well-known built-in agent tool IDs that should be excluded
-     * from the agent session when the profile enables built-in tool exclusion.
-     */
-    protected List<String> getDuplicatedTools() {
-        return List.of();
+    protected boolean isWhiteListed(JsonObject tooCall) {
+        return false;
     }
 
     /**
      * Look up the effective ToolPermission for a tool call.
      * For file tools, checks inside/outside-project sub-permission when a path is present.
      */
-    protected ToolPermission resolveEffectivePermission(String toolId, @NotNull JsonObject toolCall) {
+    protected ToolPermission resolveEffectivePermission(@NotNull JsonObject toolCall) {
         // Deny agent built-in tools via permission system when configured.
         // This forces agents to use IntelliJ MCP tools instead of their built-ins (view, edit, bash, etc.)
-        // IMPORTANT: We only deny if the call is "external" (no MCP server prefix),
-        // to avoid blocking our own plugin tools that might share the same base ID (like read_file).
-        if (agentConfig.denyBuiltInToolsViaPermissions()
-            && getDuplicatedTools().contains(toolId)) {
-            LOG.info("ACP request_permission: denying built-in tool " + toolId + " (forcing MCP alternative)");
+        if (isAgentBridgeTool(toolCall)) {
+            return agentSettings.getToolPermission(getToolId(toolCall));
+        }
+        if (isWhiteListed(toolCall)) {
+            return ToolPermission.ALLOW;
+        }
+        if (isBlackListed(toolCall)) {
             return ToolPermission.DENY;
         }
-
-        ToolDefinition entry = registry != null ? registry.findById(toolId) : null;
-
-        // Path-based sub-permissions for file tools (ceiling enforced by AgentSettings)
-        if (entry != null && entry.supportsPathSubPermissions() && toolCall != null) {
-            String path = extractPathFromToolCall(toolCall);
-            if (path != null && !path.isEmpty()) {
-                boolean insideProject = isPathInsideProject(path);
-                return agentSettings.resolveEffectivePermission(toolId, insideProject);
-            }
-        }
-        return agentSettings.getToolPermission(toolId);
+        return ToolPermission.ASK;
     }
 
-    /**
-     * Extract a file path argument from a tool call JSON (checks common arg names).
-     */
-    private @Nullable String extractPathFromToolCall(@Nullable JsonObject toolCall) {
-        if (toolCall == null) return null;
-        String direct = findPathInJson(toolCall);
-        if (direct != null) return direct;
-        // Also check inside a nested "arguments" / "input" object
-        for (String wrapper : new String[]{ARGUMENTS_KEY, INPUT_KEY, PARAMS}) {
-            if (toolCall.has(wrapper) && toolCall.get(wrapper).isJsonObject()) {
-                String nested = findPathInJson(toolCall.getAsJsonObject(wrapper));
-                if (nested != null) return nested;
-            }
-        }
-        return null;
+    public boolean isAgentBridgeTool(@NotNull JsonObject toolCall) {
+        return toolCall.get("title").getAsString().trim().toLowerCase().contains("agentbridge");
     }
 
     /**
@@ -1883,10 +1859,6 @@ public abstract class AcpClient implements AgentClient {
             }
         }
         return null;
-    }
-
-    private boolean isPathInsideProject(String path) {
-        return PsiBridgeService.isPathUnderBase(path, projectBasePath);
     }
 
     /**
@@ -1953,15 +1925,7 @@ public abstract class AcpClient implements AgentClient {
         String instruction;
 
         // Specific guidance for excluded built-in tools
-        if (getDuplicatedTools().contains(deniedKind)) {
-            instruction = "⚠ Don't use built-in '" + deniedKind + "' — it bypasses " +
-                "IntelliJ's editor buffer and may cause desync. Use '" + p + "' prefixed tools instead: " +
-                "'" + p + "intellij_read_file' to read files, " +
-                "'" + p + "edit_text' for surgical edits, " +
-                "'" + p + "create_file' to create files, " +
-                "'" + p + "run_command' for shell commands. " +
-                "These tools write through IntelliJ's Document API (undo/redo, live buffers, no desync).";
-        } else if (deniedKind.startsWith(RUN_COMMAND_ABUSE_PREFIX)) {
+        if (deniedKind.startsWith(RUN_COMMAND_ABUSE_PREFIX)) {
             String abuseType = deniedKind.substring(RUN_COMMAND_ABUSE_PREFIX.length());
             instruction = switch (abuseType) {
                 case "compile" -> "⚠ Don't run Gradle compile tasks directly. Use '" + p + "build_project' instead. "

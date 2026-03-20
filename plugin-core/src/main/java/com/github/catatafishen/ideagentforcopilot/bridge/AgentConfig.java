@@ -107,19 +107,6 @@ public interface AgentConfig {
         return false;
     }
 
-    /**
-     * Whether to deny agent built-in tools (view, edit, bash, etc.) via permission system.
-     * <p>
-     * When true, all built-in tools are automatically denied during {@code session/request_permission},
-     * forcing the agent to use IntelliJ MCP tools instead. This is a blanket denial independent of
-     * per-tool permission settings.
-     * <p>
-     * <b>Note:</b> This has nothing to do with the ACP protocol. Some agents (e.g., Copilot CLI) have
-     * their own {@code --excluded-tools} CLI flag, but that's agent-specific, not ACP.
-     */
-    default boolean denyBuiltInToolsViaPermissions() {
-        return false;
-    }
 
     /**
      * Returns the permission injection method for this agent.

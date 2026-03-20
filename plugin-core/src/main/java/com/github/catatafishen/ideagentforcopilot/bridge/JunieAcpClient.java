@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * Junie-specific ACP client.
@@ -98,42 +99,10 @@ public class JunieAcpClient extends AcpClient {
     }
 
     @Override
-    protected List<String> getDuplicatedTools() {
-        // List of Junie's built-in tools that should be excluded (denied via permission system).
-        // This forces Junie to use our MCP alternatives (agentbridge/read_file, etc.)
-        return List.of(
-            "execute", "read_file", "write_file", "list_files",
-            "view_file", "grep", "glob", "bash", "run_command"
-        );
-    }
-
-    /**
-     * Stricter tool filtering for Junie: only allow MCP tools (prefixed with 'agentbridge-')
-     * or those explicitly in our whitelist. All other built-in tools are denied to ensure
-     * they don't bypass IntelliJ's editor buffer API.
-     */
-    @Override
-    protected ToolPermission resolveEffectivePermission(String toolId, @NotNull JsonObject toolCall) {
-        LOG.info("Resolving permissions for Junie tool '" + toolId);
-        // 1. Always allow MCP tools (those starting with agentbridge- after normalization)
-        if (isAgentBridgeTool(toolCall)) {
-            return super.resolveEffectivePermission(toolId, toolCall);
-        }
-
-        // 2. Deny any tool in the duplicatedTools list (known problematic built-ins)
-        if (getDuplicatedTools().contains(toolId)) {
-            LOG.info("Junie tool '" + toolId + "' is a duplicated built-in - DENYING to force MCP alternative");
-            return ToolPermission.DENY;
-        }
-
-        // 3. For any other built-in tool, only allow if explicitly whitelisted as safe
-        // (Currently, we don't have any safe built-ins we want Junie to use directly)
-        LOG.warn("Junie tool '" + toolId + "' is an unknown built-in - DENYING by default");
-        return ToolPermission.DENY;
-    }
-
-    public boolean isAgentBridgeTool(@NotNull JsonObject toolCall) {
-        return toolCall.get("title").getAsString().trim().toLowerCase().contains("agentbridge");
+    protected boolean isBlackListed(JsonObject toolCall) {
+        var title = toolCall.get("title").getAsString().trim().toLowerCase();
+        return Stream.of("execute", "read_file", "write_file", "list_files",
+                "view_file", "grep", "glob", "bash", "run_command").anyMatch(title::contains);
     }
 
     @Override

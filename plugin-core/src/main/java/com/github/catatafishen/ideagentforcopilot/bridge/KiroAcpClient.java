@@ -16,6 +16,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * ACP client for Kiro.
@@ -80,10 +81,11 @@ public class KiroAcpClient extends AcpClient {
                          int mcpPort) {
         super(config, settings, registry, projectBasePath, mcpPort);
     }
-
     @Override
-    protected List<String> getDuplicatedTools() {
-        return List.of(   "read", "glob", "grep", "write", "shell", "aws", "code");
+    protected boolean isBlackListed(JsonObject toolCall) {
+        var title = toolCall.get("title").getAsString().trim().toLowerCase();
+        return Stream.of("read", "glob", "grep", "write", "shell", "aws", "code")
+            .anyMatch(title::contains);
     }
 
     @Override

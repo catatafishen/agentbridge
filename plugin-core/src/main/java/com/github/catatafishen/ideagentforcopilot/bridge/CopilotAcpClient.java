@@ -10,6 +10,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 
 /**
  * ACP client for GitHub Copilot.
@@ -81,8 +82,10 @@ public class CopilotAcpClient extends AcpClient {
     }
 
     @Override
-    protected List<String> getDuplicatedTools() {
-        return List.of("execute", "read", "edit", "search");
+    protected boolean isBlackListed(JsonObject toolCall) {
+        var title = toolCall.get("title").getAsString().trim().toLowerCase();
+        return Stream.of("execute", "read", "edit", "search")
+            .anyMatch(title::contains);
     }
     /**
      * Copilot bills by premium-request multiplier, not by token count.

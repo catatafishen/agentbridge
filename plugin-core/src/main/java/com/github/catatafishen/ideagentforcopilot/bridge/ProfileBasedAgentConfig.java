@@ -324,11 +324,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     @Override
-    public boolean denyBuiltInToolsViaPermissions() {
-        return profile.isExcludeAgentBuiltInTools();
-    }
-
-    @Override
     public @NotNull PermissionInjectionMethod getPermissionInjectionMethod() {
         return profile.getPermissionInjectionMethod();
     }

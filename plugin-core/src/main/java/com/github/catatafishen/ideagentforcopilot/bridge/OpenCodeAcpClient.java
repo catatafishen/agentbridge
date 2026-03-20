@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 /**
  * ACP client for OpenCode.
@@ -72,8 +74,10 @@ public class OpenCodeAcpClient extends AcpClient {
     }
 
     @Override
-    protected List<String> getDuplicatedTools() {
-        return List.of("bash", "edit", "write", "read", "grep", "glob", "list", "lsp", "patch", "question");
+    protected boolean isBlackListed(JsonObject toolCall) {
+        var title = toolCall.get("title").getAsString().trim().toLowerCase();
+        return Stream.of("bash", "edit", "write", "read", "grep", "glob", "list", "lsp", "patch", "question")
+                .anyMatch(title::contains);
     }
 
     /**

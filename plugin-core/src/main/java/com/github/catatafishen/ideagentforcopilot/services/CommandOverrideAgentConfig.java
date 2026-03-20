@@ -102,11 +102,6 @@ final class CommandOverrideAgentConfig implements AgentConfig {
     }
 
     @Override
-    public boolean denyBuiltInToolsViaPermissions() {
-        return delegate.denyBuiltInToolsViaPermissions();
-    }
-
-    @Override
     public @NotNull com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod getPermissionInjectionMethod() {
         return delegate.getPermissionInjectionMethod();
     }
