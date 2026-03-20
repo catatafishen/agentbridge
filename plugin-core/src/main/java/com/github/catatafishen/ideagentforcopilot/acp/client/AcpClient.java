@@ -172,6 +172,7 @@ public abstract class AcpClient implements AgentConnector {
         try {
             updateConsumer = onUpdate;
             JsonObject params = gson.toJsonTree(request).getAsJsonObject();
+            LOG.info(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
             CompletableFuture<JsonElement> future = transport.sendRequest(
                 "session/prompt", params, PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS
             );
@@ -507,13 +508,19 @@ public abstract class AcpClient implements AgentConnector {
     private void handleSessionUpdate(@Nullable JsonObject params) {
         if (params == null) return;
 
+        // Junie (and some agents) wrap the update under an "update" sub-object:
+        //   {sessionId, update: {sessionUpdate, content, ...}}
+        // Others send the fields directly at the top level.
+        JsonObject updateObj = params.has("update") && params.get("update").isJsonObject()
+            ? params.getAsJsonObject("update") : params;
+
         Consumer<SessionUpdate> consumer = updateConsumer;
         if (consumer == null) {
             LOG.debug("Session update received but no consumer registered");
             return;
         }
 
-        SessionUpdate update = parseSessionUpdate(params);
+        SessionUpdate update = parseSessionUpdate(updateObj);
         if (update != null) {
             update = processUpdate(update);
             consumer.accept(update);
@@ -646,6 +653,12 @@ public abstract class AcpClient implements AgentConnector {
     private List<ContentBlock> parseContentBlocks(JsonObject params) {
         if (params.has(KEY_CONTENT) && params.get(KEY_CONTENT).isJsonArray()) {
             return parseContentArray(params.getAsJsonArray(KEY_CONTENT));
+        }
+        if (params.has(KEY_CONTENT) && params.get(KEY_CONTENT).isJsonObject()) {
+            // Single content object: {"type":"text","text":"..."} — treat as one-element array
+            JsonArray arr = new JsonArray();
+            arr.add(params.get(KEY_CONTENT));
+            return parseContentArray(arr);
         }
         if (params.has(KEY_CONTENT) && params.get(KEY_CONTENT).isJsonPrimitive()) {
             return List.of(new ContentBlock.Text(params.get(KEY_CONTENT).getAsString()));
