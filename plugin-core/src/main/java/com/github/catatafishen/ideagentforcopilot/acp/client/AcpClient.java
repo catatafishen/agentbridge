@@ -58,7 +58,7 @@ public abstract class AcpClient implements AgentConnector {
     private static final long AUTH_TIMEOUT_SECONDS = 30;
     private static final long STOP_TIMEOUT_SECONDS = 5;
 
-    private static final String PROTOCOL_VERSION = "0.1";
+    private static final int PROTOCOL_VERSION = 1;
     private static final String CLIENT_NAME = "AgentBridge";
     private static final String CLIENT_VERSION = "2.0.0";
     private static final String KEY_SESSION_ID = "sessionId";
@@ -211,6 +211,15 @@ public abstract class AcpClient implements AgentConnector {
     // ═══════════════════════════════════════════════════
 
     /**
+     * Build the ClientCapabilities to send in the initialize request.
+     * <p>
+     * Default: empty (no declared capabilities). Override to advertise fs/terminal support.
+     */
+    protected InitializeRequest.ClientCapabilities buildClientCapabilities() {
+        return InitializeRequest.ClientCapabilities.empty();
+    }
+
+    /**
      * Build the command line to launch this agent process.
      */
     protected abstract List<String> buildCommand(String cwd, int mcpPort);
@@ -359,7 +368,7 @@ public abstract class AcpClient implements AgentConnector {
         InitializeRequest request = new InitializeRequest(
             PROTOCOL_VERSION,
             new InitializeRequest.ClientInfo(CLIENT_NAME, CLIENT_VERSION),
-            InitializeRequest.ClientCapabilities.standard()
+            buildClientCapabilities()
         );
 
         JsonObject params = gson.toJsonTree(request).getAsJsonObject();
