@@ -75,11 +75,13 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        // OpenCode requires mcpServers in session/new; uses http/sse transport (not local stdio)
+        // OpenCode requires mcpServers in session/new with type "http" (not "sse" or "local")
+        // and needs an empty "headers" array per its Zod schema validation
         JsonObject server = new JsonObject();
         server.addProperty("name", "agentbridge");
-        server.addProperty("type", "sse");
-        server.addProperty("url", "http://127.0.0.1:" + mcpPort + "/sse");
+        server.addProperty("type", "http");
+        server.addProperty("url", "http://127.0.0.1:" + mcpPort);
+        server.add("headers", new JsonArray());
         JsonArray servers = new JsonArray();
         servers.add(server);
         params.add("mcpServers", servers);

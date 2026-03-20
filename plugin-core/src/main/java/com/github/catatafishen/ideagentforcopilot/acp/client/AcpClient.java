@@ -138,6 +138,8 @@ public abstract class AcpClient implements AgentConnector {
             JsonElement result = future.get(SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
             NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
+            LOG.info(displayName() + ": session/new: " + (response.models() != null ? response.models().size() : 0) + " model(s), "
+                + (response.modes() != null ? response.modes().size() : 0) + " mode(s)");
             currentSessionId = response.sessionId();
 
             if (response.models() != null) {

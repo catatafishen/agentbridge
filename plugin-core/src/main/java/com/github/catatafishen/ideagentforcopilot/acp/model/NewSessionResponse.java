@@ -15,6 +15,8 @@ import java.util.List;
  */
 public record NewSessionResponse(
     String sessionId,
+    @Nullable String currentModelId,
+    @Nullable String currentModeId,
     @Nullable List<Model> models,
     @Nullable List<AvailableMode> modes,
     @Nullable List<AvailableCommand> commands,
