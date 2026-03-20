@@ -60,12 +60,12 @@ public final class JunieClient extends AcpClient {
 
     @Override
     protected JsonObject buildPermissionOutcome(String optionId, @Nullable JsonObject chosenOption) {
-        // Junie uses kotlinx.serialization polymorphic for RequestPermissionOutcome,
-        // which requires a "type" class discriminator matching the option's "kind" value.
+        // Junie uses kotlinx.serialization with classDiscriminator = "kind" for RequestPermissionOutcome.
+        // The discriminator value must match the option's "kind" field.
         JsonObject outcome = new JsonObject();
         String kind = chosenOption != null && chosenOption.has("kind")
             ? chosenOption.get("kind").getAsString() : optionId;
-        outcome.addProperty("type", kind);
+        outcome.addProperty("kind", kind);
         outcome.addProperty("optionId", optionId);
         return outcome;
     }
