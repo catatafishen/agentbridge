@@ -313,7 +313,13 @@ public abstract class AcpClient implements AgentConnector {
         }
 
         List<String> command = buildCommand(cwd, mcpPort);
-        ProcessBuilder pb = new ProcessBuilder(command);
+
+        // Resolve the binary to an absolute path so ProcessBuilder can find it even when
+        // it's installed via nvm/sdkman/homebrew in a non-standard location. Java's exec()
+        // does not search PATH the same way a shell does.
+        List<String> resolvedCommand = resolveCommand(command);
+
+        ProcessBuilder pb = new ProcessBuilder(resolvedCommand);
         pb.directory(new File(cwd));
         pb.redirectErrorStream(false);
 
@@ -325,8 +331,28 @@ public abstract class AcpClient implements AgentConnector {
             pb.environment().putAll(env);
         }
 
-        LOG.info("Launching " + displayName() + ": " + String.join(" ", command));
+        LOG.info("Launching " + displayName() + ": " + String.join(" ", resolvedCommand));
         return pb.start();
+    }
+
+    private List<String> resolveCommand(List<String> command) {
+        if (command.isEmpty()) {
+            return command;
+        }
+        String binaryName = command.getFirst();
+        // Already absolute — no resolution needed
+        if (binaryName.startsWith("/") || binaryName.startsWith("./")) {
+            return command;
+        }
+        String absolutePath = com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector.findBinaryPath(binaryName);
+        if (absolutePath != null && !absolutePath.isEmpty()) {
+            List<String> resolved = new java.util.ArrayList<>(command);
+            resolved.set(0, absolutePath);
+            return resolved;
+        }
+        // Fall back to original name; will fail at exec with a helpful error
+        LOG.warn("Could not resolve absolute path for '" + binaryName + "'; attempting launch with unresolved name");
+        return command;
     }
 
     private InitializeResponse initialize() throws Exception {

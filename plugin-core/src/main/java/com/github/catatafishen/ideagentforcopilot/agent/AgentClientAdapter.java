@@ -66,7 +66,7 @@ public class AgentClientAdapter implements AgentClient {
             PromptRequest request = new PromptRequest(sessionId, contentBlocks, model, null);
 
             Consumer<com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate> bridgeConsumer =
-                    newUpdate -> dispatchUpdate(newUpdate, onChunk, onUpdate);
+                newUpdate -> dispatchUpdate(newUpdate, onChunk, onUpdate);
 
             if (onRequest != null) {
                 onRequest.run();
@@ -84,7 +84,7 @@ public class AgentClientAdapter implements AgentClient {
     @Override
     public List<com.github.catatafishen.ideagentforcopilot.bridge.Model> listModels() {
         List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> newModels =
-                connector.getAvailableModels();
+            connector.getAvailableModels();
         return newModels.stream().map(AgentClientAdapter::convertModel).toList();
     }
 
@@ -138,7 +138,7 @@ public class AgentClientAdapter implements AgentClient {
         if (references != null) {
             for (ResourceReference ref : references) {
                 blocks.add(new ContentBlock.Resource(
-                        new ContentBlock.ResourceLink(ref.uri(), null, ref.mimeType(), ref.text(), null)
+                    new ContentBlock.ResourceLink(ref.uri(), null, ref.mimeType(), ref.text(), null)
                 ));
             }
         }
@@ -148,7 +148,9 @@ public class AgentClientAdapter implements AgentClient {
     private void dispatchUpdate(com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate newUpdate,
                                 @Nullable Consumer<String> onChunk,
                                 @Nullable Consumer<com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate> onUpdate) {
-        if (newUpdate instanceof com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.AgentMessageChunk(var content)) {
+        if (newUpdate instanceof com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.AgentMessageChunk(
+            var content
+        )) {
             dispatchTextChunk(content, onChunk);
             return;
         }
@@ -171,66 +173,69 @@ public class AgentClientAdapter implements AgentClient {
 
     @Nullable
     private static com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate convertUpdate(
-            com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate update) {
+        com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate update) {
         return switch (update) {
-            case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.ToolCall tc ->
-                    convertToolCall(tc);
+            case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.ToolCall tc -> convertToolCall(tc);
             case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.ToolCallUpdate tcu ->
-                    convertToolCallUpdate(tcu);
+                convertToolCallUpdate(tcu);
             case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.AgentThoughtChunk(var content) ->
-                    convertThought(content);
-            case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.TurnUsage(int input, int output, double cost) ->
-                    new com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.TurnUsage(input, output, cost);
-            case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.Banner(String message, String level, String clearOn) ->
-                    convertBanner(message, level, clearOn);
+                convertThought(content);
+            case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.TurnUsage(
+                int input, int output, double cost
+            ) -> new com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.TurnUsage(input, output, cost);
+            case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.Banner(
+                String message, String level, String clearOn
+            ) -> convertBanner(message, level, clearOn);
             case com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.Plan(var entries) ->
-                    convertPlan(entries);
+                convertPlan(entries);
             default -> null;
         };
     }
 
     private static com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolCall convertToolCall(
-            com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.ToolCall tc) {
+        com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.ToolCall tc) {
         List<String> filePaths = List.of();
         if (tc.locations() != null) {
             filePaths = tc.locations().stream()
-                    .map(com.github.catatafishen.ideagentforcopilot.acp.model.Location::uri)
-                    .filter(Objects::nonNull)
-                    .toList();
+                .map(com.github.catatafishen.ideagentforcopilot.acp.model.Location::uri)
+                .filter(Objects::nonNull)
+                .toList();
         }
 
         com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolKind kind =
-                tc.kind() != null
-                        ? com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolKind.fromString(tc.kind().name().toLowerCase())
-                        : com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolKind.OTHER;
+            tc.kind() != null
+                ? com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolKind.fromString(tc.kind().name().toLowerCase())
+                : com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolKind.OTHER;
 
         return new com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolCall(
-                tc.toolCallId(), tc.title(), kind, tc.arguments(),
-                filePaths, null, null, null
+            tc.toolCallId(), tc.title(), kind, tc.arguments(),
+            filePaths, null, null, null
         );
     }
 
     private static com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolCallUpdate convertToolCallUpdate(
-            com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.ToolCallUpdate tcu) {
+        com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate.ToolCallUpdate tcu) {
         String result = extractResultText(tcu.content());
 
         com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolCallStatus status =
-                com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolCallStatus.fromString(
-                        tcu.status().name());
+            com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolCallStatus.fromString(
+                tcu.status().name());
 
         return new com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ToolCallUpdate(
-                tcu.toolCallId(), status, result, tcu.error(), null
+            tcu.toolCallId(), status, result, tcu.error(), null
         );
     }
 
     @Nullable
     private static String extractResultText(
-            @Nullable List<com.github.catatafishen.ideagentforcopilot.acp.model.ToolCallContent> contentList) {
+        @Nullable List<com.github.catatafishen.ideagentforcopilot.acp.model.ToolCallContent> contentList) {
         if (contentList == null || contentList.isEmpty()) return null;
 
         StringBuilder sb = new StringBuilder();
         for (var item : contentList) {
-            if (item instanceof com.github.catatafishen.ideagentforcopilot.acp.model.ToolCallContent.Content(var blocks)) {
+            if (item instanceof com.github.catatafishen.ideagentforcopilot.acp.model.ToolCallContent.Content(
+                var blocks
+            )) {
                 for (ContentBlock block : blocks) {
                     if (block instanceof ContentBlock.Text(String text)) {
                         sb.append(text);
@@ -242,7 +247,7 @@ public class AgentClientAdapter implements AgentClient {
     }
 
     private static com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.AgentThought convertThought(
-            @Nullable List<ContentBlock> content) {
+        @Nullable List<ContentBlock> content) {
         StringBuilder text = new StringBuilder();
         if (content != null) {
             for (ContentBlock block : content) {
@@ -255,16 +260,16 @@ public class AgentClientAdapter implements AgentClient {
     }
 
     private static com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.Banner convertBanner(
-            String message, String level, String clearOn) {
+        String message, String level, String clearOn) {
         return new com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.Banner(
-                message,
-                com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.BannerLevel.fromString(level),
-                com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ClearOn.fromString(clearOn)
+            message,
+            com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.BannerLevel.fromString(level),
+            com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.ClearOn.fromString(clearOn)
         );
     }
 
     private static com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.Plan convertPlan(
-            @Nullable List<com.github.catatafishen.ideagentforcopilot.acp.model.PlanEntry> entries) {
+        @Nullable List<com.github.catatafishen.ideagentforcopilot.acp.model.PlanEntry> entries) {
         var protoPlan = new com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.Protocol.Plan();
         if (entries != null) {
             protoPlan.entries = entries.stream().map(e -> {
@@ -278,7 +283,7 @@ public class AgentClientAdapter implements AgentClient {
     }
 
     private static com.github.catatafishen.ideagentforcopilot.bridge.Model convertModel(
-            com.github.catatafishen.ideagentforcopilot.acp.model.Model newModel) {
+        com.github.catatafishen.ideagentforcopilot.acp.model.Model newModel) {
         var old = new com.github.catatafishen.ideagentforcopilot.bridge.Model();
         old.setId(newModel.id());
         old.setName(newModel.name());
@@ -294,7 +299,7 @@ public class AgentClientAdapter implements AgentClient {
         int output = usage.outputTokens() != null ? usage.outputTokens().intValue() : 0;
         double cost = usage.costUsd() != null ? usage.costUsd() : 0.0;
         onUpdate.accept(new com.github.catatafishen.ideagentforcopilot.bridge.SessionUpdate.TurnUsage(
-                input, output, cost
+            input, output, cost
         ));
     }
 }
