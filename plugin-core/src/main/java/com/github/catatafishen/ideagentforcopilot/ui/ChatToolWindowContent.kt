@@ -184,7 +184,7 @@ class ChatToolWindowContent(
         if (agentManager.activeProfileId != profileId) {
             agentManager.switchAgent(profileId)
         }
-        resetSessionState()
+        if (::promptOrchestrator.isInitialized) resetSessionState()
         // Stay on connect panel while spinner shows "Connecting…"
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
         loadModelsAsync(
