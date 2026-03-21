@@ -16,7 +16,7 @@ public record InitializeRequest(
     @Nullable ClientCapabilities clientCapabilities
 ) {
 
-    public record ClientInfo(String name, String version) {
+    public record ClientInfo(String name, String title, String version) {
     }
 
     public record ClientCapabilities(

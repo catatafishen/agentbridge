@@ -64,6 +64,7 @@ public abstract class AcpClient implements AgentConnector {
 
     private static final int PROTOCOL_VERSION = 1;
     private static final String CLIENT_NAME = "AgentBridge";
+    private static final String CLIENT_TITLE = "AgentBridge for IntelliJ";
     private static final String CLIENT_VERSION = "2.0.0";
     private static final String KEY_SESSION_ID = "sessionId";
     private static final String KEY_SESSION_UPDATE = "sessionUpdate";
@@ -396,7 +397,7 @@ public abstract class AcpClient implements AgentConnector {
     private InitializeResponse initialize() throws Exception {
         InitializeRequest request = new InitializeRequest(
             PROTOCOL_VERSION,
-            new InitializeRequest.ClientInfo(CLIENT_NAME, CLIENT_VERSION),
+            new InitializeRequest.ClientInfo(CLIENT_NAME, CLIENT_TITLE, CLIENT_VERSION),
             buildClientCapabilities()
         );
 
@@ -711,6 +712,12 @@ public abstract class AcpClient implements AgentConnector {
                 String blockType = block.has("type") ? block.get("type").getAsString() : "text";
                 if ("text".equals(blockType) && block.has("text")) {
                     blocks.add(new ContentBlock.Text(block.get("text").getAsString()));
+                } else if ("content".equals(blockType) && block.has("content")) {
+                    // Spec: tool_call_update content items wrap blocks as {type:"content", content:{type,text}}
+                    JsonElement inner = block.get("content");
+                    if (inner.isJsonObject() && inner.getAsJsonObject().has("text")) {
+                        blocks.add(new ContentBlock.Text(inner.getAsJsonObject().get("text").getAsString()));
+                    }
                 }
             } else if (el.isJsonPrimitive()) {
                 blocks.add(new ContentBlock.Text(el.getAsString()));
@@ -738,8 +745,14 @@ public abstract class AcpClient implements AgentConnector {
     }
 
     private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
-        String optionId = "allow_once";
-        JsonObject chosenOption = findOption(params, optionId);
+        // Prefer the "allow_once" option by kind; fall back to the first available option.
+        JsonObject chosenOption = findOptionByKind(params, "allow_once");
+        if (chosenOption == null) {
+            chosenOption = findFirstOption(params);
+        }
+        String optionId = chosenOption != null && chosenOption.has("optionId")
+            ? chosenOption.get("optionId").getAsString()
+            : "allow_once";
         JsonObject result = new JsonObject();
         result.add("outcome", buildPermissionOutcome(optionId, chosenOption));
         transport.sendResponse(id, result);
@@ -747,31 +760,43 @@ public abstract class AcpClient implements AgentConnector {
 
     /**
      * Build the outcome object sent back in the {@code session/request_permission} response.
-     * Override to add agent-specific fields (e.g. a {@code type} discriminator for kotlinx.serialization).
+     * <p>
+     * Per ACP spec the outcome is {@code {outcome: "selected", optionId: "<chosen-id>"}}.
+     * Override to add agent-specific fields.
      *
-     * @param optionId     the chosen option ID (e.g. {@code "allow_once"})
+     * @param optionId     the chosen option ID (echoed from the request's {@code options} array)
      * @param chosenOption the matching option object from the request params, or {@code null} if not found
      */
     protected JsonObject buildPermissionOutcome(String optionId, @Nullable JsonObject chosenOption) {
         JsonObject outcome = new JsonObject();
+        outcome.addProperty("outcome", "selected");
         outcome.addProperty("optionId", optionId);
         return outcome;
     }
 
     @Nullable
-    private static JsonObject findOption(@Nullable JsonObject params, String optionId) {
+    private static JsonObject findOptionByKind(@Nullable JsonObject params, String kind) {
         if (params == null || !params.has("options")) return null;
         JsonElement options = params.get("options");
         if (!options.isJsonArray()) return null;
         for (JsonElement el : options.getAsJsonArray()) {
             if (el.isJsonObject()) {
                 JsonObject opt = el.getAsJsonObject();
-                if (opt.has("optionId") && optionId.equals(opt.get("optionId").getAsString())) {
+                if (opt.has("kind") && kind.equals(opt.get("kind").getAsString())) {
                     return opt;
                 }
             }
         }
         return null;
+    }
+
+    @Nullable
+    private static JsonObject findFirstOption(@Nullable JsonObject params) {
+        if (params == null || !params.has("options")) return null;
+        JsonElement options = params.get("options");
+        if (!options.isJsonArray()) return null;
+        JsonArray arr = options.getAsJsonArray();
+        return (!arr.isEmpty() && arr.get(0).isJsonObject()) ? arr.get(0).getAsJsonObject() : null;
     }
 
     protected void destroyProcess() {
