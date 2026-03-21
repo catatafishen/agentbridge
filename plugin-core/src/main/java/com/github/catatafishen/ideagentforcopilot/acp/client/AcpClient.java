@@ -176,9 +176,14 @@ public abstract class AcpClient implements AgentConnector {
             if (response.configOptions() != null) {
                 availableConfigOptions.clear();
                 for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
-                    List<AgentConnector.AgentConfigOptionValue> vals = opt.values().stream()
-                        .map(v -> new AgentConnector.AgentConfigOptionValue(v.id(), v.label()))
-                        .toList();
+                    List<AgentConnector.AgentConfigOptionValue> vals;
+                    if (opt.values() == null) {
+                        vals = List.of();
+                    } else {
+                        vals = opt.values().stream()
+                            .map(v -> new AgentConnector.AgentConfigOptionValue(v.id(), v.label()))
+                            .toList();
+                    }
                     availableConfigOptions.add(
                         new AgentConnector.AgentConfigOption(opt.id(), opt.label(), opt.description(), vals, opt.selectedValueId())
                     );
