@@ -128,18 +128,7 @@ public class AgentClientAdapter implements AgentClient {
     public List<com.github.catatafishen.ideagentforcopilot.bridge.SessionOption> listSessionOptions() {
         List<com.github.catatafishen.ideagentforcopilot.bridge.SessionOption> options = new ArrayList<>();
 
-        List<AgentConnector.AgentMode> modes = connector.getAvailableModes();
-        if (!modes.isEmpty()) {
-            List<String> values = new ArrayList<>();
-            values.add("");
-            Map<String, String> labels = new LinkedHashMap<>();
-            for (AgentConnector.AgentMode mode : modes) {
-                values.add(mode.slug());
-                labels.put(mode.slug(), mode.name());
-            }
-            options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption("mode", "Mode", values, labels));
-        }
-
+        // Agent dropdown is plugin-specific (not in ACP configOptions)
         List<AgentConnector.AgentMode> agents = connector.getAvailableAgents();
         if (!agents.isEmpty()) {
             List<String> values = new ArrayList<>();
@@ -152,10 +141,10 @@ public class AgentClientAdapter implements AgentClient {
             options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption("agent", "Agent", values, labels));
         }
 
-        List<AgentConnector.AgentConfigOption> configOptions = connector.getAvailableConfigOptions();
-        for (AgentConnector.AgentConfigOption opt : configOptions) {
+        // All other dropdowns come from ACP configOptions reported at session start
+        for (AgentConnector.AgentConfigOption opt : connector.getAvailableConfigOptions()) {
             List<String> values = new ArrayList<>();
-            values.add(""); // "Default" — let the agent keep its current value
+            values.add(""); // empty = keep current
             Map<String, String> labels = new LinkedHashMap<>();
             for (AgentConnector.AgentConfigOptionValue v : opt.values()) {
                 values.add(v.id());
@@ -164,17 +153,35 @@ public class AgentClientAdapter implements AgentClient {
             options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption(opt.id(), opt.label(), values, labels));
         }
 
+        // Fallback: if no configOptions but modes are present, add a Mode dropdown
+        if (connector.getAvailableConfigOptions().isEmpty()) {
+            List<AgentConnector.AgentMode> modes = connector.getAvailableModes();
+            if (!modes.isEmpty()) {
+                List<String> values = new ArrayList<>();
+                values.add("");
+                Map<String, String> labels = new LinkedHashMap<>();
+                for (AgentConnector.AgentMode mode : modes) {
+                    values.add(mode.slug());
+                    labels.put(mode.slug(), mode.name());
+                }
+                options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption("mode", "Mode", values, labels));
+            }
+        }
+
         return options;
     }
 
     @Override
     public void setSessionOption(@NotNull String sessionId, @NotNull String key, @NotNull String value) {
-        if ("mode".equals(key)) {
-            connector.setCurrentModeSlug(value.isEmpty() ? null : value);
-        } else if ("agent".equals(key)) {
+        if ("agent".equals(key)) {
             connector.setCurrentAgentSlug(value.isEmpty() ? null : value);
+        } else if ("mode".equals(key)) {
+            // Update both: prompt-level modeSlug and the ACP configOption (if supported)
+            connector.setCurrentModeSlug(value.isEmpty() ? null : value);
+            if (!value.isEmpty()) {
+                connector.setConfigOption(sessionId, key, value);
+            }
         } else {
-            // Treat any other key as a config option ID per the ACP spec
             if (!value.isEmpty()) {
                 connector.setConfigOption(sessionId, key, value);
             }

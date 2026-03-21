@@ -47,7 +47,9 @@ public class NewSessionResponseDeserializer implements JsonDeserializer<NewSessi
         if (obj.has("configOptions") && obj.get("configOptions").isJsonArray()) {
             configOptions = new ArrayList<>();
             for (JsonElement e : obj.getAsJsonArray("configOptions")) {
-                configOptions.add(ctx.deserialize(e, NewSessionResponse.SessionConfigOption.class));
+                if (e.isJsonObject()) {
+                    configOptions.add(parseConfigOption(e.getAsJsonObject()));
+                }
             }
         }
 
@@ -174,5 +176,43 @@ public class NewSessionResponseDeserializer implements JsonDeserializer<NewSessi
         if (!obj.has(key) || obj.get(key).isJsonNull()) return null;
         JsonElement el = obj.get(key);
         return el.isJsonPrimitive() ? el.getAsString() : null;
+    }
+
+    /**
+     * Parses a configOption entry, handling Copilot's wire format which differs from the ACP spec:
+     * <ul>
+     *   <li>{@code name} → label (Copilot uses "name", spec says "label")</li>
+     *   <li>{@code options} → values (Copilot uses "options", spec says "values")</li>
+     *   <li>Each option: {@code value} → id, {@code name} → label</li>
+     *   <li>{@code currentValue} → selectedValueId</li>
+     * </ul>
+     */
+    private static NewSessionResponse.SessionConfigOption parseConfigOption(JsonObject obj) {
+        String id = getString(obj, "id");
+        String label = getString(obj, "label");
+        if (label == null) label = getString(obj, "name");
+        if (label == null) label = id != null ? id : "";
+        String description = getString(obj, "description");
+        String selectedValueId = getString(obj, "selectedValueId");
+        if (selectedValueId == null) selectedValueId = getString(obj, "currentValue");
+
+        List<NewSessionResponse.SessionConfigOptionValue> values = new ArrayList<>();
+        JsonElement valuesEl = obj.has("values") ? obj.get("values")
+            : obj.has("options") ? obj.get("options") : null;
+        if (valuesEl != null && valuesEl.isJsonArray()) {
+            for (JsonElement e : valuesEl.getAsJsonArray()) {
+                if (e.isJsonObject()) {
+                    JsonObject vo = e.getAsJsonObject();
+                    String valueId = getString(vo, "id");
+                    if (valueId == null) valueId = getString(vo, "value");
+                    if (valueId == null) continue;
+                    String valueLabel = getString(vo, "label");
+                    if (valueLabel == null) valueLabel = getString(vo, "name");
+                    if (valueLabel == null) valueLabel = valueId;
+                    values.add(new NewSessionResponse.SessionConfigOptionValue(valueId, valueLabel));
+                }
+            }
+        }
+        return new NewSessionResponse.SessionConfigOption(id, label, description, values, selectedValueId);
     }
 }
