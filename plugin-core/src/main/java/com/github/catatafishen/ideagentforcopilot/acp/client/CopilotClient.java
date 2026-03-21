@@ -3,29 +3,23 @@ package com.github.catatafishen.ideagentforcopilot.acp.client;
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 /**
  * GitHub Copilot ACP client.
  * <p>
- * Command: {@code copilot --acp --stdio [--config-dir ...] [--additional-mcp-config @file]}
+ * Command: {@code copilot --acp --stdio [--config-dir ...]}
  * Tool prefix: {@code agentbridge-read_file} → strip {@code agentbridge-}
  * Model display: multiplier from {@code _meta.copilotUsage}
  * References: requires inline (no ACP resource blocks)
- * MCP: HTTP via {@code --additional-mcp-config} flag + session/new mcpServers
+ * MCP: HTTP via {@code mcpServers} in {@code session/new}
  */
 public final class CopilotClient extends AcpClient {
-
-    private static final Logger LOG = Logger.getInstance(CopilotClient.class);
 
     private static final String AGENT_ID = "copilot";
     private static final String MCP_SERVER_NAME = "agentbridge";
@@ -47,23 +41,9 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        List<String> cmd = new ArrayList<>(List.of(AGENT_ID, "--acp", "--stdio"));
-
         // Use per-project config dir to avoid cross-project contamination
         String configDir = cwd + File.separator + ".agent-work" + File.separator + AGENT_ID;
-        cmd.add("--config-dir");
-        cmd.add(configDir);
-
-        // Register our MCP HTTP server via a temp config file
-        if (mcpPort > 0) {
-            String configFile = writeMcpConfigFile(mcpPort);
-            if (configFile != null) {
-                cmd.add("--additional-mcp-config");
-                cmd.add("@" + configFile);
-            }
-        }
-
-        return cmd;
+        return List.of(AGENT_ID, "--acp", "--stdio", "--config-dir", configDir);
     }
 
     @Override
@@ -75,7 +55,6 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected void customizeNewSession(String cwd, int mcpPort, JsonObject params) {
-        if (mcpPort <= 0) return;
         // Copilot requires mcpServers in session/new as an array with headers as array (not object)
         JsonObject server = new JsonObject();
         server.addProperty("name", MCP_SERVER_NAME);
@@ -110,26 +89,5 @@ public final class CopilotClient extends AcpClient {
             return meta.get("copilotUsage").getAsString();
         }
         return null;
-    }
-
-    /**
-     * Write the MCP server config as a temp JSON file and return its path.
-     * Returns null if writing fails (MCP will still work via session/new injection).
-     */
-    @Nullable
-    private static String writeMcpConfigFile(int mcpPort) {
-        String json = "{\"mcpServers\":{\"" + MCP_SERVER_NAME + "\":{"
-            + "\"type\":\"" + MCP_TYPE_HTTP + "\","
-            + "\"url\":\"http://localhost:" + mcpPort + "/mcp\","
-            + "\"headers\":{}}}}";
-        try {
-            File configFile = File.createTempFile("acp-mcp-", ".json");
-            configFile.deleteOnExit();
-            Files.writeString(configFile.toPath(), json);
-            return configFile.getAbsolutePath();
-        } catch (IOException e) {
-            LOG.warn("Failed to write Copilot MCP config file", e);
-            return null;
-        }
     }
 }
