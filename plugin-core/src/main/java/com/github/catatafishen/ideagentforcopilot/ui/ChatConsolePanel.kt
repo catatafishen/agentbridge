@@ -241,8 +241,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("ChatController.setCurrentProfile('${escJs(profileId)}')")
     }
 
-    override fun setCurrentAgent(agentName: String) {
+    override fun setCurrentAgent(agentName: String, profileId: String) {
         currentAgent = agentName
+        val colorIndex = ChatTheme.agentColorIndex(profileId)
+        executeJs("ChatController.setAgentColor($colorIndex)")
     }
 
     override fun addContextFilesEntry(files: List<Pair<String, String>>) {

@@ -83,6 +83,20 @@ object ChatTheme {
         return sb.toString()
     }
 
+    /**
+     * Map agent profile ID to a color index (from SA_COLORS).
+     * Default agents each get a distinct color; custom profiles cycle through.
+     */
+    fun agentColorIndex(profileId: String): Int = when (profileId) {
+        "copilot" -> 0          // teal
+        "claude-code" -> 1       // orange
+        "claude-cli" -> 1        // orange (same as claude-code)
+        "junie" -> 2             // purple
+        "kiro" -> 3              // pink
+        "opencode" -> 4          // blue
+        else -> profileId.hashCode().and(Int.MAX_VALUE) % SA_COLOR_COUNT
+    }
+
     private fun rgb(c: Color) = "rgb(${c.red},${c.green},${c.blue})"
     private fun rgba(c: Color, a: Double) = "rgba(${c.red},${c.green},${c.blue},$a)"
 }

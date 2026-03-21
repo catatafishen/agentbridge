@@ -593,6 +593,47 @@ thinking-chip.thinking-active .thought-bubble {
     opacity: 0.85;
 }
 
+/* Agent color classes — apply to chat-container to change working indicator color */
+chat-container.agent-c0 {
+    --agent-a06: var(--sa-c0-a06);
+    --agent-a10: var(--sa-c0-a10);
+}
+
+chat-container.agent-c1 {
+    --agent-a06: var(--sa-c1-a06);
+    --agent-a10: var(--sa-c1-a10);
+}
+
+chat-container.agent-c2 {
+    --agent-a06: var(--sa-c2-a06);
+    --agent-a10: var(--sa-c2-a10);
+}
+
+chat-container.agent-c3 {
+    --agent-a06: var(--sa-c3-a06);
+    --agent-a10: var(--sa-c3-a10);
+}
+
+chat-container.agent-c4 {
+    --agent-a06: var(--sa-c4-a06);
+    --agent-a10: var(--sa-c4-a10);
+}
+
+chat-container.agent-c5 {
+    --agent-a06: var(--sa-c5-a06);
+    --agent-a10: var(--sa-c5-a10);
+}
+
+chat-container.agent-c6 {
+    --agent-a06: var(--sa-c6-a06);
+    --agent-a10: var(--sa-c6-a10);
+}
+
+chat-container.agent-c7 {
+    --agent-a06: var(--sa-c7-a06);
+    --agent-a10: var(--sa-c7-a10);
+}
+
 .subagent-indent .agent-name {
     color: var(--sa-color, var(--think));
 }

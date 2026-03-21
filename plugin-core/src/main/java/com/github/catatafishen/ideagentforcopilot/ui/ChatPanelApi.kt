@@ -26,7 +26,7 @@ interface ChatPanelApi : Disposable {
     fun setPromptStats(modelId: String, multiplier: String)
     fun setCurrentModel(modelId: String)
     fun setCurrentProfile(profileId: String)
-    fun setCurrentAgent(agentName: String)
+    fun setCurrentAgent(agentName: String, profileId: String)
     fun addContextFilesEntry(files: List<Pair<String, String>>)
 
     // ── Agent text (streaming) ─────────────────────────────────────

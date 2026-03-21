@@ -440,6 +440,18 @@ const ChatController = {
         this._currentProfile = profileId;
     },
 
+    setAgentColor(colorIndex: number): void {
+        const container = this._container();
+        if (container) {
+            // Remove old agent-c* classes
+            for (let i = 0; i < 8; i++) {
+                container.classList.remove(`agent-c${i}`);
+            }
+            // Add the new color class
+            container.classList.add(`agent-c${colorIndex}`);
+        }
+    },
+
     setCurrentModel(modelId: string): void {
         // Kept for stats display compatibility; coloring is now profile-based.
     },

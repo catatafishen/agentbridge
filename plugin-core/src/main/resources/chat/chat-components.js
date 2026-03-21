@@ -1137,6 +1137,15 @@ var __chatUI = (() => {
     setCurrentProfile(profileId) {
       this._currentProfile = profileId;
     },
+    setAgentColor(colorIndex) {
+      const container = this._container();
+      if (container) {
+        for (let i = 0; i < 8; i++) {
+          container.classList.remove(`agent-c${i}`);
+        }
+        container.classList.add(`agent-c${colorIndex}`);
+      }
+    },
     setCurrentModel(modelId) {
     },
     restoreBatch(encodedHtml) {

@@ -862,15 +862,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             }
         }
 
-        String purpose = null;
-        if (params.has("rawInput") && params.get("rawInput").isJsonObject()) {
-            JsonObject rawInput = params.getAsJsonObject("rawInput");
-            if (rawInput.has("__tool_use_purpose")) {
-                purpose = getStringOrEmpty(rawInput, "__tool_use_purpose");
-            }
-        }
-
-        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, kind, arguments, locations, null, null, null, purpose);
+        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, kind, arguments, locations, null, null, null, null);
     }
 
     private SessionUpdate.ToolCallUpdate parseToolCallUpdate(JsonObject params) {

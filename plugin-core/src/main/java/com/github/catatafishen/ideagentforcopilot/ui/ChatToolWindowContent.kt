@@ -156,7 +156,7 @@ class ChatToolWindowContent(
     private fun buildAndShowChatPanel() {
         val addSeparatorNow = {
             val ts = java.time.Instant.now().toString()
-            consolePanel.setCurrentAgent(agentManager.activeProfile.displayName)
+            consolePanel.setCurrentAgent(agentManager.activeProfile.displayName, agentManager.activeProfile.id)
             consolePanel.addSessionSeparator(ts, agentManager.activeProfile.displayName)
         }
         if (chatPanel == null) {
