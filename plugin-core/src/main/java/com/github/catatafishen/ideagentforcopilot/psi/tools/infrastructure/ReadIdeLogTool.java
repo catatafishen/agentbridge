@@ -37,7 +37,13 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         return "Read recent IntelliJ IDE log entries, optionally filtered by level or text";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

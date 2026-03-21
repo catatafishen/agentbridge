@@ -37,7 +37,13 @@ public final class ReadTerminalOutputTool extends TerminalTool {
         return "Read output from an integrated terminal tab";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

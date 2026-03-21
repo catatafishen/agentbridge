@@ -37,7 +37,13 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
         return "Show supertypes and/or subtypes of a class or interface";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

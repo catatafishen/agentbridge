@@ -59,16 +59,9 @@ public final class PsiBridgeService implements Disposable {
     public static final Topic<FocusRestoreListener> FOCUS_RESTORE_TOPIC =
         Topic.create("PsiBridgeService.FocusRestore", FocusRestoreListener.class);
 
-    /**
-     * Serializes write tool calls (non-read-only) to prevent EDT flooding.
-     * The MCP HTTP server uses a thread pool; multiple concurrent write/heavy operations
-     * all posting lambdas via invokeLater can saturate the EDT queue and freeze the IDE.
-     * A single-permit semaphore ensures only one such operation runs at a time.
-     */
-    private final java.util.concurrent.Semaphore writeToolSemaphore = new java.util.concurrent.Semaphore(1);
-
     private static final Set<String> SYNC_TOOL_CATEGORIES = Set.of("FILE", "EDITING", "REFACTOR", "GIT");
     private final Map<String, ReentrantLock> toolLocks = new ConcurrentHashMap<>();
+    private final java.util.concurrent.Semaphore writeToolSemaphore = new java.util.concurrent.Semaphore(1);
 
     private final Project project;
     private final ToolRegistry registry;
@@ -171,6 +164,8 @@ public final class PsiBridgeService implements Disposable {
         long startMs = System.currentTimeMillis();
         boolean success = true;
 
+        String argumentsHash = ToolChipRegistry.computeBaseHash(arguments);
+
         // Track if chat tool window is active before the tool call
         // Only restore focus afterward if it was active before (don't steal focus if user switched away)
         boolean chatWasActive = isChatToolWindowActive();
@@ -178,10 +173,11 @@ public final class PsiBridgeService implements Disposable {
         // Determine if this tool requires synchronous execution (file/git/editing tools).
         boolean requiresSync = def.category() != null && SYNC_TOOL_CATEGORIES.contains(def.category().name());
 
-        // For backward compatibility: still use global write semaphore for slow operations
-        // that aren't in the sync categories. This prevents EDT flooding from concurrent
-        // heavy operations (build, test, etc.) that don't need ordering guarantees.
-        boolean needsGlobalLock = !def.isReadOnly() && !requiresSync;
+        // Global write semaphore: serialize all non-readonly tools to prevent EDT flooding
+        // and race conditions. Multiple concurrent write/heavy operations each posting lambdas
+        // via invokeLater can saturate the EDT queue and cause the IDE to freeze.
+        // Sync-category tools (FILE, EDITING, REFACTOR, GIT) also use per-tool locks for ordering.
+        boolean needsGlobalLock = !def.isReadOnly();
         if (needsGlobalLock) {
             String lockError = acquireWriteLock(toolName, startMs);
             if (lockError != null) return lockError;
@@ -218,8 +214,9 @@ public final class PsiBridgeService implements Disposable {
             String result;
             try {
                 // Register with chip registry BEFORE executing so the chip can transition to "running"
-                ToolChipRegistry.getInstance(project).registerMcp(toolName, arguments);
-                result = def.execute(arguments);
+                // Pass the resolved kind so the chip can update its color immediately.
+                ToolChipRegistry.getInstance(project).registerMcp(toolName, arguments, def.kind());
+                result = def.execute(arguments, argumentsHash);
             } finally {
                 if (syncLock != null) syncLock.unlock();
             }
@@ -263,20 +260,20 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
-     * Tries to acquire the write-tool serialization semaphore within 60 seconds.
-     * Returns {@code null} on success, or an error message string if acquisition fails.
+     * Acquires the global write lock to serialize all non-readonly tool calls.
+     * Returns null if acquired successfully, or an error message if the lock could not be acquired.
      */
     @Nullable
-    private String acquireWriteLock(String toolName, long startMs) {
+    private String acquireWriteLock(String toolName, long startTimeMs) {
         try {
             if (!writeToolSemaphore.tryAcquire(60, java.util.concurrent.TimeUnit.SECONDS)) {
-                fireToolCallEvent(toolName, startMs, false);
-                return "Error: IDE is busy processing another write operation. Please retry shortly.";
+                fireToolCallEvent(toolName, startTimeMs, false);
+                return "Error: IDE is busy processing another tool call. Please retry shortly.";
             }
             return null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            fireToolCallEvent(toolName, startMs, false);
+            fireToolCallEvent(toolName, startTimeMs, false);
             return "Error: Interrupted waiting for write lock.";
         }
     }

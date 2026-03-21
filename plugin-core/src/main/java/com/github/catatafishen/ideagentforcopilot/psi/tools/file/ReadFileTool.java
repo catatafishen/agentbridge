@@ -44,7 +44,13 @@ public class ReadFileTool extends FileTool {
         return "Read a file via IntelliJ's editor buffer -- always returns the current in-memory content";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

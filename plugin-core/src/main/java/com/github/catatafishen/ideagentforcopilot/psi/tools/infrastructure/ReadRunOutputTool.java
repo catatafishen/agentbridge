@@ -38,7 +38,13 @@ public final class ReadRunOutputTool extends InfrastructureTool {
         return "Read output from a recent Run panel tab by name";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

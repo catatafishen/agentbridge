@@ -37,7 +37,13 @@ public final class FindImplementationsTool extends RefactoringTool {
         return "Find all implementations of a class/interface or overrides of a method";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

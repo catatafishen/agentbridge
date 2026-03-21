@@ -34,7 +34,13 @@ public final class EditRunConfigurationTool extends ProjectTool {
         return "Edit an existing run configuration's arguments, environment, or working directory";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(new Object[][]{
             {"name", TYPE_STRING, "Name of the run configuration to edit"},

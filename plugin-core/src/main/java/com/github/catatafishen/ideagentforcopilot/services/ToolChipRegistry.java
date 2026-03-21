@@ -71,6 +71,11 @@ public final class ToolChipRegistry {
     private final Map<String, Integer> hashCounts = new LinkedHashMap<>();
 
     private final List<BiConsumer<String, ChipState>> listeners = new ArrayList<>();
+    private final List<ChipStateWithKindListener> kindListeners = new ArrayList<>();
+
+    public interface ChipStateWithKindListener {
+        void stateChanged(@NotNull String chipId, @NotNull ChipState state, @Nullable String kind);
+    }
 
     public static ToolChipRegistry getInstance(@NotNull Project project) {
         return project.getService(ToolChipRegistry.class);
@@ -128,6 +133,15 @@ public final class ToolChipRegistry {
      * If no client-side chip exists yet (MCP arrived first), stores a pending entry.
      */
     public synchronized void registerMcp(@NotNull String toolName, @NotNull JsonObject args) {
+        registerMcp(toolName, args, null);
+    }
+
+    /**
+     * Called by PsiBridgeService immediately before executing a tool.
+     * Finds the newest unmatched client-side chip with this args hash and transitions it to RUNNING.
+     * If no client-side chip exists yet (MCP arrived first), stores a pending entry.
+     */
+    public synchronized void registerMcp(@NotNull String toolName, @NotNull JsonObject args, @Nullable String kind) {
         String baseHash = computeBaseHash(args);
 
         // Find the newest unmatched client-side chip (newest = last in insertion order)
@@ -135,7 +149,7 @@ public final class ToolChipRegistry {
         if (target != null) {
             chips.put(target.chipId(), target.withMcp());
             LOG.debug("ToolChipRegistry: MCP matched " + target.chipId() + " (" + toolName + ")");
-            fireState(target.chipId(), ChipState.RUNNING);
+            fireState(target.chipId(), ChipState.RUNNING, kind);
             return;
         }
 
@@ -178,8 +192,16 @@ public final class ToolChipRegistry {
         listeners.add(listener);
     }
 
+    public synchronized void addKindStateListener(@NotNull ChipStateWithKindListener listener) {
+        kindListeners.add(listener);
+    }
+
     public synchronized void removeStateListener(@NotNull BiConsumer<String, ChipState> listener) {
         listeners.remove(listener);
+    }
+
+    public synchronized void removeKindStateListener(@NotNull ChipStateWithKindListener listener) {
+        kindListeners.remove(listener);
     }
 
     // ── Turn management ───────────────────────────────────────────────────────
@@ -232,11 +254,17 @@ public final class ToolChipRegistry {
     }
 
     private void fireState(@NotNull String chipId, @NotNull ChipState state) {
+        fireState(chipId, state, null);
+    }
+
+    private void fireState(@NotNull String chipId, @NotNull ChipState state, @Nullable String kind) {
         List<BiConsumer<String, ChipState>> snapshot;
+        List<ChipStateWithKindListener> kindSnapshot;
         synchronized (this) {
             snapshot = new ArrayList<>(listeners);
+            kindSnapshot = new ArrayList<>(kindListeners);
         }
-        if (snapshot.isEmpty()) return;
+        if (snapshot.isEmpty() && kindSnapshot.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (var listener : snapshot) {
                 try {
@@ -245,10 +273,17 @@ public final class ToolChipRegistry {
                     LOG.warn("ToolChipRegistry listener error", e);
                 }
             }
+            for (var listener : kindSnapshot) {
+                try {
+                    listener.stateChanged(chipId, state, kind);
+                } catch (Exception e) {
+                    LOG.warn("ToolChipRegistry kind listener error", e);
+                }
+            }
         });
     }
 
-    static @NotNull String computeBaseHash(@NotNull JsonObject args) {
+    public static @NotNull String computeBaseHash(@NotNull JsonObject args) {
         try {
             TreeMap<String, String> sorted = new TreeMap<>();
             for (String key : args.keySet()) {

@@ -80,7 +80,13 @@ public final class RunTestsTool extends TestingTool {
         return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner; falls back to Gradle for unresolvable targets";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Run tests: {target}";
     }

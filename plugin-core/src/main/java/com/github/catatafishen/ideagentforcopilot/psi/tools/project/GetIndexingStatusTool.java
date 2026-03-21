@@ -37,7 +37,13 @@ public final class GetIndexingStatusTool extends ProjectTool {
         return "Check whether IntelliJ indexing is in progress; optionally wait until it finishes";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

@@ -34,7 +34,13 @@ public final class DeleteRunConfigurationTool extends ProjectTool {
         return "Delete a run configuration by name";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "execute";
+    }
+@Override
     public boolean isDestructive() {
         return true;
     }

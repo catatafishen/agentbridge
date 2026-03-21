@@ -34,7 +34,13 @@ public final class ReloadFromDiskTool extends FileTool {
         return "Force IntelliJ to refresh a file or directory from disk, picking up changes made by external tools";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

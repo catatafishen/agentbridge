@@ -38,7 +38,13 @@ public final class MoveFileTool extends FileTool {
         return "Move a file to a different directory";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Move {path} → {destination}";
     }

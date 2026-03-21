@@ -33,7 +33,13 @@ public final class GitBlameTool extends GitTool {
         return "Show per-line authorship for a file";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

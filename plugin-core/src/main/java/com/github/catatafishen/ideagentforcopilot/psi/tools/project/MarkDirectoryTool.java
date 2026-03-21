@@ -51,7 +51,13 @@ public final class MarkDirectoryTool extends ProjectTool {
         return "Mark a directory as source root, test root, resources, excluded, etc.";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Mark {path} as {type}";
     }

@@ -71,6 +71,11 @@ public final class RunInspectionsTool extends QualityTool {
     }
 
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }

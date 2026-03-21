@@ -38,7 +38,13 @@ public final class GitFetchTool extends GitTool {
         return "Download objects and refs from a remote";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public boolean isOpenWorld() {
         return true;
     }

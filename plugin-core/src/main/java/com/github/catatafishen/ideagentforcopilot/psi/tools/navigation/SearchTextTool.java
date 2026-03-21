@@ -45,7 +45,13 @@ public final class SearchTextTool extends NavigationTool {
         return "Search for text or regex patterns across project files using IntelliJ's editor buffers";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

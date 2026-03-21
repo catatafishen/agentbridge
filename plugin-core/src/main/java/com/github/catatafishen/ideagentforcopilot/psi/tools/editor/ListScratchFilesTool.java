@@ -43,7 +43,13 @@ public final class ListScratchFilesTool extends EditorTool {
         return "List existing scratch files in the IDE scratch directory";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

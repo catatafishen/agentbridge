@@ -52,7 +52,13 @@ public final class GoToDeclarationTool extends RefactoringTool {
         return "Navigate to the declaration of a symbol at a given file and line";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

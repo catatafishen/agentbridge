@@ -34,7 +34,13 @@ public final class GitRevertTool extends GitTool {
         return "Revert a commit by creating a new commit";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_COMMIT, TYPE_STRING, "Commit SHA to revert"},

@@ -34,7 +34,13 @@ public final class RunConfigurationTool extends ProjectTool {
         return "Execute an existing run configuration by name";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Run: {name}";
     }

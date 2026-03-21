@@ -37,7 +37,13 @@ public final class GitCommitTool extends GitTool {
         return "Commit staged changes with a message";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Commit: \"{message}\"";
     }

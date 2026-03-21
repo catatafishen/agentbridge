@@ -12,6 +12,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -27,9 +28,16 @@ import java.util.concurrent.TimeoutException;
 public abstract class Tool implements ToolDefinition {
 
     protected final Project project;
+    protected String argumentsHash;
 
     protected Tool(Project project) {
         this.project = project;
+    }
+
+    @Override
+    public @Nullable String execute(@NotNull JsonObject args, @Nullable String argumentsHash) throws Exception {
+        this.argumentsHash = argumentsHash;
+        return execute(args);
     }
 
     // category() is inherited from ToolDefinition — subclasses must implement it

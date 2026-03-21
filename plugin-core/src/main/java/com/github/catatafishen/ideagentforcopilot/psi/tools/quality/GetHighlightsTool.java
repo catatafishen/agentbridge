@@ -49,7 +49,13 @@ public final class GetHighlightsTool extends QualityTool {
         return "Get cached editor highlights for open files";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

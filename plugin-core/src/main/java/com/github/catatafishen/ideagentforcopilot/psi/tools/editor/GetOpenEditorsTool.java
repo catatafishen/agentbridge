@@ -37,7 +37,13 @@ public final class GetOpenEditorsTool extends EditorTool {
         return "List all currently open editor tabs";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

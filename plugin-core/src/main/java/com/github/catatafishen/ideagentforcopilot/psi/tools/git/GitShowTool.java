@@ -33,7 +33,13 @@ public final class GitShowTool extends GitTool {
         return "Show details and diff for a specific commit";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

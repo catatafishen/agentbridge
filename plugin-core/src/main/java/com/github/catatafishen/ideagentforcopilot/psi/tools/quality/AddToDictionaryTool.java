@@ -38,7 +38,13 @@ public final class AddToDictionaryTool extends QualityTool {
         return "Add a word to the project spell-check dictionary";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"word", TYPE_STRING, "The word to add to the project dictionary"}

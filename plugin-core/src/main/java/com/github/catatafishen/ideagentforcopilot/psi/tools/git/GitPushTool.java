@@ -36,7 +36,13 @@ public final class GitPushTool extends GitTool {
         return "Push commits to a remote repository";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "execute";
+    }
+@Override
     public boolean isDestructive() {
         return true;
     }

@@ -25,6 +25,12 @@ public interface ToolDefinition {
     String id();
 
     /**
+     * Semantic kind for UI coloring (read/edit/execute/other).
+     * Each tool must explicitly declare its kind.
+     */
+    @NotNull String kind();
+
+    /**
      * Human-readable name shown in the UI (e.g. "Git Push").
      */
     @NotNull
@@ -191,6 +197,15 @@ public interface ToolDefinition {
     @SuppressWarnings("java:S112")
     default @Nullable String execute(@NotNull JsonObject args) throws Exception {
         return null;
+    }
+
+    /**
+     * Executes the tool with the given JSON arguments and an optional hash for identification.
+     * The hash can be used by the tool to update its own chip in the UI.
+     */
+    @SuppressWarnings("java:S112")
+    default @Nullable String execute(@NotNull JsonObject args, @Nullable String argumentsHash) throws Exception {
+        return execute(args);
     }
 
     /**

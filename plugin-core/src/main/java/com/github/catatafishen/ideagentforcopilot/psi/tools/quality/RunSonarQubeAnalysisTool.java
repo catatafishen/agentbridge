@@ -30,7 +30,13 @@ public final class RunSonarQubeAnalysisTool extends QualityTool {
         return "Run SonarQube for IDE (SonarLint) analysis on the full project or changed files";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

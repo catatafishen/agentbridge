@@ -35,7 +35,13 @@ public final class GitResetTool extends GitTool {
         return "Reset HEAD to a specific commit";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "execute";
+    }
+@Override
     public boolean isDestructive() {
         return true;
     }

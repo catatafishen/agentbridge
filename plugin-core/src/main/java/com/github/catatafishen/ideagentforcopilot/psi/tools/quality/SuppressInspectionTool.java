@@ -46,7 +46,13 @@ public final class SuppressInspectionTool extends QualityTool {
         return "Insert a suppress annotation or comment for a specific inspection at a given line";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path to the file containing the code to suppress"},

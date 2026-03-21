@@ -54,7 +54,13 @@ public final class RefactorTool extends RefactoringTool {
         return "Rename, extract method, inline, or safe-delete a symbol using IntelliJ's refactoring engine";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "{operation} {symbol}";
     }

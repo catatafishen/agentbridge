@@ -40,7 +40,13 @@ public final class CreateFileTool extends FileTool {
         return "Create a new file and register it in IntelliJ's VFS";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Create {path}";
     }

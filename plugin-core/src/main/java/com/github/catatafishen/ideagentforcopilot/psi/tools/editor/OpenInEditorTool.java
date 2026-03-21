@@ -44,7 +44,13 @@ public final class OpenInEditorTool extends EditorTool {
         return "Open a file in the editor, optionally navigating to a specific line";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

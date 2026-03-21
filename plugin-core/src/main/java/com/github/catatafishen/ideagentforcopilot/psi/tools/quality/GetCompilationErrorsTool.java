@@ -46,7 +46,13 @@ public final class GetCompilationErrorsTool extends QualityTool {
         return "Fast compilation error check using cached daemon results";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

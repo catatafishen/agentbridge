@@ -38,7 +38,13 @@ public final class OptimizeImportsTool extends QualityTool {
         return "Manually remove unused imports and organize them according to code style";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Absolute or project-relative path to the file to optimize imports"}

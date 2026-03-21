@@ -750,3 +750,19 @@
     "NEW INSTRUCTION": "WHEN emitting agent→UI updates THEN use SessionUpdate records, not JsonObject"
 }
 
+[2026-03-21 22:15] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool kind update via MCP",
+    "EXPECTATION": "Do not derive the kind for 'other' tool calls in PromptOrchestrator; allow MCP updates to overwrite the chip kind so color changes from gray to the correct one once handled.",
+    "NEW INSTRUCTION": "WHEN tool_call.kind is 'other' from Kiro THEN keep kind and allow MCP update to overwrite"
+}
+
+[2026-03-21 22:27] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool call correlation",
+    "EXPECTATION": "Match ACP and MCP tool calls via a stable hash of arguments/parameters, not semaphores; each tool class owns its kind and can overwrite the chip kind after execution using that hash.",
+    "NEW INSTRUCTION": "WHEN correlating ACP and MCP tool calls THEN compute canonical args hash and update chip kind"
+}
+

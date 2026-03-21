@@ -43,7 +43,13 @@ public final class RedoTool extends FileTool {
         return "Redo the last N undone actions on a file using IntelliJ's UndoManager";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path to the file to redo changes on"},

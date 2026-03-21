@@ -45,7 +45,13 @@ public final class CreateScratchFileTool extends EditorTool {
         return "Create a temporary scratch file with the given name and content";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.py', 'notes.md')"},

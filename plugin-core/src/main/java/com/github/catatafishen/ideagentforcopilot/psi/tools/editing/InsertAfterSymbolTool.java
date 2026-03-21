@@ -47,7 +47,13 @@ public final class InsertAfterSymbolTool extends EditingTool {
         return "Insert content after a symbol definition. Auto-formats and optimizes imports immediately on every call";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Insert after {symbol} in {file}";
     }

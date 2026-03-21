@@ -44,7 +44,13 @@ public final class ListProjectFilesTool extends NavigationTool {
         return "List files in a project directory, optionally filtered by glob pattern";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

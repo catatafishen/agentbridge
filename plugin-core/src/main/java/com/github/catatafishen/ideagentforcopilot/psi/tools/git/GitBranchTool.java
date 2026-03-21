@@ -35,7 +35,13 @@ public final class GitBranchTool extends GitTool {
         return "List, create, switch, or delete branches";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "{action} branch {name}";
     }

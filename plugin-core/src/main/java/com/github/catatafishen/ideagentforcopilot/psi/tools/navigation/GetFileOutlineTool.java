@@ -38,7 +38,13 @@ public final class GetFileOutlineTool extends NavigationTool {
         return "Get the structure of a file -- classes, methods, and fields with line numbers";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

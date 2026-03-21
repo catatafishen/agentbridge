@@ -43,7 +43,13 @@ public final class FindReferencesTool extends NavigationTool {
         return "Find all usages of a symbol throughout the project";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

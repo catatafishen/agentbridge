@@ -50,7 +50,13 @@ public final class ApplyQuickfixTool extends QualityTool {
         return "Apply an IntelliJ quick-fix at a specific file and line";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file containing the problem"},

@@ -34,7 +34,13 @@ public final class GitUnstageTool extends GitTool {
         return "Unstage files that were previously staged";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Unstage {path}";
     }

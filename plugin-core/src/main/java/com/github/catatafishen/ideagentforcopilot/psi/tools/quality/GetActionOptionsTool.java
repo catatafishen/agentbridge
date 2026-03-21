@@ -67,7 +67,13 @@ public final class GetActionOptionsTool extends QualityTool {
             + "Use 'symbol' (preferred) or 'column' to position the caret at the correct symbol.";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file"},

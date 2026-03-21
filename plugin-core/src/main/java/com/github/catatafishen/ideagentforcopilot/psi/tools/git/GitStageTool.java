@@ -36,7 +36,13 @@ public final class GitStageTool extends GitTool {
         return "Stage one or more files for the next commit";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Stage {path}";
     }

@@ -38,7 +38,13 @@ public final class GitLogTool extends GitTool {
         return "Show commit history";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

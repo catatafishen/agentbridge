@@ -38,7 +38,13 @@ public final class RenameFileTool extends FileTool {
         return "Rename a file in place without moving it to a different directory";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Rename {path} → {new_name}";
     }

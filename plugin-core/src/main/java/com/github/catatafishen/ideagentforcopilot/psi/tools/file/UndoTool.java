@@ -44,7 +44,13 @@ public final class UndoTool extends FileTool {
         return "Undo the last N edit actions on a file using IntelliJ's UndoManager";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path to the file to undo changes on"},

@@ -42,7 +42,13 @@ public final class GetProblemsTool extends QualityTool {
         return "Get cached editor problems (errors/warnings) for open files";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

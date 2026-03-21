@@ -37,7 +37,13 @@ public final class GitRebaseTool extends GitTool {
         return "Rebase current branch onto another";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "execute";
+    }
+@Override
     public boolean isDestructive() {
         return true;
     }

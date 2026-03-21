@@ -40,7 +40,13 @@ public final class GitMergeTool extends GitTool {
         return "Merge a branch into the current branch";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Merge {branch}";
     }

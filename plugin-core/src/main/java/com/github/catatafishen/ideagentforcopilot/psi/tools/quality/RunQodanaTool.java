@@ -33,7 +33,13 @@ public final class RunQodanaTool extends QualityTool {
         return "Run Qodana static analysis and return findings";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

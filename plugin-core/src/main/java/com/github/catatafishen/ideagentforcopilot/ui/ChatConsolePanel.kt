@@ -195,16 +195,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     private fun registerChipStateListener() {
-        registry.addStateListener { chipId, state ->
-            val did = "t-$chipId"
+        registry.addKindStateListener { chipId, state, kind ->
             val jsState = when (state) {
                 ToolChipRegistry.ChipState.RUNNING -> "running"
                 ToolChipRegistry.ChipState.COMPLETE -> "complete"
                 ToolChipRegistry.ChipState.EXTERNAL -> "external"
                 ToolChipRegistry.ChipState.FAILED -> "failed"
-                else -> return@addStateListener
+                else -> return@addKindStateListener
             }
-            executeJs("ChatController.setToolChipState('$did','$jsState')")
+            updateToolCall(chipId, jsState, kind)
             if (state != ToolChipRegistry.ChipState.RUNNING) {
                 toolJustCompleted = true
             }

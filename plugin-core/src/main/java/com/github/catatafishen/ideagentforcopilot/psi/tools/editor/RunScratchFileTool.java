@@ -58,7 +58,13 @@ public final class RunScratchFileTool extends EditorTool {
         return "Run a scratch file using an appropriate run configuration";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.kts', 'MyApp.java', 'hello.js')"},

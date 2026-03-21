@@ -51,7 +51,13 @@ public final class DownloadSourcesTool extends ProjectTool {
         return "Download library sources to enable source navigation and debugging";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

@@ -36,7 +36,13 @@ public final class GitPullTool extends GitTool {
         return "Fetch and integrate changes into the current branch";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public boolean isOpenWorld() {
         return true;
     }

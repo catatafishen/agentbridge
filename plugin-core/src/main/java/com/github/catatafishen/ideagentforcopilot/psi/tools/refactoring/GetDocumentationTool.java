@@ -43,7 +43,13 @@ public final class GetDocumentationTool extends RefactoringTool {
         return "Get Javadoc or KDoc for a symbol by fully-qualified name";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

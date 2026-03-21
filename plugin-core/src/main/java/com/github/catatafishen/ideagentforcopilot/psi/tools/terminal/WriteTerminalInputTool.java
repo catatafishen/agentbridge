@@ -33,7 +33,13 @@ public final class WriteTerminalInputTool extends TerminalTool {
         return "Send raw text or keystrokes to a running terminal (e.g. answer prompts, send Ctrl-C)";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public boolean isOpenWorld() {
         return true;
     }

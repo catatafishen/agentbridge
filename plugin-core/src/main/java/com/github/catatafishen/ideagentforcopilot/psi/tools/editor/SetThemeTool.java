@@ -37,7 +37,13 @@ public final class SetThemeTool extends EditorTool {
         return "Change the IDE theme by name (e.g., 'Darcula', 'Light')";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Set theme: {theme}";
     }

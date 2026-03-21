@@ -42,7 +42,13 @@ public final class HttpRequestTool extends InfrastructureTool {
         return "Make an HTTP request (GET/POST/PUT/PATCH/DELETE) to a URL";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public boolean isOpenWorld() {
         return true;
     }

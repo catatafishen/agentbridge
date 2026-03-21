@@ -40,7 +40,13 @@ public final class GitTagTool extends GitTool {
         return "List, create, or delete tags";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "{action} tag {name}";
     }

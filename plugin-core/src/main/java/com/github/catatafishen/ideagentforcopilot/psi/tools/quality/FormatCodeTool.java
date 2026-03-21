@@ -37,7 +37,13 @@ public final class FormatCodeTool extends QualityTool {
         return "Manually format a file using IntelliJ's configured code style";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Absolute or project-relative path to the file to format"}

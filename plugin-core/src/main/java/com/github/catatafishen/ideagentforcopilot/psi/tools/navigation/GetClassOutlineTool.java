@@ -30,7 +30,13 @@ public final class GetClassOutlineTool extends NavigationTool {
         return "Get the full API of any class by fully-qualified name, including library and JDK classes";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

@@ -38,7 +38,13 @@ public final class GitStashTool extends GitTool {
         return "Push, pop, apply, list, or drop stashed changes";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "{action} stash";
     }

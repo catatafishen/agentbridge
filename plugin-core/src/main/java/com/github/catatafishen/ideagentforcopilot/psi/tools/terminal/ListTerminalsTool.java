@@ -30,7 +30,13 @@ public final class ListTerminalsTool extends TerminalTool {
         return "List active terminal tabs";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

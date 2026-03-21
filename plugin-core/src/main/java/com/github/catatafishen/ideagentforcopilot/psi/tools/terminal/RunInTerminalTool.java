@@ -40,7 +40,13 @@ public final class RunInTerminalTool extends TerminalTool {
         return "Run a command in IntelliJ's integrated terminal";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public boolean isOpenWorld() {
         return true;
     }

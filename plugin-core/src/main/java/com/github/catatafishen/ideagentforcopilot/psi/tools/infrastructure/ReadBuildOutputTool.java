@@ -38,7 +38,13 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
         return "Read output from a tab in the Build tool window (Gradle/Maven/compiler output)";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

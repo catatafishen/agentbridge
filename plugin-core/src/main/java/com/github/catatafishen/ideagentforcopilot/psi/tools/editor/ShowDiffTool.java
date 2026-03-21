@@ -41,7 +41,13 @@ public final class ShowDiffTool extends EditorTool {
         return "Show a diff viewer comparing a file to proposed content or another file";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

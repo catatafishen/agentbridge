@@ -64,7 +64,13 @@ public final class ApplyActionTool extends QualityTool {
             + "Tip: use optimize_imports to fix all missing imports at once.";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file"},

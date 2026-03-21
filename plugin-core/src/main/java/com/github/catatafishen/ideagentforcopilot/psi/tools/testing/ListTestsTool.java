@@ -45,7 +45,13 @@ public final class ListTestsTool extends TestingTool {
         return "List test classes and methods in the project";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

@@ -70,7 +70,13 @@ public final class SearchConversationHistoryTool extends EditorTool {
         return "List, read, and search past conversation sessions from the chat history";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

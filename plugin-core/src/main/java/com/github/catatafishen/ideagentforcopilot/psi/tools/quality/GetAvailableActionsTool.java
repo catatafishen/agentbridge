@@ -53,7 +53,13 @@ public final class GetAvailableActionsTool extends QualityTool {
             + "Use apply_action to invoke one, or optimize_imports to fix all missing imports at once.";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

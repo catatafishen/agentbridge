@@ -30,7 +30,13 @@ public final class GetNotificationsTool extends InfrastructureTool {
         return "Get recent IntelliJ balloon notifications";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }

@@ -6,7 +6,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link ToolDefinition} default method contracts —
@@ -19,11 +23,35 @@ class ToolDefinitionTest {
      */
     private static ToolDefinition stub(String id, boolean readOnly) {
         return new ToolDefinition() {
-            @Override public @NotNull String id() { return id; }
-            @Override public @NotNull String displayName() { return id; }
-            @Override public @NotNull String description() { return "test"; }
-            @Override public @NotNull ToolRegistry.Category category() { return ToolRegistry.Category.OTHER; }
-            @Override public boolean isReadOnly() { return readOnly; }
+            @Override
+            public @NotNull String id() {
+                return id;
+            }
+
+            @Override
+            public @NotNull String displayName() {
+                return id;
+            }
+
+            @Override
+            public @NotNull String description() {
+                return "test";
+            }
+
+            @Override
+            public @NotNull String kind() {
+                return readOnly ? "read" : "edit";
+            }
+
+            @Override
+            public @NotNull ToolRegistry.Category category() {
+                return ToolRegistry.Category.OTHER;
+            }
+
+            @Override
+            public boolean isReadOnly() {
+                return readOnly;
+            }
         };
     }
 
@@ -97,11 +125,35 @@ class ToolDefinitionTest {
         @Test
         void resolvePermissionQuestionWithTemplate() {
             ToolDefinition tool = new ToolDefinition() {
-                @Override public @NotNull String id() { return "run"; }
-                @Override public @NotNull String displayName() { return "Run"; }
-                @Override public @NotNull String description() { return "test"; }
-                @Override public @NotNull ToolRegistry.Category category() { return ToolRegistry.Category.OTHER; }
-                @Override public @NotNull String permissionTemplate() { return "Run: {command}"; }
+                @Override
+                public @NotNull String id() {
+                    return "run";
+                }
+
+                @Override
+                public @NotNull String displayName() {
+                    return "Run";
+                }
+
+                @Override
+                public @NotNull String description() {
+                    return "test";
+                }
+
+                @Override
+                public @NotNull String kind() {
+                    return "edit";
+                }
+
+                @Override
+                public @NotNull ToolRegistry.Category category() {
+                    return ToolRegistry.Category.OTHER;
+                }
+
+                @Override
+                public @NotNull String permissionTemplate() {
+                    return "Run: {command}";
+                }
             };
             JsonObject args = new JsonObject();
             args.addProperty("command", "ls -la");
@@ -113,11 +165,35 @@ class ToolDefinitionTest {
         @Test
         void resolvePermissionQuestionNullArgsStripsPlaceholders() {
             ToolDefinition tool = new ToolDefinition() {
-                @Override public @NotNull String id() { return "run"; }
-                @Override public @NotNull String displayName() { return "Run"; }
-                @Override public @NotNull String description() { return "test"; }
-                @Override public @NotNull ToolRegistry.Category category() { return ToolRegistry.Category.OTHER; }
-                @Override public @NotNull String permissionTemplate() { return "Run: {command}"; }
+                @Override
+                public @NotNull String id() {
+                    return "run";
+                }
+
+                @Override
+                public @NotNull String displayName() {
+                    return "Run";
+                }
+
+                @Override
+                public @NotNull String description() {
+                    return "test";
+                }
+
+                @Override
+                public @NotNull String kind() {
+                    return "edit";
+                }
+
+                @Override
+                public @NotNull ToolRegistry.Category category() {
+                    return ToolRegistry.Category.OTHER;
+                }
+
+                @Override
+                public @NotNull String permissionTemplate() {
+                    return "Run: {command}";
+                }
             };
             String question = tool.resolvePermissionQuestion(null);
             assertNotNull(question);

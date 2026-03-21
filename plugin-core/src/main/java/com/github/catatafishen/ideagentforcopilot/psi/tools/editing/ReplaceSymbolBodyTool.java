@@ -48,7 +48,13 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
             + "Auto-formats and optimizes imports immediately on every call";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Replace {symbol} in {file}";
     }

@@ -36,7 +36,13 @@ public final class GitCherryPickTool extends GitTool {
         return "Apply specific commits from another branch";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Cherry-pick {commits}";
     }

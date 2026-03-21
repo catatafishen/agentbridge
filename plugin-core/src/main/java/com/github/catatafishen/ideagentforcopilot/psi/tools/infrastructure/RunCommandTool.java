@@ -45,7 +45,13 @@ public final class RunCommandTool extends InfrastructureTool {
         return "Run a shell command with paginated output -- prefer this over the built-in bash tool";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public boolean isOpenWorld() {
         return true;
     }

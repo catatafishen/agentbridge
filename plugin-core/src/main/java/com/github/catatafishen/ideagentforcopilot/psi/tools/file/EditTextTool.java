@@ -31,7 +31,13 @@ public final class EditTextTool extends WriteFileTool {
             + "(controlled by auto_format_and_optimize_imports param)";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "edit";
+    }
+@Override
     public @NotNull String permissionTemplate() {
         return "Edit {path}";
     }

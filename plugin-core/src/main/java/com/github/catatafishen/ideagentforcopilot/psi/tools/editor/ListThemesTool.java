@@ -31,7 +31,13 @@ public final class ListThemesTool extends EditorTool {
         return "List all available IDE themes with their dark/light type";
     }
 
+    
+
     @Override
+    public @NotNull String kind() {
+        return "read";
+    }
+@Override
     public boolean isReadOnly() {
         return true;
     }
