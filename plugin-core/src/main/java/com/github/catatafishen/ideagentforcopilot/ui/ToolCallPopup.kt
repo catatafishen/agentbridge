@@ -33,18 +33,26 @@ internal object ToolCallPopup {
     /**
      * Shows a popup with tool result and optional parameters.
      *
-     * @param kind         tool kind ("read", "edit", "execute", etc.) — drives the background tint
-     * @param paramsPanel  Swing component for the parameters section, or null to omit
-     * @param resultPanel  Swing component for the result section
+     * @param kind            tool kind ("read", "edit", "execute", etc.) — drives the background tint
+     * @param paramsPanel     Swing component for the parameters section, or null to omit
+     * @param resultPanel     Swing component for the result section
+     * @param toolDescription optional one-liner description for MCP tools, shown at the top of the popup
      */
-    fun show(project: Project, title: String, kind: String, paramsPanel: JComponent?, resultPanel: JComponent) {
+    fun show(
+        project: Project,
+        title: String,
+        kind: String,
+        paramsPanel: JComponent?,
+        resultPanel: JComponent,
+        toolDescription: String? = null,
+    ) {
         currentPopup?.cancel()
 
         val kindColor = KIND_COLORS[kind] ?: KIND_COLORS["other"]!!
         val panelBg = UIUtil.getPanelBackground()
         val tintedBg = ToolRenderers.blendColor(kindColor, panelBg, 0.07)
 
-        val contentPanel = buildContentPanel(tintedBg, resultPanel, paramsPanel)
+        val contentPanel = buildContentPanel(tintedBg, resultPanel, paramsPanel, toolDescription)
 
         val width = popupWidth()
         val height = popupHeight()
@@ -87,7 +95,12 @@ internal object ToolCallPopup {
         }
     }
 
-    private fun buildContentPanel(bg: Color, resultPanel: JComponent, paramsPanel: JComponent?): JBPanel<JBPanel<*>> {
+    private fun buildContentPanel(
+        bg: Color,
+        resultPanel: JComponent,
+        paramsPanel: JComponent?,
+        toolDescription: String? = null,
+    ): JBPanel<JBPanel<*>> {
         val panel = object : JBPanel<JBPanel<*>>(), Scrollable {
             override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
             override fun getScrollableUnitIncrement(visibleRect: java.awt.Rectangle, orientation: Int, direction: Int) =
@@ -96,7 +109,7 @@ internal object ToolCallPopup {
             override fun getScrollableBlockIncrement(
                 visibleRect: java.awt.Rectangle,
                 orientation: Int,
-                direction: Int
+                direction: Int,
             ) = height
 
             override fun getScrollableTracksViewportWidth() = true
@@ -107,16 +120,29 @@ internal object ToolCallPopup {
             border = JBUI.Borders.empty(8, 12)
         }
 
+        if (toolDescription != null) {
+            val descLabel = JBLabel("<html><body style='width:580px'>$toolDescription</body></html>").apply {
+                foreground = UIUtil.getContextHelpForeground()
+                border = JBUI.Borders.empty(0, 0, 6, 0)
+                alignmentX = JComponent.LEFT_ALIGNMENT
+            }
+            panel.add(descLabel)
+            panel.add(JSeparator().apply {
+                alignmentX = JComponent.LEFT_ALIGNMENT
+                maximumSize = Dimension(Int.MAX_VALUE, 1)
+            })
+            panel.add(Box.createVerticalStrut(JBUI.scale(4)))
+        }
+
         if (paramsPanel != null) {
             panel.add(sectionLabel("Parameters"))
             paramsPanel.alignmentX = JComponent.LEFT_ALIGNMENT
             panel.add(paramsPanel)
             panel.add(Box.createVerticalStrut(JBUI.scale(6)))
-            val separator = JSeparator().apply {
+            panel.add(JSeparator().apply {
                 alignmentX = JComponent.LEFT_ALIGNMENT
                 maximumSize = Dimension(Int.MAX_VALUE, 1)
-            }
-            panel.add(separator)
+            })
         }
 
         panel.add(sectionLabel("Result"))

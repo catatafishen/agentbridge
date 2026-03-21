@@ -311,7 +311,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         // Parse args for correlation
         val argsObj = arguments?.let {
-            try { JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject } catch (_: Exception) { null }
+            try {
+                JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
+            } catch (_: Exception) {
+                null
+            }
         }
 
         // Register with chip registry — returns chipId and whether MCP already handled it
@@ -340,7 +344,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
         when (status) {
             "failed" -> registry.completeClientSide(id, false)
-            "running" -> { /* intermediate — chip already shows as running or pending */ }
+            "running" -> { /* intermediate — chip already shows as running or pending */
+            }
+
             else -> registry.completeClientSide(id, true) // "completed" or any other
         }
     }
@@ -1022,6 +1028,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val baseName = toolCallNames[toolDomId]
         val chipTitle = toolChipTitle(baseName, entry?.arguments)
         val kind = entry?.kind ?: "other"
+        val toolDef = baseName?.let { toolRegistry?.findById(it) }
+        val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn()) toolDef.description() else null
         val resultPanel =
             renderToolResultPanel(baseName, entry?.status, entry?.result, entry?.arguments, entry?.description)
         val arguments = entry?.arguments
@@ -1029,7 +1037,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             ToolRenderers.jsonEditor(prettyJson(arguments), project)
         } else null
         ApplicationManager.getApplication().invokeLater {
-            ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel)
+            ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel, mcpDescription)
         }
     }
 
@@ -1040,8 +1048,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun toolChipTitle(baseName: String?, arguments: String?): String {
         if (baseName == null) return "Tool Call"
         val subtitle = formatToolSubtitle(baseName, arguments)
-        val info = TOOL_DISPLAY_INFO[baseName]
-        val display = info?.displayName ?: baseName
+        val toolDef = toolRegistry?.findById(baseName)
+        val display = toolDef?.displayName() ?: TOOL_DISPLAY_INFO[baseName]?.displayName ?: baseName
         return if (subtitle != null) "$display — $subtitle" else display
     }
 
