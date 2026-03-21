@@ -1,4 +1,4 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;

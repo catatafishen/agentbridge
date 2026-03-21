@@ -99,7 +99,6 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         p.setCustomCliModels(parseModels());
         p.setCustomBinaryPath(binaryPathField.getText().trim());
         p.setPrependInstructionsTo(instructionsFileField.getText().trim());
-        mgr.updateProfile(p);
     }
 
     @Override

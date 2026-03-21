@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
-import com.github.catatafishen.ideagentforcopilot.bridge.AcpException;
+import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.AuthMethod;
 import com.google.gson.JsonObject;
@@ -47,14 +47,14 @@ final class CommandOverrideAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @NotNull String findAgentBinary() throws AcpException {
+    public @NotNull String findAgentBinary() throws AgentException {
         List<String> tokens = parseCommand();
         if (tokens.isEmpty()) {
-            throw new AcpException("No start command configured.", null, false);
+            throw new AgentException("No start command configured.", null, false);
         }
         String binary = tokens.getFirst();
         if (new File(binary).isAbsolute() && !new File(binary).exists()) {
-            throw new AcpException("Binary not found: " + binary, null, false);
+            throw new AgentException("Binary not found: " + binary, null, false);
         }
         resolvedBinaryPath = binary;
         return binary;

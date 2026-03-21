@@ -1,4 +1,4 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
 import com.intellij.credentialStore.CredentialAttributes;
 import com.intellij.credentialStore.CredentialAttributesKt;

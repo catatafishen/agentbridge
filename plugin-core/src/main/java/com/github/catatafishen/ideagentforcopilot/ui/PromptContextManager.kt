@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
+import com.github.catatafishen.ideagentforcopilot.acp.model.ResourceReference
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project

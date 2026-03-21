@@ -241,8 +241,6 @@
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.IdeAgentService"/>
     <applicationService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager"/>
-    <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings"/>
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings"/>

@@ -1,4 +1,4 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;

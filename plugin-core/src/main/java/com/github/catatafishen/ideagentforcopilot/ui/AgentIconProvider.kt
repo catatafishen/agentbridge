@@ -1,7 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicDirectClient
-import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliClient
+import com.github.catatafishen.ideagentforcopilot.agent.claude.AnthropicDirectClient
+import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager
 import com.intellij.openapi.util.IconLoader
 import javax.swing.Icon

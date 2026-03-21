@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
-import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicKeyStore;
+import com.github.catatafishen.ideagentforcopilot.agent.claude.AnthropicKeyStore;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.HyperlinkLabel;

@@ -3,10 +3,10 @@ package com.github.catatafishen.ideagentforcopilot.ui
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
-import com.github.catatafishen.ideagentforcopilot.bridge.AcpException
+import com.github.catatafishen.ideagentforcopilot.agent.AgentException
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig
 import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore
-import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
+import com.github.catatafishen.ideagentforcopilot.acp.model.ResourceReference
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
@@ -1628,7 +1628,7 @@ class ChatToolWindowContent(
     private fun isCLINotFoundError(e: Exception): Boolean {
         var cause: Throwable? = e
         while (cause != null) {
-            if (cause is AcpException && !cause.isRecoverable) return true
+            if (cause is AgentException && !cause.isRecoverable) return true
             cause = cause.cause
         }
         return false

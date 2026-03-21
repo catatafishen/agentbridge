@@ -1,9 +1,13 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
+import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
+import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
+import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -138,7 +142,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     // ── AgentClient lifecycle ────────────────────────────────────────────────
 
     @Override
-    public void start() throws AcpException {
+    public void start() throws AgentException {
         resolvedBinaryPath = resolveBinary();
         started = true;
         ClaudeCliCredentials creds = ClaudeCliCredentials.read();
@@ -267,7 +271,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     @Override
     public @NotNull PromptResponse sendPrompt(@NotNull PromptRequest request,
-                                              @NotNull Consumer<SessionUpdate> onUpdate) throws AcpException {
+                                              @NotNull Consumer<SessionUpdate> onUpdate) throws AgentException {
         ensureStarted();
         String sessionId = request.sessionId();
         AtomicBoolean cancelled = sessionCancelled.computeIfAbsent(sessionId, k -> new AtomicBoolean(false));
@@ -390,7 +394,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                                  @NotNull String prompt,
                                  @Nullable Consumer<String> onChunk,
                                  @Nullable Consumer<SessionUpdate> onUpdate,
-                                 @NotNull AtomicBoolean cancelled) throws AcpException {
+                                 @NotNull AtomicBoolean cancelled) throws AgentException {
         try {
             LOG.info("Executing Claude CLI command: " + String.join(" ", cmd));
             ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -433,10 +437,10 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
             return stopReason;
         } catch (IOException e) {
-            throw new AcpException("Failed to start claude process: " + e.getMessage(), e, true);
+            throw new AgentException("Failed to start claude process: " + e.getMessage(), e, true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AcpException("Interrupted waiting for claude process", e, false);
+            throw new AgentException("Interrupted waiting for claude process", e, false);
         }
     }
 
@@ -750,21 +754,21 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     private static void writeJsonPromptToStdin(@NotNull OutputStream stdin, @NotNull String prompt)
-        throws AcpException {
+        throws AgentException {
         try {
             stdin.write(buildJsonUserMessage(prompt).getBytes(StandardCharsets.UTF_8));
             stdin.write('\n');
             stdin.flush();
         } catch (IOException e) {
             closeQuietly(stdin);
-            throw new AcpException("Failed to write prompt to claude process: " + e.getMessage(), e, true);
+            throw new AgentException("Failed to write prompt to claude process: " + e.getMessage(), e, true);
         }
     }
 
     // ── MCP injection ────────────────────────────────────────────────────────
 
     @Nullable
-    private Path writeMcpConfigIfNeeded() throws AcpException {
+    private Path writeMcpConfigIfNeeded() throws AgentException {
         if (mcpPort <= 0) return null;
         try {
             String json = "{\"mcpServers\":{\"agentbridge\":{"
@@ -774,7 +778,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             Files.writeString(tmp, json, StandardCharsets.UTF_8);
             return tmp;
         } catch (IOException e) {
-            throw new AcpException("Could not write MCP config: " + e.getMessage(), e, true);
+            throw new AgentException("Could not write MCP config: " + e.getMessage(), e, true);
         }
     }
 
@@ -801,17 +805,17 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     // ── Binary resolution ────────────────────────────────────────────────────
 
     @NotNull
-    private String resolveBinary() throws AcpException {
+    private String resolveBinary() throws AgentException {
         String custom = profile.getCustomBinaryPath();
         if (!custom.isEmpty()) {
             if (Files.isExecutable(Path.of(custom))) return custom;
-            throw new AcpException("Claude binary not found at: " + custom, null, false);
+            throw new AgentException("Claude binary not found at: " + custom, null, false);
         }
         for (String name : candidateNames()) {
             String found = findOnPath(name);
             if (found != null) return found;
         }
-        throw new AcpException(
+        throw new AgentException(
             "Claude CLI not found. Install it from code.claude.com and run 'claude auth login'.",
             null, false);
     }

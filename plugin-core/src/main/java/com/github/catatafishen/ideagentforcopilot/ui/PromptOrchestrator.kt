@@ -4,9 +4,9 @@ import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
 import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
-import com.github.catatafishen.ideagentforcopilot.bridge.AcpException
+import com.github.catatafishen.ideagentforcopilot.agent.AgentException
 import com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse
-import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
+import com.github.catatafishen.ideagentforcopilot.acp.model.ResourceReference
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
@@ -454,9 +454,9 @@ class PromptOrchestrator(
         var msg = if (isCancelled) "Request cancelled" else e.message ?: "Unknown error"
 
         // For ACP errors, ensure the message is descriptive
-        if (e is AcpException && msg.startsWith("(") && msg.contains(")")) {
+        if (e is AgentException && msg.startsWith("(") && msg.contains(")")) {
             // Keep the enhanced message format: (code) Message: Data
-        } else if (e is AcpException) {
+        } else if (e is AgentException) {
             msg = "ACP error: $msg"
         }
 
@@ -472,7 +472,7 @@ class PromptOrchestrator(
             return
         }
 
-        val isRecoverable = isCancelled || (e is AcpException && e.isRecoverable)
+        val isRecoverable = isCancelled || (e is AgentException && e.isRecoverable)
         if (!isRecoverable) {
             currentSessionId = null
             callbacks.updateSessionInfo()

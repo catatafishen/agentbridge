@@ -1,11 +1,14 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
+import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
+import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -158,10 +161,10 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     // ── AgentClient lifecycle ────────────────────────────────────────────────
 
     @Override
-    public void start() throws AcpException {
+    public void start() throws AgentException {
         String apiKey = AnthropicKeyStore.getApiKey(profile.getId());
         if (apiKey == null || apiKey.isEmpty()) {
-            throw new AcpException(
+            throw new AgentException(
                 "No Anthropic API key configured. "
                     + "Get your key at console.anthropic.com/settings/keys, "
                     + "then set it in Settings → Tools → IDE Agent → Agent Profiles → Claude Code.",
@@ -187,7 +190,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     // ── Session management ───────────────────────────────────────────────────
 
     @Override
-    public @NotNull String createSession(@Nullable String cwd) throws AcpException {
+    public @NotNull String createSession(@Nullable String cwd) throws AgentException {
         ensureStarted();
         String sessionId = UUID.randomUUID().toString();
         sessions.put(sessionId, new ArrayList<>());
@@ -247,7 +250,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
         String apiKey;
         try {
             apiKey = getApiKey();
-        } catch (AcpException e) {
+        } catch (AgentException e) {
             return List.of();
         }
         try {
@@ -300,7 +303,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
     @Override
     public @NotNull PromptResponse sendPrompt(@NotNull PromptRequest request,
-                                              @NotNull Consumer<SessionUpdate> onUpdate) throws AcpException {
+                                              @NotNull Consumer<SessionUpdate> onUpdate) throws AgentException {
         ensureStarted();
         String sessionId = request.sessionId();
         List<JsonObject> messages = sessions.computeIfAbsent(sessionId, k -> new ArrayList<>());
@@ -333,10 +336,10 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
     @NotNull
     private String runAgentLoop(@NotNull List<JsonObject> messages,
-                                @NotNull LoopConfig cfg) throws AcpException {
+                                @NotNull LoopConfig cfg) throws AgentException {
         AtomicReference<String> stopReason = new AtomicReference<>(STOP_REASON_END_TURN);
         for (int i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-            if (cfg.cancelled().get()) throw new AcpException("Request cancelled", null, false);
+            if (cfg.cancelled().get()) throw new AgentException("Request cancelled", null, false);
             if (cfg.onRequest() != null) cfg.onRequest().run();
 
             JsonObject requestBody = buildRequestBody(messages, cfg.model(), cfg.thinkingBudget());
@@ -361,7 +364,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
                                 @NotNull AtomicReference<String> stopReason,
                                 @Nullable Consumer<String> onChunk,
                                 @Nullable Consumer<SessionUpdate> onUpdate,
-                                @NotNull AtomicBoolean cancelled) throws AcpException {
+                                @NotNull AtomicBoolean cancelled) throws AgentException {
         String body = gson.toJson(requestBody);
         HttpRequest req = HttpRequest.newBuilder()
             .uri(URI.create(API_BASE + MESSAGES_PATH))
@@ -382,16 +385,16 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
                         String userMessage = extractAnthropicErrorMessage(errorBody);
                         emitRateLimitBanner(userMessage, onUpdate);
                     }
-                    throw new AcpException(
+                    throw new AgentException(
                         "Anthropic API error " + resp.statusCode() + ": " + errorBody, null, false);
                 }
                 parseSseStream(stream, contentBlocks, stopReason, onChunk, onUpdate, cancelled);
             }
         } catch (IOException e) {
-            throw new AcpException("Stream error: " + e.getMessage(), e, true);
+            throw new AgentException("Stream error: " + e.getMessage(), e, true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AcpException("Interrupted during streaming", e, false);
+            throw new AgentException("Interrupted during streaming", e, false);
         }
     }
 
@@ -832,10 +835,10 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     @NotNull
-    private String getApiKey() throws AcpException {
+    private String getApiKey() throws AgentException {
         String key = AnthropicKeyStore.getApiKey(profile.getId());
         if (key == null || key.isEmpty()) {
-            throw new AcpException(
+            throw new AgentException(
                 "Anthropic API key not set. Configure it in Agent Profiles settings.", null, false);
         }
         return key;

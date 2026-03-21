@@ -4,11 +4,10 @@ import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentRegistry;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
-import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicDirectClient;
-import com.github.catatafishen.ideagentforcopilot.bridge.ClaudeCliClient;
+import com.github.catatafishen.ideagentforcopilot.agent.claude.AnthropicDirectClient;
+import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.GenericAgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig;
-import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
@@ -163,8 +162,9 @@ public final class ActiveAgentManager implements Disposable {
         }
 
         try {
+            String agentId = getActiveProfileId();
             AgentProfile profile = getActiveProfile();
-            LOG.info("Starting " + profile.getDisplayName() + " agent client for project: " + project.getName());
+            LOG.info("Starting agent " + agentId + " (" + profile.getDisplayName() + ") for project: " + project.getName());
 
             if (acpClient != null) {
                 acpClient.close();
@@ -172,14 +172,14 @@ public final class ActiveAgentManager implements Disposable {
 
             clearCachedConfig();
 
-            if (profile.getTransportType() == TransportType.ANTHROPIC_DIRECT) {
+            if (AnthropicDirectClient.PROFILE_ID.equals(agentId)) {
                 acpClient = new AnthropicDirectClient(profile, ToolRegistry.getInstance(project), project);
-            } else if (profile.getTransportType() == TransportType.CLAUDE_CLI) {
+            } else if (ClaudeCliClient.PROFILE_ID.equals(agentId)) {
                 int mcpPort = resolveMcpPort();
                 AgentConfig config = resolveStartConfig();
                 acpClient = new ClaudeCliClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
             } else {
-                acpClient = createAcpClient(profile.getId());
+                acpClient = createAcpClient(agentId);
             }
 
             acpClient.start();

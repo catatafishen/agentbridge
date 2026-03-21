@@ -1,4 +1,4 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -11,7 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-final class BundledAgentDeployer {
+public final class BundledAgentDeployer {
     private static final Logger LOG = Logger.getInstance(BundledAgentDeployer.class);
 
     private static final String SENTINEL =

@@ -1,9 +1,10 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
 import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
+import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings;
@@ -89,8 +90,8 @@ abstract class AbstractClaudeAgentClient extends AbstractAgentClient {
         return (stored != null && !stored.isEmpty()) ? stored : DEFAULT_MODEL;
     }
 
-    protected void ensureStarted() throws AcpException {
-        if (!started) throw new AcpException(getClass().getSimpleName() + " not started", null, false);
+    protected void ensureStarted() throws AgentException {
+        if (!started) throw new AgentException(getClass().getSimpleName() + " not started", null, false);
     }
 
     // ── Tool name normalisation ──────────────────────────────────────────────

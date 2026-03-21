@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
+
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -37,10 +39,10 @@ public interface AgentConfig {
      * Find the agent binary on the system.
      *
      * @return absolute path to the agent binary
-     * @throws AcpException if the binary cannot be found
+     * @throws AgentException if the binary cannot be found
      */
     @NotNull
-    String findAgentBinary() throws AcpException;
+    String findAgentBinary() throws AgentException;
 
     /**
      * Build the ProcessBuilder for launching the agent in ACP mode.
@@ -49,11 +51,11 @@ public interface AgentConfig {
      * @param projectBasePath project root (for config-dir, working directory)
      * @param mcpPort         port the MCP HTTP server listens on (for stdio proxy)
      * @return configured ProcessBuilder ready to start
-     * @throws AcpException if the command cannot be built
+     * @throws AgentException if the command cannot be built
      */
     @NotNull
     ProcessBuilder buildAcpProcess(@NotNull String binaryPath, @Nullable String projectBasePath,
-                                   int mcpPort) throws AcpException;
+                                   int mcpPort) throws AgentException;
 
     /**
      * Extract agent-specific data from the ACP {@code initialize} response.

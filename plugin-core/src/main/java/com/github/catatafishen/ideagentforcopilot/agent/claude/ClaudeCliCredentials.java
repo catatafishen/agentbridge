@@ -1,4 +1,4 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;

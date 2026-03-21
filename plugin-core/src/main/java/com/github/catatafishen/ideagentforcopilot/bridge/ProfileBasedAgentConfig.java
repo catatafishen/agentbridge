@@ -1,5 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
+import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
+import com.github.catatafishen.ideagentforcopilot.agent.claude.BundledAgentDeployer;
+import com.github.catatafishen.ideagentforcopilot.agent.claude.InstructionsManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
@@ -78,7 +81,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @NotNull String findAgentBinary() throws AcpException {
+    public @NotNull String findAgentBinary() throws AgentException {
         // 1. User-provided custom path takes priority
         String customPath = profile.getCustomBinaryPath();
         if (!customPath.isEmpty()) {
@@ -87,7 +90,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
                 resolvedBinaryPath = customPath;
                 return customPath;
             }
-            throw new AcpException(profile.getDisplayName() + " binary not found at: " + customPath,
+            throw new AgentException(profile.getDisplayName() + " binary not found at: " + customPath,
                 null, false);
         }
 
@@ -113,13 +116,13 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         String hint = profile.getInstallHint().isEmpty()
             ? "Ensure it is installed and available on your PATH."
             : profile.getInstallHint();
-        throw new AcpException(profile.getDisplayName() + " CLI not found. " + hint, null, false);
+        throw new AgentException(profile.getDisplayName() + " CLI not found. " + hint, null, false);
     }
 
     @Override
     public @NotNull ProcessBuilder buildAcpProcess(@NotNull String binaryPath,
                                                    @Nullable String projectBasePath,
-                                                   int mcpPort) throws AcpException {
+                                                   int mcpPort) throws AgentException {
         resolvedBinaryPath = binaryPath;
         List<String> cmd = new ArrayList<>();
 

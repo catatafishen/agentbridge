@@ -1,4 +1,4 @@
-package com.github.catatafishen.ideagentforcopilot.bridge;
+package com.github.catatafishen.ideagentforcopilot.acp.model;
 
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
