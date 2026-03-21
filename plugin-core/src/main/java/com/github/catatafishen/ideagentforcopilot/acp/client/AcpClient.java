@@ -12,13 +12,10 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.PlanEntry;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
-import com.github.catatafishen.ideagentforcopilot.acp.model.ToolCallContent;
-import com.github.catatafishen.ideagentforcopilot.acp.model.ToolCallStatus;
-import com.github.catatafishen.ideagentforcopilot.acp.model.ToolKind;
 import com.github.catatafishen.ideagentforcopilot.acp.transport.JsonRpcErrorCodes;
 import com.github.catatafishen.ideagentforcopilot.acp.transport.JsonRpcException;
 import com.github.catatafishen.ideagentforcopilot.acp.transport.JsonRpcTransport;
-import com.github.catatafishen.ideagentforcopilot.agent.AgentConnector;
+import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentPromptException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentSessionException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentStartException;
@@ -55,7 +52,7 @@ import java.util.function.Consumer;
  *
  * @see <a href="https://agentclientprotocol.com">Agent Client Protocol</a>
  */
-public abstract class AcpClient implements AgentConnector {
+public abstract class AcpClient extends AbstractAgentClient {
 
     private static final Logger LOG = Logger.getInstance(AcpClient.class);
 
@@ -87,11 +84,11 @@ public abstract class AcpClient implements AgentConnector {
     private @Nullable String currentSessionId;
     private @Nullable String launchCwd;
     private final List<Model> availableModels = new ArrayList<>();
-    private final List<AgentConnector.AgentMode> availableModes = new ArrayList<>();
+    private final List<AbstractAgentClient.AgentMode> availableModes = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
     private @Nullable String currentModelId = null;
     private @Nullable String currentAgentSlug = null;
-    private final List<AgentConnector.AgentConfigOption> availableConfigOptions = new ArrayList<>();
+    private final List<AbstractAgentClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
     private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
 
     protected AcpClient(Project project) {
@@ -183,7 +180,7 @@ public abstract class AcpClient implements AgentConnector {
             if (response.modes() != null) {
                 availableModes.clear();
                 for (NewSessionResponse.AvailableMode m : response.modes()) {
-                    availableModes.add(new AgentConnector.AgentMode(m.slug(), m.name(), m.description()));
+                    availableModes.add(new AbstractAgentClient.AgentMode(m.slug(), m.name(), m.description()));
                 }
                 if (currentModeSlug == null) {
                     // Use the agent-reported current mode first, then our own default
@@ -198,13 +195,13 @@ public abstract class AcpClient implements AgentConnector {
             if (response.configOptions() != null) {
                 availableConfigOptions.clear();
                 for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
-                    List<AgentConnector.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
+                    List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                         : opt.values().stream()
-                            .map(v -> new AgentConnector.AgentConfigOptionValue(v.id(), v.label()))
+                            .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
                             .toList();
                     String label = opt.label() != null ? opt.label() : (opt.id() != null ? opt.id() : "");
                     availableConfigOptions.add(
-                        new AgentConnector.AgentConfigOption(opt.id(), label, opt.description(), vals, opt.selectedValueId())
+                        new AbstractAgentClient.AgentConfigOption(opt.id(), label, opt.description(), vals, opt.selectedValueId())
                     );
                 }
                 LOG.debug(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
@@ -284,7 +281,7 @@ public abstract class AcpClient implements AgentConnector {
     }
 
     @Override
-    public final List<AgentConnector.AgentMode> getAvailableModes() {
+    public final List<AbstractAgentClient.AgentMode> getAvailableModes() {
         return Collections.unmodifiableList(availableModes);
     }
 
@@ -309,7 +306,7 @@ public abstract class AcpClient implements AgentConnector {
     }
 
     @Override
-    public final List<AgentConnector.AgentConfigOption> getAvailableConfigOptions() {
+    public final List<AbstractAgentClient.AgentConfigOption> getAvailableConfigOptions() {
         return Collections.unmodifiableList(availableConfigOptions);
     }
 
@@ -766,13 +763,9 @@ public abstract class AcpClient implements AgentConnector {
         String title = getStringOrEmpty(params, "title");
         String resolvedTitle = resolveToolId(title);
 
-        ToolKind kind = null;
+        SessionUpdate.ToolKind kind = null;
         if (params.has("kind")) {
-            try {
-                kind = ToolKind.valueOf(params.get("kind").getAsString().toUpperCase());
-            } catch (IllegalArgumentException e) {
-                kind = ToolKind.OTHER;
-            }
+            kind = SessionUpdate.ToolKind.fromString(params.get("kind").getAsString());
         }
 
         JsonObject argumentsObj = parseToolCallArguments(params);
@@ -789,40 +782,39 @@ public abstract class AcpClient implements AgentConnector {
             }
         }
 
-        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, kind, arguments, locations);
+        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, kind, arguments, locations, null, null, null);
     }
 
     private SessionUpdate.ToolCallUpdate parseToolCallUpdate(JsonObject params) {
         String toolCallId = getStringOrEmpty(params, "toolCallId");
 
-        ToolCallStatus status = ToolCallStatus.COMPLETED;
+        SessionUpdate.ToolCallStatus status = SessionUpdate.ToolCallStatus.COMPLETED;
         if (params.has(KEY_STATUS)) {
-            try {
-                status = ToolCallStatus.valueOf(params.get(KEY_STATUS).getAsString().toUpperCase());
-            } catch (IllegalArgumentException e) {
-                // keep default
-            }
+            status = SessionUpdate.ToolCallStatus.fromString(params.get(KEY_STATUS).getAsString());
         }
 
         String error = params.has("error") ? params.get("error").getAsString() : null;
-        List<ToolCallContent> content = extractToolCallContent(params);
+        String description = params.has("description") ? params.get("description").getAsString() : null;
+        String result = extractResultText(params);
 
-        return new SessionUpdate.ToolCallUpdate(toolCallId, status, content, error);
+        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description);
     }
 
-    private List<ToolCallContent> extractToolCallContent(JsonObject params) {
-        if (params.has(KEY_CONTENT)) {
-            return List.of(new ToolCallContent.Content(parseContentBlocks(params)));
-        }
+    private @Nullable String extractResultText(JsonObject params) {
         if (params.has(KEY_RESULT)) {
-            String resultText = params.get(KEY_RESULT).isJsonPrimitive()
+            return params.get(KEY_RESULT).isJsonPrimitive()
                 ? params.get(KEY_RESULT).getAsString()
                 : params.get(KEY_RESULT).toString();
-            return List.of(new ToolCallContent.Content(
-                List.of(new ContentBlock.Text(resultText))
-            ));
         }
-        return List.of();
+        if (params.has(KEY_CONTENT)) {
+            List<ContentBlock> blocks = parseContentBlocks(params);
+            StringBuilder sb = new StringBuilder();
+            for (ContentBlock block : blocks) {
+                if (block instanceof ContentBlock.Text t) sb.append(t.text());
+            }
+            return sb.isEmpty() ? null : sb.toString();
+        }
+        return null;
     }
 
     private SessionUpdate.Plan parsePlan(JsonObject params) {
@@ -832,7 +824,8 @@ public abstract class AcpClient implements AgentConnector {
                 JsonObject entryObj = entryEl.getAsJsonObject();
                 String content = getStringOrEmpty(entryObj, KEY_CONTENT);
                 String status = entryObj.has(KEY_STATUS) ? entryObj.get(KEY_STATUS).getAsString() : null;
-                entries.add(new PlanEntry(content, status));
+                String priority = entryObj.has("priority") ? entryObj.get("priority").getAsString() : null;
+                entries.add(new PlanEntry(content, status, priority));
             }
         }
         return new SessionUpdate.Plan(entries);
@@ -847,9 +840,13 @@ public abstract class AcpClient implements AgentConnector {
 
     private SessionUpdate.Banner parseBanner(JsonObject params) {
         String message = getStringOrEmpty(params, "message");
-        String level = params.has("level") ? params.get("level").getAsString() : "warning";
-        String clearOn = params.has("clearOn") ? params.get("clearOn").getAsString() : null;
-        return new SessionUpdate.Banner(message, level, clearOn);
+        String levelStr = params.has("level") ? params.get("level").getAsString() : "warning";
+        String clearOnStr = params.has("clearOn") ? params.get("clearOn").getAsString() : null;
+        return new SessionUpdate.Banner(
+            message,
+            SessionUpdate.BannerLevel.fromString(levelStr),
+            SessionUpdate.ClearOn.fromString(clearOnStr)
+        );
     }
 
     private List<ContentBlock> parseContentBlocks(JsonObject params) {

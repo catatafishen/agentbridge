@@ -4,6 +4,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
 
+
 /**
  * Agent → Client: request permission for a tool call.
  *
@@ -20,7 +21,7 @@ public record RequestPermissionRequest(
     public record ProtocolToolCall(
             String toolCallId,
             String title,
-            @Nullable ToolKind kind,
+            @Nullable SessionUpdate.ToolKind kind,
             @Nullable String arguments
     ) {}
 

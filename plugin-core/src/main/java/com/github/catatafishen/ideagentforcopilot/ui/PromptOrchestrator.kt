@@ -1,6 +1,13 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.*
+import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest
+import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
+import com.github.catatafishen.ideagentforcopilot.bridge.AcpException
+import com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse
+import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
+import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.intellij.openapi.application.ApplicationManager
@@ -102,7 +109,7 @@ class PromptOrchestrator(
 
             val modelId = prepareModelAndTurnState(selectedModelId)
             val references = contextManager.buildContextReferences(contextItems.ifEmpty { null })
-            val effectivePrompt = buildEffectivePromptWithContent(client, prompt, references, contextItems)
+            val effectivePrompt = buildEffectivePrompt(prompt)
             addContextEntries(references, contextItems)
 
             dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)
@@ -121,7 +128,7 @@ class PromptOrchestrator(
         return true
     }
 
-    private fun ensureSessionCreated(client: AgentClient): String {
+    private fun ensureSessionCreated(client: AbstractAgentClient): String {
         if (currentSessionId == null) {
             currentSessionId = client.createSession(project.basePath)
             callbacks.updateSessionInfo()
@@ -147,13 +154,19 @@ class PromptOrchestrator(
         return currentSessionId!!
     }
 
-    private fun wirePermissionListener(client: AgentClient) {
-        client.setPermissionRequestListener { req: PermissionRequest ->
+    private fun wirePermissionListener(client: AbstractAgentClient) {
+        client.setPermissionRequestListener { prompt: AbstractAgentClient.PermissionPrompt ->
             ApplicationManager.getApplication().invokeLater {
                 consolePanel().showPermissionRequest(
-                    req.reqId.toString(), req.displayName, req.description
-                ) { response -> req.respond(response) }
-                notifyPermissionRequestIfUnfocused(req.displayName)
+                    prompt.toolCallId(), prompt.toolName(), prompt.arguments() ?: ""
+                ) { response ->
+                    when (response) {
+                        PermissionResponse.ALLOW_ONCE, PermissionResponse.ALLOW_SESSION ->
+                            prompt.allow(response.name.lowercase())
+                        PermissionResponse.DENY -> prompt.deny("Denied by user")
+                    }
+                }
+                notifyPermissionRequestIfUnfocused(prompt.toolName())
             }
         }
     }
@@ -208,50 +221,34 @@ class PromptOrchestrator(
         return effective
     }
 
-    /**
-     * Build the prompt sent to the agent, optionally including referenced file content inline.
-     *
-     * ACP ResourceReference objects are always sent as structured content blocks in the prompt
-     * array. However, some agents (e.g., GitHub Copilot) surface them only as metadata (path +
-     * line count) without inlining the actual content for the model. For those agents, the
-     * referenced file content is also appended as plain text so the model sees it. This behaviour
-     * is controlled by [AgentConfig.requiresResourceContentDuplication()].
-     */
-    private fun buildEffectivePromptWithContent(
-        client: AgentClient,
-        prompt: String,
-        references: List<ResourceReference>,
-        contextItems: List<ContextItemData>,
-    ): String {
-        val base = buildEffectivePrompt(prompt)
-        if (references.isEmpty() || !client.requiresResourceContentDuplication()) return base
-        val contentBlocks = references.mapIndexed { i, ref ->
-            val label = contextItems.getOrNull(i)?.name ?: ref.uri().substringAfterLast("/")
-            "--- $label ---\n${ref.text()}"
-        }
-        return "$base\n\n${contentBlocks.joinToString("\n\n")}"
-    }
+
 
     private fun dispatchPromptWithRetry(
-        client: AgentClient,
+        client: AbstractAgentClient,
         initialSessionId: String,
         effectivePrompt: String,
         modelId: String,
         references: List<ResourceReference>,
     ) {
-        val refs = references.ifEmpty { null }
-        val onChunk = java.util.function.Consumer<String> { chunk ->
-            ApplicationManager.getApplication().invokeLater {
-                if (currentPromptThread != null) consolePanel().appendText(chunk)
-            }
-        }
+        val promptBlocks = buildPromptBlocks(effectivePrompt, references)
         val onUpdate = java.util.function.Consumer<SessionUpdate> { update ->
             handlePromptStreamingUpdate(update)
         }
         val sendCall: (String) -> Unit = { sid ->
-            client.sendPrompt(sid, effectivePrompt, modelId, refs, onChunk, onUpdate, null)
+            val request = PromptRequest(sid, promptBlocks, modelId.takeIf { it.isNotEmpty() }, client.getEffectiveModeSlug())
+            client.sendPrompt(request, onUpdate)
         }
         sendWithSessionRetry(client, initialSessionId, sendCall)
+    }
+
+    private fun buildPromptBlocks(prompt: String, references: List<ResourceReference>): List<ContentBlock> {
+        val blocks = mutableListOf<ContentBlock>(ContentBlock.Text(prompt))
+        for (ref in references) {
+            blocks.add(ContentBlock.Resource(ContentBlock.ResourceLink(
+                ref.uri(), null, ref.mimeType(), ref.text(), null
+            )))
+        }
+        return blocks
     }
 
     /**
@@ -259,14 +256,15 @@ class PromptOrchestrator(
      * error, invalidates the current session, creates a fresh one, and retries once.
      */
     private fun sendWithSessionRetry(
-        client: AgentClient,
+        client: AbstractAgentClient,
         initialSessionId: String,
         sendCall: (String) -> Unit,
     ) {
         try {
             sendCall(initialSessionId)
-        } catch (e: AcpException) {
-            if (e.message != null && e.message!!.contains("not found", ignoreCase = true)) {
+        } catch (e: Exception) {
+            val msg = e.message ?: ""
+            if (msg.contains("not found", ignoreCase = true)) {
                 log.info("Session expired ('not found'), creating new session and retrying")
                 currentSessionId = null
                 val newSessionId = ensureSessionCreated(client)
@@ -320,6 +318,13 @@ class PromptOrchestrator(
 
     private fun handlePromptStreamingUpdate(update: SessionUpdate) {
         when (update) {
+            is SessionUpdate.AgentMessageChunk -> {
+                val text = update.text()
+                ApplicationManager.getApplication().invokeLater {
+                    if (currentPromptThread != null) consolePanel().appendText(text)
+                }
+            }
+
             is SessionUpdate.ToolCall -> {
                 handleStreamingToolCall(update)
                 handleClientUpdate(update)
@@ -330,7 +335,7 @@ class PromptOrchestrator(
                 handleClientUpdate(update)
             }
 
-            is SessionUpdate.AgentThought -> consolePanel().appendThinkingText(update.text())
+            is SessionUpdate.AgentThoughtChunk -> consolePanel().appendThinkingText(update.text())
             is SessionUpdate.TurnUsage -> {
                 turnInputTokens = update.inputTokens()
                 turnOutputTokens = update.outputTokens()
@@ -339,6 +344,8 @@ class PromptOrchestrator(
 
             is SessionUpdate.Banner -> handleStreamingBanner(update)
             is SessionUpdate.Plan -> handleClientUpdate(update)
+            is SessionUpdate.AvailableCommandsChanged,
+            is SessionUpdate.AvailableModesChanged -> { /* handled by AcpClient internally */ }
         }
     }
 
@@ -360,10 +367,10 @@ class PromptOrchestrator(
     private fun handleStreamingToolCall(toolCall: SessionUpdate.ToolCall) {
         val title = toolCall.title()
         val toolCallId = toolCall.toolCallId()
-        val kind = toolCall.kind().value()
+        val kind = toolCall.kind()?.value() ?: "other"
         val arguments = toolCall.arguments()
         if (toolCallId.isEmpty()) return
-        if (toolCall.isSubAgent) {
+        if (toolCall.isSubAgent()) {
             val agentType = toolCall.agentType()!!
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()

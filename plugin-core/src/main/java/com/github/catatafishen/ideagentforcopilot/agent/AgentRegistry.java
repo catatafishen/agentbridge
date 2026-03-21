@@ -24,7 +24,7 @@ public final class AgentRegistry {
     public record AgentDescriptor(
             String id,
             String displayName,
-            Function<Project, AgentConnector> factory
+            Function<Project, AbstractAgentClient> factory
     ) {}
 
     private static final Map<String, AgentDescriptor> AGENTS = new LinkedHashMap<>();
@@ -34,12 +34,13 @@ public final class AgentRegistry {
         register("junie", "Junie", JunieClient::new);
         register("kiro", "Kiro", KiroClient::new);
         register("opencode", "OpenCode", OpenCodeClient::new);
+        // TODO: register Claude clients when they support single-arg Project constructor
     }
 
     private AgentRegistry() {}
 
     private static void register(String id, String displayName,
-                                 Function<Project, AgentConnector> factory) {
+                                 Function<Project, AbstractAgentClient> factory) {
         AGENTS.put(id, new AgentDescriptor(id, displayName, factory));
     }
 
@@ -58,13 +59,13 @@ public final class AgentRegistry {
     }
 
     /**
-     * Create a new agent connector instance for the given agent ID.
+     * Create a new agent client instance for the given agent ID.
      *
      * @param agentId the agent ID (e.g. "copilot")
      * @param project the IntelliJ project
-     * @return a new connector instance, or null if the agent ID is unknown
+     * @return a new client instance, or null if the agent ID is unknown
      */
-    public static @Nullable AgentConnector create(String agentId, Project project) {
+    public static @Nullable AbstractAgentClient create(String agentId, Project project) {
         AgentDescriptor descriptor = AGENTS.get(agentId);
         return descriptor != null ? descriptor.factory().apply(project) : null;
     }

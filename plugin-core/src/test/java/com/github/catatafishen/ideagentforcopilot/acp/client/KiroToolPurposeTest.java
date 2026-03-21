@@ -19,7 +19,7 @@ class KiroToolPurposeTest {
     @DisplayName("extracts purpose from tool call arguments")
     void extractsPurpose() throws Exception {
         String args = "{\"path\": \"src/main.java\", \"__tool_use_purpose\": \"Reading file to understand structure\"}";
-        SessionUpdate.ToolCall tc = new SessionUpdate.ToolCall("tc-1", "read_file", null, args, null);
+        SessionUpdate.ToolCall tc = new SessionUpdate.ToolCall("tc-1", "read_file", null, args, null, null, null, null);
 
         // Simulate the extraction logic (same as KiroClient.extractPurpose)
         String purpose = extractPurpose(args);

@@ -1,7 +1,13 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model
-import com.github.catatafishen.ideagentforcopilot.bridge.*
+import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
+import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
+import com.github.catatafishen.ideagentforcopilot.bridge.AcpException
+import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig
+import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore
+import com.github.catatafishen.ideagentforcopilot.bridge.ResourceReference
+import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings
@@ -308,7 +314,7 @@ class ChatToolWindowContent(
             for (entry in entries) {
                 val label =
                     "${entry.content()} [${entry.status()}]${
-                        if (entry.priority().isNotEmpty()) " (${entry.priority()})" else ""
+                        if (entry.priority()?.isNotEmpty() == true) " (${entry.priority()})" else ""
                     }"
                 planNode.add(javax.swing.tree.DefaultMutableTreeNode(label))
             }
@@ -1402,7 +1408,7 @@ class ChatToolWindowContent(
             val json = conversationStore.loadJson(project.basePath)
             ApplicationManager.getApplication().invokeLater {
                 if (json != null) {
-                    conversationReplayer.loadAndSplit(json)
+                    conversationReplayer.loadAndSplit(json!!)
                     chatConsolePanel.appendEntries(conversationReplayer.recentEntries())
                     val deferred = conversationReplayer.remainingPromptCount()
                     if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
@@ -1586,7 +1592,7 @@ class ChatToolWindowContent(
         for (attempt in 1..3) {
             if (attempt > 1) Thread.sleep(2000L)
             try {
-                return agentManager.client.listModels().toList()
+                return agentManager.client.getAvailableModels()
             } catch (e: Exception) {
                 lastError = e
                 if (authService.isAuthenticationError(e.message ?: "") || isCLINotFoundError(e)) break

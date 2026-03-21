@@ -1,9 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
-import com.github.catatafishen.ideagentforcopilot.agent.AgentClientAdapter;
-import com.github.catatafishen.ideagentforcopilot.agent.AgentConnector;
+import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentRegistry;
-import com.github.catatafishen.ideagentforcopilot.bridge.AgentClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.AnthropicDirectClient;
@@ -48,7 +46,7 @@ public final class ActiveAgentManager implements Disposable {
     private final Project project;
     private volatile boolean acpConnected;
 
-    private AgentClient acpClient;
+    private AbstractAgentClient acpClient;
     private AgentConfig cachedConfig;
     private GenericSettings cachedSettings;
     private GenericAgentUiSettings cachedUiSettings;
@@ -148,7 +146,7 @@ public final class ActiveAgentManager implements Disposable {
      * Returns the agent client, starting it if necessary.
      */
     @NotNull
-    public AgentClient getClient() {
+    public AbstractAgentClient getClient() {
         if (!started || acpClient == null || !acpClient.isHealthy()) {
             start();
         }
@@ -288,10 +286,10 @@ public final class ActiveAgentManager implements Disposable {
     }
 
     @NotNull
-    private AgentClient createAcpClient(@NotNull String profileId) {
-        AgentConnector connector = AgentRegistry.create(profileId, project);
-        if (connector != null) {
-            return new AgentClientAdapter(connector, project);
+    private AbstractAgentClient createAcpClient(@NotNull String profileId) {
+        AbstractAgentClient client = AgentRegistry.create(profileId, project);
+        if (client != null) {
+            return client;
         }
         LOG.warn("Unknown ACP profile ID: " + profileId + " — no client registered in AgentRegistry");
         throw new IllegalArgumentException("Unknown ACP agent profile: " + profileId);

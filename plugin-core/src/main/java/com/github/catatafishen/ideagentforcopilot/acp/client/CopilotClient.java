@@ -2,7 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.acp.client;
 
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
-import com.github.catatafishen.ideagentforcopilot.agent.AgentConnector;
+import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -127,13 +127,13 @@ public final class CopilotClient extends AcpClient {
     }
 
     @Override
-    public List<AgentConnector.AgentMode> getAvailableAgents() {
+    public List<AbstractAgentClient.AgentMode> getAvailableAgents() {
         return List.of(
-            new AgentConnector.AgentMode("intellij-default", "Intellij-Default",
+            new AbstractAgentClient.AgentMode("intellij-default", "Intellij-Default",
                 "Full IntelliJ toolset with abuse-detection instructions"),
-            new AgentConnector.AgentMode("intellij-explore", "Intellij-Explore",
+            new AbstractAgentClient.AgentMode("intellij-explore", "Intellij-Explore",
                 "Read-only code navigation, no file edits or shell execution"),
-            new AgentConnector.AgentMode("intellij-edit", "Intellij-Edit",
+            new AbstractAgentClient.AgentMode("intellij-edit", "Intellij-Edit",
                 "Focused editing and refactoring tools, no system shell")
         );
     }
@@ -247,6 +247,11 @@ public final class CopilotClient extends AcpClient {
     @Override
     public ModelDisplayMode modelDisplayMode() {
         return ModelDisplayMode.MULTIPLIER;
+    }
+
+    @Override
+    public boolean supportsMultiplier() {
+        return true;
     }
 
     @Override

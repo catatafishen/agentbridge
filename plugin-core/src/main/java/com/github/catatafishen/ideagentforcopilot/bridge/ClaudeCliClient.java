@@ -28,9 +28,13 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
+import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 
 /**
- * {@link AgentClient} implementation that drives the {@code claude} CLI binary in
+ * Claude CLI implementation that drives the {@code claude} CLI binary in
  * bidirectional {@code --input-format stream-json --output-format stream-json} mode.
  *
  * <p>Authentication is handled entirely by the {@code claude} subprocess using the
@@ -53,6 +57,17 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private static final Logger LOG = Logger.getInstance(ClaudeCliClient.class);
 
     public static final String PROFILE_ID = "claude-cli";
+
+    @Override
+    public String agentId() { return PROFILE_ID; }
+
+    @Override
+    public String displayName() { return profile.getDisplayName(); }
+
+    @Override
+    public boolean isConnected() { return isHealthy(); }
+
+
 
     private static final String FIELD_SESSION_ID = "session_id";
     private static final String SUBTYPE_ERROR = "error";
@@ -148,7 +163,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     @Override
-    public void close() {
+    public void stop() {
         started = false;
         activeProcesses.values().forEach(Process::destroyForcibly);
         activeProcesses.clear();
@@ -221,9 +236,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     @Override
-    public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> listModels()
-            throws AcpException {
-        ensureStarted();
+    public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> getAvailableModels() {
         List<String> custom = profile.getCustomCliModels();
         if (!custom.isEmpty()) {
             return parseCustomModels(custom);
@@ -252,22 +265,23 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     // ── Prompt execution ─────────────────────────────────────────────────────
 
-    public @NotNull String sendPrompt(@NotNull String sessionId,
-                                      @NotNull String prompt,
-                                      @Nullable String model,
-                                      @Nullable List<ResourceReference> references,
-                                      @Nullable Consumer<String> onChunk,
-                                      @Nullable Consumer<SessionUpdate> onUpdate,
-                                      @Nullable Runnable onRequest) throws AcpException {
+    @Override
+    public @NotNull PromptResponse sendPrompt(@NotNull PromptRequest request,
+                                              @NotNull Consumer<SessionUpdate> onUpdate) throws AcpException {
         ensureStarted();
+        String sessionId = request.sessionId();
         AtomicBoolean cancelled = sessionCancelled.computeIfAbsent(sessionId, k -> new AtomicBoolean(false));
         cancelled.set(false);
-        if (onRequest != null) onRequest.run();
 
-        String resolvedModel = resolveModel(sessionId, model);
+        String resolvedModel = resolveModel(sessionId, request.modelId());
         boolean isNewSession = !cliSessionIds.containsKey(sessionId);
-        String fullPrompt = buildFullPrompt(prompt, references, isNewSession);
+        String rawPrompt = extractPromptText(request.prompt());
+        String fullPrompt = buildFullPrompt(rawPrompt, isNewSession);
         List<String> cmd = buildCommand(sessionId, resolvedModel);
+
+        // Wrap text chunks as AgentMessageChunk updates
+        Consumer<String> onChunk = chunk ->
+            onUpdate.accept(new SessionUpdate.AgentMessageChunk(List.of(new ContentBlock.Text(chunk))));
 
         Path mcpConfig = null;
         try {
@@ -276,7 +290,8 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 cmd.add("--mcp-config");
                 cmd.add(mcpConfig.toString());
             }
-            return runSubprocess(sessionId, cmd, fullPrompt, onChunk, onUpdate, cancelled);
+            String stopReason = runSubprocess(sessionId, cmd, fullPrompt, onChunk, onUpdate, cancelled);
+            return new PromptResponse(stopReason, null);
         } finally {
             if (mcpConfig != null) {
                 try {
@@ -286,6 +301,25 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 }
             }
         }
+    }
+
+    /**
+     * Extract plain text from content blocks, inlining resource file content.
+     */
+    @NotNull
+    private static String extractPromptText(@NotNull List<ContentBlock> blocks) {
+        StringBuilder sb = new StringBuilder();
+        for (ContentBlock block : blocks) {
+            if (block instanceof ContentBlock.Text t) {
+                sb.append(t.text());
+            } else if (block instanceof ContentBlock.Resource r) {
+                ContentBlock.ResourceLink rl = r.resource();
+                if (rl.text() != null && !rl.text().isEmpty()) {
+                    sb.append("File: ").append(rl.uri()).append("\n```\n").append(rl.text()).append("\n```\n\n");
+                }
+            }
+        }
+        return sb.toString();
     }
 
     @NotNull
@@ -747,14 +781,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     // ── Prompt building ──────────────────────────────────────────────────────
 
     @NotNull
-    private String buildFullPrompt(@NotNull String prompt,
-                                   @Nullable List<ResourceReference> references,
-                                   boolean isNewSession) {
+    private String buildFullPrompt(@NotNull String prompt, boolean isNewSession) {
         StringBuilder sb = new StringBuilder();
 
-        // Inject startup instructions for new sessions (not --resume).
-        // This ensures Claude CLI receives the plugin's system instructions even though
-        // it may not properly read the MCP initialize response's instructions field.
         if (isNewSession) {
             String instructions = config.getSessionInstructions();
             if (instructions != null && !instructions.isEmpty()) {
@@ -762,16 +791,6 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 sb.append(instructions);
                 sb.append("\n</system-reminder>\n\n");
                 LOG.info("Injected startup instructions into first message (" + instructions.length() + " chars)");
-            }
-        }
-
-        // Add resource references (file context)
-        if (references != null && !references.isEmpty()) {
-            for (ResourceReference ref : references) {
-                String text = ref.text();
-                if (!text.isEmpty()) {
-                    sb.append("File: ").append(ref.uri()).append("\n```\n").append(text).append("\n```\n\n");
-                }
             }
         }
 

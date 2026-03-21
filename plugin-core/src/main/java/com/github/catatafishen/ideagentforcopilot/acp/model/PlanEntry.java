@@ -7,5 +7,6 @@ import org.jetbrains.annotations.Nullable;
  */
 public record PlanEntry(
         String content,
-        @Nullable String status
+        @Nullable String status,
+        @Nullable String priority
 ) {}

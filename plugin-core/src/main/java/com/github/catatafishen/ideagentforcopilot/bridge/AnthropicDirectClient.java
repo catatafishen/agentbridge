@@ -36,6 +36,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
+import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 
 /**
  * Direct Anthropic Messages API client for Claude Code profiles.
@@ -52,6 +56,23 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     private static final Logger LOG = Logger.getInstance(AnthropicDirectClient.class);
 
     public static final String PROFILE_ID = "claude-code";
+
+    @Override
+    public String agentId() { return PROFILE_ID; }
+
+    @Override
+    public String displayName() { return profile.getDisplayName(); }
+
+    @Override
+    public boolean isConnected() { return isHealthy(); }
+
+    @Override
+    public void stop() {
+        started = false;
+        sessions.clear();
+        sessionModels.clear();
+        sessionCancelled.clear();
+    }
 
     @NotNull
     public static AgentProfile createDefaultProfile() {
@@ -161,13 +182,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
             : "No Anthropic API key configured. Set it in Settings → Tools → IDE Agent → Agent Profiles.";
     }
 
-    @Override
-    public void close() {
-        started = false;
-        sessions.clear();
-        sessionModels.clear();
-        sessionCancelled.clear();
-    }
+    // stop() is the canonical lifecycle method; close() is inherited from AbstractAgentClient
 
     // ── Session management ───────────────────────────────────────────────────
 
@@ -226,11 +241,15 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
     // ── Model listing ────────────────────────────────────────────────────────
 
-        @Override
-    public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> listModels()
-            throws AcpException {
-        ensureStarted();
-        String apiKey = getApiKey();
+    @Override
+    public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> getAvailableModels() {
+        if (!started) return List.of();
+        String apiKey;
+        try {
+            apiKey = getApiKey();
+        } catch (AcpException e) {
+            return List.of();
+        }
         try {
             HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(API_BASE + MODELS_PATH))
@@ -242,15 +261,15 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
             HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
             if (resp.statusCode() != 200) {
-                throw new AcpException(
-                    "Failed to list models: HTTP " + resp.statusCode() + " — " + resp.body(), null, false);
+                throw new RuntimeException(
+                    "Failed to list models: HTTP " + resp.statusCode() + " — " + resp.body());
             }
             return parseModelsFromResponse(resp.body());
         } catch (IOException e) {
-            throw new AcpException("Failed to contact Anthropic API: " + e.getMessage(), e, true);
+            throw new RuntimeException("Failed to contact Anthropic API: " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new AcpException("Interrupted while listing models", e, false);
+            return List.of();
         }
     }
 
@@ -279,25 +298,27 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
     // ── Prompt execution ─────────────────────────────────────────────────────
 
-    public @NotNull String sendPrompt(@NotNull String sessionId,
-                                      @NotNull String prompt,
-                                      @Nullable String model,
-                                      @Nullable List<ResourceReference> references,
-                                      @Nullable Consumer<String> onChunk,
-                                      @Nullable Consumer<SessionUpdate> onUpdate,
-                                      @Nullable Runnable onRequest) throws AcpException {
+    @Override
+    public @NotNull PromptResponse sendPrompt(@NotNull PromptRequest request,
+                                              @NotNull Consumer<SessionUpdate> onUpdate) throws AcpException {
         ensureStarted();
+        String sessionId = request.sessionId();
         List<JsonObject> messages = sessions.computeIfAbsent(sessionId, k -> new ArrayList<>());
         AtomicBoolean cancelled = sessionCancelled.computeIfAbsent(sessionId, k -> new AtomicBoolean(false));
         cancelled.set(false);
 
-        String resolvedModel = resolveModel(sessionId, model);
+        String resolvedModel = resolveModel(sessionId, request.modelId());
         String apiKey = getApiKey();
 
-        messages.add(buildUserMessage(prompt, references));
+        messages.add(buildUserMessageFromBlocks(request.prompt()));
+
+        // Wrap text chunks as AgentMessageChunk updates
+        Consumer<String> onChunk = chunk ->
+            onUpdate.accept(new SessionUpdate.AgentMessageChunk(List.of(new ContentBlock.Text(chunk))));
 
         int thinkingBudget = resolveThinkingBudget(sessionId);
-        return runAgentLoop(messages, new LoopConfig(resolvedModel, apiKey, thinkingBudget, onChunk, onUpdate, onRequest, cancelled));
+        String stopReason = runAgentLoop(messages, new LoopConfig(resolvedModel, apiKey, thinkingBudget, onChunk, onUpdate, null, cancelled));
+        return new PromptResponse(stopReason, null);
     }
 
     private record LoopConfig(
@@ -720,29 +741,42 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     }
 
     @NotNull
-    private JsonObject buildUserMessage(@NotNull String prompt,
-                                        @Nullable List<ResourceReference> references) {
+    /**
+     * Builds a user message from ACP content blocks.
+     * Text blocks and resource blocks are converted to Anthropic API format.
+     */
+    private JsonObject buildUserMessageFromBlocks(@NotNull List<ContentBlock> blocks) {
         JsonObject msg = new JsonObject();
         msg.addProperty("role", ROLE_USER);
 
-        if (references == null || references.isEmpty()) {
-            msg.addProperty(FIELD_CONTENT, prompt);
-        } else {
-            JsonArray content = new JsonArray();
-            for (ResourceReference ref : references) {
-                String text = ref.text();
-                if (!text.isEmpty()) {
-                    JsonObject block = new JsonObject();
-                    block.addProperty(FIELD_TYPE, TYPE_TEXT);
-                    block.addProperty(TYPE_TEXT, "File: " + ref.uri() + "\n```\n" + text + "\n```");
-                    content.add(block);
+        // Collect text content from blocks
+        StringBuilder plainText = new StringBuilder();
+        List<JsonObject> contentArray = new ArrayList<>();
+
+        for (ContentBlock block : blocks) {
+            if (block instanceof ContentBlock.Text t) {
+                plainText.append(t.text());
+            } else if (block instanceof ContentBlock.Resource r) {
+                ContentBlock.ResourceLink rl = r.resource();
+                if (rl.text() != null && !rl.text().isEmpty()) {
+                    JsonObject fileBlock = new JsonObject();
+                    fileBlock.addProperty(FIELD_TYPE, TYPE_TEXT);
+                    fileBlock.addProperty(TYPE_TEXT, "File: " + rl.uri() + "\n```\n" + rl.text() + "\n```");
+                    contentArray.add(fileBlock);
                 }
             }
+        }
+
+        if (contentArray.isEmpty()) {
+            msg.addProperty(FIELD_CONTENT, plainText.toString());
+        } else {
             JsonObject promptBlock = new JsonObject();
             promptBlock.addProperty(FIELD_TYPE, TYPE_TEXT);
-            promptBlock.addProperty(TYPE_TEXT, prompt);
-            content.add(promptBlock);
-            msg.add(FIELD_CONTENT, content);
+            promptBlock.addProperty(TYPE_TEXT, plainText.toString());
+            contentArray.add(promptBlock);
+            JsonArray arr = new JsonArray();
+            for (JsonObject b : contentArray) arr.add(b);
+            msg.add(FIELD_CONTENT, arr);
         }
         return msg;
     }
