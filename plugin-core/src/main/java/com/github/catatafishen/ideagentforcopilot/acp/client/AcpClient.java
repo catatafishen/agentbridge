@@ -74,6 +74,13 @@ public abstract class AcpClient extends AbstractAgentClient {
     private static final String KEY_CONTENT = "content";
     private static final String KEY_STATUS = "status";
     private static final String KEY_RESULT = "result";
+    private static final String KEY_UPDATE = "update";
+    private static final String KEY_ARGUMENTS = "arguments";
+    private static final String KEY_OPTIONS = "options";
+    private static final String KEY_OPTION_ID = "optionId";
+    private static final String KEY_OUTCOME = "outcome";
+    private static final String VALUE_SELECTED = "selected";
+    private static final String VALUE_ALLOW_ONCE = "allow_once";
 
     protected final Gson gson = new GsonBuilder()
         .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
@@ -156,19 +163,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         }
         try {
             beforeCreateSession(cwd);
-            int mcpPort = resolveMcpPort();
-
-            JsonObject params = new JsonObject();
-            params.addProperty("cwd", cwd);
-            customizeNewSession(cwd, mcpPort, params);
-
-            // Request continuation of the previous conversation if one was saved.
-            // Cleared only on explicit "Clear and Restart". Ignored if the agent doesn't support it.
-            String savedResumeId = loadResumeSessionId();
-            if (savedResumeId != null) {
-                params.addProperty("resumeSessionId", savedResumeId);
-                LOG.info(displayName() + ": requesting resume of session " + savedResumeId);
-            }
+            JsonObject params = buildNewSessionParams(cwd);
 
             CompletableFuture<JsonElement> future = transport.sendRequest("session/new", params);
             JsonElement result = future.get(SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -177,46 +172,8 @@ public abstract class AcpClient extends AbstractAgentClient {
             NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
             LOG.debug(displayName() + ": session/new: " + (response.models() != null ? response.models().size() : 0) + " model(s), "
                 + (response.modes() != null ? response.modes().size() : 0) + " mode(s)");
-            currentSessionId = response.sessionId();
 
-            if (response.models() != null) {
-                availableModels.clear();
-                availableModels.addAll(response.models());
-            }
-
-            if (response.currentModelId() != null) {
-                currentModelId = response.currentModelId();
-            }
-
-            if (response.modes() != null) {
-                availableModes.clear();
-                for (NewSessionResponse.AvailableMode m : response.modes()) {
-                    availableModes.add(new AbstractAgentClient.AgentMode(m.slug(), m.name(), m.description()));
-                }
-                if (currentModeSlug == null) {
-                    // Use the agent-reported current mode first, then our own default
-                    String reportedMode = response.currentModeId();
-                    currentModeSlug = reportedMode != null ? reportedMode : defaultModeSlug();
-                }
-                if (currentAgentSlug == null) {
-                    currentAgentSlug = defaultAgentSlug();
-                }
-            }
-
-            if (response.configOptions() != null) {
-                availableConfigOptions.clear();
-                for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
-                    List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
-                        : opt.values().stream()
-                        .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
-                        .toList();
-                    String label = opt.label() != null ? opt.label() : (opt.id() != null ? opt.id() : "");
-                    availableConfigOptions.add(
-                        new AbstractAgentClient.AgentConfigOption(opt.id(), label, opt.description(), vals, opt.selectedValueId())
-                    );
-                }
-                LOG.debug(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
-            }
+            processNewSessionResponse(response);
 
             onSessionCreated(currentSessionId);
             persistResumeSessionId(currentSessionId);
@@ -227,6 +184,71 @@ public abstract class AcpClient extends AbstractAgentClient {
         } catch (Exception e) {
             throw new AgentSessionException("Failed to create session for " + displayName(), e);
         }
+    }
+
+    private JsonObject buildNewSessionParams(String cwd) {
+        int mcpPort = resolveMcpPort();
+        JsonObject params = new JsonObject();
+        params.addProperty("cwd", cwd);
+        customizeNewSession(cwd, mcpPort, params);
+
+        // Request continuation of the previous conversation if one was saved.
+        String savedResumeId = loadResumeSessionId();
+        if (savedResumeId != null) {
+            params.addProperty("resumeSessionId", savedResumeId);
+            LOG.info(displayName() + ": requesting resume of session " + savedResumeId);
+        }
+        return params;
+    }
+
+    private void processNewSessionResponse(NewSessionResponse response) {
+        currentSessionId = response.sessionId();
+
+        if (response.models() != null) {
+            availableModels.clear();
+            availableModels.addAll(response.models());
+        }
+
+        if (response.currentModelId() != null) {
+            currentModelId = response.currentModelId();
+        }
+
+        if (response.modes() != null) {
+            updateModes(response);
+        }
+
+        if (response.configOptions() != null) {
+            updateConfigOptions(response);
+        }
+    }
+
+    private void updateModes(NewSessionResponse response) {
+        availableModes.clear();
+        for (NewSessionResponse.AvailableMode m : response.modes()) {
+            availableModes.add(new AbstractAgentClient.AgentMode(m.slug(), m.name(), m.description()));
+        }
+        if (currentModeSlug == null) {
+            String reportedMode = response.currentModeId();
+            currentModeSlug = reportedMode != null ? reportedMode : defaultModeSlug();
+        }
+        if (currentAgentSlug == null) {
+            currentAgentSlug = defaultAgentSlug();
+        }
+    }
+
+    private void updateConfigOptions(NewSessionResponse response) {
+        availableConfigOptions.clear();
+        for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
+            List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
+                : opt.values().stream()
+                .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
+                .toList();
+            String label = opt.label() != null ? opt.label() : (opt.id() != null ? opt.id() : "");
+            availableConfigOptions.add(
+                new AbstractAgentClient.AgentConfigOption(opt.id(), label, opt.description(), vals, opt.selectedValueId())
+            );
+        }
+        LOG.debug(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
     }
 
     @Override
@@ -783,8 +805,8 @@ public abstract class AcpClient extends AbstractAgentClient {
      * genuinely different structure.
      */
     protected JsonObject normalizeSessionUpdateParams(JsonObject params) {
-        if (params.has("update") && params.get("update").isJsonObject()) {
-            return params.getAsJsonObject("update");
+        if (params.has(KEY_UPDATE) && params.get(KEY_UPDATE).isJsonObject()) {
+            return params.getAsJsonObject(KEY_UPDATE);
         }
         return params;
     }
@@ -832,8 +854,8 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     @Nullable
     protected JsonObject parseToolCallArguments(@NotNull JsonObject params) {
-        if (params.has("arguments") && params.get("arguments").isJsonObject()) {
-            return params.getAsJsonObject("arguments");
+        if (params.has(KEY_ARGUMENTS) && params.get(KEY_ARGUMENTS).isJsonObject()) {
+            return params.getAsJsonObject(KEY_ARGUMENTS);
         }
         return null;
     }
@@ -952,22 +974,26 @@ public abstract class AcpClient extends AbstractAgentClient {
         List<ContentBlock> blocks = new ArrayList<>();
         for (JsonElement el : array) {
             if (el.isJsonObject()) {
-                JsonObject block = el.getAsJsonObject();
-                String blockType = block.has("type") ? block.get("type").getAsString() : "text";
-                if ("text".equals(blockType) && block.has("text")) {
-                    blocks.add(new ContentBlock.Text(block.get("text").getAsString()));
-                } else if ("content".equals(blockType) && block.has("content")) {
-                    // Spec: tool_call_update content items wrap blocks as {type:"content", content:{type,text}}
-                    JsonElement inner = block.get("content");
-                    if (inner.isJsonObject() && inner.getAsJsonObject().has("text")) {
-                        blocks.add(new ContentBlock.Text(inner.getAsJsonObject().get("text").getAsString()));
-                    }
-                }
+                blocks.add(parseContentBlock(el.getAsJsonObject()));
             } else if (el.isJsonPrimitive()) {
                 blocks.add(new ContentBlock.Text(el.getAsString()));
             }
         }
         return blocks;
+    }
+
+    private ContentBlock parseContentBlock(JsonObject block) {
+        String blockType = block.has("type") ? block.get("type").getAsString() : "text";
+        if ("text".equals(blockType) && block.has("text")) {
+            return new ContentBlock.Text(block.get("text").getAsString());
+        } else if ("content".equals(blockType) && block.has(KEY_CONTENT)) {
+            // Spec: tool_call_update content items wrap blocks as {type:"content", content:{type,text}}
+            JsonElement inner = block.get(KEY_CONTENT);
+            if (inner.isJsonObject() && inner.getAsJsonObject().has("text")) {
+                return new ContentBlock.Text(inner.getAsJsonObject().get("text").getAsString());
+            }
+        }
+        return new ContentBlock.Text(""); // Or some kind of empty block
     }
 
     private static String getStringOrEmpty(JsonObject obj, String key) {
@@ -989,16 +1015,25 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
+        // Notify subclass before responding, so it can capture args for chip correlation.
+        if (params != null && params.has("toolCall")) {
+            JsonObject toolCallObj = params.getAsJsonObject("toolCall");
+            String toolCallId = getStringOrEmpty(toolCallObj, "toolCallId");
+            if (!toolCallId.isEmpty()) {
+                onPermissionRequest(toolCallId, toolCallObj);
+            }
+        }
+
         // Prefer the "allow_once" option by kind; fall back to the first available option.
-        JsonObject chosenOption = findOptionByKind(params, "allow_once");
+        JsonObject chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
         if (chosenOption == null) {
             chosenOption = findFirstOption(params);
         }
-        String optionId = chosenOption != null && chosenOption.has("optionId")
-            ? chosenOption.get("optionId").getAsString()
-            : "allow_once";
+        String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
+            ? chosenOption.get(KEY_OPTION_ID).getAsString()
+            : VALUE_ALLOW_ONCE;
         JsonObject result = new JsonObject();
-        result.add("outcome", buildPermissionOutcome(optionId, chosenOption));
+        result.add(KEY_OUTCOME, buildPermissionOutcome(optionId, chosenOption));
         transport.sendResponse(id, result);
     }
 
@@ -1013,15 +1048,26 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     protected JsonObject buildPermissionOutcome(String optionId, @Nullable JsonObject chosenOption) {
         JsonObject outcome = new JsonObject();
-        outcome.addProperty("outcome", "selected");
-        outcome.addProperty("optionId", optionId);
+        outcome.addProperty(KEY_OUTCOME, VALUE_SELECTED);
+        outcome.addProperty(KEY_OPTION_ID, optionId);
         return outcome;
+    }
+
+    /**
+     * Called when a {@code session/request_permission} arrives, before the response is sent.
+     * Override in subclasses to capture tool call arguments for chip correlation (e.g. Junie
+     * sends args only in the permission request content, not in the {@code tool_call} update).
+     *
+     * @param toolCallId     the tool call ID from {@code toolCall.toolCallId}
+     * @param toolCallParams the {@code toolCall} sub-object from the permission request params
+     */
+    protected void onPermissionRequest(@NotNull String toolCallId, @NotNull JsonObject toolCallParams) {
     }
 
     @Nullable
     private static JsonObject findOptionByKind(@Nullable JsonObject params, String kind) {
-        if (params == null || !params.has("options")) return null;
-        JsonElement options = params.get("options");
+        if (params == null || !params.has(KEY_OPTIONS)) return null;
+        JsonElement options = params.get(KEY_OPTIONS);
         if (!options.isJsonArray()) return null;
         for (JsonElement el : options.getAsJsonArray()) {
             if (el.isJsonObject()) {
@@ -1036,8 +1082,8 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Nullable
     private static JsonObject findFirstOption(@Nullable JsonObject params) {
-        if (params == null || !params.has("options")) return null;
-        JsonElement options = params.get("options");
+        if (params == null || !params.has(KEY_OPTIONS)) return null;
+        JsonElement options = params.get(KEY_OPTIONS);
         if (!options.isJsonArray()) return null;
         JsonArray arr = options.getAsJsonArray();
         return (!arr.isEmpty() && arr.get(0).isJsonObject()) ? arr.get(0).getAsJsonObject() : null;
