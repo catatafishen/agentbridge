@@ -954,6 +954,8 @@ var __chatUI = (() => {
       if (paramsJson) chip.dataset.params = paramsJson;
     },
     markMcpHandled(id) {
+      const chip = document.querySelector('[data-chip-for="' + id + '"]');
+      if (chip) chip.classList.add("is-agentbridge-tool");
       this.setToolChipState(id, "running");
     },
     setToolChipState(id, state) {

@@ -415,20 +415,23 @@ working-indicator .working-text {
     border-color: color-mix(in srgb, var(--kind-other) 18%, transparent);
 }
 
-/* External (non-MCP) tool indicator */
-.turn-chip.external-tool {
+/* Default tool chip border is dashed — origin unknown.
+   Only chips confirmed handled by our MCP server get a solid border. */
+.turn-chip.tool {
     border-style: dashed;
+}
+
+.turn-chip.is-agentbridge-tool {
+    border-style: solid;
 }
 
 /* Pending: ACP registered, waiting for MCP to handle */
 .turn-chip.status-pending {
-    border-style: dashed;
     opacity: 0.8;
 }
 
-/* External: ACP completed but MCP never handled it (built-in agent tool) */
+/* External: ACP completed but MCP never handled it */
 .turn-chip.status-external {
-    border-style: dashed;
     opacity: 0.8;
 }
 

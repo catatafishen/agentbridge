@@ -196,22 +196,24 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     private fun registerChipStateListener() {
         registry.addKindStateListener { chipId, state, kind ->
-            val jsState = when (state) {
-                ToolChipRegistry.ChipState.RUNNING -> "running"
-                ToolChipRegistry.ChipState.COMPLETE -> "complete"
-                ToolChipRegistry.ChipState.EXTERNAL -> "external"
-                ToolChipRegistry.ChipState.FAILED -> "failed"
-                else -> return@addKindStateListener
-            }
             // Use "t-$chipId" — chips are registered in the DOM as data-chip-for="t-<chipId>"
             val did = "t-$chipId"
-            executeJs("ChatController.setToolChipState('$did','$jsState')")
+            if (state == ToolChipRegistry.ChipState.RUNNING) {
+                // MCP is handling this tool — mark as agentbridge tool (solid border) and set running
+                executeJs("ChatController.markMcpHandled('$did')")
+            } else {
+                val jsState = when (state) {
+                    ToolChipRegistry.ChipState.COMPLETE -> "complete"
+                    ToolChipRegistry.ChipState.EXTERNAL -> "external"
+                    ToolChipRegistry.ChipState.FAILED -> "failed"
+                    else -> return@addKindStateListener
+                }
+                executeJs("ChatController.setToolChipState('$did','$jsState')")
+                toolJustCompleted = true
+            }
             if (kind != null) {
                 val jsKind = kind.replace("'", "\\'")
                 executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
-            }
-            if (state != ToolChipRegistry.ChipState.RUNNING) {
-                toolJustCompleted = true
             }
         }
     }
