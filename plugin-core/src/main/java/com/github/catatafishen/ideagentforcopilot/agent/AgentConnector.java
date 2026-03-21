@@ -117,6 +117,21 @@ public interface AgentConnector {
         return getCurrentModeSlug();
     }
 
+    // ─── Config options (e.g. effort/thinking level, returned by session/new) ───
+
+    /** Available config options for the current session (populated after session creation). */
+    default List<AgentConfigOption> getAvailableConfigOptions() {
+        return List.of();
+    }
+
+    /**
+     * Sets a config option value for the session. Implementations should call
+     * {@code session/set_config_option} per the ACP spec.
+     */
+    default void setConfigOption(@NotNull String sessionId, @NotNull String configId, @NotNull String valueId) {
+        // no-op
+    }
+
     // ─── Models ──────────────────────────────────────
 
     /** Available models for this agent. Empty list if not supported. */
@@ -155,6 +170,16 @@ public interface AgentConnector {
      * @param description optional description of what this mode does
      */
     record AgentMode(@NotNull String slug, @NotNull String name, @Nullable String description) {}
+
+    record AgentConfigOption(
+        @NotNull String id,
+        @NotNull String label,
+        @Nullable String description,
+        @NotNull List<AgentConfigOptionValue> values,
+        @Nullable String selectedValueId
+    ) {}
+
+    record AgentConfigOptionValue(@NotNull String id, @NotNull String label) {}
 
     /**
      * How model information is shown in the UI.

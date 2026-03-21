@@ -152,6 +152,18 @@ public class AgentClientAdapter implements AgentClient {
             options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption("agent", "Agent", values, labels));
         }
 
+        List<AgentConnector.AgentConfigOption> configOptions = connector.getAvailableConfigOptions();
+        for (AgentConnector.AgentConfigOption opt : configOptions) {
+            List<String> values = new ArrayList<>();
+            values.add(""); // "Default" — let the agent keep its current value
+            Map<String, String> labels = new LinkedHashMap<>();
+            for (AgentConnector.AgentConfigOptionValue v : opt.values()) {
+                values.add(v.id());
+                labels.put(v.id(), v.label());
+            }
+            options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption(opt.id(), opt.label(), values, labels));
+        }
+
         return options;
     }
 
@@ -161,6 +173,11 @@ public class AgentClientAdapter implements AgentClient {
             connector.setCurrentModeSlug(value.isEmpty() ? null : value);
         } else if ("agent".equals(key)) {
             connector.setCurrentAgentSlug(value.isEmpty() ? null : value);
+        } else {
+            // Treat any other key as a config option ID per the ACP spec
+            if (!value.isEmpty()) {
+                connector.setConfigOption(sessionId, key, value);
+            }
         }
     }
 

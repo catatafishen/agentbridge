@@ -31,6 +31,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
@@ -87,6 +88,7 @@ public abstract class AcpClient implements AgentConnector {
     private final List<AgentConnector.AgentMode> availableModes = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
     private @Nullable String currentAgentSlug = null;
+    private final List<AgentConnector.AgentConfigOption> availableConfigOptions = new ArrayList<>();
     private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
 
     protected AcpClient(Project project) {
@@ -126,6 +128,7 @@ public abstract class AcpClient implements AgentConnector {
         availableModes.clear();
         currentModeSlug = null;
         currentAgentSlug = null;
+        availableConfigOptions.clear();
         updateConsumer = null;
     }
 
@@ -168,6 +171,19 @@ public abstract class AcpClient implements AgentConnector {
                 if (currentAgentSlug == null) {
                     currentAgentSlug = defaultAgentSlug();
                 }
+            }
+
+            if (response.configOptions() != null) {
+                availableConfigOptions.clear();
+                for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
+                    List<AgentConnector.AgentConfigOptionValue> vals = opt.values().stream()
+                        .map(v -> new AgentConnector.AgentConfigOptionValue(v.id(), v.label()))
+                        .toList();
+                    availableConfigOptions.add(
+                        new AgentConnector.AgentConfigOption(opt.id(), opt.label(), opt.description(), vals, opt.selectedValueId())
+                    );
+                }
+                LOG.info(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
             }
 
             onSessionCreated(currentSessionId);
@@ -257,6 +273,20 @@ public abstract class AcpClient implements AgentConnector {
     @Override
     public final void setCurrentAgentSlug(@Nullable String slug) {
         currentAgentSlug = slug;
+    }
+
+    @Override
+    public final List<AgentConnector.AgentConfigOption> getAvailableConfigOptions() {
+        return Collections.unmodifiableList(availableConfigOptions);
+    }
+
+    @Override
+    public final void setConfigOption(@NotNull String sessionId, @NotNull String configId, @NotNull String valueId) {
+        JsonObject params = new JsonObject();
+        params.addProperty(KEY_SESSION_ID, sessionId);
+        params.addProperty("configId", configId);
+        params.addProperty("value", valueId);
+        transport.sendRequest("session/set_config_option", params);
     }
 
     @Override
