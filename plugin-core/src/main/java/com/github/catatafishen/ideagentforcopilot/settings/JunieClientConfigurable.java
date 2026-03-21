@@ -97,14 +97,42 @@ public final class JunieClientConfigurable implements Configurable {
     @Override
     public void apply() {
         if (binaryPathField == null || authTokenField == null) return;
+
+        String oldToken = JunieKeyStore.getAuthToken();
+        String newToken = new String(authTokenField.getPassword()).trim();
+        boolean tokenChanged = !nullToEmpty(oldToken).equals(newToken);
+
         AcpClient.saveCustomBinaryPath(AGENT_ID, binaryPathField.getText().trim());
 
-        String token = new String(authTokenField.getPassword()).trim();
-        if (token.isEmpty()) {
+        if (newToken.isEmpty()) {
             JunieKeyStore.setAuthToken(null);
         } else {
-            JunieKeyStore.setAuthToken(token);
+            JunieKeyStore.setAuthToken(newToken);
         }
+
+        // Restart Junie if auth token changed (so new token is picked up by the process)
+        if (tokenChanged) {
+            restartJunieProcesses();
+        }
+    }
+
+    /**
+     * Stops all running Junie processes across all projects so they restart with the new auth token.
+     */
+    private void restartJunieProcesses() {
+        ApplicationManager.getApplication().invokeLater(() -> {
+            com.intellij.openapi.project.ProjectManager pm = com.intellij.openapi.project.ProjectManager.getInstance();
+            for (Project project : pm.getOpenProjects()) {
+                com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager manager =
+                    com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.getInstance(project);
+                // Only restart if Junie is the active agent
+                if (AGENT_ID.equals(manager.getActiveProfileId())) {
+                    com.intellij.openapi.diagnostic.Logger.getInstance(JunieClientConfigurable.class)
+                        .info("Junie auth token changed — restarting Junie process to pick up new token");
+                    manager.restart();
+                }
+            }
+        });
     }
 
     @Override
