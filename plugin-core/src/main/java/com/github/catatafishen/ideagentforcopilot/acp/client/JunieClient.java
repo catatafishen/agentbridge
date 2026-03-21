@@ -2,12 +2,14 @@ package com.github.catatafishen.ideagentforcopilot.acp.client;
 
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
+import com.github.catatafishen.ideagentforcopilot.agent.junie.JunieKeyStore;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -44,7 +46,20 @@ public final class JunieClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        return List.of("junie", "--acp=true");
+        List<String> cmd = new ArrayList<>();
+        cmd.add("junie");
+        cmd.add("--acp=true");
+
+        // If user has configured an auth token in plugin settings, use it instead of relying on CLI credentials
+        String authToken = JunieKeyStore.getAuthToken();
+        if (authToken != null && !authToken.isEmpty()) {
+            cmd.add("--auth=" + authToken);
+            LOG.info("Junie: using plugin-configured auth token");
+        } else {
+            LOG.info("Junie: using CLI credentials (no token configured in plugin settings)");
+        }
+
+        return cmd;
     }
 
     @Override
