@@ -62,6 +62,11 @@ public interface AgentConnector {
     PromptResponse sendPrompt(PromptRequest request,
                               Consumer<SessionUpdate> onUpdate) throws AgentPromptException;
 
+    /** Mode slug to activate by default when sending a prompt, or null to use the agent's own default. */
+    default @Nullable String defaultModeSlug() {
+        return null;
+    }
+
     // ─── Models ──────────────────────────────────────
 
     /** Available models for this agent. Empty list if not supported. */

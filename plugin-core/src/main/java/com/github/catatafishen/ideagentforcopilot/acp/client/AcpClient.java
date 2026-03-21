@@ -255,6 +255,16 @@ public abstract class AcpClient implements AgentConnector {
     }
 
     /**
+     * Called once, just before the agent process is launched.
+     * Override for pre-launch setup such as writing config or agent definition files.
+     *
+     * @throws IOException if setup fails (causes the launch to abort)
+     */
+    protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
+        // no-op by default
+    }
+
+    /**
      * Build the command line to launch this agent process.
      */
     protected abstract List<String> buildCommand(String cwd, int mcpPort);
@@ -350,6 +360,8 @@ public abstract class AcpClient implements AgentConnector {
             cwd = System.getProperty("user.home");
         }
         launchCwd = cwd;
+
+        beforeLaunch(cwd, mcpPort);
 
         List<String> command = buildCommand(cwd, mcpPort);
 

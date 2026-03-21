@@ -63,7 +63,7 @@ public class AgentClientAdapter implements AgentClient {
                              @Nullable Runnable onRequest) throws AcpException {
         try {
             List<ContentBlock> contentBlocks = buildContentBlocks(prompt, references);
-            PromptRequest request = new PromptRequest(sessionId, contentBlocks, model, null);
+            PromptRequest request = new PromptRequest(sessionId, contentBlocks, model, connector.defaultModeSlug());
 
             Consumer<com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate> bridgeConsumer =
                 newUpdate -> dispatchUpdate(newUpdate, onChunk, onUpdate);
