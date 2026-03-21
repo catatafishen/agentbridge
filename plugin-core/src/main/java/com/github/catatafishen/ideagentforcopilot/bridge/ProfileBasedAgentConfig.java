@@ -36,6 +36,9 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     private static final String LAST_LOGGED_IN_USER = "last_logged_in_user";
     private static final String FIRST_LAUNCH_AT = "firstLaunchAt";
     private static final String MCP_SERVERS_KEY = "mcpServers";
+    private static final String AGENT_ID_OPENCODE = "opencode";
+    private static final String AGENT_WORK_DIR = ".agent-work";
+    private static final String OPENCODE_CONFIG_FILE = "opencode.json";
 
     private final AgentProfile profile;
     @Nullable
@@ -150,10 +153,10 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         setAgentConfigDirEnvVars(pb, projectBasePath);
 
         // Write OpenCode config file and set env var if needed
-        if ("opencode".equals(profile.getId()) && mcpPort > 0 && projectBasePath != null) {
+        if (AGENT_ID_OPENCODE.equals(profile.getId()) && mcpPort > 0 && projectBasePath != null) {
             writeOpenCodeConfigFile(projectBasePath, mcpPort);
             // Set OPENCODE_CONFIG env var pointing to the config file
-            String configPath = Path.of(projectBasePath, ".agent-work", "opencode", "opencode.json").toString();
+            String configPath = Path.of(projectBasePath, AGENT_WORK_DIR, AGENT_ID_OPENCODE, OPENCODE_CONFIG_FILE).toString();
             pb.environment().put("OPENCODE_CONFIG", configPath);
         }
 
@@ -188,7 +191,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         if (!profile.isSupportsConfigDir() || projectBasePath == null) return;
         // Use per-agent subdirectory to avoid cross-contamination
         String agentId = profile.getId();
-        Path agentWorkPath = Path.of(projectBasePath, ".agent-work", agentId);
+        Path agentWorkPath = Path.of(projectBasePath, AGENT_WORK_DIR, agentId);
         cmd.add("--config-dir");
         cmd.add(agentWorkPath.toString());
     }
@@ -211,7 +214,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     public void configureAgentEnvironment(@NotNull Map<String, String> environment, @Nullable String projectBasePath) {
         if (projectBasePath == null) return;
         String agentId = profile.getId();
-        String agentWorkDir = Path.of(projectBasePath, ".agent-work", agentId).toString();
+        String agentWorkDir = Path.of(projectBasePath, AGENT_WORK_DIR, agentId).toString();
 
         switch (agentId) {
             case "claude" -> environment.put("CLAUDE_CONFIG_DIR", agentWorkDir);
@@ -220,7 +223,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
                 // Ensure authentication is available in project-specific Copilot config
                 ensureCopilotAuthentication(agentWorkDir);
             }
-            case "opencode" -> {
+            case AGENT_ID_OPENCODE -> {
                 // OpenCode uses OPENCODE_CONFIG pointing to the config.json file
                 // This is now handled in buildAcpProcess as it needs mcpPort
             }
@@ -242,8 +245,8 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         }
 
         try {
-            String agentWorkDir = Path.of(projectBasePath, ".agent-work", "opencode").toString();
-            Path configPath = Path.of(agentWorkDir, "opencode.json");
+            String agentWorkDir = Path.of(projectBasePath, AGENT_WORK_DIR, AGENT_ID_OPENCODE).toString();
+            Path configPath = Path.of(agentWorkDir, OPENCODE_CONFIG_FILE);
 
             // Create directory if it doesn't exist
             Files.createDirectories(Path.of(agentWorkDir));
@@ -509,8 +512,8 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         ));
 
         // For OpenCode, also check ~/.config/opencode/opencode.json
-        if ("opencode".equals(profile.getId())) {
-            candidates.add(Path.of(userHome, ".config", "opencode", "opencode.json"));
+        if (AGENT_ID_OPENCODE.equals(profile.getId())) {
+            candidates.add(Path.of(userHome, ".config", AGENT_ID_OPENCODE, OPENCODE_CONFIG_FILE));
         }
 
         for (Path configPath : candidates) {
@@ -533,12 +536,12 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             JsonObject root = JsonParser.parseString(content).getAsJsonObject();
 
             // OpenCode uses "mcp", others use "mcpServers" or root
-            String mcpKey = "opencode".equals(profile.getId()) ? "mcp" : MCP_SERVERS_KEY;
+            String mcpKey = AGENT_ID_OPENCODE.equals(profile.getId()) ? "mcp" : MCP_SERVERS_KEY;
 
             JsonObject servers = root.has(mcpKey) && root.get(mcpKey).isJsonObject()
                 ? root.getAsJsonObject(mcpKey)
                 : (root.has(MCP_SERVERS_KEY) && root.get(MCP_SERVERS_KEY).isJsonObject()
-                    ? root.getAsJsonObject(MCP_SERVERS_KEY) : root);
+                ? root.getAsJsonObject(MCP_SERVERS_KEY) : root);
 
             for (Map.Entry<String, JsonElement> entry : servers.entrySet()) {
                 if (!entry.getValue().isJsonObject()) continue;
@@ -706,7 +709,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
      */
     @NotNull
     private String fixOpenCodeConfigForFile(@NotNull String configJson) {
-        if (!"opencode".equals(profile.getId())) return configJson;
+        if (!AGENT_ID_OPENCODE.equals(profile.getId())) return configJson;
         try {
             JsonObject root = JsonParser.parseString(configJson).getAsJsonObject();
             if (root.has(MCP_SERVERS_KEY) && root.get(MCP_SERVERS_KEY).isJsonArray()) {
