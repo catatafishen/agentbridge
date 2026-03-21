@@ -14,6 +14,10 @@ import java.util.Map;
  * {@link #displayName}, a fixed set of {@link #values}, and an optional {@link #labels} map
  * for overriding how individual values are displayed in the UI.</p>
  *
+ * <p>If {@link #initialValue} is set, the toolbar shows that value when no user preference
+ * has been stored (i.e. when the stored value is empty). This allows dynamic options like
+ * "model" to display the agent's current selection rather than "Default".</p>
+ *
  * <p>Examples:</p>
  * <ul>
  *   <li>Claude CLI: {@code ("effort", "Effort", ["", "low", "medium", "high", "max"])}</li>
@@ -24,11 +28,18 @@ public record SessionOption(
     @NotNull String key,
     @NotNull String displayName,
     @NotNull List<String> values,
-    @Nullable Map<String, String> labels
+    @Nullable Map<String, String> labels,
+    @Nullable String initialValue
 ) {
-    /** Convenience constructor for options that don't need custom labels. */
+    /** Convenience constructor for options without custom labels or initial value. */
     public SessionOption(@NotNull String key, @NotNull String displayName, @NotNull List<String> values) {
-        this(key, displayName, values, null);
+        this(key, displayName, values, null, null);
+    }
+
+    /** Convenience constructor for options with custom labels but no initial value. */
+    public SessionOption(@NotNull String key, @NotNull String displayName, @NotNull List<String> values,
+                         @Nullable Map<String, String> labels) {
+        this(key, displayName, values, labels, null);
     }
 
     /**

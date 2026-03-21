@@ -65,7 +65,9 @@ public class AgentClientAdapter implements AgentClient {
                              @Nullable Runnable onRequest) throws AcpException {
         try {
             List<ContentBlock> contentBlocks = buildContentBlocks(prompt, references);
-            PromptRequest request = new PromptRequest(sessionId, contentBlocks, model, connector.getEffectiveModeSlug());
+            // Treat empty string as null — avoids sending "modelId":"" when model combo is hidden
+            String effectiveModel = (model != null && !model.isEmpty()) ? model : null;
+            PromptRequest request = new PromptRequest(sessionId, contentBlocks, effectiveModel, connector.getEffectiveModeSlug());
 
             Consumer<com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate> bridgeConsumer =
                 newUpdate -> dispatchUpdate(newUpdate, onChunk, onUpdate);
@@ -85,6 +87,11 @@ public class AgentClientAdapter implements AgentClient {
     @NotNull
     @Override
     public List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> listModels() {
+        // If the agent reports model as a configOption, suppress the dedicated model dropdown
+        // to avoid showing the same selector twice. OpenCode and Kiro don't use configOptions.
+        boolean hasModelConfigOption = connector.getAvailableConfigOptions().stream()
+            .anyMatch(opt -> "model".equals(opt.id()));
+        if (hasModelConfigOption) return List.of();
         return connector.getAvailableModels();
     }
 
@@ -144,13 +151,15 @@ public class AgentClientAdapter implements AgentClient {
         // All other dropdowns come from ACP configOptions reported at session start
         for (AgentConnector.AgentConfigOption opt : connector.getAvailableConfigOptions()) {
             List<String> values = new ArrayList<>();
-            values.add(""); // empty = keep current
+            values.add(""); // empty = "Default" (let agent keep current)
             Map<String, String> labels = new LinkedHashMap<>();
             for (AgentConnector.AgentConfigOptionValue v : opt.values()) {
                 values.add(v.id());
                 labels.put(v.id(), v.label());
             }
-            options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption(opt.id(), opt.label(), values, labels));
+            // initialValue shows the agent's current selection when no user preference is stored
+            options.add(new com.github.catatafishen.ideagentforcopilot.bridge.SessionOption(
+                opt.id(), opt.label(), values, labels, opt.selectedValueId()));
         }
 
         // Fallback: if no configOptions but modes are present, add a Mode dropdown
@@ -179,6 +188,12 @@ public class AgentClientAdapter implements AgentClient {
             // Update both: prompt-level modeSlug and the ACP configOption (if supported)
             connector.setCurrentModeSlug(value.isEmpty() ? null : value);
             if (!value.isEmpty()) {
+                connector.setConfigOption(sessionId, key, value);
+            }
+        } else if ("model".equals(key)) {
+            // Keep prompt-level modelId in sync when model is managed via configOption
+            if (!value.isEmpty()) {
+                connector.setModel(sessionId, value);
                 connector.setConfigOption(sessionId, key, value);
             }
         } else {

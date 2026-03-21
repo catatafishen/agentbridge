@@ -1053,7 +1053,7 @@ class ChatToolWindowContent(
 
                         selectedModelIndex = index
                         agentManager.settings.setSelectedModel(model.id())
-                        LOG.info("Model selected: ${model.id()} (index=$index)")
+                        LOG.debug("Model selected: ${model.id()} (index=$index)")
                         ApplicationManager.getApplication().invokeLater {
                             consolePanel.setCurrentModel(model.id())
                             if (supportsMultiplier) {
@@ -1067,9 +1067,9 @@ class ChatToolWindowContent(
                                 val sessionId = promptOrchestrator.currentSessionId
                                 if (sessionId != null) {
                                     client.setModel(sessionId, model.id())
-                                    LOG.info("Model switched to ${model.id()} on session $sessionId")
+                                    LOG.debug("Model switched to ${model.id()} on session $sessionId")
                                 } else {
-                                    LOG.info("No active session; model ${model.id()} will be used on next session")
+                                    LOG.debug("No active session; model ${model.id()} will be used on next session")
                                 }
                             } catch (ex: Exception) {
                                 LOG.warn("Failed to set model ${model.id()} via session/set_model", ex)
@@ -1157,7 +1157,8 @@ class ChatToolWindowContent(
 
         override fun update(e: AnActionEvent) {
             val stored = agentManager.settings.getSessionOptionValue(option.key)
-            e.presentation.text = "${option.displayName}: ${option.labelFor(stored)}"
+            val displayValue = if (stored.isEmpty()) option.initialValue ?: "" else stored
+            e.presentation.text = "${option.displayName}: ${option.labelFor(displayValue)}"
         }
     }
 
@@ -1525,13 +1526,13 @@ class ChatToolWindowContent(
 
     private fun restoreModelSelection(models: List<Model>) {
         val savedModel = agentManager.settings.selectedModel
-        LOG.info("Restoring model selection: saved='$savedModel', available=${models.map { it.id() }}")
+        LOG.debug("Restoring model selection: saved='$savedModel', available=${models.map { it.id() }}")
         if (savedModel != null) {
             val idx = models.indexOfFirst { it.id() == savedModel }
             if (idx >= 0) {
-                selectedModelIndex = idx; LOG.info("Restored model index=$idx"); return
+                selectedModelIndex = idx; LOG.debug("Restored model index=$idx"); return
             }
-            LOG.info("Saved model '$savedModel' not found in available models")
+            LOG.debug("Saved model '$savedModel' not found in available models")
         }
         if (models.isNotEmpty()) selectedModelIndex = 0
     }

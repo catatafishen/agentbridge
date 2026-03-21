@@ -150,9 +150,10 @@ public abstract class AcpClient implements AgentConnector {
 
             CompletableFuture<JsonElement> future = transport.sendRequest("session/new", params);
             JsonElement result = future.get(SESSION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            LOG.debug(displayName() + ": session/new raw response: " + result);
 
             NewSessionResponse response = gson.fromJson(result, NewSessionResponse.class);
-            LOG.info(displayName() + ": session/new: " + (response.models() != null ? response.models().size() : 0) + " model(s), "
+            LOG.debug(displayName() + ": session/new: " + (response.models() != null ? response.models().size() : 0) + " model(s), "
                 + (response.modes() != null ? response.modes().size() : 0) + " mode(s)");
             currentSessionId = response.sessionId();
 
@@ -186,7 +187,7 @@ public abstract class AcpClient implements AgentConnector {
                         new AgentConnector.AgentConfigOption(opt.id(), label, opt.description(), vals, opt.selectedValueId())
                     );
                 }
-                LOG.info(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
+                LOG.debug(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
             }
 
             onSessionCreated(currentSessionId);
@@ -212,7 +213,7 @@ public abstract class AcpClient implements AgentConnector {
         try {
             updateConsumer = onUpdate;
             JsonObject params = gson.toJsonTree(request).getAsJsonObject();
-            LOG.info(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
+            LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
             CompletableFuture<JsonElement> future = transport.sendRequest(
                 "session/prompt", params, PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS
             );
@@ -629,7 +630,7 @@ public abstract class AcpClient implements AgentConnector {
             String sessionId = createSession(cwd);
             cancelSession(sessionId);
             currentSessionId = null;
-            LOG.info(displayName() + ": eagerly loaded " + availableModels.size() + " model(s)");
+            LOG.debug(displayName() + ": eagerly loaded " + availableModels.size() + " model(s)");
         } catch (Exception e) {
             Throwable cause = e.getCause() != null ? e.getCause() : e;
             LOG.warn(displayName() + ": eager model fetch failed (models will be empty): "
@@ -647,7 +648,7 @@ public abstract class AcpClient implements AgentConnector {
         transport.onRequest(this::handleAgentRequest);
 
         transport.onStderr(line ->
-            LOG.info("[" + agentId() + " stderr] " + line));
+            LOG.debug("[" + agentId() + " stderr] " + line));
     }
 
     private void handleSessionUpdate(@Nullable JsonObject params) {
