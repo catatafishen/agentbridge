@@ -184,8 +184,9 @@ public abstract class AcpClient implements AgentConnector {
                             .map(v -> new AgentConnector.AgentConfigOptionValue(v.id(), v.label()))
                             .toList();
                     }
+                    String label = opt.label() != null ? opt.label() : (opt.id() != null ? opt.id() : "");
                     availableConfigOptions.add(
-                        new AgentConnector.AgentConfigOption(opt.id(), opt.label(), opt.description(), vals, opt.selectedValueId())
+                        new AgentConnector.AgentConfigOption(opt.id(), label, opt.description(), vals, opt.selectedValueId())
                     );
                 }
                 LOG.info(displayName() + ": session/new: " + availableConfigOptions.size() + " config option(s)");
