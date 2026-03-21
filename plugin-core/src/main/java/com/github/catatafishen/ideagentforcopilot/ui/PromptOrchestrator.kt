@@ -373,7 +373,17 @@ class PromptOrchestrator(
     private fun handleStreamingToolCall(toolCall: SessionUpdate.ToolCall) {
         val title = toolCall.title()
         val toolCallId = toolCall.toolCallId()
-        val kind = toolCall.kind()?.value() ?: "other"
+        val rawKind = toolCall.kind()?.value() ?: "other"
+        val kind = if (rawKind == "other") {
+            val toolName = title.removePrefix("agentbridge-").removePrefix("@agentbridge/")
+            val def = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project).findById(toolName)
+            when {
+                def == null -> "other"
+                def.isReadOnly() -> "read"
+                def.isDestructive() -> "execute"
+                else -> "edit"
+            }
+        } else rawKind
         val arguments = toolCall.arguments()
         if (toolCallId.isEmpty()) return
         if (toolCall.isSubAgent()) {
