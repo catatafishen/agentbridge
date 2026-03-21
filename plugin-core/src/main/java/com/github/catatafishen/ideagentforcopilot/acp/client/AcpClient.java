@@ -20,6 +20,7 @@ import com.github.catatafishen.ideagentforcopilot.agent.AgentPromptException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentSessionException;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentStartException;
 import com.github.catatafishen.ideagentforcopilot.bridge.McpServerJarLocator;
+import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
 import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.google.gson.Gson;
@@ -308,6 +309,34 @@ public abstract class AcpClient extends AbstractAgentClient {
     @Override
     public final List<AbstractAgentClient.AgentConfigOption> getAvailableConfigOptions() {
         return Collections.unmodifiableList(availableConfigOptions);
+    }
+
+    /**
+     * Bridges ACP config options (from session/new) to the {@link SessionOption} type used by
+     * the UI toolbar dropdowns. Called by the toolbar on every repaint — returns the live list.
+     */
+    @Override
+    public final List<SessionOption> listSessionOptions() {
+        return availableConfigOptions.stream()
+            .map(opt -> {
+                List<String> valueIds = opt.values().stream()
+                    .map(AbstractAgentClient.AgentConfigOptionValue::id)
+                    .toList();
+                java.util.Map<String, String> labels = opt.values().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                        AbstractAgentClient.AgentConfigOptionValue::id,
+                        AbstractAgentClient.AgentConfigOptionValue::label,
+                        (a, b) -> a,
+                        java.util.LinkedHashMap::new));
+                return new SessionOption(opt.id(), opt.label(), valueIds, labels, opt.selectedValueId());
+            })
+            .toList();
+    }
+
+    /** Delegates to {@link #setConfigOption} so the ACP server is notified. */
+    @Override
+    public final void setSessionOption(@NotNull String sessionId, @NotNull String key, @NotNull String value) {
+        setConfigOption(sessionId, key, value);
     }
 
     @Override
