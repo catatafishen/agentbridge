@@ -265,7 +265,6 @@ working-indicator .working-text {
 .meta {
     display: none;
     align-items: center;
-    max-width: 94%;
     gap: var(--sp-2);
     padding: var(--sp-1) 0;
     margin-bottom: var(--sp-1);
@@ -294,6 +293,7 @@ working-indicator .working-text {
     overflow: hidden;
     flex: 1;
     min-width: 0;
+    max-width: 94%;
     cursor: grab;
 }
 
@@ -1003,20 +1003,46 @@ hr {
     margin-top: var(--sp-2);
 }
 
-.perm-deny { color: var(--danger) !important; border-color: var(--danger) !important; }
-.perm-deny:hover { background: color-mix(in srgb, var(--danger) 20%, transparent) !important; }
-.perm-allow { color: var(--success) !important; border-color: var(--success) !important; }
-.perm-allow:hover { background: color-mix(in srgb, var(--success) 22%, transparent) !important; }
-.perm-allow-session { color: var(--link) !important; border-color: color-mix(in srgb, var(--link) 30%, transparent) !important; }
-.perm-allow-session:hover { background: color-mix(in srgb, var(--link) 22%, transparent) !important; }
+.perm-deny {
+    color: var(--danger) !important;
+    border-color: var(--danger) !important;
+}
+
+.perm-deny:hover {
+    background: color-mix(in srgb, var(--danger) 20%, transparent) !important;
+}
+
+.perm-allow {
+    color: var(--success) !important;
+    border-color: var(--success) !important;
+}
+
+.perm-allow:hover {
+    background: color-mix(in srgb, var(--success) 22%, transparent) !important;
+}
+
+.perm-allow-session {
+    color: var(--link) !important;
+    border-color: color-mix(in srgb, var(--link) 30%, transparent) !important;
+}
+
+.perm-allow-session:hover {
+    background: color-mix(in srgb, var(--link) 22%, transparent) !important;
+}
 
 .perm-result {
     font-size: 0.85em;
     padding: var(--sp-2) var(--sp-4);
     border-radius: var(--r-sm);
 }
-.perm-allowed { color: var(--success); }
-.perm-denied  { color: var(--danger); }
+
+.perm-allowed {
+    color: var(--success);
+}
+
+.perm-denied {
+    color: var(--danger);
+}
 
 .perm-args {
     width: 100%;
