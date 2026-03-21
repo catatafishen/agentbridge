@@ -203,8 +203,13 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 ToolChipRegistry.ChipState.FAILED -> "failed"
                 else -> return@addKindStateListener
             }
-            // Use named parameter to avoid mapping kind to details
-            updateToolCall(chipId, jsState, details = null, description = null, kind = kind)
+            // Use "t-$chipId" — chips are registered in the DOM as data-chip-for="t-<chipId>"
+            val did = "t-$chipId"
+            executeJs("ChatController.setToolChipState('$did','$jsState')")
+            if (kind != null) {
+                val jsKind = kind.replace("'", "\\'")
+                executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
+            }
             if (state != ToolChipRegistry.ChipState.RUNNING) {
                 toolJustCompleted = true
             }
@@ -345,31 +350,21 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             if (description != null) it.description = description
             if (kind != null) it.kind = kind
         }
-        val jsKind = kind ?: ""
-
-        // Map status to JS state
-        val jsStatus = when (status) {
-            "running" -> "running"
-            "complete" -> "complete"
-            "completed" -> "complete"
-            "external" -> "external"
-            "failed" -> "failed"
-            else -> "complete"  // fallback
+        // For intermediate running state, update DOM immediately
+        if (status == "running") {
+            executeJs("ChatController.setToolChipState('$did','running')")
+            if (kind != null) {
+                val jsKind = kind.replace("'", "\\'")
+                executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
+            }
+            return
         }
 
-        // Update chip status in the DOM
-        executeJs("ChatController.setToolChipState('$did','$jsStatus')")
-
-        // If kind is provided, update the chip kind
-        if (kind != null) {
-            executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
-        }
-
-        // Notify registry of completion
+        // For terminal states, notify the registry — it determines COMPLETE vs EXTERNAL vs FAILED,
+        // and the chip state listener updates the DOM with the authoritative final state.
         when (status) {
             "failed" -> registry.completeClientSide(id, false)
-            "running" -> { /* intermediate — no completion */ }
-            else -> registry.completeClientSide(id, true) // "completed", "complete", or any other
+            else -> registry.completeClientSide(id, true) // "complete", "completed", etc.
         }
     }
 

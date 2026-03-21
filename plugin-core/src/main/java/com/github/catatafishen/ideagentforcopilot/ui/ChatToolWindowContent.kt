@@ -8,6 +8,7 @@ import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
 import com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings
 import com.intellij.icons.AllIcons
+import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
@@ -40,6 +41,7 @@ class ChatToolWindowContent(
         const val AGENT_WORK_DIR = ".agent-work"
         const val CARD_CONNECT = "connect"
         const val CARD_CHAT = "chat"
+        const val KEY_PASTE_OVERRIDE = "copilot.pasteOverrideEnabled"
     }
 
     private val cardLayout = CardLayout()
@@ -145,6 +147,7 @@ class ChatToolWindowContent(
     private fun setupTitleBarActions() {
         val actions = listOf(
             FollowAgentFilesToggleAction(),
+            PasteOverrideToggleAction(),
             Separator.create(),
             ProjectFilesDropdownAction(),
             Separator.create(),
@@ -982,6 +985,21 @@ class ChatToolWindowContent(
         }
     }
 
+    private inner class PasteOverrideToggleAction : ToggleAction(
+        "Smart Paste",
+        "Intercept large clipboard pastes to create scratch files instead",
+        AllIcons.Actions.MenuPaste
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun isSelected(e: AnActionEvent): Boolean =
+            PropertiesComponent.getInstance(project).getBoolean(KEY_PASTE_OVERRIDE, true)
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            PropertiesComponent.getInstance(project).setValue(KEY_PASTE_OVERRIDE, state)
+        }
+    }
+
     /** Open a project-root file in the editor if it exists. */
     private fun openProjectFile(fileName: String) {
         val base = project.basePath ?: return
@@ -1248,6 +1266,7 @@ class ChatToolWindowContent(
         contentComponent: JComponent,
         pasteStrokes: Set<KeyStroke>
     ): Boolean {
+        if (!PropertiesComponent.getInstance(project).getBoolean(KEY_PASTE_OVERRIDE, true)) return false
         if (event !is java.awt.event.KeyEvent) return false
         if (editor.isDisposed) return false
         if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return false
