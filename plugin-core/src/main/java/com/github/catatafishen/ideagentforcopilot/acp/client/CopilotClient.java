@@ -36,6 +36,7 @@ public final class CopilotClient extends AcpClient {
     private static final String DEFAULT_AGENT_SLUG = "intellij-default";
     private static final String MCP_SERVER_NAME = "agentbridge";
     private static final String MCP_TYPE_HTTP = "http";
+    private static final String AGENT_WORK_DIR = ".agent-work";
 
     // ─── MCP tool sets ───────────────────────────────
 
@@ -127,7 +128,7 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
-        String configDir = cwd + File.separator + ".agent-work" + File.separator + AGENT_ID;
+        String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
         writeAgentDefinitions(configDir);
     }
 
@@ -164,7 +165,7 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        String configDir = cwd + File.separator + ".agent-work" + File.separator + AGENT_ID;
+        String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
         String mcpConfig = buildMcpConfigJson(mcpPort);
         String agentSlug = getCurrentAgentSlug();
         List<String> cmd = new java.util.ArrayList<>(List.of(
@@ -193,7 +194,7 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        String copilotHome = cwd + File.separator + ".agent-work" + File.separator + AGENT_ID;
+        String copilotHome = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
         return Map.of("COPILOT_HOME", copilotHome);
     }
 
