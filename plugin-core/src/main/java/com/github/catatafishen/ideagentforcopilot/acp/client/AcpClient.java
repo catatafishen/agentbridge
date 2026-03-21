@@ -543,6 +543,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     /**
      * Resolve the MCP server port, starting the server if needed.
      */
+    @SuppressWarnings("java:S1871") // Similar logic in ActiveAgentManager serves different purpose
     protected int resolveMcpPort() {
         McpServerControl mcpServer = McpServerControl.getInstance(project);
         if (mcpServer != null) {
@@ -989,6 +990,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         return blocks;
     }
 
+    @SuppressWarnings("java:S125") // Line below is a spec documentation comment, not commented-out code
     private ContentBlock parseContentBlock(JsonObject block) {
         String blockType = block.has("type") ? block.get("type").getAsString() : "text";
         if ("text".equals(blockType) && block.has("text")) {
