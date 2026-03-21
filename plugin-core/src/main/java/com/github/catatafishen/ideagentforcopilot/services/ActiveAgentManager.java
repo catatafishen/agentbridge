@@ -182,6 +182,13 @@ public final class ActiveAgentManager implements Disposable {
                 acpClient = createAcpClient(agentId);
             }
 
+            // Apply persisted agent selection before start() builds the launch command.
+            // Must happen before acpClient.start() since buildCommand() reads getCurrentAgentSlug().
+            String savedAgent = getSettings().getSelectedAgent();
+            if (!savedAgent.isEmpty()) {
+                acpClient.setCurrentAgentSlug(savedAgent);
+            }
+
             acpClient.start();
             started = true;
 

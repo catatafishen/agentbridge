@@ -1,12 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model
-import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException
-import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig
 import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore
-import com.github.catatafishen.ideagentforcopilot.acp.model.ResourceReference
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
@@ -665,6 +662,7 @@ class ChatToolWindowContent(
         leftGroup.addSeparator()
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.addSeparator()
+        leftGroup.add(AgentSelectorAction())
         leftGroup.add(ModelSelectorAction())
         leftGroup.add(SessionOptionsGroup())
         leftGroup.addSeparator()
@@ -1173,6 +1171,82 @@ class ChatToolWindowContent(
         }
     }
 
+    /**
+     * ComboBox dropdown for selecting the active custom agent (e.g. intellij-default, intellij-explore).
+     * Only visible when the active client exposes agents via [AbstractAgentClient.getAvailableAgents][com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient.getAvailableAgents].
+     * Selecting an agent persists the choice and restarts the agent process so the CLI picks it up.
+     */
+    private inner class AgentSelectorAction : ComboBoxAction() {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        override fun createPopupActionGroup(button: JComponent, context: DataContext): DefaultActionGroup {
+            val group = DefaultActionGroup()
+            val agents = agentManager.client.availableAgents
+            agents.forEach { agent ->
+                group.add(object : AnAction(agent.name()) {
+                    override fun actionPerformed(e: AnActionEvent) {
+                        val currentSlug = agentManager.client.currentAgentSlug
+                        if (agent.slug() == currentSlug) return
+                        restartWithNewAgent(agent.slug())
+                    }
+
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+                })
+            }
+            return group
+        }
+
+        override fun update(e: AnActionEvent) {
+            val agents = try {
+                agentManager.client.availableAgents
+            } catch (_: Exception) {
+                emptyList()
+            }
+            if (agents.isEmpty()) {
+                e.presentation.isVisible = false
+                return
+            }
+            e.presentation.isVisible = true
+            val currentSlug = try {
+                agentManager.client.currentAgentSlug
+            } catch (_: Exception) {
+                null
+            }
+            val current = agents.firstOrNull { it.slug() == currentSlug } ?: agents.firstOrNull()
+            e.presentation.text = current?.name() ?: "Agent"
+        }
+    }
+
+    /**
+     * Persists the selected agent slug, then silently restarts the agent process so
+     * the new [--agent] flag takes effect.  The chat panel stays visible; a session
+     * separator is added after reconnection so the history context is preserved.
+     */
+    private fun restartWithNewAgent(slug: String) {
+        agentManager.settings.setSelectedAgent(slug)
+        // Stop the running process (the persisted slug will be applied on the next start()
+        // call via ActiveAgentManager.start() reading getSettings().getSelectedAgent()).
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                agentManager.stop()
+            } catch (ex: Exception) {
+                LOG.warn("Error stopping agent during agent switch", ex)
+            }
+        }
+        resetSessionKeepingHistory()
+        loadModelsAsync(
+            onSuccess = { models ->
+                loadedModels = models
+                buildAndShowChatPanel()
+                restoreModelSelection(models)
+                statusBanner?.showInfo("Switched to agent: $slug")
+            },
+            onFailure = { error ->
+                statusBanner?.showError(error.message ?: "Failed to restart with agent $slug")
+            }
+        )
+    }
+
     private fun createResponsePanel(): JComponent {
         chatConsolePanel = ChatConsolePanel(project)
         consolePanel = chatConsolePanel
@@ -1537,7 +1611,7 @@ class ChatToolWindowContent(
 
     private fun restoreModelSelection(models: List<Model>) {
         val savedModel = agentManager.settings.selectedModel
-        LOG.debug("Restoring model selection: saved='$savedModel', current='${agentManager.client.getCurrentModelId()}', available=${models.map { it.id() }}")
+        LOG.debug("Restoring model selection: saved='$savedModel', current='${agentManager.client.currentModelId}', available=${models.map { it.id() }}")
         if (savedModel != null) {
             val idx = models.indexOfFirst { it.id() == savedModel }
             if (idx >= 0) {
@@ -1546,7 +1620,7 @@ class ChatToolWindowContent(
             LOG.debug("Saved model '$savedModel' not found in available models")
         }
         // Fall back to the agent-reported current model from session/new
-        val currentModelId = agentManager.client.getCurrentModelId()
+        val currentModelId = agentManager.client.currentModelId
         if (currentModelId != null) {
             val idx = models.indexOfFirst { it.id() == currentModelId }
             if (idx >= 0) {
