@@ -286,13 +286,17 @@ working-indicator .working-text {
     order: 10;
 }
 
+/* Thinking chip sits outside the strip, always visible */
+.meta > thinking-chip {
+    flex-shrink: 0;
+}
+
 .chip-strip {
     display: flex;
     gap: var(--sp-2);
     overflow: hidden;
     flex: 1;
     min-width: 0;
-    max-width: 94%;
     cursor: grab;
 }
 

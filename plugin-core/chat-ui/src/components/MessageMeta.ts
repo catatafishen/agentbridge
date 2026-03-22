@@ -55,7 +55,14 @@ export default class MessageMeta extends HTMLElement {
         append(this._navRight);
         append(this._badge);
 
-        for (const chip of existingChips) this._strip.appendChild(chip);
+        // Thinking chips go outside the strip (always visible), tool chips go inside
+        for (const chip of existingChips) {
+            if (chip.tagName === 'THINKING-CHIP') {
+                this.insertBefore(chip, this._navLeft);
+            } else {
+                this._strip.appendChild(chip);
+            }
+        }
 
         this._strip.addEventListener('scroll', () => this.scheduleNavUpdate(), {passive: true});
         stripToMeta.set(this._strip, this);
@@ -77,11 +84,16 @@ export default class MessageMeta extends HTMLElement {
 
     appendChild<T extends Node>(node: T): T {
         if (this._strip && node instanceof HTMLElement && CHIP_TAGS.has(node.tagName)) {
-            this._strip.appendChild(node);
-            this._scrollToEnd();
+            // Thinking chips go before nav buttons (always visible), tool chips go in strip
+            if (node.tagName === 'THINKING-CHIP') {
+                this.insertBefore(node, this._navLeft);
+            } else {
+                this._strip.appendChild(node);
+                this._scrollToEnd();
+            }
             return node;
         }
-        return Node.prototype.appendChild.call(this, node) as T;
+        return super.appendChild(node);
     }
 
     /** Schedule a nav update coalesced via requestAnimationFrame. */
