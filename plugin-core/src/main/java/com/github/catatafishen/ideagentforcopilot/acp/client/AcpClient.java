@@ -894,7 +894,44 @@ public abstract class AcpClient extends AbstractAgentClient {
             }
         }
 
-        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, kind, arguments, locations, null, null, null, null);
+        // Sub-agent detection: check explicit agentType fields, then fall back to client-specific logic
+        String agentType = extractSubAgentType(params, resolvedTitle, argumentsObj);
+        String subAgentDesc = null;
+        String subAgentPrompt = null;
+        if (agentType != null && argumentsObj != null) {
+            subAgentDesc = argumentsObj.has("description") ? argumentsObj.get("description").getAsString() : null;
+            subAgentPrompt = argumentsObj.has("prompt") ? argumentsObj.get("prompt").getAsString() : null;
+        }
+
+        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, kind, arguments, locations, agentType, subAgentDesc, subAgentPrompt, null);
+    }
+
+    /**
+     * Detect sub-agent invocations in a {@code tool_call} notification and return the agent type.
+     * Returns {@code null} if this is not a sub-agent call.
+     * <p>
+     * The base implementation checks for explicit {@code agentType}/{@code subagent_type}/{@code agent_type}
+     * fields in both the top-level params and the arguments object.
+     * Subclasses can override to add client-specific detection (e.g., title-based matching).
+     */
+    @Nullable
+    protected String extractSubAgentType(@NotNull JsonObject params, @NotNull String resolvedTitle,
+                                         @Nullable JsonObject argumentsObj) {
+        // Check top-level params first (some ACP extensions put agentType here)
+        for (String key : new String[]{"agentType", "agent_type", "subagent_type"}) {
+            if (params.has(key) && params.get(key).isJsonPrimitive()) {
+                return params.get(key).getAsString();
+            }
+        }
+        // Check inside the arguments object
+        if (argumentsObj != null) {
+            for (String key : new String[]{"agentType", "agent_type", "subagent_type"}) {
+                if (argumentsObj.has(key) && argumentsObj.get(key).isJsonPrimitive()) {
+                    return argumentsObj.get(key).getAsString();
+                }
+            }
+        }
+        return null;
     }
 
     private SessionUpdate.ToolCallUpdate parseToolCallUpdate(JsonObject params) {

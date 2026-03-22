@@ -252,6 +252,32 @@ public final class CopilotClient extends AcpClient {
         return null;
     }
 
+    /**
+     * In Copilot's ACP implementation, sub-agent invocations appear as {@code tool_call}
+     * notifications where the {@code title} is the agent's name (e.g., "Intellij-Explore").
+     * The ACP spec has no standard {@code agentType} field, so we detect sub-agent calls
+     * by matching the resolved title against the names of our registered Copilot agents.
+     */
+    @Override
+    @org.jetbrains.annotations.Nullable
+    protected String extractSubAgentType(
+        @org.jetbrains.annotations.NotNull com.google.gson.JsonObject params,
+        @org.jetbrains.annotations.NotNull String resolvedTitle,
+        @org.jetbrains.annotations.Nullable com.google.gson.JsonObject argumentsObj) {
+        // First, try the standard field-based detection from the base class
+        String standard = super.extractSubAgentType(params, resolvedTitle, argumentsObj);
+        if (standard != null) return standard;
+
+        // Copilot-specific: match by title against known agent names
+        // getAvailableAgents() returns the slugs and names we registered
+        for (AgentMode agent : getAvailableAgents()) {
+            if (resolvedTitle.equalsIgnoreCase(agent.slug()) || resolvedTitle.equalsIgnoreCase(agent.name())) {
+                return agent.slug();
+            }
+        }
+        return null;
+    }
+
     @Override
     public boolean requiresInlineReferences() {
         return true;

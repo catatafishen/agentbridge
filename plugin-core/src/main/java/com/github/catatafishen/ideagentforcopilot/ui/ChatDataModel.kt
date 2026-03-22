@@ -91,11 +91,20 @@ internal data class SubAgentInfo(val displayName: String)
 internal const val AGENT_TYPE_GENERAL = "general-purpose"
 
 internal val SUB_AGENT_INFO = mapOf(
-    "explore" to SubAgentInfo("Explore Agent"),
+    // Built-in Claude Code agents (current casing from docs)
+    "Explore" to SubAgentInfo("Explore"),
+    "Plan" to SubAgentInfo("Plan"),
+    AGENT_TYPE_GENERAL to SubAgentInfo("General"),
+    // Legacy / lowercase aliases
+    "explore" to SubAgentInfo("Explore"),
     "task" to SubAgentInfo("Task Agent"),
-    AGENT_TYPE_GENERAL to SubAgentInfo("General Agent"),
-    "code-review" to SubAgentInfo("Code Review Agent"),
-    "ui-reviewer" to SubAgentInfo("UI Review Agent"),
+    // Custom intellij-* agents (recommended in startup instructions)
+    "intellij-explore" to SubAgentInfo("Explore"),
+    "intellij-edit" to SubAgentInfo("Edit Agent"),
+    "intellij-default" to SubAgentInfo("Agent"),
+    // Other custom agents
+    "code-review" to SubAgentInfo("Code Review"),
+    "ui-reviewer" to SubAgentInfo("UI Review"),
 )
 
 /** JSON key to use as subtitle in the chip label for specific tools */

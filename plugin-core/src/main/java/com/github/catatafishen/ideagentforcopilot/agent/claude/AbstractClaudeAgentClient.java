@@ -122,7 +122,10 @@ abstract class AbstractClaudeAgentClient extends AbstractAgentClient {
         if (onUpdate == null) return;
         String normalized = normalizeToolName(toolName);
         String args = (!input.isEmpty()) ? input.toString() : null;
-        String agentType = input.has("agent_type") ? input.get("agent_type").getAsString() : null;
+        // "subagent_type" is the current field name (Claude Code >= 2.1.63 / Task tool renamed to Agent)
+        // "agent_type" is the legacy field name; keep checking both for backwards compatibility
+        String agentType = input.has("subagent_type") ? input.get("subagent_type").getAsString()
+            : input.has("agent_type") ? input.get("agent_type").getAsString() : null;
         String subAgentDesc = agentType != null && input.has("description") ? input.get("description").getAsString() : null;
         String subAgentPrompt = agentType != null && input.has("prompt") ? input.get("prompt").getAsString() : null;
         SessionUpdate.ToolKind kind = SessionUpdate.ToolKind.OTHER;
