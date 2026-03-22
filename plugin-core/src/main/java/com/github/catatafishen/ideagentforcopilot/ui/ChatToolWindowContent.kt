@@ -1022,29 +1022,54 @@ class ChatToolWindowContent(
             val base = project.basePath ?: return
 
             // Shared
-            group.addSeparator("Shared")
-            addFileAction(group, base, "TODO.md", "TODO")
-            addFileAction(group, base, "AGENTS.md", "AGENTS")
+            val sharedGroup = DefaultActionGroup()
+            addFileAction(sharedGroup, base, "TODO.md", "TODO")
+            addFileAction(sharedGroup, base, "AGENTS.md", "AGENTS")
+            if (sharedGroup.childrenCount > 0) {
+                if (group.childrenCount > 0) group.addSeparator()
+                group.addSeparator("Shared")
+                group.addAll(*sharedGroup.childActionsOrStubs)
+            }
 
             // Copilot CLI
-            group.addSeparator("Copilot CLI")
-            addGlobSection(group, base, ".agent-work/copilot/agents", "*.md", "agents")
-            addGlobSection(group, base, ".agent-work/copilot/skills", "*/SKILL.md", "skills")
-            addGlobSection(group, base, ".agent-work/copilot/instructions", "*.instructions.md", "instructions")
+            val copilotGroup = DefaultActionGroup()
+            addGlobSection(copilotGroup, base, ".agent-work/copilot/agents", "*.md", "agents")
+            addGlobSection(copilotGroup, base, ".agent-work/copilot/skills", "*/SKILL.md", "skills")
+            addGlobSection(copilotGroup, base, ".agent-work/copilot/instructions", "*.instructions.md", "instructions")
+            if (copilotGroup.childrenCount > 0) {
+                if (group.childrenCount > 0) group.addSeparator()
+                group.addSeparator("Copilot CLI")
+                group.addAll(*copilotGroup.childActionsOrStubs)
+            }
 
             // OpenCode
-            group.addSeparator("OpenCode")
-            addGlobSection(group, base, ".agent-work/opencode/agent", "*.md", "agent")
+            val openCodeGroup = DefaultActionGroup()
+            addGlobSection(openCodeGroup, base, ".agent-work/opencode/agent", "*.md", "agent")
+            if (openCodeGroup.childrenCount > 0) {
+                if (group.childrenCount > 0) group.addSeparator()
+                group.addSeparator("OpenCode")
+                group.addAll(*openCodeGroup.childActionsOrStubs)
+            }
 
             // Junie
-            group.addSeparator("Junie")
-            addFileAction(group, base, ".agent-work/junie/guidelines.md", "guidelines.md")
-            addGlobSection(group, base, ".agent-work/junie/agents", "*.md", "agents")
+            val junieGroup = DefaultActionGroup()
+            addFileAction(junieGroup, base, ".agent-work/junie/guidelines.md", "guidelines.md")
+            addGlobSection(junieGroup, base, ".agent-work/junie/agents", "*.md", "agents")
+            if (junieGroup.childrenCount > 0) {
+                if (group.childrenCount > 0) group.addSeparator()
+                group.addSeparator("Junie")
+                group.addAll(*junieGroup.childActionsOrStubs)
+            }
 
             // Kiro
-            group.addSeparator("Kiro")
-            addGlobSection(group, base, ".agent-work/kiro/agents", "*.json", "agents")
-            addGlobSection(group, base, ".agent-work/kiro/skills", "*/SKILL.md", "skills")
+            val kiroGroup = DefaultActionGroup()
+            addGlobSection(kiroGroup, base, ".agent-work/kiro/agents", "*.json", "agents")
+            addGlobSection(kiroGroup, base, ".agent-work/kiro/skills", "*/SKILL.md", "skills")
+            if (kiroGroup.childrenCount > 0) {
+                if (group.childrenCount > 0) group.addSeparator()
+                group.addSeparator("Kiro")
+                group.addAll(*kiroGroup.childActionsOrStubs)
+            }
 
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
                 .createActionGroupPopup(
@@ -1058,10 +1083,17 @@ class ChatToolWindowContent(
         private fun addFileAction(group: DefaultActionGroup, base: String, path: String, label: String) {
             val file = java.io.File(base, path)
             val exists = file.exists()
+            val extension = path.substringAfterLast('.', "")
+            val icon = if (exists) {
+                fileIconFor(path, extension)
+            } else {
+                AllIcons.Actions.IntentionBulbGrey
+            }
+
             group.add(object : AnAction(
                 label,
                 if (exists) "Open $path" else "Create $path",
-                if (exists) AllIcons.FileTypes.Text else AllIcons.Actions.IntentionBulbGrey
+                icon
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.BGT
                 override fun actionPerformed(e: AnActionEvent) {
@@ -1074,26 +1106,25 @@ class ChatToolWindowContent(
             })
         }
 
+        private fun fileIconFor(path: String, extension: String): Icon {
+            return com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
+                .getFileTypeByExtension(extension).icon ?: AllIcons.FileTypes.Text
+        }
+
         private fun addGlobSection(group: DefaultActionGroup, base: String, dirPath: String, pattern: String, label: String) {
             val dir = java.io.File(base, dirPath)
             val files = findMatchingFiles(dir, pattern)
 
-            if (files.isEmpty()) {
-                group.add(object : AnAction("$label (none)", "No files found", AllIcons.Actions.IntentionBulbGrey) {
+            files.forEach { file ->
+                val relPath = file.relativeTo(java.io.File(base)).path
+                val extension = file.extension
+                val icon = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
+                    .getFileTypeByExtension(extension).icon
+
+                group.add(object : AnAction(file.nameWithoutExtension, "Open ${file.name}", icon) {
                     override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                    override fun update(e: AnActionEvent) {
-                        e.presentation.isEnabled = false
-                    }
-                    override fun actionPerformed(e: AnActionEvent) {}
+                    override fun actionPerformed(e: AnActionEvent) = openProjectFile(relPath)
                 })
-            } else {
-                files.forEach { file ->
-                    val relPath = file.relativeTo(java.io.File(base)).path
-                    group.add(object : AnAction(file.nameWithoutExtension, "Open ${file.name}", AllIcons.FileTypes.Text) {
-                        override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                        override fun actionPerformed(e: AnActionEvent) = openProjectFile(relPath)
-                    })
-                }
             }
         }
 

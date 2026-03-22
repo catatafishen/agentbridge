@@ -355,11 +355,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         toolCallNames[did] = title
         toolCallEntries[did] = entry
 
-        val initialStatus = when (registration.initialState()) {
-            ToolChipRegistry.ChipState.RUNNING -> "running"
-            else -> "pending"
+        val isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
+        if (isMcpHandled) {
+            entry.mcpHandled = true
         }
+
+        val initialStatus = if (isMcpHandled) "running" else "pending"
         executeJs("ChatController.upsertToolChip('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind','$initialStatus')")
+        if (isMcpHandled) {
+            executeJs("ChatController.markMcpHandled('$did')")
+        }
     }
 
     override fun updateToolCall(

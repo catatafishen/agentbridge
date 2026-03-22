@@ -806,3 +806,43 @@
     "NEW INSTRUCTION": "WHEN a known MCP tool renders as unmapped THEN compare tool_call id/hash with tool_result and normalize tool ID from logs"
 }
 
+[2026-03-22 20:41] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Edit source assets",
+    "EXPECTATION": "CSS changes should be made in the source stylesheet, not the generated/built CSS under resources.",
+    "NEW INSTRUCTION": "WHEN updating chat UI styles THEN modify source stylesheet and rebuild assets, not built CSS"
+}
+
+[2026-03-22 21:01] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "UI placement",
+    "EXPECTATION": "The Smart Paste control should appear in the settings view rather than the title bar.",
+    "NEW INSTRUCTION": "WHEN adding or moving Smart Paste control THEN place it in the settings view"
+}
+
+[2026-03-22 21:10] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Tool kind resolution",
+    "EXPECTATION": "Do not infer tool kind via ToolRegistry/title mapping in PromptOrchestrator; rely on MCP updates to set the final kind and attributes.",
+    "NEW INSTRUCTION": "WHEN MCP tool_call_update arrives THEN set chip kind and attributes from MCP and ignore title mapping"
+}
+
+[2026-03-22 21:39] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Hash correlation mismatch",
+    "EXPECTATION": "Agentbridge-handled tools (e.g., Search Text, Git Commit, Git Status) should render with solid borders after restart; current hash correlation fails causing dotted borders.",
+    "NEW INSTRUCTION": "WHEN restoring tool chips from history THEN set mcpHandled by matching tool-call hash to MCP handling events"
+}
+
+[2026-03-22 21:44] - Updated by Junie
+{
+    "TYPE": "preference",
+    "CATEGORY": "Project files dropdown",
+    "EXPECTATION": "In the title bar project files dropdown, do not show empty groups like 'skills (none)', and use the actual IntelliJ icon for Markdown files.",
+    "NEW INSTRUCTION": "WHEN rendering project files dropdown THEN hide empty groups; use IntelliJ Markdown icon"
+}
+

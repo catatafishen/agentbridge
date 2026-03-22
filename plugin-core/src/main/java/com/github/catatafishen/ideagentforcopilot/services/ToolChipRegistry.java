@@ -310,10 +310,22 @@ public final class ToolChipRegistry {
                     // Use a stable JSON representation for the value to ensure consistency
                     // regardless of internal GSON representation or property order in nested objects.
                     String stableValue = (value == null || value.isJsonNull()) ? "null" : value.toString();
+
+                    // Normalize numbers: "1.0" -> "1"
+                    if (value != null && value.isJsonPrimitive() && value.getAsJsonPrimitive().isNumber()) {
+                        double d = value.getAsDouble();
+                        if (d == (long) d) {
+                            stableValue = String.valueOf((long) d);
+                        }
+                    }
+
                     sorted.put(key, stableValue);
                 }
             }
-            return String.format("%08x", sorted.toString().hashCode());
+            String toHash = sorted.toString();
+            String hash = String.format("%08x", toHash.hashCode());
+            LOG.debug("ToolChipRegistry: hashing '" + toHash + "' -> " + hash);
+            return hash;
         } catch (Exception e) {
             LOG.warn("ToolChipRegistry: hash error", e);
             return "00000000";
