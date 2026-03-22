@@ -40,6 +40,14 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     private static final String AGENT_ID_OPENCODE = "opencode";
     private static final String AGENT_WORK_DIR = ".agent-work";
     private static final String OPENCODE_CONFIG_FILE = "opencode.json";
+    /**
+     * OpenCode's native built-in tool names. Denied in the generated config so the model
+     * uses agentbridge MCP tools instead of OpenCode's own file/search/shell tools.
+     */
+    private static final List<String> OPENCODE_NATIVE_TOOLS = List.of(
+        "grep", "glob", "ls", "read", "write", "edit", "patch",
+        "bash", "webfetch", "task", "todoread", "todowrite"
+    );
 
     private final AgentProfile profile;
     @Nullable
@@ -185,8 +193,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @Nullable String getMcpConfigTemplate() {
-        // Always returns non-null in this impl, but interface requires @Nullable for other implementations
+    public @NotNull String getMcpConfigTemplate() {
         return profile.getMcpConfigTemplate();
     }
 
@@ -611,15 +618,18 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         }
     }
 
-    /**
-     * Builds a JSON object mapping tool IDs to their permission mode (allow/ask/deny).
-     * Includes all non-built-in tools with their configured permissions.
-     * When {@code excludeAgentBuiltInTools} is enabled, also adds "deny" for every
-     * built-in tool so the CONFIG_JSON block enforces the exclusion at the agent level.
-     */
     @NotNull
     private com.google.gson.JsonObject buildPermissionJsonObject() {
         var permObj = new com.google.gson.JsonObject();
+
+        // For OpenCode: deny native agent tools so the model is forced to use agentbridge MCP tools.
+        // This runs regardless of the registry state so the deny entries are always present.
+        if (AGENT_ID_OPENCODE.equals(profile.getId()) && profile.isExcludeAgentBuiltInTools()) {
+            for (String nativeTool : OPENCODE_NATIVE_TOOLS) {
+                permObj.addProperty(nativeTool, "deny");
+            }
+        }
+
         if (registry == null) return permObj;
         var settings = new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(profile.getId());
         for (var entry : registry.getAllTools()) {

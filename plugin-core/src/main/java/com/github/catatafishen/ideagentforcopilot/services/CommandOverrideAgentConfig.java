@@ -147,7 +147,7 @@ final class CommandOverrideAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @Nullable String getMcpConfigTemplate() {
+    public @NotNull String getMcpConfigTemplate() {
         return delegate.getMcpConfigTemplate();
     }
 

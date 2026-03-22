@@ -145,8 +145,15 @@ public final class AgentProfileManager {
         p.setId(OPENCODE_PROFILE_ID);
         p.setDisplayName("OpenCode");
         p.setBuiltIn(true);
+        p.setTransportType(TransportType.ACP);
         p.setBinaryName(OPENCODE_PROFILE_ID);
         p.setInstallHint("Install with: npm i -g opencode-ai");
+        p.setInstallUrl("https://opencode.ai/docs");
+        p.setExcludeAgentBuiltInTools(true); // Deny native tools; force use of agentbridge MCP tools
+        // fixOpenCodeConfigForFile() converts "mcpServers" array → "mcp" object for opencode.json
+        p.setMcpConfigTemplate(
+            "{\"mcpServers\":[{\"name\":\"agentbridge\",\"type\":\"http\",\"url\":\"http://127.0.0.1:{mcpPort}\",\"headers\":[]}]}"
+        );
         return p;
     }
 

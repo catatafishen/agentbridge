@@ -109,7 +109,6 @@ public interface AgentConfig {
         return false;
     }
 
-
     /**
      * Returns the permission injection method for this agent.
      * Controls how per-tool ALLOW/ASK/DENY settings are communicated to the agent process.
@@ -206,9 +205,9 @@ public interface AgentConfig {
      * Returns the MCP config template (JSON string) to use for injection.
      * Supported placeholders: {javaPath}, {mcpJarPath}, {mcpPort}.
      */
-    @Nullable
+    @NotNull
     default String getMcpConfigTemplate() {
-        return null;
+        return "";
     }
 
     /**
