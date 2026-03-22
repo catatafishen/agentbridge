@@ -61,7 +61,12 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private static final long INITIALIZE_TIMEOUT_SECONDS = 90;
     private static final long SESSION_TIMEOUT_SECONDS = 30;
-    private static final long PROMPT_TIMEOUT_SECONDS = 600;
+    /**
+     * How long a prompt may be silent (no {@code session/update} received) before it is
+     * considered stuck. Unlike a hard deadline from send time, this resets on every streaming
+     * chunk, so arbitrarily long agentic turns are fine as long as the agent keeps sending.
+     */
+    private static final long INACTIVITY_TIMEOUT_SECONDS = 300; // 5 minutes of silence
     private static final long AUTH_TIMEOUT_SECONDS = 30;
     private static final long STOP_TIMEOUT_SECONDS = 5;
 
@@ -103,6 +108,10 @@ public abstract class AcpClient extends AbstractAgentClient {
     private @Nullable String currentAgentSlug = null;
     private final List<AbstractAgentClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
     private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
+    /**
+     * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
+     */
+    private volatile long lastActivityNanos = System.nanoTime();
 
     protected AcpClient(Project project) {
         this.project = project;
@@ -302,13 +311,12 @@ public abstract class AcpClient extends AbstractAgentClient {
     public final PromptResponse sendPrompt(PromptRequest request,
                                            Consumer<SessionUpdate> onUpdate) throws AgentPromptException {
         try {
+            lastActivityNanos = System.nanoTime();
             updateConsumer = onUpdate;
             JsonObject params = gson.toJsonTree(request).getAsJsonObject();
             LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
-            CompletableFuture<JsonElement> future = transport.sendRequest(
-                "session/prompt", params, PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS
-            );
-            JsonElement result = future.get(PROMPT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            CompletableFuture<JsonElement> future = transport.sendRequest("session/prompt", params);
+            JsonElement result = waitForPromptResult(future);
             return gson.fromJson(result, PromptResponse.class);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -330,6 +338,36 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     protected @Nullable PromptResponse tryRecoverPromptException(Exception cause) {
         return null;
+    }
+
+    /**
+     * Waits for the {@code session/prompt} response using an inactivity-based deadline.
+     * <p>
+     * Rather than a hard wall-clock timeout from the time the request was sent (which
+     * would prematurely kill legitimately long agentic turns), this method polls in short
+     * intervals and only times out when no {@code session/update} notification has arrived
+     * for {@value #INACTIVITY_TIMEOUT_SECONDS} seconds. As long as the agent keeps streaming
+     * chunks — even during a multi-tool, multi-minute turn — the deadline keeps resetting.
+     */
+    private JsonElement waitForPromptResult(CompletableFuture<JsonElement> future)
+        throws InterruptedException, java.util.concurrent.ExecutionException,
+        java.util.concurrent.TimeoutException {
+        long pollMs = 5_000L;
+        long inactivityLimitNanos = TimeUnit.SECONDS.toNanos(INACTIVITY_TIMEOUT_SECONDS);
+        while (true) {
+            try {
+                return future.get(pollMs, TimeUnit.MILLISECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                long silenceNanos = System.nanoTime() - lastActivityNanos;
+                if (silenceNanos >= inactivityLimitNanos) {
+                    long silenceSec = TimeUnit.NANOSECONDS.toSeconds(silenceNanos);
+                    LOG.warn(displayName() + ": inactivity timeout after " + silenceSec + "s of silence");
+                    throw new java.util.concurrent.TimeoutException(
+                        "Agent inactive for " + silenceSec + "s (no session/update received)"
+                    );
+                }
+            }
+        }
     }
 
     /**
@@ -671,9 +709,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         );
 
         JsonObject params = gson.toJsonTree(request).getAsJsonObject();
-        CompletableFuture<JsonElement> future = transport.sendRequest(
-            "initialize", params, INITIALIZE_TIMEOUT_SECONDS, TimeUnit.SECONDS
-        );
+        CompletableFuture<JsonElement> future = transport.sendRequest("initialize", params);
 
         JsonElement result = future.get(INITIALIZE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         InitializeResponse response = gson.fromJson(result, InitializeResponse.class);
@@ -702,9 +738,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         params.addProperty("methodId", methodId);
 
         try {
-            CompletableFuture<JsonElement> future = transport.sendRequest(
-                "authenticate", params, AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS
-            );
+            CompletableFuture<JsonElement> future = transport.sendRequest("authenticate", params);
             future.get(AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             LOG.info(displayName() + " authenticated with method: " + methodId);
         } catch (java.util.concurrent.ExecutionException e) {
@@ -798,6 +832,9 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private void handleSessionUpdate(@Nullable JsonObject params) {
         if (params == null) return;
+
+        // Reset inactivity clock on every update so long turns with active streaming never time out.
+        lastActivityNanos = System.nanoTime();
 
         JsonObject updateObj = normalizeSessionUpdateParams(params);
 

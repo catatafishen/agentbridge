@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
@@ -41,7 +40,6 @@ public class JsonRpcTransport {
     private static final Logger LOG = Logger.getInstance(JsonRpcTransport.class);
 
     private static final String JSONRPC_VERSION = "2.0";
-    private static final long DEFAULT_TIMEOUT_SECONDS = 30;
 
     private static final String KEY_JSONRPC = "jsonrpc";
     private static final String KEY_ID = "id";
@@ -108,7 +106,7 @@ public class JsonRpcTransport {
      * Set a logger callback for debug-level ACP message tracing.
      * When set, every incoming and outgoing JSON-RPC line is passed to this consumer.
      */
-    public void setDebugLogger(Consumer<String> logger) {
+    public void setDebugLogger(@Nullable Consumer<String> logger) {
         this.debugLogger = logger;
     }
 
@@ -170,21 +168,15 @@ public class JsonRpcTransport {
      * Send a JSON-RPC request and return a future for the response.
      */
     public CompletableFuture<JsonElement> sendRequest(String method, @Nullable JsonObject params) {
-        return sendRequest(method, params, DEFAULT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    }
-
-    /**
-     * Send a JSON-RPC request with a custom timeout.
-     */
-    public CompletableFuture<JsonElement> sendRequest(String method, @Nullable JsonObject params,
-                                                      long timeout, TimeUnit unit) {
         long id = nextId.getAndIncrement();
         CompletableFuture<JsonElement> future = new CompletableFuture<>();
         pendingRequests.put(id, future);
-
-        future.orTimeout(timeout, unit)
-            .whenComplete((result, error) -> pendingRequests.remove(id));
-
+        // Clean up the pending-request entry when the future completes for any reason.
+        // We intentionally do NOT use orTimeout() here: the caller manages its own deadline
+        // via future.get(timeout, unit). Using orTimeout() would race with a late-arriving
+        // real response, prematurely removing the id and causing spurious "unknown request id"
+        // warnings (and a missed result) when the actual response arrives after the timeout.
+        future.whenComplete((result, error) -> pendingRequests.remove(id));
         writeLine(gson.toJson(buildRequest(id, method, params)));
         return future;
     }
