@@ -66,7 +66,7 @@ Different ACP agents support custom agent definitions with tool filtering, but u
 
 ```yaml
 ---
-name: ide-explore
+name: intellij-explore
 description: "Fast codebase explorer using IntelliJ code intelligence"
 model: claude-haiku-4.5
 tools:
@@ -82,7 +82,7 @@ System prompt goes here...
 
 **Bundled Agents**:
 
-- `ide-explore.md` — fast codebase exploration (read-only MCP tools)
+- `intellij-explore.md` — fast codebase exploration (read-only MCP tools)
 - `ide-task.md` — task execution with IntelliJ tools
 
 **Status**: ✅ Working (agent definitions loaded), but built-in tool filtering is
@@ -137,7 +137,7 @@ System prompt goes here...
 **Bundled Agents**:
 
 - `ide-general` — general-purpose agent with most IntelliJ tools enabled (default)
-- `ide-explore` — read-only exploration agent with code intelligence
+- `intellij-explore` — read-only exploration agent with code intelligence
 
 Injected via `OPENCODE_CONFIG_CONTENT` JSON config (not `.md` files).
 
@@ -183,8 +183,8 @@ See [JUNIE-TOOL-WORKAROUND.md](docs/JUNIE-TOOL-WORKAROUND.md).
 
 | Agent    | MCP Tool Prefix | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests  | Bundled Agents               | Status                     |
 |----------|-----------------|----------------------------------|------------------------------------------------------------|----------------------|------------------------------|----------------------------|
-| Copilot  | `agentbridge-`  | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools    | 2 (ide-explore, ide-task)    | Working (filtering broken) |
-| OpenCode | `agentbridge_`  | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | 2 (ide-general, ide-explore) | ✅ Working                  |
+| Copilot  | `agentbridge-`  | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools    | 2 (intellij-explore, intellij-task)    | Working (filtering broken) |
+| OpenCode | `agentbridge_`  | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | 2 (ide-general, intellij-explore) | ✅ Working                  |
 | Junie    | `agentbridge-`  | ❌ No support                     | N/A                                                        | ❌ No (auto-executes) | 0                            | Prompt workaround only     |
 | Kiro     | `@agentbridge/` | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts  | 1 (intellij-agent)           | ⚠️ Experimental (hangs)    |
 

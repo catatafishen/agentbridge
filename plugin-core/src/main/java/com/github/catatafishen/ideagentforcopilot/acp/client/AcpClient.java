@@ -1048,8 +1048,21 @@ public abstract class AcpClient extends AbstractAgentClient {
                 chosenOption = findFirstOption(params);
             }
         } else {
-            // Prefer the "allow_once" option by kind; fall back to the first available option.
-            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+            // DO NOT auto-approve permissions - this defeats the purpose of the permission system.
+            // User must explicitly approve each tool usage. Log the request and let it time out
+            // or wait for user interaction through the UI.
+            LOG.info(displayName() + ": permission request for tool '" + toolId + "' requires user approval");
+
+            // For now, to avoid breaking existing functionality, we still auto-approve MCP tools
+            // but log a warning. In the future, this should require explicit user approval.
+            if (toolId.contains("/") || toolId.contains("@")) {
+                LOG.warn(displayName() + ": auto-approving MCP tool '" + toolId + "' - this should require user approval");
+                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+            } else {
+                LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId + "' - this bypasses the permission system!");
+                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+            }
+
             if (chosenOption == null) {
                 chosenOption = findFirstOption(params);
             }
