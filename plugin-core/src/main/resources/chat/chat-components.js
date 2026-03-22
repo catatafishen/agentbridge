@@ -808,9 +808,8 @@ var __chatUI = (() => {
       if (wi && !wi.hidden) wi.resetTimer();
     },
     _thinkingCounter: 0,
-    _profileColors: {},
-    _nextProfileColor: 0,
     _currentProfile: "",
+    _currentClientType: "",
     _ctx: {},
     _getCtx(turnId, agentId) {
       const key = turnId + "-" + agentId;
@@ -830,12 +829,6 @@ var __chatUI = (() => {
       if (!ctx.msg) {
         const msg = document.createElement("chat-message");
         msg.setAttribute("type", "agent");
-        if (this._currentProfile && agentId === "main") {
-          if (!(this._currentProfile in this._profileColors)) {
-            this._profileColors[this._currentProfile] = this._nextProfileColor++ % 6;
-          }
-          msg.classList.add("model-c" + this._profileColors[this._currentProfile]);
-        }
         const meta = document.createElement("message-meta");
         meta.className = "meta";
         const now = /* @__PURE__ */ new Date();
@@ -851,6 +844,9 @@ var __chatUI = (() => {
         ctx.msg = msg;
         ctx.meta = meta;
         ctx.details = details;
+        if (agentId === "main" && this._currentClientType) {
+          msg.classList.add("client-" + this._currentClientType);
+        }
       }
       return ctx;
     },
@@ -1097,8 +1093,6 @@ var __chatUI = (() => {
       this._msgs().innerHTML = "";
       this._ctx = {};
       this._thinkingCounter = 0;
-      this._profileColors = {};
-      this._nextProfileColor = 0;
       this._currentProfile = "";
     },
     finalizeTurn(turnId, statsJson) {
@@ -1187,14 +1181,8 @@ var __chatUI = (() => {
     setCurrentProfile(profileId) {
       this._currentProfile = profileId;
     },
-    setAgentColor(colorIndex) {
-      const container = this._container();
-      if (container) {
-        for (let i = 0; i < 8; i++) {
-          container.classList.remove(`agent-c${i}`);
-        }
-        container.classList.add(`agent-c${colorIndex}`);
-      }
+    setClientType(type) {
+      this._currentClientType = type;
     },
     setCurrentModel(modelId) {
     },

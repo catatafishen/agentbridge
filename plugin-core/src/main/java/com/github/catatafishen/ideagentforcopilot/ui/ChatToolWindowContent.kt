@@ -159,7 +159,11 @@ class ChatToolWindowContent(
     private fun buildAndShowChatPanel() {
         val addSeparatorNow = {
             val ts = java.time.Instant.now().toString()
-            consolePanel.setCurrentAgent(agentManager.activeProfile.displayName, agentManager.activeProfile.id)
+            consolePanel.setCurrentAgent(
+                agentManager.activeProfile.displayName,
+                agentManager.activeProfile.id,
+                agentManager.activeProfile.clientCssClass
+            )
             consolePanel.addSessionSeparator(ts, agentManager.activeProfile.displayName)
         }
         if (chatPanel == null) {
@@ -170,7 +174,11 @@ class ChatToolWindowContent(
             // Set agent color immediately so it is queued in pendingJs before the browser loads.
             // Without this there is a race: the browser becomes ready (pendingJs flushed empty) before
             // addSeparatorNow runs, so a message sent in that window shows the default color.
-            consolePanel.setCurrentAgent(agentManager.activeProfile.displayName, agentManager.activeProfile.id)
+            consolePanel.setCurrentAgent(
+                agentManager.activeProfile.displayName,
+                agentManager.activeProfile.id,
+                agentManager.activeProfile.clientCssClass
+            )
             restoreConversation(onComplete = addSeparatorNow)
         } else {
             addSeparatorNow()

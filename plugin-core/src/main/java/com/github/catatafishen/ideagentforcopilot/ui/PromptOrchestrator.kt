@@ -428,7 +428,11 @@ class PromptOrchestrator(
             activeSubAgentId = toolCallId
             agentManager.client.setSubAgentActive(true)
             agentManager.settings.setActiveAgentLabel(agentType)
-            consolePanel().setCurrentAgent(agentType, agentManager.activeProfile.id)
+            consolePanel().setCurrentAgent(
+                agentType,
+                agentManager.activeProfile.id,
+                agentManager.activeProfile.clientCssClass
+            )
             val description =
                 toolCall.subAgentDescription()?.takeIf { it.isNotBlank() } ?: title.ifBlank { "Sub-agent task" }
             consolePanel().addSubAgentEntry(toolCallId, agentType, description, toolCall.subAgentPrompt())
@@ -506,7 +510,11 @@ class PromptOrchestrator(
                 activeSubAgentId = null
                 agentManager.client.setSubAgentActive(false)
                 agentManager.settings.setActiveAgentLabel(null)
-                consolePanel().setCurrentAgent(agentManager.activeProfile.displayName, agentManager.activeProfile.id)
+                consolePanel().setCurrentAgent(
+                    agentManager.activeProfile.displayName,
+                    agentManager.activeProfile.id,
+                    agentManager.activeProfile.clientCssClass
+                )
             }
             consolePanel().updateSubAgentResult(toolCallId, uiStatus, result, description)
         } else if (isInternal) {

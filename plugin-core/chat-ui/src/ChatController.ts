@@ -26,9 +26,8 @@ const ChatController = {
     },
 
     _thinkingCounter: 0,
-    _profileColors: {} as Record<string, number>,
-    _nextProfileColor: 0,
     _currentProfile: '',
+    _currentClientType: '',
     _ctx: {} as Record<string, TurnContext & { thinkingMsg?: HTMLElement | null; thinkingChip?: HTMLElement | null }>,
 
     _getCtx(turnId: string, agentId: string): TurnContext & {
@@ -54,13 +53,6 @@ const ChatController = {
         if (!ctx.msg) {
             const msg = document.createElement('chat-message');
             msg.setAttribute('type', 'agent');
-            // Apply profile-based color class for main agent messages
-            if (this._currentProfile && agentId === 'main') {
-                if (!(this._currentProfile in this._profileColors)) {
-                    this._profileColors[this._currentProfile] = this._nextProfileColor++ % 6;
-                }
-                msg.classList.add('model-c' + this._profileColors[this._currentProfile]);
-            }
             const meta = document.createElement('message-meta');
             meta.className = 'meta';
             const now = new Date();
@@ -76,6 +68,10 @@ const ChatController = {
             ctx.msg = msg;
             ctx.meta = meta;
             ctx.details = details;
+
+            if (agentId === 'main' && this._currentClientType) {
+                msg.classList.add('client-' + this._currentClientType);
+            }
         }
         return ctx;
     },
@@ -347,8 +343,6 @@ const ChatController = {
         this._msgs().innerHTML = '';
         this._ctx = {};
         this._thinkingCounter = 0;
-        this._profileColors = {};
-        this._nextProfileColor = 0;
         this._currentProfile = '';
     },
 
@@ -455,20 +449,12 @@ const ChatController = {
         this._currentProfile = profileId;
     },
 
-    setAgentColor(colorIndex: number): void {
-        const container = this._container();
-        if (container) {
-            // Remove old agent-c* classes
-            for (let i = 0; i < 8; i++) {
-                container.classList.remove(`agent-c${i}`);
-            }
-            // Add the new color class
-            container.classList.add(`agent-c${colorIndex}`);
-        }
+    setClientType(type: string): void {
+        this._currentClientType = type;
     },
 
     setCurrentModel(modelId: string): void {
-        // Kept for stats display compatibility; coloring is now profile-based.
+        // Kept for stats display compatibility
     },
 
     restoreBatch(encodedHtml: string): void {

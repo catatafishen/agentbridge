@@ -38,6 +38,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var currentTurnId = ""
     private var toolJustCompleted = false
     private var currentAgent = ""
+    private var currentClientType = ""
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
     private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
     private val toolRegistry = com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.getInstance(project)
@@ -248,10 +249,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("ChatController.setCurrentProfile('${escJs(profileId)}')")
     }
 
-    override fun setCurrentAgent(agentName: String, profileId: String) {
+    override fun setCurrentAgent(agentName: String, profileId: String, clientType: String) {
         currentAgent = agentName
-        val colorIndex = ChatTheme.agentColorIndex(profileId)
-        executeJs("ChatController.setAgentColor($colorIndex)")
+        currentClientType = clientType
+        executeJs("ChatController.setClientType('${escJs(clientType)}')")
     }
 
     override fun addContextFilesEntry(files: List<Pair<String, String>>) {

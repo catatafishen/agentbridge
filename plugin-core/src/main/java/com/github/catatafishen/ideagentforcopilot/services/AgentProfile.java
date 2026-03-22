@@ -586,6 +586,20 @@ public final class AgentProfile {
     }
 
     /**
+     * Returns a CSS-friendly client identifier for styling agent bubbles.
+     */
+    @NotNull
+    public String getClientCssClass() {
+        String name = binaryName.toLowerCase();
+        if (name.contains("copilot")) return "copilot";
+        if (name.contains("claude")) return "claude";
+        if (name.contains("opencode")) return "opencode";
+        if (name.contains("junie")) return "junie";
+        if (name.contains("kiro")) return "kiro";
+        return "";
+    }
+
+    /**
      * Builds the default start command string for display in the connect panel.
      */
     @NotNull

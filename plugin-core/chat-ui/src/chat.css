@@ -207,6 +207,33 @@ body {
     max-width: 94%;
     word-break: break-word;
     overflow-wrap: anywhere;
+    border-left: 3px solid var(--agent);
+}
+
+/* Client-specific colors */
+chat-message.client-copilot .agent-bubble {
+    border-left-color: #7c3aed;
+    background: rgba(124, 58, 237, 0.05);
+}
+
+chat-message.client-claude .agent-bubble {
+    border-left-color: #d97706;
+    background: rgba(217, 119, 6, 0.05);
+}
+
+chat-message.client-opencode .agent-bubble {
+    border-left-color: #0891b2;
+    background: rgba(8, 145, 178, 0.05);
+}
+
+chat-message.client-junie .agent-bubble {
+    border-left-color: #dc2626;
+    background: rgba(220, 38, 38, 0.05);
+}
+
+chat-message.client-kiro .agent-bubble {
+    border-left-color: #059669;
+    background: rgba(5, 150, 105, 0.05);
 }
 
 .agent-bubble + .agent-bubble {
@@ -531,127 +558,6 @@ thinking-chip.thinking-active .thought-bubble {
 }
 
 /* ── Sub-agent colors ────────────────────────────────── */
-
-/* ── Model colors (main agent bubbles cycle per profile) ── */
-.model-c0 {
-    --mc: rgba(150, 200, 150, 1);
-}
-
-.model-c0 .agent-bubble {
-    background: rgba(150, 200, 150, 0.06);
-}
-
-.model-c0 .agent-bubble:hover {
-    background: rgba(150, 200, 150, 0.10);
-}
-
-.model-c1 {
-    --mc: rgba(130, 170, 220, 1);
-}
-
-.model-c1 .agent-bubble {
-    background: rgba(130, 170, 220, 0.06);
-}
-
-.model-c1 .agent-bubble:hover {
-    background: rgba(130, 170, 220, 0.10);
-}
-
-.model-c2 {
-    --mc: rgba(190, 150, 210, 1);
-}
-
-.model-c2 .agent-bubble {
-    background: rgba(190, 150, 210, 0.06);
-}
-
-.model-c2 .agent-bubble:hover {
-    background: rgba(190, 150, 210, 0.10);
-}
-
-.model-c3 {
-    --mc: rgba(220, 170, 100, 1);
-}
-
-.model-c3 .agent-bubble {
-    background: rgba(220, 170, 100, 0.06);
-}
-
-.model-c3 .agent-bubble:hover {
-    background: rgba(220, 170, 100, 0.10);
-}
-
-.model-c4 {
-    --mc: rgba(200, 130, 150, 1);
-}
-
-.model-c4 .agent-bubble {
-    background: rgba(200, 130, 150, 0.06);
-}
-
-.model-c4 .agent-bubble:hover {
-    background: rgba(200, 130, 150, 0.10);
-}
-
-.model-c5 {
-    --mc: rgba(100, 190, 190, 1);
-}
-
-.model-c5 .agent-bubble {
-    background: rgba(100, 190, 190, 0.06);
-}
-
-.model-c5 .agent-bubble:hover {
-    background: rgba(100, 190, 190, 0.10);
-}
-
-.agent-name {
-    color: var(--mc, var(--think));
-    font-weight: 500;
-    font-size: 0.88em;
-    opacity: 0.85;
-}
-
-/* Agent color classes — apply to chat-container to change working indicator color */
-chat-container.agent-c0 {
-    --agent-a06: var(--sa-c0-a06);
-    --agent-a10: var(--sa-c0-a10);
-}
-
-chat-container.agent-c1 {
-    --agent-a06: var(--sa-c1-a06);
-    --agent-a10: var(--sa-c1-a10);
-}
-
-chat-container.agent-c2 {
-    --agent-a06: var(--sa-c2-a06);
-    --agent-a10: var(--sa-c2-a10);
-}
-
-chat-container.agent-c3 {
-    --agent-a06: var(--sa-c3-a06);
-    --agent-a10: var(--sa-c3-a10);
-}
-
-chat-container.agent-c4 {
-    --agent-a06: var(--sa-c4-a06);
-    --agent-a10: var(--sa-c4-a10);
-}
-
-chat-container.agent-c5 {
-    --agent-a06: var(--sa-c5-a06);
-    --agent-a10: var(--sa-c5-a10);
-}
-
-chat-container.agent-c6 {
-    --agent-a06: var(--sa-c6-a06);
-    --agent-a10: var(--sa-c6-a10);
-}
-
-chat-container.agent-c7 {
-    --agent-a06: var(--sa-c7-a06);
-    --agent-a10: var(--sa-c7-a10);
-}
 
 .subagent-indent .agent-name {
     color: var(--sa-color, var(--think));

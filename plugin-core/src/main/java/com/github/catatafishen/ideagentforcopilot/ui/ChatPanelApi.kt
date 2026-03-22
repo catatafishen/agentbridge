@@ -27,7 +27,7 @@ interface ChatPanelApi : Disposable {
     fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int)
     fun setCurrentModel(modelId: String)
     fun setCurrentProfile(profileId: String)
-    fun setCurrentAgent(agentName: String, profileId: String)
+    fun setCurrentAgent(agentName: String, profileId: String, clientType: String = "")
     fun addContextFilesEntry(files: List<Pair<String, String>>)
 
     // ── Agent text (streaming) ─────────────────────────────────────
