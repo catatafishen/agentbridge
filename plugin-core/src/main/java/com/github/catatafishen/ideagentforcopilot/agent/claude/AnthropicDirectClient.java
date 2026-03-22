@@ -1,14 +1,18 @@
 package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
-import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
+import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
+import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
+import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
+import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
-import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
-import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -39,10 +43,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
-import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
-import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
-import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 
 /**
  * Direct Anthropic Messages API client for Claude Code profiles.
@@ -61,13 +61,19 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     public static final String PROFILE_ID = "claude-code";
 
     @Override
-    public String agentId() { return PROFILE_ID; }
+    public String agentId() {
+        return PROFILE_ID;
+    }
 
     @Override
-    public String displayName() { return profile.getDisplayName(); }
+    public String displayName() {
+        return profile.getDisplayName();
+    }
 
     @Override
-    public boolean isConnected() { return isHealthy(); }
+    public boolean isConnected() {
+        return isHealthy();
+    }
 
     @Override
     public void stop() {
@@ -109,7 +115,6 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
 
     private static final String API_BASE = "https://api.anthropic.com";
     private static final String MESSAGES_PATH = "/v1/messages";
-    private static final String MODELS_PATH = "/v1/models";
     private static final String API_VERSION_HEADER = "anthropic-version";
     private static final String API_VERSION = "2023-06-01";
     private static final String API_KEY_HEADER = "x-api-key";
@@ -253,50 +258,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
         } catch (AgentException e) {
             return List.of();
         }
-        try {
-            HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(API_BASE + MODELS_PATH))
-                .header(API_KEY_HEADER, apiKey)
-                .header(API_VERSION_HEADER, API_VERSION)
-                .header("Content-Type", "application/json")
-                .GET()
-                .build();
-
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
-            if (resp.statusCode() != 200) {
-                throw new RuntimeException(
-                    "Failed to list models: HTTP " + resp.statusCode() + " — " + resp.body());
-            }
-            return parseModelsFromResponse(resp.body());
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to contact Anthropic API: " + e.getMessage(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return List.of();
-        }
-    }
-
-    @NotNull
-    private List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> parseModelsFromResponse(
-            @NotNull String responseBody) {
-        JsonObject body = JsonParser.parseString(responseBody).getAsJsonObject();
-        JsonArray data = body.getAsJsonArray("data");
-        if (data == null) return List.of();
-        // Use a LinkedHashMap keyed by display_name to deduplicate: the Anthropic API returns
-        // both undated aliases (e.g. "claude-opus-4-6") and dated snapshots
-        // (e.g. "claude-opus-4-6-20251101") with identical display names. Keep the first
-        // occurrence, which is the alias and is the more stable identifier to send.
-        java.util.LinkedHashMap<String, com.github.catatafishen.ideagentforcopilot.acp.model.Model> seen =
-                new java.util.LinkedHashMap<>();
-        for (var elem : data) {
-            JsonObject m = elem.getAsJsonObject();
-            String id = m.has("id") ? m.get("id").getAsString() : "";
-            if (id.isEmpty()) continue;
-            String displayName = m.has("display_name") ? m.get("display_name").getAsString() : id;
-            seen.computeIfAbsent(displayName,
-                    k -> new com.github.catatafishen.ideagentforcopilot.acp.model.Model(id, k, null, null));
-        }
-        return new ArrayList<>(seen.values());
+        return AnthropicModelsApi.fetchModels(apiKey);
     }
 
     // ── Prompt execution ─────────────────────────────────────────────────────
