@@ -234,6 +234,11 @@ public final class CopilotClient extends AcpClient {
         return protocolTitle.replaceFirst("^agentbridge-", "");
     }
 
+    @Override
+    protected boolean isMcpToolTitle(@org.jetbrains.annotations.NotNull String protocolTitle) {
+        return protocolTitle.startsWith("agentbridge-");
+    }
+
     /**
      * Copilot sends tool arguments in a non-standard {@code rawInput} field instead of
      * the spec-compliant {@code arguments} field. Fall back to {@code rawInput} if

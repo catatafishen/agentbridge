@@ -43,6 +43,11 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     @Override
+    protected boolean isMcpToolTitle(@org.jetbrains.annotations.NotNull String protocolTitle) {
+        return protocolTitle.startsWith("agentbridge_");
+    }
+
+    @Override
     public boolean requiresInlineReferences() {
         return true;
     }

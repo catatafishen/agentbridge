@@ -1075,15 +1075,19 @@ public abstract class AcpClient extends AbstractAgentClient {
         String toolId = "";
         if (params != null && params.has("toolCall")) {
             JsonObject toolCallObj = params.getAsJsonObject("toolCall");
+            String protocolTitle = getStringOrEmpty(toolCallObj, "title");
             toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
-            toolId = resolveToolId(getStringOrEmpty(toolCallObj, "title"));
+            toolId = resolveToolId(protocolTitle);
             if (!toolCallId.isEmpty()) {
                 onPermissionRequest(toolCallId, toolCallObj);
             }
         }
 
         JsonObject chosenOption = null;
-        if (!toolId.isEmpty() && isToolBlocked(toolId)) {
+        String protocolTitle = params != null && params.has("toolCall")
+            ? getStringOrEmpty(params.getAsJsonObject("toolCall"), "title")
+            : "";
+        if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
             String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
             LOG.warn(displayName() + ": " + reason);
             chosenOption = findOptionByKind(params, VALUE_DENY_ONCE);
@@ -1106,21 +1110,26 @@ public abstract class AcpClient extends AbstractAgentClient {
                 // we'll try to find any option that isn't allow. But typically "deny_once" exists.
                 chosenOption = findFirstOption(params);
             }
-        } else {
-            // DO NOT auto-approve permissions - this defeats the purpose of the permission system.
-            // User must explicitly approve each tool usage. Log the request and let it time out
-            // or wait for user interaction through the UI.
-            LOG.info(displayName() + ": permission request for tool '" + toolId + "' requires user approval");
+        } else if (isBuiltInTool(protocolTitle)) {
+            LOG.info(displayName() + ": permission request for built-in tool '" + toolId + "' requires user approval");
 
-            // For now, to avoid breaking existing functionality, we still auto-approve MCP tools
-            // but log a warning. In the future, this should require explicit user approval.
-            if (toolId.contains("/") || toolId.contains("@")) {
-                LOG.warn(displayName() + ": auto-approving MCP tool '" + toolId + "' - this should require user approval");
+            if (isAllowedBuiltInTool(toolId)) {
+                LOG.warn(displayName() + ": auto-approving built-in web tool '" + toolId + "' - this is allowed because no MCP alternative exists");
                 chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
             } else {
-                LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId + "' - this bypasses the permission system!");
-                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+                String reason = "Built-in tool '" + toolId + "' is not auto-approved; deny it unless the user explicitly allows it.";
+                LOG.warn(displayName() + ": " + reason);
+                chosenOption = findOptionByKind(params, VALUE_DENY_ONCE);
+
+                if (chosenOption == null) {
+                    chosenOption = findFirstOption(params);
+                }
             }
+        } else {
+            // MCP tools are our own server-side tools, so we keep the existing auto-approval path.
+            LOG.info(displayName() + ": permission request for MCP tool '" + toolId + "' requires user approval");
+            LOG.warn(displayName() + ": auto-approving MCP tool '" + toolId + "' - this should require user approval");
+            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
 
             if (chosenOption == null) {
                 chosenOption = findFirstOption(params);
@@ -1135,9 +1144,9 @@ public abstract class AcpClient extends AbstractAgentClient {
         transport.sendResponse(id, result);
     }
 
-    private boolean isToolBlocked(String toolId) {
+    private boolean isToolBlocked(String protocolTitle, String toolId) {
         // We only care about built-in tools (not prefixed with our own MCP server names)
-        if (toolId.contains("/") || toolId.contains("@")) {
+        if (!isBuiltInTool(protocolTitle)) {
             return false;
         }
 
@@ -1156,6 +1165,27 @@ public abstract class AcpClient extends AbstractAgentClient {
 
         return false;
     }
+
+    static boolean isAllowedBuiltInTool(@NotNull String toolId) {
+        return ALLOWED_BUILT_IN_TOOLS.contains(toolId.toLowerCase());
+    }
+
+    static boolean shouldAutoDenyBuiltInTool(@NotNull String toolId) {
+        if (toolId.startsWith("agentbridge-")
+            || toolId.startsWith("agentbridge_")
+            || toolId.startsWith("Tool: agentbridge/")
+            || toolId.startsWith("Running: @agentbridge/")
+            || toolId.startsWith("@agentbridge/")) {
+            return false;
+        }
+        return !toolId.contains("/") && !toolId.contains("@") && !isAllowedBuiltInTool(toolId);
+    }
+
+    protected final boolean isBuiltInTool(@NotNull String protocolTitle) {
+        return !isMcpToolTitle(protocolTitle);
+    }
+
+    protected abstract boolean isMcpToolTitle(@NotNull String protocolTitle);
 
     /**
      * Build the outcome object sent back in the {@code session/request_permission} response.
@@ -1210,17 +1240,34 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     protected void destroyProcess() {
-        if (agentProcess == null || !agentProcess.isAlive()) {
+        destroyProcessTree(agentProcess);
+    }
+
+    static void destroyProcessTree(@Nullable Process process) {
+        if (process == null || !process.isAlive()) {
             return;
         }
-        agentProcess.destroy();
+
+        ProcessHandle handle = process.toHandle();
+        List<ProcessHandle> descendants = handle.descendants().toList();
+        for (int i = descendants.size() - 1; i >= 0; i--) {
+            descendants.get(i).destroyForcibly();
+        }
+
+        handle.destroy();
         try {
-            if (!agentProcess.waitFor(STOP_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                agentProcess.destroyForcibly();
+            if (!process.waitFor(STOP_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                for (int i = descendants.size() - 1; i >= 0; i--) {
+                    descendants.get(i).destroyForcibly();
+                }
+                handle.destroyForcibly();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            agentProcess.destroyForcibly();
+            for (int i = descendants.size() - 1; i >= 0; i--) {
+                descendants.get(i).destroyForcibly();
+            }
+            handle.destroyForcibly();
         }
     }
 }

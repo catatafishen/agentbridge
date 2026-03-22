@@ -94,6 +94,12 @@ public final class JunieClient extends AcpClient {
     }
 
     @Override
+    protected boolean isMcpToolTitle(@NotNull String protocolTitle) {
+        return protocolTitle.startsWith("agentbridge_")
+            || protocolTitle.startsWith("Tool: agentbridge/");
+    }
+
+    @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
         List<String> cmd = new ArrayList<>();
         cmd.add("junie");

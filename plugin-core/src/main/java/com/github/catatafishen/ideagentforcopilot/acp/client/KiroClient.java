@@ -35,6 +35,12 @@ public final class KiroClient extends AcpClient {
     }
 
     @Override
+    protected boolean isMcpToolTitle(@org.jetbrains.annotations.NotNull String protocolTitle) {
+        return protocolTitle.startsWith("Running: @agentbridge/")
+            || protocolTitle.startsWith("@agentbridge/");
+    }
+
+    @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
         com.github.catatafishen.ideagentforcopilot.services.AgentProfile profile =
             com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager.getInstance(project).getActiveProfile();
