@@ -14,10 +14,10 @@
     --sp-7: 14px;
     --sp-8: 16px;
     --sp-10: 20px;
-    --r-sm: 4px;
-    --r-md: 8px;
-    --r-lg: 12px;
-    --r-pill: 6px;
+    --r-sm: 3px;
+    --r-md: 3px;
+    --r-lg: 3px;
+    --r-pill: 3px;
     --font-family: system-ui, sans-serif;
     --font-size: 11pt;
     --code-font-size: 10pt;
@@ -252,8 +252,7 @@ working-indicator .working-text {
     background: var(--think-a04);
     border-radius: var(--r-md);
     overflow: hidden;
-    transition: opacity 0.25s ease, transform 0.25s ease;
-    transform-origin: top center;
+    transition: opacity 0.15s ease;
 }
 
 .thinking-content {
@@ -353,7 +352,6 @@ working-indicator .working-text {
     cursor: pointer;
     white-space: nowrap;
     flex-shrink: 0;
-    animation: chipIn 0.25s ease;
     user-select: none;
     transition: background 0.15s, border-color 0.15s, opacity 0.15s;
 }
@@ -492,16 +490,11 @@ working-indicator .working-text {
 
 thinking-chip.thinking-active .thought-bubble {
     display: inline-block;
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
-.chip-expanded {
-    animation: chipExpand 0.2s ease;
+    animation: pulse 2s ease-in-out infinite;
 }
 
 .collapsing {
     opacity: 0;
-    transform: scaleY(0.8);
     pointer-events: none;
 }
 
@@ -1199,33 +1192,9 @@ pre.word-wrap code {
 @keyframes pulse {
     0%, 100% {
         opacity: 1;
-        transform: scale(1);
     }
     50% {
-        opacity: 0.4;
-        transform: scale(0.9);
-    }
-}
-
-@keyframes chipIn {
-    from {
-        transform: scale(0.8);
-        opacity: 0;
-    }
-    to {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-@keyframes chipExpand {
-    from {
-        opacity: 0;
-        transform: scaleY(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: scaleY(1);
+        opacity: 0.5;
     }
 }
 
