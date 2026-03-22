@@ -1,13 +1,17 @@
 package com.github.catatafishen.ideagentforcopilot.agent.claude;
 
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
+import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
+import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
+import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
+import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
-import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
-import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
-import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -32,10 +36,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
-import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
-import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
-import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate;
 
 /**
  * Claude CLI implementation that drives the {@code claude} CLI binary in
@@ -63,15 +63,19 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     public static final String PROFILE_ID = "claude-cli";
 
     @Override
-    public String agentId() { return PROFILE_ID; }
+    public String agentId() {
+        return PROFILE_ID;
+    }
 
     @Override
-    public String displayName() { return profile.getDisplayName(); }
+    public String displayName() {
+        return profile.getDisplayName();
+    }
 
     @Override
-    public boolean isConnected() { return isHealthy(); }
-
-
+    public boolean isConnected() {
+        return isHealthy();
+    }
 
     private static final String FIELD_SESSION_ID = "session_id";
     private static final String SUBTYPE_ERROR = "error";
@@ -106,11 +110,6 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);
         p.setPrependInstructionsTo("");  // Claude CLI gets instructions via MCP initialize, not file prepend
-        p.setCustomCliModels(List.of(
-            "claude-opus-4-5=Claude Opus 4.5",
-            "claude-sonnet-4-5=Claude Sonnet 4.5",
-            "claude-haiku-4-5=Claude Haiku 4.5"
-        ));
         return p;
     }
 
@@ -212,42 +211,39 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     // ── Model listing ────────────────────────────────────────────────────────
 
     /**
-     * Known Claude models for the CLI client.
+     * Claude CLI model aliases.
      *
-     * <p>The Claude CLI has no stable {@code models} subcommand — {@code claude models}
-     * is treated as a user prompt, which makes an API call and returns an
-     * LLM-generated response that can change format at any time. We therefore
-     * use a curated hardcoded list (the same approach used by other Claude CLI
-     * wrappers such as claude-code-plus). The list should be updated when
-     * Anthropic releases new model families.</p>
+     * <p>The Claude CLI provides stable model aliases that automatically resolve to the
+     * latest version of each model family. These aliases are preferred over specific
+     * version IDs because they don't require updates when new model versions are released.</p>
+     *
+     * <p>See: https://docs.claude.ai/claude-for-desktop/reference#model-aliases</p>
      */
     private static final List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> KNOWN_MODELS =
-            buildKnownModels();
+        buildKnownModels();
 
     private static List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> buildKnownModels() {
         Object[][] rows = {
-            // { id, displayName }
-            {"claude-opus-4-6", "Claude Opus 4.6"},
-            {"claude-sonnet-4-6", "Claude Sonnet 4.6"},
-            {"claude-haiku-4-5-20251001", "Claude Haiku 4.5"},
+            // { alias, displayName }
+            {"default", "Default (recommended)"},
+            {"sonnet", "Sonnet (latest, daily coding)"},
+            {"opus", "Opus (latest, complex reasoning)"},
+            {"haiku", "Haiku (fast and efficient)"},
+            {"sonnet[1m]", "Sonnet 1M context"},
+            {"opus[1m]", "Opus 1M context"},
+            {"opusplan", "Opus Plan (opus→sonnet)"},
         };
         List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> list = new ArrayList<>(rows.length);
         for (Object[] row : rows) {
             list.add(new com.github.catatafishen.ideagentforcopilot.acp.model.Model(
-                    (String) row[0], (String) row[1], null, null));
+                (String) row[0], (String) row[1], null, null));
         }
         return java.util.Collections.unmodifiableList(list);
     }
 
     @Override
     public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> getAvailableModels() {
-        // 1. Use custom models from profile if configured
-        List<String> custom = profile.getCustomCliModels();
-        if (!custom.isEmpty()) {
-            return parseCustomModels(custom);
-        }
-
-        // 2. Try to fetch from Anthropic API if API key is available
+        // 1. Try to fetch from Anthropic API if API key is available
         //    Check both Claude Code API profile key and this profile's key
         try {
             String apiKey = AnthropicKeyStore.getApiKey(AnthropicDirectClient.PROFILE_ID);
@@ -256,7 +252,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             }
             if (apiKey != null && !apiKey.isBlank()) {
                 List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> apiModels =
-                        AnthropicModelsApi.fetchModels(apiKey);
+                    AnthropicModelsApi.fetchModels(apiKey);
                 if (!apiModels.isEmpty()) {
                     LOG.info("Fetched " + apiModels.size() + " models from Anthropic API");
                     return apiModels;
@@ -264,30 +260,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             }
         } catch (Exception e) {
             LOG.warn("Failed to fetch models from Anthropic API, falling back to hardcoded list: " +
-                    e.getMessage());
+                e.getMessage());
         }
 
-        // 3. Fall back to hardcoded list
+        // 2. Fall back to hardcoded list
         return KNOWN_MODELS;
-    }
-
-    /**
-     * Parses {@code "model-id=Display Name"} entries; malformed lines are skipped.
-     */
-    @NotNull
-    private static List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> parseCustomModels(
-            @NotNull List<String> entries) {
-        List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> result = new ArrayList<>(entries.size());
-        for (String entry : entries) {
-            int eq = entry.indexOf('=');
-            if (eq <= 0) continue;
-            String id = entry.substring(0, eq).trim();
-            String name = entry.substring(eq + 1).trim();
-            if (id.isEmpty()) continue;
-            result.add(new com.github.catatafishen.ideagentforcopilot.acp.model.Model(
-                    id, name.isEmpty() ? id : name, null, null));
-        }
-        return result.isEmpty() ? KNOWN_MODELS : result;
     }
 
     // ── Prompt execution ─────────────────────────────────────────────────────
