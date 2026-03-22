@@ -167,6 +167,10 @@ class ChatToolWindowContent(
             chatPanel = panel
             mainPanel.add(panel, CARD_CHAT)
             archiveConversation()
+            // Set agent color immediately so it is queued in pendingJs before the browser loads.
+            // Without this there is a race: the browser becomes ready (pendingJs flushed empty) before
+            // addSeparatorNow runs, so a message sent in that window shows the default color.
+            consolePanel.setCurrentAgent(agentManager.activeProfile.displayName, agentManager.activeProfile.id)
             restoreConversation(onComplete = addSeparatorNow)
         } else {
             addSeparatorNow()
