@@ -59,6 +59,7 @@ sealed class EntryData {
         var result: String? = null,
         var status: String? = null,
         var description: String? = null,
+        var filePath: String? = null,
         val timestamp: String = "",
         val agent: String = ""
     ) : EntryData()

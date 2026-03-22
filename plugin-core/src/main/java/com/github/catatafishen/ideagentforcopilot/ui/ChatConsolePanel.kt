@@ -306,7 +306,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     ) {
         finalizeCurrentText()
         val resolvedKind = kind ?: "other"
-        val entry = EntryData.ToolCall(title, arguments, resolvedKind, null, null, timestamp(), currentAgent)
+
+        // Extract file path from arguments for edit tools
+        val filePath = extractFilePathFromArgs(title, arguments)
+
+        val entry =
+            EntryData.ToolCall(title, arguments, resolvedKind, null, null, null, filePath, timestamp(), currentAgent)
         entries.add(entry)
 
         val def = toolRegistry?.findById(title)
@@ -1055,8 +1060,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val paramsPanel = if (!arguments.isNullOrBlank()) {
             ToolRenderers.jsonEditor(prettyJson(arguments), project)
         } else null
+        val filePath = entry?.filePath
         ApplicationManager.getApplication().invokeLater {
-            ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel, mcpDescription)
+            ToolCallPopup.show(project, chipTitle, kind, paramsPanel, resultPanel, mcpDescription, filePath)
         }
     }
 
@@ -1079,6 +1085,24 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         } catch (_: Exception) {
             json
         }
+    }
+
+    private fun extractFilePathFromArgs(toolName: String, arguments: String?): String? {
+        if (arguments.isNullOrBlank()) return null
+        try {
+            val json = JsonParser.parseString(arguments)
+            if (!json.isJsonObject) return null
+            val obj = json.asJsonObject
+            // Check common file path parameter names
+            for (key in listOf("path", "file", "filename", "filepath")) {
+                if (obj.has(key) && obj.get(key).isJsonPrimitive) {
+                    return obj.get(key).asString
+                }
+            }
+        } catch (_: Exception) {
+            // Ignore parse errors
+        }
+        return null
     }
 
     private fun buildInitialPage(): String {

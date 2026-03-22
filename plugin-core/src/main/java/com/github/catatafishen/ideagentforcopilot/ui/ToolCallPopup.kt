@@ -37,6 +37,7 @@ internal object ToolCallPopup {
      * @param paramsPanel     Swing component for the parameters section, or null to omit
      * @param resultPanel     Swing component for the result section
      * @param toolDescription optional one-liner description for MCP tools, shown at the top of the popup
+     * @param filePath        optional file path for edit tools, enables "Show Local History" button
      */
     fun show(
         project: Project,
@@ -45,6 +46,7 @@ internal object ToolCallPopup {
         paramsPanel: JComponent?,
         resultPanel: JComponent,
         toolDescription: String? = null,
+        filePath: String? = null,
     ) {
         currentPopup?.cancel()
 
@@ -52,7 +54,7 @@ internal object ToolCallPopup {
         val panelBg = UIUtil.getPanelBackground()
         val tintedBg = ToolRenderers.blendColor(kindColor, panelBg, 0.07)
 
-        val contentPanel = buildContentPanel(tintedBg, resultPanel, paramsPanel, toolDescription)
+        val contentPanel = buildContentPanel(tintedBg, resultPanel, paramsPanel, toolDescription, project, filePath)
 
         val width = popupWidth()
         val height = popupHeight()
@@ -100,6 +102,8 @@ internal object ToolCallPopup {
         resultPanel: JComponent,
         paramsPanel: JComponent?,
         toolDescription: String? = null,
+        project: Project,
+        filePath: String?,
     ): JBPanel<JBPanel<*>> {
         val panel = object : JBPanel<JBPanel<*>>(), Scrollable {
             override fun getPreferredScrollableViewportSize(): Dimension = preferredSize
@@ -149,9 +153,38 @@ internal object ToolCallPopup {
         resultPanel.alignmentX = JComponent.LEFT_ALIGNMENT
         panel.add(resultPanel)
 
+        // Add "Show Local History" button if file path is available
+        if (filePath != null) {
+            panel.add(Box.createVerticalStrut(JBUI.scale(8)))
+            val historyButton = JButton("Show Local History").apply {
+                addActionListener {
+                    showLocalHistory(project, filePath)
+                }
+                alignmentX = JComponent.LEFT_ALIGNMENT
+            }
+            panel.add(historyButton)
+        }
+
         panel.add(Box.createVerticalGlue())
 
         return panel
+    }
+
+    private fun showLocalHistory(project: Project, filePath: String) {
+        val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(filePath) ?: return
+
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(file, true)
+            // Show notification with instructions
+            com.intellij.notification.NotificationGroupManager.getInstance()
+                .getNotificationGroup("AgentBridge Notifications")
+                .createNotification(
+                    "Local History",
+                    "Right-click in the editor and select 'Local History → Show History' to view changes",
+                    com.intellij.notification.NotificationType.INFORMATION
+                )
+                .notify(project)
+        }
     }
 
     private fun sectionLabel(text: String): JBLabel {

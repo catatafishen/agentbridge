@@ -64,6 +64,7 @@ class PromptOrchestrator(
     private var activeSubAgentId: String? = null
     private val toolCallTitles = mutableMapOf<String, String>()
     private var pendingBanner: PendingBanner? = null
+    private var codeChangeListener: Runnable? = null
 
     /** Executes a prompt on the calling thread (must be called from a background thread). */
     fun execute(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String) {
@@ -191,6 +192,19 @@ class PromptOrchestrator(
         activeSubAgentId = null
         turnModelId = selectedModelId
         CodeChangeTracker.clear()
+
+        // Register real-time listener so code-change chips update as each tool runs.
+        codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
+        val listener = Runnable {
+            ApplicationManager.getApplication().invokeLater {
+                val changes = CodeChangeTracker.get()
+                if (changes[0] > 0 || changes[1] > 0) {
+                    consolePanel().setCodeChangeStats(changes[0], changes[1])
+                }
+            }
+        }
+        codeChangeListener = listener
+        CodeChangeTracker.addListener(listener)
         ApplicationManager.getApplication().invokeLater {
             consolePanel().setCurrentProfile(agentManager.activeProfileId)
             consolePanel().setCurrentModel(selectedModelId)
@@ -300,6 +314,10 @@ class PromptOrchestrator(
     }
 
     private fun handlePromptCompletion(prompt: String) {
+        // Unregister the real-time code-change listener before finalising the turn.
+        codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
+        codeChangeListener = null
+
         PsiBridgeService.getInstance(project).flushPendingAutoFormat()
         PsiBridgeService.getInstance(project).clearFileAccessTracking()
         pendingBanner = null

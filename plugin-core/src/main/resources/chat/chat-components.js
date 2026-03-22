@@ -361,11 +361,13 @@ var __chatUI = (() => {
       });
     }
     setCodeChangeStats(added, removed) {
-      let chip = this.querySelector(".turn-chip.stats.diff-stat");
+      const strip = this._strip;
+      if (!strip) return;
+      let chip = strip.querySelector(".diff-stat");
       if (!chip) {
         chip = document.createElement("span");
         chip.className = "turn-chip stats diff-stat";
-        this.appendChild(chip);
+        strip.appendChild(chip);
       }
       chip.innerHTML = "";
       if (added > 0) {
@@ -380,6 +382,7 @@ var __chatUI = (() => {
         del.textContent = "\u2212" + removed;
         chip.appendChild(del);
       }
+      this.scheduleNavUpdate();
     }
     _createNav(label, direction) {
       const btn = document.createElement("button");

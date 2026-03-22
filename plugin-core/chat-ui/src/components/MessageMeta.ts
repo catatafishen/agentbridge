@@ -106,11 +106,13 @@ export default class MessageMeta extends HTMLElement {
     }
 
     setCodeChangeStats(added: number, removed: number): void {
-        let chip = this.querySelector('.turn-chip.stats.diff-stat') as HTMLElement;
+        const strip = this._strip;
+        if (!strip) return;
+        let chip = strip.querySelector('.diff-stat') as HTMLElement;
         if (!chip) {
             chip = document.createElement('span');
             chip.className = 'turn-chip stats diff-stat';
-            this.appendChild(chip);
+            strip.appendChild(chip);
         }
         chip.innerHTML = '';
         if (added > 0) {
@@ -125,6 +127,7 @@ export default class MessageMeta extends HTMLElement {
             del.textContent = '−' + removed;
             chip.appendChild(del);
         }
+        this.scheduleNavUpdate();
     }
 
     private _createNav(label: string, direction: number): HTMLElement {
