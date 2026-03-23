@@ -196,8 +196,8 @@ public final class CopilotClient extends AcpClient {
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
         String copilotHome = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
-        // Set both HOME and USERPROFILE to avoid issues with non-ASCII usernames
         return Map.of(
+            "XDG_CONFIG_HOME", copilotHome,
             "COPILOT_HOME", copilotHome,
             "HOME", copilotHome,
             "USERPROFILE", copilotHome
