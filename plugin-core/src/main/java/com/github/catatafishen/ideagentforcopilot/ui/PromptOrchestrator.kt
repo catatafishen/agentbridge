@@ -541,6 +541,7 @@ class PromptOrchestrator(
         while (cause != null) {
             val causeMsg = cause.message ?: ""
             if (authService.isAuthenticationError(causeMsg)) {
+                log.info("Detected authentication error in cause chain: $causeMsg")
                 msg = causeMsg
                 break
             }
@@ -559,8 +560,11 @@ class PromptOrchestrator(
         callbacks.saveConversation()
 
         if (authService.isAuthenticationError(msg)) {
+            log.info("Authentication error detected: $msg")
             authService.markAuthError(msg)
-            copilotBanner()?.triggerCheck()
+            val banner = copilotBanner()
+            log.info("Banner instance: $banner")
+            banner?.triggerCheck()
             consolePanel().addErrorEntry("Error: $msg")
             e.printStackTrace()
             return
