@@ -160,11 +160,26 @@ public abstract class AcpClient extends AbstractAgentClient {
             LOG.info(displayName() + " transport started, registering handlers");
             registerHandlers();
             LOG.info(displayName() + " handlers registered, initializing");
-            capabilities = initialize();
+            try {
+                capabilities = initialize();
+            } catch (Exception e) {
+                LOG.warn(displayName() + " initialization failed: " + e.getMessage(), e);
+                throw e;
+            }
             LOG.info(displayName() + " initialized, authenticating");
-            authenticate();
+            try {
+                authenticate();
+            } catch (Exception e) {
+                LOG.warn(displayName() + " authentication failed: " + e.getMessage(), e);
+                throw e;
+            }
             LOG.info(displayName() + " authenticated, fetching models");
-            eagerFetchModels();
+            try {
+                eagerFetchModels();
+            } catch (Exception e) {
+                LOG.warn(displayName() + " model fetching failed: " + e.getMessage(), e);
+                throw e;
+            }
             LOG.info(displayName() + " agent started successfully");
         } catch (Exception e) {
             LOG.warn(displayName() + " startup failed at: " + getStartupStepFromException(e), e);
