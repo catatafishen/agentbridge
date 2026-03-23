@@ -152,7 +152,13 @@ public final class KiroClient extends AcpClient {
         if (protocolTitle.startsWith("@agentbridge/")) {
             return protocolTitle.substring("@agentbridge/".length());
         }
-        return protocolTitle.replaceFirst("^Running: @agentbridge/", "");
+        String cleaned = protocolTitle.replaceFirst("^Running: @agentbridge/", "");
+        // Map Kiro's human-readable titles to actual tool names
+        return switch (cleaned) {
+            case "Searching the web" -> "web_search";
+            case "Fetching web content" -> "web_fetch";
+            default -> cleaned;
+        };
     }
 
     @Override

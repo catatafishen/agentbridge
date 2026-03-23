@@ -229,16 +229,11 @@ var __chatUI = (() => {
       const isUser = parent?.getAttribute("type") === "user";
       this.classList.add(isUser ? "prompt-bubble" : "agent-bubble");
       if (isUser) {
-        this.setAttribute("tabindex", "0");
-        this.setAttribute("role", "button");
-        this.setAttribute("aria-label", "Toggle message details");
+        this.onclick = (e) => {
+          if (e.target.closest("a,.turn-chip")) return;
+          collapseAllChips(parent);
+        };
       }
-      this.onclick = (e) => {
-        if (e.target.closest("a,.turn-chip")) return;
-        collapseAllChips(parent);
-        const meta = parent?.querySelector("message-meta");
-        if (meta) meta.classList.toggle("show");
-      };
       if (this.hasAttribute("streaming")) this._setupStreaming();
     }
     _setupStreaming() {
