@@ -231,6 +231,19 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
+    public com.github.catatafishen.ideagentforcopilot.bridge.AuthMethod getAuthMethod() {
+        if (capabilities == null || capabilities.authMethods() == null || capabilities.authMethods().isEmpty()) {
+            return null;
+        }
+        // Return the first auth method from capabilities
+        var method = capabilities.authMethods().getFirst();
+        return new com.github.catatafishen.ideagentforcopilot.bridge.AuthMethod(
+            method.command(),
+            method.args() != null ? method.args().toArray(new String[0]) : null
+        );
+    }
+
+    @Override
     public final void stop() {
         transport.stop();
         destroyProcess();
