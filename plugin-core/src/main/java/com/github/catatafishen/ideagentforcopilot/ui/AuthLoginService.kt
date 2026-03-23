@@ -96,28 +96,43 @@ class AuthLoginService(private val project: Project) {
 
     /**
      * Resolves the auth command for the active agent profile.
-     * Falls back to `copilot login` (the correct Copilot CLI auth command).
+     * Returns the full path to the binary and login args.
      */
     private fun resolveAuthCommand(): List<String> {
-        // The Copilot CLI uses `copilot login` — not `copilot auth login`
-        // (which is not a valid subcommand and gets treated as an AI prompt).
-        // For other agents, derive from the authMethod ID advertised in ACP capabilities.
         try {
             val authMethod = ActiveAgentManager.getInstance(project).client.authMethod
             LOG.info("AuthLoginService: authMethod = $authMethod, id = ${authMethod?.id}")
-            if (authMethod?.id != null) {
-                val command = when {
-                    authMethod.id.contains("copilot") -> "copilot login"
-                    authMethod.id.contains("github") -> "copilot login"
-                    else -> authMethod.id.replace("-", " ")
+
+            // Use the resolved binary path from the agent config
+            val agentManager = ActiveAgentManager.getInstance(project)
+            val profile = agentManager.getActiveProfile()
+            val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
+
+            // Get the full path to the binary (already resolved by the agent)
+            val binaryPath = config.agentBinaryPath ?: run {
+                LOG.warn("Binary path not yet resolved, attempting to find it")
+                try {
+                    config.findAgentBinary()
+                } catch (e: Exception) {
+                    LOG.warn("Failed to find binary path, falling back to binary name", e)
+                    profile.binaryName
                 }
-                LOG.info("AuthLoginService: resolved command = '$command'")
-                return command.split(" ").filter { it.isNotEmpty() }
             }
+
+            // Determine the login subcommand
+            val loginArgs = when {
+                authMethod?.id?.contains("copilot") == true -> listOf("login")
+                authMethod?.id?.contains("github") == true -> listOf("login")
+                authMethod?.id != null -> authMethod.id.replace("-", " ").split(" ").drop(1)
+                else -> listOf("login")
+            }
+
+            LOG.info("AuthLoginService: resolved command = '$binaryPath ${loginArgs.joinToString(" ")}'")
+            return listOf(binaryPath) + loginArgs
         } catch (e: Exception) {
             LOG.warn("AuthLoginService: failed to resolve auth command", e)
+            return listOf("copilot", "login")
         }
-        return listOf("copilot", "login")
     }
 
     fun startInlineAuth(
