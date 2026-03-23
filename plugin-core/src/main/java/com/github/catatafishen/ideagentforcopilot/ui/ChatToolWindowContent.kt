@@ -1488,6 +1488,22 @@ class ChatToolWindowContent(
         val trimmed = prompt.trim()
         if (trimmed.isEmpty()) return
 
+        // Intercept Kiro slash commands
+        val client = agentManager.getClient()
+        if (client is com.github.catatafishen.ideagentforcopilot.acp.client.KiroClient && trimmed.startsWith("/")) {
+            statusBanner?.dismissCurrent()
+            setSendingState(true)
+            consolePanel.addPromptEntry(trimmed, null)
+            ApplicationManager.getApplication().executeOnPooledThread {
+                client.executeSlashCommand(trimmed) { _ ->
+                    ApplicationManager.getApplication().invokeLater {
+                        setSendingState(false)
+                    }
+                }
+            }
+            return
+        }
+
         statusBanner?.dismissCurrent()
         setSendingState(true)
         consolePanel.addPromptEntry(trimmed, null)
