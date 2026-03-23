@@ -358,6 +358,14 @@ class ChatToolWindowContent(
                     updateState("Copilot CLI is not installed \u2014 install with: $cmd", showInstall = true)
                 }
 
+                !profile.isSupportsOAuthSignIn && profile.terminalSignInCommand != null && authService.isAuthenticationError(
+                    diag
+                ) ->
+                    updateState(
+                        "Not signed in to ${profile.displayName} \u2014 click Sign In to authenticate, then Retry.",
+                        showSignIn = true,
+                    )
+
                 !profile.isSupportsOAuthSignIn && authService.isAuthenticationError(diag) ->
                     updateState(
                         "Not signed in to ${profile.displayName} \u2014 check credentials and click Retry.",
@@ -378,24 +386,29 @@ class ChatToolWindowContent(
         }
         banner.retryHandler = { authService.clearPendingAuthError() }
         banner.signInHandler = {
-            banner.showSignInPending()
-            inlineAuthProcess?.destroy()
-            inlineAuthProcess = authService.startInlineAuth(
-                onDeviceCode = { info: AuthLoginService.DeviceCodeInfo ->
-                    banner.showDeviceCode(info.code, info.url)
-                },
-                onAuthComplete = {
-                    banner.hideDeviceCode()
-                    inlineAuthProcess = null
-                    authService.clearPendingAuthError()
-                    banner.triggerCheck()
-                },
-                onFallback = {
-                    banner.hideDeviceCode()
-                    inlineAuthProcess = null
-                    authService.startCopilotLogin()
-                },
-            )
+            val terminalCmd = agentManager.activeProfile.terminalSignInCommand
+            if (terminalCmd != null) {
+                authService.startTerminalSignIn(terminalCmd)
+            } else {
+                banner.showSignInPending()
+                inlineAuthProcess?.destroy()
+                inlineAuthProcess = authService.startInlineAuth(
+                    onDeviceCode = { info: AuthLoginService.DeviceCodeInfo ->
+                        banner.showDeviceCode(info.code, info.url)
+                    },
+                    onAuthComplete = {
+                        banner.hideDeviceCode()
+                        inlineAuthProcess = null
+                        authService.clearPendingAuthError()
+                        banner.triggerCheck()
+                    },
+                    onFallback = {
+                        banner.hideDeviceCode()
+                        inlineAuthProcess = null
+                        authService.startCopilotLogin()
+                    },
+                )
+            }
         }
         return banner
     }
