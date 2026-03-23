@@ -77,6 +77,7 @@ public final class McpProtocolHandler {
         JsonObject serverInfo = new JsonObject();
         serverInfo.addProperty("name", SERVER_NAME);
         serverInfo.addProperty("version", SERVER_VERSION);
+        serverInfo.addProperty("description", "Code Intelligence tools for IntelliJ IDEA");
 
         JsonObject capabilities = new JsonObject();
         JsonObject toolsCap = new JsonObject();
