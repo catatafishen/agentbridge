@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry
+import com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -97,42 +98,47 @@ class AuthLoginService(private val project: Project) {
     /**
      * Resolves the auth command for the active agent profile.
      * Returns the full path to the binary and login args.
+     *
+     * Binary path resolution is done independently of the running client so that
+     * the auth command can be built even when the client has not started yet (e.g.
+     * because it failed with "Authentication required" before we could show the login
+     * button).
      */
     private fun resolveAuthCommand(): List<String> {
-        try {
-            val authMethod = ActiveAgentManager.getInstance(project).client.authMethod
-            LOG.info("AuthLoginService: authMethod = $authMethod, id = ${authMethod?.id}")
+        val agentManager = ActiveAgentManager.getInstance(project)
+        val profile = agentManager.getActiveProfile()
+        val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
 
-            // Use the resolved binary path from the agent config
-            val agentManager = ActiveAgentManager.getInstance(project)
-            val profile = agentManager.getActiveProfile()
-            val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
-
-            // Get the full path to the binary (already resolved by the agent)
-            val binaryPath = config.agentBinaryPath ?: run {
-                LOG.warn("Binary path not yet resolved, attempting to find it")
-                try {
-                    config.findAgentBinary()
-                } catch (e: Exception) {
-                    LOG.warn("Failed to find binary path, falling back to binary name", e)
-                    profile.binaryName
-                }
+        // Resolve binary path without relying on the running client
+        val binaryPath = config.agentBinaryPath
+            ?: try {
+                config.findAgentBinary()
+            } catch (e: Exception) {
+                LOG.warn("AuthLoginService: findAgentBinary failed, trying BinaryDetector", e)
+                BinaryDetector.findBinaryPath(profile.binaryName)
+                    ?: profile.binaryName.also {
+                        LOG.warn("AuthLoginService: BinaryDetector could not find '${profile.binaryName}', using bare name as last resort")
+                    }
             }
 
-            // Determine the login subcommand
-            val loginArgs = when {
+        // Determine the login subcommand from the running client if available;
+        // fall back to "login" if the client hasn't started (auth failure during startup).
+        val loginArgs = try {
+            val authMethod = agentManager.client.authMethod
+            LOG.info("AuthLoginService: authMethod = $authMethod, id = ${authMethod?.id}")
+            when {
                 authMethod?.id?.contains("copilot") == true -> listOf("login")
                 authMethod?.id?.contains("github") == true -> listOf("login")
                 authMethod?.id != null -> authMethod.id.replace("-", " ").split(" ").drop(1)
                 else -> listOf("login")
             }
-
-            LOG.info("AuthLoginService: resolved command = '$binaryPath ${loginArgs.joinToString(" ")}'")
-            return listOf(binaryPath) + loginArgs
         } catch (e: Exception) {
-            LOG.warn("AuthLoginService: failed to resolve auth command", e)
-            return listOf("copilot", "login")
+            LOG.info("AuthLoginService: client not available (${e.message}), defaulting to 'login'")
+            listOf("login")
         }
+
+        LOG.info("AuthLoginService: resolved command = '$binaryPath ${loginArgs.joinToString(" ")}'")
+        return listOf(binaryPath) + loginArgs
     }
 
     fun startInlineAuth(

@@ -226,7 +226,13 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         switch (agentId) {
             case "claude" -> environment.put("CLAUDE_CONFIG_DIR", agentWorkDir);
             case "copilot" -> {
+                // Mirror the full environment that CopilotClient.buildEnvironment() sets so that
+                // auth commands (e.g. `copilot login`) store credentials in the same directory
+                // the agent process will read from.
                 environment.put("COPILOT_HOME", agentWorkDir);
+                environment.put("XDG_CONFIG_HOME", agentWorkDir);
+                environment.put("HOME", agentWorkDir);
+                environment.put("USERPROFILE", agentWorkDir);
                 // Ensure authentication is available in project-specific Copilot config
                 ensureCopilotAuthentication(agentWorkDir);
             }
