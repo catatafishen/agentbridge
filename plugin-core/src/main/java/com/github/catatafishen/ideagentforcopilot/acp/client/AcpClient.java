@@ -706,6 +706,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         }
 
         LOG.info("Launching " + displayName() + ": " + String.join(" ", resolvedCommand));
+        LOG.info("Environment size: " + pb.environment().size() + " variables");
         return pb.start();
     }
 
