@@ -121,6 +121,16 @@ public final class KiroClient extends AcpClient {
         }
     }
 
+    /**
+     * Kiro sends agent_thought_chunk updates asynchronously — they can arrive after
+     * session/prompt returns. Keep the consumer set so late-arriving thoughts are
+     * delivered to the UI instead of being silently dropped.
+     */
+    @Override
+    protected void afterPromptComplete() {
+        // Do NOT clear updateConsumer — Kiro may send thoughts after the response
+    }
+
     @Override
     public String displayName() {
         return "Kiro";

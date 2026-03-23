@@ -362,8 +362,17 @@ public abstract class AcpClient extends AbstractAgentClient {
             if (recovery != null) return recovery;
             throw new AgentPromptException("Prompt failed for " + displayName(), e);
         } finally {
-            updateConsumer = null;
+            afterPromptComplete();
         }
+    }
+
+    /**
+     * Called in the finally block after {@code sendPrompt} completes (success or failure).
+     * Default: clears {@code updateConsumer}. Override to retain it (e.g. Kiro sends
+     * thought chunks asynchronously after the prompt response).
+     */
+    protected void afterPromptComplete() {
+        updateConsumer = null;
     }
 
     /**
