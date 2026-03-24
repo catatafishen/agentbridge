@@ -562,7 +562,6 @@ var __chatUI = (() => {
         this.innerHTML = '<span class="thought-bubble">\u{1F4AD}</span> Thinking...';
         this.classList.add("thinking-active");
       } else {
-        this.textContent = "\u{1F4AD} Thought complete";
         this.classList.remove("thinking-active");
       }
     }
@@ -1107,6 +1106,12 @@ var __chatUI = (() => {
       this._collapseThinkingFor(ctx || null);
       if (ctx) {
         ctx.textBubble = null;
+        if (ctx.msg && !ctx.msg.querySelector("message-bubble")) {
+          const placeholder = document.createElement("message-bubble");
+          placeholder.classList.add("no-output-placeholder");
+          placeholder.textContent = "Completed without output";
+          ctx.msg.appendChild(placeholder);
+        }
       }
       document.querySelectorAll('subagent-chip[status="running"]').forEach((c) => c.setAttribute("status", "complete"));
       document.querySelectorAll('tool-chip[status="running"]').forEach((c) => c.setAttribute("status", "complete"));
@@ -1132,6 +1137,22 @@ var __chatUI = (() => {
       actions.setAttribute("req-id", reqId);
       if (argsJson) actions.setAttribute("args", argsJson);
       ctx.msg.appendChild(actions);
+      this._container()?.scrollIfNeeded();
+    },
+    showAskUserRequest(turnId, agentId, reqId, question, options) {
+      this.disableQuickReplies();
+      const ctx = this._ensureMsg(turnId, agentId);
+      this._collapseThinkingFor(ctx);
+      const bubble = document.createElement("message-bubble");
+      bubble.dataset.reqId = reqId;
+      bubble.innerHTML = escHtml(question).replace(/\n/g, "<br/>");
+      ctx.msg.appendChild(bubble);
+      if (options?.length) {
+        const replies = document.createElement("quick-replies");
+        replies.dataset.reqId = reqId;
+        replies.options = options;
+        ctx.msg.appendChild(replies);
+      }
       this._container()?.scrollIfNeeded();
     },
     showQuickReplies(options) {
@@ -1421,6 +1442,9 @@ var __chatUI = (() => {
   globalThis.b64 = b64;
   globalThis.showPermissionRequest = (turnId, agentId, reqId, toolDisplayName, argsJson) => {
     ChatController_default.showPermissionRequest(turnId, agentId, reqId, toolDisplayName, argsJson);
+  };
+  globalThis.showAskUserRequest = (turnId, agentId, reqId, question, options) => {
+    ChatController_default.showAskUserRequest(turnId, agentId, reqId, question, options);
   };
   document.addEventListener("click", (e) => {
     let el = e.target;

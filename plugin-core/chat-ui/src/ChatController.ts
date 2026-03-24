@@ -355,6 +355,14 @@ const ChatController = {
         this._collapseThinkingFor(ctx || null);
         if (ctx) {
             ctx.textBubble = null;
+            // If the turn produced thinking but no text output, add a placeholder so the
+            // turn is not silently empty (i.e. the message exists but has no bubble).
+            if (ctx.msg && !ctx.msg.querySelector('message-bubble')) {
+                const placeholder = document.createElement('message-bubble');
+                placeholder.classList.add('no-output-placeholder');
+                placeholder.textContent = 'Completed without output';
+                ctx.msg.appendChild(placeholder);
+            }
         }
         // Mark any still-running sub-agent chips as complete (not failed)
         document.querySelectorAll('subagent-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
@@ -389,6 +397,26 @@ const ChatController = {
         actions.setAttribute('req-id', reqId);
         if (argsJson) actions.setAttribute('args', argsJson);
         ctx.msg!.appendChild(actions);
+
+        this._container()?.scrollIfNeeded();
+    },
+
+    showAskUserRequest(turnId: string, agentId: string, reqId: string, question: string, options: string[]): void {
+        this.disableQuickReplies();
+        const ctx = this._ensureMsg(turnId, agentId);
+        this._collapseThinkingFor(ctx);
+
+        const bubble = document.createElement('message-bubble');
+        bubble.dataset.reqId = reqId;
+        bubble.innerHTML = escHtml(question).replace(/\n/g, '<br/>');
+        ctx.msg!.appendChild(bubble);
+
+        if (options?.length) {
+            const replies = document.createElement('quick-replies');
+            replies.dataset.reqId = reqId;
+            (replies as any).options = options;
+            ctx.msg!.appendChild(replies);
+        }
 
         this._container()?.scrollIfNeeded();
     },

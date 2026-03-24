@@ -50,6 +50,9 @@ globalThis.ChatController = ChatController;
 (globalThis as any).showPermissionRequest = (turnId: string, agentId: string, reqId: string, toolDisplayName: string, argsJson: string) => {
     ChatController.showPermissionRequest(turnId, agentId, reqId, toolDisplayName, argsJson);
 };
+(globalThis as any).showAskUserRequest = (turnId: string, agentId: string, reqId: string, question: string, options: string[]) => {
+    ChatController.showAskUserRequest(turnId, agentId, reqId, question, options);
+};
 
 // ── Global event handlers ─────────────────────────────
 
