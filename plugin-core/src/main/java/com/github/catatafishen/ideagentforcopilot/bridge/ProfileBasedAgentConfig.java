@@ -4,6 +4,7 @@ import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.BundledAgentDeployer;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.InstructionsManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
+import com.github.catatafishen.ideagentforcopilot.services.GenericSettings;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
@@ -13,6 +14,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -52,6 +54,8 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     private final AgentProfile profile;
     @Nullable
     private final ToolRegistry registry;
+    @Nullable
+    private final Project project;
     private String resolvedBinaryPath;
     private JsonArray authMethods;
     /**
@@ -60,8 +64,15 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     private String effectiveMcpServerName = "agentbridge";
 
     public ProfileBasedAgentConfig(@NotNull AgentProfile profile, @Nullable ToolRegistry registry) {
+        this(profile, registry, null);
+    }
+
+    public ProfileBasedAgentConfig(@NotNull AgentProfile profile,
+                                   @Nullable ToolRegistry registry,
+                                   @Nullable Project project) {
         this.profile = profile;
         this.registry = registry;
+        this.project = project;
     }
 
     @Override
@@ -175,7 +186,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     private void addModelFlagIfSupported(@NotNull List<String> cmd) {
         if (!profile.isSupportsModelFlag()) return;
-        String savedModel = new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(getSettingsPrefix()).getSelectedModel();
+        String savedModel = getSettings().getSelectedModel();
         if (savedModel != null && !savedModel.isEmpty()) {
             cmd.add("--model");
             cmd.add(savedModel);
@@ -185,7 +196,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     @Override
     public void clearSavedModel() {
-        new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(getSettingsPrefix()).setSelectedModel("");
+        getSettings().setSelectedModel("");
         LOG.info(profile.getDisplayName() + ": cleared saved model selection (rejected by CLI)");
     }
 
@@ -366,8 +377,8 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     @NotNull
-    private String getSettingsPrefix() {
-        return profile.getId();
+    private GenericSettings getSettings() {
+        return project != null ? new GenericSettings(profile.getId(), project) : new GenericSettings(profile.getId());
     }
 
     @Override
@@ -568,7 +579,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
      */
     private void addPermissionCliFlags(@NotNull List<String> cmd) {
         if (registry == null) return;
-        var settings = new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(profile.getId());
+        var settings = getSettings();
         int allowCount = 0;
         int denyCount = 0;
         for (var entry : registry.getAllTools()) {
@@ -623,7 +634,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         }
 
         if (registry == null) return permObj;
-        var settings = new com.github.catatafishen.ideagentforcopilot.services.GenericSettings(profile.getId());
+        var settings = getSettings();
         for (var entry : registry.getAllTools()) {
             if (entry.isBuiltIn()) {
                 if (profile.isExcludeAgentBuiltInTools()) {

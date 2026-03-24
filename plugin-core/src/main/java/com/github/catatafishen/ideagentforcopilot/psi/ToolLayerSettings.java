@@ -27,9 +27,7 @@ public interface ToolLayerSettings {
     static ToolLayerSettings getInstance(@NotNull Project project) {
         ToolLayerSettings service = (ToolLayerSettings) PlatformApiCompat.getServiceByRawClass(project, ToolLayerSettings.class);
         if (service == null) {
-            com.intellij.openapi.diagnostic.Logger.getInstance(ToolLayerSettings.class)
-                .warn("ToolLayerSettings service not found, using DefaultToolLayerSettings.FALLBACK");
-            return DefaultToolLayerSettings.FALLBACK;
+            throw new IllegalStateException("ToolLayerSettings service not registered for project: " + project.getName());
         }
         return service;
     }

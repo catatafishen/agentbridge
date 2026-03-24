@@ -18,11 +18,19 @@ public class CopilotSettingsTest extends BasePlatformTestCase {
         settings = new GenericSettings("copilot");
         // Clear any stale values from previous runs
         PropertiesComponent props = PropertiesComponent.getInstance();
+        PropertiesComponent projectProps = PropertiesComponent.getInstance(getProject());
         props.unsetValue("copilot.selectedModel");
         props.unsetValue("copilot.selectedAgent");
         props.unsetValue("copilot.monthlyRequests");
         props.unsetValue("copilot.monthlyCost");
         props.unsetValue("copilot.usageResetMonth");
+        props.unsetValue("copilot.tool.perm.edit_text");
+        projectProps.unsetValue("copilot.selectedModel");
+        projectProps.unsetValue("copilot.selectedAgent");
+        projectProps.unsetValue("copilot.monthlyRequests");
+        projectProps.unsetValue("copilot.monthlyCost");
+        projectProps.unsetValue("copilot.usageResetMonth");
+        projectProps.unsetValue("copilot.tool.perm.edit_text");
     }
 
     public void testSelectedModelDefaultNull() {
@@ -74,5 +82,16 @@ public class CopilotSettingsTest extends BasePlatformTestCase {
     public void testSetAndGetUsageResetMonth() {
         settings.setUsageResetMonth("2026-02");
         assertEquals("2026-02", settings.getUsageResetMonth());
+    }
+
+    public void testProjectScopedToolPermissionPersistsSeparatelyFromApplicationScope() {
+        GenericSettings appSettings = new GenericSettings("copilot");
+        GenericSettings projectSettings = new GenericSettings("copilot", getProject());
+
+        appSettings.setToolPermission("edit_text", ToolPermission.DENY);
+        projectSettings.setToolPermission("edit_text", ToolPermission.ASK);
+
+        assertEquals(ToolPermission.DENY, appSettings.getToolPermission("edit_text"));
+        assertEquals(ToolPermission.ASK, projectSettings.getToolPermission("edit_text"));
     }
 }

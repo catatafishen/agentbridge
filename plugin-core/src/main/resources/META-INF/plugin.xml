@@ -1,14 +1,14 @@
 <idea-plugin require-restart="false">
   <id>com.github.catatafishen.ideagentforcopilot</id>
-  <name>IDE Agent for Copilot</name>
+  <name>AgentBridge</name>
   <vendor email="henrik@westergard.org" url="https://github.com/catatafishen/ide-agent-for-copilot">
-    IDE Agent for Copilot Contributors
+    AgentBridge Contributors
   </vendor>
 
   <category>AI Assistant</category>
 
   <description><![CDATA[
-    <p><b>IDE Agent for Copilot</b> &mdash; ACP &amp; MCP bridge connecting AI coding agents to your JetBrains IDE
+    <p><b>AgentBridge</b> &mdash; ACP &amp; MCP bridge connecting AI coding agents to your JetBrains IDE
     through <b>92 native MCP tools</b>.</p>
 
     <p>Instead of operating through a terminal or generating diffs in isolation, agents work through
@@ -16,12 +16,19 @@
     tools you use.</p>
 
     <h3>Multi-Agent Support</h3>
-    <p>Connect any ACP-compatible agent &mdash; including GitHub Copilot, opencode, and custom
-    configurations. Switch between agent profiles instantly, each with its own connection settings,
-    tool permissions, and instructions.</p>
+    <p>Connect your preferred AI coding agent and switch between them with one click. Supported agents:</p>
+    <ul>
+        <li><b>GitHub Copilot</b> &mdash; OAuth sign-in, dynamic model discovery</li>
+        <li><b>Claude CLI</b> (Claude Code) &mdash; Anthropic's Claude via the <code>claude</code> CLI</li>
+        <li><b>Codex</b> (Experimental) &mdash; OpenAI Codex via <code>codex app-server</code>, with device-auth sign-in</li>
+        <li><b>Kiro</b> &mdash; Amazon Kiro agent</li>
+        <li><b>Junie</b> &mdash; JetBrains Junie agent</li>
+        <li><b>opencode</b> &mdash; open-source multi-model agent</li>
+    </ul>
+    <p>Each agent has its own connection settings, tool permissions, and instructions.</p>
 
     <h3>Real IDE Integration, Not Just a Shell</h3>
-    <p>Other coding agents can build, test, and use Git. IDE Agent for Copilot does it through native JetBrains
+    <p>Other coding agents can build, test, and use Git. AgentBridge does it through native JetBrains
     platform APIs &mdash; keeping you in the loop with visible, reviewable actions:</p>
     <ul>
         <li><b>Inspections &amp; quick-fixes</b> &mdash; the agent sees the same warnings you see and can apply IDE-suggested fixes</li>
@@ -58,17 +65,41 @@
     <h3>Requirements</h3>
     <ul>
         <li>A supported JetBrains IDE (IntelliJ IDEA, WebStorm, PyCharm, GoLand, etc.) version 2025.3+</li>
-        <li>An ACP-compatible agent CLI (e.g., GitHub Copilot CLI, opencode)</li>
+        <li>An ACP-compatible agent CLI (GitHub Copilot, Claude CLI, Codex, Kiro, Junie, opencode, or custom)</li>
     </ul>
 
     <h3>Open Source</h3>
     <p>Apache 2.0 License &mdash;
     <a href="https://github.com/catatafishen/ide-agent-for-copilot">github.com/catatafishen/ide-agent-for-copilot</a></p>
 
-    <p><em>This plugin is an independent open-source project and is not affiliated with or endorsed by GitHub, Anthropic, or JetBrains.</em></p>
+    <p><em>This plugin is an independent open-source project and is not affiliated with or endorsed by GitHub, Anthropic, Amazon, JetBrains, or OpenAI.</em></p>
     ]]></description>
 
   <change-notes><![CDATA[
+    <h3>1.15.0 &mdash; AgentBridge: New Agents &amp; Rebranding</h3>
+
+    <p>The plugin is now named <b>AgentBridge</b>.</p>
+
+    <h4>New Agents</h4>
+    <ul>
+        <li><b>Claude CLI</b> (Claude Code) &mdash; Anthropic's Claude via the <code>claude</code> CLI</li>
+        <li><b>Kiro</b> &mdash; Amazon Kiro agent with thinking support</li>
+        <li><b>Junie</b> &mdash; JetBrains Junie agent</li>
+        <li><b>Codex</b> (Experimental) &mdash; OpenAI Codex via <code>codex app-server</code>; Sign In button
+        runs <code>codex login --device-auth</code> in the IDE terminal</li>
+    </ul>
+
+    <h4>New MCP Tools</h4>
+    <ul>
+        <li><code>get_available_actions</code> / <code>apply_action</code> / <code>get_action_options</code>
+        &mdash; invoke any IDE quick-fix or intention action by name</li>
+        <li><code>get_sonar_rule_description</code> &mdash; look up SonarQube rule explanations</li>
+    </ul>
+
+    <h4>Per-Agent Settings</h4>
+    <p>Each agent has its own settings page with binary auto-detection, model selection, and a dedicated
+    Agent Instructions section.</p>
+
     <h3>1.12.0</h3>
 
     <h4>Multi-Agent Support</h4>
@@ -272,7 +303,7 @@
       parentId="tools"
       instance="com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.settings"
-      displayName="IDE Agent for Copilot"/>
+      displayName="AgentBridge"/>
 
     <!-- ── General sub-pages ── -->
     <projectConfigurable

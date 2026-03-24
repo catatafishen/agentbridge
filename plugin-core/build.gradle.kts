@@ -232,7 +232,7 @@ tasks.named("processResources") {
 
 // Also include in the distribution ZIP
 tasks.named<Zip>("buildPlugin") {
-    archiveBaseName.set("ide-agent-for-copilot")
+    archiveBaseName.set("agentbridge")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn(project(":mcp-server").tasks.named("jar"))
     from(project(":mcp-server").tasks.named("jar")) {
@@ -278,7 +278,7 @@ tasks.register("deployToMainIde") {
 /** Finds the plugin install directory in the running IDE's plugin folder. */
 fun detectPluginInstallDir(): File {
     val home = System.getProperty("user.home")
-    val pluginDirNames = listOf("ide-agent-for-copilot", "plugin-core")
+    val pluginDirNames = listOf("agentbridge", "ide-agent-for-copilot", "plugin-core")
 
     // 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/<plugin>
     val dataBase = File(home, ".local/share/JetBrains")
@@ -326,7 +326,7 @@ sourceSets {
 intellijPlatform {
     pluginConfiguration {
         id = "com.github.catatafishen.ideagentforcopilot"
-        name = "IDE Agent for Copilot"
+        name = "AgentBridge"
         version = project.version.toString()
         // Description is maintained in plugin.xml as rich HTML for the marketplace.
 

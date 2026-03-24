@@ -16,8 +16,6 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class DefaultToolLayerSettings implements ToolLayerSettings {
 
-    static final DefaultToolLayerSettings FALLBACK = new DefaultToolLayerSettings(null);
-
     @Nullable
     private final Project project;
 

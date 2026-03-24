@@ -195,7 +195,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             if (method.contains("launch")) return "process launch";
             if (method.contains("start")) return "transport start";
             if (method.contains("initialize")) return "initialization";
-            if (method.contains("authenticate")) return "authentication";
+             if (method.contains("authenticate")) return "authentication";
             if (method.contains("fetchModels")) return "model fetch";
         }
         return "unknown step";

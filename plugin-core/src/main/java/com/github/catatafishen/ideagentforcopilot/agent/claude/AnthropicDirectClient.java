@@ -159,7 +159,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
                                  @Nullable Project project) {
         super(registry);
         this.profile = profile;
-        this.config = new ProfileBasedAgentConfig(profile, registry);
+        this.config = new ProfileBasedAgentConfig(profile, registry, project);
         this.project = project;
         this.httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))

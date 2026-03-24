@@ -101,12 +101,16 @@ public final class CodexCredentials {
         }
     }
 
-    /** Returns true if the user is logged in with a non-expired credential. */
+    /**
+     * Returns true if the user is logged in with a non-expired credential.
+     */
     public boolean isLoggedIn() {
         return loggedIn;
     }
 
-    /** Email or display name of the logged-in account, or null if not available. */
+    /**
+     * Email or display name of the logged-in account, or null if not available.
+     */
     @Nullable
     public String getDisplayName() {
         return displayName;
