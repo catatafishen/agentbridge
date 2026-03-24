@@ -220,7 +220,8 @@ class ChatToolWindowContent(
 
     private fun promptPlaceholder(): String {
         val name = agentManager.activeProfile.displayName
-        return "Ask $name... (Shift+Enter for new line)"
+        return if (isSending) "Nudge $name... (Shift+Enter for new line)"
+        else "Ask $name... (Shift+Enter for new line)"
     }
 
     private fun updatePromptPlaceholder() {
@@ -731,6 +732,7 @@ class ChatToolWindowContent(
             }
         }
         ApplicationManager.getApplication().invokeLater {
+            updatePromptPlaceholder()
             controlsToolbar.updateActionsAsync()
             if (::processingTimerPanel.isInitialized) {
                 if (sending) processingTimerPanel.start() else processingTimerPanel.stop()
