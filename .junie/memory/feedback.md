@@ -862,3 +862,11 @@
     "NEW INSTRUCTION": "WHEN plugin starts after IDE restart THEN load and apply saved tool permission settings"
 }
 
+[2026-03-24 14:22] - Updated by Junie
+{
+    "TYPE": "correction",
+    "CATEGORY": "Web UI branding label",
+    "EXPECTATION": "The web UI should not display 'IDE agent for Copilot'; it should show only 'AgentBridge'.",
+    "NEW INSTRUCTION": "WHEN rendering web UI title or header THEN display 'AgentBridge' only and remove Copilot text"
+}
+

@@ -95,7 +95,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
         p.setDescription("""
             Direct Anthropic API profile for Claude Code — experimental support. \
             Calls api.anthropic.com/v1/messages directly — no subprocess or ACP adapter needed. \
-            Requires an Anthropic API key (set in Settings → Tools → IDE Agent → Agent Profiles → Claude Code API). \
+            Requires an Anthropic API key (set in Settings → Tools → AgentBridge → Agent Profiles → Claude Code API). \
             All IntelliJ IDE tools are available natively via the PSI bridge.""");
         p.setBinaryName("");
         p.setAlternateNames(List.of());
@@ -175,7 +175,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
             throw new AgentException(
                 "No Anthropic API key configured. "
                     + "Get your key at console.anthropic.com/settings/keys, "
-                    + "then set it in Settings → Tools → IDE Agent → Agent Profiles → Claude Code.",
+                    + "then set it in Settings → Tools → AgentBridge → Agent Profiles → Claude Code.",
                 null, false);
         }
         started = true;
@@ -190,7 +190,7 @@ public final class AnthropicDirectClient extends AbstractClaudeAgentClient {
     @Override
     public @org.jetbrains.annotations.Nullable String checkAuthentication() {
         return AnthropicKeyStore.hasApiKey(profile.getId()) ? null
-            : "No Anthropic API key configured. Set it in Settings → Tools → IDE Agent → Agent Profiles.";
+            : "No Anthropic API key configured. Set it in Settings → Tools → AgentBridge → Agent Profiles.";
     }
 
     // stop() is the canonical lifecycle method; close() is inherited from AbstractAgentClient

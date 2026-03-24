@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Settings page: Settings → Tools → IDE Agent for Copilot → MCP → Tools.
+ * Settings page: Settings → Tools → AgentBridge → MCP → Tools.
  * Enable or disable individual MCP tools exposed to agents.
  */
 public final class ToolsConfigurable implements Configurable {

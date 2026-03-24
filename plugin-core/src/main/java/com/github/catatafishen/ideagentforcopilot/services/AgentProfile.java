@@ -15,7 +15,7 @@ import java.util.UUID;
  * replacing the old per-agent config/service/settings classes.
  *
  * <p>Profiles are persisted via {@link AgentProfileManager} and editable in
- * Settings → Tools → IDE Agent for Copilot → Agent Profiles.</p>
+ * Settings → Tools → AgentBridge → Agent Profiles.</p>
  */
 public final class AgentProfile {
 

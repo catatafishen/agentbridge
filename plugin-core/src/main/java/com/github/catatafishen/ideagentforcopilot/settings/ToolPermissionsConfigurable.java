@@ -12,7 +12,7 @@ import javax.swing.*;
 
 /**
  * Settings page wrapping the Tool Permissions panel.
- * Appears under Settings > Tools > IDE Agent for Copilot > Tool Permissions.
+ * Appears under Settings > Tools > AgentBridge > Tool Permissions.
  */
 public final class ToolPermissionsConfigurable implements Configurable {
 

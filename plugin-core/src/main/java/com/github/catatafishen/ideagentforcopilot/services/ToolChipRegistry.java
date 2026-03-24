@@ -98,10 +98,19 @@ public final class ToolChipRegistry {
         @Nullable JsonObject args,
         @NotNull String clientId
     ) {
-        // If args is null, we cannot compute a hash — fall back to a clientId-based chip
-        // that cannot correlate with MCP. Empty args ({}) DO go through the hash path because
-        // the MCP side always hashes them the same way (hash of "{}").
+        // If args is null, we cannot compute a hash — but first try to find an MCP-first chip
+        // by tool name (handles Junie, which sends tool_call with empty content:[]).
+        // Fall back to a clientId-based chip that cannot correlate with MCP.
+        // Empty args ({}) DO go through the hash path because the MCP side always hashes them the same way.
         if (args == null) {
+            ChipEntry mcpFirstByName = findMcpFirstChipByName(displayTitle);
+            if (mcpFirstByName != null) {
+                ChipEntry updated = mcpFirstByName.withClientId(clientId, displayTitle);
+                chips.put(mcpFirstByName.chipId(), updated);
+                clientToChip.put(clientId, mcpFirstByName.chipId());
+                LOG.debug("ToolChipRegistry: null-args client claimed MCP-first chip " + mcpFirstByName.chipId() + " (" + displayTitle + ")");
+                return new ChipRegistration(mcpFirstByName.chipId(), ChipState.RUNNING);
+            }
             String chipId = "c-" + clientId.replaceAll("[^a-zA-Z0-9]", "-");
             ChipEntry entry = new ChipEntry(chipId, displayTitle, clientId, false, System.currentTimeMillis());
             chips.put(chipId, entry);
@@ -243,6 +252,20 @@ public final class ToolChipRegistry {
     }
 
     // ── Internal ─────────────────────────────────────────────────────────────
+
+    /**
+     * Find a MCP-first chip (mcpHandled=true, clientId=null) by tool display name.
+     * Used when the client-side event has no args (e.g. Junie's tool_call with empty content).
+     */
+    private @Nullable ChipEntry findMcpFirstChipByName(@NotNull String displayName) {
+        ChipEntry result = null;
+        for (var entry : chips.values()) {
+            if (entry.clientId() == null && entry.mcpHandled() && displayName.equals(entry.displayName())) {
+                result = entry; // keep iterating — last match wins (newest)
+            }
+        }
+        return result;
+    }
 
     /**
      * Find a MCP-first chip (mcpHandled=true, clientId=null) with the given base hash.

@@ -18,7 +18,7 @@ import java.util.Objects;
 
 /**
  * Settings page for configuring project file shortcuts in the toolbar dropdown.
- * Appears under Settings > Tools > IDE Agent for Copilot > Project Files.
+ * Appears under Settings > Tools > AgentBridge > Project Files.
  */
 public final class ProjectFilesConfigurable implements Configurable {
 

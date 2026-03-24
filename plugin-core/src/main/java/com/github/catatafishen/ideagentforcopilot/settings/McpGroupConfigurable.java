@@ -12,7 +12,7 @@ import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 
 /**
- * Group node: Settings → Tools → IDE Agent for Copilot → MCP.
+ * Group node: Settings → Tools → AgentBridge → MCP.
  * Contains child pages for Server and Tools.
  */
 public final class McpGroupConfigurable implements Configurable {

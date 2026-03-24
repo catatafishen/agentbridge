@@ -199,7 +199,7 @@ class PromptOrchestrator(
         val title = agentManager.activeProfile.displayName
         val content = "Permission request: $toolDisplayName"
         com.intellij.notification.NotificationGroupManager.getInstance()
-            .getNotificationGroup("IDE Agent for Copilot")
+            .getNotificationGroup("AgentBridge Notifications")
             ?.createNotification(title, content, com.intellij.notification.NotificationType.INFORMATION)
             ?.notify(project)
     }

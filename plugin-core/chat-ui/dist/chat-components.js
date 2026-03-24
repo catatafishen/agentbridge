@@ -559,7 +559,7 @@ var __chatUI = (() => {
     _render() {
       const status = this.getAttribute("status") || "complete";
       if (status === "running" || status === "thinking") {
-        this.innerHTML = '<span class="thought-bubble">\u{1F4AD}</span> Thinking...';
+        this.innerHTML = '<span class="thought-bubble">\u{1F4AD}</span> Thought';
         this.classList.add("thinking-active");
       } else {
         this.classList.remove("thinking-active");

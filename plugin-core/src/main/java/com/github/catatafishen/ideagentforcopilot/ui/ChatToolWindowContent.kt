@@ -25,7 +25,7 @@ import java.awt.*
 import javax.swing.*
 
 /**
- * Main content for the IDE Agent for Copilot tool window.
+ * Main content for the AgentBridge tool window.
  */
 class ChatToolWindowContent(
     private val project: Project,
@@ -1350,7 +1350,8 @@ class ChatToolWindowContent(
                         pendingNudgeId = id
                         pendingNudgeText = text
                         consolePanel.showNudgeBubble(id, text)
-                        val psiBridge = com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
+                        val psiBridge =
+                            com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
                         psiBridge.setPendingNudge(text)
                         psiBridge.setOnNudgeConsumed {
                             pendingNudgeId = null

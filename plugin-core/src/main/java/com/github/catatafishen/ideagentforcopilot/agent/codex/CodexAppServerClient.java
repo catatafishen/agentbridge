@@ -895,7 +895,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 // Emit one thinking chip per turn, then stream any available reasoning text into it.
                 if (!reasoningActive) {
                     reasoningActive = true;
-                    cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text("Thinking..."))));
+                    cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text("Thought"))));
                 }
                 appendReasoningContent(item, cb);
             }

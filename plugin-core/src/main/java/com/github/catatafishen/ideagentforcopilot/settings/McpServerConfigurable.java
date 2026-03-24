@@ -25,7 +25,7 @@ import java.awt.datatransfer.StringSelection;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Settings page: Settings → Tools → IDE Agent for Copilot → MCP → Server.
+ * Settings page: Settings → Tools → AgentBridge → MCP → Server.
  * Configures MCP server port, transport mode, and auto-start.
  */
 public final class McpServerConfigurable implements Configurable {

@@ -70,7 +70,7 @@
 
     <h3>Open Source</h3>
     <p>Apache 2.0 License &mdash;
-    <a href="https://github.com/catatafishen/ide-agent-for-copilot">github.com/catatafishen/ide-agent-for-copilot</a></p>
+    <a href="https://github.com/catatafishen/ide-agent-for-copilot">AgentBridge on GitHub</a></p>
 
     <p><em>This plugin is an independent open-source project and is not affiliated with or endorsed by GitHub, Anthropic, Amazon, JetBrains, or OpenAI.</em></p>
     ]]></description>
@@ -103,7 +103,7 @@
     <h3>1.12.0</h3>
 
     <h4>Multi-Agent Support</h4>
-    <p>IDE Agent for Copilot is no longer limited to a single agent. Configure and switch between multiple agents:</p>
+    <p>AgentBridge is no longer limited to a single agent. Configure and switch between multiple agents:</p>
     <ul>
         <li>Agent profile selector in the connection panel &mdash; switch agents with one click</li>
         <li>Per-profile settings: connection command, tool permissions, built-in tool blocking, custom instructions</li>
@@ -231,7 +231,7 @@
 
     <h3>1.0.0 &mdash; Initial Release</h3>
     <ul>
-        <li>Introduces IDE Agent for Copilot</li>
+        <li>Introduces AgentBridge</li>
         <li><b>Dynamic model discovery</b> &mdash; automatically supports all Copilot models without plugin updates</li>
         <li>Enables multi-step task execution inside the IDE</li>
         <li>Project navigation and context awareness</li>
@@ -302,7 +302,7 @@
       serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.McpHttpServer"/>
 
-    <!-- Settings: IDE Agent for Copilot (root) -->
+    <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
       parentId="tools"
       instance="com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable"

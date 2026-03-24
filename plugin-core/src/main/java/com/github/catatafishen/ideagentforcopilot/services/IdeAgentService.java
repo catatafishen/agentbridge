@@ -5,7 +5,7 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 
 /**
- * Application-level service for managing the IDE Agent for Copilot plugin.
+ * Application-level service for managing the AgentBridge plugin.
  * Singleton that lives for the entire IDE session.
  */
 @Service(Service.Level.APP)
