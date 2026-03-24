@@ -320,8 +320,8 @@ public final class ChatWebServer implements Disposable {
 
         List<String> localIps = collectLocalIpv4Addresses();
 
-        if (ksFile.exists() && !certCoversAllIps(ksFile, localIps)) {
-            LOG.info("[ChatWebServer] Regenerating certificate — local IPs changed");
+        if (ksFile.exists() && (!certCoversAllIps(ksFile, localIps) || !certHasCaFlag(ksFile) || !certHasExpectedSubject(ksFile))) {
+            LOG.info("[ChatWebServer] Regenerating certificate — local IPs changed, CA flag missing, or subject changed");
             java.nio.file.Files.delete(ksPath);
         }
 
@@ -346,8 +346,11 @@ public final class ChatWebServer implements Disposable {
                 "-storetype", "PKCS12",
                 "-storepass", KEYSTORE_PASSWORD,
                 "-keypass", KEYSTORE_PASSWORD,
-                "-dname", "CN=AgentBridge, O=AgentBridge, C=US",
-                "-ext", "SAN=" + sanBuilder
+                "-dname", "CN=AgentBridge Local Network, O=AgentBridge, C=FI",
+                "-ext", "SAN=" + sanBuilder,
+                // Required for Android (and iOS) CA trust: marks this as a CA certificate.
+                // Without BasicConstraints CA:TRUE the mobile CA installer rejects it.
+                "-ext", "BC:critical=ca:true"
             };
 
             Process process = new ProcessBuilder(cmd).start();
@@ -417,6 +420,45 @@ public final class ChatWebServer implements Disposable {
         }
     }
 
+    /**
+     * Returns {@code true} if the certificate in the keystore has BasicConstraints CA:TRUE.
+     */
+    private static boolean certHasCaFlag(java.io.File ksFile) {
+        try {
+            KeyStore ks = KeyStore.getInstance("PKCS12");
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(ksFile)) {
+                ks.load(fis, KEYSTORE_PASSWORD.toCharArray());
+            }
+            java.security.cert.Certificate cert = ks.getCertificate("agentbridge");
+            if (!(cert instanceof X509Certificate x509)) return false;
+            return x509.getBasicConstraints() >= 0; // >= 0 means CA:TRUE
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Could not read existing certificate BasicConstraints", e);
+            return false;
+        }
+    }
+
+    private static final String EXPECTED_CN = "CN=AgentBridge Local Network";
+
+    /**
+     * Returns {@code true} if the certificate subject contains the expected CN.
+     * Detects certs generated before the display name was set, so they are regenerated.
+     */
+    private static boolean certHasExpectedSubject(java.io.File ksFile) {
+        try {
+            KeyStore ks = KeyStore.getInstance("PKCS12");
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(ksFile)) {
+                ks.load(fis, KEYSTORE_PASSWORD.toCharArray());
+            }
+            java.security.cert.Certificate cert = ks.getCertificate("agentbridge");
+            if (!(cert instanceof X509Certificate x509)) return false;
+            return x509.getSubjectX500Principal().getName().contains(EXPECTED_CN);
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Could not read existing certificate subject", e);
+            return false;
+        }
+    }
+
     private void handleCert(HttpExchange exchange) throws IOException {
         if (!"GET".equals(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
@@ -481,7 +523,10 @@ public final class ChatWebServer implements Disposable {
     private void handleServiceWorker(HttpExchange exchange) throws IOException {
         String sw = "self.addEventListener('install',()=>self.skipWaiting());\n"
             + "self.addEventListener('activate',e=>e.waitUntil(clients.claim()));\n"
-            + "self.addEventListener('fetch',e=>e.respondWith(fetch(e.request).catch(()=>new Response('Offline',{status:503}))));\n"
+            + "self.addEventListener('fetch',e=>{"
+            + "if(e.request.headers.get('accept')==='text/event-stream')return;"
+            + "e.respondWith(fetch(e.request).catch(()=>new Response('Offline',{status:503})));"
+            + "});\n"
             + "self.addEventListener('message',e=>{\n"
             + "  if(e.data&&e.data.type==='SHOW_NOTIFICATION'){\n"
             + "    e.waitUntil(self.registration.showNotification(e.data.title||'AgentBridge',{body:e.data.body||'',icon:'/icon-192.png',tag:'agentbridge'}));\n"
@@ -756,9 +801,29 @@ public final class ChatWebServer implements Disposable {
     }
 
     private String buildInfoJson() {
+        List<String> certIps = new ArrayList<>();
+        if (sslKeyStore != null) {
+            try {
+                java.security.cert.Certificate cert = sslKeyStore.getCertificate("agentbridge");
+                if (cert instanceof X509Certificate x509) {
+                    Collection<List<?>> sans = x509.getSubjectAlternativeNames();
+                    if (sans != null) {
+                        for (List<?> san : sans) {
+                            // SAN type 7 = iPAddress
+                            if (san.get(0) instanceof Integer type && type == 7) {
+                                certIps.add((String) san.get(1));
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warn("[ChatWebServer] Could not read cert SANs for /info", e);
+            }
+        }
         return "{\"project\":" + GSON.toJson(projectName)
             + ",\"model\":" + GSON.toJson(currentModel)
-            + ",\"running\":" + agentRunning + "}";
+            + ",\"running\":" + agentRunning
+            + ",\"certIps\":" + GSON.toJson(certIps) + "}";
     }
 
     private static int parseFromQuery(@Nullable String query) {
