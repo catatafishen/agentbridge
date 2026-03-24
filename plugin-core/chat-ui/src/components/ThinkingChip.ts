@@ -33,9 +33,6 @@ export default class ThinkingChip extends HTMLElement {
         if (status === 'running' || status === 'thinking') {
             this.innerHTML = '<span class="thought-bubble">💭</span> Thinking...';
             this.classList.add('thinking-active');
-        } else if (status === 'complete-empty') {
-            this.textContent = '💭 Thought complete · no reasoning returned';
-            this.classList.remove('thinking-active');
         } else {
             this.textContent = '💭 Thought complete';
             this.classList.remove('thinking-active');

@@ -20,6 +20,10 @@ export default class ThinkingBlock extends HTMLElement {
     }
 
     finalize(): void {
+        const el = this.contentEl;
+        if (el && !el.textContent?.trim()) {
+            el.textContent = 'No reasoning returned';
+        }
         this.removeAttribute('active');
     }
 }

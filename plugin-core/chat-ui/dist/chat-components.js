@@ -464,6 +464,10 @@ var __chatUI = (() => {
       if (el) el.textContent += text;
     }
     finalize() {
+      const el = this.contentEl;
+      if (el && !el.textContent?.trim()) {
+        el.textContent = "No reasoning returned";
+      }
       this.removeAttribute("active");
     }
   };
@@ -555,10 +559,10 @@ var __chatUI = (() => {
     _render() {
       const status = this.getAttribute("status") || "complete";
       if (status === "running" || status === "thinking") {
-        this.innerHTML = '<span class="thought-bubble">\u{1F4AD}</span> Thought';
+        this.innerHTML = '<span class="thought-bubble">\u{1F4AD}</span> Thinking...';
         this.classList.add("thinking-active");
       } else {
-        this.textContent = "\u{1F4AD} Thought";
+        this.textContent = "\u{1F4AD} Thought complete";
         this.classList.remove("thinking-active");
       }
     }
@@ -851,7 +855,7 @@ var __chatUI = (() => {
     },
     _collapseThinkingFor(ctx) {
       if (!ctx?.thinkingBlock) return;
-      ctx.thinkingBlock.removeAttribute("active");
+      ctx.thinkingBlock.finalize();
       ctx.thinkingBlock.removeAttribute("expanded");
       ctx.thinkingBlock.classList.add("turn-hidden");
       if (ctx.thinkingChip) {
@@ -1100,8 +1104,8 @@ var __chatUI = (() => {
       if (ctx?.textBubble && !ctx.textBubble.textContent?.trim()) {
         ctx.textBubble.remove();
       }
+      this._collapseThinkingFor(ctx || null);
       if (ctx) {
-        ctx.thinkingBlock = null;
         ctx.textBubble = null;
       }
       document.querySelectorAll('subagent-chip[status="running"]').forEach((c) => c.setAttribute("status", "complete"));

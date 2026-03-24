@@ -81,12 +81,11 @@ const ChatController = {
         thinkingChip?: HTMLElement | null
     } | null): void {
         if (!ctx?.thinkingBlock) return;
-        const hasThinkingText = !!ctx.thinkingBlock.textContent?.trim();
-        ctx.thinkingBlock.removeAttribute('active');
+        (ctx.thinkingBlock as any).finalize();
         ctx.thinkingBlock.removeAttribute('expanded');
         ctx.thinkingBlock.classList.add('turn-hidden');
         if (ctx.thinkingChip) {
-            ctx.thinkingChip.setAttribute('status', hasThinkingText ? 'complete' : 'complete-empty');
+            ctx.thinkingChip.setAttribute('status', 'complete');
             ctx.thinkingChip = null;
         }
         ctx.thinkingBlock = null;
