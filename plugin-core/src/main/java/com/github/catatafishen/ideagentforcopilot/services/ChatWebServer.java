@@ -425,12 +425,18 @@ public final class ChatWebServer implements Disposable {
         }
         try {
             java.security.cert.Certificate cert = sslKeyStore.getCertificate("agentbridge");
+            // Serve as PEM — Android's CA certificate installer requires PEM format.
+            // Serving raw DER triggers Android's VPN/app-cert installer which asks for a private key.
             byte[] derBytes = cert.getEncoded();
-            exchange.getResponseHeaders().set("Content-Type", "application/x-x509-ca-cert");
-            exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"agentbridge-ca.crt\"");
+            String pem = "-----BEGIN CERTIFICATE-----\n"
+                + java.util.Base64.getMimeEncoder(64, new byte[]{'\n'}).encodeToString(derBytes)
+                + "\n-----END CERTIFICATE-----\n";
+            byte[] pemBytes = pem.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/x-pem-file");
+            exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"agentbridge-ca.pem\"");
             exchange.getResponseHeaders().set("Cache-Control", "no-cache");
-            exchange.sendResponseHeaders(200, derBytes.length);
-            exchange.getResponseBody().write(derBytes);
+            exchange.sendResponseHeaders(200, pemBytes.length);
+            exchange.getResponseBody().write(pemBytes);
         } catch (Exception e) {
             LOG.warn("[ChatWebServer] Failed to serve certificate", e);
             exchange.sendResponseHeaders(500, -1);

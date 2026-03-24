@@ -91,9 +91,10 @@
     <h4>Install the Chat as a PWA</h4>
     <ul>
         <li>Open the chat web UI in any browser and install it as a home-screen app</li>
-        <li>Download the self-signed certificate from <code>/cert.crt</code> and install it once to trust HTTPS
-        over your local network</li>
-        <li>Certificate automatically includes your machine's LAN IP &mdash; no manual SAN editing needed</li>
+        <li>Download the certificate from <code>/cert.crt</code> and install it as a <b>CA certificate</b> once to trust HTTPS over your local network</li>
+        <li><b>Android:</b> Settings &rarr; Security &rarr; Encryption &amp; credentials &rarr; Install a certificate &rarr; <b>CA certificate</b> &rarr; pick the downloaded file (do not just tap the file &mdash; that asks for a private key)</li>
+        <li><b>iOS/iPadOS:</b> open the <code>.pem</code> file to install the profile, then enable it under Settings &rarr; General &rarr; About &rarr; Certificate Trust Settings</li>
+        <li>Certificate automatically includes your machine's LAN IP &mdash; no manual setup needed</li>
     </ul>
 
     <h3>1.15.0 &mdash; AgentBridge: New Agents &amp; Rebranding</h3>

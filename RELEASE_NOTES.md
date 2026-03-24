@@ -4,16 +4,24 @@
 
 ### OpenAI Codex Support
 
-Full support for OpenAI Codex agents — drives the locally-installed `codex` CLI via JSON-RPC 2.0 over stdio, routes user input requests to the built-in `ask_user` flow, and shows a window notification when a prompt arrives while the IDE is unfocused.
+Full support for OpenAI Codex agents — drives the locally-installed `codex` CLI via JSON-RPC 2.0 over stdio, routes user
+input requests to the built-in `ask_user` flow, and shows a window notification when a prompt arrives while the IDE is
+unfocused.
 
 ### Nudge While the Agent Works
 
-New **Nudge** action (`Ctrl+Enter`) lets you guide or redirect the agent mid-turn without stopping it. The nudge message waits in a queue and is injected at the next opportunity. Cancel it with the ✕ button if you change your mind.
+New **Nudge** action (`Ctrl+Enter`) lets you guide or redirect the agent mid-turn without stopping it. The nudge message
+waits in a queue and is injected at the next opportunity. Cancel it with the ✕ button if you change your mind.
 
 ### Install the Chat as a PWA
 
 - Open the chat web UI in any browser and install it as a home-screen app
-- Download the self-signed certificate from `/cert.crt` and install it on your device once to trust the HTTPS connection over your local network
+- Download the certificate from `/cert.crt` and install it as a **CA certificate** on your device once to trust the
+  HTTPS connection
+    - **Android**: Settings → Security → Encryption & credentials → Install a certificate → **CA certificate** → pick
+      the downloaded file *(do not just tap the file — that opens the wrong installer and asks for a private key)*
+    - **iOS/iPadOS**: open the `.pem` file to install the profile, then go to Settings → General → About → Certificate
+      Trust Settings and enable it
 - The certificate automatically includes your machine's current LAN IP, so no manual setup is needed
 
 ---
