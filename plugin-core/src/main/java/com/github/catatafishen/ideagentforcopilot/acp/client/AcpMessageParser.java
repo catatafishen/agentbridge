@@ -152,7 +152,13 @@ class AcpMessageParser {
         String description = params.has("description") ? params.get("description").getAsString() : null;
         String result = extractResultText(params);
 
-        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description);
+        // Extract rawInput for tool correlation - this contains the actual tool arguments
+        String arguments = null;
+        if (params.has("rawInput") && params.get("rawInput").isJsonObject()) {
+            arguments = params.get("rawInput").getAsJsonObject().toString();
+        }
+
+        return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description, false, null, arguments);
     }
 
     private @Nullable String extractResultText(JsonObject params) {

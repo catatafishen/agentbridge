@@ -228,6 +228,7 @@ public sealed interface SessionUpdate
      * @param description  optional natural language explanation of the result (may be null)
      * @param autoDenied   true if the tool was automatically denied by the plugin (security/policy)
      * @param denialReason human-readable reason for the auto-denial, or null
+     * @param arguments    raw tool arguments from the update (may be null) - used for re-correlation
      */
     record ToolCallUpdate(
         @NotNull String toolCallId,
@@ -236,10 +237,15 @@ public sealed interface SessionUpdate
         @Nullable String error,
         @Nullable String description,
         boolean autoDenied,
-        @Nullable String denialReason
+        @Nullable String denialReason,
+        @Nullable String arguments
     ) implements SessionUpdate {
         public ToolCallUpdate(@NotNull String toolCallId, @NotNull ToolCallStatus status, @Nullable String result, @Nullable String error, @Nullable String description) {
-            this(toolCallId, status, result, error, description, false, null);
+            this(toolCallId, status, result, error, description, false, null, null);
+        }
+
+        public ToolCallUpdate(@NotNull String toolCallId, @NotNull ToolCallStatus status, @Nullable String result, @Nullable String error, @Nullable String description, boolean autoDenied, @Nullable String denialReason) {
+            this(toolCallId, status, result, error, description, autoDenied, denialReason, null);
         }
     }
 

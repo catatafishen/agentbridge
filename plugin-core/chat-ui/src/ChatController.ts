@@ -230,6 +230,17 @@ const ChatController = {
         this.setToolChipState(id, 'running');
     },
 
+    removeToolChip(id: string): void {
+        const chip = document.querySelector('[data-chip-for="' + id + '"]');
+        if (chip) {
+            chip.remove();
+        }
+        const section = document.getElementById(id);
+        if (section) {
+            section.remove();
+        }
+    },
+
     setToolChipState(id: string, state: string): void {
         const chip = document.querySelector('[data-chip-for="' + id + '"]');
         if (!chip) return;

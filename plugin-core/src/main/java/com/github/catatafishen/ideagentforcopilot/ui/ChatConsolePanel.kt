@@ -269,12 +269,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         currentAgent = agentName
         currentClientType = clientType
         val agentCss = ChatTheme.activeAgentCss(profileId)
+        val isDark = com.intellij.ide.ui.LafManager.getInstance().currentUIThemeLookAndFeel.isDark
+        val iconSvg = ChatTheme.getAgentIconSvg(profileId, isDark)
         executeJs(
             "document.documentElement.style.cssText += '$agentCss';ChatController.setClientType('${
                 escJs(
                     clientType
                 )
-            }')"
+            }', '${escJs(iconSvg)}')"
         )
     }
 
@@ -328,26 +330,27 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         arguments: String?,
         kind: String?
     ) {
+        val cleanTitle = title.trim('\'', '"')
         finalizeCurrentText()
         val resolvedKind = kind ?: "other"
 
         // Extract file path from arguments for edit tools
-        val filePath = extractFilePathFromArgs(title, arguments)
+        val filePath = extractFilePathFromArgs(cleanTitle, arguments)
 
         val entry =
             EntryData.ToolCall(
-                title, arguments, resolvedKind, null, null, null, filePath,
+                cleanTitle, arguments, resolvedKind, null, null, null, filePath,
                 autoDenied = false, denialReason = null,
                 timestamp = timestamp(), agent = currentAgent
             )
         entries.add(entry)
 
-        val def = toolRegistry?.findById(title)
-        val info = TOOL_DISPLAY_INFO[title]
-        val displayName = def?.displayName() ?: info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(title, arguments)
+        val def = toolRegistry?.findById(cleanTitle)
+        val info = TOOL_DISPLAY_INFO[cleanTitle]
+        val displayName = def?.displayName() ?: info?.displayName ?: cleanTitle.replaceFirstChar { it.uppercaseChar() }
+        val short = formatToolSubtitle(cleanTitle, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
-        val hasCustomRenderer = ToolRenderers.hasRenderer(title, toolRegistry)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
 
@@ -361,10 +364,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
 
         // Register with chip registry — returns chipId and whether MCP already handled it
-        val registration = registry.registerClientSide(title, argsObj, id)
+        val registration = registry.registerClientSide(cleanTitle, argsObj, id)
         val chipId = registration.chipId()
         val did = "t-$chipId"
-        toolCallNames[did] = title
+        toolCallNames[did] = cleanTitle
         toolCallEntries[did] = entry
 
         val isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
@@ -386,10 +389,32 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         description: String?,
         kind: String?,
         autoDenied: Boolean,
-        denialReason: String?
+        denialReason: String?,
+        arguments: String?
     ) {
         val chipId = registry.findChipIdByClientId(id)
         val did = if (chipId != null) "t-$chipId" else domId(id)
+
+        // Try to re-correlate if we have new arguments and status is running
+        if (arguments != null && status == "running") {
+            try {
+                val argsObj = JsonParser.parseString(arguments).asJsonObject
+                val registration = registry.reregisterWithArgs(id, argsObj)
+                val newChipId = registration.chipId()
+                val newDid = "t-$newChipId"
+
+                if (newDid != did && registration.initialState() == ToolChipRegistry.ChipState.RUNNING) {
+                    // Remove old chip DOM element
+                    executeJs("ChatController.removeToolChip('$did')")
+                    // Mark the entry as MCP handled
+                    toolCallEntries[newDid]?.mcpHandled = true
+                    LOG.debug("updateToolCall: re-correlated chip $id: $did -> $newDid (MCP handled)")
+                }
+            } catch (e: Exception) {
+                LOG.warn("updateToolCall: failed to re-correlate chip $id", e)
+            }
+        }
+
         val resultLen = details?.length ?: 0
         LOG.debug("updateToolCall: id=$id, chipId=$chipId, status=$status, resultLen=$resultLen, hasDesc=${description != null}, denied=$autoDenied")
         toolCallEntries[did]?.let {
@@ -438,16 +463,17 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val saDid = domId(subAgentId)
         val toolDid = domId(toolId)
         val resolvedKind = kind ?: "other"
-        val entry = EntryData.ToolCall(title, arguments, resolvedKind)
-        toolCallNames[toolDid] = title
+        val cleanTitle = title.trim('\'', '"')
+        val entry = EntryData.ToolCall(cleanTitle, arguments, resolvedKind)
+        toolCallNames[toolDid] = cleanTitle
         toolCallEntries[toolDid] = entry
 
-        val def = toolRegistry?.findById(title)
-        val info = TOOL_DISPLAY_INFO[title]
-        val displayName = def?.displayName() ?: info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(title, arguments)
+        val def = toolRegistry?.findById(cleanTitle)
+        val info = TOOL_DISPLAY_INFO[cleanTitle]
+        val displayName = def?.displayName() ?: info?.displayName ?: cleanTitle.replaceFirstChar { it.uppercaseChar() }
+        val short = formatToolSubtitle(cleanTitle, arguments)
         val label = if (short != null) "$displayName — $short" else displayName
-        val hasCustomRenderer = ToolRenderers.hasRenderer(title, toolRegistry)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
         val isExternal = def == null  // Not from our MCP plugin
@@ -595,7 +621,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         executeJs("ChatController.finalizeTurn('$currentTurnId',$statsJson)")
         ApplicationManager.getApplication().invokeLater { browser?.component?.repaint() }
-        ChatWebServer.getInstance(project)?.pushNotification("Turn complete", "Agent finished ($toolCallCount tool calls)")
+        ChatWebServer.getInstance(project)
+            ?.pushNotification("Turn complete", "Agent finished ($toolCallCount tool calls)")
     }
 
     override fun showQuickReplies(options: List<String>) {
@@ -802,7 +829,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val raw = e.raw.toString()
                 if (raw.isNotBlank()) {
                     val id = "batch-think-${batchIdCounter++}"
-                    metaChips.append("<thinking-chip status='complete' data-chip-for='$id'></thinking-chip>")
+                    metaChips.append("<thinking-chip label='Thought' status='complete' data-chip-for='$id'></thinking-chip>")
                     detailsContent.append(
                         "<thinking-block id='$id' class='thinking-section turn-hidden'><div class='thinking-content'>${
                             esc(
@@ -838,16 +865,17 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     private fun appendToolEntry(e: EntryData.ToolCall, metaChips: StringBuilder) {
-        val info = TOOL_DISPLAY_INFO[e.title]
-        val displayName = info?.displayName ?: e.title.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(e.title, e.arguments)
+        val title = e.title.trim('\'', '"')
+        val info = TOOL_DISPLAY_INFO[title]
+        val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
+        val short = formatToolSubtitle(title, e.arguments)
         val label = if (short != null) "$displayName — $short" else displayName
         val id = "batch-tool-${batchIdCounter++}"
         val result = e.result
         val status = e.status ?: "completed"
-        toolCallNames[id] = e.title
+        toolCallNames[id] = title
         toolCallEntries[id] = EntryData.ToolCall(
-            e.title, e.arguments, e.kind,
+            title, e.arguments, e.kind,
             result = result, status = status, description = e.description,
             mcpHandled = e.mcpHandled
         )
@@ -1248,9 +1276,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     /** Produces a chip-style title matching the JS toolDisplayName() logic. */
     private fun toolChipTitle(baseName: String?, arguments: String?): String {
         if (baseName == null) return "Tool Call"
-        val subtitle = formatToolSubtitle(baseName, arguments)
-        val toolDef = toolRegistry?.findById(baseName)
-        val display = toolDef?.displayName() ?: TOOL_DISPLAY_INFO[baseName]?.displayName ?: baseName
+        val clean = baseName.trim('\'', '"')
+        val subtitle = formatToolSubtitle(clean, arguments)
+        val toolDef = toolRegistry?.findById(clean)
+        val display = toolDef?.displayName() ?: TOOL_DISPLAY_INFO[clean]?.displayName ?: clean
         return if (subtitle != null) "$display — $subtitle" else display
     }
 

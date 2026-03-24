@@ -562,6 +562,7 @@ var __chatUI = (() => {
         this.innerHTML = '<span class="thought-bubble">\u{1F4AD}</span> Thought';
         this.classList.add("thinking-active");
       } else {
+        this.textContent = "\u{1F4AC} Thought";
         this.classList.remove("thinking-active");
       }
     }
@@ -991,6 +992,16 @@ var __chatUI = (() => {
       const chip = document.querySelector('[data-chip-for="' + id + '"]');
       if (chip) chip.classList.add("is-agentbridge-tool");
       this.setToolChipState(id, "running");
+    },
+    removeToolChip(id) {
+      const chip = document.querySelector('[data-chip-for="' + id + '"]');
+      if (chip) {
+        chip.remove();
+      }
+      const section = document.getElementById(id);
+      if (section) {
+        section.remove();
+      }
     },
     setToolChipState(id, state) {
       const chip = document.querySelector('[data-chip-for="' + id + '"]');

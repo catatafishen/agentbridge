@@ -72,6 +72,7 @@ class PromptOrchestrator(
     private var turnModelId = ""
     private var activeSubAgentId: String? = null
     private val toolCallTitles = mutableMapOf<String, String>()
+    private val toolCallArgs = mutableMapOf<String, String>() // arguments from tool_call_update
     private var pendingBanner: PendingBanner? = null
     private var codeChangeListener: Runnable? = null
 
@@ -490,6 +491,12 @@ class PromptOrchestrator(
         val description = update.description()
         val autoDenied = update.autoDenied()
         val denialReason = update.denialReason()
+        val arguments = update.arguments() // raw arguments from tool_call_update
+
+        // Store arguments for potential re-correlation
+        if (arguments != null) {
+            toolCallArgs[toolCallId] = arguments
+        }
 
         val callType = toolCallTitles[toolCallId]
         val isSubAgent = callType == "task"
@@ -510,7 +517,8 @@ class PromptOrchestrator(
             isSubAgent,
             isInternal,
             autoDenied,
-            denialReason
+            denialReason,
+            arguments
         )
 
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
@@ -527,7 +535,8 @@ class PromptOrchestrator(
         isSubAgent: Boolean,
         isInternal: Boolean,
         autoDenied: Boolean = false,
-        denialReason: String? = null
+        denialReason: String? = null,
+        arguments: String? = null
     ) {
         if (isSubAgent) {
             if (uiStatus == "running") {
@@ -547,7 +556,16 @@ class PromptOrchestrator(
         } else if (isInternal) {
             consolePanel().updateSubAgentToolCall(toolCallId, uiStatus, result, description, autoDenied, denialReason)
         } else {
-            consolePanel().updateToolCall(toolCallId, uiStatus, result, description, kind, autoDenied, denialReason)
+            consolePanel().updateToolCall(
+                toolCallId,
+                uiStatus,
+                result,
+                description,
+                kind,
+                autoDenied,
+                denialReason,
+                arguments
+            )
         }
     }
 

@@ -34,6 +34,7 @@ export default class ThinkingChip extends HTMLElement {
             this.innerHTML = '<span class="thought-bubble">💭</span> Thought';
             this.classList.add('thinking-active');
         } else {
+            this.textContent = '💬 Thought';
             this.classList.remove('thinking-active');
         }
     }

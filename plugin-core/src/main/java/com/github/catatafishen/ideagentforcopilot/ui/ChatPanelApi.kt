@@ -53,7 +53,8 @@ interface ChatPanelApi : Disposable {
         description: String? = null,
         kind: String? = null,
         autoDenied: Boolean = false,
-        denialReason: String? = null
+        denialReason: String? = null,
+        arguments: String? = null
     )
 
     // ── Sub-agents ─────────────────────────────────────────────────
