@@ -106,13 +106,23 @@ describe('ChatController', () => {
             expect(content.textContent).toContain('Step 1. Step 2.');
         });
 
-        it('collapseThinking creates chip and hides block', () => {
+        it('collapseThinking creates a completed chip and hides block', () => {
             CC().addThinkingText('t0', 'main', 'Thinking...');
             CC().collapseThinking('t0', 'main');
             const block = getMessages().querySelector('thinking-block');
             expect(block.classList.contains('turn-hidden')).toBe(true);
             const chip = getMessages().querySelector('thinking-chip');
             expect(chip).not.toBeNull();
+            expect(chip.getAttribute('status')).toBe('complete');
+            expect(chip.textContent).toContain('Thought complete');
+        });
+
+        it('collapseThinking marks empty thoughts explicitly', () => {
+            CC().addThinkingText('t0', 'main', '');
+            CC().collapseThinking('t0', 'main');
+            const chip = getMessages().querySelector('thinking-chip');
+            expect(chip.getAttribute('status')).toBe('complete-empty');
+            expect(chip.textContent).toContain('no reasoning returned');
         });
 
         it('collapseThinking is no-op if no active thinking', () => {

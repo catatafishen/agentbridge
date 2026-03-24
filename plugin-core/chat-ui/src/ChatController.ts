@@ -81,11 +81,12 @@ const ChatController = {
         thinkingChip?: HTMLElement | null
     } | null): void {
         if (!ctx?.thinkingBlock) return;
+        const hasThinkingText = !!ctx.thinkingBlock.textContent?.trim();
         ctx.thinkingBlock.removeAttribute('active');
         ctx.thinkingBlock.removeAttribute('expanded');
         ctx.thinkingBlock.classList.add('turn-hidden');
         if (ctx.thinkingChip) {
-            ctx.thinkingChip.setAttribute('status', 'complete');
+            ctx.thinkingChip.setAttribute('status', hasThinkingText ? 'complete' : 'complete-empty');
             ctx.thinkingChip = null;
         }
         ctx.thinkingBlock = null;
@@ -352,8 +353,8 @@ const ChatController = {
         if (ctx?.textBubble && !ctx.textBubble.textContent?.trim()) {
             ctx.textBubble.remove();
         }
+        this._collapseThinkingFor(ctx || null);
         if (ctx) {
-            ctx.thinkingBlock = null;
             ctx.textBubble = null;
         }
         // Mark any still-running sub-agent chips as complete (not failed)
