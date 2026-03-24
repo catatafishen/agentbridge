@@ -320,8 +320,8 @@ public final class ChatWebServer implements Disposable {
 
         List<String> localIps = collectLocalIpv4Addresses();
 
-        if (ksFile.exists() && (!certCoversAllIps(ksFile, localIps) || !certHasCaFlag(ksFile))) {
-            LOG.info("[ChatWebServer] Regenerating certificate — local IPs changed or CA flag missing");
+        if (ksFile.exists() && (!certCoversAllIps(ksFile, localIps) || !certHasCaFlag(ksFile) || !certHasExpectedSubject(ksFile))) {
+            LOG.info("[ChatWebServer] Regenerating certificate — local IPs changed, CA flag missing, or subject changed");
             java.nio.file.Files.delete(ksPath);
         }
 
@@ -346,7 +346,7 @@ public final class ChatWebServer implements Disposable {
                 "-storetype", "PKCS12",
                 "-storepass", KEYSTORE_PASSWORD,
                 "-keypass", KEYSTORE_PASSWORD,
-                "-dname", "CN=AgentBridge, O=AgentBridge, C=US",
+                "-dname", "CN=AgentBridge Local Network, O=AgentBridge, C=FI",
                 "-ext", "SAN=" + sanBuilder,
                 // Required for Android (and iOS) CA trust: marks this as a CA certificate.
                 // Without BasicConstraints CA:TRUE the mobile CA installer rejects it.
@@ -434,6 +434,27 @@ public final class ChatWebServer implements Disposable {
             return x509.getBasicConstraints() >= 0; // >= 0 means CA:TRUE
         } catch (Exception e) {
             LOG.warn("[ChatWebServer] Could not read existing certificate BasicConstraints", e);
+            return false;
+        }
+    }
+
+    private static final String EXPECTED_CN = "CN=AgentBridge Local Network";
+
+    /**
+     * Returns {@code true} if the certificate subject contains the expected CN.
+     * Detects certs generated before the display name was set, so they are regenerated.
+     */
+    private static boolean certHasExpectedSubject(java.io.File ksFile) {
+        try {
+            KeyStore ks = KeyStore.getInstance("PKCS12");
+            try (java.io.FileInputStream fis = new java.io.FileInputStream(ksFile)) {
+                ks.load(fis, KEYSTORE_PASSWORD.toCharArray());
+            }
+            java.security.cert.Certificate cert = ks.getCertificate("agentbridge");
+            if (!(cert instanceof X509Certificate x509)) return false;
+            return x509.getSubjectX500Principal().getName().contains(EXPECTED_CN);
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] Could not read existing certificate subject", e);
             return false;
         }
     }
