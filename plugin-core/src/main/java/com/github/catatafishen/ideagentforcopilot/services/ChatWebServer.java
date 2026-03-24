@@ -1,0 +1,663 @@
+package com.github.catatafishen.ideagentforcopilot.services;
+
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
+import com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerSettings;
+import com.google.gson.Gson;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+
+/**
+ * Optional HTTP server that streams the chat panel to a local web browser (e.g. phone on LAN).
+ *
+ * <ul>
+ *   <li>Serves {@code GET /} — PWA web app (reuses the same HTML/CSS/JS as the IDE panel)</li>
+ *   <li>Serves {@code GET /events} — SSE stream of chat events</li>
+ *   <li>Serves {@code GET /state} — full event log for initial page load</li>
+ *   <li>Serves {@code GET /info} — project info + current model</li>
+ *   <li>Serves {@code POST /prompt} — sends a prompt to the agent</li>
+ *   <li>Serves {@code POST /reply} — sends a quick reply</li>
+ *   <li>Serves {@code POST /nudge} — nudges the running agent</li>
+ *   <li>Serves {@code POST /stop} — stops the running agent</li>
+ *   <li>Serves {@code POST /permission} — responds to a permission request</li>
+ *   <li>Serves {@code POST /cancel-nudge} — cancels a pending nudge</li>
+ *   <li>Serves {@code GET /manifest.json} — PWA manifest</li>
+ *   <li>Serves {@code GET /sw.js} — service worker</li>
+ *   <li>Serves {@code GET /chat.css} — chat stylesheet</li>
+ *   <li>Serves {@code GET /chat.bundle.js} — chat web components bundle</li>
+ * </ul>
+ */
+@Service(Service.Level.PROJECT)
+public final class ChatWebServer implements Disposable {
+
+    private static final Logger LOG = Logger.getInstance(ChatWebServer.class);
+    private static final int MAX_EVENTS = 600;
+    private static final Gson GSON = new Gson();
+
+    private final Project project;
+    private HttpServer httpServer;
+    private volatile boolean running;
+
+    // ── Event log ─────────────────────────────────────────────────────────────
+    // Stored as raw JSON strings: {"seq":N,"js":"..."}
+    private final List<String> eventLog = new ArrayList<>();
+    private int nextSeq = 1;
+
+    // ── SSE clients ───────────────────────────────────────────────────────────
+    private final List<SseClient> sseClients = new CopyOnWriteArrayList<>();
+
+    // ── Current state (for /info) ─────────────────────────────────────────────
+    private volatile String currentModel = "";
+    private volatile String projectName = "";
+    private volatile boolean agentRunning = false;
+
+    // ── Action callbacks (wired by ChatToolWindowContent) ─────────────────────
+    public volatile Consumer<String> onSendPrompt;
+    public volatile Consumer<String> onQuickReply;
+    public volatile Consumer<String> onNudge;
+    public volatile Runnable onStop;
+    public volatile Consumer<String> onCancelNudge;
+    /**
+     * Permission response: "reqId:deny" / "reqId:once" / "reqId:session"
+     */
+    public volatile Consumer<String> onPermissionResponse;
+
+    public ChatWebServer(@NotNull Project project) {
+        this.project = project;
+        projectName = project.getName();
+    }
+
+    public static ChatWebServer getInstance(@NotNull Project project) {
+        return PlatformApiCompat.getService(project, ChatWebServer.class);
+    }
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    public synchronized void start() throws IOException {
+        if (running) return;
+        ChatWebServerSettings settings = ChatWebServerSettings.getInstance(project);
+        int port = settings.getPort();
+
+        IOException lastError = null;
+        for (int attempt = 0; attempt < 10; attempt++) {
+            try {
+                httpServer = HttpServer.create(new InetSocketAddress("0.0.0.0", port + attempt), 0);
+                if (attempt > 0) {
+                    settings.setPort(port + attempt);
+                }
+                break;
+            } catch (IOException e) {
+                lastError = e;
+            }
+        }
+        if (httpServer == null)
+            throw new IOException("Cannot bind Chat Web Server to any port near " + port, lastError);
+
+        httpServer.createContext("/", this::handleRoot);
+        httpServer.createContext("/chat.css", ex -> serveClasspath(ex, "/chat/chat.css", "text/css; charset=utf-8"));
+        httpServer.createContext("/chat.bundle.js", ex -> serveClasspath(ex, "/chat/chat-components.js", "application/javascript; charset=utf-8"));
+        httpServer.createContext("/manifest.json", this::handleManifest);
+        httpServer.createContext("/sw.js", this::handleServiceWorker);
+        httpServer.createContext("/events", this::handleSse);
+        httpServer.createContext("/state", this::handleState);
+        httpServer.createContext("/info", this::handleInfo);
+        httpServer.createContext("/prompt", ex -> handleAction(ex, body -> {
+            String text = jsonString(body, "text");
+            if (text != null && !text.isEmpty() && onSendPrompt != null) onSendPrompt.accept(text);
+        }));
+        httpServer.createContext("/reply", ex -> handleAction(ex, body -> {
+            String text = jsonString(body, "text");
+            if (text != null && !text.isEmpty() && onQuickReply != null) onQuickReply.accept(text);
+        }));
+        httpServer.createContext("/nudge", ex -> handleAction(ex, body -> {
+            String text = jsonString(body, "text");
+            if (text != null && !text.isEmpty() && onNudge != null) onNudge.accept(text);
+        }));
+        httpServer.createContext("/stop", ex -> handleAction(ex, body -> {
+            if (onStop != null) onStop.run();
+        }));
+        httpServer.createContext("/cancel-nudge", ex -> handleAction(ex, body -> {
+            String id = jsonString(body, "id");
+            if (id != null && onCancelNudge != null) onCancelNudge.accept(id);
+        }));
+        httpServer.createContext("/permission", ex -> handleAction(ex, body -> {
+            String reqId = jsonString(body, "reqId");
+            String response = jsonString(body, "response");
+            if (reqId != null && response != null && onPermissionResponse != null) {
+                onPermissionResponse.accept(reqId + ":" + response);
+            }
+        }));
+
+        httpServer.setExecutor(Executors.newCachedThreadPool());
+        httpServer.start();
+        running = true;
+        LOG.info("[ChatWebServer] started on port " + httpServer.getAddress().getPort()
+            + " for project: " + project.getBasePath());
+    }
+
+    public synchronized void stop() {
+        if (!running || httpServer == null) return;
+        // Signal all SSE clients to close
+        for (SseClient c : sseClients) c.close();
+        sseClients.clear();
+        httpServer.stop(0);
+        httpServer = null;
+        running = false;
+        LOG.info("[ChatWebServer] stopped for project: " + project.getBasePath());
+    }
+
+    public boolean isRunning() {
+        return running;
+    }
+
+    public int getPort() {
+        return httpServer != null ? httpServer.getAddress().getPort() : 0;
+    }
+
+    @Override
+    public void dispose() {
+        stop();
+    }
+
+    // ── Event pushing ─────────────────────────────────────────────────────────
+
+    /**
+     * Called from ChatConsolePanel.executeJs — mirrors every ChatController.* call to web clients.
+     * Must be callable from any thread.
+     */
+    public void pushJsEvent(@NotNull String js) {
+        if (!running) return;
+        String json;
+        int seq;
+        boolean isClear = js.equals("ChatController.clear()");
+        synchronized (this) {
+            seq = nextSeq++;
+            json = "{\"seq\":" + seq + ",\"js\":" + GSON.toJson(js) + "}";
+            if (isClear) {
+                // Don't persist clear in the log — new clients start with an empty page
+                eventLog.clear();
+            } else {
+                eventLog.add(json);
+                if (eventLog.size() > MAX_EVENTS) eventLog.remove(0);
+            }
+            // Track model from setCurrentModel calls
+            if (js.startsWith("ChatController.setCurrentModel(")) {
+                currentModel = extractFirstStringArg(js);
+            }
+        }
+        broadcast(json);
+    }
+
+    /**
+     * Pushes a transient notification event (not stored in log, only delivered to live clients).
+     */
+    public void pushNotification(@NotNull String title, @NotNull String body) {
+        if (!running) return;
+        int seq;
+        synchronized (this) {
+            seq = nextSeq++;
+        }
+        String json = "{\"seq\":" + seq + ",\"notification\":true,\"title\":"
+            + GSON.toJson(title) + ",\"body\":" + GSON.toJson(body) + "}";
+        broadcast(json);
+    }
+
+    public void setAgentRunning(boolean running) {
+        agentRunning = running;
+    }
+
+    // ── Handlers ─────────────────────────────────────────────────────────────
+
+    private void handleRoot(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        byte[] html = buildWebAppHtml().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/html; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+        exchange.sendResponseHeaders(200, html.length);
+        exchange.getResponseBody().write(html);
+        exchange.close();
+    }
+
+    private void handleManifest(HttpExchange exchange) throws IOException {
+        String manifest = "{"
+            + "\"name\":\"AgentBridge\","
+            + "\"short_name\":\"AgentBridge\","
+            + "\"start_url\":\"/\","
+            + "\"display\":\"standalone\","
+            + "\"theme_color\":\"#2b2b2b\","
+            + "\"background_color\":\"#2b2b2b\","
+            + "\"icons\":[{\"src\":\"/icon.svg\",\"sizes\":\"any\",\"type\":\"image/svg+xml\"}]"
+            + "}";
+        sendJson(exchange, manifest);
+    }
+
+    private void handleServiceWorker(HttpExchange exchange) throws IOException {
+        String sw = "self.addEventListener('install',()=>self.skipWaiting());\n"
+            + "self.addEventListener('activate',e=>e.waitUntil(clients.claim()));\n"
+            + "self.addEventListener('message',e=>{\n"
+            + "  if(e.data&&e.data.type==='SHOW_NOTIFICATION'){\n"
+            + "    e.waitUntil(self.registration.showNotification(e.data.title||'AgentBridge',{body:e.data.body||'',icon:'/icon.svg',tag:'agentbridge'}));\n"
+            + "  }\n"
+            + "});\n";
+        byte[] bytes = sw.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/javascript; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    private void handleSse(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        int fromSeq = parseFromQuery(exchange.getRequestURI().getQuery());
+
+        exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
+        exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+        exchange.getResponseHeaders().set("Connection", "keep-alive");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.sendResponseHeaders(200, 0);
+
+        SseClient client = new SseClient();
+        List<String> snapshot;
+        synchronized (this) {
+            snapshot = new ArrayList<>(eventLog);
+            sseClients.add(client);
+        }
+
+        try {
+            OutputStream out = exchange.getResponseBody();
+            // Replay buffered events newer than fromSeq
+            for (String ev : snapshot) {
+                if (extractSeq(ev) > fromSeq) {
+                    writeSse(out, ev);
+                }
+            }
+            // Stream live events
+            while (running) {
+                String ev = client.queue.poll(20, TimeUnit.SECONDS);
+                if (ev == null) {
+                    // Keep-alive comment
+                    out.write(": ping\n\n".getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                } else if (ev.equals(SseClient.CLOSE_SIGNAL)) {
+                    break;
+                } else {
+                    writeSse(out, ev);
+                }
+            }
+        } catch (IOException | InterruptedException ignored) {
+            // Client disconnected
+        } finally {
+            sseClients.remove(client);
+            try {
+                exchange.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void handleState(HttpExchange exchange) throws IOException {
+        List<String> snapshot;
+        int seq;
+        synchronized (this) {
+            snapshot = new ArrayList<>(eventLog);
+            seq = nextSeq - 1;
+        }
+        StringBuilder sb = new StringBuilder("{\"seq\":").append(seq)
+            .append(",\"events\":[");
+        for (int i = 0; i < snapshot.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(snapshot.get(i));
+        }
+        sb.append("],\"info\":").append(buildInfoJson()).append("}");
+        sendJson(exchange, sb.toString());
+    }
+
+    private void handleInfo(HttpExchange exchange) throws IOException {
+        sendJson(exchange, buildInfoJson());
+    }
+
+    private void handleAction(HttpExchange exchange, Consumer<String> handler) throws IOException {
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+
+        if ("OPTIONS".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            handler.accept(body);
+            exchange.sendResponseHeaders(204, -1);
+        } catch (Exception e) {
+            LOG.warn("[ChatWebServer] action handler error", e);
+            exchange.sendResponseHeaders(500, -1);
+        }
+        exchange.close();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void broadcast(String json) {
+        for (SseClient c : sseClients) c.offer(json);
+    }
+
+    private static void writeSse(OutputStream out, String json) throws IOException {
+        byte[] bytes = ("data: " + json + "\n\n").getBytes(StandardCharsets.UTF_8);
+        out.write(bytes);
+        out.flush();
+    }
+
+    private void serveClasspath(HttpExchange exchange, String resourcePath, String contentType) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
+            if (is == null) {
+                exchange.sendResponseHeaders(404, -1);
+                exchange.close();
+                return;
+            }
+            byte[] bytes = is.readAllBytes();
+            exchange.getResponseHeaders().set("Content-Type", contentType);
+            exchange.getResponseHeaders().set("Cache-Control", "public, max-age=3600");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+        }
+        exchange.close();
+    }
+
+    private void sendJson(HttpExchange exchange, String json) throws IOException {
+        byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.sendResponseHeaders(200, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    private String buildInfoJson() {
+        return "{\"project\":" + GSON.toJson(projectName)
+            + ",\"model\":" + GSON.toJson(currentModel)
+            + ",\"running\":" + agentRunning + "}";
+    }
+
+    private static int parseFromQuery(@Nullable String query) {
+        if (query == null) return 0;
+        for (String part : query.split("&")) {
+            if (part.startsWith("from=")) {
+                try {
+                    return Integer.parseInt(part.substring(5));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        return 0;
+    }
+
+    private static int extractSeq(String json) {
+        // Fast extraction of "seq":N from JSON string (avoids full parse)
+        int idx = json.indexOf("\"seq\":");
+        if (idx < 0) return 0;
+        int start = idx + 6;
+        int end = start;
+        while (end < json.length() && Character.isDigit(json.charAt(end))) end++;
+        try {
+            return Integer.parseInt(json.substring(start, end));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Extracts the first single-quoted string argument from a JS call like ChatController.fn('value')
+     */
+    private static String extractFirstStringArg(String js) {
+        int start = js.indexOf('\'');
+        if (start < 0) return "";
+        int end = js.indexOf('\'', start + 1);
+        if (end < 0) return "";
+        return js.substring(start + 1, end);
+    }
+
+    private static @Nullable String jsonString(String body, String key) {
+        try {
+            @SuppressWarnings("unchecked")
+            var map = new Gson().fromJson(body, java.util.Map.class);
+            Object v = map.get(key);
+            return v != null ? v.toString() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // ── Web app HTML ──────────────────────────────────────────────────────────
+
+    private String buildWebAppHtml() {
+        return "<!DOCTYPE html>\n"
+            + "<html lang=\"en\">\n"
+            + "<head>\n"
+            + "  <meta charset=\"utf-8\">\n"
+            + "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">\n"
+            + "  <title>AgentBridge \u2014 " + escHtml(projectName) + "</title>\n"
+            + "  <link rel=\"manifest\" href=\"/manifest.json\">\n"
+            + "  <link rel=\"stylesheet\" href=\"/chat.css\">\n"
+            + "  <style>\n"
+            + WEB_APP_CSS
+            + "  </style>\n"
+            + "</head>\n"
+            + "<body>\n"
+            + "  <div id=\"ab-offline\">Connection lost, reconnecting\u2026</div>\n"
+            + "  <div id=\"ab-header\">\n"
+            + "    <div id=\"ab-title\">AgentBridge \u2014 " + escHtml(projectName) + "</div>\n"
+            + "    <div id=\"ab-model\"></div>\n"
+            + "    <div id=\"ab-status\" title=\"Connecting\u2026\"></div>\n"
+            + "  </div>\n"
+            + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
+            + "  <div id=\"ab-footer\">\n"
+            + "    <textarea id=\"ab-input\" rows=\"1\" placeholder=\"Message\u2026\"></textarea>\n"
+            + "    <div id=\"ab-btns\">\n"
+            + "      <button id=\"ab-send\">Send</button>\n"
+            + "      <button id=\"ab-nudge\" title=\"Nudge agent with this text\">Nudge</button>\n"
+            + "    </div>\n"
+            + "  </div>\n"
+            + "  <script src=\"/chat.bundle.js\"></script>\n"
+            + "  <script>\n"
+            + WEB_APP_JS
+            + "  </script>\n"
+            + "</body>\n"
+            + "</html>\n";
+    }
+
+    private static String escHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
+    }
+
+    // ── Web app CSS ───────────────────────────────────────────────────────────
+
+    private static final String WEB_APP_CSS = ""
+        + "html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--fg);}\n"
+        + "body{display:flex;flex-direction:column;height:100dvh;font-family:var(--font-family);font-size:var(--font-size);}\n"
+        + "#ab-offline{display:none;position:fixed;top:0;left:0;right:0;background:var(--error);color:#fff;text-align:center;padding:4px 8px;font-size:.85em;z-index:200;}\n"
+        + "#ab-offline.visible{display:block;}\n"
+        + "#ab-header{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--fg-a16);background:var(--bg);min-height:36px;}\n"
+        + "#ab-title{font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n"
+        + "#ab-model{font-size:.82em;color:var(--fg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}\n"
+        + "#ab-status{width:8px;height:8px;border-radius:50%;background:var(--fg-a16);flex:0 0 8px;transition:background .3s;}\n"
+        + "#ab-status.connected{background:var(--kind-execute);}\n"
+        + "#ab-status.running{background:var(--agent);animation:ab-pulse 1.5s infinite;}\n"
+        + "@keyframes ab-pulse{0%,100%{opacity:1}50%{opacity:.35}}\n"
+        + "#ab-chat{flex:1;overflow:hidden;position:relative;}\n"
+        + "chat-container{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}\n"
+        + "#ab-footer{flex:0 0 auto;border-top:1px solid var(--fg-a16);padding:6px 8px;display:flex;gap:6px;align-items:flex-end;background:var(--bg);padding-bottom:max(6px,env(safe-area-inset-bottom));}\n"
+        + "#ab-input{flex:1;border:1px solid var(--fg-a16);border-radius:var(--r-md);background:var(--fg-a05);color:var(--fg);padding:6px 8px;font:inherit;resize:none;min-height:36px;max-height:120px;overflow-y:auto;outline:none;}\n"
+        + "#ab-input:focus{border-color:var(--user-a25);}\n"
+        + "#ab-btns{display:flex;flex-direction:column;gap:4px;}\n"
+        + "#ab-send{border:none;border-radius:var(--r-md);padding:6px 10px;cursor:pointer;font:inherit;background:var(--user-a12);color:var(--user);font-size:.88em;white-space:nowrap;}\n"
+        + "#ab-send:hover{background:var(--user-a16);}\n"
+        + "#ab-nudge{border:none;border-radius:var(--r-md);padding:6px 10px;cursor:pointer;font:inherit;background:var(--tool-a08);color:var(--tool);font-size:.88em;white-space:nowrap;}\n"
+        + "#ab-nudge:hover{background:var(--tool-a16);}\n"
+        + "#ab-send:disabled,#ab-nudge:disabled{opacity:.38;cursor:default;}\n"
+        + "/* Disable tool chip clicks in web context */\n"
+        + "tool-chip{pointer-events:none;}\n"
+        + "tool-chip .chip-expand{display:none;}\n";
+
+    // ── Web app JS ────────────────────────────────────────────────────────────
+
+    private static final String WEB_APP_JS = ""
+        // Bridge: replaces native Kotlin bridge with fetch-based implementations
+        + "window._bridge={"
+        + "openFile:()=>{},"
+        + "openUrl:url=>window.open(url,'_blank'),"
+        + "setCursor:c=>{document.body.style.cursor=c;},"
+        + "loadMore:()=>webPost('/load-more',{}),"
+        + "quickReply:text=>webPost('/reply',{text}),"
+        + "permissionResponse:data=>{"
+        + "  const parts=data.split(':');const resp=parts.pop();const reqId=parts.join(':');"
+        + "  webPost('/permission',{reqId,response:resp});"
+        + "},"
+        + "openScratch:()=>{},"
+        + "showToolPopup:()=>{},"
+        + "cancelNudge:id=>webPost('/cancel-nudge',{id})"
+        + "};\n"
+        + "function webPost(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}\n"
+        // DOM refs
+        + "const statusDot=document.getElementById('ab-status');\n"
+        + "const modelEl=document.getElementById('ab-model');\n"
+        + "const offlineEl=document.getElementById('ab-offline');\n"
+        + "const inputEl=document.getElementById('ab-input');\n"
+        + "const sendBtn=document.getElementById('ab-send');\n"
+        + "const nudgeBtn=document.getElementById('ab-nudge');\n"
+        // Track agent state via ChatController overrides
+        + "let agentRunning=false;\n"
+        + "const _origWI=ChatController.showWorkingIndicator.bind(ChatController);\n"
+        + "ChatController.showWorkingIndicator=function(){_origWI();agentRunning=true;updateButtons();};\n"
+        + "const _origFT=ChatController.finalizeTurn.bind(ChatController);\n"
+        + "ChatController.finalizeTurn=function(...a){_origFT(...a);agentRunning=false;updateButtons();};\n"
+        + "const _origCA=ChatController.cancelAllRunning.bind(ChatController);\n"
+        + "ChatController.cancelAllRunning=function(){_origCA();agentRunning=false;updateButtons();};\n"
+        // Track model display
+        + "const _origSCM=ChatController.setCurrentModel.bind(ChatController);\n"
+        + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):''};\n"
+        + "function updateButtons(){"
+        + "  nudgeBtn.disabled=!agentRunning;"
+        + "  statusDot.className=agentRunning?'running':'connected';"
+        + "}\n"
+        // Info fetch
+        + "fetch('/info').then(r=>r.json()).then(info=>{"
+        + "  if(info.model)modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);"
+        + "  agentRunning=info.running||false;updateButtons();"
+        + "}).catch(()=>{});\n"
+        // State load + SSE connect
+        + "let lastSeq=0;\n"
+        + "let sseRetry=null;\n"
+        + "fetch('/state').then(r=>r.json()).then(st=>{"
+        + "  (st.events||[]).forEach(ev=>processEvent(ev,true));"
+        + "  lastSeq=st.seq||0;"
+        + "  connectSSE();"
+        + "}).catch(()=>connectSSE());\n"
+        // Event processing
+        + "function processEvent(ev,replaying){"
+        + "  if(ev.notification){if(!replaying)showNotification(ev.title||'AgentBridge',ev.body||'');return;}\n"
+        + "  if(ev.js){try{(0,eval)(ev.js);}catch(e){console.warn('event eval:',e,ev.js&&ev.js.substring(0,80));}}\n"
+        + "  if(ev.seq>lastSeq)lastSeq=ev.seq;"
+        + "}\n"
+        // SSE
+        + "function connectSSE(){"
+        + "  const es=new EventSource('/events?from='+lastSeq);"
+        + "  es.onopen=()=>{statusDot.className=agentRunning?'running':'connected';offlineEl.classList.remove('visible');};"
+        + "  es.onmessage=e=>{"
+        + "    try{const ev=JSON.parse(e.data);if(!ev.seq||ev.seq>lastSeq){processEvent(ev,false);if(ev.seq)lastSeq=ev.seq;}}catch(err){}"
+        + "  };"
+        + "  es.onerror=()=>{"
+        + "    es.close();statusDot.className='';offlineEl.classList.add('visible');"
+        + "    clearTimeout(sseRetry);sseRetry=setTimeout(connectSSE,3000);"
+        + "  };"
+        + "}\n"
+        // Notifications
+        + "function showNotification(title,body){"
+        + "  if(navigator.serviceWorker&&navigator.serviceWorker.controller){"
+        + "    navigator.serviceWorker.controller.postMessage({type:'SHOW_NOTIFICATION',title,body});"
+        + "  }else if('Notification'in window&&Notification.permission==='granted'){"
+        + "    try{new Notification(title,{body,icon:'/icon.svg',tag:'ab'});}catch(e){}"
+        + "  }"
+        + "}\n"
+        + "function reqNotifPerm(){if('Notification'in window&&Notification.permission==='default')Notification.requestPermission();}\n"
+        + "document.addEventListener('click',reqNotifPerm,{once:true});\n"
+        // Quick-reply bridge (ask_user responses)
+        + "document.addEventListener('quick-reply',e=>window._bridge.quickReply(e.detail.text));\n"
+        // Input auto-resize
+        + "inputEl.addEventListener('input',()=>{"
+        + "  inputEl.style.height='auto';"
+        + "  inputEl.style.height=Math.min(inputEl.scrollHeight,120)+'px';"
+        + "});\n"
+        + "inputEl.addEventListener('keydown',e=>{"
+        + "  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendPrompt();}"
+        + "});\n"
+        // Send/nudge actions
+        + "sendBtn.onclick=sendPrompt;\n"
+        + "nudgeBtn.onclick=sendNudge;\n"
+        + "nudgeBtn.disabled=true;\n"
+        + "function sendPrompt(){"
+        + "  const t=inputEl.value.trim();if(!t)return;"
+        + "  inputEl.value='';inputEl.style.height='auto';"
+        + "  webPost('/prompt',{text:t});"
+        + "}\n"
+        + "function sendNudge(){"
+        + "  const t=inputEl.value.trim();if(!t)return;"
+        + "  inputEl.value='';inputEl.style.height='auto';"
+        + "  webPost('/nudge',{text:t});"
+        + "}\n"
+        // PWA service worker
+        + "if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});\n";
+
+    // ── SSE client ────────────────────────────────────────────────────────────
+
+    private static final class SseClient {
+        static final String CLOSE_SIGNAL = "__close__";
+        final LinkedBlockingQueue<String> queue = new LinkedBlockingQueue<>(300);
+
+        boolean offer(String data) {
+            return queue.offer(data);
+        }
+
+        void close() {
+            queue.offer(CLOSE_SIGNAL);
+        }
+    }
+}

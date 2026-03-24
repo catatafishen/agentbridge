@@ -292,6 +292,10 @@
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService"/>
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerSettings"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ChatWebServer"/>
 
     <!-- MCP HTTP server (speaks MCP protocol, used by agent CLI via McpStdioProxy) -->
     <projectService
@@ -404,6 +408,13 @@
       instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
       displayName="Tool Permissions"/>
+
+    <!-- ── Web Access ── -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.settings"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.webAccess"
+      displayName="Web Access"/>
 
     <!-- Start PSI Bridge when the project opens -->
     <postStartupActivity

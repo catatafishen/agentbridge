@@ -33,6 +33,17 @@ class PsiBridgeStartup : ProjectActivity {
                 LOG.error("Failed to auto-start MCP HTTP server", e)
             }
         }
+
+        // Auto-start web chat server if enabled
+        val webSettings = com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerSettings.getInstance(project)
+        if (webSettings.isEnabled) {
+            try {
+                com.github.catatafishen.ideagentforcopilot.services.ChatWebServer.getInstance(project)?.start()
+                LOG.info("Web chat server auto-started on port ${webSettings.port}")
+            } catch (e: Exception) {
+                LOG.error("Failed to auto-start web chat server", e)
+            }
+        }
     }
 
     /**

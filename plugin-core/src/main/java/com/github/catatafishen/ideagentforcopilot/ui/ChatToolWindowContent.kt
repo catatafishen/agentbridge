@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException
 import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
+import com.github.catatafishen.ideagentforcopilot.services.ChatWebServer
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
@@ -709,6 +710,7 @@ class ChatToolWindowContent(
 
     private fun setSendingState(sending: Boolean) {
         isSending = sending
+        ChatWebServer.getInstance(project)?.setAgentRunning(sending)
         if (!sending) {
             // If nudge was never consumed (no tool calls happened), remove bubble and restore text
             val nudgeId = pendingNudgeId
@@ -1326,6 +1328,55 @@ class ChatToolWindowContent(
             }
         }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
+
+        ChatWebServer.getInstance(project)?.also { ws ->
+            ws.onSendPrompt = { prompt ->
+                ApplicationManager.getApplication().invokeLater { sendPromptDirectly(prompt) }
+            }
+            ws.onQuickReply = { text ->
+                ApplicationManager.getApplication().invokeLater {
+                    if (!consolePanel.consumePendingAskUserResponse(text)) {
+                        sendQuickReply(text)
+                    }
+                }
+            }
+            ws.onNudge = { text ->
+                ApplicationManager.getApplication().invokeLater {
+                    if (isSending) {
+                        val id = System.currentTimeMillis().toString()
+                        pendingNudgeId = id
+                        pendingNudgeText = text
+                        consolePanel.showNudgeBubble(id, text)
+                        val psiBridge = com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
+                        psiBridge.setPendingNudge(text)
+                        psiBridge.setOnNudgeConsumed {
+                            pendingNudgeId = null
+                            pendingNudgeText = null
+                            ApplicationManager.getApplication().invokeLater { consolePanel.resolveNudgeBubble(id) }
+                        }
+                    }
+                }
+            }
+            ws.onStop = {
+                ApplicationManager.getApplication().invokeLater {
+                    if (isSending) {
+                        promptOrchestrator.stop()
+                        setSendingState(false)
+                    }
+                }
+            }
+            ws.onCancelNudge = { id ->
+                ApplicationManager.getApplication().invokeLater {
+                    chatConsolePanel.onCancelNudge?.invoke(id)
+                }
+            }
+            ws.onPermissionResponse = java.util.function.Consumer { data ->
+                ApplicationManager.getApplication().invokeLater {
+                    chatConsolePanel.handleWebPermissionResponse(data)
+                }
+            }
+        }
+
         return consolePanel.component
     }
 

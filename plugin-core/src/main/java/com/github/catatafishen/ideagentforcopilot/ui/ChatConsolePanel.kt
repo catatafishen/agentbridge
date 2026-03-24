@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.services.ChatWebServer
 import com.github.catatafishen.ideagentforcopilot.services.ToolChipRegistry
 import com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ArgumentAwareRenderer
@@ -594,6 +595,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         executeJs("ChatController.finalizeTurn('$currentTurnId',$statsJson)")
         ApplicationManager.getApplication().invokeLater { browser?.component?.repaint() }
+        ChatWebServer.getInstance(project)?.pushNotification("Turn complete", "Agent finished ($toolCallCount tool calls)")
     }
 
     override fun showQuickReplies(options: List<String>) {
@@ -921,6 +923,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 .info("executeJs (queued): $short")
             pendingJs.add(js)
         }
+        if (!js.startsWith("document.")) {
+            ChatWebServer.getInstance(project)?.pushJsEvent(js)
+        }
     }
 
     private fun formatToolSubtitle(baseName: String, arguments: String?): String? {
@@ -1068,6 +1073,19 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     // ── Permission requests ────────────────────────────────────────
 
+    fun handleWebPermissionResponse(data: String) {
+        val colonIdx = data.indexOf(':')
+        if (colonIdx > 0) {
+            val reqId = data.substring(0, colonIdx)
+            val response = when (data.substring(colonIdx + 1)) {
+                "once" -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_ONCE
+                "session" -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.ALLOW_SESSION
+                else -> com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse.DENY
+            }
+            pendingPermissionCallbacks.remove(reqId)?.invoke(response)
+        }
+    }
+
     override fun showPermissionRequest(
         reqId: String,
         toolDisplayName: String,
@@ -1097,6 +1115,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val optionJson = options.joinToString(",") { "'${escJs(it)}'" }
         val turnId = currentTurnId.ifEmpty { "t${turnCounter++}".also { currentTurnId = it } }
         executeJs("window.showAskUserRequest('$turnId','main','$safeId','$safeQuestion',[$optionJson]);")
+        ChatWebServer.getInstance(project)?.pushNotification("Agent needs your input", question.take(100))
     }
 
     override fun hasPendingAskUserRequest(): Boolean = activeAskUserRequestId != null
