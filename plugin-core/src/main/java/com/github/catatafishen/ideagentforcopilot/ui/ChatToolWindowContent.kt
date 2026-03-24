@@ -723,8 +723,9 @@ class ChatToolWindowContent(
                 psiBridge.setOnNudgeConsumed(null)
                 ApplicationManager.getApplication().invokeLater {
                     consolePanel.removeNudgeBubble(nudgeId)
-                    if (nudgeText != null && promptTextArea.text.isBlank()) {
+                    if (nudgeText != null) {
                         promptTextArea.text = nudgeText
+                        onSendStopClicked()
                     }
                 }
             }
@@ -1397,12 +1398,11 @@ class ChatToolWindowContent(
     private fun registerEnterSend(contentComponent: JComponent) {
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) {
-                if (
-                    promptTextArea.text.isNotBlank() &&
-                    authService.pendingAuthError == null &&
-                    (!isSending || consolePanel.hasPendingAskUserRequest())
-                ) {
-                    onSendStopClicked()
+                if (promptTextArea.text.isBlank() || authService.pendingAuthError != null) return
+                when {
+                    consolePanel.hasPendingAskUserRequest() -> onSendStopClicked()
+                    isSending -> onNudgeClicked()
+                    else -> onSendStopClicked()
                 }
             }
         }.registerCustomShortcutSet(
@@ -1433,7 +1433,7 @@ class ChatToolWindowContent(
 
     private fun registerCtrlEnterNudge(contentComponent: JComponent) {
         object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) = onNudgeClicked()
+            override fun actionPerformed(e: AnActionEvent) = onForceStopAndSend()
         }.registerCustomShortcutSet(
             CustomShortcutSet(
                 KeyStroke.getKeyStroke(
@@ -1443,6 +1443,27 @@ class ChatToolWindowContent(
             ),
             contentComponent
         )
+    }
+
+    private fun onForceStopAndSend() {
+        val rawText = promptTextArea.text.trim()
+        if (rawText.isEmpty()) return
+        if (isSending) {
+            // Discard any pending nudge before stopping so setSendingState doesn't auto-send it
+            if (pendingNudgeId != null) {
+                val nudgeId = pendingNudgeId!!
+                pendingNudgeId = null
+                pendingNudgeText = null
+                val psiBridge = com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService.getInstance(project)
+                psiBridge.setPendingNudge(null)
+                psiBridge.setOnNudgeConsumed(null)
+                ApplicationManager.getApplication().invokeLater { consolePanel.removeNudgeBubble(nudgeId) }
+            }
+            promptOrchestrator.stop()
+            setSendingState(false)
+        }
+        promptTextArea.text = rawText
+        onSendStopClicked()
     }
 
     private fun handlePastePreprocess(
