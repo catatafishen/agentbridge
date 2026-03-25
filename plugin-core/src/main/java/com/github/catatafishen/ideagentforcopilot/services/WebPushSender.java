@@ -112,7 +112,11 @@ public final class WebPushSender {
      * @param payload small plaintext payload (e.g. event ID JSON)
      */
     public void sendToAll(@NotNull String payload) {
-        if (subscriptions.isEmpty()) return;
+        if (subscriptions.isEmpty()) {
+            LOG.debug("[WebPush] No subscriptions registered, skipping push");
+            return;
+        }
+        LOG.debug("[WebPush] Sending to " + subscriptions.size() + " subscription(s)");
         byte[] plaintext = payload.getBytes(StandardCharsets.UTF_8);
         for (PushSubscription sub : subscriptions.values()) {
             CompletableFuture.runAsync(() -> {

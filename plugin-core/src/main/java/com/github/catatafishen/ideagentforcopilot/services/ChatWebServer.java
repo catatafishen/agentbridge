@@ -452,9 +452,15 @@ public final class ChatWebServer implements Disposable {
         broadcast(json);
         // Also send via Web Push for devices with the browser closed
         WebPushSender wp = webPush; // read volatile once; null if not yet initialised
-        if (wp != null && wp.hasSubscriptions()) {
-            String payload = "{\"seq\":" + seq + ",\"title\":" + GSON.toJson(title) + "}";
-            wp.sendToAll(payload);
+        if (wp != null) {
+            if (wp.hasSubscriptions()) {
+                String payload = "{\"seq\":" + seq + ",\"title\":" + GSON.toJson(title) + "}";
+                wp.sendToAll(payload);
+            } else {
+                LOG.debug("[Chat] Web Push configured but no subscriptions registered for: " + title);
+            }
+        } else {
+            LOG.debug("[Chat] Web Push not initialized yet for: " + title);
         }
     }
 
