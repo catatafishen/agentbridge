@@ -91,6 +91,9 @@ public final class ChatWebServer implements Disposable {
     // ── SSE clients ───────────────────────────────────────────────────────────
     private final List<SseClient> sseClients = new CopyOnWriteArrayList<>();
 
+    // ── Web Push ──────────────────────────────────────────────────────────────
+    private volatile WebPushSender webPush;
+
     // ── Current state (for /info) ─────────────────────────────────────────────
     private volatile String currentModel = "";
     private volatile String projectName = "";
@@ -142,6 +145,45 @@ public final class ChatWebServer implements Disposable {
     public void broadcastTransient(String js) {
         String event = "{\"js\":" + GSON.toJson(js) + "}";
         for (SseClient c : sseClients) c.offer(event);
+    }
+
+    // ── Web Push helpers ──────────────────────────────────────────────────────
+
+    /** Returns (creating if needed) the {@link WebPushSender}, or {@code null} if key gen fails. */
+    private @Nullable WebPushSender getOrCreateWebPush() {
+        if (webPush != null) return webPush;
+        synchronized (this) {
+            if (webPush != null) return webPush;
+            try {
+                ChatWebServerSettings settings = ChatWebServerSettings.getInstance(project);
+                java.security.KeyPair kp = WebPushSender.deserializeKeyPair(
+                    settings.getVapidPrivateKey(), settings.getVapidPublicKey());
+                if (kp == null) {
+                    kp = WebPushSender.generateVapidKeyPair();
+                    String[] serialized = WebPushSender.serializeKeyPair(kp);
+                    settings.setVapidPrivateKey(serialized[0]);
+                    settings.setVapidPublicKey(serialized[1]);
+                    LOG.info("[ChatWebServer] Generated new VAPID key pair");
+                }
+                webPush = new WebPushSender(kp);
+            } catch (Exception e) {
+                LOG.warn("[ChatWebServer] Failed to initialise WebPushSender: " + e.getMessage());
+                return null;
+            }
+        }
+        return webPush;
+    }
+
+    /** Parses a Web Push subscription JSON into a {@link WebPushSender.PushSubscription}. */
+    private static @Nullable WebPushSender.PushSubscription parseSubscription(@NotNull String json) {
+        String endpoint = jsonString(json, "endpoint");
+        int keysIdx = json.indexOf("\"keys\"");
+        if (endpoint == null || keysIdx < 0) return null;
+        String keysBlock = json.substring(keysIdx);
+        String p256dh = jsonString(keysBlock, "p256dh");
+        String auth = jsonString(keysBlock, "auth");
+        if (p256dh == null || auth == null) return null;
+        return new WebPushSender.PushSubscription(endpoint, p256dh, auth);
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -257,6 +299,17 @@ public final class ChatWebServer implements Disposable {
                 onPermissionResponse.accept(reqId + ":" + response);
             }
         }));
+        server.createContext("/push-subscribe", ex -> handleAction(ex, body -> {
+            WebPushSender wp = getOrCreateWebPush();
+            if (wp == null) return;
+            WebPushSender.PushSubscription sub = parseSubscription(body);
+            if (sub != null) wp.addSubscription(sub);
+        }));
+        server.createContext("/push-unsubscribe", ex -> handleAction(ex, body -> {
+            String endpoint = jsonString(body, "endpoint");
+            WebPushSender wp = webPush;
+            if (endpoint != null && wp != null) wp.removeSubscription(endpoint);
+        }));
         server.createContext("/disconnect", ex -> handleAction(ex, body -> {
             if (onDisconnect != null) onDisconnect.run();
         }));
@@ -360,7 +413,8 @@ public final class ChatWebServer implements Disposable {
     }
 
     /**
-     * Pushes a transient notification event (not stored in log, only delivered to live clients).
+     * Pushes a notification to live SSE clients and, if any Web Push subscriptions are registered,
+     * sends a Web Push to devices that may have the browser closed.
      */
     public void pushNotification(@NotNull String title, @NotNull String body) {
         if (!running) return;
@@ -371,6 +425,12 @@ public final class ChatWebServer implements Disposable {
         String json = "{\"seq\":" + seq + ",\"notification\":true,\"title\":"
             + GSON.toJson(title) + ",\"body\":" + GSON.toJson(body) + "}";
         broadcast(json);
+        // Also send via Web Push for devices with the browser closed
+        WebPushSender wp = webPush; // read volatile once; null if not yet initialised
+        if (wp != null && wp.hasSubscriptions()) {
+            String payload = "{\"seq\":" + seq + ",\"title\":" + GSON.toJson(title) + "}";
+            wp.sendToAll(payload);
+        }
     }
 
     public void setAgentRunning(boolean running) {
@@ -714,6 +774,23 @@ public final class ChatWebServer implements Disposable {
             + "</body></html>';"
             + "e.respondWith(fetch(e.request).catch(()=>new Response(offlineHtml,{status:503,headers:{'Content-Type':'text/html'}})));"
             + "});\n"
+            // Web Push: fetch event data from local server and show notification
+            + "self.addEventListener('push',e=>{\n"
+            + "  e.waitUntil((async()=>{\n"
+            + "    let title='AgentBridge',body='';\n"
+            + "    try{\n"
+            + "      const data=e.data?JSON.parse(e.data.text()):{};\n"
+            + "      title=data.title||'AgentBridge';\n"
+            + "      if(data.seq){\n"
+            + "        const r=await fetch('/state');\n"
+            + "        const st=await r.json();\n"
+            + "        const ev=(st.events||[]).slice().reverse().find(ev=>ev.notification&&ev.seq>=data.seq);\n"
+            + "        if(ev&&ev.body)body=ev.body;\n"
+            + "      }\n"
+            + "    }catch(err){}\n"
+            + "    await self.registration.showNotification(title,{body,icon:'/icon-192.png',tag:'agentbridge',requireInteraction:false});\n"
+            + "  })());\n"
+            + "});\n"
             + "self.addEventListener('message',e=>{\n"
             + "  if(e.data&&e.data.type==='SHOW_NOTIFICATION'){\n"
             + "    const opts={body:e.data.body||'',icon:'/icon-192.png',tag:'agentbridge',requireInteraction:false};\n"
@@ -1023,6 +1100,8 @@ public final class ChatWebServer implements Disposable {
             if (plugin != null) pluginVersion = plugin.getVersion();
         } catch (Exception ignored) {
         }
+        WebPushSender wp = getOrCreateWebPush();
+        String vapidKey = wp != null ? wp.getVapidPublicKeyBase64() : "";
         return "{\"project\":" + GSON.toJson(projectName)
             + ",\"model\":" + GSON.toJson(currentModel)
             + ",\"running\":" + agentRunning
@@ -1030,7 +1109,8 @@ public final class ChatWebServer implements Disposable {
             + ",\"version\":" + GSON.toJson(pluginVersion)
             + ",\"certIps\":" + GSON.toJson(certIps)
             + ",\"models\":" + modelsJson
-            + ",\"profiles\":" + profilesJson + "}";
+            + ",\"profiles\":" + profilesJson
+            + ",\"vapidKey\":" + GSON.toJson(vapidKey) + "}";
     }
 
     private static int parseFromQuery(@Nullable String query) {
@@ -1447,7 +1527,25 @@ public final class ChatWebServer implements Disposable {
         + "    try{new Notification(title,{body,icon:'/icon.svg',tag:'ab'});}catch(e){}"
         + "  }"
         + "}\n"
-        + "function reqNotifPerm(){if('Notification'in window&&Notification.permission==='default')Notification.requestPermission();}\n"
+        + "function subscribePush(vapidKey){"
+        + "  if(!('serviceWorker'in navigator&&'PushManager'in window))return;"
+        + "  navigator.serviceWorker.ready.then(reg=>{"
+        + "    reg.pushManager.getSubscription().then(existing=>{"
+        + "      if(existing){webPost('/push-subscribe',existing.toJSON()).catch(()=>{});return;}"
+        + "      const appKey=Uint8Array.from(atob(vapidKey.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));"
+        + "      reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:appKey})"
+        + "        .then(sub=>webPost('/push-subscribe',sub.toJSON()))"
+        + "        .catch(()=>{});"
+        + "    }).catch(()=>{});"
+        + "  }).catch(()=>{});"
+        + "}\n"
+        + "function reqNotifPerm(){"
+        + "  if('Notification'in window&&Notification.permission==='default'){"
+        + "    Notification.requestPermission().then(p=>{"
+        + "      if(p==='granted')fetch('/info').then(r=>r.json()).then(info=>{if(info.vapidKey)subscribePush(info.vapidKey);}).catch(()=>{});"
+        + "    });"
+        + "  }"
+        + "}\n"
         + "document.addEventListener('click',reqNotifPerm,{once:true});\n"
         // Quick-reply bridge (ask_user responses)
         + "document.addEventListener('quick-reply',e=>window._bridge.quickReply(e.detail.text));\n"
@@ -1466,8 +1564,13 @@ public final class ChatWebServer implements Disposable {
         + "  inputEl.value='';inputEl.style.height='auto';"
         + "  webPost(agentRunning?'/nudge':'/prompt',{text:t});"
         + "}\n"
-        // PWA service worker
-        + "if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});\n";
+        // Register service worker; once ready, subscribe to push if permission already granted
+        + "if('serviceWorker'in navigator){\n"
+        + "  navigator.serviceWorker.register('/sw.js').then(()=>{\n"
+        + "    if(Notification.permission==='granted')\n"
+        + "      fetch('/info').then(r=>r.json()).then(info=>{if(info.vapidKey)subscribePush(info.vapidKey);}).catch(()=>{});\n"
+        + "  }).catch(()=>{});\n"
+        + "}\n";
 
     // ── SSE client ────────────────────────────────────────────────────────────
 

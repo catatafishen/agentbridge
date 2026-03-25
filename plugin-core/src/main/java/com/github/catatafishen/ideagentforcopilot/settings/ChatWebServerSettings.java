@@ -57,10 +57,36 @@ public final class ChatWebServerSettings implements PersistentStateComponent<Cha
         myState = state;
     }
 
+    // ── VAPID key accessors ───────────────────────────────────────────────────
+
+    public @org.jetbrains.annotations.Nullable String getVapidPrivateKey() {
+        return myState.vapidPrivateKey;
+    }
+
+    public void setVapidPrivateKey(@org.jetbrains.annotations.Nullable String key) {
+        myState.vapidPrivateKey = key;
+    }
+
+    public @org.jetbrains.annotations.Nullable String getVapidPublicKey() {
+        return myState.vapidPublicKey;
+    }
+
+    public void setVapidPublicKey(@org.jetbrains.annotations.Nullable String key) {
+        myState.vapidPublicKey = key;
+    }
+
     public static class State {
         private int port = DEFAULT_PORT;
         private boolean enabled = false;
         private boolean httpsEnabled = true;
+        /**
+         * VAPID private key — base64url-encoded raw 32-byte P-256 scalar.
+         */
+        public String vapidPrivateKey = "";
+        /**
+         * VAPID public key — base64url-encoded uncompressed 65-byte P-256 point.
+         */
+        public String vapidPublicKey = "";
 
         public int getPort() {
             return port;
