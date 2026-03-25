@@ -1315,7 +1315,7 @@ public final class ChatWebServer implements Disposable {
             + "  </div>\n"
             + "  <script src=\"/chat.bundle.js\"></script>\n"
             + "  <script>\n"
-            + "    const ICON_SVG = " + escJs(iconSvg) + ";\n"
+            + "    window.ICON_SVG = " + escJs(iconSvg) + ";\n"
             + WEB_APP_JS
             + "  </script>\n"
             + "</body>\n"
@@ -1456,7 +1456,7 @@ public final class ChatWebServer implements Disposable {
         + "  mcpDot.className=agentRunning?'running':'connected';"
         + "  mcpText.textContent=agentRunning?'Running':'Ready';"
         + "  connectStopBtn.hidden=!agentRunning;"
-        + "  sendBtn.innerHTML=ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
+        + "  sendBtn.innerHTML=window.ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
         + "}\n"
         + "ChatController.setClientType=(type,iconSvg)=>{"
         + "  if(iconSvg)window.ICON_SVG=iconSvg.replace('<svg','<svg style=\"vertical-align:text-bottom;margin-right:4px\" fill=\"currentColor\" width=\"14\" height=\"14\"');"
