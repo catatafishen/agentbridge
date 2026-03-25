@@ -1269,7 +1269,7 @@ public final class ChatWebServer implements Disposable {
             + "  </div>\n"
             + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
             + "  <div id=\"ab-footer\">\n"
-            + "    <textarea id=\"ab-input\" rows=\"1\" placeholder=\"Message\u2026\"></textarea>\n"
+            + "    <textarea id=\"ab-input\" rows=\"1\" placeholder=\"Message\u2026\" enterkeyhint=\"send\"></textarea>\n"
             + "    <button id=\"ab-send\">" + iconSvg + "<span>Send</span></button>\n"
             + "  </div>\n"
             + "  <script src=\"/chat.bundle.js\"></script>\n"
