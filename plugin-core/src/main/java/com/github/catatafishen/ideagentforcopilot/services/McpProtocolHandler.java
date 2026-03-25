@@ -41,9 +41,9 @@ public final class McpProtocolHandler {
     private static final int RESOURCE_PAGE_SIZE = 200;
     private static final int RESOURCE_NOT_FOUND_ERROR = -32002;
 
-    private static final String SERVER_NAME = "ide-mcp-server";
-    private static final String SERVER_VERSION = "1.0.0";
-    private static final String PROTOCOL_VERSION = "2025-03-26";
+    private static final String SERVER_NAME = "agentbridge";
+    private static final String SERVER_VERSION = com.github.catatafishen.ideagentforcopilot.BuildInfo.getVersion();
+    private static final String PROTOCOL_VERSION = "2025-11-25";
     private static final String STARTUP_INSTRUCTIONS_URI = "resource://default-startup-instructions.md";
     private static final String RESOURCES_CURSOR_PREFIX = "resources:";
     private static final String RESOURCE_TEMPLATES_CURSOR_PREFIX = "resourceTemplates:";
