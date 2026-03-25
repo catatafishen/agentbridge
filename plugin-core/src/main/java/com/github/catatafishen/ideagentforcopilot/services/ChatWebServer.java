@@ -1,15 +1,14 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
+import com.github.catatafishen.ideagentforcopilot.BuildInfo;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerSettings;
 import com.github.catatafishen.ideagentforcopilot.ui.ChatTheme;
 import com.google.gson.Gson;
-import com.intellij.ide.plugins.PluginManagerCore;
 import com.intellij.ide.ui.LafManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.extensions.PluginId;
 import com.intellij.openapi.project.Project;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -1120,8 +1119,7 @@ public final class ChatWebServer implements Disposable {
                 LOG.warn("[ChatWebServer] Could not read cert SANs for /info", e);
             }
         }
-        String pluginVersion = "";
-        // Plugin version retrieval not available in current API
+        String pluginVersion = BuildInfo.getVersion();
         WebPushSender wp = getOrCreateWebPush();
         String vapidKey = wp != null ? wp.getVapidPublicKeyBase64() : "";
         return "{\"project\":" + GSON.toJson(projectName)
