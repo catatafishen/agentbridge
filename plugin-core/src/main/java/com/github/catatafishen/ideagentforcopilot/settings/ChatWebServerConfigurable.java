@@ -220,7 +220,7 @@ public final class ChatWebServerConfigurable implements Configurable {
             if (appQrPanel != null) appQrPanel.setUrl(url);
             if (certQrPanel != null && https) {
                 String host = ChatWebServer.getLanIp();
-                String certUrl = "http://" + (host != null ? host : "localhost") + ":" + ws.getPort() + "/cert.crt";
+                String certUrl = "http://" + (host != null ? host : "localhost") + ":" + ws.getHttpCertPort() + "/cert.crt";
                 certQrPanel.setUrl(certUrl);
             }
         }

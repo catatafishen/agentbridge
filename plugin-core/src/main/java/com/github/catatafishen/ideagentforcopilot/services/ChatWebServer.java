@@ -127,15 +127,16 @@ public final class ChatWebServer implements Disposable {
             }
         }
 
+        var executor = Executors.newCachedThreadPool();
+
         IOException lastError = null;
         for (int attempt = 0; attempt < 10; attempt++) {
             int tryPort = port + attempt;
             try {
                 if (https) {
                     httpsServer = HttpsServer.create(new InetSocketAddress("0.0.0.0", tryPort), 0);
-                } else {
-                    httpServer = HttpServer.create(new InetSocketAddress("0.0.0.0", tryPort), 0);
                 }
+                httpServer = HttpServer.create(new InetSocketAddress("0.0.0.0", tryPort + (https ? 1 : 0)), 0);
                 if (attempt > 0) settings.setPort(tryPort);
                 break;
             } catch (IOException e) {
@@ -151,12 +152,12 @@ public final class ChatWebServer implements Disposable {
             }
         }
 
-        boolean bound = https ? httpsServer != null : httpServer != null;
+        boolean bound = https ? (httpsServer != null && httpServer != null) : httpServer != null;
         if (!bound) throw new IOException("Cannot bind Chat Web Server to any port near " + port, lastError);
 
-        var executor = Executors.newCachedThreadPool();
-
+        httpServer.setExecutor(executor);
         if (https) {
+            registerContexts(httpsServer, false);
             SSLContext finalSslContext = sslContext;
             httpsServer.setHttpsConfigurator(new HttpsConfigurator(finalSslContext) {
                 @Override
@@ -165,14 +166,16 @@ public final class ChatWebServer implements Disposable {
                     params.setSSLParameters(sslParams);
                 }
             });
-            registerContexts(httpsServer);
             httpsServer.setExecutor(executor);
             httpsServer.start();
+
+            registerCertOnlyContext(httpServer);
+            httpServer.start();
             LOG.info("[ChatWebServer] started (HTTPS:" + httpsServer.getAddress().getPort()
+                + " + cert-HTTP:" + httpServer.getAddress().getPort()
                 + ") for project: " + project.getBasePath());
         } else {
-            registerContexts(httpServer);
-            httpServer.setExecutor(executor);
+            registerContexts(httpServer, true);
             httpServer.start();
             LOG.info("[ChatWebServer] started (HTTP:" + httpServer.getAddress().getPort()
                 + ") for project: " + project.getBasePath());
@@ -181,7 +184,8 @@ public final class ChatWebServer implements Disposable {
         running = true;
     }
 
-    private void registerContexts(HttpServer server) {
+    private void registerContexts(HttpServer server, boolean serveAll) {
+        if (!serveAll) return;
         server.createContext("/", this::handleRoot);
         server.createContext("/chat.css", ex -> serveClasspath(ex, "/chat/chat.css", "text/css; charset=utf-8"));
         server.createContext("/chat.bundle.js", ex -> serveClasspath(ex, "/chat/chat-components.js", "application/javascript; charset=utf-8"));
@@ -222,6 +226,10 @@ public final class ChatWebServer implements Disposable {
         }));
     }
 
+    private void registerCertOnlyContext(HttpServer server) {
+        server.createContext("/cert.crt", this::handleCert);
+    }
+
     public synchronized void stop() {
         if (!running) return;
         // Signal all SSE clients to close
@@ -247,6 +255,15 @@ public final class ChatWebServer implements Disposable {
         if (httpsServer != null) return httpsServer.getAddress().getPort();
         if (httpServer != null) return httpServer.getAddress().getPort();
         return 0;
+    }
+
+    /**
+     * Returns the port where the HTTP server is listening (for cert downloads).
+     * When HTTPS is enabled this is always a separate port from the main server.
+     */
+    public int getHttpCertPort() {
+        if (httpServer != null) return httpServer.getAddress().getPort();
+        return getPort();
     }
 
     /**
