@@ -549,7 +549,7 @@ public final class ChatWebServer implements Disposable {
         java.io.File serverCerFile = pluginDir.resolve("server.cer").toFile();
 
         try {
-            StringBuilder san = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1");
+            StringBuilder san = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1,ip:127.0.1.1");
             for (String ip : localIps) san.append(",ip:").append(ip);
 
             // 1. Generate CA key pair + long-lived self-signed CA cert
