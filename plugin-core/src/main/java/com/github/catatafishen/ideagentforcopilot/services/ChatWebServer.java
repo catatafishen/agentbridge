@@ -95,6 +95,9 @@ public final class ChatWebServer implements Disposable {
     private volatile String currentModel = "";
     private volatile String projectName = "";
     private volatile boolean agentRunning = false;
+    private volatile boolean connected = false;
+    private volatile String modelsJson = "[]";
+    private volatile String profilesJson = "[]";
 
     // ── Action callbacks (wired by ChatToolWindowContent) ─────────────────────
     public volatile Consumer<String> onSendPrompt;
@@ -106,6 +109,9 @@ public final class ChatWebServer implements Disposable {
      * Permission response: "reqId:deny" / "reqId:once" / "reqId:session"
      */
     public volatile Consumer<String> onPermissionResponse;
+    public volatile Runnable onDisconnect;
+    public volatile Consumer<String> onConnect;
+    public volatile Consumer<String> onSelectModel;
 
     public ChatWebServer(@NotNull Project project) {
         this.project = project;
@@ -114,6 +120,28 @@ public final class ChatWebServer implements Disposable {
 
     public static ChatWebServer getInstance(@NotNull Project project) {
         return PlatformApiCompat.getService(project, ChatWebServer.class);
+    }
+
+    // ── State setters (called by ChatToolWindowContent) ───────────────────────
+
+    public void setConnected(boolean value) {
+        this.connected = value;
+    }
+
+    public void setModelsJson(String json) {
+        this.modelsJson = json != null ? json : "[]";
+    }
+
+    public void setProfilesJson(String json) {
+        this.profilesJson = json != null ? json : "[]";
+    }
+
+    /**
+     * Sends a transient JS-eval event to all connected SSE clients (not stored in event log).
+     */
+    public void broadcastTransient(String js) {
+        String event = "{\"js\":" + GSON.toJson(js) + "}";
+        for (SseClient c : sseClients) c.offer(event);
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -228,6 +256,17 @@ public final class ChatWebServer implements Disposable {
             if (reqId != null && response != null && onPermissionResponse != null) {
                 onPermissionResponse.accept(reqId + ":" + response);
             }
+        }));
+        server.createContext("/disconnect", ex -> handleAction(ex, body -> {
+            if (onDisconnect != null) onDisconnect.run();
+        }));
+        server.createContext("/connect", ex -> handleAction(ex, body -> {
+            String profileId = jsonString(body, "profileId");
+            if (profileId != null && !profileId.isEmpty() && onConnect != null) onConnect.accept(profileId);
+        }));
+        server.createContext("/set-model", ex -> handleAction(ex, body -> {
+            String modelId = jsonString(body, "modelId");
+            if (modelId != null && !modelId.isEmpty() && onSelectModel != null) onSelectModel.accept(modelId);
         }));
     }
 
@@ -942,7 +981,7 @@ public final class ChatWebServer implements Disposable {
             }
             byte[] bytes = is.readAllBytes();
             exchange.getResponseHeaders().set("Content-Type", contentType);
-            exchange.getResponseHeaders().set("Cache-Control", "public, max-age=3600");
+            exchange.getResponseHeaders().set("Cache-Control", "no-cache");
             exchange.sendResponseHeaders(200, bytes.length);
             exchange.getResponseBody().write(bytes);
         }
@@ -987,8 +1026,11 @@ public final class ChatWebServer implements Disposable {
         return "{\"project\":" + GSON.toJson(projectName)
             + ",\"model\":" + GSON.toJson(currentModel)
             + ",\"running\":" + agentRunning
+            + ",\"connected\":" + connected
             + ",\"version\":" + GSON.toJson(pluginVersion)
-            + ",\"certIps\":" + GSON.toJson(certIps) + "}";
+            + ",\"certIps\":" + GSON.toJson(certIps)
+            + ",\"models\":" + modelsJson
+            + ",\"profiles\":" + profilesJson + "}";
     }
 
     private static int parseFromQuery(@Nullable String query) {
@@ -1121,7 +1163,21 @@ public final class ChatWebServer implements Disposable {
             + "  </div>\n"
             + "  <div id=\"ab-menu\" hidden>\n"
             + "    <div id=\"ab-menu-version\"></div>\n"
-            + "    <button id=\"ab-menu-reload\">Hard reload</button>\n"
+            + "    <div id=\"ab-menu-model-section\">\n"
+            + "      <label id=\"ab-menu-model-label\">Model</label>\n"
+            + "      <select id=\"ab-menu-model\"></select>\n"
+            + "    </div>\n"
+            + "    <button id=\"ab-menu-disconnect\">\u2715\ufe0f Disconnect ACP</button>\n"
+            + "    <div class=\"ab-menu-sep\"></div>\n"
+            + "    <button id=\"ab-menu-reload\">\ud83d\udd04 Hard reload</button>\n"
+            + "  </div>\n"
+            + "  <div id=\"ab-connect-page\" hidden>\n"
+            + "    <div id=\"ab-connect-inner\">\n"
+            + "      <div id=\"ab-connect-title\">Connect to ACP</div>\n"
+            + "      <select id=\"ab-connect-profile\"></select>\n"
+            + "      <button id=\"ab-connect-btn\">Connect</button>\n"
+            + "      <div id=\"ab-connect-status\"></div>\n"
+            + "    </div>\n"
             + "  </div>\n"
             + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
             + "  <div id=\"ab-footer\">\n"
@@ -1177,7 +1233,25 @@ public final class ChatWebServer implements Disposable {
         + "#ab-menu{position:fixed;top:44px;right:8px;z-index:150;background:var(--bg);border:1px solid var(--fg-a16);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);min-width:200px;padding:8px 0;}\n"
         + "#ab-menu-version{padding:6px 14px 8px;font-size:.82em;color:var(--fg-muted);border-bottom:1px solid var(--fg-a08);margin-bottom:4px;}\n"
         + "#ab-menu-reload{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--fg);cursor:pointer;padding:7px 14px;font:inherit;font-size:.9em;}\n"
-        + "#ab-menu-reload:hover{background:var(--fg-a08);}\n";
+        + "#ab-menu-reload:hover{background:var(--fg-a08);}\n"
+        + "#ab-menu-model-section{padding:6px 14px 8px;border-bottom:1px solid var(--fg-a08);}\n"
+        + "#ab-menu-model-label{display:block;font-size:.78em;color:var(--fg-muted);margin-bottom:4px;}\n"
+        + "#ab-menu-model{width:100%;background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:4px;padding:4px 6px;font:inherit;font-size:.88em;cursor:pointer;}\n"
+        + "#ab-menu-model:focus{outline:1px solid var(--user);}\n"
+        + "#ab-menu-disconnect{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--error,#e06c75);cursor:pointer;padding:7px 14px;font:inherit;font-size:.9em;}\n"
+        + "#ab-menu-disconnect:hover{background:var(--fg-a08);}\n"
+        + ".ab-menu-sep{height:1px;background:var(--fg-a08);margin:4px 0;}\n"
+        + "/* Connect page */\n"
+        + "#ab-connect-page{flex:1;display:none;align-items:center;justify-content:center;background:var(--bg);overflow:auto;}\n"
+        + "#ab-connect-page:not([hidden]){display:flex;}\n"
+        + "#ab-connect-inner{display:flex;flex-direction:column;gap:12px;width:min(340px,90vw);padding:24px;background:var(--bg);border:1px solid var(--fg-a16);border-radius:10px;}\n"
+        + "#ab-connect-title{font-weight:600;font-size:1.1em;}\n"
+        + "#ab-connect-profile{background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:6px;padding:7px 10px;font:inherit;cursor:pointer;}\n"
+        + "#ab-connect-profile:focus{outline:1px solid var(--user);}\n"
+        + "#ab-connect-btn{border:none;border-radius:6px;padding:9px 16px;background:var(--user-a12);color:var(--user);cursor:pointer;font:inherit;font-weight:600;font-size:.95em;}\n"
+        + "#ab-connect-btn:hover{background:var(--user-a16);}\n"
+        + "#ab-connect-btn:disabled{opacity:.4;cursor:default;}\n"
+        + "#ab-connect-status{font-size:.85em;color:var(--fg-muted);min-height:1.2em;}\n";
 
     // ── Web app JS ────────────────────────────────────────────────────────────
 
@@ -1209,6 +1283,14 @@ public final class ChatWebServer implements Disposable {
         + "const menuEl=document.getElementById('ab-menu');\n"
         + "const menuVersionEl=document.getElementById('ab-menu-version');\n"
         + "const menuReloadBtn=document.getElementById('ab-menu-reload');\n"
+        + "const menuModelSel=document.getElementById('ab-menu-model');\n"
+        + "const menuDisconnectBtn=document.getElementById('ab-menu-disconnect');\n"
+        + "const connectPageEl=document.getElementById('ab-connect-page');\n"
+        + "const connectProfileSel=document.getElementById('ab-connect-profile');\n"
+        + "const connectBtn=document.getElementById('ab-connect-btn');\n"
+        + "const connectStatusEl=document.getElementById('ab-connect-status');\n"
+        + "const chatAreaEl=document.getElementById('ab-chat');\n"
+        + "const footerEl=document.getElementById('ab-footer');\n"
         // Auto-scroll: track whether user is near the bottom
         + "let atBottom=true;\n"
         + "chatEl.addEventListener('scroll',()=>{"
@@ -1225,7 +1307,7 @@ public final class ChatWebServer implements Disposable {
         + "ChatController.cancelAllRunning=function(){_origCA();agentRunning=false;updateButtons();};\n"
         // Track model display
         + "const _origSCM=ChatController.setCurrentModel.bind(ChatController);\n"
-        + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):''};\n"
+        + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):'';syncModelSelect(m);};\n"
         + "function updateButtons(){"
         + "  statusDot.className=agentRunning?'running':'connected';"
         + "  sendBtn.innerHTML=ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
@@ -1234,12 +1316,43 @@ public final class ChatWebServer implements Disposable {
         + "  if(iconSvg)window.ICON_SVG=iconSvg.replace('<svg','<svg style=\"vertical-align:text-bottom;margin-right:4px\" fill=\"currentColor\" width=\"14\" height=\"14\"');"
         + "  updateButtons();"
         + "};\n"
+        // Connection state helpers
+        + "function showChatView(){"
+        + "  connectPageEl.hidden=true;"
+        + "  chatAreaEl.style.display='';"
+        + "  footerEl.style.display='';"
+        + "  menuDisconnectBtn.style.display='';"
+        + "}\n"
+        + "function showConnectView(profiles){"
+        + "  chatAreaEl.style.display='none';"
+        + "  footerEl.style.display='none';"
+        + "  connectPageEl.hidden=false;"
+        + "  menuDisconnectBtn.style.display='none';"
+        + "  connectStatusEl.textContent='';"
+        + "  connectBtn.disabled=false;"
+        + "  connectBtn.textContent='Connect';"
+        + "  if(profiles&&profiles.length){"
+        + "    const prev=connectProfileSel.value;"
+        + "    connectProfileSel.innerHTML=profiles.map(p=>`<option value=\"${p.id}\">${p.name}</option>`).join('');"
+        + "    if(prev)connectProfileSel.value=prev;"
+        + "  }"
+        + "}\n"
+        // Populate model select from info
+        + "function populateModels(models,currentModelId){"
+        + "  menuModelSel.innerHTML=(models||[]).map(m=>`<option value=\"${m.id}\">${m.name}</option>`).join('');"
+        + "  if(currentModelId)syncModelSelect(currentModelId);"
+        + "}\n"
+        + "function syncModelSelect(modelId){"
+        + "  if(modelId)menuModelSel.value=modelId;"
+        + "}\n"
         // Info fetch
         + "let _pluginVersion='';\n"
         + "fetch('/info').then(r=>r.json()).then(info=>{"
-        + "  if(info.model)modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);"
+        + "  if(info.model){modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);}\n"
         + "  agentRunning=info.running||false;updateButtons();"
         + "  _pluginVersion=info.version||'';"
+        + "  populateModels(info.models,info.model);"
+        + "  if(info.connected)showChatView();else showConnectView(info.profiles);"
         + "}).catch(()=>{});\n"
         // Hamburger menu
         + "menuBtn.addEventListener('click',e=>{"
@@ -1251,14 +1364,53 @@ public final class ChatWebServer implements Disposable {
         + "document.addEventListener('click',e=>{"
         + "  if(!menuEl.hidden&&!menuEl.contains(e.target))menuEl.hidden=true;"
         + "});\n"
+        // Hard reload — navigate to /?v=timestamp to bypass HTTP cache
         + "menuReloadBtn.addEventListener('click',()=>{"
         + "  menuEl.hidden=true;"
         + "  if('serviceWorker'in navigator){"
         + "    navigator.serviceWorker.getRegistrations().then(regs=>Promise.all(regs.map(r=>r.unregister())));"
         + "    if('caches'in window)caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k))));"
         + "  }"
-        + "  setTimeout(()=>location.reload(true),150);"
+        + "  setTimeout(()=>{location.href='/?v='+Date.now();},150);"
         + "});\n"
+        // Model select change
+        + "menuModelSel.addEventListener('change',()=>{"
+        + "  const id=menuModelSel.value;if(id)webPost('/set-model',{modelId:id});"
+        + "});\n"
+        // Disconnect
+        + "menuDisconnectBtn.addEventListener('click',()=>{"
+        + "  menuEl.hidden=true;"
+        + "  webPost('/disconnect',{});"
+        + "});\n"
+        // Connect page submit
+        + "connectBtn.addEventListener('click',()=>{"
+        + "  const profileId=connectProfileSel.value;if(!profileId)return;"
+        + "  connectBtn.disabled=true;connectBtn.textContent='Connecting\u2026';"
+        + "  connectStatusEl.textContent='';"
+        + "  webPost('/connect',{profileId}).catch(()=>{"
+        + "    connectBtn.disabled=false;connectBtn.textContent='Connect';"
+        + "    connectStatusEl.textContent='Connection error \u2014 check the IDE plugin.';"
+        + "  });"
+        + "});\n"
+        // handleConnected / handleDisconnected — called via SSE broadcastTransient
+        + "function handleConnected(modelsJsonStr,profilesJsonStr){"
+        + "  try{"
+        + "    const models=JSON.parse(modelsJsonStr||'[]');"
+        + "    const profiles=JSON.parse(profilesJsonStr||'[]');"
+        + "    populateModels(models,'');"
+        + "    fetch('/info').then(r=>r.json()).then(info=>{"
+        + "      if(info.model)modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);"
+        + "      populateModels(info.models,info.model);"
+        + "    }).catch(()=>{});"
+        + "    showChatView();"
+        + "  }catch(e){showChatView();}"
+        + "}\n"
+        + "function handleDisconnected(profilesJsonStr){"
+        + "  try{"
+        + "    const profiles=JSON.parse(profilesJsonStr||'[]');"
+        + "    showConnectView(profiles);"
+        + "  }catch(e){showConnectView([]);}"
+        + "}\n"
         // State load + SSE connect
         + "let lastSeq=0;\n"
         + "let sseRetry=null;\n"
@@ -1288,9 +1440,9 @@ public final class ChatWebServer implements Disposable {
         + "  };"
         + "}\n"
         // Notifications
-        + "function showNotification(title,body){"
+        + "function showNotification(title,body,actions){"
         + "  if(navigator.serviceWorker&&navigator.serviceWorker.controller){"
-        + "    navigator.serviceWorker.controller.postMessage({type:'SHOW_NOTIFICATION',title,body});"
+        + "    navigator.serviceWorker.controller.postMessage({type:'SHOW_NOTIFICATION',title,body,actions});"
         + "  }else if('Notification'in window&&Notification.permission==='granted'){"
         + "    try{new Notification(title,{body,icon:'/icon.svg',tag:'ab'});}catch(e){}"
         + "  }"

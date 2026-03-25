@@ -188,6 +188,7 @@ class ChatToolWindowContent(
         updatePromptPlaceholder()
         authService.clearPendingAuthError()  // Clear any auth error from a previous agent
         setSendingState(false)  // Ensure send button is enabled
+        notifyWebServerConnected()
     }
 
     /**
@@ -214,6 +215,12 @@ class ChatToolWindowContent(
             },
             onFailure = { error ->
                 connectPanel.showError(error.message ?: "Connection failed")
+                val msg = error.message ?: "Connection failed"
+                ChatWebServer.getInstance(project)?.broadcastTransient(
+                    "connectStatusEl.textContent=${
+                        com.google.gson.Gson().toJson(msg)
+                    };connectBtn.disabled=false;connectBtn.textContent='Connect';"
+                )
             }
         )
     }
@@ -244,7 +251,68 @@ class ChatToolWindowContent(
         cardLayout.show(mainPanel, CARD_CONNECT)
         // Reset toolbar icon to default when disconnecting
         restartSessionGroup?.updateIconForDisconnect()
+        notifyWebServerDisconnected()
     }
+
+    // ── Web server state helpers ──────────────────────────────────────────────
+
+    private fun buildModelsJson(): String {
+        if (loadedModels.isEmpty()) return "[]"
+        return "[" + loadedModels.joinToString(",") { m ->
+            "{\"id\":${com.google.gson.Gson().toJson(m.id())},\"name\":${com.google.gson.Gson().toJson(m.name())}}"
+        } + "]"
+    }
+
+    private fun buildProfilesJson(): String {
+        val profiles = agentManager.availableProfiles.toList()
+        if (profiles.isEmpty()) return "[]"
+        return "[" + profiles.joinToString(",") { p ->
+            val g = com.google.gson.Gson()
+            "{\"id\":${g.toJson(p.id)},\"name\":${g.toJson(p.displayName)}}"
+        } + "]"
+    }
+
+    private fun selectModelById(modelId: String) {
+        val idx = loadedModels.indexOfFirst { it.id() == modelId }
+        if (idx < 0) return
+        selectedModelIndex = idx
+        agentManager.settings.setSelectedModel(modelId)
+        consolePanel.setCurrentModel(modelId)
+        val supportsMultiplier = agentManager.client.supportsMultiplier()
+        if (supportsMultiplier) {
+            val multiplier = getModelMultiplier(modelId)
+            if (multiplier != null) consolePanel.setPromptStats(modelId, multiplier)
+        }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val sessionId = promptOrchestrator.currentSessionId
+                if (sessionId != null) agentManager.client.setModel(sessionId, modelId)
+            } catch (e: Exception) {
+                LOG.warn("Failed to set model $modelId via web", e)
+            }
+        }
+    }
+
+    private fun notifyWebServerConnected() {
+        val ws = ChatWebServer.getInstance(project) ?: return
+        val modelsJson = buildModelsJson()
+        val profilesJson = buildProfilesJson()
+        ws.setConnected(true)
+        ws.setModelsJson(modelsJson)
+        ws.setProfilesJson(profilesJson)
+        ws.broadcastTransient("handleConnected(${escJsStr(modelsJson)},${escJsStr(profilesJson)})")
+    }
+
+    private fun notifyWebServerDisconnected() {
+        val ws = ChatWebServer.getInstance(project) ?: return
+        val profilesJson = buildProfilesJson()
+        ws.setConnected(false)
+        ws.setModelsJson("[]")
+        ws.setProfilesJson(profilesJson)
+        ws.broadcastTransient("handleDisconnected(${escJsStr(profilesJson)})")
+    }
+
+    private fun escJsStr(s: String): String = com.google.gson.Gson().toJson(s)
 
     private fun updateSessionInfo() {
         ApplicationManager.getApplication().invokeLater {
@@ -1385,6 +1453,16 @@ class ChatToolWindowContent(
                     chatConsolePanel.handleWebPermissionResponse(data)
                 }
             }
+            ws.onDisconnect = Runnable {
+                ApplicationManager.getApplication().invokeLater { disconnectFromAgent() }
+            }
+            ws.onConnect = java.util.function.Consumer { profileId ->
+                ApplicationManager.getApplication().invokeLater { connectToAgent(profileId, null) }
+            }
+            ws.onSelectModel = java.util.function.Consumer { modelId ->
+                ApplicationManager.getApplication().invokeLater { selectModelById(modelId) }
+            }
+            ws.setProfilesJson(buildProfilesJson())
         }
 
         return consolePanel.component
