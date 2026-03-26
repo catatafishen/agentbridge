@@ -45,6 +45,13 @@ public abstract class AbstractAgentClient {
     public abstract void stop();
 
     /**
+     * Clear any persisted session/thread ID so the next session starts fresh.
+     * Called when the user explicitly starts a new conversation. Default: no-op.
+     */
+    public void clearPersistedSession() {
+    }
+
+    /**
      * Whether the agent process is alive and initialized.
      */
     public abstract boolean isConnected();

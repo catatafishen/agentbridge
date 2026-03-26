@@ -27,6 +27,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -161,6 +162,22 @@ public final class CodexAppServerClient extends AbstractAgentClient {
      * Plugin session ID → Codex thread ID.
      */
     private final Map<String, String> sessionToThreadId = new ConcurrentHashMap<>();
+
+    private static final String KEY_CODEX_THREAD = "codexThreadId";
+
+    @Nullable
+    private String loadCodexThreadId() {
+        return PropertiesComponent.getInstance(project).getValue(PROFILE_ID + "." + KEY_CODEX_THREAD);
+    }
+
+    private void persistCodexThreadId(@Nullable String threadId) {
+        if (threadId == null) {
+            PropertiesComponent.getInstance(project).unsetValue(PROFILE_ID + "." + KEY_CODEX_THREAD);
+        } else {
+            PropertiesComponent.getInstance(project).setValue(PROFILE_ID + "." + KEY_CODEX_THREAD, threadId);
+        }
+    }
+
     /**
      * Plugin session ID → cwd (captured at createSession time).
      */
@@ -253,6 +270,11 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         }
         sessionToThreadId.clear();
         sessionCancelled.clear();
+    }
+
+    @Override
+    public void clearPersistedSession() {
+        persistCodexThreadId(null);
     }
 
     @Override
@@ -359,12 +381,13 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
         String model = resolveModel(sessionId, request.modelId());
         String rawPrompt = extractPromptText(request.prompt());
-        String fullPrompt = buildFullPrompt(rawPrompt, !sessionToThreadId.containsKey(sessionId));
+        String fullPrompt = buildFullPrompt(rawPrompt, !sessionToThreadId.containsKey(sessionId)
+            && loadCodexThreadId() == null);
 
         // Ensure a Codex thread exists for this session
         String threadId = sessionToThreadId.get(sessionId);
         if (threadId == null) {
-            threadId = startThread(sessionId, model);
+            threadId = getOrResumeThread(sessionId, model);
         }
 
         // Set up the active turn future
@@ -578,6 +601,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             }
             String threadId = thread.get(F_ID).getAsString();
             sessionToThreadId.put(sessionId, threadId);
+            persistCodexThreadId(threadId);
             LOG.info("Created Codex thread " + threadId + " for session " + sessionId);
             return threadId;
         } catch (AgentException ae) {
@@ -587,6 +611,55 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             throw new AgentException("thread/start interrupted", ie, true);
         } catch (Exception e) {
             throw new AgentException("thread/start failed: " + e.getMessage(), e, true);
+        }
+    }
+
+    /**
+     * Returns a thread ID for the session, resuming a persisted thread if available or starting a new one.
+     */
+    @NotNull
+    private String getOrResumeThread(@NotNull String sessionId, @NotNull String model) throws AgentException {
+        String savedThreadId = loadCodexThreadId();
+        if (savedThreadId != null) {
+            try {
+                String resumed = resumeThread(savedThreadId, model, sessionId);
+                LOG.info("Resumed Codex thread " + resumed + " for session " + sessionId);
+                return resumed;
+            } catch (AgentException e) {
+                LOG.warn("thread/resume failed (thread may be expired), starting new thread: " + e.getMessage());
+                persistCodexThreadId(null);
+            }
+        }
+        return startThread(sessionId, model);
+    }
+
+    /**
+     * Resumes an existing Codex thread by threadId.
+     */
+    @NotNull
+    private String resumeThread(@NotNull String threadId, @NotNull String model,
+                                @NotNull String sessionId) throws AgentException {
+        JsonObject params = new JsonObject();
+        params.addProperty("threadId", threadId);
+        params.addProperty("model", model);
+
+        try {
+            JsonObject result = sendRequest("thread/resume", params).get(15, TimeUnit.SECONDS);
+            JsonObject thread = result.getAsJsonObject(F_THREAD);
+            if (thread == null || !thread.has(F_ID)) {
+                throw new AgentException("thread/resume response missing thread.id", null, true);
+            }
+            String resumedId = thread.get(F_ID).getAsString();
+            sessionToThreadId.put(sessionId, resumedId);
+            persistCodexThreadId(resumedId);
+            return resumedId;
+        } catch (AgentException ae) {
+            throw ae;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new AgentException("thread/resume interrupted", ie, true);
+        } catch (Exception e) {
+            throw new AgentException("thread/resume failed: " + e.getMessage(), e, true);
         }
     }
 

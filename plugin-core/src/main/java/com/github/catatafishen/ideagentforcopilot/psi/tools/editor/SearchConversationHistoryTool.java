@@ -74,13 +74,12 @@ public final class SearchConversationHistoryTool extends EditorTool {
         return "List, read, and search past conversation sessions from the chat history";
     }
 
-
-
     @Override
     public @NotNull String kind() {
         return "read";
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -305,7 +304,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
     }
 
     private static List<JsonObject> filterByTurnId(List<JsonObject> entries,
-                                                    List<Integer> promptIndices, String turnId) {
+                                                   List<Integer> promptIndices, String turnId) {
         int n = parseTurnNumber(turnId);
         if (n <= 0 || n > promptIndices.size()) return Collections.emptyList();
         int promptIdx = n - 1; // 0-based
@@ -316,7 +315,9 @@ public final class SearchConversationHistoryTool extends EditorTool {
         return entries.subList(startIdx, endIdx + 1);
     }
 
-    /** Parses a turn ID like "t3" or "3" into the 1-based turn number. Returns -1 on parse failure. */
+    /**
+     * Parses a turn ID like "t3" or "3" into the 1-based turn number. Returns -1 on parse failure.
+     */
     private static int parseTurnNumber(String turnId) {
         String s = turnId.toLowerCase(Locale.ROOT).trim();
         if (s.startsWith("t")) s = s.substring(1);

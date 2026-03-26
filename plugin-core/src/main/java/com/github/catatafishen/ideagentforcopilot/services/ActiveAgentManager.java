@@ -40,6 +40,7 @@ public final class ActiveAgentManager implements Disposable {
     private static final String KEY_ATTACH_TRIGGER = "agent.attachTriggerChar";
     private static final String DEFAULT_ATTACH_TRIGGER = "#";
     private static final String KEY_FOLLOW_AGENT_FILES = "agent.followAgentFiles";
+    private static final String KEY_INJECT_CONV_HISTORY = "agent.injectConversationHistory";
     private static final String KEY_AUTO_CONNECT = "agent.autoConnect";
     private static final String KEY_CUSTOM_ACP_COMMAND = "agent.customAcpCommand";
     private static final String KEY_SHARED_TURN_TIMEOUT_MINUTES = "agent.sharedTurnTimeoutMinutes";
@@ -459,6 +460,14 @@ public final class ActiveAgentManager implements Disposable {
 
     public static void setFollowAgentFiles(@NotNull Project project, boolean enabled) {
         PropertiesComponent.getInstance(project).setValue(KEY_FOLLOW_AGENT_FILES, enabled, true);
+    }
+
+    public static boolean getInjectConversationHistory(@NotNull Project project) {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_INJECT_CONV_HISTORY, false);
+    }
+
+    public static void setInjectConversationHistory(@NotNull Project project, boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_INJECT_CONV_HISTORY, enabled, false);
     }
 
     // ── ACP connection state ─────────────────────────────────────────────────

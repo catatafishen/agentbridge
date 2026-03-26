@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
 import com.intellij.icons.AllIcons;
@@ -72,6 +73,7 @@ public final class ChatHistoryConfigurable implements Configurable {
     private final Project project;
 
     private JBLabel summaryLabel;
+    private JCheckBox injectHistoryCheckbox;
     private JBTable table;
     private ConversationTableModel tableModel;
 
@@ -129,12 +131,22 @@ public final class ChatHistoryConfigurable implements Configurable {
             .addExtraAction(createRevealInFinderAction())
             .createPanel();
 
+        injectHistoryCheckbox = new JCheckBox(
+            "Inject prior conversation summary into new sessions");
+        injectHistoryCheckbox.setToolTipText(
+            "<html>When enabled, a compressed summary of recent conversation history is<br>"
+                + "prepended to the first prompt of each new session.<br>"
+                + "Useful as a fallback for clients without native session restore,<br>"
+                + "but uses extra tokens. Disabled by default.</html>");
+        injectHistoryCheckbox.setSelected(ActiveAgentManager.getInjectConversationHistory(project));
+
         JPanel panel = FormBuilder.createFormBuilder()
             .addComponent(new JBLabel(
                 "<html>Conversation files stored in this project's "
                     + "<code>.agent-work</code> directory.</html>"))
             .addComponent(summaryLabel)
-            .addComponentFillVertically(decorated, 0)
+            .addComponent(injectHistoryCheckbox)
+            .addComponentFillVertically(decorated, 4)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
 
@@ -146,22 +158,29 @@ public final class ChatHistoryConfigurable implements Configurable {
 
     @Override
     public boolean isModified() {
-        return false;
+        return injectHistoryCheckbox != null
+            && injectHistoryCheckbox.isSelected() != ActiveAgentManager.getInjectConversationHistory(project);
     }
 
     @Override
     public void apply() {
-        // Deletions happen immediately — nothing to apply.
+        if (injectHistoryCheckbox != null) {
+            ActiveAgentManager.setInjectConversationHistory(project, injectHistoryCheckbox.isSelected());
+        }
     }
 
     @Override
     public void reset() {
+        if (injectHistoryCheckbox != null) {
+            injectHistoryCheckbox.setSelected(ActiveAgentManager.getInjectConversationHistory(project));
+        }
         loadConversations();
     }
 
     @Override
     public void disposeUIResources() {
         summaryLabel = null;
+        injectHistoryCheckbox = null;
         table = null;
         tableModel = null;
     }

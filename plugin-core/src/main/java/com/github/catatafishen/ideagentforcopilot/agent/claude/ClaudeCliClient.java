@@ -16,6 +16,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -124,6 +125,23 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private final Map<String, String> cliSessionIds = new ConcurrentHashMap<>();
     private final Map<String, Process> activeProcesses = new ConcurrentHashMap<>();
 
+    private static final String KEY_CLI_RESUME_SESSION = "cliResumeSessionId";
+
+    @Nullable
+    private String loadCliResumeSessionId() {
+        if (project == null) return null;
+        return PropertiesComponent.getInstance(project).getValue(profile.getId() + "." + KEY_CLI_RESUME_SESSION);
+    }
+
+    private void persistCliResumeSessionId(@Nullable String id) {
+        if (project == null) return;
+        if (id == null) {
+            PropertiesComponent.getInstance(project).unsetValue(profile.getId() + "." + KEY_CLI_RESUME_SESSION);
+        } else {
+            PropertiesComponent.getInstance(project).setValue(profile.getId() + "." + KEY_CLI_RESUME_SESSION, id);
+        }
+    }
+
     private String resolvedBinaryPath;
 
     public ClaudeCliClient(@NotNull AgentProfile profile,
@@ -173,6 +191,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         cliSessionIds.clear();
         sessionModels.clear();
         sessionCancelled.clear();
+    }
+
+    @Override
+    public void clearPersistedSession() {
+        persistCliResumeSessionId(null);
     }
 
     // ── Session management ───────────────────────────────────────────────────
@@ -365,6 +388,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         }
 
         String cliSessionId = cliSessionIds.get(sessionId);
+        if (cliSessionId == null) {
+            cliSessionId = loadCliResumeSessionId();
+        }
         if (cliSessionId != null) {
             cmd.add("--resume");
             cmd.add(cliSessionId);
@@ -485,7 +511,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         return switch (type) {
             case "system" -> {
                 if (event.has(FIELD_SESSION_ID)) {
-                    cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
+                    String captured = event.get(FIELD_SESSION_ID).getAsString();
+                    cliSessionIds.put(sessionId, captured);
+                    persistCliResumeSessionId(captured);
                 }
                 yield currentStopReason;
             }
@@ -530,7 +558,9 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             case "result" -> {
                 // Always capture session_id from the result event (most reliable location)
                 if (event.has(FIELD_SESSION_ID)) {
-                    cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
+                    String captured = event.get(FIELD_SESSION_ID).getAsString();
+                    cliSessionIds.put(sessionId, captured);
+                    persistCliResumeSessionId(captured);
                 }
                 boolean isError = event.has(FIELD_SUBTYPE)
                     && SUBTYPE_ERROR.equals(event.get(FIELD_SUBTYPE).getAsString());

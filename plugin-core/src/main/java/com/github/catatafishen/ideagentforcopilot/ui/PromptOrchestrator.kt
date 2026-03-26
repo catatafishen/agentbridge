@@ -253,7 +253,7 @@ class PromptOrchestrator(
 
     private fun buildEffectivePrompt(prompt: String): String {
         var effective = prompt
-        if (!conversationSummaryInjected) {
+        if (!conversationSummaryInjected && ActiveAgentManager.getInjectConversationHistory(project)) {
             conversationSummaryInjected = true
             val summary = consolePanel().getCompressedSummary()
             if (summary.isNotEmpty()) {

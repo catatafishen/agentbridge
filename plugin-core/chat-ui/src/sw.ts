@@ -35,7 +35,7 @@ self.addEventListener('fetch', (e) => {
         fetch(e.request).catch(
             () => new Response(OFFLINE_HTML, {
                 status: 503,
-                headers: { 'Content-Type': 'text/html' },
+                headers: {'Content-Type': 'text/html'},
             }),
         ),
     );
@@ -110,7 +110,7 @@ self.addEventListener('message', (e) => {
 self.addEventListener('notificationclick', (e) => {
     e.notification.close();
     e.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+        self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(list => {
             const c = list.find(w => w.url.startsWith(self.location.origin));
             if (c) return c.focus();
             return self.clients.openWindow('/');

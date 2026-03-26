@@ -49,11 +49,14 @@ class ChatToolWindowContent(
     private var chatPanel: JComponent? = null
 
     // Shared model list (populated from ACP)
+    @Volatile
     private var loadedModels: List<Model> = emptyList()
     private var modelLoadGeneration = 0
 
     // Prompt tab fields
+    @Volatile
     private var selectedModelIndex = -1
+    @Volatile
     private var modelsStatusText: String? = MSG_LOADING
     private lateinit var controlsToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
@@ -737,7 +740,7 @@ class ChatToolWindowContent(
         consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
         promptTextArea.text = ""
 
-        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id() ?: ""
+        val selectedModelId = resolveSelectedModelId()
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(prompt, contextItems, selectedModelId)
         }
@@ -1817,7 +1820,7 @@ class ChatToolWindowContent(
         statusBanner?.dismissCurrent()
         setSendingState(true)
         consolePanel.addPromptEntry(trimmed, null)
-        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id() ?: ""
+        val selectedModelId = resolveSelectedModelId()
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(trimmed, emptyList(), selectedModelId)
         }
@@ -1893,6 +1896,7 @@ class ChatToolWindowContent(
     fun resetSession() {
         // Clear the persisted resume ID so the next session/new starts completely fresh.
         agentManager.settings.setResumeSessionId(null)
+        agentManager.getClient().clearPersistedSession()
         resetSessionState()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
@@ -1989,6 +1993,11 @@ class ChatToolWindowContent(
         if (models.isNotEmpty()) selectedModelIndex = 0
     }
 
+    private fun resolveSelectedModelId(): String {
+        loadedModels.getOrNull(selectedModelIndex)?.id()?.takeIf { it.isNotEmpty() }?.let { return it }
+        return agentManager.client.currentModelId?.takeIf { it.isNotEmpty() } ?: ""
+    }
+
     private fun loadModelsAsync(
         onSuccess: (List<Model>) -> Unit,
         onFailure: ((Exception) -> Unit)? = null
@@ -2037,6 +2046,7 @@ class ChatToolWindowContent(
     }
 
     private fun onModelsLoaded(models: List<Model>, onSuccess: (List<Model>) -> Unit) {
+        loadedModels = models
         modelsStatusText = null
         restoreModelSelection(models)
         onSuccess(models)
