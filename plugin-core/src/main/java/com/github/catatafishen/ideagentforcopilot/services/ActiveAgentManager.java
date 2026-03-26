@@ -12,6 +12,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -125,6 +126,18 @@ public final class ActiveAgentManager implements Disposable {
                 LOG.warn("Agent switch listener failed", e);
             }
         }
+
+        // Migrate session context to the new agent on a pooled thread
+        final String prevId = previousId;
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService
+                    .getInstance(project)
+                    .onAgentSwitch(prevId, profileId);
+            } catch (Exception e) {
+                LOG.warn("SessionSwitchService.onAgentSwitch failed", e);
+            }
+        });
     }
 
     // ── Agent lifecycle (absorbed from AgentService) ─────────────────────────
