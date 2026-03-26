@@ -78,6 +78,30 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.transportMode = mode;
     }
 
+    public @org.jetbrains.annotations.Nullable String getKindReadColorHex() {
+        return myState.getKindReadColorHex();
+    }
+
+    public void setKindReadColorHex(@org.jetbrains.annotations.Nullable String hex) {
+        myState.setKindReadColorHex(hex);
+    }
+
+    public @org.jetbrains.annotations.Nullable String getKindEditColorHex() {
+        return myState.getKindEditColorHex();
+    }
+
+    public void setKindEditColorHex(@org.jetbrains.annotations.Nullable String hex) {
+        myState.setKindEditColorHex(hex);
+    }
+
+    public @org.jetbrains.annotations.Nullable String getKindExecuteColorHex() {
+        return myState.getKindExecuteColorHex();
+    }
+
+    public void setKindExecuteColorHex(@org.jetbrains.annotations.Nullable String hex) {
+        myState.setKindExecuteColorHex(hex);
+    }
+
     /**
      * Applies {@link McpToolFilter#DEFAULT_DISABLED} on first run (before any
      * persisted state exists). Once applied, the flag is persisted so subsequent
@@ -107,6 +131,9 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private TransportMode transportMode = TransportMode.STREAMABLE_HTTP;
         private Set<String> disabledToolIds = new LinkedHashSet<>();
         private boolean defaultsApplied = false;
+        private String kindReadColorHex = null;
+        private String kindEditColorHex = null;
+        private String kindExecuteColorHex = null;
 
         public int getPort() {
             return port;
@@ -154,6 +181,30 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setDefaultsApplied(boolean defaultsApplied) {
             this.defaultsApplied = defaultsApplied;
+        }
+
+        public @org.jetbrains.annotations.Nullable String getKindReadColorHex() {
+            return kindReadColorHex;
+        }
+
+        public void setKindReadColorHex(@org.jetbrains.annotations.Nullable String kindReadColorHex) {
+            this.kindReadColorHex = kindReadColorHex;
+        }
+
+        public @org.jetbrains.annotations.Nullable String getKindEditColorHex() {
+            return kindEditColorHex;
+        }
+
+        public void setKindEditColorHex(@org.jetbrains.annotations.Nullable String kindEditColorHex) {
+            this.kindEditColorHex = kindEditColorHex;
+        }
+
+        public @org.jetbrains.annotations.Nullable String getKindExecuteColorHex() {
+            return kindExecuteColorHex;
+        }
+
+        public void setKindExecuteColorHex(@org.jetbrains.annotations.Nullable String kindExecuteColorHex) {
+            this.kindExecuteColorHex = kindExecuteColorHex;
         }
     }
 }

@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.services.ChatWebServer
 import com.github.catatafishen.ideagentforcopilot.services.ToolChipRegistry
+import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers
@@ -1131,7 +1132,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     // ── Theme ──────────────────────────────────────────────────────
 
-    private fun buildCssVars(): String = ChatTheme.buildCssVars()
+    private fun buildCssVars(): String = ChatTheme.buildCssVars(McpServerSettings.getInstance(project))
 
     private fun updateThemeColors() {
         val vars = buildCssVars().replace("'", "\\'")

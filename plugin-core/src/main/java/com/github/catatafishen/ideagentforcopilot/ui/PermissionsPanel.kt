@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition
 import com.github.catatafishen.ideagentforcopilot.services.ToolPermission
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry.Category
+import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.*
@@ -14,12 +15,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.BorderLayout
-import java.awt.Color
-import java.awt.Component
-import java.awt.Font
-import java.awt.GridBagConstraints
-import java.awt.GridBagLayout
+import java.awt.*
 import javax.swing.JComponent
 import javax.swing.JTree
 import javax.swing.ScrollPaneConstants
@@ -40,46 +36,21 @@ private const val SILENT_TOOLTIP =
 
 /**
  * Permission batch groups, matching the tool-chip CSS color palette.
- *
- * CSS source (chat.css):
- *   --kind-read:    rgb(100, 185, 185)
- *   --kind-edit:    rgb(205, 155,  95)
- *   --kind-execute: rgb(130, 190, 130)
+ * Colors resolve through [ToolKindColors], honoring per-project user overrides.
  */
-private enum class KindGroup(
-    val label: String,
-    val description: String,
-    private val lightColor: Color,
-    private val darkColor: Color,
-) {
-    READ(
-        "Read & Navigate",
-        "File reads, search, git log/diff, code quality checks",
-        Color(0, 130, 130), Color(100, 185, 185)
-    ),
-    EDIT(
-        "Edit & Refactor",
-        "File writes, git stage/commit/merge, refactoring",
-        Color(150, 90, 20), Color(205, 155, 95)
-    ),
-    EXECUTE(
-        "Run & Execute",
-        "Shell commands, run configs, git push/reset, delete files",
-        Color(30, 120, 30), Color(130, 190, 130)
-    );
+private enum class KindGroup(val label: String, val description: String) {
+    READ("Read & Navigate", "File reads, search, git log/diff, code quality checks"),
+    EDIT("Edit & Refactor", "File writes, git stage/commit/merge, refactoring"),
+    EXECUTE("Run & Execute", "Shell commands, run configs, git push/reset, delete files");
 
-    val color: Color get() = JBColor(lightColor, darkColor)
-
-    /** Returns a subtle tinted background by blending 12% of the kind color into the panel background. */
-    fun tintedBackground(): Color {
-        val c = color
-        val base = UIUtil.getPanelBackground()
-        return Color(
-            ((c.red * 0.12 + base.red * 0.88).toInt()).coerceIn(0, 255),
-            ((c.green * 0.12 + base.green * 0.88).toInt()).coerceIn(0, 255),
-            ((c.blue * 0.12 + base.blue * 0.88).toInt()).coerceIn(0, 255)
-        )
+    fun color(settings: McpServerSettings?): Color = when (this) {
+        READ -> ToolKindColors.readColor(settings)
+        EDIT -> ToolKindColors.editColor(settings)
+        EXECUTE -> ToolKindColors.executeColor(settings)
     }
+
+    fun tintedBackground(settings: McpServerSettings?): Color =
+        ToolKindColors.tintedBackground(color(settings))
 }
 
 /** Maps a [ToolDefinition] to its batch [KindGroup], or null for unclassified tools. */
@@ -145,13 +116,17 @@ private class NavTreeCellRenderer : TreeCellRenderer {
  * This panel is purely about permission levels (allow/ask/deny).
  * Tool enable/disable is managed in Tool Registration settings.
  */
-internal class PermissionsPanel(private val settings: AgentUiSettings, private val registry: ToolRegistry) {
+internal class PermissionsPanel(
+    private val settings: AgentUiSettings,
+    private val registry: ToolRegistry,
+    private val mcpSettings: McpServerSettings,
+) {
 
     private data class ToolRow(
         val tool: ToolDefinition,
-        val permCombo: ComboBox<String>?,
-        val inProjectCombo: ComboBox<String>?,
-        val outProjectCombo: ComboBox<String>?,
+        val permCombo: ComboBox<String>?,        // null = tool runs silently (no permission UI)
+        val inProjectCombo: ComboBox<String>?,   // sub-permission: inside project
+        val outProjectCombo: ComboBox<String>?,  // sub-permission: outside project
     )
 
     private val rows = mutableListOf<ToolRow>()
@@ -185,14 +160,19 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
             if (tool.isBuiltIn) continue
 
             val group = tool.kindGroup()
+            val toolEnabled = mcpSettings.isToolEnabled(tool.id())
             val permCombo = ComboBox(PLUGIN_PERM_OPTIONS).apply {
                 setMinimumAndPreferredWidth(JBUI.scale(108))
                 selectedIndex = settings.getToolPermission(tool.id()).toPluginIndex()
-                toolTipText = "Permission when agent requests this tool"
+                toolTipText = if (toolEnabled)
+                    "Permission when agent requests this tool"
+                else
+                    "This tool is disabled in MCP → Tools settings"
+                isEnabled = toolEnabled
                 group?.let { applyKindTint(this, it) }
             }
 
-            val (inProjectCombo, outProjectCombo) = buildSubPermCombos(tool, permCombo)
+            val (inProjectCombo, outProjectCombo) = buildSubPermCombos(tool, permCombo, toolEnabled)
             group?.let {
                 inProjectCombo?.let { c -> applyKindTint(c, it) }
                 outProjectCombo?.let { c -> applyKindTint(c, it) }
@@ -202,17 +182,18 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
     }
 
     /**
-     * Applies a subtle kind-group background tint to [combo] so that each permission
+     * Applies a kind-group background tint to [combo] so that each permission
      * control is visually color-coded to match the Quick Permissions group above.
      */
     private fun applyKindTint(combo: ComboBox<String>, group: KindGroup) {
-        combo.background = group.tintedBackground()
+        combo.background = group.tintedBackground(mcpSettings)
         combo.isOpaque = true
     }
 
     private fun buildSubPermCombos(
         tool: ToolDefinition,
-        permCombo: ComboBox<String>?
+        permCombo: ComboBox<String>?,
+        toolEnabled: Boolean,
     ): Pair<ComboBox<String>?, ComboBox<String>?> {
         if (!tool.supportsPathSubPermissions() || tool.isBuiltIn || permCombo == null) {
             return Pair(null, null)
@@ -226,21 +207,21 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
 
         val inProjectCombo = ComboBox(PLUGIN_PERM_OPTIONS).apply {
             setMinimumAndPreferredWidth(JBUI.scale(108))
-            isEnabled = topIsAllow
+            isEnabled = toolEnabled && topIsAllow
             selectedIndex = settings.getToolPermissionInsideProject(tool.id()).toPluginIndex()
             toolTipText = subTooltip(true, topIsAllow)
         }
         val outProjectCombo = ComboBox(PLUGIN_PERM_OPTIONS).apply {
             setMinimumAndPreferredWidth(JBUI.scale(108))
-            isEnabled = topIsAllow
+            isEnabled = toolEnabled && topIsAllow
             selectedIndex = settings.getToolPermissionOutsideProject(tool.id()).toPluginIndex()
             toolTipText = subTooltip(false, topIsAllow)
         }
 
         permCombo.addActionListener {
             val allow = permCombo.selectedIndex == 0
-            inProjectCombo.isEnabled = allow
-            outProjectCombo.isEnabled = allow
+            inProjectCombo.isEnabled = toolEnabled && allow
+            outProjectCombo.isEnabled = toolEnabled && allow
             inProjectCombo.toolTipText = subTooltip(true, allow)
             outProjectCombo.toolTipText = subTooltip(false, allow)
         }
@@ -251,14 +232,16 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
     // ── Group controls panel ──────────────────────────────────────────────────
 
     /**
-     * Builds the "Quick Permissions" panel shown above the tree/detail splitter.
-     * Each [KindGroup] gets a colored label and a batch Allow/Ask combo that
-     * propagates to all matching tool rows when changed.
+     * Builds the "Quick Permissions" panel shown above the tree/detail splitter,
+     * followed immediately by an "Individual Tool Permissions" separator so it's
+     * visually clear that the batch controls affect all tools in the panel below.
+     *
+     * Layout: label | combo | spacer (so labels and combos stay adjacent on the left).
      */
     private fun buildGroupControlsPanel(): JBPanel<*> {
         groupCombos.clear()
         val panel = JBPanel<JBPanel<*>>(GridBagLayout())
-        panel.border = JBUI.Borders.empty(10, 16, 8, 16)
+        panel.border = JBUI.Borders.empty(10, 16, 0, 16)
 
         val gbc = GridBagConstraints().apply {
             anchor = GridBagConstraints.WEST
@@ -267,7 +250,7 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
             gridx = 0; gridy = 0
         }
 
-        // Section header
+        // Section header spans all 3 columns (label | combo | spacer)
         gbc.gridwidth = 3; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
         panel.add(TitledSeparator("Quick Permissions"), gbc)
         gbc.gridy++
@@ -275,22 +258,14 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
         gbc.insets = JBUI.insets(4, 0, 2, 0)
 
         for (group in KindGroup.entries) {
-            // Colored "●" dot
-            gbc.gridx = 0
-            panel.add(JBLabel("● ").apply {
-                foreground = group.color
-                font = UIUtil.getLabelFont().deriveFont(Font.BOLD, UIUtil.getLabelFont().size + 2f)
-                toolTipText = group.description
-            }, gbc)
-
-            // Group name
-            gbc.gridx = 1; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL
+            // Group name label — no weight so it stays adjacent to the combo
+            gbc.gridx = 0; gbc.insets = JBUI.insets(4, 0, 2, 8)
             panel.add(JBLabel(group.label).apply {
                 toolTipText = group.description
             }, gbc)
 
             // Batch combo
-            gbc.gridx = 2; gbc.weightx = 0.0; gbc.fill = GridBagConstraints.NONE
+            gbc.gridx = 1; gbc.insets = JBUI.insets(4, 0, 2, 0)
             val combo = ComboBox(PLUGIN_PERM_OPTIONS).apply {
                 setMinimumAndPreferredWidth(JBUI.scale(108))
                 selectedIndex = computeGroupInitialIndex(group)
@@ -301,9 +276,18 @@ internal class PermissionsPanel(private val settings: AgentUiSettings, private v
             combo.addActionListener { applyGroupPermission(group) }
             panel.add(combo, gbc)
 
+            // Right spacer absorbs remaining width
+            gbc.gridx = 2; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL
+            panel.add(JBPanel<JBPanel<*>>(), gbc)
+            gbc.weightx = 0.0; gbc.fill = GridBagConstraints.NONE
+
             gbc.gridy++
-            gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
         }
+
+        // "Individual Tool Permissions" separator divides quick controls from the detail grid
+        gbc.gridx = 0; gbc.gridwidth = 3; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
+        gbc.insets = JBUI.insets(10, 0, 0, 0)
+        panel.add(TitledSeparator("Individual Tool Permissions"), gbc)
 
         return panel
     }

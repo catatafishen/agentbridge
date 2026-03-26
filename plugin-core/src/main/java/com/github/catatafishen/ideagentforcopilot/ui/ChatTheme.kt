@@ -1,5 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
+import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -29,40 +30,109 @@ object ChatTheme {
         JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214)),
     )
 
-    // Tool kind chip colors — semantic categories
-    val KIND_READ_COLOR: JBColor = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
-    val KIND_EDIT_COLOR: JBColor = JBColor(Color(0xA0, 0x7A, 0x3A), Color(205, 155, 95))
-    val KIND_EXECUTE_COLOR: JBColor = JBColor(Color(0x4A, 0x90, 0x4A), Color(130, 190, 130))
-    val KIND_SEARCH_COLOR: JBColor = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
+    // Tool kind chip colors — semantic categories (kept for external API compatibility)
     val KIND_THINK_COLOR: JBColor = JBColor(Color(0x7A, 0x70, 0xA8), Color(170, 155, 210))
     val KIND_OTHER_COLOR: JBColor = JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170))
 
-    fun buildCssVars(): String {
+    fun buildCssVars(): String = buildCssVars(null)
+
+    /**
+     * Builds the CSS variable string for the chat panel, using per-project kind-color
+     * overrides from [mcpSettings] when provided.
+     */
+    fun buildCssVars(mcpSettings: McpServerSettings?): String {
         val font = UIUtil.getLabelFont()
         val fg = UIUtil.getLabelForeground()
         val bg = JBUI.CurrentTheme.ToolWindow.background()
-        val codeBg = UIManager.getColor("Editor.backgroundColor") ?: JBColor(Color(0xF0, 0xF0, 0xF0), Color(0x2B, 0x2D, 0x30))
-        val tblBorder = UIManager.getColor("TableCell.borderColor") ?: JBColor(Color(0xD0, 0xD0, 0xD0), Color(0x45, 0x48, 0x4A))
-        val thBg = UIManager.getColor("TableHeader.background") ?: JBColor(Color(0xE8, 0xE8, 0xE8), Color(0x35, 0x38, 0x3B))
+        val codeBg =
+            UIManager.getColor("Editor.backgroundColor") ?: JBColor(Color(0xF0, 0xF0, 0xF0), Color(0x2B, 0x2D, 0x30))
+        val tblBorder =
+            UIManager.getColor("TableCell.borderColor") ?: JBColor(Color(0xD0, 0xD0, 0xD0), Color(0x45, 0x48, 0x4A))
+        val thBg =
+            UIManager.getColor("TableHeader.background") ?: JBColor(Color(0xE8, 0xE8, 0xE8), Color(0x35, 0x38, 0x3B))
         val spinBg = UIManager.getColor("Panel.background") ?: JBColor(Color(0xDD, 0xDD, 0xDD), Color(0x55, 0x55, 0x55))
         val linkColor = UIManager.getColor(LINK_COLOR_KEY) ?: JBColor(Color(0x28, 0x7B, 0xDE), Color(0x58, 0x9D, 0xF6))
-        val tooltipBg = UIManager.getColor("ToolTip.background") ?: JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x3C, 0x3F, 0x41))
+        val tooltipBg =
+            UIManager.getColor("ToolTip.background") ?: JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x3C, 0x3F, 0x41))
         val sb = StringBuilder()
         sb.append("--font-family:'${font.family}',sans-serif;--font-size:${font.size - 2}pt;--code-font-size:${font.size - 3}pt;--code-font:'JetBrains Mono','${font.family}',monospace;")
-        sb.append("--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${rgba(fg, 0.16)};--fg-muted:${rgba(fg, 0.55)};--bg:${rgb(bg)};")
-        sb.append("--user:${rgb(USER_COLOR)};--user-a06:${rgba(USER_COLOR, 0.06)};--user-a08:${rgba(USER_COLOR, 0.08)};")
-        sb.append("--user-a12:${rgba(USER_COLOR, 0.12)};--user-a15:${rgba(USER_COLOR, 0.15)};--user-a16:${rgba(USER_COLOR, 0.16)};")
+        sb.append(
+            "--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${
+                rgba(
+                    fg,
+                    0.16
+                )
+            };--fg-muted:${rgba(fg, 0.55)};--bg:${rgb(bg)};"
+        )
+        sb.append(
+            "--user:${rgb(USER_COLOR)};--user-a06:${rgba(USER_COLOR, 0.06)};--user-a08:${
+                rgba(
+                    USER_COLOR,
+                    0.08
+                )
+            };"
+        )
+        sb.append(
+            "--user-a12:${rgba(USER_COLOR, 0.12)};--user-a15:${rgba(USER_COLOR, 0.15)};--user-a16:${
+                rgba(
+                    USER_COLOR,
+                    0.16
+                )
+            };"
+        )
         sb.append("--user-a18:${rgba(USER_COLOR, 0.18)};--user-a25:${rgba(USER_COLOR, 0.25)};")
-        sb.append("--agent:${rgb(AGENT_COLOR)};--agent-a06:${rgba(AGENT_COLOR, 0.06)};--agent-a08:${rgba(AGENT_COLOR, 0.08)};")
+        sb.append(
+            "--agent:${rgb(AGENT_COLOR)};--agent-a06:${rgba(AGENT_COLOR, 0.06)};--agent-a08:${
+                rgba(
+                    AGENT_COLOR,
+                    0.08
+                )
+            };"
+        )
         sb.append("--agent-a10:${rgba(AGENT_COLOR, 0.10)};--agent-a16:${rgba(AGENT_COLOR, 0.16)};")
-        sb.append("--think:${rgb(THINK_COLOR)};--think-a04:${rgba(THINK_COLOR, 0.04)};--think-a06:${rgba(THINK_COLOR, 0.06)};")
-        sb.append("--think-a08:${rgba(THINK_COLOR, 0.08)};--think-a10:${rgba(THINK_COLOR, 0.10)};--think-a16:${rgba(THINK_COLOR, 0.16)};")
-        sb.append("--think-a25:${rgba(THINK_COLOR, 0.25)};--think-a30:${rgba(THINK_COLOR, 0.30)};--think-a35:${rgba(THINK_COLOR, 0.35)};")
+        sb.append(
+            "--think:${rgb(THINK_COLOR)};--think-a04:${rgba(THINK_COLOR, 0.04)};--think-a06:${
+                rgba(
+                    THINK_COLOR,
+                    0.06
+                )
+            };"
+        )
+        sb.append(
+            "--think-a08:${rgba(THINK_COLOR, 0.08)};--think-a10:${rgba(THINK_COLOR, 0.10)};--think-a16:${
+                rgba(
+                    THINK_COLOR,
+                    0.16
+                )
+            };"
+        )
+        sb.append(
+            "--think-a25:${rgba(THINK_COLOR, 0.25)};--think-a30:${rgba(THINK_COLOR, 0.30)};--think-a35:${
+                rgba(
+                    THINK_COLOR,
+                    0.35
+                )
+            };"
+        )
         sb.append("--think-a40:${rgba(THINK_COLOR, 0.40)};--think-a55:${rgba(THINK_COLOR, 0.55)};")
-        sb.append("--tool:${rgb(TOOL_COLOR)};--tool-a08:${rgba(TOOL_COLOR, 0.08)};--tool-a16:${rgba(TOOL_COLOR, 0.16)};--tool-a40:${rgba(TOOL_COLOR, 0.40)};")
+        sb.append(
+            "--tool:${rgb(TOOL_COLOR)};--tool-a08:${rgba(TOOL_COLOR, 0.08)};--tool-a16:${
+                rgba(
+                    TOOL_COLOR,
+                    0.16
+                )
+            };--tool-a40:${rgba(TOOL_COLOR, 0.40)};"
+        )
         sb.append("--spin-bg:${rgb(spinBg)};--code-bg:${rgb(codeBg)};--tbl-border:${rgb(tblBorder)};--th-bg:${rgb(thBg)};")
         sb.append("--link:${rgb(linkColor)};--tooltip-bg:${rgb(tooltipBg)};")
-        sb.append("--error:${rgb(ERROR_COLOR)};--error-a05:${rgba(ERROR_COLOR, 0.05)};--error-a06:${rgba(ERROR_COLOR, 0.06)};")
+        sb.append(
+            "--error:${rgb(ERROR_COLOR)};--error-a05:${rgba(ERROR_COLOR, 0.05)};--error-a06:${
+                rgba(
+                    ERROR_COLOR,
+                    0.06
+                )
+            };"
+        )
         sb.append("--error-a12:${rgba(ERROR_COLOR, 0.12)};--error-a16:${rgba(ERROR_COLOR, 0.16)};")
         val bannerInfoBg = JBUI.CurrentTheme.Banner.INFO_BACKGROUND
         val bannerInfoBorder = JBUI.CurrentTheme.Banner.INFO_BORDER_COLOR
@@ -75,11 +145,21 @@ object ChatTheme {
         sb.append("--shadow:${rgba(THINK_COLOR, 0.25)};")
         for (i in SA_COLORS.indices) {
             val c = SA_COLORS[i]
-            sb.append("--sa-c$i:${rgb(c)};--sa-c$i-a06:${rgba(c, 0.06)};--sa-c$i-a10:${rgba(c, 0.10)};--sa-c$i-a15:${rgba(c, 0.15)};")
+            sb.append(
+                "--sa-c$i:${rgb(c)};--sa-c$i-a06:${rgba(c, 0.06)};--sa-c$i-a10:${
+                    rgba(
+                        c,
+                        0.10
+                    )
+                };--sa-c$i-a15:${rgba(c, 0.15)};"
+            )
         }
         sb.append("--active-agent:${rgb(AGENT_COLOR)};--active-agent-a06:${rgba(AGENT_COLOR, 0.06)};")
-        sb.append("--kind-read:${rgb(KIND_READ_COLOR)};--kind-edit:${rgb(KIND_EDIT_COLOR)};")
-        sb.append("--kind-execute:${rgb(KIND_EXECUTE_COLOR)};--kind-search:${rgb(KIND_SEARCH_COLOR)};")
+        val kindRead = ToolKindColors.readColor(mcpSettings)
+        val kindEdit = ToolKindColors.editColor(mcpSettings)
+        val kindExecute = ToolKindColors.executeColor(mcpSettings)
+        sb.append("--kind-read:${rgb(kindRead)};--kind-edit:${rgb(kindEdit)};")
+        sb.append("--kind-execute:${rgb(kindExecute)};--kind-search:${rgb(kindRead)};")
         sb.append("--kind-think:${rgb(KIND_THINK_COLOR)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
         return sb.toString()
     }
@@ -117,14 +197,9 @@ object ChatTheme {
         val path = "/icons/expui/$name$suffix.svg"
         return try {
             ChatTheme::class.java.getResourceAsStream(path)?.bufferedReader()?.use { it.readText() } ?: ""
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             ""
         }
-    }
-
-    @JvmStatic
-    fun getAgentIconSvgStatic(profileId: String?, isDark: Boolean): String {
-        return getAgentIconSvg(profileId, isDark)
     }
 
     private fun rgb(c: Color) = "rgb(${c.red},${c.green},${c.blue})"
