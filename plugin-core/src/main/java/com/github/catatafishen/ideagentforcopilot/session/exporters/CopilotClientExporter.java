@@ -16,17 +16,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Exports v2 {@link SessionMessage} list into Copilot CLI's native {@code events.jsonl} format.
- *
- * <p>The event types mirror what {@code CopilotClientImporter} reads:
- * {@code session.start}, {@code user.message}, {@code assistant.reasoning},
- * {@code assistant.message} (with {@code toolRequests}), {@code tool.execution_complete},
- * {@code assistant.turn_end}.</p>
- */
 public final class CopilotClientExporter {
 
     private static final Logger LOG = Logger.getInstance(CopilotClientExporter.class);
@@ -35,14 +28,12 @@ public final class CopilotClientExporter {
     private static final String CONTENT_KEY = "content";
     private static final String TOOL_CALL_ID_KEY = "toolCallId";
     private static final String RESULT_KEY = "result";
+    private static final String INTERACTION_ID_KEY = "interactionId";
+    private static final String TURN_ID_KEY = "turnId";
 
     private CopilotClientExporter() {
     }
 
-    /**
-     * Returns the base session-state directory for Copilot CLI under the given project.
-     * Individual sessions are stored in UUID subfolders: {@code <basePath>/.agent-work/copilot/session-state/<uuid>/events.jsonl}.
-     */
     @NotNull
     public static Path defaultSessionStateDir(@NotNull String basePath) {
         return Path.of(basePath, ".agent-work", "copilot", "session-state");
@@ -52,15 +43,43 @@ public final class CopilotClientExporter {
         @NotNull List<SessionMessage> messages,
         @NotNull Path targetPath) throws IOException {
 
+        exportToFile(messages, targetPath, null);
+    }
+
+    /**
+     * Exports v2 messages to Copilot CLI {@code events.jsonl}.
+     *
+     * @param sessionId if provided, used in the session.start event; otherwise a new UUID is generated
+     */
+    public static void exportToFile(
+        @NotNull List<SessionMessage> messages,
+        @NotNull Path targetPath,
+        @Nullable String sessionId) throws IOException {
+
+        String sid = sessionId != null ? sessionId : UUID.randomUUID().toString();
+        EventChain chain = new EventChain();
         StringBuilder sb = new StringBuilder();
 
         String model = findFirstModel(messages);
-        sb.append(sessionStartEvent(model)).append('\n');
+        Instant startTime;
+        if (messages.isEmpty() || messages.getFirst().createdAt <= 0) {
+            startTime = Instant.now();
+        } else {
+            startTime = Instant.ofEpochMilli(messages.getFirst().createdAt);
+        }
+
+        sb.append(chain.emit("session.start", sessionStartData(sid, model, startTime))).append('\n');
+
+        if (model != null) {
+            JsonObject modelData = new JsonObject();
+            modelData.addProperty("newModel", model);
+            sb.append(chain.emit("session.model_change", modelData)).append('\n');
+        }
 
         for (SessionMessage msg : messages) {
             switch (msg.role) {
-                case "user" -> writeUserMessage(msg, sb);
-                case "assistant" -> writeAssistantTurn(msg, sb);
+                case "user" -> writeUserMessage(msg, sb, chain);
+                case "assistant" -> writeAssistantTurn(msg, sb, chain);
                 default -> { /* separators and unknown roles are skipped */ }
             }
         }
@@ -75,65 +94,115 @@ public final class CopilotClientExporter {
     }
 
     @NotNull
-    private static String sessionStartEvent(@Nullable String model) {
+    private static JsonObject sessionStartData(
+        @NotNull String sessionId,
+        @Nullable String model,
+        @NotNull Instant startTime) {
+
+        JsonObject context = new JsonObject();
+        String cwd = System.getProperty("user.dir", "");
+        context.addProperty("cwd", cwd);
+        context.addProperty("gitRoot", cwd);
+
         JsonObject data = new JsonObject();
+        data.addProperty("sessionId", sessionId);
+        data.addProperty("version", 1);
+        data.addProperty("producer", "copilot-agent");
+        data.addProperty("startTime", startTime.toString());
+        data.add("context", context);
+        data.addProperty("alreadyInUse", false);
         if (model != null) {
             data.addProperty("selectedModel", model);
         }
-        return eventLine("session.start", data);
+        return data;
     }
 
-    private static void writeUserMessage(@NotNull SessionMessage msg, @NotNull StringBuilder sb) {
+    private static void writeUserMessage(
+        @NotNull SessionMessage msg,
+        @NotNull StringBuilder sb,
+        @NotNull EventChain chain) {
+
         String text = extractText(msg);
         if (text.isEmpty()) return;
 
+        String interactionId = UUID.randomUUID().toString();
         JsonObject data = new JsonObject();
         data.addProperty(CONTENT_KEY, text);
-        sb.append(eventLine("user.message", data)).append('\n');
+        data.add("attachments", new JsonArray());
+        data.addProperty(INTERACTION_ID_KEY, interactionId);
+        sb.append(chain.emit("user.message", data)).append('\n');
     }
 
-    private static void writeAssistantTurn(@NotNull SessionMessage msg, @NotNull StringBuilder sb) {
+    private static void writeAssistantTurn(
+        @NotNull SessionMessage msg,
+        @NotNull StringBuilder sb,
+        @NotNull EventChain chain) {
+
+        String interactionId = UUID.randomUUID().toString();
+        String turnId = UUID.randomUUID().toString();
+
+        JsonObject turnStartData = new JsonObject();
+        turnStartData.addProperty(TURN_ID_KEY, turnId);
+        turnStartData.addProperty(INTERACTION_ID_KEY, interactionId);
+        sb.append(chain.emit("assistant.turn_start", turnStartData)).append('\n');
+
         for (JsonObject part : msg.parts) {
             String type = JsonlUtil.getStr(part, "type");
             if (type == null) continue;
 
             switch (type) {
-                case "reasoning" -> writeReasoningEvent(part, sb);
-                case "text" -> writeAssistantMessageEvent(part, msg, sb);
-                case "tool-invocation" -> writeToolEvents(part, sb);
-                case "subagent" -> writeSubagentEvents(part, sb);
+                case "reasoning" -> writeReasoningEvent(part, sb, chain);
+                case "text" -> writeAssistantMessageEvent(part, msg, sb, chain, interactionId);
+                case "tool-invocation" -> writeToolEvents(part, sb, chain, interactionId);
+                case "subagent" -> writeSubagentEvents(part, sb, chain);
                 default -> { /* status, file, etc. — not representable in events.jsonl */ }
             }
         }
 
-        sb.append(eventLine("assistant.turn_end", new JsonObject())).append('\n');
+        JsonObject turnEndData = new JsonObject();
+        turnEndData.addProperty(TURN_ID_KEY, turnId);
+        sb.append(chain.emit("assistant.turn_end", turnEndData)).append('\n');
     }
 
-    private static void writeReasoningEvent(@NotNull JsonObject part, @NotNull StringBuilder sb) {
+    private static void writeReasoningEvent(
+        @NotNull JsonObject part,
+        @NotNull StringBuilder sb,
+        @NotNull EventChain chain) {
+
         String text = JsonlUtil.getStr(part, "text");
         if (text == null || text.isEmpty()) return;
 
         JsonObject data = new JsonObject();
         data.addProperty(CONTENT_KEY, text);
-        sb.append(eventLine("assistant.reasoning", data)).append('\n');
+        sb.append(chain.emit("assistant.reasoning", data)).append('\n');
     }
 
     private static void writeAssistantMessageEvent(
         @NotNull JsonObject part,
         @NotNull SessionMessage msg,
-        @NotNull StringBuilder sb) {
+        @NotNull StringBuilder sb,
+        @NotNull EventChain chain,
+        @NotNull String interactionId) {
+
         String text = JsonlUtil.getStr(part, "text");
         if (text == null || text.isEmpty()) return;
 
         JsonObject data = new JsonObject();
+        data.addProperty("messageId", UUID.randomUUID().toString());
         data.addProperty(CONTENT_KEY, text);
+        data.addProperty(INTERACTION_ID_KEY, interactionId);
         if (msg.model != null) {
             data.addProperty("model", msg.model);
         }
-        sb.append(eventLine("assistant.message", data)).append('\n');
+        sb.append(chain.emit("assistant.message", data)).append('\n');
     }
 
-    private static void writeToolEvents(@NotNull JsonObject part, @NotNull StringBuilder sb) {
+    private static void writeToolEvents(
+        @NotNull JsonObject part,
+        @NotNull StringBuilder sb,
+        @NotNull EventChain chain,
+        @NotNull String interactionId) {
+
         JsonObject invocation = part.getAsJsonObject("toolInvocation");
         if (invocation == null) return;
 
@@ -159,9 +228,11 @@ public final class CopilotClientExporter {
             toolRequests.add(toolReq);
 
             JsonObject data = new JsonObject();
+            data.addProperty("messageId", UUID.randomUUID().toString());
             data.addProperty(CONTENT_KEY, "");
             data.add("toolRequests", toolRequests);
-            sb.append(eventLine("assistant.message", data)).append('\n');
+            data.addProperty(INTERACTION_ID_KEY, interactionId);
+            sb.append(chain.emit("assistant.message", data)).append('\n');
         }
 
         if (RESULT_KEY.equals(state)) {
@@ -172,11 +243,15 @@ public final class CopilotClientExporter {
             JsonObject data = new JsonObject();
             data.addProperty(TOOL_CALL_ID_KEY, toolCallId);
             data.add(RESULT_KEY, resultObj);
-            sb.append(eventLine("tool.execution_complete", data)).append('\n');
+            sb.append(chain.emit("tool.execution_complete", data)).append('\n');
         }
     }
 
-    private static void writeSubagentEvents(@NotNull JsonObject part, @NotNull StringBuilder sb) {
+    private static void writeSubagentEvents(
+        @NotNull JsonObject part,
+        @NotNull StringBuilder sb,
+        @NotNull EventChain chain) {
+
         String agentType = JsonlUtil.getStr(part, "agentType");
         String description = JsonlUtil.getStr(part, "description");
         String status = JsonlUtil.getStr(part, "status");
@@ -186,12 +261,12 @@ public final class CopilotClientExporter {
         startData.addProperty(TOOL_CALL_ID_KEY, toolCallId);
         startData.addProperty("agentName", agentType != null ? agentType : "general-purpose");
         startData.addProperty("agentDisplayName", description != null ? description : "");
-        sb.append(eventLine("subagent.started", startData)).append('\n');
+        sb.append(chain.emit("subagent.started", startData)).append('\n');
 
         if ("done".equals(status)) {
             JsonObject completeData = new JsonObject();
             completeData.addProperty(TOOL_CALL_ID_KEY, toolCallId);
-            sb.append(eventLine("subagent.completed", completeData)).append('\n');
+            sb.append(chain.emit("subagent.completed", completeData)).append('\n');
         }
     }
 
@@ -216,11 +291,29 @@ public final class CopilotClientExporter {
         return null;
     }
 
-    @NotNull
-    private static String eventLine(@NotNull String type, @NotNull JsonObject data) {
-        JsonObject event = new JsonObject();
-        event.addProperty("type", type);
-        event.add("data", data);
-        return GSON.toJson(event);
+    /**
+     * Maintains a sequential event chain with IDs and timestamps.
+     * Each event gets a UUID and references the previous event's ID as parentId.
+     */
+    private static final class EventChain {
+        private String lastId = UUID.randomUUID().toString();
+        private long timestampMs = System.currentTimeMillis();
+
+        @NotNull
+        String emit(@NotNull String type, @NotNull JsonObject data) {
+            String id = UUID.randomUUID().toString();
+            Instant ts = Instant.ofEpochMilli(timestampMs);
+            timestampMs += 100; // advance slightly to maintain ordering
+
+            JsonObject event = new JsonObject();
+            event.addProperty("type", type);
+            event.add("data", data);
+            event.addProperty("id", id);
+            event.addProperty("timestamp", ts.toString());
+            event.addProperty("parentId", lastId);
+
+            lastId = id;
+            return GSON.toJson(event);
+        }
     }
 }

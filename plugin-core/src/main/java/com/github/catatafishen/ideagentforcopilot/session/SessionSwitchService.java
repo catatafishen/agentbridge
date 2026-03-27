@@ -6,6 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.services.GenericSettings;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.AnthropicClientExporter;
+import com.github.catatafishen.ideagentforcopilot.session.exporters.ClaudeCliExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.CodexClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.CopilotClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
@@ -433,8 +434,9 @@ public final class SessionSwitchService implements Disposable {
 
             String newSessionId = UUID.randomUUID().toString();
             Path targetFile = claudeDir.resolve(newSessionId + JSONL_EXT);
+            String cwd = basePath != null ? basePath : "";
 
-            AnthropicClientExporter.exportToFile(messages, targetFile);
+            ClaudeCliExporter.exportToFile(messages, targetFile, newSessionId, cwd);
 
             if (!Files.exists(targetFile)) {
                 LOG.warn("Claude session file not found after export: " + targetFile);
@@ -581,7 +583,7 @@ public final class SessionSwitchService implements Disposable {
             writeWorkspaceYaml(sessionDir, newSessionId, base);
 
             Path eventsFile = sessionDir.resolve("events.jsonl");
-            CopilotClientExporter.exportToFile(messages, eventsFile);
+            CopilotClientExporter.exportToFile(messages, eventsFile, newSessionId);
 
             // Copy plan.md from v2 store into this Copilot session dir
             copyPlanFromV2Store(base, sessionDir);

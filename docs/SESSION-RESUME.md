@@ -405,4 +405,34 @@ same-role messages cause API errors or silent failures.
 consecutive messages with the same role into a single message with merged content
 blocks. This ensures the exported JSONL always has proper alternation.
 
+### Bug 9: Copilot events.jsonl missing required event metadata (2026-03-27 ~14:50)
+
+**Symptom**: Copilot CLI received `--resume=<id>` with a valid session directory
+(including `workspace.yaml`), but still created a new session.
+
+**Root cause**: Real Copilot CLI events have `id`, `timestamp`, and `parentId` fields
+at the top level of every event, plus rich `data` fields (`sessionId`, `version`,
+`producer`, `context`, `interactionId`, `messageId`, `turnId`). The exported events
+only had `type` and `data` — the CLI silently rejected them due to missing metadata.
+
+**Fix**: `CopilotClientExporter` now generates a proper event chain with UUIDs for
+`id`, ISO timestamps, `parentId` references forming a sequential chain, and all
+required `data` fields per event type. Added `assistant.turn_start` events before
+each assistant turn.
+
+### Bug 10: Claude CLI export used wrong JSONL format entirely (2026-03-27 ~14:50)
+
+**Symptom**: Claude CLI loaded the exported session via `--resume` but "failed to
+respond" on the first prompt.
+
+**Root cause**: `AnthropicClientExporter` writes bare Anthropic API messages
+(`{"role":"user","content":[...]}`), but Claude CLI's session JSONL uses a completely
+different event format with envelope fields: `type` (`"user"`/`"assistant"`),
+`uuid`, `parentUuid`, `sessionId`, `timestamp`, `cwd`, and a nested `message` field
+containing the Anthropic payload. The bare API format was being rejected by the CLI.
+
+**Fix**: Created `ClaudeCliExporter` that wraps Anthropic messages in Claude CLI event
+envelopes (`queue-operation` events, user/assistant events with proper metadata).
+`AnthropicClientExporter` is preserved for Kiro/Junie which DO use the bare Anthropic
+format.
 

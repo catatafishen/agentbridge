@@ -54,7 +54,7 @@ public final class AnthropicClientExporter {
     }
 
     @NotNull
-    private static List<SessionMessage> applyTokenBudget(
+    static List<SessionMessage> applyTokenBudget(
         @NotNull List<SessionMessage> messages,
         int maxTokenEstimate) {
 
@@ -107,7 +107,7 @@ public final class AnthropicClientExporter {
      * initial user prompt), prepends a synthetic user message with context.
      */
     @NotNull
-    private static List<AnthropicMessage> ensureUserFirst(@NotNull List<AnthropicMessage> messages) {
+    static List<AnthropicMessage> ensureUserFirst(@NotNull List<AnthropicMessage> messages) {
         if (messages.isEmpty()) return messages;
         if ("user".equals(messages.getFirst().role)) return messages;
 
@@ -122,7 +122,7 @@ public final class AnthropicClientExporter {
     }
 
     @NotNull
-    private static List<AnthropicMessage> toAnthropicMessages(@NotNull List<SessionMessage> messages) {
+    static List<AnthropicMessage> toAnthropicMessages(@NotNull List<SessionMessage> messages) {
         List<AnthropicMessage> raw = new ArrayList<>();
 
         for (SessionMessage msg : messages) {
@@ -231,9 +231,9 @@ public final class AnthropicClientExporter {
         return merged;
     }
 
-    private static final class AnthropicMessage {
-        private final String role;
-        private final List<JsonObject> contentBlocks;
+    static final class AnthropicMessage {
+        final String role;
+        final List<JsonObject> contentBlocks;
 
         AnthropicMessage(@NotNull String role, @NotNull List<JsonObject> contentBlocks) {
             this.role = role;
