@@ -816,6 +816,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private static final String PROP_CUSTOM_BINARY = "agentbridge.%s.customBinary";
     private static final String PROP_AGENT_BUBBLE_COLOR = "agentbridge.client.%s.bubbleColor";
+    private static final String PROP_SESSION_MAPPING = "agentbridge.%s.sessionMapping";
 
     /**
      * Returns the user-configured binary path for the given agent ID,
@@ -854,6 +855,24 @@ public abstract class AcpClient extends AbstractAgentClient {
     public static void saveAgentBubbleColorKey(String clientType, @Nullable String colorKey) {
         PropertiesComponent.getInstance()
             .setValue(PROP_AGENT_BUBBLE_COLOR.formatted(clientType), colorKey != null ? colorKey : "", "");
+    }
+
+    /**
+     * Returns whether cross-client session mapping is enabled for the given profile ID.
+     * When enabled, the plugin will import from the client's native session format on start
+     * and export to it on agent switch.
+     */
+    public static boolean isSessionMappingEnabled(String profileId) {
+        return PropertiesComponent.getInstance()
+            .getBoolean(PROP_SESSION_MAPPING.formatted(profileId), true);
+    }
+
+    /**
+     * Enables or disables cross-client session mapping for the given profile ID.
+     */
+    public static void setSessionMappingEnabled(String profileId, boolean enabled) {
+        PropertiesComponent.getInstance()
+            .setValue(PROP_SESSION_MAPPING.formatted(profileId), enabled);
     }
 
     // ────────────────────────────────────────────────────────────────────────

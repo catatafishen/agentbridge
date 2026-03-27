@@ -25,8 +25,7 @@ import java.util.regex.Pattern;
  * Shared base for Claude-based {@link AbstractAgentClient} implementations.
  *
  * <p>Holds constants, session-lifecycle maps, and utility methods common to
- * {@link AnthropicDirectClient} (direct HTTPS) and {@link ClaudeCliClient}
- * (subprocess via {@code claude} CLI).
+ * {@link ClaudeCliClient} (subprocess via {@code claude} CLI).
  */
 abstract class AbstractClaudeAgentClient extends AbstractAgentClient {
 

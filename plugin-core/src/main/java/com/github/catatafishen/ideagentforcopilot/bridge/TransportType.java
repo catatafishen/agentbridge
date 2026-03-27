@@ -12,13 +12,6 @@ public enum TransportType {
     ACP,
 
     /**
-     * Direct HTTPS calls to the Anthropic Messages API with SSE streaming.
-     * Used for Claude Code accounts that have a direct Anthropic API key.
-     * No local CLI binary required.
-     */
-    ANTHROPIC_DIRECT,
-
-    /**
      * Subprocess calls to the {@code claude} CLI binary in {@code --print} mode with
      * {@code --output-format stream-json}. Uses the Claude subscription stored by the CLI
      * ({@code ~/.claude/.credentials.json}) — no Anthropic API key required.

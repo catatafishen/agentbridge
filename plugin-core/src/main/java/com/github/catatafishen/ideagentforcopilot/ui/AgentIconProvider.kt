@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.agent.claude.AnthropicDirectClient
 import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexAppServerClient
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager
@@ -20,7 +19,7 @@ object AgentIconProvider {
 
     fun getIconForProfile(profileId: String?): Icon {
         val icon = when (profileId) {
-            AnthropicDirectClient.PROFILE_ID, ClaudeCliClient.PROFILE_ID -> claudeIcon
+            ClaudeCliClient.PROFILE_ID -> claudeIcon
             AgentProfileManager.COPILOT_PROFILE_ID -> copilotIcon
             AgentProfileManager.OPENCODE_PROFILE_ID -> opencodeIcon
             AgentProfileManager.JUNIE_PROFILE_ID -> junieIcon

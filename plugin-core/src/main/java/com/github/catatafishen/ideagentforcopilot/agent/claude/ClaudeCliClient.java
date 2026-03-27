@@ -266,27 +266,6 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     @Override
     public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> getAvailableModels() {
-        // 1. Try to fetch from Anthropic API if API key is available
-        //    Check both Claude Code API profile key and this profile's key
-        try {
-            String apiKey = AnthropicKeyStore.getApiKey(AnthropicDirectClient.PROFILE_ID);
-            if (apiKey == null || apiKey.isBlank()) {
-                apiKey = AnthropicKeyStore.getApiKey(profile.getId());
-            }
-            if (apiKey != null && !apiKey.isBlank()) {
-                List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> apiModels =
-                    AnthropicModelsApi.fetchModels(apiKey);
-                if (!apiModels.isEmpty()) {
-                    LOG.info("Fetched " + apiModels.size() + " models from Anthropic API");
-                    return apiModels;
-                }
-            }
-        } catch (Exception e) {
-            LOG.warn("Failed to fetch models from Anthropic API, falling back to hardcoded list: " +
-                e.getMessage());
-        }
-
-        // 2. Fall back to hardcoded list
         return KNOWN_MODELS;
     }
 

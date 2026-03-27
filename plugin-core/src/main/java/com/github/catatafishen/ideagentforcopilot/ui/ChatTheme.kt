@@ -180,8 +180,7 @@ object ChatTheme {
      */
     fun agentColorIndex(profileId: String): Int = when (profileId) {
         "copilot" -> 0          // teal
-        "claude-code" -> 1       // orange
-        "claude-cli" -> 1        // orange (same as claude-code)
+        "claude-cli" -> 1        // orange
         "junie" -> 2             // purple
         "kiro" -> 3              // pink
         "opencode" -> 4          // blue

@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.services;
 
-import com.github.catatafishen.ideagentforcopilot.agent.claude.AnthropicDirectClient;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliCredentials;
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexAppServerClient;
@@ -22,7 +21,7 @@ public final class AgentProfileManager {
 
     public static final String COPILOT_PROFILE_ID = "copilot";
     public static final String OPENCODE_PROFILE_ID = "opencode";
-    public static final String CLAUDE_CODE_PROFILE_ID = AnthropicDirectClient.PROFILE_ID;
+
     public static final String CLAUDE_CLI_PROFILE_ID = ClaudeCliClient.PROFILE_ID;
     public static final String JUNIE_PROFILE_ID = "junie";
     public static final String KIRO_PROFILE_ID = "kiro";
@@ -69,7 +68,7 @@ public final class AgentProfileManager {
     }
 
     private void ensureDefaults() {
-        for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID, CLAUDE_CODE_PROFILE_ID,
+        for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
             CLAUDE_CLI_PROFILE_ID, JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID)) {
             if (!profiles.containsKey(id)) {
                 AgentProfile profile = createDefaultProfile(id);
@@ -83,7 +82,6 @@ public final class AgentProfileManager {
         return switch (id) {
             case COPILOT_PROFILE_ID -> buildCopilotProfile();
             case OPENCODE_PROFILE_ID -> buildOpenCodeProfile();
-            case CLAUDE_CODE_PROFILE_ID -> AnthropicDirectClient.createDefaultProfile();
             case CLAUDE_CLI_PROFILE_ID -> ClaudeCliClient.createDefaultProfile();
             case JUNIE_PROFILE_ID -> buildJunieProfile();
             case KIRO_PROFILE_ID -> buildKiroProfile();

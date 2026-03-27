@@ -2,7 +2,6 @@ package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentRegistry;
-import com.github.catatafishen.ideagentforcopilot.agent.claude.AnthropicDirectClient;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient;
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
@@ -262,9 +261,7 @@ public final class ActiveAgentManager implements Disposable {
 
             clearCachedConfig();
 
-            if (AnthropicDirectClient.PROFILE_ID.equals(agentId)) {
-                acpClient = new AnthropicDirectClient(profile, ToolRegistry.getInstance(project), project);
-            } else if (ClaudeCliClient.PROFILE_ID.equals(agentId)) {
+            if (ClaudeCliClient.PROFILE_ID.equals(agentId)) {
                 int mcpPort = resolveMcpPort();
                 AgentConfig config = resolveStartConfig();
                 acpClient = new ClaudeCliClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);

@@ -399,12 +399,6 @@
 
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.AnthropicDirectClientConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.anthropicDirect"
-      displayName="Claude Code"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
       instance="com.github.catatafishen.ideagentforcopilot.settings.ClaudeCliClientConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.clientAgents.claudeCli"
       displayName="Claude CLI"/>
