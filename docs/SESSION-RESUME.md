@@ -83,7 +83,7 @@ When the user switches from agent A to agent B:
 
 | Agent       | Session Storage Path                                                | Format                        |
 |-------------|---------------------------------------------------------------------|-------------------------------|
-| Claude CLI  | `~/.claude/projects/<dash-separated-cwd>/<uuid>.jsonl`                    | Anthropic messages            |
+| Claude CLI  | `~/.claude/projects/<dash-separated-cwd>/<uuid>.jsonl`              | Anthropic messages            |
 | Kiro        | `~/.kiro/sessions/<uuid>/session.json` + `messages.jsonl`           | Anthropic messages            |
 | Junie       | `~/.junie/sessions/<uuid>/session.json` + `messages.jsonl`          | Anthropic messages            |
 | Copilot CLI | `<project>/.agent-work/copilot/session-state/<uuid>/events.jsonl`   | Copilot events                |
@@ -251,6 +251,7 @@ deleted `.current-session-id`. Two separate `SessionStoreV2` instances
 competed for the same `.current-session-id` file with no synchronization.
 
 **Timeline of the race**:
+
 1. `switchAgent(A→B)` → spawns `doExport` → completes, writes session
 2. `fetchModelsWithRetry()` → awaits export (done) → starts agent B
 3. `buildAndShowChatPanel()` (first connection) → `archive()` →
@@ -288,6 +289,7 @@ still fail:
 returned). The agent had no context from the previous conversation.
 
 **Investigation findings**:
+
 - The exported `events.jsonl` existed and contained 83 events
 - However, the events had **0 `user.message` events** — only `assistant.message`,
   `tool.execution_complete`, `assistant.turn_end`, and `session.start` events
@@ -310,6 +312,7 @@ returned). The agent had no context from the previous conversation.
 The turn ended early with no output.
 
 **Investigation findings**:
+
 - The `~/.claude/projects/` directory was **completely empty** — no project directories
   exist at all (not the old SHA1-based path, not the new dash-separated path)
 - This means either: (a) `AnthropicClientExporter` failed silently and never wrote the
@@ -324,33 +327,33 @@ The turn ended early with no output.
 ### Open Questions for Next Debugging Session
 
 1. **Why does `CopilotClientExporter` produce 0 user messages?**
-   - Check what the v2 session contained at the exact moment of export (not after)
-   - Add logging to `writeUserMessage()` to trace which messages are skipped and why
-   - Verify that `extractText()` correctly handles the parts structure from
-     `AnthropicClientImporter` (the source of the v2 data)
+    - Check what the v2 session contained at the exact moment of export (not after)
+    - Add logging to `writeUserMessage()` to trace which messages are skipped and why
+    - Verify that `extractText()` correctly handles the parts structure from
+      `AnthropicClientImporter` (the source of the v2 data)
 
 2. **Does Copilot CLI actually support `--resume` for externally-created sessions?**
-   - The CLI may only resume sessions it created itself (where it controls the
-     `events.jsonl` format and internal state)
-   - Test by creating a session in Copilot, stopping it, then resuming with `--resume`
-     to verify the mechanism works at all
+    - The CLI may only resume sessions it created itself (where it controls the
+      `events.jsonl` format and internal state)
+    - Test by creating a session in Copilot, stopping it, then resuming with `--resume`
+      to verify the mechanism works at all
 
 3. **Why is `~/.claude/projects/` empty?**
-   - Add debug logging to `AnthropicClientExporter` to confirm the exact path written
-   - Check file permissions and whether `mkdirs()` succeeded
-   - Verify the dash-separated path format matches Claude CLI's actual convention
-     (inspect a real Claude CLI session to see what path it uses)
+    - Add debug logging to `AnthropicClientExporter` to confirm the exact path written
+    - Check file permissions and whether `mkdirs()` succeeded
+    - Verify the dash-separated path format matches Claude CLI's actual convention
+      (inspect a real Claude CLI session to see what path it uses)
 
 4. **Does Claude CLI crash on malformed session data?**
-   - If the exported JSONL is malformed (wrong message structure, missing required
-     fields), Claude CLI may crash silently instead of starting a fresh session
-   - Validate the exported JSONL against Claude's expected format
+    - If the exported JSONL is malformed (wrong message structure, missing required
+      fields), Claude CLI may crash silently instead of starting a fresh session
+    - Validate the exported JSONL against Claude's expected format
 
 5. **Is the `resumeSessionId` in `session/new` actually used by any agent?**
-   - Copilot CLI ignores it (needs `--resume` flag instead)
-   - Claude CLI uses `--resume <id>` flag
-   - Only Kiro/Junie may actually use the ACP `resumeSessionId` parameter
-   - Consider whether the ACP parameter should be removed to avoid confusion
+    - Copilot CLI ignores it (needs `--resume` flag instead)
+    - Claude CLI uses `--resume <id>` flag
+    - Only Kiro/Junie may actually use the ACP `resumeSessionId` parameter
+    - Consider whether the ACP parameter should be removed to avoid confusion
 
 ### Current Situation (2026-03-27 ~14:00)
 
@@ -361,16 +364,17 @@ All fixes are committed and the plugin was rebuilt and restarted twice for testi
 
 **What still doesn't work**:
 
-| Path                | Status | Notes                                                          |
-|---------------------|--------|----------------------------------------------------------------|
-| Copilot → Claude    | ❌      | Claude fails to respond; `~/.claude/projects/` is empty        |
-| Claude → Copilot    | ❌      | Copilot starts fresh session; exported events have 0 user msgs |
-| Copilot → Copilot   | ❌      | Same-agent resume after IDE restart also gives blank context    |
+| Path              | Status | Notes                                                          |
+|-------------------|--------|----------------------------------------------------------------|
+| Copilot → Claude  | ❌      | Claude fails to respond; `~/.claude/projects/` is empty        |
+| Claude → Copilot  | ❌      | Copilot starts fresh session; exported events have 0 user msgs |
+| Copilot → Copilot | ❌      | Same-agent resume after IDE restart also gives blank context   |
 
 **Last test (14:00)**: User switched from Claude → Copilot with "Resume session".
 Copilot started a brand new session with no context. Agent confirmed blank context.
 
 **Next steps**: See "Open Questions" above. The most promising investigation paths are:
+
 1. Add logging to `CopilotClientExporter.writeUserMessage()` to understand why 0 user
    messages are exported despite the v2 session having user messages with text content
 2. Verify `~/.claude/projects/` path convention by inspecting a real Claude CLI session
@@ -435,4 +439,56 @@ containing the Anthropic payload. The bare API format was being rejected by the 
 envelopes (`queue-operation` events, user/assistant events with proper metadata).
 `AnthropicClientExporter` is preserved for Kiro/Junie which DO use the bare Anthropic
 format.
+
+### Bug 11: Stale `resumeSessionId` reused on subsequent Copilot launches (commit `f181688`)
+
+**Symptom**: After a successful resume, subsequent Copilot launches would still pass the
+old `--resume=<id>` flag, attempting to resume an already-resumed (consumed) session.
+
+**Root cause**: `CopilotClient.buildCommand()` read `resumeSessionId` from
+`GenericSettings` but never cleared it. Every subsequent launch kept appending
+`--resume` with the same stale ID.
+
+**Fix**: `buildCommand()` now clears the stored `resumeSessionId` immediately after
+reading it, ensuring the flag is consumed exactly once per intended resume.
+
+---
+
+### ✅ Copilot → Claude Resume: Confirmed Working (2026-03-27)
+
+After all ten bugs above were fixed (commits `db56f7c` through `f181688`), the
+**Copilot → Claude** resume path was confirmed working end-to-end:
+
+- Switched from Copilot CLI to Claude CLI with "Resume session" selected
+- Claude CLI started with `--resume <id>` pointing to the exported session
+- Claude responded to the first prompt with full context from the previous Copilot
+  conversation intact
+- Verified: the agent (Claude) confirmed awareness of prior session content without
+  any re-prompting
+
+**What made it work** (the two critical fixes):
+
+1. `ClaudeCliExporter` (Bug 10) — correct envelope format with `uuid`, `parentUuid`,
+   `sessionId`, `cwd`, and proper `queue-operation` events
+2. `mergeConsecutiveSameRole()` (Bug 8) — prevents consecutive user messages that
+   cause Claude API errors
+
+| Path              | Status | Notes                              |
+|-------------------|--------|------------------------------------|
+| Copilot → Claude  | ✅      | Confirmed working as of 2026-03-27 |
+| Claude → Copilot  | ✅      | Confirmed working as of 2026-03-27 |
+| Copilot → Copilot | ❓      | Not yet tested after Bug 9 fix     |
+
+### ✅ Claude → Copilot Resume: Confirmed Working (2026-03-27)
+
+Immediately after the Copilot → Claude test above, the reverse path was tested:
+
+- Switched from Claude CLI back to Copilot CLI with "Resume session" selected
+- Copilot CLI started with `--resume <id>` pointing to the exported session
+- Copilot (powered by Claude Opus 4.6) responded with full awareness of the
+  previous conversation — correctly recalling Bug 9, Bug 10, Bug 11, the two
+  final commits (`b202e0fe`, `f1816888`), and the SESSION-RESUME.md update
+- No re-prompting was needed; the agent had complete context from the Claude session
+
+This confirms **bidirectional resume** between Copilot and Claude is fully working.
 
