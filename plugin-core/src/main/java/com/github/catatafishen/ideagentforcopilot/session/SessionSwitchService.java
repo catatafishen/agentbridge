@@ -22,10 +22,10 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -43,6 +43,9 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Project service that orchestrates cross-client session migration when the active
@@ -94,6 +97,7 @@ public final class SessionSwitchService implements Disposable {
 
     private final Project project;
     private final SessionStoreV2 sessionStore = new SessionStoreV2();
+    private volatile CompletableFuture<Void> pendingExport = CompletableFuture.completedFuture(null);
 
     public SessionSwitchService(@NotNull Project project) {
         this.project = project;
@@ -113,15 +117,38 @@ public final class SessionSwitchService implements Disposable {
     // ── Main entry point ──────────────────────────────────────────────────────
 
     /**
-     * Called when the active agent is switched. Runs the export logic on a pooled thread.
+     * Called when the active agent is switched. Runs the export logic on a pooled thread
+     * and stores the future so callers can wait for completion via {@link #awaitPendingExport}.
      *
      * @param fromProfileId profile ID of the previously active agent
      * @param toProfileId   profile ID of the newly active agent
      */
     public void onAgentSwitch(@NotNull String fromProfileId, @NotNull String toProfileId) {
         if (fromProfileId.equals(toProfileId)) return;
-        ApplicationManager.getApplication().executeOnPooledThread(
-            () -> doExport(fromProfileId, toProfileId));
+        pendingExport = CompletableFuture.runAsync(
+            () -> doExport(fromProfileId, toProfileId),
+            AppExecutorUtil.getAppExecutorService());
+    }
+
+    /**
+     * Blocks until any in-progress session export completes, or until {@code timeoutMs} elapses.
+     * Safe to call when no export is running — returns immediately.
+     * <p>
+     * Call this before starting the new agent process so that {@code resumeSessionId} is
+     * guaranteed to be set before {@code createSession()} reads it.
+     *
+     * @param timeoutMs maximum wait in milliseconds
+     */
+    public void awaitPendingExport(long timeoutMs) {
+        CompletableFuture<Void> future = pendingExport;
+        if (future.isDone()) return;
+        try {
+            future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            LOG.warn("Timed out waiting for session export (" + timeoutMs + " ms) — resumeSessionId may be stale");
+        } catch (Exception e) {
+            LOG.warn("Error waiting for session export", e);
+        }
     }
 
     // ── Export logic ──────────────────────────────────────────────────────────
@@ -594,7 +621,6 @@ public final class SessionSwitchService implements Disposable {
     private List<SessionMessage> loadCurrentV2Session(@Nullable String basePath) {
         try {
             String sessionId = sessionStore.getCurrentSessionId(basePath);
-            if (sessionId.isEmpty()) return null;
 
             File sessionsDir = sessionsDir(basePath);
             File jsonlFile = new File(sessionsDir, sessionId + JSONL_EXT);

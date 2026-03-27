@@ -6,6 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.agent.AgentException
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.ChatWebServer
 import com.github.catatafishen.ideagentforcopilot.session.migration.V1ToV2Migrator
+import com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
 import com.intellij.icons.AllIcons
@@ -2040,6 +2041,11 @@ class ChatToolWindowContent(
     }
 
     private fun fetchModelsWithRetry(): List<Model> {
+        // Wait for any in-progress session export to complete before starting the agent.
+        // Without this, createSession() reads a stale or missing resumeSessionId because
+        // the export from the previous agent runs concurrently on a pooled thread.
+        SessionSwitchService.getInstance(project).awaitPendingExport(10_000)
+
         var lastError: Exception? = null
         for (attempt in 1..3) {
             if (attempt > 1) Thread.sleep(2000L)
