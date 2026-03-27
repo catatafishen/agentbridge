@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.acp.client;
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -186,6 +187,14 @@ public final class CopilotClient extends AcpClient {
             cmd.add("--agent");
             cmd.add(agentSlug);
         }
+
+        // The Copilot CLI ignores resumeSessionId in ACP session/new params — it only
+        // supports resume via the --resume CLI flag.
+        String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
+        if (resumeId != null) {
+            cmd.add("--resume=" + resumeId);
+        }
+
         return cmd;
     }
 

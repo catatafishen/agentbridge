@@ -128,7 +128,7 @@ continuation of the exported session. The mechanism varies by client:
 
 | Agent | Resume Mechanism | Persisted Where |
 |-------|-----------------|-----------------|
-| Copilot | `resumeSessionId` in ACP `session/new` | `GenericSettings("copilot", project)` |
+| Copilot | `--resume=<id>` CLI flag (ACP `resumeSessionId` is ignored) | `GenericSettings("copilot", project)` |
 | Kiro | `resumeSessionId` in ACP `session/new` | `GenericSettings("kiro", project)` |
 | Junie | `resumeSessionId` in ACP `session/new` | `GenericSettings("junie", project)` |
 | Claude CLI | `--resume <id>` CLI flag | `cliSessionIds` map (in-memory only) + `cliResumeSessionId` property |
