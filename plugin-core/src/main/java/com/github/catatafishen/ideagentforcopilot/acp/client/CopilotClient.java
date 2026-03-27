@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
-import com.github.catatafishen.ideagentforcopilot.services.AgentUiSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -190,12 +189,12 @@ public final class CopilotClient extends AcpClient {
         }
 
         // The Copilot CLI ignores resumeSessionId in ACP session/new params — it only
-        // supports resume via the --resume CLI flag. One-shot: clear after reading.
-        AgentUiSettings settings = ActiveAgentManager.getInstance(project).getSettings();
-        String resumeId = settings.getResumeSessionId();
+        // supports resume via the --resume CLI flag. The ID is NOT cleared here — it will
+        // be overwritten by persistResumeSessionId() after a successful session/new. If the
+        // CLI fails to start, the old ID is preserved for the next attempt.
+        String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
         if (resumeId != null) {
             cmd.add("--resume=" + resumeId);
-            settings.setResumeSessionId(null);
         }
 
         return cmd;

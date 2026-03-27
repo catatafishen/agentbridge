@@ -679,3 +679,30 @@ clients that ran outside the plugin.
 | Universal v2 → Junie    | ❓      | AnthropicClientExporter, untested        |
 | Universal v2 → Kiro     | ❓      | AnthropicClientExporter, untested        |
 
+### Bug 22: `buildCommand()` clear-after-read loses resume ID (2026-03-27)
+
+**Symptom**: Copilot can't restore its own sessions after IDE restart. The CLI receives
+`--resume=<id>` pointing to an export-created session directory that has `workspace.yaml`
+but no `events.jsonl`, so it creates a fresh session instead.
+
+**Root cause**: `CopilotClient.buildCommand()` read the `resumeSessionId` from
+`GenericSettings` and then **immediately cleared it** (`settings.setResumeSessionId(null)`).
+The clear was meant to be "one-shot" (Bug 11 fix), but it created a fragile window:
+
+1. `buildCommand()` reads and clears → resume ID is now null in memory
+2. CLI process launch, transport, authentication, `session/new` — any failure here…
+3. `persistResumeSessionId(newId)` — only runs if `createSession()` succeeds
+
+If anything between steps 1 and 3 fails, the resume ID is **permanently lost**. On the
+next attempt, `buildCommand()` reads null → no `--resume` flag → fresh session.
+
+Additionally, if the IDE is killed (crash, deploy restart) before the in-memory null is
+flushed to `PropertiesComponent` (backed by `.idea/workspace.xml`), the on-disk value may
+revert to a stale export-created session ID (from `exportToCopilot()`). That stale ID
+points to an exported session directory that may lack `events.jsonl`, causing the CLI to
+silently create a fresh session.
+
+**Fix**: Removed `settings.setResumeSessionId(null)` from `buildCommand()`. The explicit
+clear is redundant because `persistResumeSessionId(newId)` in `createSession()` naturally
+overwrites the old value. If `createSession()` fails, the old ID is preserved for retry.
+
