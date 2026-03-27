@@ -175,7 +175,7 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws java.io.IOException {
-        java.nio.file.Path kiroDir = java.nio.file.Path.of(cwd, ".agent-work", ".kiro", "agents");
+        java.nio.file.Path kiroDir = java.nio.file.Path.of(System.getProperty("user.home"), ".kiro", "agents");
         java.nio.file.Files.createDirectories(kiroDir);
         java.nio.file.Path agentPath = kiroDir.resolve("intellij-task.json");
 

@@ -9,13 +9,10 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
@@ -23,12 +20,12 @@ import java.util.concurrent.TimeoutException;
 /**
  * GitHub Copilot ACP client.
  * <p>
- * Command: {@code copilot --acp --stdio [--config-dir ...]}
+ * Command: {@code copilot --acp --stdio}
  * Tool prefix: {@code agentbridge-read_file} → strip {@code agentbridge-}
  * Model display: multiplier from {@code _meta.copilotUsage}
  * References: requires inline (no ACP resource blocks)
- * MCP: HTTP via {@code mcpServers} in {@code session/new}
- * Agents: three custom agents written to {@code .agent-work/copilot/agents/} at launch
+ * MCP: HTTP via {@code mcpServers} in {@code session/new} + merged into {@code ~/.copilot/mcp-config.json}
+ * Agents: three custom agents written to {@code ~/.copilot/agents/} at launch
  * <p>
  * <b>Tool filtering note:</b> {@code --excluded-tools} and {@code --available-tools} are currently
  * ignored in ACP mode (bug #556). The flags are passed anyway so they take effect once the bug is
@@ -43,7 +40,6 @@ public final class CopilotClient extends AcpClient {
     private static final String DEFAULT_AGENT_SLUG = "intellij-default";
     private static final String MCP_SERVER_NAME = "agentbridge";
     private static final String MCP_TYPE_HTTP = "http";
-    private static final String AGENT_WORK_DIR = ".agent-work";
     private static final String KEY_RAW_INPUT = "rawInput";
 
     // ─── MCP tool sets ───────────────────────────────
@@ -138,34 +134,9 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
-        String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
-        writeAgentDefinitions(configDir);
-        writeMcpConfig(configDir, mcpPort);
-        ensureDotCopilotSymlink(configDir);
-    }
-
-    /**
-     * Creates a {@code .copilot/session-state} symlink inside the config directory.
-     *
-     * <p><b>Why:</b> The Copilot CLI may resolve {@code --resume=<id>} relative to
-     * {@code $HOME/.copilot/session-state/} rather than {@code --config-dir/session-state/}.
-     * Since both {@code HOME} and {@code --config-dir} are set to the same value
-     * ({@code .agent-work/copilot}), sessions are created at
-     * {@code .agent-work/copilot/session-state/<id>/} but {@code --resume} may look at
-     * {@code .agent-work/copilot/.copilot/session-state/<id>/}. This symlink bridges the gap.</p>
-     */
-    private static void ensureDotCopilotSymlink(String configDir) {
-        Path dotCopilotSessionState = Path.of(configDir, ".copilot", "session-state");
-        if (Files.exists(dotCopilotSessionState, LinkOption.NOFOLLOW_LINKS)) {
-            return;
-        }
-        try {
-            Files.createDirectories(dotCopilotSessionState.getParent());
-            Files.createSymbolicLink(dotCopilotSessionState, Path.of("..", "session-state"));
-            LOG.info("Created .copilot/session-state symlink in " + configDir);
-        } catch (IOException e) {
-            LOG.warn("Failed to create .copilot/session-state symlink: " + e.getMessage());
-        }
+        Path home = copilotHome();
+        writeAgentDefinitions(home.toString());
+        mergeMcpConfig(home, mcpPort);
     }
 
     // ─── Identity ────────────────────────────────────
@@ -201,13 +172,9 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
         String agentSlug = getCurrentAgentSlug();
         List<String> cmd = new java.util.ArrayList<>(List.of(
             AGENT_ID, "--acp", "--stdio",
-            "--config-dir", configDir,
-            // MCP config is written to mcp-config.json in configDir instead of command line
-            // to avoid Windows command-line escaping issues with JSON
             "--disable-builtin-mcps",
             "--no-auto-update",
             "--excluded-tools", EXCLUDED_BUILTIN_TOOLS
@@ -224,11 +191,9 @@ public final class CopilotClient extends AcpClient {
         String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
         if (resumeId != null) {
             cmd.add("--resume=" + resumeId);
-            Path sessionDir = Path.of(configDir, "session-state", resumeId);
-            Path symlinkDir = Path.of(configDir, ".copilot", "session-state", resumeId);
+            Path sessionDir = copilotHome().resolve("session-state").resolve(resumeId);
             LOG.info("Copilot --resume=" + resumeId
-                + " configDir=" + sessionDir + " (exists=" + Files.isDirectory(sessionDir) + ")"
-                + " symlinkDir=" + symlinkDir + " (exists=" + Files.isDirectory(symlinkDir) + ")");
+                + " sessionDir=" + sessionDir + " (exists=" + Files.isDirectory(sessionDir) + ")");
         } else {
             LOG.info("Copilot: no resumeSessionId set, starting fresh session");
         }
@@ -236,20 +201,19 @@ public final class CopilotClient extends AcpClient {
         return cmd;
     }
 
-    private static String buildMcpConfigJson(int mcpPort) {
-        return "{\"mcpServers\":{\"" + MCP_SERVER_NAME
-            + "\":{\"type\":\"http\",\"url\":\"http://localhost:" + mcpPort + "/mcp\"}}}";
+    /**
+     * Returns the standard Copilot CLI home directory ({@code ~/.copilot/}).
+     * No environment overrides — the CLI uses the real user home for config, auth, and sessions.
+     */
+    static Path copilotHome() {
+        return Path.of(System.getProperty("user.home"), ".copilot");
     }
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        String copilotHome = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
-        return Map.of(
-            "XDG_CONFIG_HOME", copilotHome,
-            "COPILOT_HOME", copilotHome,
-            "HOME", copilotHome,
-            "USERPROFILE", copilotHome
-        );
+        // No environment overrides — let the CLI use standard ~/.copilot/ for config,
+        // auth, and session state. Overriding HOME breaks --resume path resolution.
+        return Map.of();
     }
 
     // ─── Session ─────────────────────────────────────
@@ -388,11 +352,29 @@ public final class CopilotClient extends AcpClient {
         writeAgentFile(agentsDir.resolve("intellij-edit.md"), buildEditAgentDefinition());
     }
 
-    private void writeMcpConfig(String configDir, int mcpPort) throws IOException {
-        Path configPath = Paths.get(configDir, "mcp-config.json");
-        String json = buildMcpConfigJson(mcpPort);
+    /**
+     * Merges our agentbridge MCP server into the user's existing {@code mcp-config.json}.
+     * If the file doesn't exist, creates it. If it does, adds/updates the agentbridge entry
+     * without clobbering other user-configured MCP servers.
+     */
+    private void mergeMcpConfig(Path copilotDir, int mcpPort) throws IOException {
+        Path configPath = copilotDir.resolve("mcp-config.json");
+        JsonObject root;
+        if (Files.exists(configPath)) {
+            String existing = Files.readString(configPath, StandardCharsets.UTF_8);
+            root = com.google.gson.JsonParser.parseString(existing).getAsJsonObject();
+        } else {
+            root = new JsonObject();
+        }
+        if (!root.has("mcpServers") || !root.get("mcpServers").isJsonObject()) {
+            root.add("mcpServers", new JsonObject());
+        }
+        JsonObject entry = new JsonObject();
+        entry.addProperty("type", MCP_TYPE_HTTP);
+        entry.addProperty("url", "http://localhost:" + mcpPort + "/mcp");
+        root.getAsJsonObject("mcpServers").add(MCP_SERVER_NAME, entry);
         Files.createDirectories(configPath.getParent());
-        Files.writeString(configPath, json, StandardCharsets.UTF_8);
+        Files.writeString(configPath, root.toString(), StandardCharsets.UTF_8);
     }
 
     private static void writeAgentFile(Path path, String content) throws IOException {

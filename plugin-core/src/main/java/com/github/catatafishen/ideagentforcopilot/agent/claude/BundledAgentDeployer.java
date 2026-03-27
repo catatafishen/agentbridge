@@ -35,21 +35,28 @@ public final class BundledAgentDeployer {
     }
 
     /**
-     * Ensures the given agent definitions exist in a custom directory relative to the project root.
+     * Ensures the given agent definitions exist in a custom directory.
      * Each filename in {@code agentFiles} must correspond to a classpath resource under {@code /agents/}.
      * Safe to call multiple times — uses a sentinel to skip already-deployed files.
      *
-     * @param projectBasePath the project root directory, or null to skip
-     * @param agentsDirectory directory relative to project root (e.g. {@code ".agent-work/.kiro/agents"})
+     * @param projectBasePath the project root directory, or null to skip (ignored for absolute paths)
+     * @param agentsDirectory directory — absolute or relative to project root
      * @param agentFiles      list of agent filenames to deploy (e.g. {@code "kiro-intellij-agent.json"})
      */
     public static void ensureAgents(@Nullable String projectBasePath,
                                     @NotNull String agentsDirectory,
                                     @NotNull List<String> agentFiles) {
-        if (projectBasePath == null || agentFiles.isEmpty()) return;
+        if (agentFiles.isEmpty()) return;
+
+        Path agentsDir;
+        if (Path.of(agentsDirectory).isAbsolute()) {
+            agentsDir = Path.of(agentsDirectory);
+        } else {
+            if (projectBasePath == null) return;
+            agentsDir = Path.of(projectBasePath, agentsDirectory);
+        }
 
         synchronized (LOCK) {
-            Path agentsDir = Path.of(projectBasePath, agentsDirectory);
             for (String agentFile : agentFiles) {
                 deployAgent(agentsDir, agentFile);
             }

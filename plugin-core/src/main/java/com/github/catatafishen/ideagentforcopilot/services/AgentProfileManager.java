@@ -135,7 +135,7 @@ public final class AgentProfileManager {
         p.setAlternateNames(List.of("kiro"));
         p.setInstallHint("Install Kiro CLI and ensure it's available on your PATH.");
         p.setInstallUrl("https://kiro.dev/docs/cli/acp/");
-        p.setAgentsDirectory(".agent-work/.kiro/agents");
+        p.setAgentsDirectory(System.getProperty("user.home") + "/.kiro/agents");
         p.setBundledAgentFiles(List.of("kiro-intellij-explore.json", "kiro-intellij-task.json"));
         return p;
     }

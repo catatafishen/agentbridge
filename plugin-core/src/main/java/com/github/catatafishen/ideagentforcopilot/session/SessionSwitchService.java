@@ -59,7 +59,7 @@ import java.util.concurrent.TimeoutException;
  *   <li>Claude CLI / Claude Code — {@code ~/.claude/projects/<sha1>/*.jsonl}</li>
  *   <li>Kiro — {@code ~/.kiro/sessions/<uuid>/messages.jsonl}</li>
  *   <li>Junie — {@code ~/.junie/sessions/<uuid>/messages.jsonl}</li>
- *   <li>Copilot CLI — {@code <project>/.agent-work/copilot/session-state/<uuid>/events.jsonl}</li>
+ *   <li>Copilot CLI — {@code ~/.copilot/session-state/<uuid>/events.jsonl}</li>
  *   <li>Codex — {@code ~/.codex/codex.db} + rollout JSONL</li>
  *   <li>OpenCode — {@code ~/.local/share/opencode/opencode.db}</li>
  * </ul>
@@ -70,7 +70,7 @@ import java.util.concurrent.TimeoutException;
  *   <li>Kiro — writes to {@code ~/.kiro/sessions/<uuid>/} + sets resumeSessionId</li>
  *   <li>Junie — writes to {@code ~/.junie/sessions/<uuid>/} + sets resumeSessionId</li>
  *   <li>Codex — writes rollout JSONL + updates codex.db + sets codexThreadId</li>
- *   <li>Copilot CLI — writes to {@code <project>/.agent-work/copilot/session-state/<uuid>/events.jsonl} + sets resumeSessionId</li>
+ *   <li>Copilot CLI — writes to {@code ~/.copilot/session-state/<uuid>/events.jsonl} + sets resumeSessionId</li>
  *   <li>OpenCode — writes to {@code opencode.db} (session/message/part tables)</li>
  * </ul>
  */
@@ -407,13 +407,12 @@ public final class SessionSwitchService implements Disposable {
     }
 
     /**
-     * Imports from Copilot CLI session state ({@code <basePath>/.agent-work/copilot/session-state/}).
+     * Imports from Copilot CLI session state ({@code ~/.copilot/session-state/}).
      * Finds the most-recent {@code events.jsonl} and imports it if it has more messages than v2.
      */
     private void importFromCopilotCli(@Nullable String basePath) {
         try {
-            String base = basePath != null ? basePath : "";
-            Path copilotSessionsDir = Path.of(base, ".agent-work", COPILOT_ID_PREFIX, "session-state");
+            Path copilotSessionsDir = Path.of(System.getProperty(USER_HOME_PROPERTY), ".copilot", SESSION_STATE_DIR);
             if (!copilotSessionsDir.toFile().isDirectory()) return;
 
             List<SessionMessage> currentV2 = loadCurrentV2Session(basePath);
@@ -575,7 +574,7 @@ public final class SessionSwitchService implements Disposable {
      * Exports v2 session messages to a new Copilot CLI session directory
      * and sets {@code resumeSessionId} so AcpClient sends it on next {@code session/new}.
      *
-     * <p>Copilot CLI stores sessions under {@code .agent-work/copilot/session-state/<uuid>/}.
+     * <p>Copilot CLI stores sessions under {@code ~/.copilot/session-state/<uuid>/}.
      * A valid resumable session requires at minimum:
      * <ul>
      *   <li>{@code events.jsonl} — the conversation event log</li>
@@ -591,7 +590,7 @@ public final class SessionSwitchService implements Disposable {
         try {
             String base = basePath != null ? basePath : "";
             String newSessionId = UUID.randomUUID().toString();
-            Path sessionDir = Path.of(base, AGENT_WORK_DIR, COPILOT_ID_PREFIX, SESSION_STATE_DIR, newSessionId);
+            Path sessionDir = Path.of(System.getProperty(USER_HOME_PROPERTY), ".copilot", SESSION_STATE_DIR, newSessionId);
             Files.createDirectories(sessionDir);
 
             // Create required subdirectories that Copilot CLI expects
@@ -665,7 +664,10 @@ public final class SessionSwitchService implements Disposable {
         List<Path> candidates = new ArrayList<>();
         String base = basePath != null ? basePath : "";
 
-        // Copilot session directories
+        // Copilot session directories (new location: ~/.copilot/session-state/)
+        collectPlanFiles(Path.of(System.getProperty(USER_HOME_PROPERTY), ".copilot", SESSION_STATE_DIR), candidates);
+
+        // Legacy: Copilot session directories (old location: .agent-work/copilot/session-state/)
         collectPlanFiles(Path.of(base, AGENT_WORK_DIR, COPILOT_ID_PREFIX, SESSION_STATE_DIR), candidates);
 
         // Plugin-managed session directories (Claude, Kiro, Junie, etc.)

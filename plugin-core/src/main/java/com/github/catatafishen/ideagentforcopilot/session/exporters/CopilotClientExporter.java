@@ -36,7 +36,7 @@ public final class CopilotClientExporter {
 
     @NotNull
     public static Path defaultSessionStateDir(@NotNull String basePath) {
-        return Path.of(basePath, ".agent-work", "copilot", "session-state");
+        return Path.of(System.getProperty("user.home"), ".copilot", "session-state");
     }
 
     public static void exportToFile(

@@ -178,8 +178,9 @@ class CopilotClientRoundTripTest {
     @Test
     void defaultSessionStateDirIsCorrect() {
         Path result = CopilotClientExporter.defaultSessionStateDir("/home/user/project");
-        assertTrue(result.toString().endsWith(".agent-work/copilot/session-state"));
-        assertTrue(result.toString().startsWith("/home/user/project"));
+        String userHome = System.getProperty("user.home");
+        assertTrue(result.toString().endsWith(".copilot/session-state"));
+        assertTrue(result.toString().startsWith(userHome));
     }
 
     // ── Round-trip tests ────────────────────────────────────────────
