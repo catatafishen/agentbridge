@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -19,7 +20,10 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link OpenCodeClientImporter} and {@link OpenCodeClientExporter}.
@@ -244,10 +248,12 @@ class OpenCodeClientRoundTripTest {
     }
 
     @Test
-    void exportToNonExistentDbReturnsNull() {
-        Path nonExistent = tempDir.resolve("nonexistent.db");
-        assertNull(OpenCodeClientExporter.exportSession(
-            List.of(userMessage("hi")), nonExistent, PROJECT_DIR));
+    void exportToNonExistentDbCreatesIt() {
+        Path freshDb = tempDir.resolve("fresh/opencode.db");
+        String sessionId = OpenCodeClientExporter.exportSession(
+            List.of(userMessage("hi")), freshDb, PROJECT_DIR);
+        assertNotNull(sessionId, "Exporter should create the DB and succeed");
+        assertTrue(Files.exists(freshDb), "Database file should have been created");
     }
 
     // ── Round-trip tests ────────────────────────────────────────────
@@ -373,67 +379,125 @@ class OpenCodeClientRoundTripTest {
         return DriverManager.getConnection("jdbc:sqlite:" + dbPath);
     }
 
+    /**
+     * Creates tables matching the real OpenCode schema (drizzle-managed).
+     * This ensures tests validate against production constraints.
+     */
     private static void createTables(Path dbPath) throws SQLException {
         try (Connection conn = connect(dbPath);
              Statement stmt = conn.createStatement()) {
             stmt.execute("""
+                CREATE TABLE IF NOT EXISTS project (
+                    id TEXT PRIMARY KEY,
+                    worktree TEXT NOT NULL,
+                    vcs TEXT,
+                    name TEXT,
+                    icon_url TEXT,
+                    icon_color TEXT,
+                    time_created INTEGER NOT NULL,
+                    time_updated INTEGER NOT NULL,
+                    time_initialized INTEGER,
+                    sandboxes TEXT NOT NULL,
+                    commands TEXT
+                )""");
+
+            stmt.execute("""
                 CREATE TABLE IF NOT EXISTS session (
                     id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    parent_id TEXT,
+                    slug TEXT NOT NULL,
                     directory TEXT NOT NULL,
-                    title TEXT,
+                    title TEXT NOT NULL,
+                    version TEXT NOT NULL,
+                    share_url TEXT,
+                    summary_additions INTEGER,
+                    summary_deletions INTEGER,
+                    summary_files INTEGER,
+                    summary_diffs TEXT,
+                    revert TEXT,
+                    permission TEXT,
                     time_created INTEGER NOT NULL,
-                    time_updated INTEGER NOT NULL
+                    time_updated INTEGER NOT NULL,
+                    time_compacting INTEGER,
+                    time_archived INTEGER,
+                    workspace_id TEXT,
+                    FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE
                 )""");
+
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS message (
                     id TEXT PRIMARY KEY,
                     session_id TEXT NOT NULL,
-                    data TEXT,
                     time_created INTEGER NOT NULL,
-                    FOREIGN KEY (session_id) REFERENCES session(id)
+                    time_updated INTEGER NOT NULL,
+                    data TEXT NOT NULL,
+                    FOREIGN KEY (session_id) REFERENCES session(id) ON DELETE CASCADE
                 )""");
+
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS part (
                     id TEXT PRIMARY KEY,
                     message_id TEXT NOT NULL,
-                    data TEXT,
+                    session_id TEXT NOT NULL,
                     time_created INTEGER NOT NULL,
-                    FOREIGN KEY (message_id) REFERENCES message(id)
+                    time_updated INTEGER NOT NULL,
+                    data TEXT NOT NULL,
+                    FOREIGN KEY (message_id) REFERENCES message(id) ON DELETE CASCADE
                 )""");
         }
     }
 
     private static String insertSession(Path dbPath, String id, String directory, long created, long updated)
-            throws SQLException {
+        throws SQLException {
+        // First ensure project exists
+        String projectId = "test-project-id";
         try (Connection conn = connect(dbPath);
              PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO session (id, directory, title, time_created, time_updated) VALUES (?, ?, ?, ?, ?)")) {
-            ps.setString(1, id);
+                 "INSERT OR IGNORE INTO project (id, worktree, time_created, time_updated, sandboxes) " +
+                     "VALUES (?, ?, ?, ?, ?)")) {
+            ps.setString(1, projectId);
             ps.setString(2, directory);
-            ps.setString(3, "Test Session");
-            ps.setLong(4, created);
-            ps.setLong(5, updated);
+            ps.setLong(3, created);
+            ps.setLong(4, updated);
+            ps.setString(5, "[]");
+            ps.executeUpdate();
+        }
+
+        try (Connection conn = connect(dbPath);
+             PreparedStatement ps = conn.prepareStatement(
+                 "INSERT INTO session (id, project_id, slug, directory, title, version, " +
+                     "time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) {
+            ps.setString(1, id);
+            ps.setString(2, projectId);
+            ps.setString(3, "test-slug");
+            ps.setString(4, directory);
+            ps.setString(5, "Test Session");
+            ps.setString(6, "1.2.0");
+            ps.setLong(7, created);
+            ps.setLong(8, updated);
             ps.executeUpdate();
         }
         return id;
     }
 
     private static void insertMessageRaw(Path dbPath, String id, String sessionId, String data, long timeCreated)
-            throws SQLException {
+        throws SQLException {
         try (Connection conn = connect(dbPath);
              PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO message (id, session_id, data, time_created) VALUES (?, ?, ?, ?)")) {
+                 "INSERT INTO message (id, session_id, data, time_created, time_updated) VALUES (?, ?, ?, ?, ?)")) {
             ps.setString(1, id);
             ps.setString(2, sessionId);
             ps.setString(3, data);
             ps.setLong(4, timeCreated);
+            ps.setLong(5, timeCreated);
             ps.executeUpdate();
         }
     }
 
     private static void insertMessageWithParts(Path dbPath, String msgId, String sessionId,
-                                                String role, long timeCreated, String... partJsons)
-            throws SQLException {
+                                               String role, long timeCreated, String... partJsons)
+        throws SQLException {
         JsonObject msgData = new JsonObject();
         msgData.addProperty("role", role);
         insertMessageRaw(dbPath, msgId, sessionId, GSON.toJson(msgData), timeCreated);
@@ -444,14 +508,27 @@ class OpenCodeClientRoundTripTest {
     }
 
     private static void insertPart(Path dbPath, String partId, String messageId, String data, long timeCreated)
-            throws SQLException {
+        throws SQLException {
+        // Look up session_id from message
+        String sessionId;
+        try (Connection conn = connect(dbPath);
+             PreparedStatement ps = conn.prepareStatement("SELECT session_id FROM message WHERE id = ?")) {
+            ps.setString(1, messageId);
+            try (ResultSet rs = ps.executeQuery()) {
+                sessionId = rs.next() ? rs.getString("session_id") : "unknown";
+            }
+        }
+
         try (Connection conn = connect(dbPath);
              PreparedStatement ps = conn.prepareStatement(
-                     "INSERT INTO part (id, message_id, data, time_created) VALUES (?, ?, ?, ?)")) {
+                 "INSERT INTO part (id, message_id, session_id, data, time_created, time_updated) " +
+                     "VALUES (?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, partId);
             ps.setString(2, messageId);
-            ps.setString(3, data);
-            ps.setLong(4, timeCreated);
+            ps.setString(3, sessionId);
+            ps.setString(4, data);
+            ps.setLong(5, timeCreated);
+            ps.setLong(6, timeCreated);
             ps.executeUpdate();
         }
     }
