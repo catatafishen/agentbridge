@@ -235,6 +235,7 @@ public final class SessionStoreV2 {
         for (JsonObject rec : records) {
             if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
                 rec.addProperty(KEY_UPDATED_AT, now);
+                rec.addProperty(KEY_AGENT, currentAgent);
                 found = true;
                 break;
             }
