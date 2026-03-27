@@ -22,17 +22,19 @@ public final class OpenCodeClientImporter {
 
     private static final Logger LOG = Logger.getInstance(OpenCodeClientImporter.class);
     private static final Gson GSON = new Gson();
+    private static final String KEY_PARTS = "parts";
+    private static final String KEY_MODEL_ID = "modelID";
 
     private OpenCodeClientImporter() {
     }
 
+    /**
+     * Returns the default OpenCode database path.
+     * Delegates to {@link com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter#defaultDbPath()}.
+     */
     @NotNull
     public static Path defaultDbPath() {
-        String xdgData = System.getenv("XDG_DATA_HOME");
-        if (xdgData != null && !xdgData.isEmpty()) {
-            return Path.of(xdgData, "opencode", "opencode.db");
-        }
-        return Path.of(System.getProperty("user.home"), ".local", "share", "opencode", "opencode.db");
+        return com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter.defaultDbPath();
     }
 
     @NotNull
@@ -149,7 +151,10 @@ public final class OpenCodeClientImporter {
                     String data = rs.getString("data");
                     JsonObject partData = parseJson(data);
                     if (partData != null) {
-                        parts.add(partData);
+                        JsonObject converted = convertOpenCodePartToV2(partData);
+                        if (converted != null) {
+                            parts.add(converted);
+                        }
                     }
                 }
             }
@@ -157,36 +162,109 @@ public final class OpenCodeClientImporter {
         return parts;
     }
 
+    /**
+     * Converts an OpenCode native part to v2 format.
+     * Skips ephemeral parts ({@code step-start}, {@code step-finish}) that have no content.
+     *
+     * <p>OpenCode tool calls use {@code {"type":"tool","callID":"...","tool":"...",
+     * "state":{"status":"completed","input":{...},"output":"..."}}} which we convert
+     * to v2 format {@code {"type":"tool-invocation","toolInvocation":{...}}}.</p>
+     */
+    @Nullable
+    private static JsonObject convertOpenCodePartToV2(@NotNull JsonObject part) {
+        String type = JsonlUtil.getStr(part, "type");
+        if (type == null) return part;
+
+        return switch (type) {
+            case "text", "reasoning" -> part;
+            case "step-start", "step-finish" -> null;
+            case "tool" -> convertToolPartToV2(part);
+            default -> part;
+        };
+    }
+
+    @NotNull
+    private static JsonObject convertToolPartToV2(@NotNull JsonObject openCodePart) {
+        String callId = JsonlUtil.getStr(openCodePart, "callID");
+        String toolName = JsonlUtil.getStr(openCodePart, "tool");
+        JsonObject state = JsonlUtil.getObject(openCodePart, "state");
+
+        String status = state != null ? JsonlUtil.getStr(state, "status") : null;
+        String output = state != null ? JsonlUtil.getStr(state, "output") : null;
+
+        JsonObject invocation = new JsonObject();
+        invocation.addProperty("toolCallId", callId != null ? callId : "");
+        invocation.addProperty("toolName", toolName != null ? toolName : "unknown");
+        invocation.addProperty("state", "completed".equals(status) ? "result" : "call");
+
+        if (state != null && state.has("input")) {
+            invocation.addProperty("args", GSON.toJson(state.get("input")));
+        }
+        if (output != null) {
+            invocation.addProperty("result", output);
+        }
+
+        JsonObject v2Part = new JsonObject();
+        v2Part.addProperty("type", "tool-invocation");
+        v2Part.add("toolInvocation", invocation);
+        return v2Part;
+    }
+
+    /**
+     * Tries to extract text content from an OpenCode message's embedded parts array.
+     * Used as a fallback when separate part rows are empty.
+     */
     @Nullable
     private static String extractTextFromMessageData(@Nullable String data) {
         if (data == null) return null;
         JsonObject obj = parseJson(data);
-        if (obj == null) return null;
+        if (obj == null || !obj.has(KEY_PARTS) || !obj.get(KEY_PARTS).isJsonArray()) return null;
 
-        if (obj.has("parts") && obj.get("parts").isJsonArray()) {
-            StringBuilder sb = new StringBuilder();
-            for (var el : obj.getAsJsonArray("parts")) {
-                if (!el.isJsonObject()) continue;
-                JsonObject part = el.getAsJsonObject();
-                if ("text".equals(JsonlUtil.getStr(part, "type"))) {
-                    String text = JsonlUtil.getStr(part, "text");
-                    if (text != null) sb.append(text);
-                }
+        StringBuilder sb = new StringBuilder();
+        for (var el : obj.getAsJsonArray(KEY_PARTS)) {
+            if (!el.isJsonObject()) continue;
+            JsonObject part = el.getAsJsonObject();
+            if ("text".equals(JsonlUtil.getStr(part, "type"))) {
+                String text = JsonlUtil.getStr(part, "text");
+                if (text != null) sb.append(text);
             }
-            if (!sb.isEmpty()) return sb.toString();
         }
-        return null;
+        return sb.isEmpty() ? null : sb.toString();
     }
 
+    /**
+     * Extracts the model ID from an OpenCode message's data JSON.
+     *
+     * <p>OpenCode stores model info differently per role:</p>
+     * <ul>
+     *   <li>User messages: {@code model.modelID}</li>
+     *   <li>Assistant messages: top-level {@code modelID}</li>
+     * </ul>
+     */
     @Nullable
     private static String extractModel(@Nullable String data) {
         if (data == null) return null;
         JsonObject obj = parseJson(data);
-        if (obj == null || !obj.has("metadata")) return null;
-        JsonObject metadata = obj.getAsJsonObject("metadata");
-        if (metadata == null || !metadata.has("assistant")) return null;
-        JsonObject assistant = metadata.getAsJsonObject("assistant");
-        return assistant != null ? JsonlUtil.getStr(assistant, "modelID") : null;
+        if (obj == null) return null;
+
+        // Assistant messages: top-level modelID
+        String topLevel = JsonlUtil.getStr(obj, KEY_MODEL_ID);
+        if (topLevel != null) return topLevel;
+
+        // User messages: model.modelID
+        JsonObject model = JsonlUtil.getObject(obj, "model");
+        if (model != null) {
+            String modelId = JsonlUtil.getStr(model, KEY_MODEL_ID);
+            if (modelId != null) return modelId;
+        }
+
+        // Legacy fallback: metadata.assistant.modelID
+        JsonObject metadata = JsonlUtil.getObject(obj, "metadata");
+        if (metadata != null) {
+            JsonObject assistant = JsonlUtil.getObject(metadata, "assistant");
+            if (assistant != null) return JsonlUtil.getStr(assistant, KEY_MODEL_ID);
+        }
+        return null;
     }
 
     @Nullable

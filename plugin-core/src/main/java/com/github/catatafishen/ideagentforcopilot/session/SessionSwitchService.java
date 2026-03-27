@@ -723,13 +723,16 @@ public final class SessionSwitchService implements Disposable {
     }
 
     /**
-     * Exports v2 session messages to OpenCode's native SQLite format.
+     * Exports v2 session messages to OpenCode's native SQLite format
+     * and sets {@code resumeSessionId} so AcpClient sends it in the next {@code session/new}.
      */
     private void exportToOpenCode(@NotNull List<SessionMessage> messages, @Nullable String basePath) {
         Path dbPath = OpenCodeClientExporter.defaultDbPath();
         String projectDir = basePath != null ? basePath : "";
         String sessionId = OpenCodeClientExporter.exportSession(messages, dbPath, projectDir);
         if (sessionId != null) {
+            new GenericSettings(AgentProfileManager.OPENCODE_PROFILE_ID, project)
+                .setResumeSessionId(sessionId);
             LOG.info("Exported v2 session to OpenCode: " + sessionId);
         }
     }

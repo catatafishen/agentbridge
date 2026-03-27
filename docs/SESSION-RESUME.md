@@ -492,3 +492,143 @@ Immediately after the Copilot → Claude test above, the reverse path was tested
 
 This confirms **bidirectional resume** between Copilot and Claude is fully working.
 
+---
+
+## OpenCode Resume: Bug Investigation (2026-03-27)
+
+Testing revealed that **OpenCode resume was completely broken** — both switching TO and FROM
+OpenCode failed silently. Investigation uncovered 7 new bugs (12-18).
+
+### Bug 12: OpenCode exporter schema mismatch (CRITICAL)
+
+**Symptom**: Switching TO OpenCode shows a fresh conversation — no history carried over.
+
+**Root cause**: `OpenCodeClientExporter.ensureTables()` created a simplified schema:
+
+```sql
+CREATE TABLE session
+(
+    id,
+    directory,
+    title,
+    time_created,
+    time_updated
+)
+```
+
+But OpenCode's actual schema (managed by drizzle migrations) has many more required columns:
+
+```sql
+CREATE TABLE session
+(
+    id,
+    project_id
+    NOT
+    NULL,
+    slug
+    NOT
+    NULL,
+    directory
+    NOT
+    NULL,
+    title
+    NOT
+    NULL,
+    version
+    NOT
+    NULL,
+    time_created
+    NOT
+    NULL,
+    time_updated
+    NOT
+    NULL,
+    .
+    .
+    .
+)
+```
+
+When the database already existed (normal case), our INSERTs failed with NOT NULL constraint
+violations on `project_id`, `slug`, and `version`. The `message` table also required
+`time_updated`, and `part` required `session_id` and `time_updated`.
+
+**Fix**: Rewrote `OpenCodeClientExporter` to match OpenCode 1.2.x schema:
+
+- Finds or creates a `project` record using SHA-1(worktree) as the ID
+- Creates sessions with all required fields (`project_id`, `slug`, `version`)
+- Includes `time_updated` in message and part records
+- Includes `session_id` in part records
+
+### Bug 13: OpenCode export didn't set `resumeSessionId`
+
+**Symptom**: Even if SQLite export succeeded, OpenCode started a fresh ACP session.
+
+**Root cause**: `SessionSwitchService.exportToOpenCode()` wrote to SQLite but never called
+`GenericSettings.setResumeSessionId()`. When the ACP client sent `session/new`, it had no
+`resumeSessionId`, so OpenCode created a fresh session.
+
+**Fix**: Added `GenericSettings(OPENCODE_PROFILE_ID, project).setResumeSessionId(sessionId)`
+after successful SQLite export.
+
+### Bug 14: OpenCode ID format mismatch
+
+**Symptom**: Exported sessions had plain UUIDs, but OpenCode uses prefixed IDs.
+
+**Root cause**: The exporter generated UUIDs like `a1b2c3d4-...` but OpenCode uses
+`ses_XXXX` for sessions, `msg_XXXX` for messages, and `prt_XXXX` for parts.
+
+**Fix**: Added `generateId(prefix)` that produces OpenCode-style IDs (e.g., `ses_abc123...`).
+
+### Bug 15: OpenCode message data too sparse
+
+**Symptom**: Even if resume worked, OpenCode might reject messages with incomplete data.
+
+**Root cause**: The exporter wrote `{"role":"user"}` for message data, but OpenCode expects
+richer JSON: `{"role":"user","time":{"created":...},"summary":{"diffs":[]},...}`.
+
+**Fix**: `buildMessageData()` now writes `role`, `time.created`, `time.completed` (for
+assistant), and model info matching OpenCode's expected format.
+
+### Bug 16: OpenCode tool part format different
+
+**Symptom**: Tool call history lost during round-trip conversion.
+
+**Root cause**: V2 stores tool calls as `{"type":"tool-invocation","toolInvocation":{...}}`
+but OpenCode uses `{"type":"tool","callID":"...","tool":"...","state":{...}}`.
+
+**Fix**: `convertV2PartToOpenCodePart()` in the exporter now converts to OpenCode's native
+format. `convertOpenCodePartToV2()` in the importer does the reverse, including handling
+of `step-start`/`step-finish` ephemeral parts.
+
+### Bug 17: OpenCode importer model extraction wrong
+
+**Symptom**: Model information lost on import from OpenCode.
+
+**Root cause**: `extractModel()` looked for `metadata.assistant.modelID` but OpenCode stores
+model as top-level `modelID` (assistant messages) or `model.modelID` (user messages).
+
+**Fix**: Updated `extractModel()` to check all three locations with proper fallback order.
+
+### Bug 18: OpenCode project table not handled
+
+**Symptom**: Session FK constraint violation when inserting into existing database.
+
+**Root cause**: OpenCode sessions reference a `project` table via `project_id` (SHA-1 hex
+of worktree path). Our exporter didn't create or reference project records.
+
+**Fix**: `findOrCreateProject()` computes SHA-1 of the worktree path and creates a project
+record if one doesn't exist, matching OpenCode's native format.
+
+### Current Status (2026-03-27)
+
+| Path              | Status | Notes                                          |
+|-------------------|--------|------------------------------------------------|
+| Copilot → Claude  | ✅      | Confirmed working                              |
+| Claude → Copilot  | ✅      | Confirmed working (bidirectional)              |
+| → OpenCode        | 🔧     | Bugs 12-18 fixed, awaiting retest              |
+| OpenCode →        | 🔧     | Importer fixes applied, awaiting retest        |
+| Copilot → Copilot | ❓      | Not yet tested after Bug 9 fix                 |
+| → Junie           | ❓      | Junie not installed; code follows Kiro pattern |
+| → Kiro            | ❓      | Not tested                                     |
+
