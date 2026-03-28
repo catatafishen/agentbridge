@@ -8,6 +8,7 @@ import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
@@ -192,7 +193,10 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             if (resumeId != null && !resumeId.isEmpty()) {
                 cliSessionIds.put(sessionId, resumeId);
                 props.unsetValue(propKey);
-                LOG.info("Will resume Claude CLI session: " + resumeId);
+                // Claude CLI handles resume natively via --resume flag — the CLI loads
+                // the full session context itself, so prompt injection is redundant.
+                ActiveAgentManager.setInjectConversationHistory(project, false);
+                LOG.info("Will resume Claude CLI session: " + resumeId + " (injection disabled)");
             }
         }
 
