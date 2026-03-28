@@ -559,6 +559,11 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
+    public void dropCurrentSession() {
+        currentSessionId = null;
+    }
+
+    @Override
     public final void cancelSession(String sessionId) {
         // ACP spec: Client MUST respond to all pending session/request_permission
         // requests with the "cancelled" outcome before sending session/cancel.

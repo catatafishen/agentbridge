@@ -429,6 +429,10 @@ class PromptOrchestrator(
         codeChangeListener = null
         pendingBanner = null
 
+        // Drop the ACP client's cached session ID too, so the next createSession()
+        // goes through the full load/new flow instead of hitting the early-return
+        // "reuse" path with the still-corrupted session.
+        agentManager.client.dropCurrentSession()
         currentSessionId = null
         callbacks.updateSessionInfo()
 

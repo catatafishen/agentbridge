@@ -98,6 +98,21 @@ public abstract class AbstractAgentClient {
      */
     public abstract void cancelSession(String sessionId);
 
+    /**
+     * Drops the cached current session ID without sending any cancellation request.
+     * <p>
+     * Used after detecting a corrupted session (e.g. an agent that returns
+     * {@code end_turn} with no content). Clearing the cached ID forces the next
+     * {@link #createSession} call to open a fresh session via the full load/new
+     * flow instead of hitting the early-return "reuse" path.
+     * </p>
+     * <p>
+     * The default implementation is a no-op; subclasses with a cached session ID
+     * should override this method.
+     * </p>
+     */
+    public void dropCurrentSession() {}
+
     // ─── Prompts ─────────────────────────────────────
 
     /**
