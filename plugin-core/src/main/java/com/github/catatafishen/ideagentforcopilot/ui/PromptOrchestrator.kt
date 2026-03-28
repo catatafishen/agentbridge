@@ -6,6 +6,7 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.ResourceReference
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException
+import com.github.catatafishen.ideagentforcopilot.agent.AgentPromptException
 import com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse
 import com.github.catatafishen.ideagentforcopilot.psi.CodeChangeTracker
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
@@ -76,6 +77,7 @@ class PromptOrchestrator(
     private val toolCallTitles = mutableMapOf<String, String>()
     private val toolCallArgs = mutableMapOf<String, String>() // arguments from tool_call_update
     private var pendingBanner: PendingBanner? = null
+    private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
 
     /** Executes a prompt on the calling thread (must be called from a background thread). */
@@ -137,6 +139,12 @@ class PromptOrchestrator(
             // response) without throwing. Treat it as a cancellation so handlePromptCompletion
             // is not invoked and the stale thread interrupt doesn't leak into the next turn.
             if (stopped) throw InterruptedException("Stopped by user")
+            // If the agent returned end_turn but produced no content, the session state is likely
+            // corrupted (e.g. OpenCode's compaction state is broken). Reset the session so the
+            // next message starts fresh.
+            if (!turnHadContent) {
+                throw AgentPromptException("Agent returned an empty response — session state may be corrupted. Please try sending your message again.")
+            }
             handlePromptCompletion(prompt)
         } catch (e: Exception) {
             handlePromptError(e)
@@ -212,6 +220,7 @@ class PromptOrchestrator(
         turnInputTokens = 0
         turnOutputTokens = 0
         turnCostUsd = null
+        turnHadContent = false
         activeSubAgentId = null
         turnModelId = selectedModelId
         CodeChangeTracker.clear()
@@ -405,6 +414,7 @@ class PromptOrchestrator(
     private fun handlePromptStreamingUpdate(update: SessionUpdate) {
         when (update) {
             is SessionUpdate.AgentMessageChunk -> {
+                turnHadContent = true
                 val text = update.text()
                 ApplicationManager.getApplication().invokeLater {
                     if (!stopped) consolePanel().appendText(text)
@@ -412,16 +422,21 @@ class PromptOrchestrator(
             }
 
             is SessionUpdate.ToolCall -> {
+                turnHadContent = true
                 handleStreamingToolCall(update)
                 handleClientUpdate(update)
             }
 
             is SessionUpdate.ToolCallUpdate -> {
+                turnHadContent = true
                 handleStreamingToolCallUpdate(update)
                 handleClientUpdate(update)
             }
 
-            is SessionUpdate.AgentThoughtChunk -> if (!stopped) consolePanel().appendThinkingText(update.text())
+            is SessionUpdate.AgentThoughtChunk -> {
+                turnHadContent = true
+                if (!stopped) consolePanel().appendThinkingText(update.text())
+            }
             is SessionUpdate.TurnUsage -> {
                 turnInputTokens = update.inputTokens()
                 turnOutputTokens = update.outputTokens()
@@ -460,7 +475,7 @@ class PromptOrchestrator(
         val kind = toolCall.kind()?.value() ?: "other"
         val arguments = toolCall.arguments()
         if (toolCallId.isEmpty()) return
-        if (toolCall.isSubAgent()) {
+        if (toolCall.isSubAgent) {
             val agentType = toolCall.agentType() ?: return
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
@@ -526,7 +541,6 @@ class PromptOrchestrator(
             uiStatus,
             result,
             description,
-            null,
             isSubAgent,
             isInternal,
             autoDenied,
@@ -545,7 +559,6 @@ class PromptOrchestrator(
         uiStatus: String,
         result: String?,
         description: String?,
-        kind: String?,
         isSubAgent: Boolean,
         isInternal: Boolean,
         autoDenied: Boolean = false,
@@ -576,7 +589,7 @@ class PromptOrchestrator(
                 uiStatus,
                 result,
                 description,
-                kind,
+                null,
                 autoDenied,
                 denialReason,
                 arguments,
