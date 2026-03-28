@@ -126,11 +126,6 @@ public abstract class AcpClient extends AbstractAgentClient {
     private final java.util.concurrent.ConcurrentHashMap<String, JsonElement> pendingPermissionRequests =
         new java.util.concurrent.ConcurrentHashMap<>();
     /**
-     * Tracks built-in tool IDs that have been auto-denied at least once in the current session.
-     * On the first denial the plugin responds immediately; on a retry the user is prompted.
-     */
-    private final Set<String> deniedBuiltInTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    /**
      * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
      */
     private volatile long lastActivityNanos = System.nanoTime();
@@ -293,7 +288,6 @@ public abstract class AcpClient extends AbstractAgentClient {
             currentAgentSlug = null;
             availableConfigOptions.clear();
             pendingPermissionRequests.clear();
-            deniedBuiltInTools.clear();
             terminalHandler.releaseAll();
             loadedSessionHistory = null;
             updateConsumer = null;
@@ -614,7 +608,8 @@ public abstract class AcpClient extends AbstractAgentClient {
             long turnStartNanos = System.nanoTime();
             lastActivityNanos = turnStartNanos;
             updateConsumer = onUpdate;
-            JsonObject params = gson.toJsonTree(request).getAsJsonObject();
+            PromptRequest effectiveRequest = beforeSendPrompt(request);
+            JsonObject params = gson.toJsonTree(effectiveRequest).getAsJsonObject();
             LOG.debug(displayName() + ": sending session/prompt, sessionId=" + request.sessionId());
             CompletableFuture<JsonElement> future = transport.sendRequest("session/prompt", params);
             JsonElement result = waitForPromptResult(future, turnStartNanos);
@@ -633,6 +628,22 @@ public abstract class AcpClient extends AbstractAgentClient {
         } finally {
             afterPromptComplete();
         }
+    }
+
+    /**
+     * Hook called before sending a {@code session/prompt}. Subclasses may override to
+     * augment the request (e.g. prepend corrective guidance). Default: returns unchanged.
+     */
+    protected PromptRequest beforeSendPrompt(PromptRequest request) {
+        return request;
+    }
+
+    /**
+     * Hook called when a non-allowed built-in tool is auto-approved. Subclasses may
+     * override to track tool misuse for corrective guidance. Default: no-op.
+     */
+    protected void onBuiltInToolApproved(String toolId) {
+        // no-op — subclasses like CopilotClient may track for reprimand
     }
 
     /**
@@ -1436,16 +1447,14 @@ public abstract class AcpClient extends AbstractAgentClient {
         } else if (isBuiltInTool(protocolTitle)) {
             if (isAllowedBuiltInTool(toolId)) {
                 LOG.info(displayName() + ": auto-approving built-in web tool '" + toolId + "' — no MCP alternative exists");
-                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
-                if (chosenOption == null) {
-                    chosenOption = findFirstOption(params);
-                }
-            } else if (deniedBuiltInTools.add(toolId)) {
-                chosenOption = handleFirstBuiltInDenial(toolId, toolCallId, params);
             } else {
-                LOG.info(displayName() + ": agent retried built-in tool '" + toolId + "' — prompting user");
-                promptUserForPermission(id, requestKey, toolId, params);
-                return;
+                LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
+                    + "' — should use MCP tools instead");
+                onBuiltInToolApproved(toolId);
+            }
+            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+            if (chosenOption == null) {
+                chosenOption = findFirstOption(params);
             }
         } else {
             LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
@@ -1475,64 +1484,6 @@ public abstract class AcpClient extends AbstractAgentClient {
             ));
         }
         return findDenyOption(params);
-    }
-
-    private @Nullable JsonObject handleFirstBuiltInDenial(String toolId, String toolCallId, @Nullable JsonObject params) {
-        LOG.warn(displayName() + ": denying built-in tool '" + toolId
-            + "' — use agentbridge MCP tools (run_command, run_in_terminal) instead");
-
-        Consumer<SessionUpdate> consumer = updateConsumer;
-        if (consumer != null && !toolCallId.isEmpty()) {
-            String reason = "Built-in tool '" + toolId + "' denied — use run_command or run_in_terminal instead.";
-            consumer.accept(new SessionUpdate.ToolCallUpdate(
-                toolCallId,
-                SessionUpdate.ToolCallStatus.FAILED,
-                null,
-                reason,
-                null,
-                true,
-                reason
-            ));
-        }
-        return findDenyOption(params);
-    }
-
-    /**
-     * Prompts the user via IDE notification when an agent retries a previously denied built-in tool.
-     * The permission response is deferred until the user clicks Allow or Deny (or the notification expires).
-     */
-    private void promptUserForPermission(JsonElement id, String requestKey, String toolId, @Nullable JsonObject params) {
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-            com.intellij.notification.Notification notification = NotificationGroupManager.getInstance()
-                .getNotificationGroup("AgentBridge Notifications")
-                .createNotification(
-                    "Built-in tool permission",
-                    displayName() + " wants to use built-in tool '" + toolId
-                        + "' and insists it has no MCP alternative. Allow?",
-                    NotificationType.WARNING);
-
-            notification.addAction(com.intellij.notification.NotificationAction.createSimpleExpiring(
-                "Allow once", () -> {
-                    LOG.info(displayName() + ": user approved built-in tool '" + toolId + "'");
-                    JsonObject option = findOptionByKind(params, VALUE_ALLOW_ONCE);
-                    sendPermissionResponse(id, requestKey, option);
-                }));
-
-            notification.addAction(com.intellij.notification.NotificationAction.createSimpleExpiring(
-                "Deny", () -> {
-                    LOG.info(displayName() + ": user denied built-in tool '" + toolId + "'");
-                    sendPermissionResponse(id, requestKey, findDenyOption(params));
-                }));
-
-            notification.whenExpired(() -> {
-                if (pendingPermissionRequests.containsKey(requestKey)) {
-                    LOG.info(displayName() + ": permission notification for '" + toolId + "' expired — denying");
-                    sendPermissionResponse(id, requestKey, findDenyOption(params));
-                }
-            });
-
-            notification.notify(project);
-        });
     }
 
     private void sendPermissionResponse(JsonElement id, String requestKey, @Nullable JsonObject chosenOption) {

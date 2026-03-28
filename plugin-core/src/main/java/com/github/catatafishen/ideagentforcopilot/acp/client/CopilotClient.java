@@ -1,6 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.acp.client;
 
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
@@ -29,7 +31,8 @@ import java.util.concurrent.TimeoutException;
  * <p>
  * <b>Tool filtering note:</b> {@code --excluded-tools} and {@code --available-tools} are currently
  * ignored in ACP mode (bug #556). The flags are passed anyway so they take effect once the bug is
- * fixed upstream. Built-in tools are suppressed via ACP permission-denial in the meantime.
+ * fixed upstream. Built-in tools are auto-approved but tracked; a corrective "reprimand" is
+ * prepended to the next user message to redirect the model toward MCP alternatives.
  */
 public final class CopilotClient extends AcpClient {
 
@@ -124,6 +127,12 @@ public final class CopilotClient extends AcpClient {
      */
     private static final String EXCLUDED_BUILTIN_TOOLS =
         "view,edit,create,bash,glob,grep,task,report_intent";
+
+    /**
+     * Tracks built-in tools that were auto-approved but should have used MCP alternatives.
+     * Consumed and cleared on the next {@code session/prompt} via {@link #beforeSendPrompt}.
+     */
+    private final java.util.Set<String> misusedBuiltInTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     // ─── Lifecycle ───────────────────────────────────
 
@@ -494,5 +503,54 @@ public final class CopilotClient extends AcpClient {
         }
         result.addAll(builtinTools);
         return result;
+    }
+
+    // ─── Built-in tool reprimand (Copilot-specific workaround for bug #556) ───
+
+    @Override
+    protected void onBuiltInToolApproved(String toolId) {
+        misusedBuiltInTools.add(toolId);
+    }
+
+    @Override
+    protected PromptRequest beforeSendPrompt(PromptRequest request) {
+        if (misusedBuiltInTools.isEmpty()) {
+            return request;
+        }
+        java.util.Set<String> tools = new java.util.LinkedHashSet<>(misusedBuiltInTools);
+        misusedBuiltInTools.clear();
+
+        String reprimand = buildToolReprimand(tools);
+        LOG.info(displayName() + ": prepending tool reprimand for: " + tools);
+
+        java.util.List<ContentBlock> augmented = new java.util.ArrayList<>();
+        augmented.add(new ContentBlock.Text(reprimand));
+        augmented.addAll(request.prompt());
+        return new PromptRequest(request.sessionId(), augmented, request.modelId(), request.modeSlug());
+    }
+
+    private static String buildToolReprimand(java.util.Set<String> tools) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[System notice] You used the following built-in tools which duplicate our MCP tools. ");
+        sb.append("Do NOT use these again — use the MCP alternatives instead:\n");
+        for (String tool : tools) {
+            sb.append("  • ").append(tool).append(" → use ").append(mcpAlternative(tool)).append('\n');
+        }
+        sb.append("All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.");
+        return sb.toString();
+    }
+
+    private static String mcpAlternative(String builtInTool) {
+        return switch (builtInTool) {
+            case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
+            case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
+            case "create" -> "agentbridge-create_file";
+            case "view" -> "agentbridge-read_file";
+            case "glob" -> "agentbridge-list_project_files";
+            case "grep" -> "agentbridge-search_text";
+            case "task" -> "agentbridge-run_command (for shell tasks)";
+            case "report_intent" -> "(not needed — IDE tracks intent automatically)";
+            default -> "the corresponding agentbridge-* tool";
+        };
     }
 }
