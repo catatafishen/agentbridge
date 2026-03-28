@@ -13,6 +13,7 @@ import java.util.List;
 public sealed interface SessionUpdate
     permits SessionUpdate.AgentMessageChunk,
     SessionUpdate.AgentThoughtChunk,
+    SessionUpdate.UserMessageChunk,
     SessionUpdate.ToolCall,
     SessionUpdate.ToolCallUpdate,
     SessionUpdate.TurnUsage,
@@ -169,6 +170,21 @@ public sealed interface SessionUpdate
             for (ContentBlock block : content) {
                 if (block instanceof ContentBlock.Text t) sb.append(t.text());
                 else if (block instanceof ContentBlock.Thinking t) sb.append(t.thinking());
+            }
+            return sb.toString();
+        }
+    }
+
+    /**
+     * User message replayed during {@code session/load}.
+     * Per ACP spec, agents replay user messages as {@code user_message_chunk}
+     * session updates when loading an existing session.
+     */
+    record UserMessageChunk(List<ContentBlock> content) implements SessionUpdate {
+        public String text() {
+            StringBuilder sb = new StringBuilder();
+            for (ContentBlock block : content) {
+                if (block instanceof ContentBlock.Text t) sb.append(t.text());
             }
             return sb.toString();
         }

@@ -80,6 +80,7 @@ class AcpMessageParser {
         return switch (type) {
             case "agent_message_chunk" -> parseMessageChunk(params);
             case "agent_thought_chunk" -> parseThoughtChunk(params);
+            case "user_message_chunk" -> parseUserMessageChunk(params);
             case "tool_call" -> parseToolCall(params);
             case "tool_call_update" -> parseToolCallUpdate(params);
             case "plan" -> parsePlan(params);
@@ -102,6 +103,10 @@ class AcpMessageParser {
 
     private SessionUpdate.AgentThoughtChunk parseThoughtChunk(JsonObject params) {
         return new SessionUpdate.AgentThoughtChunk(parseContentBlocks(params));
+    }
+
+    private SessionUpdate.UserMessageChunk parseUserMessageChunk(JsonObject params) {
+        return new SessionUpdate.UserMessageChunk(parseContentBlocks(params));
     }
 
     private SessionUpdate.ToolCall parseToolCall(JsonObject params) {
