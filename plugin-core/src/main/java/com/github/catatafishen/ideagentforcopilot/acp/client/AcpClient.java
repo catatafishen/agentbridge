@@ -506,6 +506,18 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     /**
+     * Marks the session history as loaded internally by the agent, even though no
+     * {@code session/update} notifications were replayed during {@code session/load}.
+     * <p>
+     * Some agents (e.g. OpenCode) restore conversation history from their own storage
+     * and do not replay it via ACP notifications. Call this from {@link #loadSession}
+     * after {@link #sendLoadSessionRequest} to prevent the injection fallback.
+     */
+    protected void markSessionHistoryLoadedInternally() {
+        loadedSessionHistory = List.of();
+    }
+
+    /**
      * Enables conversation history injection as a fallback when session loading fails.
      * Shows a notification to the user explaining the limitation.
      */

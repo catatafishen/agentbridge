@@ -116,7 +116,12 @@ public final class OpenCodeClient extends AcpClient {
         // OpenCode uses session/resume (not session/load per ACP spec) and does not
         // advertise the loadSession capability. Skip the capability check and use
         // the OpenCode-specific RPC method name.
-        return sendLoadSessionRequest("session/resume", cwd, sessionId);
+        String result = sendLoadSessionRequest("session/resume", cwd, sessionId);
+        // OpenCode's session/resume restores conversation history from its SQLite database
+        // internally — it does not replay history via session/update notifications.
+        // Mark as loaded to prevent the injection fallback.
+        markSessionHistoryLoadedInternally();
+        return result;
     }
 
     @Override
