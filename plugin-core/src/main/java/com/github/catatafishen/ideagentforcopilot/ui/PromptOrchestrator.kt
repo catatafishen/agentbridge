@@ -27,7 +27,7 @@ data class PromptOrchestratorCallbacks(
     val updateSessionInfo: () -> Unit,
     val requestFocusAfterTurn: () -> Unit,
     val onTimerIncrementToolCalls: () -> Unit,
-    val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double) -> Unit,
+    val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double?) -> Unit,
     val onTimerSetCodeChangeStats: (added: Int, removed: Int) -> Unit,
     /** Called for plan-tree and file-tracking side-effects (remains in ChatToolWindowContent). */
     val onClientUpdate: (SessionUpdate) -> Unit,
@@ -70,7 +70,7 @@ class PromptOrchestrator(
     private var turnToolCallCount = 0
     private var turnInputTokens = 0
     private var turnOutputTokens = 0
-    private var turnCostUsd = 0.0
+    private var turnCostUsd: Double? = null
     private var turnModelId = ""
     private var activeSubAgentId: String? = null
     private val toolCallTitles = mutableMapOf<String, String>()
@@ -211,7 +211,7 @@ class PromptOrchestrator(
         turnToolCallCount = 0
         turnInputTokens = 0
         turnOutputTokens = 0
-        turnCostUsd = 0.0
+        turnCostUsd = null
         activeSubAgentId = null
         turnModelId = selectedModelId
         CodeChangeTracker.clear()
@@ -433,6 +433,7 @@ class PromptOrchestrator(
             is SessionUpdate.AvailableCommandsChanged,
             is SessionUpdate.AvailableModesChanged -> { /* handled by AcpClient internally */
             }
+
             is SessionUpdate.UserMessageChunk -> { /* replayed user messages during session/load — no-op during streaming */
             }
         }

@@ -288,13 +288,10 @@ public sealed interface SessionUpdate
     ) implements SessionUpdate {
     }
 
-    /**
-     * Turn-level token and cost statistics.
-     */
     record TurnUsage(
         int inputTokens,
         int outputTokens,
-        double costUsd
+        @Nullable Double costUsd
     ) implements SessionUpdate {
     }
 

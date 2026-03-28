@@ -43,7 +43,7 @@ internal class ProcessingTimerPanel(
 
     private var turnInputTokens = 0
     private var turnOutputTokens = 0
-    private var turnCostUsd = 0.0
+    private var turnCostUsd: Double? = null
     private var sessionTotalInputTokens = 0L
     private var sessionTotalOutputTokens = 0L
     private var sessionTotalCostUsd = 0.0
@@ -109,7 +109,7 @@ internal class ProcessingTimerPanel(
         removedLineCount = 0
         turnInputTokens = 0
         turnOutputTokens = 0
-        turnCostUsd = 0.0
+        turnCostUsd = null
         isRunning = true
         displayMode = modeTurn
         timerLabel.text = "0s"
@@ -145,13 +145,13 @@ internal class ProcessingTimerPanel(
         revalidate(); repaint()
     }
 
-    fun recordUsage(inputTokens: Int, outputTokens: Int, costUsd: Double) {
+    fun recordUsage(inputTokens: Int, outputTokens: Int, costUsd: Double?) {
         turnInputTokens = inputTokens
         turnOutputTokens = outputTokens
         turnCostUsd = costUsd
         sessionTotalInputTokens += inputTokens
         sessionTotalOutputTokens += outputTokens
-        sessionTotalCostUsd += costUsd
+        if (costUsd != null) sessionTotalCostUsd += costUsd
         refreshDisplay()
     }
 
@@ -202,7 +202,8 @@ internal class ProcessingTimerPanel(
         removedLabel.text = if (removedLineCount > 0) "-$removedLineCount" else ""
         removedLabel.isVisible = removedLineCount > 0
 
-        if (!isRunning && turnCostUsd > 0.0 || (turnInputTokens + turnOutputTokens) > 0) {
+        val hasUsage = !isRunning && (turnCostUsd?.let { it > 0.0 } ?: false || (turnInputTokens + turnOutputTokens) > 0)
+        if (hasUsage) {
             requestsLabel.text =
                 "\u2022 ${BillingManager.formatUsageChip(turnInputTokens, turnOutputTokens, turnCostUsd)}"
             requestsLabel.isVisible = requestsLabel.text.length > 2

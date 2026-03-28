@@ -84,12 +84,14 @@ class BillingManager {
          * Returns an empty string if no usage data is available.
          * Examples: "1.2k tok · $0.004", "850 tok · $0.001"
          */
-        fun formatUsageChip(inputTokens: Int, outputTokens: Int, costUsd: Double): String {
-            if (inputTokens == 0 && outputTokens == 0 && costUsd == 0.0) return ""
+        fun formatUsageChip(inputTokens: Int, outputTokens: Int, costUsd: Double?): String {
+            if (inputTokens == 0 && outputTokens == 0 && (costUsd == null || costUsd == 0.0)) return ""
             val totalTokens = inputTokens + outputTokens
             val tokStr = if (totalTokens >= 1000) "${totalTokens / 1000}.${(totalTokens % 1000) / 100}k tok"
             else "$totalTokens tok"
-            return if (costUsd > 0.0) "$tokStr · \$${String.format("%.4f", costUsd).trimEnd('0').trimEnd('.')}"
+            return if (costUsd != null && costUsd > 0.0) "$tokStr · \$${
+                String.format("%.4f", costUsd).trimEnd('0').trimEnd('.')
+            }"
             else tokStr
         }
     }

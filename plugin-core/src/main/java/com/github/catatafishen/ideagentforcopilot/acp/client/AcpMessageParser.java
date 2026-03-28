@@ -217,11 +217,13 @@ class AcpMessageParser {
 
     private SessionUpdate.TurnUsage parseUsageUpdate(JsonObject params) {
         int used = params.has("used") ? params.get("used").getAsInt() : 0;
-        double cost = 0.0;
+        Double cost = null;
         if (params.has("cost") && params.get("cost").isJsonObject()) {
             JsonObject costObj = params.getAsJsonObject("cost");
             JsonElement amountEl = costObj.get("amount");
-            cost = amountEl != null && amountEl.isJsonPrimitive() ? amountEl.getAsDouble() : 0.0;
+            if (amountEl != null && amountEl.isJsonPrimitive()) {
+                cost = amountEl.getAsDouble();
+            }
         }
         return new SessionUpdate.TurnUsage(used, 0, cost);
     }
