@@ -79,6 +79,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     private static final String VALUE_SELECTED = "selected";
     private static final String VALUE_ALLOW_ONCE = "allow_once";
     private static final String VALUE_DENY_ONCE = "deny_once";
+    private static final String KEY_TOOL_CALL = "toolCall";
     private static final Set<String> ALLOWED_BUILT_IN_TOOLS = Set.of("web_fetch", "web_search");
 
     protected final Gson gson = new GsonBuilder()
@@ -105,6 +106,14 @@ public abstract class AcpClient extends AbstractAgentClient {
     private @Nullable String currentAgentSlug = null;
     private final List<AbstractAgentClient.AgentConfigOption> availableConfigOptions = new ArrayList<>();
     private volatile @Nullable Consumer<SessionUpdate> updateConsumer;
+    /**
+     * Tracks pending {@code session/request_permission} request IDs so we can respond with
+     * {@code {outcome: "cancelled"}} when {@link #cancelSession} is called.
+     * Per ACP spec, the Client MUST respond to all pending permission requests with the
+     * cancelled outcome when a turn is cancelled.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, JsonElement> pendingPermissionRequests =
+        new java.util.concurrent.ConcurrentHashMap<>();
     /**
      * Nanotime of the last {@code session/update} notification received; used for inactivity detection.
      */
@@ -261,6 +270,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         currentModelId = null;
         currentAgentSlug = null;
         availableConfigOptions.clear();
+        pendingPermissionRequests.clear();
         updateConsumer = null;
     }
 
@@ -479,6 +489,10 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     @Override
     public final void cancelSession(String sessionId) {
+        // ACP spec: Client MUST respond to all pending session/request_permission
+        // requests with the "cancelled" outcome before sending session/cancel.
+        cancelPendingPermissionRequests();
+
         JsonObject params = new JsonObject();
         params.addProperty(KEY_SESSION_ID, sessionId);
         transport.sendNotification("session/cancel", params);
@@ -1013,8 +1027,19 @@ public abstract class AcpClient extends AbstractAgentClient {
         JsonElement result = future.get(INITIALIZE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         InitializeResponse response = gson.fromJson(result, InitializeResponse.class);
 
+        // ACP spec: version negotiation — if agent responds with a different version,
+        // client SHOULD close the connection. We log a warning and continue for pragmatism
+        // since most agents in practice use version 1.
+        if (response.protocolVersion() != null && response.protocolVersion() != PROTOCOL_VERSION) {
+            LOG.warn(displayName() + ": protocol version mismatch — requested "
+                + PROTOCOL_VERSION + ", agent supports " + response.protocolVersion()
+                + ". Continuing with best-effort compatibility.");
+        }
+
         if (response.agentInfo() != null) {
-            LOG.info(displayName() + " initialized: " + response.agentInfo().name()
+            String displayTitle = response.agentInfo().title() != null
+                ? response.agentInfo().title() : response.agentInfo().name();
+            LOG.info(displayName() + " initialized: " + displayTitle
                 + " v" + response.agentInfo().version());
         } else {
             LOG.info(displayName() + " initialized (no agentInfo in response)");
@@ -1247,78 +1272,104 @@ public abstract class AcpClient extends AbstractAgentClient {
         }
     }
 
+    /**
+     * Responds to all pending {@code session/request_permission} requests with the
+     * {@code cancelled} outcome. Per ACP spec, the Client MUST do this when a turn is cancelled.
+     */
+    private void cancelPendingPermissionRequests() {
+        for (var entry : pendingPermissionRequests.entrySet()) {
+            JsonElement requestId = entry.getValue();
+            JsonObject cancelledOutcome = new JsonObject();
+            cancelledOutcome.addProperty(KEY_OUTCOME, "cancelled");
+            JsonObject result = new JsonObject();
+            result.add(KEY_OUTCOME, cancelledOutcome);
+            transport.sendResponse(requestId, result);
+            LOG.info(displayName() + ": responded cancelled to pending permission request " + entry.getKey());
+        }
+        pendingPermissionRequests.clear();
+    }
+
     private void handlePermissionRequest(JsonElement id, @Nullable JsonObject params) {
-        // Notify subclass before responding, so it can capture args for chip correlation.
-        String toolCallId = "";
-        String toolId = "";
-        if (params != null && params.has("toolCall")) {
-            JsonObject toolCallObj = params.getAsJsonObject("toolCall");
-            String protocolTitle = getStringOrEmpty(toolCallObj, "title");
-            toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
-            toolId = resolveToolId(protocolTitle);
-            if (!toolCallId.isEmpty()) {
-                onPermissionRequest(toolCallId, toolCallObj);
-            }
+        // Track this request so cancelSession can respond with "cancelled" per ACP spec.
+        String requestKey = id != null ? id.toString() : "";
+        if (!requestKey.isEmpty()) {
+            pendingPermissionRequests.put(requestKey, id);
         }
 
-        JsonObject chosenOption = null;
-        String protocolTitle = params != null && params.has("toolCall")
-            ? getStringOrEmpty(params.getAsJsonObject("toolCall"), "title")
-            : "";
-        if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
-            String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
-            LOG.warn(displayName() + ": " + reason);
-            chosenOption = findOptionByKind(params, VALUE_DENY_ONCE);
-
-            // Notify UI that this tool was auto-denied
-            if (updateConsumer != null) {
-                updateConsumer.accept(new SessionUpdate.ToolCallUpdate(
-                    toolCallId,
-                    SessionUpdate.ToolCallStatus.FAILED,
-                    null,
-                    "Auto-denied: " + reason,
-                    null,
-                    true,
-                    reason
-                ));
+        try {
+            // Notify subclass before responding, so it can capture args for chip correlation.
+            String toolCallId = "";
+            String toolId = "";
+            if (params != null && params.has(KEY_TOOL_CALL)) {
+                JsonObject toolCallObj = params.getAsJsonObject(KEY_TOOL_CALL);
+                String protocolTitle = getStringOrEmpty(toolCallObj, "title");
+                toolCallId = getStringOrEmpty(toolCallObj, KEY_TOOL_CALL_ID);
+                toolId = resolveToolId(protocolTitle);
+                if (!toolCallId.isEmpty()) {
+                    onPermissionRequest(toolCallId, toolCallObj);
+                }
             }
 
-            if (chosenOption == null) {
-                // Fallback: if we must deny but agent doesn't offer "deny_once",
-                // we'll try to find any option that isn't allow. But typically "deny_once" exists.
-                chosenOption = findFirstOption(params);
-            }
-        } else if (isBuiltInTool(protocolTitle)) {
-            LOG.info(displayName() + ": permission request for built-in tool '" + toolId + "' requires user approval");
-
-            if (isAllowedBuiltInTool(toolId)) {
-                LOG.warn(displayName() + ": auto-approving built-in web tool '" + toolId + "' - this is allowed because no MCP alternative exists");
-                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
-            } else {
-                String reason = "Built-in tool '" + toolId + "' is not auto-approved; deny it unless the user explicitly allows it.";
+            JsonObject chosenOption = null;
+            String protocolTitle = params != null && params.has(KEY_TOOL_CALL)
+                ? getStringOrEmpty(params.getAsJsonObject(KEY_TOOL_CALL), "title")
+                : "";
+            if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
+                String reason = "Tool '" + toolId + "' is blocked by the current agent profile (excludeAgentBuiltInTools=true).";
                 LOG.warn(displayName() + ": " + reason);
                 chosenOption = findOptionByKind(params, VALUE_DENY_ONCE);
+
+                // Notify UI that this tool was auto-denied
+                Consumer<SessionUpdate> consumer = updateConsumer;
+                if (consumer != null) {
+                    consumer.accept(new SessionUpdate.ToolCallUpdate(
+                        toolCallId,
+                        SessionUpdate.ToolCallStatus.FAILED,
+                        null,
+                        "Auto-denied: " + reason,
+                        null,
+                        true,
+                        reason
+                    ));
+                }
+
+                if (chosenOption == null) {
+                    chosenOption = findFirstOption(params);
+                }
+            } else if (isBuiltInTool(protocolTitle)) {
+                LOG.info(displayName() + ": permission request for built-in tool '" + toolId + "' requires user approval");
+
+                if (isAllowedBuiltInTool(toolId)) {
+                    LOG.warn(displayName() + ": auto-approving built-in web tool '" + toolId + "' - this is allowed because no MCP alternative exists");
+                    chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+                } else {
+                    String reason = "Built-in tool '" + toolId + "' is not auto-approved; deny it unless the user explicitly allows it.";
+                    LOG.warn(displayName() + ": " + reason);
+                    chosenOption = findOptionByKind(params, VALUE_DENY_ONCE);
+
+                    if (chosenOption == null) {
+                        chosenOption = findFirstOption(params);
+                    }
+                }
+            } else {
+                // MCP tools: auto-approve at ACP level, MCP server will handle permission checks
+                LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
+                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
 
                 if (chosenOption == null) {
                     chosenOption = findFirstOption(params);
                 }
             }
-        } else {
-            // MCP tools: auto-approve at ACP level, MCP server will handle permission checks
-            LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
-            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
 
-            if (chosenOption == null) {
-                chosenOption = findFirstOption(params);
-            }
+            String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
+                ? chosenOption.get(KEY_OPTION_ID).getAsString()
+                : VALUE_ALLOW_ONCE;
+            JsonObject result = new JsonObject();
+            result.add(KEY_OUTCOME, buildPermissionOutcome(optionId, chosenOption));
+            transport.sendResponse(id, result);
+        } finally {
+            pendingPermissionRequests.remove(requestKey);
         }
-
-        String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
-            ? chosenOption.get(KEY_OPTION_ID).getAsString()
-            : VALUE_ALLOW_ONCE;
-        JsonObject result = new JsonObject();
-        result.add(KEY_OUTCOME, buildPermissionOutcome(optionId, chosenOption));
-        transport.sendResponse(id, result);
     }
 
     /**
