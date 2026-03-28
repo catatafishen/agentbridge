@@ -54,13 +54,12 @@ public final class GetAvailableActionsTool extends QualityTool {
             + "Use apply_action to invoke one, or optimize_imports to fix all missing imports at once.";
     }
 
-
-
     @Override
     public @NotNull String kind() {
         return "read";
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -142,17 +141,18 @@ public final class GetAvailableActionsTool extends QualityTool {
             String severity = h.getSeverity().getName();
             List<String> fixes = collectQuickFixNames(h);
 
-            String entry = pathStr + ":" + actualLine + " [" + severity + "] " + desc;
-            if (!fixes.isEmpty()) {
-                entry += "  →  Quick fixes: [" + String.join(", ", fixes) + "]";
-                allFixNames.addAll(fixes);
+            StringBuilder entry = new StringBuilder(pathStr).append(':').append(actualLine)
+                .append(" [").append(severity).append("] ").append(desc);
+            for (String fix : fixes) {
+                entry.append("\n    Fix: ").append(fix);
+                allFixNames.add(fix);
             }
-            entries.add(entry);
+            entries.add(entry.toString());
         }
 
         if (entries.isEmpty()) {
             return "No highlights found at " + pathStr + LINE_LABEL + targetLine + ". "
-                + "The daemon may not have analyzed this file yet — open it in the editor or call get_highlights first. "
+                + "The daemon may not have analyzed this file yet - open it in the editor or call get_highlights first. "
                 + "Tip: provide 'symbol' or 'column' to also query intention actions (refactoring, conversions, etc.).";
         }
 
@@ -160,11 +160,7 @@ public final class GetAvailableActionsTool extends QualityTool {
         sb.append("[QUICK FIX] at ").append(pathStr).append(LINE_LABEL).append(targetLine).append(":\n\n");
         sb.append(String.join("\n", entries));
         if (!allFixNames.isEmpty()) {
-            sb.append("""
-
-
-                Tip: provide 'symbol' or 'column' to also see intention actions at a specific symbol. \
-                Use apply_action(file, line, action_name) to invoke a fix.""");
+            sb.append("\n\nCopy the action name exactly as shown (after 'Fix:') and pass to apply_action.");
         }
         return sb.toString();
     }
@@ -186,7 +182,6 @@ public final class GetAvailableActionsTool extends QualityTool {
         Editor editor = getOrOpenEditor(vf);
         if (editor == null) return "Error: Could not open editor for " + pathStr;
 
-        // Resolve column from symbol name or explicit column
         int col = resolveColumn(doc, targetLine, symbol, targetCol);
         editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(targetLine - 1, col));
 
@@ -213,14 +208,15 @@ public final class GetAvailableActionsTool extends QualityTool {
             sb.append(" col ").append(col + 1);
         }
         sb.append(":\n");
+        sb.append("\nCopy the action name exactly as shown to pass to apply_action.\n");
 
         if (!quickFixes.isEmpty()) {
             sb.append("\n[QUICK FIX]\n");
-            quickFixes.forEach(f -> sb.append("  • ").append(f).append("\n"));
+            quickFixes.forEach(f -> sb.append("  ").append(f).append("\n"));
         }
         if (!intentions.isEmpty()) {
             sb.append("\n[INTENTION]\n");
-            intentions.forEach(i -> sb.append("  • ").append(i).append("\n"));
+            intentions.forEach(i -> sb.append("  ").append(i).append("\n"));
         }
 
         sb.append("\nUse apply_action(file, line, action_name) to invoke one.");

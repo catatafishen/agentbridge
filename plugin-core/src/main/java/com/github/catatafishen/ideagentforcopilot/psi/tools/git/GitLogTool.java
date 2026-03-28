@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitLogRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +16,7 @@ public final class GitLogTool extends GitTool {
     private static final String PARAM_FORMAT = "format";
     private static final String PARAM_AUTHOR = "author";
     private static final String PARAM_SINCE = "since";
+    private static final String PARAM_UNTIL = "until";
     private static final String PARAM_BRANCH = "branch";
 
     public GitLogTool(Project project) {
@@ -38,7 +38,7 @@ public final class GitLogTool extends GitTool {
         return "Show commit history";
     }
 
-    
+
 
     @Override
     public @NotNull String kind() {
@@ -52,10 +52,11 @@ public final class GitLogTool extends GitTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-            {PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 10)"},
+            {PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 20)"},
             {PARAM_FORMAT, TYPE_STRING, "Output format: 'oneline', 'short', 'medium', 'full'"},
             {PARAM_AUTHOR, TYPE_STRING, "Filter commits by author name or email"},
-            {PARAM_SINCE, TYPE_STRING, "Show commits after this date (e.g., '2024-01-01')"},
+            {PARAM_SINCE, TYPE_STRING, "Show commits after this date (e.g., '2024-01-01', '2 weeks ago')"},
+            {PARAM_UNTIL, TYPE_STRING, "Show commits before this date (e.g., '2024-12-31', '1 week ago')"},
             {"path", TYPE_STRING, "Show only commits touching this file"},
             {PARAM_BRANCH, TYPE_STRING, "Show commits from this branch (default: current)"}
         });
@@ -88,6 +89,10 @@ public final class GitLogTool extends GitTool {
 
         if (args.has(PARAM_SINCE) && !args.get(PARAM_SINCE).getAsString().isEmpty()) {
             cmdArgs.add("--since=" + args.get(PARAM_SINCE).getAsString());
+        }
+
+        if (args.has(PARAM_UNTIL) && !args.get(PARAM_UNTIL).getAsString().isEmpty()) {
+            cmdArgs.add("--until=" + args.get(PARAM_UNTIL).getAsString());
         }
 
         if (args.has(PARAM_BRANCH) && !args.get(PARAM_BRANCH).getAsString().isEmpty()) {

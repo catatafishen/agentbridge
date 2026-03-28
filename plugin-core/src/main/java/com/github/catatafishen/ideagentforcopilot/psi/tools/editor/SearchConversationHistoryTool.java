@@ -88,10 +88,10 @@ public final class SearchConversationHistoryTool extends EditorTool {
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_QUERY, TYPE_STRING, "Text to search for across conversations (case-insensitive)"},
-            {"file", TYPE_STRING, "Conversation to read: 'current' for the active session, or an archive timestamp (e.g., '2026-03-04T15-30-00')"},
+            {"file", TYPE_STRING, "Conversation identifier: 'current' for the active session, or an archive timestamp (e.g., '2026-03-04T15-30-00'). Not a filesystem path."},
             {PARAM_TURN_ID, TYPE_STRING, "Turn ID from conversation summary (e.g. 't3'). Fetches that specific turn in full. Defaults to file='current'."},
-            {PARAM_SINCE, TYPE_STRING, "Filter entries since this timestamp (ISO 8601, e.g., '2026-03-17T10:00:00Z')"},
-            {PARAM_UNTIL, TYPE_STRING, "Filter entries until this timestamp (ISO 8601)"},
+            {PARAM_SINCE, TYPE_STRING, "Filter entries since this time. Accepted: \"5m\", \"2h\", \"16:57:30\", \"2026-03-17\", \"2026-03-17 10:00:00\", \"2026-03-17T10:00:00Z\""},
+            {PARAM_UNTIL, TYPE_STRING, "Filter entries until this time. Same formats as since."},
             {PARAM_LAST_N, TYPE_INTEGER, "Number of turns (prompts) to return from the end"},
             {PARAM_OFFSET, TYPE_INTEGER, "Number of turns to skip from the end before returning last_n"},
             {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"}
@@ -116,8 +116,15 @@ public final class SearchConversationHistoryTool extends EditorTool {
         String file = args.has("file") ? args.get("file").getAsString() : null;
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
 
-        Instant since = parseTimestampParam(args, PARAM_SINCE);
-        Instant until = parseTimestampParam(args, PARAM_UNTIL);
+        Instant since;
+        Instant until;
+        try {
+            since = parseTimestampParam(args, PARAM_SINCE);
+            until = parseTimestampParam(args, PARAM_UNTIL);
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
+        }
+
         Integer lastN = args.has(PARAM_LAST_N) ? args.get(PARAM_LAST_N).getAsInt() : null;
         Integer offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : null;
         String turnId = args.has(PARAM_TURN_ID) ? args.get(PARAM_TURN_ID).getAsString() : null;
@@ -140,10 +147,11 @@ public final class SearchConversationHistoryTool extends EditorTool {
 
     private static Instant parseTimestampParam(JsonObject args, String param) {
         if (!args.has(param)) return null;
+        String value = args.get(param).getAsString();
         try {
-            return Instant.parse(args.get(param).getAsString());
-        } catch (Exception e) {
-            return null;
+            return com.github.catatafishen.ideagentforcopilot.psi.TimeArgParser.parseInstant(value);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid '" + param + "' value: " + e.getMessage());
         }
     }
 
@@ -151,7 +159,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
         StringBuilder sb = new StringBuilder();
         sb.append("Conversations:\n\n");
         if (currentFile.exists() && currentFile.length() > 10) {
-            sb.append("• current (").append(ToolUtils.formatFileSize(currentFile.length())).append(")\n");
+            sb.append("  current (").append(ToolUtils.formatFileSize(currentFile.length())).append(")\n");
         }
         if (archiveDir.exists()) {
             File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(JSON_EXT));
@@ -159,7 +167,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
                 Arrays.sort(archives, Comparator.comparing(File::getName).reversed());
                 for (File f : archives) {
                     String name = f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
-                    sb.append("• ").append(name).append(" (").append(ToolUtils.formatFileSize(f.length())).append(")\n");
+                    sb.append("  ").append(name).append(" (").append(ToolUtils.formatFileSize(f.length())).append(")\n");
                 }
             }
         }

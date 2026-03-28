@@ -9,9 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayDeque;
@@ -50,9 +48,6 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         "^(\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2}:\\d{2}),(\\d{3}) \\[[^]]+]\\s+(\\w+)\\s+- #?([^\\s-][^-]*)\\s*-\\s*(.*)$"
     );
 
-    private static final Pattern RELATIVE_TIME_PATTERN =
-        Pattern.compile("^(\\d+)(m|min|minutes?|s|sec|seconds?)$", Pattern.CASE_INSENSITIVE);
-
     private static final DateTimeFormatter DATETIME_FMT =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
@@ -75,13 +70,15 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         return """
             Read recent IntelliJ IDE log entries with compact output.
 
-            FILTER is always a case-insensitive regex — use | for OR:
+            FILTER is always a case-insensitive regex - use | for OR:
               filter="ToolChipRegistry|git_diff"
 
-            SINCE / UNTIL narrow to a time window:
-              Relative: "5m", "30s", "2min"
-              Absolute time today: "16:57:30"
-              Absolute datetime: "2026-03-22 16:57:30"
+            SINCE / UNTIL narrow to a time window. All formats accepted:
+              Relative: "5m", "30s", "2h"
+              Time today: "16:57:30" or "16:57"
+              Date: "2026-03-22"
+              Date-time: "2026-03-22 16:57:30"
+              ISO 8601: "2026-03-22T16:57:30Z"
 
             Output format: HH:mm:ss.SSS  LEVEL  ShortClass: message
             (date and thread-id stripped; logger shortened to simple class name)
@@ -104,7 +101,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
             {PARAM_FILTER, TYPE_STRING,
                 "Case-insensitive regex. Use | for OR: \"ToolChipRegistry|git_diff\""},
             {PARAM_SINCE, TYPE_STRING,
-                "Show entries at or after: \"5m\", \"30s\", \"16:57:30\", \"2026-03-22 16:57:30\""},
+                "Show entries at or after. Accepted: \"5m\", \"2h\", \"16:57:30\", \"2026-03-22 16:57:30\", \"2026-03-22T16:57:30Z\""},
             {PARAM_UNTIL, TYPE_STRING,
                 "Show entries at or before. Same formats as since."},
             {PARAM_LEVEL, TYPE_STRING,
@@ -127,17 +124,16 @@ public final class ReadIdeLogTool extends InfrastructureTool {
 
         Pattern filterPattern = compileFilter(filterStr);
         if (filterPattern == null && filterStr != null && !filterStr.isBlank()) {
-            // compileFilter returns null on bad regex and logs the error as a string here
-            return "Invalid filter regex — check syntax";
+            return "Invalid filter regex - check syntax";
         }
 
-        LocalDateTime since = parseTimeArgOrError(sinceStr);
-        if (since == null && sinceStr != null) {
-            return "Invalid since value: \"" + sinceStr + "\". Use \"5m\", \"30s\", \"HH:mm:ss\", or \"yyyy-MM-dd HH:mm:ss\"";
-        }
-        LocalDateTime until = parseTimeArgOrError(untilStr);
-        if (until == null && untilStr != null) {
-            return "Invalid until value: \"" + untilStr + "\". Use \"5m\", \"30s\", \"HH:mm:ss\", or \"yyyy-MM-dd HH:mm:ss\"";
+        LocalDateTime since;
+        LocalDateTime until;
+        try {
+            since = parseTimeArgOrError(sinceStr);
+            until = parseTimeArgOrError(untilStr);
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
         }
 
         List<String> levels = parseLevels(levelParam);
@@ -268,38 +264,8 @@ public final class ReadIdeLogTool extends InfrastructureTool {
         return result.isEmpty() ? null : result;
     }
 
-    /**
-     * Parses a time argument, returning {@code null} if the string is {@code null}
-     * (no argument) and throwing an exception if the format is unrecognised (error case).
-     * Returns a non-null value on success.
-     */
     private static @Nullable LocalDateTime parseTimeArgOrError(@Nullable String value) {
-        if (value == null) return null;
-        String v = value.trim();
-
-        // Relative: "5m", "30s", "2min", "90sec"
-        Matcher rel = RELATIVE_TIME_PATTERN.matcher(v);
-        if (rel.matches()) {
-            long amount = Long.parseLong(rel.group(1));
-            String unit = rel.group(2).toLowerCase();
-            LocalDateTime now = LocalDateTime.now();
-            return unit.startsWith("m") ? now.minusMinutes(amount) : now.minusSeconds(amount);
-        }
-
-        // Absolute time today: "HH:mm:ss"
-        try {
-            LocalTime t = LocalTime.parse(v.replace(",", ":"),
-                DateTimeFormatter.ofPattern("HH:mm:ss"));
-            return LocalDate.now().atTime(t);
-        } catch (DateTimeParseException ignored) { /* fall through */ }
-
-        // Absolute datetime: "2026-03-22 16:57:30"
-        try {
-            return LocalDateTime.parse(v, DATETIME_FMT);
-        } catch (DateTimeParseException ignored) { /* fall through */ }
-
-        // Unknown format — signal error by returning null when input was non-null
-        return null;
+        return com.github.catatafishen.ideagentforcopilot.psi.TimeArgParser.parseLocalDateTime(value);
     }
 
     // ── Log file location ─────────────────────────────────────────────────────

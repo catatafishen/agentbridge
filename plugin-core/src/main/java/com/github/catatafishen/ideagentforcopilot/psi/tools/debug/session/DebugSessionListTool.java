@@ -7,6 +7,7 @@ import com.intellij.xdebugger.XDebugSession;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.XSourcePosition;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public final class DebugSessionListTool extends DebugTool {
 
@@ -45,27 +46,26 @@ public final class DebugSessionListTool extends DebugTool {
         if (sessions.length == 0) return "No active debug sessions.";
 
         XDebugSession current = XDebuggerManager.getInstance(project).getCurrentSession();
+        String basePath = project.getBasePath();
         var sb = new StringBuilder("Active debug sessions (").append(sessions.length).append("):\n\n");
-        for (int i = 0; i < sessions.length; i++) {
-            XDebugSession s = sessions[i];
-            sb.append('#').append(i + 1).append(": ").append(s.getSessionName());
-            if (s == current) sb.append(" [active]");
-
-            if (s.isStopped()) {
-                sb.append(" — STOPPED");
-            } else if (s.getSuspendContext() != null) {
-                XSourcePosition pos = s.getCurrentPosition();
-                if (pos != null) {
-                    sb.append(" — PAUSED at ").append(pos.getFile().getName()).append(':').append(pos.getLine() + 1);
-                } else {
-                    sb.append(" — PAUSED");
-                }
-            } else {
-                sb.append(" — RUNNING");
-            }
-            sb.append('\n');
+        for (XDebugSession s : sessions) {
+            sb.append(s.getSessionName());
+            if (s == current) sb.append(" (active)");
+            sb.append(" - ").append(sessionStatus(s, basePath)).append('\n');
         }
+        sb.append("\nThe session name is the identifier to use with debug tools.");
+        sb.append("\nOnly the active (current) session can be targeted by debug tools.");
         sb.append("\nUse 'run_configuration' to start a new debug session.");
         return sb.toString().strip();
+    }
+
+    private String sessionStatus(@NotNull XDebugSession s, @Nullable String basePath) {
+        if (s.isStopped()) return "STOPPED";
+        if (s.getSuspendContext() == null) return "RUNNING";
+        XSourcePosition pos = s.getCurrentPosition();
+        if (pos == null) return "PAUSED";
+        String relPath = relativize(basePath, pos.getFile().getPath());
+        String location = relPath != null ? relPath : pos.getFile().getName();
+        return "PAUSED at " + location + ':' + (pos.getLine() + 1);
     }
 }

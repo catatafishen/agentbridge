@@ -7,8 +7,12 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Computable;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.XExpression;
-import com.intellij.xdebugger.breakpoints.*;
+import com.intellij.xdebugger.breakpoints.SuspendPolicy;
+import com.intellij.xdebugger.breakpoints.XBreakpoint;
+import com.intellij.xdebugger.breakpoints.XBreakpointManager;
+import com.intellij.xdebugger.breakpoints.XLineBreakpoint;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public final class BreakpointListTool extends DebugTool {
 
@@ -28,7 +32,17 @@ public final class BreakpointListTool extends DebugTool {
 
     @Override
     public @NotNull String description() {
-        return "List all breakpoints with their conditions, enabled status, and source location";
+        return """
+            List all breakpoints with their index, location, enabled status, and conditions.
+
+            Output format per breakpoint:
+              index: N  location: relative/path/File.java:42  status: enabled
+              condition: x > 5  (if set)
+              log: message     (if set)
+
+            Use the index with breakpoint_update or breakpoint_remove.
+            Alternatively pass file + line to breakpoint_update/remove to avoid index fragility.
+            """;
     }
 
     @Override
@@ -50,37 +64,42 @@ public final class BreakpointListTool extends DebugTool {
 
         if (breakpoints.length == 0) return "No breakpoints set.";
 
+        String basePath = project.getBasePath();
         var sb = new StringBuilder();
         sb.append("Breakpoints (").append(breakpoints.length).append("):\n\n");
-        int id = 1;
-        for (XBreakpoint<?> bp : breakpoints) {
-            sb.append('#').append(id++).append(": ");
-            if (bp instanceof XLineBreakpoint<?> lbp) {
-                String file = lbp.getShortFilePath();
-                if (file == null && lbp.getSourcePosition() != null) {
-                    file = lbp.getSourcePosition().getFile().getName();
-                }
-                sb.append(file != null ? file : "<unknown>")
-                    .append(':').append(lbp.getLine() + 1);
-            } else {
-                sb.append(bp.getType().getTitle());
-            }
-            sb.append(" [").append(bp.isEnabled() ? "enabled" : "DISABLED").append("]");
-
-            XExpression cond = bp.getConditionExpression();
-            if (cond != null && !cond.getExpression().isBlank()) {
-                sb.append("  condition: ").append(cond.getExpression());
-            }
-            XExpression logExpr = bp.getLogExpressionObject();
-            if (logExpr != null && !logExpr.getExpression().isBlank()) {
-                sb.append("  log: ").append(logExpr.getExpression());
-            }
+        for (int i = 0; i < breakpoints.length; i++) {
+            XBreakpoint<?> bp = breakpoints[i];
+            sb.append("index: ").append(i + 1);
+            sb.append("  location: ").append(breakpointLocation(bp, basePath));
+            sb.append("  status: ").append(bp.isEnabled() ? "enabled" : "DISABLED");
 
             SuspendPolicy suspend = bp.getSuspendPolicy();
-            if (suspend == SuspendPolicy.NONE) sb.append("  [non-suspending]");
+            if (suspend == SuspendPolicy.NONE) sb.append("  suspend: none");
+            else if (suspend == SuspendPolicy.THREAD) sb.append("  suspend: thread");
 
+            appendExpr(sb, "condition", bp.getConditionExpression());
+            appendExpr(sb, "log", bp.getLogExpressionObject());
             sb.append('\n');
         }
+        sb.append("\nPass index to breakpoint_update or breakpoint_remove, or use file+line as an alternative selector.");
         return sb.toString().strip();
+    }
+
+    @NotNull
+    private String breakpointLocation(@NotNull XBreakpoint<?> bp, @Nullable String basePath) {
+        if (bp instanceof XLineBreakpoint<?> lbp && lbp.getSourcePosition() != null) {
+            String fullPath = lbp.getSourcePosition().getFile().getPath();
+            String relPath = relativize(basePath, fullPath);
+            String location = relPath != null ? relPath : lbp.getSourcePosition().getFile().getName();
+            return location + ':' + (lbp.getLine() + 1);
+        }
+        return bp.getType().getTitle();
+    }
+
+    private static void appendExpr(@NotNull StringBuilder sb, @NotNull String label,
+                                   @Nullable XExpression expr) {
+        if (expr != null && !expr.getExpression().isBlank()) {
+            sb.append("\n  ").append(label).append(": ").append(expr.getExpression());
+        }
     }
 }

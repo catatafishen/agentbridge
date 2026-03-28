@@ -81,21 +81,18 @@ public abstract class DebugTool extends Tool {
 
     // ── Snapshot builder ────────────────────────────────────────────────────
 
-    /**
-     * Builds the canonical snapshot: session header → source context → variables → call stack.
-     */
     @NotNull
     protected String buildSnapshot(@NotNull XDebugSession session,
                                    boolean includeSource, boolean includeVariables, boolean includeStack) {
         var suspendCtx = session.getSuspendContext();
-        if (suspendCtx == null) return "(session is running — no snapshot available)";
+        if (suspendCtx == null) return "(session is running - no snapshot available)";
 
         XSourcePosition pos = session.getCurrentPosition();
         var sb = new StringBuilder();
 
         sb.append("# ").append(session.getSessionName());
         if (pos != null) {
-            sb.append(" — ").append(pos.getFile().getName()).append(':').append(pos.getLine() + 1);
+            sb.append(" - ").append(relativeSourcePath(pos)).append(':').append(pos.getLine() + 1);
         }
         sb.append(" (paused)\n\n");
 
@@ -278,11 +275,25 @@ public abstract class DebugTool extends Tool {
         for (int i = 0; i < frames.size(); i++) {
             XSourcePosition pos = frames.get(i).getSourcePosition();
             String loc = pos != null
-                ? pos.getFile().getName() + ':' + (pos.getLine() + 1)
+                ? relativeSourcePath(pos) + ':' + (pos.getLine() + 1)
                 : "<unknown>";
-            sb.append(i == 0 ? "→" : " ").append(" #").append(i).append(' ').append(loc).append('\n');
+            sb.append(i == 0 ? "->" : "  ").append(" #").append(i).append(' ').append(loc).append('\n');
         }
         return sb.toString();
+    }
+
+    /**
+     * Returns the project-relative path of a source position's file, or just the filename if the
+     * project base path is unavailable.
+     */
+    @NotNull
+    protected String relativeSourcePath(@NotNull XSourcePosition pos) {
+        String basePath = project.getBasePath();
+        String fullPath = pos.getFile().getPath();
+        if (basePath != null && fullPath.startsWith(basePath + "/")) {
+            return fullPath.substring(basePath.length() + 1);
+        }
+        return pos.getFile().getName();
     }
 
     // ── Source context ───────────────────────────────────────────────────────
@@ -302,7 +313,7 @@ public abstract class DebugTool extends Tool {
             var sb = new StringBuilder("## Source Context\nFile: ").append(vf.getPath()).append('\n');
             for (int i = start; i <= end; i++) {
                 String lineText = doc.getText(new TextRange(doc.getLineStartOffset(i), doc.getLineEndOffset(i)));
-                sb.append(i == targetLine ? "→" : " ").append(i + 1).append(": ").append(lineText).append('\n');
+                sb.append(i == targetLine ? ">>" : "  ").append(i + 1).append(": ").append(lineText).append('\n');
             }
             return sb.toString();
         } catch (Exception e) {
@@ -328,7 +339,7 @@ public abstract class DebugTool extends Tool {
             }
 
             @Override
-            @SuppressWarnings({"java:S1133", "deprecation"})
+            @SuppressWarnings("java:S1133")
             // required by IDE daemon versions that still treat tooManyChildren(int) as abstract; delegates to the non-deprecated signature
             public void tooManyChildren(int remaining) {
                 tooManyChildren(remaining, () -> {

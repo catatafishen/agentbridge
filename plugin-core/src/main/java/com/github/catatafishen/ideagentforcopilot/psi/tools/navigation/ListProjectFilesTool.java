@@ -45,13 +45,12 @@ public final class ListProjectFilesTool extends NavigationTool {
         return "List files in a project directory, optionally filtered by glob pattern";
     }
 
-
-
     @Override
     public @NotNull String kind() {
         return "read";
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -64,8 +63,8 @@ public final class ListProjectFilesTool extends NavigationTool {
             {"sort", TYPE_STRING, "Sort order: 'name' (default, alphabetical), 'size' (largest first), 'modified' (most recently modified first)", ""},
             {PARAM_MIN_SIZE, TYPE_INTEGER, "Only include files at least this many bytes", ""},
             {PARAM_MAX_SIZE, TYPE_INTEGER, "Only include files at most this many bytes", ""},
-            {PARAM_MODIFIED_AFTER, TYPE_STRING, "Only include files modified after this date (yyyy-MM-dd, UTC)", ""},
-            {PARAM_MODIFIED_BEFORE, TYPE_STRING, "Only include files modified before this date (yyyy-MM-dd, UTC)", ""}
+            {PARAM_MODIFIED_AFTER, TYPE_STRING, "Only include files modified after this time. Accepted: \"5m\", \"2026-03-28\", \"2026-03-28 16:57:30\", \"2026-03-28T16:57:30Z\"", ""},
+            {PARAM_MODIFIED_BEFORE, TYPE_STRING, "Only include files modified before this time. Same formats as modified_after.", ""}
         });
     }
 
@@ -81,8 +80,20 @@ public final class ListProjectFilesTool extends NavigationTool {
         String sort = args.has("sort") ? args.get("sort").getAsString() : "name";
         long minSize = args.has(PARAM_MIN_SIZE) ? args.get(PARAM_MIN_SIZE).getAsLong() : -1;
         long maxSize = args.has(PARAM_MAX_SIZE) ? args.get(PARAM_MAX_SIZE).getAsLong() : -1;
-        long modifiedAfter = args.has(PARAM_MODIFIED_AFTER) ? ToolUtils.parseDateParam(args.get(PARAM_MODIFIED_AFTER).getAsString()) : -1;
-        long modifiedBefore = args.has(PARAM_MODIFIED_BEFORE) ? ToolUtils.parseDateParam(args.get(PARAM_MODIFIED_BEFORE).getAsString()) : -1;
+
+        long modifiedAfter;
+        long modifiedBefore;
+        try {
+            modifiedAfter = args.has(PARAM_MODIFIED_AFTER)
+                ? com.github.catatafishen.ideagentforcopilot.psi.TimeArgParser.parseEpochMillis(args.get(PARAM_MODIFIED_AFTER).getAsString())
+                : -1;
+            modifiedBefore = args.has(PARAM_MODIFIED_BEFORE)
+                ? com.github.catatafishen.ideagentforcopilot.psi.TimeArgParser.parseEpochMillis(args.get(PARAM_MODIFIED_BEFORE).getAsString())
+                : -1;
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
+        }
+
         return ApplicationManager.getApplication().runReadAction(
             (Computable<String>) () -> computeFilesList(dir, pattern, sort, minSize, maxSize, modifiedAfter, modifiedBefore));
     }

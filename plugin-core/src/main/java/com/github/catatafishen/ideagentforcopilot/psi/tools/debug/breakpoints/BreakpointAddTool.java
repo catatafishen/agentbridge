@@ -9,11 +9,19 @@ import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.XDebuggerUtil;
-import com.intellij.xdebugger.breakpoints.*;
+import com.intellij.xdebugger.breakpoints.SuspendPolicy;
+import com.intellij.xdebugger.breakpoints.XBreakpoint;
+import com.intellij.xdebugger.breakpoints.XBreakpointManager;
+import com.intellij.xdebugger.breakpoints.XLineBreakpoint;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public final class BreakpointAddTool extends DebugTool {
+
+    private static final String PARAM_CONDITION = "condition";
+    private static final String PARAM_LOG_EXPRESSION = "log_expression";
+    private static final String PARAM_ENABLED = "enabled";
+    private static final String PARAM_SUSPEND = "suspend";
 
     public BreakpointAddTool(Project project) {
         super(project);
@@ -40,19 +48,14 @@ public final class BreakpointAddTool extends DebugTool {
     }
 
     @Override
-    public boolean isReadOnly() {
-        return false;
-    }
-
-    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "File path (absolute or project-relative)"},
             {"line", TYPE_INTEGER, "Line number (1-based)"},
-            {"condition", TYPE_STRING, "Optional condition expression (breakpoint only fires when true)"},
-            {"log_expression", TYPE_STRING, "Optional log expression (non-suspending log breakpoint)"},
-            {"enabled", TYPE_BOOLEAN, "Whether the breakpoint is enabled (default: true)"},
-            {"suspend", TYPE_BOOLEAN, "Whether to suspend execution on hit (default: true). Set false with log_expression for a tracepoint."},
+            {PARAM_CONDITION, TYPE_STRING, "Optional condition expression (breakpoint only fires when true)"},
+            {PARAM_LOG_EXPRESSION, TYPE_STRING, "Optional log expression (non-suspending log breakpoint)"},
+            {PARAM_ENABLED, TYPE_BOOLEAN, "Whether the breakpoint is enabled (default: true)"},
+            {PARAM_SUSPEND, TYPE_BOOLEAN, "Whether to suspend execution on hit (default: true). Set false with log_expression for a tracepoint."},
         }, "file", "line");
     }
 
@@ -60,48 +63,70 @@ public final class BreakpointAddTool extends DebugTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String path = args.get("file").getAsString();
         int lineZeroBased = args.get("line").getAsInt() - 1;
-        String condition = args.has("condition") ? args.get("condition").getAsString() : null;
-        String logExpr = args.has("log_expression") ? args.get("log_expression").getAsString() : null;
-        boolean enabled = !args.has("enabled") || args.get("enabled").getAsBoolean();
-        boolean suspend = !args.has("suspend") || args.get("suspend").getAsBoolean();
+        String condition = args.has(PARAM_CONDITION) ? args.get(PARAM_CONDITION).getAsString() : null;
+        String logExpr = args.has(PARAM_LOG_EXPRESSION) ? args.get(PARAM_LOG_EXPRESSION).getAsString() : null;
+        boolean enabled = !args.has(PARAM_ENABLED) || args.get(PARAM_ENABLED).getAsBoolean();
+        boolean suspend = !args.has(PARAM_SUSPEND) || args.get(PARAM_SUSPEND).getAsBoolean();
 
         VirtualFile file = refreshAndFindVirtualFile(path);
         if (file == null) return "File not found: " + path;
 
         XBreakpointManager mgr = XDebuggerManager.getInstance(project).getBreakpointManager();
 
-        // Check for duplicate
         XLineBreakpoint<?> existing = findLineBreakpoint(mgr, file, lineZeroBased);
         if (existing != null) {
             return "Breakpoint already exists at " + file.getName() + ':' + (lineZeroBased + 1) + ". Use breakpoint_update to modify it.";
         }
 
-        // Add via XDebuggerUtil (handles type detection per language)
         PlatformApiCompat.writeActionRunAndWait(() ->
             XDebuggerUtil.getInstance().toggleLineBreakpoint(project, file, lineZeroBased, false));
 
         XLineBreakpoint<?> bp = findLineBreakpoint(mgr, file, lineZeroBased);
-        if (bp == null) return "Failed to add breakpoint — the file or line may not support breakpoints.";
+        if (bp == null) return "Failed to add breakpoint - the file or line may not support breakpoints.";
 
-        // Apply properties
-        final String finalCondition = condition;
-        final String finalLogExpr = logExpr;
+        applyProperties(bp, enabled, suspend, condition, logExpr);
+
+        int index = findBreakpointIndex(mgr, bp);
+        String relPath = relativize(project.getBasePath(), file.getPath());
+        String location = relPath != null ? relPath : file.getName();
+        return buildResult(index, location, lineZeroBased + 1, condition, logExpr, enabled, suspend);
+    }
+
+    private void applyProperties(@NotNull XLineBreakpoint<?> bp, boolean enabled, boolean suspend,
+                                 @Nullable String condition, @Nullable String logExpr) throws Exception {
         PlatformApiCompat.writeActionRunAndWait(() -> {
             bp.setEnabled(enabled);
-            if (finalCondition != null && !finalCondition.isBlank()) {
-                bp.setConditionExpression(PlatformApiCompat.createXExpression(finalCondition));
+            if (condition != null && !condition.isBlank()) {
+                bp.setConditionExpression(PlatformApiCompat.createXExpression(condition));
             }
-            if (finalLogExpr != null && !finalLogExpr.isBlank()) {
-                bp.setLogExpressionObject(PlatformApiCompat.createXExpression(finalLogExpr));
+            if (logExpr != null && !logExpr.isBlank()) {
+                bp.setLogExpressionObject(PlatformApiCompat.createXExpression(logExpr));
             }
             bp.setSuspendPolicy(suspend ? SuspendPolicy.ALL : SuspendPolicy.NONE);
         });
+    }
 
-        return "Added breakpoint at " + file.getName() + ':' + (lineZeroBased + 1)
-            + (condition != null ? " [condition: " + condition + "]" : "")
-            + (logExpr != null ? " [log: " + logExpr + "]" : "")
-            + (enabled ? "" : " [disabled]")
-            + (suspend ? "" : " [non-suspending]");
+    private int findBreakpointIndex(@NotNull XBreakpointManager mgr, @NotNull XBreakpoint<?> bp) {
+        XBreakpoint<?>[] all = ApplicationManager.getApplication()
+            .runReadAction((Computable<XBreakpoint<?>[]>) mgr::getAllBreakpoints);
+        for (int i = 0; i < all.length; i++) {
+            if (all[i] == bp) return i + 1;
+        }
+        return -1;
+    }
+
+    @NotNull
+    private static String buildResult(int index, @NotNull String location, int line,
+                                      @Nullable String condition, @Nullable String logExpr,
+                                      boolean enabled, boolean suspend) {
+        var sb = new StringBuilder("Added breakpoint");
+        if (index > 0) sb.append(" index ").append(index);
+        sb.append(" at ").append(location).append(':').append(line);
+        if (condition != null && !condition.isBlank()) sb.append(" [condition: ").append(condition).append(']');
+        if (logExpr != null && !logExpr.isBlank()) sb.append(" [log: ").append(logExpr).append(']');
+        if (!enabled) sb.append(" [disabled]");
+        if (!suspend) sb.append(" [non-suspending]");
+        return sb.toString();
     }
 
     @Nullable

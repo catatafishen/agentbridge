@@ -5,7 +5,11 @@ import com.github.catatafishen.ideagentforcopilot.psi.tools.debug.DebugTool;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import com.intellij.xdebugger.XDebuggerManager;
-import com.intellij.xdebugger.breakpoints.*;
+import com.intellij.xdebugger.breakpoints.XBreakpoint;
+import com.intellij.xdebugger.breakpoints.XBreakpointManager;
+import com.intellij.xdebugger.breakpoints.XBreakpointProperties;
+import com.intellij.xdebugger.breakpoints.XBreakpointType;
+import com.intellij.xdebugger.breakpoints.XLineBreakpointType;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
@@ -45,8 +49,8 @@ public final class BreakpointAddExceptionTool extends DebugTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-                {"exception_class", TYPE_STRING, "Fully qualified exception class name (e.g., java.lang.IllegalStateException), or '*' for any exception"},
-                {"enabled", TYPE_BOOLEAN, "Whether the breakpoint is enabled (default: true)"},
+            {"exception_class", TYPE_STRING, "Fully qualified exception class name (e.g., java.lang.IllegalStateException), or '*' for any exception"},
+            {"enabled", TYPE_BOOLEAN, "Whether the breakpoint is enabled (default: true)"},
         }, "exception_class");
     }
 
@@ -76,7 +80,7 @@ public final class BreakpointAddExceptionTool extends DebugTool {
         final XBreakpointType finalType = exceptionType;
         final XBreakpointProperties<?> props = finalType.createProperties();
         XBreakpoint<?> bp = PlatformApiCompat.writeActionComputeAndWait(
-                () -> mgr.addBreakpoint(finalType, props));
+            () -> mgr.addBreakpoint(finalType, props));
 
         bp.setEnabled(enabled);
 
@@ -91,13 +95,13 @@ public final class BreakpointAddExceptionTool extends DebugTool {
                     method.invoke(props, exceptionClass);
                 } catch (NoSuchMethodException ignored2) {
                     return "Added exception breakpoint but could not set class name '" + exceptionClass +
-                            "' (properties type: " + props.getClass().getSimpleName() +
-                            " has no setQualifiedName/setExceptionClass method). Configure it manually in the IDE.";
+                        "' (properties type: " + props.getClass().getSimpleName() +
+                        " has no setQualifiedName/setExceptionClass method). Configure it manually in the IDE.";
                 }
             }
         }
 
         return "Added exception breakpoint" + (exceptionClass.equals("*") ? " (any exception)" : " for " + exceptionClass)
-                + (enabled ? "" : " [disabled]");
+            + (enabled ? "" : " [disabled]");
     }
 }
