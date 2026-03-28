@@ -102,6 +102,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.setKindExecuteColorKey(key);
     }
 
+    public boolean isSmoothScrollEnabled() {
+        return myState.smoothScrollEnabled;
+    }
+
+    public void setSmoothScrollEnabled(boolean enabled) {
+        myState.smoothScrollEnabled = enabled;
+    }
+
     /**
      * Applies {@link McpToolFilter#DEFAULT_DISABLED} on first run (before any
      * persisted state exists). Once applied, the flag is persisted so subsequent
@@ -131,6 +139,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private TransportMode transportMode = TransportMode.STREAMABLE_HTTP;
         private Set<String> disabledToolIds = new LinkedHashSet<>();
         private boolean defaultsApplied = false;
+        private boolean smoothScrollEnabled = false;
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
@@ -181,6 +190,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setDefaultsApplied(boolean defaultsApplied) {
             this.defaultsApplied = defaultsApplied;
+        }
+
+        public boolean isSmoothScrollEnabled() {
+            return smoothScrollEnabled;
+        }
+
+        public void setSmoothScrollEnabled(boolean smoothScrollEnabled) {
+            this.smoothScrollEnabled = smoothScrollEnabled;
         }
 
         public @org.jetbrains.annotations.Nullable String getKindReadColorKey() {

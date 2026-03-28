@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
+import com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -38,6 +39,7 @@ public final class McpServerConfigurable implements Configurable {
     private JBCheckBox autoStartCheckbox;
     private JBCheckBox followModeCheckbox;
     private JBCheckBox debugLoggingCheckbox;
+    private JBCheckBox smoothScrollCheckbox;
     private JPanel mainPanel;
 
     public McpServerConfigurable(@NotNull Project project) {
@@ -78,6 +80,12 @@ public final class McpServerConfigurable implements Configurable {
         debugLoggingCheckbox.setToolTipText(
             "When enabled, every ACP request and response is logged to the IDE log (Help → Show Log).");
 
+        smoothScrollCheckbox = new JBCheckBox(
+            "Enable smooth scrolling in chat panel",
+            settings.isSmoothScrollEnabled());
+        smoothScrollCheckbox.setToolTipText(
+            "⚠ May cause screen tearing on some systems. Disable if you see visual artifacts while scrolling.");
+
         JButton restartButton = new JButton("Restart MCP Server", AllIcons.Actions.Restart);
         restartButton.setToolTipText("Stop and restart the MCP server to pick up tool registration changes");
         restartButton.addActionListener(e -> restartMcpServer(restartButton));
@@ -106,6 +114,9 @@ public final class McpServerConfigurable implements Configurable {
             .addSeparator()
             .addComponent(debugLoggingCheckbox)
             .addSeparator()
+            .addComponent(smoothScrollCheckbox)
+            .addTooltip("⚠ May cause screen tearing on some systems")
+            .addSeparator()
             .addComponent(buttonRow)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
@@ -122,6 +133,7 @@ public final class McpServerConfigurable implements Configurable {
         if (transportModeCombo.getSelectedItem() != settings.getTransportMode()) return true;
         if (autoStartCheckbox.isSelected() != settings.isAutoStart()) return true;
         if (debugLoggingCheckbox.isSelected() != settings.isDebugLoggingEnabled()) return true;
+        if (smoothScrollCheckbox.isSelected() != settings.isSmoothScrollEnabled()) return true;
         return followModeCheckbox.isSelected() != ActiveAgentManager.getFollowAgentFiles(project);
     }
 
@@ -132,7 +144,12 @@ public final class McpServerConfigurable implements Configurable {
         settings.setTransportMode((TransportMode) transportModeCombo.getSelectedItem());
         settings.setAutoStart(autoStartCheckbox.isSelected());
         settings.setDebugLoggingEnabled(debugLoggingCheckbox.isSelected());
+        settings.setSmoothScrollEnabled(smoothScrollCheckbox.isSelected());
         ActiveAgentManager.setFollowAgentFiles(project, followModeCheckbox.isSelected());
+        var chatPanel = ChatConsolePanel.Companion.getInstance(project);
+        if (chatPanel != null) {
+            chatPanel.setSmoothScroll(smoothScrollCheckbox.isSelected());
+        }
     }
 
     @Override
@@ -142,6 +159,7 @@ public final class McpServerConfigurable implements Configurable {
         transportModeCombo.setSelectedItem(settings.getTransportMode());
         autoStartCheckbox.setSelected(settings.isAutoStart());
         debugLoggingCheckbox.setSelected(settings.isDebugLoggingEnabled());
+        smoothScrollCheckbox.setSelected(settings.isSmoothScrollEnabled());
         followModeCheckbox.setSelected(ActiveAgentManager.getFollowAgentFiles(project));
     }
 
@@ -153,6 +171,7 @@ public final class McpServerConfigurable implements Configurable {
         autoStartCheckbox = null;
         followModeCheckbox = null;
         debugLoggingCheckbox = null;
+        smoothScrollCheckbox = null;
     }
 
     private void copyMcpConfig(JButton button) {

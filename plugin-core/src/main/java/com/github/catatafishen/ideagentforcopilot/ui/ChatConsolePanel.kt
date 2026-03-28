@@ -217,6 +217,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         browserReady = true
                         pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
                         pendingJs.clear()
+                        if (com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).isSmoothScrollEnabled) {
+                            setSmoothScroll(true)
+                        }
                     }
                 }, browser.cefBrowser
             )
@@ -248,6 +251,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     fun setAutoScroll(enabled: Boolean) {
         executeJs("ChatController.setAutoScroll($enabled)")
+    }
+
+    fun setSmoothScroll(enabled: Boolean) {
+        executeJs("document.querySelector('chat-container').style.scrollBehavior = '${if (enabled) "smooth" else "auto"}'")
     }
 
     override fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>?, bubbleHtml: String?) {
