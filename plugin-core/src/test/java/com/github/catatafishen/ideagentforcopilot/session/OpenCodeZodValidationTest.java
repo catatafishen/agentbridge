@@ -21,6 +21,9 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -167,6 +170,141 @@ class OpenCodeZodValidationTest {
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
+    /**
+     * Verifies that consecutive assistant messages (e.g. main response + sub-agent result
+     * + continuation) are merged into a single assistant message during export, maintaining
+     * the linear user→assistant chain that OpenCode expects.
+     */
+    @Test
+    void consecutiveAssistantMessagesAreMergedDuringExport() throws Exception {
+        // Simulate a turn where Copilot responded, launched a sub-agent, then continued
+        long baseTime = System.currentTimeMillis();
+        List<SessionMessage> messages = List.of(
+            new SessionMessage("u1", "user",
+                List.of(textPart("Check permissions")),
+                baseTime, null, null),
+            new SessionMessage("a1", "assistant",
+                List.of(textPart("Let me investigate...")),
+                baseTime, "build", "claude-sonnet-4.6"),
+            // Sub-agent result as separate assistant message (same parent in v2 format)
+            new SessionMessage("a2", "assistant",
+                List.of(subagentPart("explore", "Exploring codebase", "Found the bug")),
+                baseTime, "Intellij-Explore", "claude-haiku-4.5"),
+            // Continuation after sub-agent
+            new SessionMessage("a3", "assistant",
+                List.of(textPart("Based on the exploration, here's the fix...")),
+                baseTime, "build", "claude-sonnet-4.6"),
+            new SessionMessage("u2", "user",
+                List.of(textPart("Thanks!")),
+                baseTime, null, null),
+            new SessionMessage("a4", "assistant",
+                List.of(textPart("You're welcome!")),
+                baseTime, "build", "claude-sonnet-4.6")
+        );
+
+        Path dbPath = tempDir.resolve("opencode.db");
+        String sessionId = OpenCodeClientExporter.exportSession(messages, dbPath, PROJECT_DIR);
+        assertNotNull(sessionId, "Export should succeed");
+
+        // Validate structure: should have exactly 4 messages (2 user + 2 assistant)
+        // because the 3 consecutive assistants (a1, a2, a3) are merged into 1
+        try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
+            Class.forName("org.sqlite.JDBC");
+
+            // Count messages
+            try (var ps = conn.prepareStatement(
+                "SELECT json_extract(data, '$.role') as role, COUNT(*) as cnt "
+                    + "FROM message WHERE session_id = ? GROUP BY role ORDER BY role")) {
+                ps.setString(1, sessionId);
+                try (var rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        String role = rs.getString("role");
+                        int count = rs.getInt("cnt");
+                        if ("assistant".equals(role)) {
+                            assertEquals(2, count,
+                                "Expected 2 assistant messages (3 merged into 1 + 1 standalone)");
+                        } else if ("user".equals(role)) {
+                            assertEquals(2, count, "Expected 2 user messages");
+                        }
+                    }
+                }
+            }
+
+            // Verify each assistant has exactly one unique parentID (no branching)
+            try (var ps = conn.prepareStatement(
+                "SELECT json_extract(data, '$.parentID') as parent, COUNT(*) as cnt "
+                    + "FROM message WHERE session_id = ? "
+                    + "AND json_extract(data, '$.role') = 'assistant' "
+                    + "GROUP BY parent HAVING cnt > 1")) {
+                ps.setString(1, sessionId);
+                try (var rs = ps.executeQuery()) {
+                    assertFalse(rs.next(),
+                        "No parent user message should have multiple assistant children");
+                }
+            }
+
+            // Verify timestamps are monotonically increasing
+            try (var ps = conn.prepareStatement(
+                "SELECT time_created FROM message WHERE session_id = ? ORDER BY rowid")) {
+                ps.setString(1, sessionId);
+                try (var rs = ps.executeQuery()) {
+                    long prev = -1;
+                    while (rs.next()) {
+                        long ts = rs.getLong("time_created");
+                        assertTrue(ts > prev,
+                            "Timestamps must be strictly increasing, but " + ts + " <= " + prev);
+                        prev = ts;
+                    }
+                }
+            }
+        }
+
+        // Also verify Zod schema validation passes
+        JsonObject validatorInput = extractValidatorInput(dbPath, sessionId);
+        String result = runValidator(validatorInput);
+        JsonObject resultObj = JsonParser.parseString(result).getAsJsonObject();
+        assertTrue(resultObj.get("valid").getAsBoolean(),
+            "Merged session should pass Zod validation:\n" + result);
+    }
+
+    @Test
+    void linearizeMessagesMergesConsecutiveAssistants() {
+        long now = System.currentTimeMillis();
+        List<SessionMessage> messages = List.of(
+            new SessionMessage("u1", "user", List.of(textPart("Hello")), now, null, null),
+            new SessionMessage("a1", "assistant", List.of(textPart("Response 1")), now, "build", "model"),
+            new SessionMessage("a2", "assistant", List.of(textPart("Sub-agent result")), now, "explore", "model"),
+            new SessionMessage("a3", "assistant", List.of(textPart("Continuation")), now, "build", "model"),
+            new SessionMessage("u2", "user", List.of(textPart("Next")), now, null, null),
+            new SessionMessage("a4", "assistant", List.of(textPart("Final")), now, "build", "model")
+        );
+
+        List<SessionMessage> result = OpenCodeClientExporter.linearizeMessages(messages);
+
+        // 6 messages → 4 (u1, merged-a, u2, a4)
+        assertEquals(4, result.size(), "Expected 4 messages after linearization");
+        assertEquals("user", result.get(0).role);
+        assertEquals("assistant", result.get(1).role);
+        assertEquals("user", result.get(2).role);
+        assertEquals("assistant", result.get(3).role);
+
+        // Merged assistant should have 3 parts (from a1 + a2 + a3)
+        assertEquals(3, result.get(1).parts.size(),
+            "Merged assistant should have 3 parts");
+
+        // Metadata should come from the first assistant
+        assertEquals("build", result.get(1).agent);
+    }
+
+    private static JsonObject subagentPart(String agentType, String description, String result) {
+        JsonObject part = new JsonObject();
+        part.addProperty("type", "subagent");
+        part.addProperty("agentType", agentType);
+        part.addProperty("description", description);
+        part.addProperty("result", result);
+        return part;
+    }
+
     private JsonObject extractValidatorInput(Path dbPath, String sessionId) throws SQLException {
         JsonArray messagesArr = new JsonArray();
         JsonArray partsArr = new JsonArray();
@@ -249,7 +387,7 @@ class OpenCodeZodValidationTest {
     }
 
     private static JsonObject toolInvocationPart(String callId, String toolName,
-                                                  String args, String result) {
+                                                 String args, String result) {
         JsonObject invocation = new JsonObject();
         invocation.addProperty("state", "result");
         invocation.addProperty("toolCallId", callId);

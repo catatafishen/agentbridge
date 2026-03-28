@@ -20,6 +20,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -80,7 +81,13 @@ public final class OpenCodeClientExporter {
     }
 
     /**
-     * Exports v2 session messages into the OpenCode SQLite database.
+     * Exports a list of v2 session messages to OpenCode's native SQLite database.
+     *
+     * <p>Messages are linearized before export: consecutive assistant messages
+     * (e.g. main response + sub-agent result + continuation) are merged into a
+     * single assistant message to maintain the linear user→assistant→user→assistant
+     * chain that OpenCode expects. Each assistant message gets a unique
+     * {@code parentID} pointing to the preceding user message.</p>
      *
      * @param messages   the v2 session messages to export
      * @param dbPath     path to the OpenCode database file
@@ -107,6 +114,7 @@ public final class OpenCodeClientExporter {
         }
 
         String sessionId = generateId("ses");
+        List<SessionMessage> linearized = linearizeMessages(messages);
 
         try (Connection conn = openSqlite(dbPath)) {
             ensureTables(conn);
@@ -118,17 +126,24 @@ public final class OpenCodeClientExporter {
 
             // Track the last user message ID so assistant messages can reference it
             // via the required parentID field in OpenCode's Zod schema.
+            // Use real msg.createdAt when available, but enforce strict monotonicity
+            // (each timestamp > previous) so OpenCode's ORDER BY time_created is
+            // deterministic even when upstream converters stamped all messages at once.
             String lastUserMessageId = null;
-            for (SessionMessage msg : messages) {
+            long prevTime = 0;
+            for (SessionMessage msg : linearized) {
                 if ("separator".equals(msg.role)) continue;
-                String messageId = insertMessage(conn, sessionId, msg, now, projectDir, lastUserMessageId);
+                long msgTime = msg.createdAt > prevTime ? msg.createdAt : prevTime + 1;
+                prevTime = msgTime;
+                String messageId = insertMessage(conn, sessionId, msg, msgTime, projectDir, lastUserMessageId);
                 if ("user".equals(msg.role)) {
                     lastUserMessageId = messageId;
                 }
             }
 
             LOG.info("Exported v2 session to OpenCode: " + sessionId
-                + " (project=" + projectId + ", messages=" + messages.size() + ")");
+                + " (project=" + projectId + ", messages=" + linearized.size()
+                + ", original=" + messages.size() + ")");
             return sessionId;
         } catch (SQLException e) {
             LOG.warn("Failed to export v2 session to OpenCode database: " + dbPath, e);
@@ -137,6 +152,78 @@ public final class OpenCodeClientExporter {
     }
 
     // ── ID generation ─────────────────────────────────────────────────────────
+
+    /**
+     * Merges consecutive assistant messages into single messages to produce a
+     * linear user→assistant→user→assistant chain.
+     *
+     * <p>OpenCode expects each user message to have exactly one assistant response.
+     * Our v2 format may have multiple consecutive assistant messages when a turn
+     * involved sub-agents or multi-step responses. This method merges all parts
+     * from consecutive assistant messages into the first one, preserving the
+     * agent name and model from the first assistant in each group.</p>
+     *
+     * <p>Separator messages are preserved as-is (they are skipped during export).</p>
+     */
+    @NotNull
+    public static List<SessionMessage> linearizeMessages(@NotNull List<SessionMessage> messages) {
+        List<SessionMessage> result = new ArrayList<>();
+        SessionMessage pendingAssistant = null;
+        List<JsonObject> mergedParts = null;
+
+        for (SessionMessage msg : messages) {
+            if ("separator".equals(msg.role)) {
+                // Flush any pending assistant before a separator
+                if (pendingAssistant != null) {
+                    result.add(buildMergedAssistant(pendingAssistant, mergedParts));
+                    pendingAssistant = null;
+                    mergedParts = null;
+                }
+                result.add(msg);
+                continue;
+            }
+
+            if ("assistant".equals(msg.role)) {
+                if (pendingAssistant == null) {
+                    // First assistant in a potential sequence
+                    pendingAssistant = msg;
+                    mergedParts = new ArrayList<>(msg.parts);
+                } else {
+                    // Consecutive assistant — merge parts into the pending one
+                    mergedParts.addAll(msg.parts);
+                }
+            } else {
+                // User message — flush any pending assistant first
+                if (pendingAssistant != null) {
+                    result.add(buildMergedAssistant(pendingAssistant, mergedParts));
+                    pendingAssistant = null;
+                    mergedParts = null;
+                }
+                result.add(msg);
+            }
+        }
+
+        // Flush trailing assistant
+        if (pendingAssistant != null) {
+            result.add(buildMergedAssistant(pendingAssistant, mergedParts));
+        }
+
+        return result;
+    }
+
+    /**
+     * Builds a merged assistant message from the first assistant's metadata
+     * and the combined parts from all consecutive assistants.
+     */
+    @NotNull
+    private static SessionMessage buildMergedAssistant(
+        @NotNull SessionMessage first, @NotNull List<JsonObject> allParts) {
+        if (allParts.size() == first.parts.size()) {
+            return first; // no merge needed — return original
+        }
+        return new SessionMessage(
+            first.id, first.role, allParts, first.createdAt, first.agent, first.model);
+    }
 
     /**
      * Generates an OpenCode-style prefixed ID (e.g. {@code ses_abc123...}).
@@ -308,6 +395,8 @@ public final class OpenCodeClientExporter {
     /**
      * Inserts a message and its parts into the database.
      *
+     * @param timeCreated the timestamp for this message (caller provides monotonically
+     *                    increasing values to ensure deterministic ordering)
      * @return the generated message ID (for parentID linking)
      */
     @NotNull
@@ -315,12 +404,11 @@ public final class OpenCodeClientExporter {
         @NotNull Connection conn,
         @NotNull String sessionId,
         @NotNull SessionMessage msg,
-        long baseTime,
+        long timeCreated,
         @NotNull String projectDir,
         @Nullable String parentMessageId) throws SQLException {
 
         String messageId = generateId("msg");
-        long timeCreated = msg.createdAt > 0 ? msg.createdAt : baseTime;
 
         JsonObject msgData = buildMessageData(msg, timeCreated, projectDir, parentMessageId);
 
