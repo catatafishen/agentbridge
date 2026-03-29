@@ -170,16 +170,6 @@ public final class KiroClientExporter {
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
-    /**
-     * Converts v2 session messages to Kiro's JSONL message format.
-     *
-     * <p>Kiro uses three message kinds:
-     * <ul>
-     *   <li>{@code Prompt} — user messages with text content</li>
-     *   <li>{@code AssistantMessage} — assistant text + tool_use blocks</li>
-     *   <li>{@code ToolResults} — tool results following an AssistantMessage with tool_use</li>
-     * </ul>
-     */
     @NotNull
     static List<JsonObject> toKiroMessages(@NotNull List<SessionMessage> messages) {
         List<JsonObject> result = new ArrayList<>();
@@ -195,6 +185,16 @@ public final class KiroClientExporter {
                 default -> LOG.debug("Skipping unknown role: " + msg.role);
             }
         }
+
+        // Kiro requires conversation history to start with a Prompt.
+        // When switching from another agent, the exported messages may begin
+        // with an AssistantMessage (no user turn in the current session).
+        if (!result.isEmpty() && !KIND_PROMPT.equals(result.getFirst().get("kind").getAsString())) {
+            JsonArray content = new JsonArray();
+            content.add(textContentBlock("[Previous conversation context]"));
+            result.addFirst(wrapMessage(KIND_PROMPT, UUID.randomUUID().toString(), content));
+        }
+
         return result;
     }
 
@@ -242,7 +242,7 @@ public final class KiroClientExporter {
                 if (text.isEmpty()) continue;
 
                 if (seenToolUse) {
-                    emitAssistantTurn(assistantContent, pendingTools, msg.id, result);
+                    emitAssistantTurn(assistantContent, pendingTools, result);
                     assistantContent = new JsonArray();
                     pendingTools = new ArrayList<>();
                     seenToolUse = false;
@@ -259,19 +259,18 @@ public final class KiroClientExporter {
             }
         }
 
-        emitAssistantTurn(assistantContent, pendingTools, msg.id, result);
+        emitAssistantTurn(assistantContent, pendingTools, result);
         return result;
     }
 
     private static void emitAssistantTurn(
         @NotNull JsonArray assistantContent,
         @NotNull List<ToolPair> pendingTools,
-        @NotNull String messageId,
         @NotNull List<JsonObject> out) {
 
         if (assistantContent.isEmpty()) return;
 
-        out.add(wrapMessage(KIND_ASSISTANT_MESSAGE, messageId, assistantContent));
+        out.add(wrapMessage(KIND_ASSISTANT_MESSAGE, UUID.randomUUID().toString(), assistantContent));
 
         if (!pendingTools.isEmpty()) {
             out.add(buildToolResultsMessage(pendingTools));
