@@ -860,6 +860,28 @@ public final class SessionSwitchService implements Disposable {
     }
 
     /**
+     * Clears the Claude CLI resume session ID from both in-memory storage
+     * ({@link PropertiesComponent}) and the file-based fallback on disk.
+     *
+     * <p>Call this when the user explicitly requests a fresh session (no resume),
+     * so that {@link com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient#createSession}
+     * does not find a stale resume ID and pass {@code --resume} to the CLI.</p>
+     */
+    public void clearClaudeResumeState() {
+        PropertiesComponent.getInstance(project)
+            .unsetValue(ClaudeCliClient.PROFILE_ID + ".cliResumeSessionId");
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            try {
+                Path resumeFile = sessionsDir(basePath).toPath().resolve(CLAUDE_RESUME_ID_FILE);
+                Files.deleteIfExists(resumeFile);
+            } catch (IOException e) {
+                LOG.warn("Failed to delete Claude resume ID file", e);
+            }
+        }
+    }
+
+    /**
      * Reads and consumes the Claude CLI resume session ID from the file on disk.
      * Returns {@code null} if the file does not exist or is empty.
      * The file is deleted after reading to ensure one-time consumption.

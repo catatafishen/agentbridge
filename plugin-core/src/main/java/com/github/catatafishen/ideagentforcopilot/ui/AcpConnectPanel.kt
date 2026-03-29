@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.*
+import com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.icons.AllIcons
@@ -607,18 +608,30 @@ class AcpConnectPanel(
 
     private fun applySessionChoice(profileId: String) {
         val settings = GenericSettings(profileId, project)
+        val sameAgent = agentManager.activeProfileId == profileId
+        val sessionSwitch = SessionSwitchService.getInstance(project)
+
         when (val choice = sessionCombo.selectedItem as? SessionChoice) {
-            is SessionChoice.None -> settings.resumeSessionId = null
-            is SessionChoice.Latest -> { /* keep existing resume ID — default behavior */
+            is SessionChoice.None -> {
+                settings.resumeSessionId = null
+                // Clear Claude CLI resume state so it starts fresh (no --resume).
+                if (sameAgent) sessionSwitch.clearClaudeResumeState()
+            }
+
+            is SessionChoice.Latest -> {
+                // Re-export the current session so the JSONL has the correct last-prompt.
+                // Without this, a stale export (e.g. from a previous IDE session) would be
+                // reused and Claude CLI could branch from the wrong message.
+                if (sameAgent) sessionSwitch.exportForRestart(profileId)
             }
 
             is SessionChoice.Older -> {
-                // Switch the v2 current session to the selected one so the conversation
-                // is loaded from the older session on next restore.
                 switchCurrentSession(choice.record.id)
-                // Clear the ACP resume ID — the server doesn't know about old sessions.
-                // The session export logic will re-export if session mapping is enabled.
                 settings.resumeSessionId = null
+                // Export the older session to Claude CLI format. switchCurrentSession()
+                // already updated .current-session-id, so exportForRestart() will pick
+                // up the correct session. For agent switches, onAgentSwitch() handles this.
+                if (sameAgent) sessionSwitch.exportForRestart(profileId)
             }
 
             null -> { /* no selection — keep defaults */
