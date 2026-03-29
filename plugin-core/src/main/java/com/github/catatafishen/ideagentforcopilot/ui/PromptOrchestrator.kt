@@ -27,7 +27,7 @@ data class PromptOrchestratorCallbacks(
     val updateSessionInfo: () -> Unit,
     val requestFocusAfterTurn: () -> Unit,
     val onTimerIncrementToolCalls: () -> Unit,
-    val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double) -> Unit,
+    val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double?) -> Unit,
     val onTimerSetCodeChangeStats: (added: Int, removed: Int) -> Unit,
     /** Called for plan-tree and file-tracking side-effects (remains in ChatToolWindowContent). */
     val onClientUpdate: (SessionUpdate) -> Unit,
@@ -70,12 +70,13 @@ class PromptOrchestrator(
     private var turnToolCallCount = 0
     private var turnInputTokens = 0
     private var turnOutputTokens = 0
-    private var turnCostUsd = 0.0
+    private var turnCostUsd: Double? = null
     private var turnModelId = ""
     private var activeSubAgentId: String? = null
     private val toolCallTitles = mutableMapOf<String, String>()
     private val toolCallArgs = mutableMapOf<String, String>() // arguments from tool_call_update
     private var pendingBanner: PendingBanner? = null
+    private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
 
     /** Executes a prompt on the calling thread (must be called from a background thread). */
@@ -137,6 +138,14 @@ class PromptOrchestrator(
             // response) without throwing. Treat it as a cancellation so handlePromptCompletion
             // is not invoked and the stale thread interrupt doesn't leak into the next turn.
             if (stopped) throw InterruptedException("Stopped by user")
+            // If the agent returned end_turn but produced no content, the session state is
+            // likely corrupted (e.g. OpenCode's compaction state is broken). Handle it
+            // explicitly — NOT via handlePromptError, which shows a misleading "Reconnect"
+            // banner. We reset the session and tell the user clearly what happened.
+            if (!turnHadContent) {
+                handleSessionCorrupted()
+                return
+            }
             handlePromptCompletion(prompt)
         } catch (e: Exception) {
             handlePromptError(e)
@@ -211,7 +220,8 @@ class PromptOrchestrator(
         turnToolCallCount = 0
         turnInputTokens = 0
         turnOutputTokens = 0
-        turnCostUsd = 0.0
+        turnCostUsd = null
+        turnHadContent = false
         activeSubAgentId = null
         turnModelId = selectedModelId
         CodeChangeTracker.clear()
@@ -253,7 +263,7 @@ class PromptOrchestrator(
 
     private fun buildEffectivePrompt(prompt: String): String {
         var effective = prompt
-        if (!conversationSummaryInjected) {
+        if (!conversationSummaryInjected && ActiveAgentManager.getInjectConversationHistory(project)) {
             conversationSummaryInjected = true
             val summary = consolePanel().getCompressedSummary()
             if (summary.isNotEmpty()) {
@@ -321,6 +331,9 @@ class PromptOrchestrator(
     /**
      * Attempts to call [sendCall] with [initialSessionId]. If it fails with a "not found" session
      * error, invalidates the current session, creates a fresh one, and retries once.
+     *
+     * **Important:** when the retry fires, the resumed session context is lost — the agent
+     * starts fresh. A warning is shown in the chat so the user knows why the agent lost context.
      */
     private fun sendWithSessionRetry(
         client: AbstractAgentClient,
@@ -332,9 +345,23 @@ class PromptOrchestrator(
         } catch (e: Exception) {
             val msg = e.message ?: ""
             if (msg.contains("not found", ignoreCase = true)) {
-                log.info("Session expired ('not found'), creating new session and retrying")
+                val agentName = agentManager.activeProfile.displayName
+                log.warn(
+                    "$agentName: session '$initialSessionId' not found — " +
+                        "falling back to fresh session. Previous context will be lost. " +
+                        "Original error: $msg",
+                    e
+                )
                 currentSessionId = null
                 val newSessionId = ensureSessionCreated(client)
+
+                ApplicationManager.getApplication().invokeLater {
+                    consolePanel().addErrorEntry(
+                        "⚠ Session resume failed — $agentName could not find the previous session. " +
+                            "Started a fresh session; earlier conversation context was not restored."
+                    )
+                }
+
                 sendCall(newSessionId)
             } else {
                 throw e
@@ -402,9 +429,47 @@ class PromptOrchestrator(
         }
     }
 
+    /**
+     * Called when the agent returns {@code end_turn} with no content at all — no text,
+     * no tool calls, no thoughts. This indicates a corrupted or unusable session state
+     * (e.g. OpenCode's session compaction state is broken).
+     *
+     * Resets the session and tells the user explicitly what happened. Does NOT go through
+     * [handlePromptError], which would show a misleading "Reconnect" banner implying a
+     * connection failure.
+     */
+    private fun handleSessionCorrupted() {
+        val agentName = agentManager.activeProfile.displayName
+        log.warn("$agentName: empty turn — session state corrupted, resetting session")
+
+        codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
+        codeChangeListener = null
+        pendingBanner = null
+
+        // Drop the ACP client's cached session ID too, so the next createSession()
+        // goes through the full load/new flow instead of hitting the early-return
+        // "reuse" path with the still-corrupted session.
+        agentManager.client.dropCurrentSession()
+        currentSessionId = null
+        callbacks.updateSessionInfo()
+
+        consolePanel().cancelAllRunning()
+        consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
+        callbacks.saveConversation()
+
+        consolePanel().addErrorEntry(
+            "Session not resumed — $agentName returned an empty response. " +
+                "Your session has been reset. Please resend your message to continue."
+        )
+        ApplicationManager.getApplication().invokeLater {
+            statusBanner()?.showWarning("Session was reset — please resend your last message.")
+        }
+    }
+
     private fun handlePromptStreamingUpdate(update: SessionUpdate) {
         when (update) {
             is SessionUpdate.AgentMessageChunk -> {
+                turnHadContent = true
                 val text = update.text()
                 ApplicationManager.getApplication().invokeLater {
                     if (!stopped) consolePanel().appendText(text)
@@ -412,16 +477,22 @@ class PromptOrchestrator(
             }
 
             is SessionUpdate.ToolCall -> {
+                turnHadContent = true
                 handleStreamingToolCall(update)
                 handleClientUpdate(update)
             }
 
             is SessionUpdate.ToolCallUpdate -> {
+                turnHadContent = true
                 handleStreamingToolCallUpdate(update)
                 handleClientUpdate(update)
             }
 
-            is SessionUpdate.AgentThoughtChunk -> if (!stopped) consolePanel().appendThinkingText(update.text())
+            is SessionUpdate.AgentThoughtChunk -> {
+                turnHadContent = true
+                if (!stopped) consolePanel().appendThinkingText(update.text())
+            }
+
             is SessionUpdate.TurnUsage -> {
                 turnInputTokens = update.inputTokens()
                 turnOutputTokens = update.outputTokens()
@@ -432,6 +503,9 @@ class PromptOrchestrator(
             is SessionUpdate.Plan -> handleClientUpdate(update)
             is SessionUpdate.AvailableCommandsChanged,
             is SessionUpdate.AvailableModesChanged -> { /* handled by AcpClient internally */
+            }
+
+            is SessionUpdate.UserMessageChunk -> { /* replayed user messages during session/load — no-op during streaming */
             }
         }
     }
@@ -457,7 +531,7 @@ class PromptOrchestrator(
         val kind = toolCall.kind()?.value() ?: "other"
         val arguments = toolCall.arguments()
         if (toolCallId.isEmpty()) return
-        if (toolCall.isSubAgent()) {
+        if (toolCall.isSubAgent) {
             val agentType = toolCall.agentType() ?: return
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
@@ -523,7 +597,6 @@ class PromptOrchestrator(
             uiStatus,
             result,
             description,
-            null,
             isSubAgent,
             isInternal,
             autoDenied,
@@ -542,7 +615,6 @@ class PromptOrchestrator(
         uiStatus: String,
         result: String?,
         description: String?,
-        kind: String?,
         isSubAgent: Boolean,
         isInternal: Boolean,
         autoDenied: Boolean = false,
@@ -573,7 +645,7 @@ class PromptOrchestrator(
                 uiStatus,
                 result,
                 description,
-                kind,
+                null,
                 autoDenied,
                 denialReason,
                 arguments,

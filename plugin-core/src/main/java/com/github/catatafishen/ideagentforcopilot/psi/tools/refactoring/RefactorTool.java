@@ -1,11 +1,11 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.refactoring;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.RefactorRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -49,16 +49,15 @@ public final class RefactorTool extends RefactoringTool {
 
     @Override
     public @NotNull String description() {
-        return "Rename, extract method, inline, or safe-delete a symbol using IntelliJ's refactoring engine";
+        return "Rename or safe-delete a symbol using IntelliJ's refactoring engine";
     }
-
-
 
     @Override
     public @NotNull String kind() {
         return "edit";
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "{operation} {symbol}";
     }
@@ -66,7 +65,7 @@ public final class RefactorTool extends RefactoringTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-            {PARAM_OPERATION, TYPE_STRING, "Refactoring type: 'rename', 'extract_method', 'inline', or 'safe_delete'"},
+            {PARAM_OPERATION, TYPE_STRING, "Refactoring type: 'rename' or 'safe_delete'"},
             {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
             {PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to refactor (class, method, field, or variable)"},
             {"line", TYPE_INTEGER, "Line number to disambiguate if multiple symbols share the same name"},
@@ -114,7 +113,7 @@ public final class RefactorTool extends RefactoringTool {
     }
 
     private String resolveAndRefactor(String operation, String pathStr, String symbolName,
-                                      int targetLine, String newName) {
+                                      int targetLine, String newName) throws Exception {
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -130,7 +129,7 @@ public final class RefactorTool extends RefactoringTool {
         }
 
         String[] result = new String[1];
-        WriteAction.run(() -> {
+        PlatformApiCompat.writeActionRunAndWait(() -> {
             try {
                 result[0] = executeRefactoring(operation, targetElement, symbolName, newName, pathStr);
             } catch (Exception e) {
@@ -204,7 +203,8 @@ public final class RefactorTool extends RefactoringTool {
     private String formatUsageReport(String symbolName, Collection<PsiReference> refs) {
         StringBuilder sb = new StringBuilder();
         sb.append("Cannot safely delete '").append(symbolName)
-            .append("' — it has ").append(refs.size()).append(" usages:\n");
+            .append("' - it has ").append(refs.size()).append(" usages:\n");
+        String basePath = project.getBasePath();
         int shown = 0;
         for (var ref : refs) {
             if (shown++ >= 10) {
@@ -213,15 +213,18 @@ public final class RefactorTool extends RefactoringTool {
             }
             PsiFile refFile = ref.getElement().getContainingFile();
             int line = -1;
-            if (refFile != null) {
-                Document refDoc = FileDocumentManager.getInstance()
-                    .getDocument(refFile.getVirtualFile());
+            if (refFile != null && refFile.getVirtualFile() != null) {
+                Document refDoc = FileDocumentManager.getInstance().getDocument(refFile.getVirtualFile());
                 if (refDoc != null) {
                     line = refDoc.getLineNumber(ref.getElement().getTextOffset()) + 1;
                 }
             }
-            sb.append("  ").append(refFile != null ? refFile.getName() : "?")
-                .append(":").append(line).append("\n");
+            String displayPath = "?";
+            if (refFile != null && refFile.getVirtualFile() != null) {
+                String rel = relativize(basePath, refFile.getVirtualFile().getPath());
+                displayPath = rel != null ? rel : refFile.getName();
+            }
+            sb.append("  ").append(displayPath).append(':').append(line).append('\n');
         }
         return sb.toString();
     }

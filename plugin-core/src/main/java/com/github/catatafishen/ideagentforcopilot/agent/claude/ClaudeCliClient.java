@@ -8,14 +8,17 @@ import com.github.catatafishen.ideagentforcopilot.agent.AgentException;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.AgentProfile;
 import com.github.catatafishen.ideagentforcopilot.services.McpInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.PermissionInjectionMethod;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
+import com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -181,6 +184,31 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     public @NotNull String createSession(@Nullable String cwd) {
         String sessionId = UUID.randomUUID().toString();
         sessionCancelled.put(sessionId, new AtomicBoolean(false));
+
+        // Seed cliSessionIds from any pending session-switch export so that buildCommand
+        // can add --resume on the very first prompt of this session.
+        if (project != null) {
+            String propKey = PROFILE_ID + ".cliResumeSessionId";
+            PropertiesComponent props = PropertiesComponent.getInstance(project);
+            String resumeId = props.getValue(propKey);
+
+            // Fall back to file-based resume ID — PropertiesComponent values set during
+            // dispose() are lost on plugin hot-reload because IntelliJ flushes project state
+            // before dispose runs.
+            if (resumeId == null || resumeId.isEmpty()) {
+                resumeId = SessionSwitchService.readAndConsumeClaudeResumeIdFile(project.getBasePath());
+            }
+
+            if (resumeId != null && !resumeId.isEmpty()) {
+                cliSessionIds.put(sessionId, resumeId);
+                props.unsetValue(propKey);
+                // Claude CLI handles resume natively via --resume flag — the CLI loads
+                // the full session context itself, so prompt injection is redundant.
+                ActiveAgentManager.setInjectConversationHistory(project, false);
+                LOG.info("Will resume Claude CLI session: " + resumeId + " (injection disabled)");
+            }
+        }
+
         LOG.info("Created ClaudeCLI session: " + sessionId);
         return sessionId;
     }
@@ -243,27 +271,6 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     @Override
     public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> getAvailableModels() {
-        // 1. Try to fetch from Anthropic API if API key is available
-        //    Check both Claude Code API profile key and this profile's key
-        try {
-            String apiKey = AnthropicKeyStore.getApiKey(AnthropicDirectClient.PROFILE_ID);
-            if (apiKey == null || apiKey.isBlank()) {
-                apiKey = AnthropicKeyStore.getApiKey(profile.getId());
-            }
-            if (apiKey != null && !apiKey.isBlank()) {
-                List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> apiModels =
-                    AnthropicModelsApi.fetchModels(apiKey);
-                if (!apiModels.isEmpty()) {
-                    LOG.info("Fetched " + apiModels.size() + " models from Anthropic API");
-                    return apiModels;
-                }
-            }
-        } catch (Exception e) {
-            LOG.warn("Failed to fetch models from Anthropic API, falling back to hardcoded list: " +
-                e.getMessage());
-        }
-
-        // 2. Fall back to hardcoded list
         return KNOWN_MODELS;
     }
 
@@ -428,7 +435,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
             String stderr = stderrBuf.toString().trim();
             if (!stderr.isEmpty()) {
-                LOG.warn("claude CLI stderr: " + stderr);
+                String cliSessionId = cliSessionIds.get(sessionId);
+                if (cliSessionId != null) {
+                    LOG.warn("claude CLI stderr (resume=" + cliSessionId + "): " + stderr);
+                } else {
+                    LOG.warn("claude CLI stderr: " + stderr);
+                }
                 if (stopReason.equals(STOP_REASON_END_TURN) && onChunk != null) {
                     // No output was produced; surface the CLI error to the user
                     onChunk.accept("\n[Claude CLI error: " + stderr + "]");
@@ -454,6 +466,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                                      @Nullable Consumer<SessionUpdate> onUpdate,
                                      @NotNull AtomicBoolean cancelled) throws IOException {
         String stopReason = STOP_REASON_END_TURN;
+        int eventCount = 0;
         try (BufferedReader reader = new BufferedReader(
             new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
@@ -462,6 +475,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 if (line.isEmpty()) continue;
                 try {
                     JsonObject event = JsonParser.parseString(line).getAsJsonObject();
+                    String eventType = event.has(FIELD_TYPE) ? event.get(FIELD_TYPE).getAsString() : "unknown";
+                    eventCount++;
+                    LOG.debug("stream-json [" + eventCount + "] type=" + eventType);
+                    if (LOG.isTraceEnabled()) {
+                        LOG.trace("stream-json [" + eventCount + "] raw=" + line);
+                    }
                     stopReason = handleStreamEvent(sessionId, event, stopReason, stdin, onChunk, onUpdate);
                 } catch (RuntimeException e) {
                     LOG.debug("Could not parse stream-json line: " + line, e);
@@ -471,6 +490,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             closeQuietly(stdin);
         }
         if (cancelled.get()) stopReason = "cancelled";
+        if (eventCount == 0) {
+            LOG.warn("Claude CLI produced no stream-json events (session=" + sessionId + ")");
+        } else {
+            LOG.info("Claude CLI session complete: " + eventCount + " events, stopReason=" + stopReason);
+        }
         return stopReason;
     }
 
@@ -528,7 +552,6 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                 yield currentStopReason;
             }
             case "result" -> {
-                // Always capture session_id from the result event (most reliable location)
                 if (event.has(FIELD_SESSION_ID)) {
                     cliSessionIds.put(sessionId, event.get(FIELD_SESSION_ID).getAsString());
                 }
@@ -536,6 +559,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                     && SUBTYPE_ERROR.equals(event.get(FIELD_SUBTYPE).getAsString());
                 if (isError && event.has(SUBTYPE_ERROR)) {
                     String errorText = extractErrorText(event.get(SUBTYPE_ERROR));
+                    LOG.warn("Claude CLI error (session=" + sessionId + "): " + errorText);
+                    String cliSessionId = cliSessionIds.get(sessionId);
+                    if (cliSessionId != null) {
+                        LOG.warn("Session was resumed with --resume " + cliSessionId
+                            + " — the error may indicate the session file is invalid or corrupted");
+                    }
                     if (onChunk != null) onChunk.accept("\n[Error: " + errorText + "]");
                     if (isRateLimitError(errorText)) emitRateLimitBanner(errorText, onUpdate);
                 }

@@ -2,7 +2,6 @@ package com.github.catatafishen.ideagentforcopilot.services;
 
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.agent.AgentRegistry;
-import com.github.catatafishen.ideagentforcopilot.agent.claude.AnthropicDirectClient;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient;
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.AgentConfig;
@@ -10,6 +9,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.AgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.GenericAgentSettings;
 import com.github.catatafishen.ideagentforcopilot.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
+import com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
@@ -40,6 +40,7 @@ public final class ActiveAgentManager implements Disposable {
     private static final String KEY_ATTACH_TRIGGER = "agent.attachTriggerChar";
     private static final String DEFAULT_ATTACH_TRIGGER = "#";
     private static final String KEY_FOLLOW_AGENT_FILES = "agent.followAgentFiles";
+    private static final String KEY_INJECT_CONV_HISTORY = "agent.injectConversationHistory";
     private static final String KEY_AUTO_CONNECT = "agent.autoConnect";
     private static final String KEY_CUSTOM_ACP_COMMAND = "agent.customAcpCommand";
     private static final String KEY_SHARED_TURN_TIMEOUT_MINUTES = "agent.sharedTurnTimeoutMinutes";
@@ -123,6 +124,16 @@ public final class ActiveAgentManager implements Disposable {
             } catch (Exception e) {
                 LOG.warn("Agent switch listener failed", e);
             }
+        }
+
+        // Kick off the session export. onAgentSwitch dispatches work to a pooled thread
+        // and stores a CompletableFuture so the new agent can wait before createSession().
+        try {
+            com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService
+                .getInstance(project)
+                .onAgentSwitch(previousId, profileId);
+        } catch (Exception e) {
+            LOG.warn("SessionSwitchService.onAgentSwitch failed", e);
         }
     }
 
@@ -237,6 +248,11 @@ public final class ActiveAgentManager implements Disposable {
             return;
         }
 
+        // Wait for any pending session export to finish before the ACP client starts.
+        // CopilotClient.buildCommand() reads resumeSessionId to build the --resume CLI
+        // flag, so the export must complete before the process is launched.
+        SessionSwitchService.getInstance(project).awaitPendingExport(10_000);
+
         try {
             String agentId = getActiveProfileId();
             AgentProfile profile = getActiveProfile();
@@ -248,9 +264,7 @@ public final class ActiveAgentManager implements Disposable {
 
             clearCachedConfig();
 
-            if (AnthropicDirectClient.PROFILE_ID.equals(agentId)) {
-                acpClient = new AnthropicDirectClient(profile, ToolRegistry.getInstance(project), project);
-            } else if (ClaudeCliClient.PROFILE_ID.equals(agentId)) {
+            if (ClaudeCliClient.PROFILE_ID.equals(agentId)) {
                 int mcpPort = resolveMcpPort();
                 AgentConfig config = resolveStartConfig();
                 acpClient = new ClaudeCliClient(profile, config, ToolRegistry.getInstance(project), project, mcpPort);
@@ -283,28 +297,35 @@ public final class ActiveAgentManager implements Disposable {
         }
     }
 
-    /**
-     * Stop the ACP client.
-     */
     public synchronized void stop() {
         if (!started) return;
-        try {
-            LOG.info("Stopping ACP client...");
-            if (acpClient != null) {
-                acpClient.close();
+        started = false;
+        AbstractAgentClient clientToStop = acpClient;
+        acpClient = null;
+        if (clientToStop != null) {
+            try {
+                clientToStop.close();
+            } catch (Exception e) {
+                LOG.error("Failed to stop ACP client", e);
             }
-            started = false;
-            acpClient = null;
-        } catch (Exception e) {
-            LOG.error("Failed to stop ACP client", e);
         }
     }
 
     /**
      * Restart the agent process.
+     *
+     * <p>Before stopping the CLI, exports the current v2 session to the agent's native
+     * format. This ensures the native session directory has a valid {@code events.jsonl}
+     * (or equivalent) so the CLI can resume on restart — even if the previous CLI process
+     * was killed before flushing its event log to disk.</p>
      */
     public synchronized void restart() {
         LOG.info("Restarting ACP client");
+
+        // Export the v2 session to native format before stopping the CLI.
+        // start() calls awaitPendingExport() to wait for completion.
+        SessionSwitchService.getInstance(project).exportForRestart(getActiveProfileId());
+
         stop();
         clearCachedConfig();
         start();
@@ -313,6 +334,17 @@ public final class ActiveAgentManager implements Disposable {
     @Override
     public void dispose() {
         LOG.info("ActiveAgentManager disposed");
+
+        // Export the v2 session before shutting down, so that the next IDE startup
+        // can resume via --resume. This must be synchronous (best-effort with timeout)
+        // because async tasks may not complete during IDE shutdown.
+        try {
+            SessionSwitchService.getInstance(project).exportForRestart(getActiveProfileId());
+            SessionSwitchService.getInstance(project).awaitPendingExport(3000);
+        } catch (Exception e) {
+            LOG.warn("Failed to export session during dispose: " + e.getMessage());
+        }
+
         stop();
     }
 
@@ -459,6 +491,14 @@ public final class ActiveAgentManager implements Disposable {
 
     public static void setFollowAgentFiles(@NotNull Project project, boolean enabled) {
         PropertiesComponent.getInstance(project).setValue(KEY_FOLLOW_AGENT_FILES, enabled, true);
+    }
+
+    public static boolean getInjectConversationHistory(@NotNull Project project) {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_INJECT_CONV_HISTORY, false);
+    }
+
+    public static void setInjectConversationHistory(@NotNull Project project, boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_INJECT_CONV_HISTORY, enabled, false);
     }
 
     // ── ACP connection state ─────────────────────────────────────────────────

@@ -1,19 +1,20 @@
 package com.github.catatafishen.ideagentforcopilot.acp.client;
 
+import com.github.catatafishen.ideagentforcopilot.acp.model.ContentBlock;
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
+import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
@@ -21,25 +22,29 @@ import java.util.concurrent.TimeoutException;
 /**
  * GitHub Copilot ACP client.
  * <p>
- * Command: {@code copilot --acp --stdio [--config-dir ...]}
+ * Command: {@code copilot --acp --stdio}
  * Tool prefix: {@code agentbridge-read_file} → strip {@code agentbridge-}
  * Model display: multiplier from {@code _meta.copilotUsage}
  * References: requires inline (no ACP resource blocks)
- * MCP: HTTP via {@code mcpServers} in {@code session/new}
- * Agents: three custom agents written to {@code .agent-work/copilot/agents/} at launch
+ * MCP: HTTP via {@code mcpServers} in {@code session/new} + merged into {@code ~/.copilot/mcp-config.json}
+ * Agents: three custom agents written to {@code ~/.copilot/agents/} at launch
  * <p>
  * <b>Tool filtering note:</b> {@code --excluded-tools} and {@code --available-tools} are currently
  * ignored in ACP mode (bug #556). The flags are passed anyway so they take effect once the bug is
- * fixed upstream. Built-in tools are suppressed via ACP permission-denial in the meantime.
+ * fixed upstream. Built-in tools are auto-approved but tracked; a corrective "reprimand" is
+ * prepended to the next user message to redirect the model toward MCP alternatives.
  */
 public final class CopilotClient extends AcpClient {
+
+    private static final com.intellij.openapi.diagnostic.Logger LOG =
+        com.intellij.openapi.diagnostic.Logger.getInstance(CopilotClient.class);
 
     private static final String AGENT_ID = "copilot";
     private static final String DEFAULT_AGENT_SLUG = "intellij-default";
     private static final String MCP_SERVER_NAME = "agentbridge";
     private static final String MCP_TYPE_HTTP = "http";
-    private static final String AGENT_WORK_DIR = ".agent-work";
     private static final String KEY_RAW_INPUT = "rawInput";
+    private static final String SESSION_STATE_DIR = "session-state";
 
     // ─── MCP tool sets ───────────────────────────────
 
@@ -123,6 +128,12 @@ public final class CopilotClient extends AcpClient {
     private static final String EXCLUDED_BUILTIN_TOOLS =
         "view,edit,create,bash,glob,grep,task,report_intent";
 
+    /**
+     * Tracks built-in tools that were auto-approved but should have used MCP alternatives.
+     * Consumed and cleared on the next {@code session/prompt} via {@link #beforeSendPrompt}.
+     */
+    private final java.util.Set<String> misusedBuiltInTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     // ─── Lifecycle ───────────────────────────────────
 
     public CopilotClient(Project project) {
@@ -133,9 +144,10 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
-        String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
-        writeAgentDefinitions(configDir);
-        writeMcpConfig(configDir, mcpPort);
+        Path home = copilotHome();
+        writeAgentDefinitions(home.toString());
+        mergeMcpConfig(home, mcpPort);
+        migrateResumeSessionFromLegacyPath();
     }
 
     // ─── Identity ────────────────────────────────────
@@ -171,13 +183,9 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        String configDir = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
         String agentSlug = getCurrentAgentSlug();
         List<String> cmd = new java.util.ArrayList<>(List.of(
             AGENT_ID, "--acp", "--stdio",
-            "--config-dir", configDir,
-            // MCP config is written to mcp-config.json in configDir instead of command line
-            // to avoid Windows command-line escaping issues with JSON
             "--disable-builtin-mcps",
             "--no-auto-update",
             "--excluded-tools", EXCLUDED_BUILTIN_TOOLS
@@ -186,23 +194,67 @@ public final class CopilotClient extends AcpClient {
             cmd.add("--agent");
             cmd.add(agentSlug);
         }
+
+        // The Copilot CLI ignores both resumeSessionId (ACP param) and --resume (CLI flag) in
+        // ACP mode as of v1.0.12. The flag is sent anyway in case a future version honours it.
+        // Resume failure is handled by AcpClient.loadSession() → enableInjectionFallback().
+        String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
+        if (resumeId != null) {
+            cmd.add("--resume=" + resumeId);
+            Path sessionDir = copilotHome().resolve(SESSION_STATE_DIR).resolve(resumeId);
+            LOG.info("Copilot --resume=" + resumeId
+                + " sessionDir=" + sessionDir + " (exists=" + Files.isDirectory(sessionDir) + ")");
+        } else {
+            LOG.info("Copilot: no resumeSessionId set, starting fresh session");
+        }
+
         return cmd;
     }
 
-    private static String buildMcpConfigJson(int mcpPort) {
-        return "{\"mcpServers\":{\"" + MCP_SERVER_NAME
-            + "\":{\"type\":\"http\",\"url\":\"http://localhost:" + mcpPort + "/mcp\"}}}";
+    @Override
+    protected String loadSession(String cwd, String sessionId) throws Exception {
+        // Copilot CLI does not support session/load (ACP spec) nor session/resume.
+        // The --resume CLI flag is the only mechanism, and it is broken in ACP mode as of v1.0.12.
+        throw new com.github.catatafishen.ideagentforcopilot.agent.AgentSessionException(
+            "Copilot CLI does not support session loading in ACP mode (as of v1.0.12). "
+                + "The --resume CLI flag is passed at launch but is currently ignored.");
+    }
+
+    /**
+     * Returns the standard Copilot CLI home directory ({@code ~/.copilot/}).
+     * No environment overrides — the CLI uses the real user home for config, auth, and sessions.
+     */
+    static Path copilotHome() {
+        return Path.of(System.getProperty("user.home"), ".copilot");
+    }
+
+    private void migrateResumeSessionFromLegacyPath() {
+        String resumeId = ActiveAgentManager.getInstance(project).getSettings().getResumeSessionId();
+        if (resumeId == null) return;
+
+        Path newDir = copilotHome().resolve(SESSION_STATE_DIR).resolve(resumeId);
+        if (Files.isDirectory(newDir)) return;
+
+        String basePath = project.getBasePath();
+        if (basePath == null) return;
+
+        Path legacyDir = Path.of(basePath, ".agent-work", AGENT_ID, SESSION_STATE_DIR, resumeId);
+        if (!Files.isDirectory(legacyDir)) return;
+
+        try {
+            Files.createDirectories(newDir.getParent());
+            Files.createSymbolicLink(newDir, legacyDir);
+            LOG.info("Migrated resume session " + resumeId + " from legacy path: " + legacyDir + " → " + newDir);
+        } catch (IOException e) {
+            LOG.warn("Failed to migrate resume session from legacy path: " + legacyDir, e);
+        }
     }
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        String copilotHome = cwd + File.separator + AGENT_WORK_DIR + File.separator + AGENT_ID;
-        return Map.of(
-            "XDG_CONFIG_HOME", copilotHome,
-            "COPILOT_HOME", copilotHome,
-            "HOME", copilotHome,
-            "USERPROFILE", copilotHome
-        );
+        // No environment overrides — let the CLI use standard ~/.copilot/ for config,
+        // auth, and session state. Overriding HOME breaks --resume path resolution.
+        return Map.of();
     }
 
     // ─── Session ─────────────────────────────────────
@@ -341,11 +393,29 @@ public final class CopilotClient extends AcpClient {
         writeAgentFile(agentsDir.resolve("intellij-edit.md"), buildEditAgentDefinition());
     }
 
-    private void writeMcpConfig(String configDir, int mcpPort) throws IOException {
-        Path configPath = Paths.get(configDir, "mcp-config.json");
-        String json = buildMcpConfigJson(mcpPort);
+    /**
+     * Merges our agentbridge MCP server into the user's existing {@code mcp-config.json}.
+     * If the file doesn't exist, creates it. If it does, adds/updates the agentbridge entry
+     * without clobbering other user-configured MCP servers.
+     */
+    private void mergeMcpConfig(Path copilotDir, int mcpPort) throws IOException {
+        Path configPath = copilotDir.resolve("mcp-config.json");
+        JsonObject root;
+        if (Files.exists(configPath)) {
+            String existing = Files.readString(configPath, StandardCharsets.UTF_8);
+            root = com.google.gson.JsonParser.parseString(existing).getAsJsonObject();
+        } else {
+            root = new JsonObject();
+        }
+        if (!root.has("mcpServers") || !root.get("mcpServers").isJsonObject()) {
+            root.add("mcpServers", new JsonObject());
+        }
+        JsonObject entry = new JsonObject();
+        entry.addProperty("type", MCP_TYPE_HTTP);
+        entry.addProperty("url", "http://localhost:" + mcpPort + "/mcp");
+        root.getAsJsonObject("mcpServers").add(MCP_SERVER_NAME, entry);
         Files.createDirectories(configPath.getParent());
-        Files.writeString(configPath, json, StandardCharsets.UTF_8);
+        Files.writeString(configPath, root.toString(), StandardCharsets.UTF_8);
     }
 
     private static void writeAgentFile(Path path, String content) throws IOException {
@@ -433,5 +503,56 @@ public final class CopilotClient extends AcpClient {
         }
         result.addAll(builtinTools);
         return result;
+    }
+
+    // ─── Built-in tool reprimand (Copilot-specific workaround for bug #556) ───
+
+    @Override
+    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
+        if (!userApproved) {
+            misusedBuiltInTools.add(toolId);
+        }
+    }
+
+    @Override
+    protected PromptRequest beforeSendPrompt(PromptRequest request) {
+        if (misusedBuiltInTools.isEmpty()) {
+            return request;
+        }
+        java.util.Set<String> tools = new java.util.LinkedHashSet<>(misusedBuiltInTools);
+        misusedBuiltInTools.clear();
+
+        String reprimand = buildToolReprimand(tools);
+        LOG.info(displayName() + ": prepending tool reprimand for: " + tools);
+
+        java.util.List<ContentBlock> augmented = new java.util.ArrayList<>();
+        augmented.add(new ContentBlock.Text(reprimand));
+        augmented.addAll(request.prompt());
+        return new PromptRequest(request.sessionId(), augmented, request.modelId(), request.modeSlug());
+    }
+
+    private static String buildToolReprimand(java.util.Set<String> tools) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[System notice] You used the following built-in tools which duplicate our MCP tools. ");
+        sb.append("Do NOT use these again — use the MCP alternatives instead:\n");
+        for (String tool : tools) {
+            sb.append("  • ").append(tool).append(" → use ").append(mcpAlternative(tool)).append('\n');
+        }
+        sb.append("All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.");
+        return sb.toString();
+    }
+
+    private static String mcpAlternative(String builtInTool) {
+        return switch (builtInTool) {
+            case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
+            case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
+            case "create" -> "agentbridge-create_file";
+            case "view" -> "agentbridge-read_file";
+            case "glob" -> "agentbridge-list_project_files";
+            case "grep" -> "agentbridge-search_text";
+            case "task" -> "agentbridge-run_command (for shell tasks)";
+            case "report_intent" -> "(not needed — IDE tracks intent automatically)";
+            default -> "the corresponding agentbridge-* tool";
+        };
     }
 }

@@ -50,7 +50,7 @@ public final class ReadTerminalOutputTool extends TerminalTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-            {"tab_name", TYPE_STRING, "Name of the terminal tab to read from"},
+            {"tab_name", TYPE_STRING, "Name of the terminal tab to read from. If omitted, reads from the currently selected terminal tab."},
             {PARAM_MAX_LINES, TYPE_INTEGER, "Maximum number of lines to return from the end of the terminal buffer (default: 50). Use 0 for the full buffer."}
         });
     }

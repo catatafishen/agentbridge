@@ -3,9 +3,11 @@ package com.github.catatafishen.ideagentforcopilot.ui
 import com.github.catatafishen.ideagentforcopilot.acp.model.Model
 import com.github.catatafishen.ideagentforcopilot.acp.model.SessionUpdate
 import com.github.catatafishen.ideagentforcopilot.agent.AgentException
-import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
 import com.github.catatafishen.ideagentforcopilot.services.ChatWebServer
+import com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService
+import com.github.catatafishen.ideagentforcopilot.session.migration.V1ToV2Migrator
+import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2
 import com.github.catatafishen.ideagentforcopilot.settings.BillingSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.*
@@ -49,11 +51,15 @@ class ChatToolWindowContent(
     private var chatPanel: JComponent? = null
 
     // Shared model list (populated from ACP)
+    @Volatile
     private var loadedModels: List<Model> = emptyList()
     private var modelLoadGeneration = 0
 
     // Prompt tab fields
+    @Volatile
     private var selectedModelIndex = -1
+
+    @Volatile
     private var modelsStatusText: String? = MSG_LOADING
     private lateinit var controlsToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
@@ -81,7 +87,7 @@ class ChatToolWindowContent(
     private var statusBanner: StatusBanner? = null
     private var inlineAuthProcess: Process? = null
 
-    private val conversationStore = ConversationStore()
+    private val conversationStore = SessionStoreV2.getInstance(project)
     private val conversationReplayer = ConversationReplayer()
 
     // Throttled incremental save during streaming (avoid data loss on crash)
@@ -95,6 +101,8 @@ class ChatToolWindowContent(
     init {
         setupUI()
         subscribeToFocusRestoreEvents()
+        // Initialise the session store's agent name from the currently active profile.
+        conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
     }
 
     /**
@@ -163,6 +171,7 @@ class ChatToolWindowContent(
 
     private fun setupTitleBarActions() {
         val actions = listOf(
+            AutoScrollToggleAction(),
             FollowAgentFilesToggleAction(),
             Separator.create(),
             ProjectFilesDropdownAction(),
@@ -554,6 +563,13 @@ class ChatToolWindowContent(
             loadModels()
         }
         agentManager.addSwitchListener {
+            // Update the session store's agent name when the user switches profiles.
+            conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
+            // Reset session state so ensureSessionCreated() calls createSession() on the
+            // new client. Without this, Claude CLI's cliResumeSessionId property is never
+            // consumed and --resume is never passed, so context is lost on switch-back.
+            promptOrchestrator.currentSessionId = null
+            promptOrchestrator.conversationSummaryInjected = false
             ApplicationManager.getApplication().invokeLater {
                 copilotBanner?.triggerCheck()
             }
@@ -737,7 +753,7 @@ class ChatToolWindowContent(
         consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
         promptTextArea.text = ""
 
-        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id() ?: ""
+        val selectedModelId = resolveSelectedModelId()
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(prompt, contextItems, selectedModelId)
         }
@@ -978,8 +994,9 @@ class ChatToolWindowContent(
         AllIcons.Actions.Restart
     ) {
         init {
-            // Listen for agent switches and update icon
+            // Listen for agent switches and update icon; also keep session store in sync.
             agentManager.addSwitchListener {
+                conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
                 updateIconForActiveAgent()
             }
         }
@@ -1148,6 +1165,24 @@ class ChatToolWindowContent(
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             ActiveAgentManager.setFollowAgentFiles(project, state)
+        }
+    }
+
+    @Volatile
+    private var autoScrollEnabled = true
+
+    private inner class AutoScrollToggleAction : ToggleAction(
+        "Auto-Scroll",
+        "Scroll to bottom automatically when new content arrives",
+        AllIcons.RunConfigurations.Scroll_down
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+        override fun isSelected(e: AnActionEvent): Boolean = autoScrollEnabled
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            autoScrollEnabled = state
+            chatConsolePanel.setAutoScroll(state)
         }
     }
 
@@ -1773,6 +1808,7 @@ class ChatToolWindowContent(
 
     private fun restoreConversation(onComplete: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
+            V1ToV2Migrator.migrateIfNeeded(project.basePath)
             val json = conversationStore.loadJson(project.basePath)
             ApplicationManager.getApplication().invokeLater {
                 if (json != null) {
@@ -1817,7 +1853,7 @@ class ChatToolWindowContent(
         statusBanner?.dismissCurrent()
         setSendingState(true)
         consolePanel.addPromptEntry(trimmed, null)
-        val selectedModelId = loadedModels.getOrNull(selectedModelIndex)?.id() ?: ""
+        val selectedModelId = resolveSelectedModelId()
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(trimmed, emptyList(), selectedModelId)
         }
@@ -1893,11 +1929,16 @@ class ChatToolWindowContent(
     fun resetSession() {
         // Clear the persisted resume ID so the next session/new starts completely fresh.
         agentManager.settings.setResumeSessionId(null)
+        agentManager.getClient().clearPersistedSession()
         resetSessionState()
         consolePanel.clear()
         consolePanel.showPlaceholder("New conversation started.")
         updateSessionInfo()
         archiveConversation()
+        // Delete .current-session-id so the next save creates a brand-new v2 session.
+        // This is separate from archive() because archive() must NOT delete the ID during
+        // agent switches — doExport still needs the session ID for subsequent export steps.
+        conversationStore.resetCurrentSessionId(project.basePath)
         ApplicationManager.getApplication().invokeLater {
             if (::planRoot.isInitialized) {
                 planRoot.removeAllChildren()
@@ -1989,6 +2030,11 @@ class ChatToolWindowContent(
         if (models.isNotEmpty()) selectedModelIndex = 0
     }
 
+    private fun resolveSelectedModelId(): String {
+        loadedModels.getOrNull(selectedModelIndex)?.id()?.takeIf { it.isNotEmpty() }?.let { return it }
+        return agentManager.client.currentModelId?.takeIf { it.isNotEmpty() } ?: ""
+    }
+
     private fun loadModelsAsync(
         onSuccess: (List<Model>) -> Unit,
         onFailure: ((Exception) -> Unit)? = null
@@ -2023,6 +2069,11 @@ class ChatToolWindowContent(
     }
 
     private fun fetchModelsWithRetry(): List<Model> {
+        // Wait for any in-progress session export to complete before starting the agent.
+        // Without this, createSession() reads a stale or missing resumeSessionId because
+        // the export from the previous agent runs concurrently on a pooled thread.
+        SessionSwitchService.getInstance(project).awaitPendingExport(10_000)
+
         var lastError: Exception? = null
         for (attempt in 1..3) {
             if (attempt > 1) Thread.sleep(2000L)
@@ -2037,6 +2088,7 @@ class ChatToolWindowContent(
     }
 
     private fun onModelsLoaded(models: List<Model>, onSuccess: (List<Model>) -> Unit) {
+        loadedModels = models
         modelsStatusText = null
         restoreModelSelection(models)
         onSuccess(models)

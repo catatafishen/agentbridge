@@ -14,7 +14,10 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Objects;
+import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -50,10 +53,13 @@ public class JsonRpcTransport {
     private static final String KEY_MESSAGE = "message";
     private static final String KEY_CODE = "code";
 
+    private static final int STDERR_BUFFER_MAX = 20;
+
     private final Gson gson = new GsonBuilder().create();
     private final AtomicLong nextId = new AtomicLong(1);
     private final ConcurrentHashMap<Long, CompletableFuture<JsonElement>> pendingRequests = new ConcurrentHashMap<>();
     private final AtomicBoolean alive = new AtomicBoolean(false);
+    private final Deque<String> stderrBuffer = new ArrayDeque<>();
 
     private @Nullable Process process;
     private @Nullable PrintWriter writer;
@@ -240,8 +246,18 @@ public class JsonRpcTransport {
             }
         } finally {
             alive.set(false);
-            // Fail all pending requests so callers don't wait for the full timeout
-            IOException cause = new IOException("Agent process exited unexpectedly");
+            // Wait briefly for stderr to drain so we can include it in the failure message
+            if (stderrThread != null) {
+                try {
+                    stderrThread.join(500);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            String stderrContext = buildStderrContext();
+            IOException cause = stderrContext.isEmpty()
+                ? new IOException("Agent process exited unexpectedly")
+                : new IOException("Agent process exited unexpectedly: " + stderrContext);
             pendingRequests.forEach((id, future) -> future.completeExceptionally(cause));
             pendingRequests.clear();
         }
@@ -287,6 +303,10 @@ public class JsonRpcTransport {
         if (obj.has(KEY_ERROR)) {
             JsonObject error = obj.getAsJsonObject(KEY_ERROR);
             String errorMsg = error.has(KEY_MESSAGE) ? error.get(KEY_MESSAGE).getAsString() : "Unknown error";
+            if (error.has("data") && !error.get("data").isJsonNull()) {
+                String data = error.get("data").getAsString();
+                if (!data.isBlank()) errorMsg = errorMsg + ": " + data;
+            }
             int code = error.has(KEY_CODE) ? error.get(KEY_CODE).getAsInt() : -1;
             future.completeExceptionally(new JsonRpcException(code, errorMsg));
         } else {
@@ -320,6 +340,10 @@ public class JsonRpcTransport {
             new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
             String line;
             while (alive.get() && (line = reader.readLine()) != null) {
+                synchronized (stderrBuffer) {
+                    if (stderrBuffer.size() >= STDERR_BUFFER_MAX) stderrBuffer.pollFirst();
+                    stderrBuffer.addLast(line);
+                }
                 if (stderrHandler != null) {
                     stderrHandler.accept(line);
                 } else {
@@ -330,6 +354,15 @@ public class JsonRpcTransport {
             if (alive.get()) {
                 LOG.warn("Stderr reader terminated", e);
             }
+        }
+    }
+
+    private String buildStderrContext() {
+        synchronized (stderrBuffer) {
+            if (stderrBuffer.isEmpty()) return "";
+            StringJoiner sj = new StringJoiner(" | ");
+            stderrBuffer.forEach(sj::add);
+            return sj.toString();
         }
     }
 

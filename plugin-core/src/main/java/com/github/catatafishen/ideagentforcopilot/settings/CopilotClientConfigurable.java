@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient;
+import com.github.catatafishen.ideagentforcopilot.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
@@ -13,6 +14,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -33,6 +35,7 @@ public final class CopilotClientConfigurable implements Configurable {
 
     private JBLabel statusLabel;
     private JBTextField binaryPathField;
+    private @Nullable ThemeColorComboBox bubbleColorCombo;
     private BillingConfigurable billingConfigurable;
 
     @Override
@@ -51,6 +54,8 @@ public final class CopilotClientConfigurable implements Configurable {
         binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
         binaryPathField.setToolTipText("Absolute path to the copilot binary. Leave empty to find it on PATH.");
 
+        bubbleColorCombo = new ThemeColorComboBox();
+
         HyperlinkLabel installLink = new HyperlinkLabel("Install from github.com/github/copilot-cli");
         installLink.setHyperlinkTarget("https://github.com/github/copilot-cli#installation");
 
@@ -66,6 +71,8 @@ public final class CopilotClientConfigurable implements Configurable {
             .addSeparator(8)
             .addLabeledComponent("Copilot binary:", binaryPathField)
             .addTooltip("Leave empty to auto-detect on PATH.")
+            .addLabeledComponent("Bubble color:", bubbleColorCombo)
+            .addTooltip("Choose a theme-aware accent color for message bubbles when using GitHub Copilot.")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         configPanel.setBorder(JBUI.Borders.empty(8));
@@ -88,13 +95,23 @@ public final class CopilotClientConfigurable implements Configurable {
         String stored = nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID));
         boolean binaryChanged = binaryPathField != null
             && !binaryPathField.getText().trim().equals(stored);
-        return binaryChanged || (billingConfigurable != null && billingConfigurable.isModified());
+        if (binaryChanged) return true;
+        if (bubbleColorCombo != null) {
+            ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
+            String key = tc != null ? tc.name() : null;
+            if (!java.util.Objects.equals(key, AcpClient.loadAgentBubbleColorKey(AGENT_ID))) return true;
+        }
+        return billingConfigurable != null && billingConfigurable.isModified();
     }
 
     @Override
     public void apply() {
         if (binaryPathField != null) {
             AcpClient.saveCustomBinaryPath(AGENT_ID, binaryPathField.getText().trim());
+        }
+        if (bubbleColorCombo != null) {
+            ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
+            AcpClient.saveAgentBubbleColorKey(AGENT_ID, tc != null ? tc.name() : null);
         }
         if (billingConfigurable != null) billingConfigurable.apply();
     }
@@ -105,6 +122,9 @@ public final class CopilotClientConfigurable implements Configurable {
             refreshStatusAsync();
             binaryPathField.setText(nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID)));
         }
+        if (bubbleColorCombo != null) {
+            bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)));
+        }
         if (billingConfigurable != null) billingConfigurable.reset();
     }
 
@@ -112,6 +132,7 @@ public final class CopilotClientConfigurable implements Configurable {
     public void disposeUIResources() {
         statusLabel = null;
         binaryPathField = null;
+        bubbleColorCombo = null;
         if (billingConfigurable != null) {
             billingConfigurable.disposeUIResources();
             billingConfigurable = null;

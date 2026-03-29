@@ -48,7 +48,7 @@ public final class ListTerminalsTool extends TerminalTool {
         appendAvailableShells(result);
         appendDefaultShell(result);
 
-        result.append("\n\nTip: Use run_in_terminal with tab_name to reuse an existing tab, or new_tab=true to force a new one.");
+        result.append("\n\nTip: Use read_terminal_output or write_terminal_input with tab_name to interact with a listed tab.");
         return result.toString();
     }
 

@@ -27,6 +27,7 @@ public final class ToolRegistry {
         PROJECT("Project"),
         INFRASTRUCTURE("Infrastructure"),
         TERMINAL("Terminal"),
+        DEBUG("Debugging"),
         EDITOR("Editor"),
         SHELL("Shell (built-in)"),
         OTHER("Other"),

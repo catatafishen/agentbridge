@@ -1,0 +1,439 @@
+/* Web App layout — PWA / remote web UI shell */
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    overflow: hidden;
+}
+
+body {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    font-family: var(--font-family);
+    font-size: var(--font-size);
+}
+
+/* ── Offline banner ────────────────────────────────────────────────────── */
+
+#ab-offline {
+    display: none;
+    position: fixed;
+    top: 48px;
+    left: 0;
+    right: 0;
+    background: var(--error);
+    color: #fff;
+    text-align: center;
+    padding: 4px 8px;
+    font-size: .85em;
+    z-index: 200;
+}
+
+#ab-offline.visible {
+    display: block;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────── */
+
+#ab-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--fg-a16);
+    background: var(--bg);
+    min-height: 36px;
+}
+
+#ab-title {
+    font-weight: 600;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#ab-model {
+    font-size: .82em;
+    color: var(--fg-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 180px;
+}
+
+#ab-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--fg-a16);
+    flex: 0 0 8px;
+    transition: background .3s;
+}
+
+#ab-status.connected {
+    background: var(--kind-execute);
+}
+
+#ab-status.running {
+    background: var(--agent);
+    animation: ab-pulse 1.5s infinite;
+}
+
+@keyframes ab-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .35; }
+}
+
+/* ── Chat area ─────────────────────────────────────────────────────────── */
+
+#ab-chat {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+chat-container {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 6px 8px;
+    box-sizing: border-box;
+}
+
+/* ── Footer / input ────────────────────────────────────────────────────── */
+
+#ab-footer {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--fg-a16);
+    display: flex;
+    align-items: flex-end;
+    background: var(--bg);
+}
+
+#ab-input {
+    flex: 1;
+    border: 0;
+    background: var(--fg-a05);
+    color: var(--fg);
+    padding: 6px 8px;
+    font: inherit;
+    resize: none;
+    min-height: 36px;
+    max-height: 120px;
+    overflow-y: auto;
+    outline: none;
+}
+
+#ab-send {
+    border: none;
+    padding: 6px 10px;
+    cursor: pointer;
+    font: inherit;
+    background: var(--user-a12);
+    color: var(--user);
+    font-size: .88em;
+    white-space: nowrap;
+    height: 100%;
+    display: flex;
+    align-items: center;
+}
+
+#ab-send:hover {
+    background: var(--user-a16);
+}
+
+#ab-nudge {
+    border: none;
+    border-radius: var(--r-md);
+    padding: 6px 10px;
+    cursor: pointer;
+    font: inherit;
+    background: var(--tool-a08);
+    color: var(--tool);
+    font-size: .88em;
+    white-space: nowrap;
+}
+
+#ab-nudge:hover {
+    background: var(--tool-a16);
+}
+
+#ab-send:disabled,
+#ab-nudge:disabled {
+    opacity: .38;
+    cursor: default;
+}
+
+/* Disable tool chip clicks in web context */
+tool-chip {
+    pointer-events: none;
+}
+
+tool-chip .chip-expand {
+    display: none;
+}
+
+/* ── Hamburger menu ────────────────────────────────────────────────────── */
+
+#ab-menu-btn {
+    border: none;
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+    font-size: 1.1em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+    flex: 0 0 auto;
+}
+
+#ab-menu-btn:hover {
+    background: var(--fg-a08);
+}
+
+#ab-menu {
+    position: fixed;
+    top: 44px;
+    right: 8px;
+    z-index: 150;
+    background: var(--bg);
+    border: 1px solid var(--fg-a16);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+    min-width: 200px;
+    padding: 8px 0;
+}
+
+#ab-menu-version {
+    padding: 6px 14px 8px;
+    font-size: .82em;
+    color: var(--fg-muted);
+    border-bottom: 1px solid var(--fg-a08);
+    margin-bottom: 4px;
+}
+
+#ab-menu-reload {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: var(--fg);
+    cursor: pointer;
+    padding: 7px 14px;
+    font: inherit;
+    font-size: .9em;
+}
+
+#ab-menu-reload:hover {
+    background: var(--fg-a08);
+}
+
+#ab-menu-model-section {
+    padding: 6px 14px 8px;
+    border-bottom: 1px solid var(--fg-a08);
+}
+
+#ab-menu-model-label {
+    display: block;
+    font-size: .78em;
+    color: var(--fg-muted);
+    margin-bottom: 4px;
+}
+
+#ab-menu-model {
+    width: 100%;
+    background: var(--fg-a05);
+    color: var(--fg);
+    border: 1px solid var(--fg-a16);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font: inherit;
+    font-size: .88em;
+    cursor: pointer;
+}
+
+#ab-menu-model:focus {
+    outline: 1px solid var(--user);
+}
+
+#ab-menu-disconnect {
+    display: block;
+    width: 100%;
+    text-align: left;
+    border: none;
+    background: transparent;
+    color: var(--error, #e06c75);
+    cursor: pointer;
+    padding: 7px 14px;
+    font: inherit;
+    font-size: .9em;
+}
+
+#ab-menu-disconnect:hover {
+    background: var(--fg-a08);
+}
+
+.ab-menu-sep {
+    height: 1px;
+    background: var(--fg-a08);
+    margin: 4px 0;
+}
+
+/* ── Connect page ──────────────────────────────────────────────────────── */
+
+#ab-connect-page {
+    flex: 1;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    overflow: auto;
+    padding: 24px;
+}
+
+#ab-connect-page:not([hidden]) {
+    display: flex;
+}
+
+#ab-connect-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: min(360px, 90vw);
+    max-height: 600px;
+}
+
+#ab-mcp-card,
+#ab-acp-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--bg);
+    border: 1px solid var(--fg-a16);
+    border-radius: 10px;
+    padding: 16px;
+}
+
+.ab-card-header {
+    font-weight: 600;
+    font-size: 1em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.ab-card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ab-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ab-status-label {
+    font-size: .85em;
+    color: var(--fg-muted);
+    min-width: 60px;
+}
+
+.ab-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+}
+
+.ab-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--fg-a16);
+    flex: 0 0 10px;
+    transition: background .3s;
+}
+
+.ab-status-dot.connected {
+    background: var(--kind-execute);
+}
+
+.ab-status-dot.running {
+    background: var(--agent);
+    animation: ab-pulse 1.5s infinite;
+}
+
+#ab-mcp-text {
+    font-size: .9em;
+    color: var(--fg);
+}
+
+.ab-card-stop-btn {
+    border: none;
+    background: transparent;
+    color: var(--error, #e06c75);
+    cursor: pointer;
+    font-size: .95em;
+    padding: 4px 8px;
+    border-radius: 4px;
+    flex: 0 0 auto;
+}
+
+.ab-card-stop-btn:hover {
+    background: var(--fg-a08);
+}
+
+#ab-connect-profile {
+    background: var(--fg-a05);
+    color: var(--fg);
+    border: 1px solid var(--fg-a16);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font: inherit;
+    cursor: pointer;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+#ab-connect-profile:focus {
+    outline: 1px solid var(--user);
+}
+
+#ab-connect-btn {
+    border: none;
+    border-radius: 6px;
+    padding: 9px 16px;
+    background: var(--user-a12);
+    color: var(--user);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    font-size: .95em;
+    width: 100%;
+}
+
+#ab-connect-btn:hover {
+    background: var(--user-a16);
+}
+
+#ab-connect-btn:disabled {
+    opacity: .4;
+    cursor: default;
+}
+
+#ab-connect-status {
+    font-size: .85em;
+    color: var(--fg-muted);
+    min-height: 1.2em;
+}

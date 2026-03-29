@@ -323,6 +323,14 @@
       serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.McpHttpServer"/>
 
+    <!-- Session migration service (exports v2 session to native format on agent switch) -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService"/>
+
+    <!-- Conversation persistence (v2 JSONL + v1 compat) — singleton to prevent race conditions -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2"/>
+
     <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
       parentId="tools"
@@ -392,12 +400,6 @@
       instance="com.github.catatafishen.ideagentforcopilot.settings.OpenCodeClientConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.clientAgents.opencode"
       displayName="OpenCode"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.AnthropicDirectClientConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.anthropicDirect"
-      displayName="Claude Code"/>
 
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"

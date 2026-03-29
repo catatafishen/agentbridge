@@ -35,7 +35,7 @@ public final class KiroClient extends AcpClient {
         // Register request and stderr handlers from parent
         transport.onRequest(this::handleAgentRequest);
         transport.onStderr(line ->
-            LOG.debug("[" + agentId() + " stderr] " + line));
+            LOG.warn("[" + agentId() + " stderr] " + line));
     }
 
     private void handleKiroNotification(String method, JsonObject params) {
@@ -45,6 +45,7 @@ public final class KiroClient extends AcpClient {
             case "_kiro.dev/mcp/server_initialized" -> handleMcpServerInitialized(params);
             case "_kiro.dev/compaction/status" -> handleCompactionStatus(params);
             case "_kiro.dev/clear/status" -> handleClearStatus(params);
+            case "_kiro.dev/metadata" -> { /* context usage telemetry — intentionally ignored */ }
             case "_session/terminate" -> handleSessionTerminate(params);
             default -> LOG.debug("Unhandled Kiro notification: " + method);
         }
@@ -174,7 +175,7 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws java.io.IOException {
-        java.nio.file.Path kiroDir = java.nio.file.Path.of(cwd, ".agent-work", ".kiro", "agents");
+        java.nio.file.Path kiroDir = java.nio.file.Path.of(System.getProperty("user.home"), ".kiro", "agents");
         java.nio.file.Files.createDirectories(kiroDir);
         java.nio.file.Path agentPath = kiroDir.resolve("intellij-task.json");
 

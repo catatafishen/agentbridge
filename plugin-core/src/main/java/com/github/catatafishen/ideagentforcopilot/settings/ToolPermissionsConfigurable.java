@@ -31,7 +31,8 @@ public final class ToolPermissionsConfigurable implements Configurable {
     @Override
     public @NotNull JComponent createComponent() {
         var settings = ActiveAgentManager.getInstance(project).getSettings();
-        permissionsPanel = new PermissionsPanel(settings, ToolRegistry.getInstance(project));
+        permissionsPanel = new PermissionsPanel(settings, ToolRegistry.getInstance(project),
+            McpServerSettings.getInstance(project));
         return permissionsPanel.getComponent();
     }
 

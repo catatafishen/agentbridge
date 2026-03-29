@@ -80,13 +80,12 @@ public final class RunTestsTool extends TestingTool {
         return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner; falls back to Gradle for unresolvable targets";
     }
 
-
-
     @Override
     public @NotNull String kind() {
         return "edit";
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Run tests: {target}";
     }
@@ -129,40 +128,6 @@ public final class RunTestsTool extends TestingTool {
 
     // ── Run configuration lookup ─────────────────────────────
 
-    private String runConfiguration(JsonObject args) throws Exception {
-        String name = args.get("name").getAsString();
-
-        CompletableFuture<String> resultFuture = new CompletableFuture<>();
-
-        EdtUtil.invokeLater(() -> {
-            try {
-                var settings = RunManager.getInstance(project).findConfigurationByName(name);
-                if (settings == null) {
-                    resultFuture.complete("Run configuration not found: '" + name
-                        + "'. Use list_run_configurations to see available configs.");
-                    return;
-                }
-
-                var executor = DefaultRunExecutor.getRunExecutorInstance();
-                var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
-                if (envBuilder == null) {
-                    resultFuture.complete("Cannot create execution environment for: " + name);
-                    return;
-                }
-
-                var env = envBuilder.build();
-                ExecutionManager.getInstance(project).restartRunProfile(env);
-                resultFuture.complete("Started run configuration: " + name
-                    + " [" + settings.getType().getDisplayName() + "]"
-                    + "\nResults will appear in the IntelliJ Run panel.");
-            } catch (Exception e) {
-                resultFuture.complete("Error running configuration: " + e.getMessage());
-            }
-        });
-
-        return resultFuture.get(10, TimeUnit.SECONDS);
-    }
-
     private ConfigurationType findJUnitConfigurationType() {
         return PlatformApiCompat.findConfigurationTypeBySearch(JUNIT_TYPE_ID);
     }
@@ -170,17 +135,48 @@ public final class RunTestsTool extends TestingTool {
     private String tryRunTestConfig(String target) {
         try {
             var configs = RunManager.getInstance(project).getAllSettings();
-            for (var config : configs) {
-                String typeName = config.getType().getDisplayName().toLowerCase();
+            for (var settings : configs) {
+                String typeName = settings.getType().getDisplayName().toLowerCase();
                 if ((typeName.contains(JUNIT_TYPE_ID) || typeName.contains("test"))
-                    && config.getName().contains(target)) {
-                    return runConfiguration(createJsonWithName(config.getName()));
+                    && settings.getName().contains(target)) {
+                    return runTestConfigAndWait(settings);
                 }
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("tryRunTestConfig interrupted", e);
         } catch (Exception ignored) {
-            // Config lookup errors are non-fatal
+            // Config lookup errors are non-fatal; fall through to other runners
         }
         return null;
+    }
+
+    private String runTestConfigAndWait(com.intellij.execution.RunnerAndConfigurationSettings settings) throws Exception {
+        String configName = settings.getName();
+
+        CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
+        AtomicReference<Runnable> disconnect = new AtomicReference<>(() -> {
+        });
+        disconnect.set(subscribeToExecution(configName, handlerFuture, disconnect));
+
+        CompletableFuture<String> launchFuture = new CompletableFuture<>();
+        EdtUtil.invokeLater(() -> {
+            try {
+                var executor = DefaultRunExecutor.getRunExecutorInstance();
+                var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
+                if (envBuilder == null) {
+                    launchFuture.complete("Cannot create execution environment for: " + configName);
+                    return;
+                }
+                ExecutionManager.getInstance(project).restartRunProfile(envBuilder.build());
+                launchFuture.complete(null);
+            } catch (Exception e) {
+                LOG.warn("Failed to run test config: " + configName, e);
+                launchFuture.complete(LAUNCH_FAILED);
+            }
+        });
+
+        return awaitTestExecution(configName, launchFuture, handlerFuture, disconnect);
     }
 
     // ── Native JUnit runner ──────────────────────────────────
@@ -609,12 +605,6 @@ public final class RunTestsTool extends TestingTool {
         } catch (Exception e) {
             return simpleName;
         }
-    }
-
-    private static JsonObject createJsonWithName(String name) {
-        JsonObject obj = new JsonObject();
-        obj.addProperty("name", name);
-        return obj;
     }
 
     private String collectTestRunOutput(String configName) {

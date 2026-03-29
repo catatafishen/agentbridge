@@ -37,6 +37,8 @@ public final class ProjectToolFactory {
         tools.add(new CreateRunConfigurationTool(project, runConfigService));
         tools.add(new EditRunConfigurationTool(project, runConfigService));
         tools.add(new DeleteRunConfigurationTool(project, runConfigService));
+        tools.add(new GetProjectModulesTool(project));
+        tools.add(new GetProjectDependenciesTool(project));
         return List.copyOf(tools);
     }
 }

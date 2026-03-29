@@ -47,6 +47,8 @@ public class WriteFileTool extends FileTool {
     private static final String AUTO_FORMAT_SUFFIX = " (auto-format queued)";
     private static final String PARAM_AUTO_FORMAT = "auto_format_and_optimize_imports";
     private static final String PARAM_AUTO_FORMAT_LEGACY = "auto_format";
+    private static final String MSG_CANNOT_OPEN = "Cannot open document: ";
+    private static final String MSG_EDITED_PREFIX = "Edited: ";
 
     public WriteFileTool(Project project) {
         super(project);
@@ -119,8 +121,7 @@ public class WriteFileTool extends FileTool {
                         autoFormat, resultFuture);
                     followRange[0] = 1;
                 } else if (args.has("old_str") && args.has(PARAM_NEW_STR)) {
-                    writeFilePartialEdit(vf, pathStr, args.get("old_str").getAsString(),
-                        args.get(PARAM_NEW_STR).getAsString(), autoFormat, resultFuture, followRange);
+                    handlePartialEditArgs(vf, pathStr, args, autoFormat, resultFuture, followRange);
                 } else if (args.has(PARAM_START_LINE) && args.has(PARAM_NEW_STR)) {
                     followRange[0] = args.get(PARAM_START_LINE).getAsInt();
                     writeFileLineRange(vf, pathStr, args, autoFormat, resultFuture, followRange);
@@ -198,23 +199,38 @@ public class WriteFileTool extends FileTool {
         });
     }
 
+    private void handlePartialEditArgs(VirtualFile vf, String pathStr, JsonObject args,
+                                       boolean autoFormat, CompletableFuture<String> resultFuture,
+                                       int[] followRange) {
+        boolean replaceAll = args.has("replace_all") && args.get("replace_all").getAsBoolean();
+        boolean caseSensitive = !args.has("case_sensitive") || args.get("case_sensitive").getAsBoolean();
+        String oldStr = args.get("old_str").getAsString();
+        String newStr = args.get(PARAM_NEW_STR).getAsString();
+        if (replaceAll) {
+            writeFileReplaceAll(vf, pathStr, oldStr, newStr, autoFormat, caseSensitive, resultFuture, followRange);
+        } else {
+            writeFilePartialEdit(vf, pathStr, oldStr, newStr, autoFormat, resultFuture, followRange, caseSensitive);
+        }
+    }
+
+    // S107 (too many params): cohesive param set for a targeted file edit; splitting would obscure the API
+    @SuppressWarnings("java:S107")
     private void writeFilePartialEdit(VirtualFile vf, String pathStr, String oldStr, String newStr,
                                       boolean autoFormat, CompletableFuture<String> resultFuture,
-                                      int[] followRange) {
+                                      int[] followRange, boolean caseSensitive) {
         if (vf == null) {
             resultFuture.complete(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
             return;
         }
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) {
-            resultFuture.complete("Cannot open document: " + pathStr);
+            resultFuture.complete(MSG_CANNOT_OPEN + pathStr);
             return;
         }
-        // Normalize line endings for consistent matching
         String normalizedOld = oldStr.replace("\r\n", "\n").replace("\r", "\n");
         String normalizedNew = newStr.replace("\r\n", "\n").replace("\r", "\n");
 
-        int[] match = findMatchPosition(doc, vf, pathStr, normalizedOld, autoFormat);
+        int[] match = findMatchPosition(doc, vf, pathStr, normalizedOld, autoFormat, caseSensitive);
         int idx = match[0];
         int matchLen = match[1];
 
@@ -224,12 +240,15 @@ public class WriteFileTool extends FileTool {
                 closestMatchHint(doc.getText(), normalizedOld));
             return;
         }
-        // Check for multiple matches using same strategy
+        // Check for multiple matches
         String text = doc.getText();
-        String checkText = (matchLen == normalizedOld.length()) ? text : ToolUtils.normalizeForMatch(text);
-        String checkOld = (matchLen == normalizedOld.length()) ? normalizedOld : ToolUtils.normalizeForMatch(normalizedOld);
-        if (checkText.indexOf(checkOld, idx + 1) != -1) {
-            resultFuture.complete("old_str matches multiple locations in " + pathStr + ". Make it more specific.");
+        String searchableText = caseSensitive ? text : text.toLowerCase();
+        String searchableOld = caseSensitive ? normalizedOld : normalizedOld.toLowerCase();
+        String dedupText = (matchLen == normalizedOld.length()) ? searchableText : ToolUtils.normalizeForMatch(searchableText);
+        String dedupOld = (matchLen == normalizedOld.length()) ? searchableOld : ToolUtils.normalizeForMatch(searchableOld);
+        if (dedupText.indexOf(dedupOld, idx + 1) != -1) {
+            resultFuture.complete("old_str matches multiple locations in " + pathStr
+                + ". Make it more specific, or use replace_all: true.");
             return;
         }
         final int finalIdx = idx;
@@ -247,7 +266,7 @@ public class WriteFileTool extends FileTool {
         int ctxEnd = Math.min(finalIdx + normalizedNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, finalIdx)) + 1;
         String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
-        resultFuture.complete("Edited: " + pathStr + " (replaced " + finalLen + " chars with " + normalizedNew.length() + FORMAT_CHARS_SUFFIX
+        resultFuture.complete(MSG_EDITED_PREFIX + pathStr + " (replaced " + finalLen + " chars with " + normalizedNew.length() + FORMAT_CHARS_SUFFIX
             + contextLines(doc, finalIdx, ctxEnd) + formatNote + syntaxWarning);
     }
 
@@ -264,7 +283,7 @@ public class WriteFileTool extends FileTool {
         }
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) {
-            resultFuture.complete("Cannot open document: " + pathStr);
+            resultFuture.complete(MSG_CANNOT_OPEN + pathStr);
             return;
         }
         int startLine = args.get(PARAM_START_LINE).getAsInt();
@@ -308,7 +327,7 @@ public class WriteFileTool extends FileTool {
         int ctxEnd = Math.min(fStart + fNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, fStart)) + 1;
         String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
-        resultFuture.complete("Edited: " + pathStr + " (replaced lines " + startLine + "-" + endLine
+        resultFuture.complete(MSG_EDITED_PREFIX + pathStr + " (replaced lines " + startLine + "-" + endLine
             + " (" + replacedLines + " lines) with " + fNew.length() + FORMAT_CHARS_SUFFIX
             + contextLines(doc, fStart, ctxEnd) + formatNote + syntaxWarning);
     }
@@ -317,16 +336,15 @@ public class WriteFileTool extends FileTool {
      * Returns [index, matchLength] or [-1, 0] if not found.
      */
     private int[] findMatchPosition(Document doc, VirtualFile vf, String pathStr,
-                                    String normalizedOld, boolean autoFormat) {
+                                    String normalizedOld, boolean autoFormat, boolean caseSensitive) {
         String text = doc.getText();
-        int idx = text.indexOf(normalizedOld);
+        int idx = indexOf(text, normalizedOld, caseSensitive);
         int matchLen = normalizedOld.length();
 
-        // Fallback 1: auto-format the file and retry (normalizes whitespace/line endings)
         if (idx == -1 && autoFormat) {
             formatFileSync(vf);
             text = doc.getText();
-            idx = text.indexOf(normalizedOld);
+            idx = indexOf(text, normalizedOld, caseSensitive);
             if (idx != -1) {
                 LOG.info("write_file: match succeeded after auto-format for " + pathStr);
                 return new int[]{idx, matchLen};
@@ -334,10 +352,9 @@ public class WriteFileTool extends FileTool {
         }
 
         if (idx == -1) {
-            // Fallback 2: normalize Unicode chars and retry
             String normText = ToolUtils.normalizeForMatch(text);
             String normOld = ToolUtils.normalizeForMatch(normalizedOld);
-            idx = normText.indexOf(normOld);
+            idx = indexOf(normText, normOld, caseSensitive);
             if (idx != -1) {
                 LOG.info("write_file: normalized match succeeded for " + pathStr);
                 matchLen = ToolUtils.findOriginalLength(text, idx, normOld.length());
@@ -347,6 +364,68 @@ public class WriteFileTool extends FileTool {
             }
         }
         return new int[]{idx, matchLen};
+    }
+
+    private static int indexOf(String text, String target, boolean caseSensitive) {
+        if (caseSensitive) return text.indexOf(target);
+        return text.toLowerCase().indexOf(target.toLowerCase());
+    }
+
+    // S107: 8 params are a cohesive unit for a single targeted file-replace operation; splitting adds complexity
+    @SuppressWarnings("java:S107")
+    private void writeFileReplaceAll(VirtualFile vf, String pathStr, String oldStr, String newStr,
+                                     boolean autoFormat, boolean caseSensitive,
+                                     CompletableFuture<String> resultFuture, int[] followRange) {
+        if (vf == null) {
+            resultFuture.complete(ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+            return;
+        }
+        Document doc = FileDocumentManager.getInstance().getDocument(vf);
+        if (doc == null) {
+            resultFuture.complete(MSG_CANNOT_OPEN + pathStr);
+            return;
+        }
+        String normalizedOld = oldStr.replace("\r\n", "\n").replace("\r", "\n");
+        String normalizedNew = newStr.replace("\r\n", "\n").replace("\r", "\n");
+
+        String text = doc.getText();
+        String searchText = caseSensitive ? text : text.toLowerCase();
+        String searchOld = caseSensitive ? normalizedOld : normalizedOld.toLowerCase();
+
+        List<Integer> positions = new ArrayList<>();
+        int pos = 0;
+        while ((pos = searchText.indexOf(searchOld, pos)) != -1) {
+            positions.add(pos);
+            pos += searchOld.length();
+        }
+        if (positions.isEmpty()) {
+            resultFuture.complete("old_str not found in " + pathStr +
+                ". Ensure the text matches exactly (check whitespace, indentation, line endings)." +
+                closestMatchHint(text, normalizedOld));
+            return;
+        }
+        WriteAction.run(() ->
+            CommandProcessor.getInstance().executeCommand(project, () -> {
+                for (int i = positions.size() - 1; i >= 0; i--) {
+                    int start = positions.get(i);
+                    doc.replaceString(start, start + normalizedOld.length(), normalizedNew);
+                }
+            }, "Edit File", null)
+        );
+        FileDocumentManager.getInstance().saveDocument(doc);
+        CodeChangeTracker.recordChange(
+            positions.size() * CodeChangeTracker.countLines(normalizedNew),
+            positions.size() * CodeChangeTracker.countLines(normalizedOld));
+        String syntaxWarning = checkSyntaxErrors(pathStr);
+        if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
+        int firstPos = positions.getFirst();
+        followRange[0] = doc.getLineNumber(firstPos) + 1;
+        int ctxEnd = Math.min(firstPos + normalizedNew.length(), doc.getTextLength());
+        followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, firstPos)) + 1;
+        String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
+        resultFuture.complete(MSG_EDITED_PREFIX + pathStr + " (replaced " + positions.size()
+            + " occurrence(s) of " + normalizedOld.length() + " chars with " + normalizedNew.length()
+            + FORMAT_CHARS_SUFFIX + formatNote + syntaxWarning);
     }
 
     /**

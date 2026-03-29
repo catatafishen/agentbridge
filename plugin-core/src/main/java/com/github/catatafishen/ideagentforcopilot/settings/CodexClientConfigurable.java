@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexCredentials;
 import com.github.catatafishen.ideagentforcopilot.ui.AuthTerminalHelperKt;
+import com.github.catatafishen.ideagentforcopilot.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
@@ -14,6 +15,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -27,6 +29,7 @@ public final class CodexClientConfigurable implements Configurable {
     private JBLabel binaryStatusLabel;
     private JBLabel authStatusLabel;
     private JBTextField binaryPathField;
+    private @Nullable ThemeColorComboBox bubbleColorCombo;
     private JPanel mainPanel;
 
     public CodexClientConfigurable(@NotNull Project project) {
@@ -46,6 +49,8 @@ public final class CodexClientConfigurable implements Configurable {
         binaryPathField = new JBTextField();
         binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
         binaryPathField.setToolTipText("Absolute path to the codex binary. Leave empty to find it on PATH.");
+
+        bubbleColorCombo = new ThemeColorComboBox();
 
         HyperlinkLabel installLink = new HyperlinkLabel("Install Codex CLI — npmjs.com/@openai/codex");
         installLink.setHyperlinkTarget("https://www.npmjs.com/package/@openai/codex");
@@ -74,6 +79,8 @@ public final class CodexClientConfigurable implements Configurable {
             .addSeparator(8)
             .addLabeledComponent("Codex binary path:", binaryPathField)
             .addTooltip("Leave empty to auto-detect on PATH.")
+            .addLabeledComponent("Bubble color:", bubbleColorCombo)
+            .addTooltip("Choose a theme-aware accent color for message bubbles when using Codex.")
             .addSeparator(8)
             .addComponent(signInButton, 4)
             .addComponent(signInDeviceButton, 2)
@@ -88,13 +95,23 @@ public final class CodexClientConfigurable implements Configurable {
     public boolean isModified() {
         if (binaryPathField == null) return false;
         String stored = nullToEmpty(loadCustomBinaryPath());
-        return !binaryPathField.getText().trim().equals(stored);
+        if (!binaryPathField.getText().trim().equals(stored)) return true;
+        if (bubbleColorCombo != null) {
+            ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
+            String key = tc != null ? tc.name() : null;
+            if (!java.util.Objects.equals(key, loadBubbleColorKey())) return true;
+        }
+        return false;
     }
 
     @Override
     public void apply() {
         if (binaryPathField == null) return;
         saveCustomBinaryPath(binaryPathField.getText().trim());
+        if (bubbleColorCombo != null) {
+            ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
+            saveBubbleColorKey(tc != null ? tc.name() : null);
+        }
     }
 
     @Override
@@ -102,6 +119,9 @@ public final class CodexClientConfigurable implements Configurable {
         if (binaryPathField == null) return;
         refreshStatusAsync();
         binaryPathField.setText(nullToEmpty(loadCustomBinaryPath()));
+        if (bubbleColorCombo != null) {
+            bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(loadBubbleColorKey()));
+        }
     }
 
     @Override
@@ -109,6 +129,7 @@ public final class CodexClientConfigurable implements Configurable {
         binaryStatusLabel = null;
         authStatusLabel = null;
         binaryPathField = null;
+        bubbleColorCombo = null;
         mainPanel = null;
     }
 
@@ -200,6 +221,16 @@ public final class CodexClientConfigurable implements Configurable {
     private void saveCustomBinaryPath(String path) {
         com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient
             .saveCustomBinaryPath(CodexAppServerClient.PROFILE_ID, path);
+    }
+
+    private @Nullable String loadBubbleColorKey() {
+        return com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient
+            .loadAgentBubbleColorKey(CodexAppServerClient.PROFILE_ID);
+    }
+
+    private void saveBubbleColorKey(@Nullable String colorKey) {
+        com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient
+            .saveAgentBubbleColorKey(CodexAppServerClient.PROFILE_ID, colorKey);
     }
 
     @NotNull

@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -23,6 +24,12 @@ public final class SearchTextTool extends NavigationTool {
     private static final String PARAM_REGEX = "regex";
     private static final String PARAM_CASE_SENSITIVE = "case_sensitive";
     private static final String PARAM_MAX_RESULTS = "max_results";
+    private static final String PARAM_CONTEXT_LINES = "context_lines";
+
+    private record SearchParams(Pattern pattern, String basePath, String filePattern,
+                                List<String> results, AtomicInteger skippedLarge,
+                                int maxResults, int contextLines) {
+    }
 
     public SearchTextTool(Project project) {
         super(project);
@@ -43,13 +50,12 @@ public final class SearchTextTool extends NavigationTool {
         return "Search for text or regex patterns across project files using IntelliJ's editor buffers";
     }
 
-
-
     @Override
     public @NotNull String kind() {
         return "read";
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -61,7 +67,8 @@ public final class SearchTextTool extends NavigationTool {
             {"file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.kt', '*.java')", ""},
             {PARAM_REGEX, TYPE_BOOLEAN, "If true, treat query as regex. Default: false (literal match)"},
             {PARAM_CASE_SENSITIVE, TYPE_BOOLEAN, "Case-sensitive search. Default: true"},
-            {PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"}
+            {PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"},
+            {PARAM_CONTEXT_LINES, TYPE_INTEGER, "Lines of context before and after each match (default: 0). Reduces need for follow-up read_file calls."}
         }, "query");
     }
 
@@ -79,15 +86,19 @@ public final class SearchTextTool extends NavigationTool {
         boolean isRegex = args.has(PARAM_REGEX) && args.get(PARAM_REGEX).getAsBoolean();
         boolean caseSensitive = !args.has(PARAM_CASE_SENSITIVE) || args.get(PARAM_CASE_SENSITIVE).getAsBoolean();
         int maxResults = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
+        int contextLines = args.has(PARAM_CONTEXT_LINES) ? args.get(PARAM_CONTEXT_LINES).getAsInt() : 0;
 
-        showSearchFeedback("🔍 Searching text: " + query);
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
-            performSearch(query, filePattern, isRegex, caseSensitive, maxResults));
-        showSearchFeedback("✓ Text search complete: " + query);
+        showSearchFeedback("Searching text: " + query);
+        // Cast required: disambiguates Computable<T> vs ThrowableComputable<T,E> overloads.
+        // The IDE falsely reports this as redundant; Gradle fails without it.
+        Computable<String> action = () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults, contextLines);
+        String result = ApplicationManager.getApplication().runReadAction(action);
+        showSearchFeedback("Text search complete: " + query);
         return result;
     }
 
-    private String performSearch(String query, String filePattern, boolean isRegex, boolean caseSensitive, int maxResults) {
+    private String performSearch(String query, String filePattern, boolean isRegex,
+                                 boolean caseSensitive, int maxResults, int contextLines) {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -95,44 +106,69 @@ public final class SearchTextTool extends NavigationTool {
         if (pattern == null) return "Error: invalid regex: " + query;
 
         List<String> results = new ArrayList<>();
-        int[] skippedLarge = {0};
-        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
-        fileIndex.iterateContent(vf -> {
-            if (vf.isDirectory()) return true;
-            String relPath = relativize(basePath, vf.getPath());
-            if (relPath == null) return true;
-            if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern)) return true;
-            if (vf.getLength() > 1_000_000) {
-                skippedLarge[0]++;
-                return results.size() < maxResults;
-            }
-            searchFileForPattern(vf, pattern, relPath, results, maxResults);
-            return results.size() < maxResults;
-        });
+        AtomicInteger skippedLarge = new AtomicInteger(0);
+        var params = new SearchParams(pattern, basePath, filePattern, results, skippedLarge, maxResults, contextLines);
+        ProjectFileIndex.getInstance(project).iterateContent(vf -> processFile(vf, params));
 
         StringBuilder sb = new StringBuilder();
         if (results.isEmpty()) {
             sb.append("No matches found for '").append(query).append("'");
         } else {
-            sb.append(results.size()).append(" matches:\n").append(String.join("\n", results));
+            sb.append(results.size()).append(" matches:\n");
+            String separator = contextLines > 0 ? "\n---\n" : "\n";
+            sb.append(String.join(separator, results));
         }
-        if (skippedLarge[0] > 0) {
-            sb.append("\n(").append(skippedLarge[0]).append(" file(s) >1 MB skipped)");
+        if (skippedLarge.get() > 0) {
+            sb.append("\n(").append(skippedLarge.get()).append(" file(s) >1 MB skipped)");
         }
         return sb.toString();
     }
 
+    private boolean processFile(VirtualFile vf, SearchParams p) {
+        if (vf.isDirectory()) return true;
+        String relPath = relativize(p.basePath(), vf.getPath());
+        if (relPath == null) return true;
+        if (!p.filePattern().isEmpty() && ToolUtils.doesNotMatchGlob(relPath, p.filePattern())) return true;
+        if (vf.getLength() > 1_000_000) {
+            p.skippedLarge().incrementAndGet();
+            return p.results().size() < p.maxResults();
+        }
+        searchFileForPattern(vf, p.pattern(), relPath, p.results(), p.maxResults(), p.contextLines());
+        return p.results().size() < p.maxResults();
+    }
+
     private static void searchFileForPattern(VirtualFile vf, Pattern pattern,
-                                             String relPath, List<String> results, int maxResults) {
+                                             String relPath, List<String> results,
+                                             int maxResults, int contextLines) {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return;
         String text = doc.getText();
         Matcher matcher = pattern.matcher(text);
         while (matcher.find() && results.size() < maxResults) {
-            int line = doc.getLineNumber(matcher.start()) + 1;
-            String lineText = ToolUtils.getLineText(doc, line - 1);
-            results.add(String.format(FORMAT_LINE_REF, relPath, line, lineText));
+            int matchLine = doc.getLineNumber(matcher.start()) + 1;
+            String lineText = ToolUtils.getLineText(doc, matchLine - 1);
+            if (contextLines <= 0) {
+                results.add(String.format(FORMAT_LINE_REF, relPath, matchLine, lineText));
+            } else {
+                results.add(buildMatchWithContext(doc, relPath, matchLine, lineText, contextLines));
+            }
         }
+    }
+
+    private static String buildMatchWithContext(Document doc, String relPath,
+                                                int matchLine, String lineText, int contextLines) {
+        int lineCount = doc.getLineCount();
+        StringBuilder entry = new StringBuilder();
+        int beforeStart = Math.max(1, matchLine - contextLines);
+        for (int l = beforeStart; l < matchLine; l++) {
+            entry.append(String.format("  %s:%d:   %s%n", relPath, l, ToolUtils.getLineText(doc, l - 1)));
+        }
+        entry.append(String.format(FORMAT_LINE_REF, relPath, matchLine, lineText));
+        int afterEnd = Math.min(lineCount, matchLine + contextLines);
+        for (int l = matchLine + 1; l <= afterEnd; l++) {
+            entry.append(String.format("%n  %s:%d:   %s", relPath, l, ToolUtils.getLineText(doc, l - 1)));
+        }
+        return entry.toString();
     }
 
     private static Pattern compileSearchPattern(String query, boolean isRegex, boolean caseSensitive) {

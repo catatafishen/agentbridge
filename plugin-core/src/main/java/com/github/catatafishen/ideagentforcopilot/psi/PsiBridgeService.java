@@ -97,6 +97,7 @@ public final class PsiBridgeService implements Disposable {
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.infrastructure.InfrastructureToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.terminal.TerminalToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.editor.EditorToolFactory.create(project));
+        allTools.addAll(com.github.catatafishen.ideagentforcopilot.psi.tools.debug.DebugToolFactory.create(project));
         registry.registerAll(allTools);
 
         // Subscribe to tool call events to restore focus to chat input after each tool call

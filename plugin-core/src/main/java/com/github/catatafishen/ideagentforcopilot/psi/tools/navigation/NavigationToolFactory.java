@@ -25,6 +25,7 @@ public final class NavigationToolFactory {
         if (hasJava) {
             tools.add(new GetClassOutlineTool(project));
         }
+        tools.add(new ListDirectoryTreeTool(project));
         return tools;
     }
 }

@@ -534,6 +534,7 @@ public final class AgentProfile {
         if (name.contains("opencode")) return "opencode";
         if (name.contains("junie")) return "junie";
         if (name.contains("kiro")) return "kiro";
+        if (name.contains("codex")) return "codex";
         return "";
     }
 

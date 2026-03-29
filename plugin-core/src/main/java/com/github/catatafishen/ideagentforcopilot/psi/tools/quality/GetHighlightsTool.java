@@ -29,6 +29,8 @@ public final class GetHighlightsTool extends QualityTool {
 
     private static final Logger LOG = Logger.getInstance(GetHighlightsTool.class);
 
+    private static final String PARAM_INCLUDE_UNINDEXED = "include_unindexed";
+
     public GetHighlightsTool(Project project) {
         super(project);
     }
@@ -48,13 +50,12 @@ public final class GetHighlightsTool extends QualityTool {
         return "Get cached editor highlights for open files";
     }
 
-
-
     @Override
     public @NotNull String kind() {
         return "read";
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -63,7 +64,8 @@ public final class GetHighlightsTool extends QualityTool {
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Optional: file path to check. If omitted, checks all open files", ""},
-            {PARAM_LIMIT, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"}
+            {PARAM_LIMIT, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"},
+            {PARAM_INCLUDE_UNINDEXED, TYPE_BOOLEAN, "If true, also include highlights from files not indexed by the project (default: false)"}
         });
     }
 
@@ -71,7 +73,7 @@ public final class GetHighlightsTool extends QualityTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String pathStr = args.has("path") ? args.get("path").getAsString() : null;
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 100;
-        boolean includeUnindexed = args.has("include_unindexed") && args.get("include_unindexed").getAsBoolean();
+        boolean includeUnindexed = args.has(PARAM_INCLUDE_UNINDEXED) && args.get(PARAM_INCLUDE_UNINDEXED).getAsBoolean();
 
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
@@ -166,12 +168,14 @@ public final class GetHighlightsTool extends QualityTool {
                     && severity != com.intellij.lang.annotation.HighlightSeverity.INFORMATION
                     && severity.myVal >= com.intellij.lang.annotation.HighlightSeverity.WEAK_WARNING.myVal) {
                     int line = doc.getLineNumber(h.getStartOffset()) + 1;
-                    String entry = String.format(FORMAT_LOCATION, relPath, line, severity.getName(), h.getDescription());
+                    StringBuilder entry = new StringBuilder(
+                        String.format(FORMAT_LOCATION, relPath, line, severity.getName(), h.getDescription()));
                     List<String> fixes = collectQuickFixNames(h);
-                    if (!fixes.isEmpty()) {
-                        entry += "  →  Quick fixes: [" + String.join(", ", fixes) + "]";
+                    // One fix per line with plain "Fix:" prefix so action names are unambiguous
+                    for (String fix : fixes) {
+                        entry.append("\n    Fix: ").append(fix);
                     }
-                    problems.add(entry);
+                    problems.add(entry.toString());
                     added++;
                 }
             }

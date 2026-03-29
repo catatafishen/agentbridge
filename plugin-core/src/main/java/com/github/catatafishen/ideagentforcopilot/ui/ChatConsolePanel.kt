@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.ui
 
 import com.github.catatafishen.ideagentforcopilot.services.ChatWebServer
 import com.github.catatafishen.ideagentforcopilot.services.ToolChipRegistry
+import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ToolRenderers
@@ -94,10 +95,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     @Volatile
     private var activeAskUserRequestId: String? = null
 
-    // Periodic JCEF repaint during streaming to avoid partial-update artifacts
-    private val repaintTimer = javax.swing.Timer(150) {
-        browser?.cefBrowser?.invalidate()
-    }.apply { isRepeats = true }
+    // CEF windowless frame rate — high during streaming, low when idle
+    private fun setFrameRate(fps: Int) {
+        browser?.cefBrowser?.setWindowlessFrameRate(fps)
+    }
 
     // ── Swing fallback ─────────────────────────────────────────────
     private val fallbackArea: JBTextArea?
@@ -112,6 +113,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         fun getInstance(project: Project): ChatConsolePanel? = instances[project]
 
         private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
+        private const val STREAMING_FRAME_RATE = 60
+        private const val IDLE_FRAME_RATE = 10
     }
 
     // ── Init ───────────────────────────────────────────────────────
@@ -216,6 +219,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         browserReady = true
                         pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
                         pendingJs.clear()
+                        if (com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings.getInstance(project).isSmoothScrollEnabled) {
+                            setSmoothScroll(true)
+                        }
                     }
                 }, browser.cefBrowser
             )
@@ -245,6 +251,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     // ── Public API ─────────────────────────────────────────────────
 
+    fun setAutoScroll(enabled: Boolean) {
+        executeJs("ChatController.setAutoScroll($enabled)")
+    }
+
+    fun setSmoothScroll(enabled: Boolean) {
+        executeJs("document.querySelector('chat-container').style.scrollBehavior = '${if (enabled) "smooth" else "auto"}'")
+    }
+
     override fun addPromptEntry(text: String, contextFiles: List<Triple<String, String, Int>>?, bubbleHtml: String?) {
         toolJustCompleted = false
         finalizeCurrentText()
@@ -257,7 +271,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun startStreaming() {
-        repaintTimer.start()
+        setFrameRate(STREAMING_FRAME_RATE)
     }
 
     override fun setPromptStats(modelId: String, multiplier: String) {
@@ -569,12 +583,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val info = SUB_AGENT_INFO[agentType]
         val displayName = info?.displayName ?: agentType.replaceFirstChar { it.uppercaseChar() }
         val promptText = prompt ?: description
+        val promptHtml = b64(markdownToHtml(promptText))
         executeJs(
-            "ChatController.addSubAgent('$currentTurnId','main','$did','${escJs(displayName)}',$colorIndex,'${
-                escJs(
-                    promptText
-                )
-            }')"
+            "ChatController.addSubAgent('$currentTurnId','main','$did','${escJs(displayName)}',$colorIndex,b64('$promptHtml'))"
         )
         if (autoDenied || !initialResult.isNullOrBlank() || initialStatus == "completed" || initialStatus == "failed") {
             val status = if (autoDenied) "denied" else (initialStatus ?: "completed")
@@ -651,7 +662,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
-        repaintTimer.stop()
+        setFrameRate(IDLE_FRAME_RATE)
         toolJustCompleted = false
         finalizeCurrentText()
         collapseThinking()
@@ -677,7 +688,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun cancelAllRunning() {
-        repaintTimer.stop()
+        setFrameRate(IDLE_FRAME_RATE)
         clearPendingAskUserRequest(null)
         executeJs("ChatController.cancelAllRunning()")
     }
@@ -952,7 +963,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun dispose() {
         registry.removeKindStateListener(kindStateListener)
-        repaintTimer.stop()
         instances.remove(project)
     }
 
@@ -986,7 +996,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (browserReady) {
             com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
                 .info("executeJs (ready): $short")
-            browser?.cefBrowser?.executeJavaScript(js, "", 0)
+            browser?.cefBrowser?.let { cef ->
+                cef.executeJavaScript(js, "", 0)
+                cef.invalidate()
+            }
         } else {
             com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
                 .info("executeJs (queued): $short")
@@ -1131,7 +1144,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     // ── Theme ──────────────────────────────────────────────────────
 
-    private fun buildCssVars(): String = ChatTheme.buildCssVars()
+    private fun buildCssVars(): String = ChatTheme.buildCssVars(McpServerSettings.getInstance(project))
 
     private fun updateThemeColors() {
         val vars = buildCssVars().replace("'", "\\'")

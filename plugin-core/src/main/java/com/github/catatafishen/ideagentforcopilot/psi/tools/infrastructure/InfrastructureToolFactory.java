@@ -21,6 +21,7 @@ public final class InfrastructureToolFactory {
             new RunCommandTool(project),
             new ReadIdeLogTool(project),
             new GetNotificationsTool(project),
+            new ListRunTabsTool(project),
             new ReadRunOutputTool(project),
             new ReadBuildOutputTool(project)
         );

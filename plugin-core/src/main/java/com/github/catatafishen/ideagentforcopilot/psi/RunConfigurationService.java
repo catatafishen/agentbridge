@@ -50,6 +50,7 @@ public final class RunConfigurationService {
     private static final String PARAM_TASKS = "tasks";
     private static final String PARAM_SCRIPT_PARAMETERS = "script_parameters";
     private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
+    private static final String ERROR_CONFIG_LIST_HINT = "'. Use list_run_configurations to see available configs.";
 
     private final Project project;
     private final ClassResolverUtil.ClassResolver classResolver;
@@ -60,7 +61,9 @@ public final class RunConfigurationService {
     }
 
     public String listRunConfigurations() {
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
+        // Cast required: disambiguates Computable<T> vs ThrowableComputable<T,E> overloads at compile time.
+        // The IDE falsely reports this as redundant; Gradle fails without it.
+        Computable<String> action = () -> {
             try {
                 var configs = RunManager.getInstance(project).getAllSettings();
                 if (configs.isEmpty()) return "No run configurations found";
@@ -77,7 +80,18 @@ public final class RunConfigurationService {
             } catch (Exception e) {
                 return "Error listing run configurations: " + e.getMessage();
             }
-        });
+        };
+        return ApplicationManager.getApplication().runReadAction(action);
+    }
+
+    private com.intellij.execution.runners.ExecutionEnvironment buildExecutionEnv(
+        com.intellij.execution.RunnerAndConfigurationSettings settings) {
+        var executor = DefaultRunExecutor.getRunExecutorInstance();
+        var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
+        if (envBuilder == null) {
+            throw new IllegalStateException("Cannot create execution environment for: " + settings.getName());
+        }
+        return envBuilder.build();
     }
 
     public String runConfiguration(JsonObject args) throws Exception {
@@ -89,20 +103,11 @@ public final class RunConfigurationService {
             try {
                 var settings = RunManager.getInstance(project).findConfigurationByName(name);
                 if (settings == null) {
-                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name
-                        + "'. Use list_run_configurations to see available configs.");
+                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name + ERROR_CONFIG_LIST_HINT);
                     return;
                 }
 
-                var executor = DefaultRunExecutor.getRunExecutorInstance();
-                var envBuilder = ExecutionEnvironmentBuilder.createOrNull(executor, settings);
-                if (envBuilder == null) {
-                    resultFuture.complete("Cannot create execution environment for: " + name);
-                    return;
-                }
-
-                var env = envBuilder.build();
-                ExecutionManager.getInstance(project).restartRunProfile(env);
+                ExecutionManager.getInstance(project).restartRunProfile(buildExecutionEnv(settings));
                 resultFuture.complete("Started run configuration: " + name
                     + " [" + settings.getType().getDisplayName() + "]"
                     + "\nResults will appear in the IntelliJ Run panel.");
@@ -112,6 +117,84 @@ public final class RunConfigurationService {
         });
 
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    public String runConfigurationAndWait(JsonObject args) throws Exception {
+        String name = args.get("name").getAsString();
+        int waitSeconds = args.has("wait_seconds") ? args.get("wait_seconds").getAsInt() : 30;
+
+        var settingsRef = new java.util.concurrent.atomic.AtomicReference<com.intellij.execution.RunnerAndConfigurationSettings>();
+        CompletableFuture<Void> launchFuture = new CompletableFuture<>();
+        var doneLatch = new java.util.concurrent.CountDownLatch(1);
+        var exitCodeRef = new java.util.concurrent.atomic.AtomicInteger(-1);
+
+        // Subscribe before launching so we don't miss the processStarted event.
+        Runnable disconnect = PlatformApiCompat.subscribeExecutionListener(project,
+            new com.intellij.execution.ExecutionListener() {
+                @Override
+                public void processStarted(@org.jetbrains.annotations.NotNull String executorId,
+                                           @org.jetbrains.annotations.NotNull com.intellij.execution.runners.ExecutionEnvironment env,
+                                           @org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessHandler handler) {
+                    var s = settingsRef.get();
+                    var envSettings = env.getRunnerAndConfigurationSettings();
+                    if (s != null && envSettings != null && s.getName().equals(envSettings.getName())) {
+                        handler.addProcessListener(new com.intellij.execution.process.ProcessListener() {
+                            @Override
+                            public void startNotified(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent e) {
+                                // we wait for termination only
+                            }
+
+                            @Override
+                            public void onTextAvailable(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent e,
+                                                        @org.jetbrains.annotations.NotNull com.intellij.openapi.util.Key outputType) {
+                                // output is read via read_run_output after termination
+                            }
+
+                            @Override
+                            public void processTerminated(@org.jetbrains.annotations.NotNull com.intellij.execution.process.ProcessEvent event) {
+                                exitCodeRef.set(event.getExitCode());
+                                doneLatch.countDown();
+                            }
+                        });
+                    }
+                }
+            });
+
+        EdtUtil.invokeLater(() -> {
+            try {
+                var settings = RunManager.getInstance(project).findConfigurationByName(name);
+                if (settings == null) {
+                    launchFuture.completeExceptionally(new IllegalArgumentException(
+                        ERROR_CONFIG_NOT_FOUND + name + ERROR_CONFIG_LIST_HINT));
+                    return;
+                }
+                settingsRef.set(settings);
+                ExecutionManager.getInstance(project).restartRunProfile(buildExecutionEnv(settings));
+                launchFuture.complete(null);
+            } catch (Exception e) {
+                launchFuture.completeExceptionally(e);
+            }
+        });
+
+        try {
+            launchFuture.get(10, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.ExecutionException e) {
+            disconnect.run();
+            return e.getCause().getMessage();
+        }
+
+        boolean finished = doneLatch.await(waitSeconds, TimeUnit.SECONDS);
+        disconnect.run();
+
+        if (!finished) {
+            return "Run configuration '" + name + "' did not complete within " + waitSeconds + "s. "
+                + "Use read_run_output with tab_name='" + name + "' to see current output.";
+        }
+
+        int exitCode = exitCodeRef.get();
+        String status = exitCode == 0 ? "PASSED" : "FAILED (exit code " + exitCode + ")";
+        return "Run configuration '" + name + "' " + status + ". "
+            + "Use read_run_output with tab_name='" + name + "' to see full output.";
     }
 
     public String createRunConfiguration(JsonObject args) throws Exception {
@@ -239,8 +322,7 @@ public final class RunConfigurationService {
                 RunManager runManager = RunManager.getInstance(project);
                 var settings = runManager.findConfigurationByName(name);
                 if (settings == null) {
-                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name
-                        + "'. Use list_run_configurations to see available configs.");
+                    resultFuture.complete(ERROR_CONFIG_NOT_FOUND + name + ERROR_CONFIG_LIST_HINT);
                     return;
                 }
 

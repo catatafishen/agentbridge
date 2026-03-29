@@ -57,7 +57,9 @@ mcp-server/build/
 
 # Node.js (chat-ui build tooling)
 plugin-core/chat-ui/node_modules/
+plugin-core/chat-ui/dist/
 plugin-core/js-tests/node_modules/
+plugin-core/opencode-zod-validator/node_modules/
 
 # Generated chat UI (built from chat-ui/src/ TypeScript + CSS)
 plugin-core/src/main/resources/chat/

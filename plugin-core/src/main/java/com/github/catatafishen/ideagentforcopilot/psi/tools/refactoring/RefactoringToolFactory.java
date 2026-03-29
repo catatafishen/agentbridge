@@ -27,6 +27,7 @@ public final class RefactoringToolFactory {
             tools.add(new GetCallHierarchyTool(project));
         }
         tools.add(new GetDocumentationTool(project));
+        tools.add(new GetSymbolInfoTool(project));
         return List.copyOf(tools);
     }
 }

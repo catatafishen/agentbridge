@@ -22,12 +22,14 @@ const ChatController = {
         scrollIfNeeded(): void;
         forceScroll(): void;
         compensateScroll(targetY: number): void;
+        autoScroll: boolean;
         workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void }
     } | null {
         return document.querySelector<HTMLElement & {
             scrollIfNeeded(): void;
             forceScroll(): void;
             compensateScroll(targetY: number): void;
+            autoScroll: boolean;
             workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void }
         }>('chat-container');
     },
@@ -296,7 +298,7 @@ const ChatController = {
         // No-op: orphan handling removed; replaced by ToolChipRegistry correlation
     },
 
-    addSubAgent(turnId: string, agentId: string, sectionId: string, displayName: string, colorIndex: number, promptText?: string): void {
+    addSubAgent(turnId: string, agentId: string, sectionId: string, displayName: string, colorIndex: number, promptHtml?: string): void {
         this._resetWorkingTimer();
         const ctx = this._ensureMsg(turnId, agentId);
         this._collapseThinkingFor(ctx);
@@ -309,7 +311,7 @@ const ChatController = {
         ctx.meta!.appendChild(chip);
         ctx.meta!.classList.add('show');
         const promptBubble = document.createElement('message-bubble');
-        promptBubble.innerHTML = '<span class="subagent-prefix subagent-c' + colorIndex + '">@' + escHtml(displayName) + '</span> ' + escHtml(promptText || '');
+        promptBubble.innerHTML = '<span class="subagent-prefix subagent-c' + colorIndex + '">@' + escHtml(displayName) + '</span> ' + (promptHtml || '');
         ctx.msg!.appendChild(promptBubble);
         const msg = document.createElement('chat-message');
         msg.setAttribute('type', 'agent');
@@ -547,25 +549,26 @@ const ChatController = {
 
         // Measure before insertion so we can restore the visual scroll position.
         // JCEF does not implement CSS scroll anchoring, so inserting content above the
-        // viewport leaves scrollY at 0, pinning the user to the top and preventing a
+        // viewport leaves scrollTop at 0, pinning the user to the top and preventing a
         // second scroll-up trigger.
-        const prevScrollY = window.scrollY;
-        const prevHeight = document.body.scrollHeight;
+        const container = this._container();
+        const prevScrollTop = container?.scrollTop ?? 0;
+        const prevHeight = container?.scrollHeight ?? 0;
 
         while (temp.firstChild) {
             msgs.insertBefore(temp.firstChild, insertBefore);
         }
         this._moveQueuedToBottom();
         // If the user was near the top when load-more fired, compensate for the added
-        // height so they are no longer pinned at scrollY=0 and can scroll up again.
+        // height so they are no longer pinned at scrollTop=0 and can scroll up again.
         // We ensure a minimum scroll offset of 10px so JCEF always detects subsequent
         // scroll-up gestures, preventing the user from getting stuck at the absolute top.
         // Cap at 50px to keep user near top so subsequent scroll-up can trigger more loads.
-        if (prevScrollY <= 30) {
-            const addedHeight = document.body.scrollHeight - prevHeight;
+        if (container && prevScrollTop <= 30) {
+            const addedHeight = container.scrollHeight - prevHeight;
             if (addedHeight > 0) {
-                const targetScroll = Math.min(50, Math.max(10, prevScrollY + addedHeight));
-                window.scrollTo(0, targetScroll);
+                const targetScroll = Math.min(50, Math.max(10, prevScrollTop + addedHeight));
+                container.compensateScroll(targetScroll);
             }
         }
     },
@@ -592,9 +595,10 @@ const ChatController = {
         const loadMore = msgs.querySelector('load-more');
         const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
 
-        const prevHeight = document.body.scrollHeight;
-        const prevScrollY = window.scrollY;
-        const wasNearTop = prevScrollY <= 30;
+        const container = this._container();
+        const prevHeight = container?.scrollHeight ?? 0;
+        const prevScrollTop = container?.scrollTop ?? 0;
+        const wasNearTop = prevScrollTop <= 30;
 
         while (temp.firstChild) {
             msgs.insertBefore(temp.firstChild, insertBefore);
@@ -605,14 +609,11 @@ const ChatController = {
         // We ensure a minimum scroll offset of 10px so JCEF always detects subsequent
         // scroll-up gestures, preventing the user from getting stuck at the absolute top.
         // Also cap at 50px to keep user near top so subsequent scroll-up can trigger more loads.
-        const addedHeight = document.body.scrollHeight - prevHeight;
-        if (addedHeight > 0) {
-            const targetScroll = Math.min(50, Math.max(10, prevScrollY + addedHeight));
-            const container = this._container();
-            if (container) {
+        if (container) {
+            const addedHeight = container.scrollHeight - prevHeight;
+            if (addedHeight > 0) {
+                const targetScroll = Math.min(50, Math.max(10, prevScrollTop + addedHeight));
                 container.compensateScroll(targetScroll);
-            } else {
-                window.scrollTo(0, targetScroll);
             }
         }
 
@@ -630,7 +631,7 @@ const ChatController = {
         const container = this._container();
         const wi = container?.workingIndicator;
         if (wi) {
-            wi.classList.remove('client-copilot', 'client-claude', 'client-opencode', 'client-junie', 'client-kiro');
+            wi.classList.remove('client-copilot', 'client-claude', 'client-opencode', 'client-junie', 'client-kiro', 'client-codex');
             if (this._currentClientType) wi.classList.add('client-' + this._currentClientType);
         }
         wi?.show();
@@ -741,6 +742,15 @@ const ChatController = {
                 break;
             }
         }
+    },
+
+    getAutoScroll(): boolean {
+        return this._container()?.autoScroll ?? true;
+    },
+
+    setAutoScroll(enabled: boolean): void {
+        const container = this._container();
+        if (container) container.autoScroll = enabled;
     },
 
 };

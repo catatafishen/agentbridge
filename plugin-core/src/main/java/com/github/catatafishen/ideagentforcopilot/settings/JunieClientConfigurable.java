@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient;
 import com.github.catatafishen.ideagentforcopilot.agent.junie.JunieKeyStore;
+import com.github.catatafishen.ideagentforcopilot.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
@@ -35,6 +36,7 @@ public final class JunieClientConfigurable implements Configurable {
     private JBLabel statusLabel;
     private JBTextField binaryPathField;
     private JBPasswordField authTokenField;
+    private @Nullable ThemeColorComboBox bubbleColorCombo;
     private JPanel panel;
 
     @Override
@@ -48,6 +50,8 @@ public final class JunieClientConfigurable implements Configurable {
         authTokenField = new JBPasswordField();
         authTokenField.getEmptyText().setText("Optional: enter token to bypass CLI auth");
         authTokenField.setToolTipText("Generate a token at https://junie.jetbrains.com/cli. Leave empty to use CLI credentials.");
+
+        bubbleColorCombo = new ThemeColorComboBox();
 
         HyperlinkLabel authLink = new HyperlinkLabel("Generate an auth token at junie.jetbrains.com/cli");
         authLink.setHyperlinkTarget("https://junie.jetbrains.com/cli");
@@ -79,6 +83,8 @@ public final class JunieClientConfigurable implements Configurable {
             .addSeparator(8)
             .addLabeledComponent("Junie binary:", binaryPathField)
             .addTooltip("Leave empty to auto-detect on PATH.")
+            .addLabeledComponent("Bubble color:", bubbleColorCombo)
+            .addTooltip("Choose a theme-aware accent color for message bubbles when using Junie.")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -90,8 +96,14 @@ public final class JunieClientConfigurable implements Configurable {
         if (binaryPathField == null || authTokenField == null) return false;
         String storedPath = nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID));
         String storedToken = nullToEmpty(JunieKeyStore.getAuthToken());
-        return !binaryPathField.getText().trim().equals(storedPath)
-            || !new String(authTokenField.getPassword()).equals(storedToken);
+        if (!binaryPathField.getText().trim().equals(storedPath)) return true;
+        if (!new String(authTokenField.getPassword()).equals(storedToken)) return true;
+        if (bubbleColorCombo != null) {
+            ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
+            String key = tc != null ? tc.name() : null;
+            if (!java.util.Objects.equals(key, AcpClient.loadAgentBubbleColorKey(AGENT_ID))) return true;
+        }
+        return false;
     }
 
     @Override
@@ -108,6 +120,11 @@ public final class JunieClientConfigurable implements Configurable {
             JunieKeyStore.setAuthToken(null);
         } else {
             JunieKeyStore.setAuthToken(newToken);
+        }
+
+        if (bubbleColorCombo != null) {
+            ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
+            AcpClient.saveAgentBubbleColorKey(AGENT_ID, tc != null ? tc.name() : null);
         }
 
         // Restart Junie if auth token changed (so new token is picked up by the process)
@@ -141,6 +158,9 @@ public final class JunieClientConfigurable implements Configurable {
         refreshStatusAsync();
         binaryPathField.setText(nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID)));
         authTokenField.setText(nullToEmpty(JunieKeyStore.getAuthToken()));
+        if (bubbleColorCombo != null) {
+            bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)));
+        }
     }
 
     @Override
@@ -148,6 +168,7 @@ public final class JunieClientConfigurable implements Configurable {
         statusLabel = null;
         binaryPathField = null;
         authTokenField = null;
+        bubbleColorCombo = null;
         panel = null;
     }
 

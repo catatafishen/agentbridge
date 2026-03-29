@@ -17,6 +17,7 @@ const banner = `/*
 `;
 
 async function build() {
+    // 1. Chat components — custom elements + ChatController (loaded first)
     await esbuild.build({
         entryPoints: ['src/index.ts'],
         bundle: true,
@@ -26,12 +27,32 @@ async function build() {
         target: 'es2022',
     });
 
-    // Prepend banner to the output file
-    const outputPath = 'dist/chat-components.js';
-    const content = fs.readFileSync(outputPath, 'utf8');
-    fs.writeFileSync(outputPath, banner + content);
+    // 2. Web app — PWA page logic (loaded after chat-components)
+    await esbuild.build({
+        entryPoints: ['src/web-app.ts'],
+        bundle: true,
+        format: 'iife',
+        globalName: '__webApp',
+        outfile: 'dist/web-app.js',
+        target: 'es2022',
+    });
 
-    console.log('✓ Built with header comment');
+    // 3. Service worker — runs in SW context, no DOM
+    await esbuild.build({
+        entryPoints: ['src/sw.ts'],
+        bundle: true,
+        format: 'iife',
+        outfile: 'dist/sw.js',
+        target: 'es2022',
+    });
+
+    // Prepend banner to JS output files
+    for (const file of ['dist/chat-components.js', 'dist/web-app.js', 'dist/sw.js']) {
+        const content = fs.readFileSync(file, 'utf8');
+        fs.writeFileSync(file, banner + content);
+    }
+
+    console.log('✓ Built: chat-components.js, web-app.js, sw.js');
 }
 
 build().catch(() => process.exit(1));

@@ -909,4 +909,64 @@ public final class PlatformApiCompat {
         @NotNull com.intellij.ide.ui.LafManager lafManager) {
         return kotlin.sequences.SequencesKt.toList(lafManager.getInstalledThemes());
     }
+
+    /**
+     * Creates an {@link com.intellij.xdebugger.XExpression} from plain text (language-agnostic, expression mode).
+     *
+     * <b>Why extracted:</b> {@code XExpression} is a public interface but the platform provides no
+     * public factory. The previous approach used the internal {@code XExpressionImpl.fromText()};
+     * this implementation avoids that by implementing the interface directly, using only
+     * public API ({@code XExpression}, {@code EvaluationMode}).
+     */
+    public static com.intellij.xdebugger.XExpression createXExpression(@NotNull String text) {
+        return new com.intellij.xdebugger.XExpression() {
+            @Override
+            public @NotNull String getExpression() {
+                return text;
+            }
+
+            @Override
+            public @Nullable com.intellij.lang.Language getLanguage() {
+                return null;
+            }
+
+            @Override
+            public @Nullable com.intellij.xdebugger.evaluation.EvaluationMode getMode() {
+                return com.intellij.xdebugger.evaluation.EvaluationMode.EXPRESSION;
+            }
+
+            @Override
+            public @Nullable String getCustomInfo() {
+                return null;
+            }
+        };
+    }
+
+    /**
+     * Returns all registered {@link com.intellij.xdebugger.breakpoints.XBreakpointType} extensions.
+     *
+     * <p><b>Why extracted:</b> {@code XBreakpointType.EXTENSION_POINT_NAME} is typed with a raw
+     * {@code XBreakpointType} generic, causing the IDE daemon to report "cannot resolve
+     * getExtensionList()" even though the method exists on {@code ExtensionPointName}. The Gradle
+     * build compiles cleanly.</p>
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static @NotNull java.util.List<com.intellij.xdebugger.breakpoints.XBreakpointType<?, ?>> listXBreakpointTypes() {
+        return (java.util.List) com.intellij.xdebugger.breakpoints.XBreakpointType.EXTENSION_POINT_NAME.getExtensionList();
+    }
+
+    /**
+     * Executes a {@link java.util.function.Supplier} inside a {@code WriteAction} block and
+     * returns the computed result.
+     *
+     * <p><b>Why extracted:</b> {@code WriteAction.computeAndWait(ThrowableComputable)} is not
+     * recognised as accepting a functional interface lambda by the IDE daemon (same annotation
+     * issue as {@link #writeActionRunAndWait}). Using an {@link java.util.concurrent.atomic.AtomicReference}
+     * and {@link #writeActionRunAndWait} sidesteps the false positive.</p>
+     */
+    public static <T> T writeActionComputeAndWait(@NotNull java.util.function.Supplier<T> supplier) throws Exception {
+        java.util.concurrent.atomic.AtomicReference<T> ref = new java.util.concurrent.atomic.AtomicReference<>();
+        writeActionRunAndWait(() -> ref.set(supplier.get()));
+        return ref.get();
+    }
 }

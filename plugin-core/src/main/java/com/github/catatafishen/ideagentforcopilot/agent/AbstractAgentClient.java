@@ -45,6 +45,13 @@ public abstract class AbstractAgentClient {
     public abstract void stop();
 
     /**
+     * Clear any persisted session/thread ID so the next session starts fresh.
+     * Called when the user explicitly starts a new conversation. Default: no-op.
+     */
+    public void clearPersistedSession() {
+    }
+
+    /**
      * Whether the agent process is alive and initialized.
      */
     public abstract boolean isConnected();
@@ -74,9 +81,37 @@ public abstract class AbstractAgentClient {
     public abstract String createSession(String cwd) throws Exception;
 
     /**
+     * Returns conversation history replayed by the agent during the most recent
+     * {@code session/load} call, or {@code null} if no history was replayed (or
+     * the session was created fresh via {@code session/new}).
+     * <p>
+     * When non-null and non-empty, the agent has conversation context from the
+     * loaded session and the UI layer does NOT need to inject a compressed summary.
+     * When null, injection should be used as a fallback.
+     */
+    public @Nullable List<SessionUpdate> getLoadedSessionHistory() {
+        return null;
+    }
+
+    /**
      * Cancel an in-progress prompt turn.
      */
     public abstract void cancelSession(String sessionId);
+
+    /**
+     * Drops the cached current session ID without sending any cancellation request.
+     * <p>
+     * Used after detecting a corrupted session (e.g. an agent that returns
+     * {@code end_turn} with no content). Clearing the cached ID forces the next
+     * {@link #createSession} call to open a fresh session via the full load/new
+     * flow instead of hitting the early-return "reuse" path.
+     * </p>
+     * <p>
+     * The default implementation is a no-op; subclasses with a cached session ID
+     * should override this method.
+     * </p>
+     */
+    public void dropCurrentSession() {}
 
     // ─── Prompts ─────────────────────────────────────
 

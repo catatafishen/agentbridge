@@ -1,11 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
 import com.github.catatafishen.ideagentforcopilot.psi.RunConfigurationService;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunConfigCrudRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunConfigCrudRenderer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Executes an existing run configuration by name.
@@ -34,13 +33,12 @@ public final class RunConfigurationTool extends ProjectTool {
         return "Execute an existing run configuration by name";
     }
 
-    
-
     @Override
     public @NotNull String kind() {
         return "edit";
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Run: {name}";
     }
@@ -48,7 +46,8 @@ public final class RunConfigurationTool extends ProjectTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-            {"name", TYPE_STRING, "Exact name of the run configuration"}
+            {"name", TYPE_STRING, "Exact name of the run configuration"},
+            {"wait_seconds", TYPE_INTEGER, "(Optional) Wait up to this many seconds for the run to complete (default: fire-and-forget). Use read_run_output after to get full output."}
         }, "name");
     }
 
@@ -59,6 +58,9 @@ public final class RunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        if (args.has("wait_seconds")) {
+            return runConfigService.runConfigurationAndWait(args);
+        }
         return runConfigService.runConfiguration(args);
     }
 }

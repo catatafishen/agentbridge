@@ -16,7 +16,6 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.stream.Collectors;
 
 /**
  * Lists, reads, and searches past conversation sessions from the chat history.
@@ -29,7 +28,9 @@ public final class SearchConversationHistoryTool extends EditorTool {
     private static final String PARAM_SINCE = "since";
     private static final String PARAM_UNTIL = "until";
     private static final String PARAM_LAST_N = "last_n";
+    private static final String PARAM_TURN_ID = "turn_id";
     private static final String PARAM_OFFSET = "offset";
+    private static final String CONVERSATION_CURRENT = "current";
     private static final String CONVERSATION_PREFIX = "conversation-";
     private static final String JSON_TITLE = "title";
     private static final String JSON_TIMESTAMP = "timestamp";
@@ -40,14 +41,16 @@ public final class SearchConversationHistoryTool extends EditorTool {
         Instant until;
         Integer lastN;
         Integer offset;
+        String turnId;
         int maxChars;
 
-        FilterOptions(String query, Instant since, Instant until, Integer lastN, Integer offset, int maxChars) {
+        FilterOptions(String query, Instant since, Instant until, Integer lastN, Integer offset, String turnId, int maxChars) {
             this.query = query != null ? query.toLowerCase(Locale.ROOT) : null;
             this.since = since;
             this.until = until;
             this.lastN = lastN;
             this.offset = offset;
+            this.turnId = turnId;
             this.maxChars = maxChars;
         }
     }
@@ -71,13 +74,12 @@ public final class SearchConversationHistoryTool extends EditorTool {
         return "List, read, and search past conversation sessions from the chat history";
     }
 
-    
-
     @Override
     public @NotNull String kind() {
         return "read";
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -86,9 +88,10 @@ public final class SearchConversationHistoryTool extends EditorTool {
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_QUERY, TYPE_STRING, "Text to search for across conversations (case-insensitive)"},
-            {"file", TYPE_STRING, "Conversation to read: 'current' for the active session, or an archive timestamp (e.g., '2026-03-04T15-30-00')"},
-            {PARAM_SINCE, TYPE_STRING, "Filter entries since this timestamp (ISO 8601, e.g., '2026-03-17T10:00:00Z')"},
-            {PARAM_UNTIL, TYPE_STRING, "Filter entries until this timestamp (ISO 8601)"},
+            {"file", TYPE_STRING, "Conversation identifier: 'current' for the active session, or an archive timestamp (e.g., '2026-03-04T15-30-00'). Not a filesystem path."},
+            {PARAM_TURN_ID, TYPE_STRING, "Turn ID from conversation summary (e.g. 't3'). Fetches that specific turn in full. Defaults to file='current'."},
+            {PARAM_SINCE, TYPE_STRING, "Filter entries since this time. Accepted: \"5m\", \"2h\", \"16:57:30\", \"2026-03-17\", \"2026-03-17 10:00:00\", \"2026-03-17T10:00:00Z\""},
+            {PARAM_UNTIL, TYPE_STRING, "Filter entries until this time. Same formats as since."},
             {PARAM_LAST_N, TYPE_INTEGER, "Number of turns (prompts) to return from the end"},
             {PARAM_OFFSET, TYPE_INTEGER, "Number of turns to skip from the end before returning last_n"},
             {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"}
@@ -113,12 +116,23 @@ public final class SearchConversationHistoryTool extends EditorTool {
         String file = args.has("file") ? args.get("file").getAsString() : null;
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
 
-        Instant since = parseTimestampParam(args, PARAM_SINCE);
-        Instant until = parseTimestampParam(args, PARAM_UNTIL);
+        Instant since;
+        Instant until;
+        try {
+            since = parseTimestampParam(args, PARAM_SINCE);
+            until = parseTimestampParam(args, PARAM_UNTIL);
+        } catch (IllegalArgumentException e) {
+            return "Error: " + e.getMessage();
+        }
+
         Integer lastN = args.has(PARAM_LAST_N) ? args.get(PARAM_LAST_N).getAsInt() : null;
         Integer offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : null;
+        String turnId = args.has(PARAM_TURN_ID) ? args.get(PARAM_TURN_ID).getAsString() : null;
 
-        FilterOptions options = new FilterOptions(query, since, until, lastN, offset, maxChars);
+        // Default to current conversation when only turn_id is specified
+        if (file == null && turnId != null) file = CONVERSATION_CURRENT;
+
+        FilterOptions options = new FilterOptions(query, since, until, lastN, offset, turnId, maxChars);
 
         if (file == null && query == null && since == null && until == null && lastN == null) {
             return listConversations(currentFile, archiveDir);
@@ -133,10 +147,11 @@ public final class SearchConversationHistoryTool extends EditorTool {
 
     private static Instant parseTimestampParam(JsonObject args, String param) {
         if (!args.has(param)) return null;
+        String value = args.get(param).getAsString();
         try {
-            return Instant.parse(args.get(param).getAsString());
-        } catch (Exception e) {
-            return null;
+            return com.github.catatafishen.ideagentforcopilot.psi.TimeArgParser.parseInstant(value);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("Invalid '" + param + "' value: " + e.getMessage());
         }
     }
 
@@ -144,7 +159,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
         StringBuilder sb = new StringBuilder();
         sb.append("Conversations:\n\n");
         if (currentFile.exists() && currentFile.length() > 10) {
-            sb.append("• current (").append(ToolUtils.formatFileSize(currentFile.length())).append(")\n");
+            sb.append("  current (").append(ToolUtils.formatFileSize(currentFile.length())).append(")\n");
         }
         if (archiveDir.exists()) {
             File[] archives = archiveDir.listFiles((d, n) -> n.endsWith(JSON_EXT));
@@ -152,7 +167,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
                 Arrays.sort(archives, Comparator.comparing(File::getName).reversed());
                 for (File f : archives) {
                     String name = f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
-                    sb.append("• ").append(name).append(" (").append(ToolUtils.formatFileSize(f.length())).append(")\n");
+                    sb.append("  ").append(name).append(" (").append(ToolUtils.formatFileSize(f.length())).append(")\n");
                 }
             }
         }
@@ -213,7 +228,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
                                               FilterOptions options,
                                               StringBuilder sb) {
         String label = f.equals(currentFile)
-            ? "current"
+            ? CONVERSATION_CURRENT
             : f.getName().replace(CONVERSATION_PREFIX, "").replace(JSON_EXT, "");
         String result = conversationJsonToText(f, options);
         if (result.isEmpty()) return 0;
@@ -228,7 +243,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
     }
 
     private static File resolveConversationFile(String name, File currentFile, File archiveDir) {
-        if ("current".equalsIgnoreCase(name)) return currentFile;
+        if (CONVERSATION_CURRENT.equalsIgnoreCase(name)) return currentFile;
         File direct = new File(archiveDir, CONVERSATION_PREFIX + name + JSON_EXT);
         if (direct.exists()) return direct;
         if (archiveDir.exists()) {
@@ -266,12 +281,10 @@ public final class SearchConversationHistoryTool extends EditorTool {
         if (options.since == null && options.until == null) return entries;
         return entries.stream()
             .filter(obj -> isWithinTimeRange(obj, options.since, options.until))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static List<JsonObject> filterByTurns(List<JsonObject> entries, FilterOptions options) {
-        if (options.lastN == null && options.offset == null) return entries;
-
         List<Integer> promptIndices = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             if ("prompt".equals(entries.get(i).get("type").getAsString())) {
@@ -279,19 +292,48 @@ public final class SearchConversationHistoryTool extends EditorTool {
             }
         }
 
+        if (options.turnId != null) {
+            return filterByTurnId(entries, promptIndices, options.turnId);
+        }
+
+        if (options.lastN == null && options.offset == null) return entries;
+
         int offset = options.offset != null ? options.offset : 0;
         int endPromptIdx = promptIndices.size() - 1 - offset;
-        if (endPromptIdx < 0) {
-            return Collections.emptyList();
-        }
+        if (endPromptIdx < 0) return Collections.emptyList();
 
         int lastN = options.lastN != null ? options.lastN : promptIndices.size();
         int startPromptIdx = Math.max(0, endPromptIdx - lastN + 1);
         int startIdx = promptIndices.get(startPromptIdx);
-        int endIdx = (endPromptIdx + 1 < promptIndices.size())
+        int endIdx = endPromptIdx + 1 < promptIndices.size()
             ? promptIndices.get(endPromptIdx + 1) - 1
             : entries.size() - 1;
         return entries.subList(startIdx, endIdx + 1);
+    }
+
+    private static List<JsonObject> filterByTurnId(List<JsonObject> entries,
+                                                   List<Integer> promptIndices, String turnId) {
+        int n = parseTurnNumber(turnId);
+        if (n <= 0 || n > promptIndices.size()) return Collections.emptyList();
+        int promptIdx = n - 1; // 0-based
+        int startIdx = promptIndices.get(promptIdx);
+        int endIdx = promptIdx + 1 < promptIndices.size()
+            ? promptIndices.get(promptIdx + 1) - 1
+            : entries.size() - 1;
+        return entries.subList(startIdx, endIdx + 1);
+    }
+
+    /**
+     * Parses a turn ID like "t3" or "3" into the 1-based turn number. Returns -1 on parse failure.
+     */
+    private static int parseTurnNumber(String turnId) {
+        String s = turnId.toLowerCase(Locale.ROOT).trim();
+        if (s.startsWith("t")) s = s.substring(1);
+        try {
+            return Integer.parseInt(s);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     private static String formatAndFilterEntries(List<JsonObject> entries, FilterOptions options) {
@@ -311,14 +353,12 @@ public final class SearchConversationHistoryTool extends EditorTool {
     }
 
     private static boolean isWithinTimeRange(JsonObject obj, Instant since, Instant until) {
-        String tsStr = obj.has("ts") ? obj.get("ts").getAsString() :
-            (obj.has(JSON_TIMESTAMP) ? obj.get(JSON_TIMESTAMP).getAsString() : null);
-        if (tsStr == null) return true; // Keep entries without timestamp? Or filter them out? Usually keep.
+        String tsKey = obj.has("ts") ? "ts" : JSON_TIMESTAMP;
+        if (!obj.has(tsKey)) return true;
+        String tsStr = obj.get(tsKey).getAsString();
         try {
             Instant ts = Instant.parse(tsStr);
-            if (since != null && ts.isBefore(since)) return false;
-            if (until != null && ts.isAfter(until)) return false;
-            return true;
+            return (since == null || !ts.isBefore(since)) && (until == null || !ts.isAfter(until));
         } catch (Exception e) {
             return true;
         }
@@ -360,7 +400,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
                 yield msg.isEmpty() ? null : "Status: " + msg;
             }
             case "separator" -> {
-                String ts = obj.has("timestamp") ? obj.get("timestamp").getAsString() : "";
+                String ts = obj.has(JSON_TIMESTAMP) ? obj.get(JSON_TIMESTAMP).getAsString() : "";
                 yield "--- Session " + formatTimestamp(ts) + " ---";
             }
             default -> null;

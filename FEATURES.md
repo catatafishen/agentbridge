@@ -216,7 +216,7 @@ Guide the agent mid-turn without interrupting its current task, or queue up task
 - **Enter** — while agent is running, sends a nudge (mid-turn guidance injected at the next tool
   call boundary); when idle, sends a normal prompt
 - **Ctrl+Enter** — force-stops the current turn and immediately sends a new prompt
-- **Ctrl+Shift+Enter** — sends the current prompt to a **message queue**. Queued messages are 
+- **Ctrl+Shift+Enter** — sends the current prompt to a **message queue**. Queued messages are
   handled one by one automatically at the end of the current turn.
 - **Unhandled nudge** — if the agent finishes its turn before consuming the nudge, it is
   automatically sent as a new prompt (no text lost)
@@ -243,6 +243,23 @@ screen.
   messages are missed
 - **Settings** — enable/disable and configure the port under
   _Settings → Tools → AgentBridge → Web Access_
+
+---
+
+## Cross-Client Session Restore
+
+Switch between AI agents without losing your conversation. AgentBridge maintains a universal
+session format that works across all supported clients — so your context travels with you.
+
+- **Seamless agent switching** — switch from GitHub Copilot to Claude, OpenCode, Junie, or Kiro
+  mid-project and pick up exactly where you left off
+- **Full context preserved** — the restored agent sees your entire conversation history: messages,
+  tool calls, code edits, and reasoning
+- **No re-prompting needed** — just switch and continue; the agent already knows what you were
+  working on
+- **Works across subscriptions** — use your Copilot subscription for one task, your Claude credits
+  for another, and switch back without starting over
+- **Confirmed working** — Claude CLI ✅ · Junie ✅ · OpenCode ✅ · Kiro ✅ · Copilot (workaround) 🔧
 
 ---
 

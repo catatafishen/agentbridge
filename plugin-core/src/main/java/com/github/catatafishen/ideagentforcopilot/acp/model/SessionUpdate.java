@@ -13,6 +13,7 @@ import java.util.List;
 public sealed interface SessionUpdate
     permits SessionUpdate.AgentMessageChunk,
     SessionUpdate.AgentThoughtChunk,
+    SessionUpdate.UserMessageChunk,
     SessionUpdate.ToolCall,
     SessionUpdate.ToolCallUpdate,
     SessionUpdate.TurnUsage,
@@ -175,6 +176,21 @@ public sealed interface SessionUpdate
     }
 
     /**
+     * User message replayed during {@code session/load}.
+     * Per ACP spec, agents replay user messages as {@code user_message_chunk}
+     * session updates when loading an existing session.
+     */
+    record UserMessageChunk(List<ContentBlock> content) implements SessionUpdate {
+        public String text() {
+            StringBuilder sb = new StringBuilder();
+            for (ContentBlock block : content) {
+                if (block instanceof ContentBlock.Text t) sb.append(t.text());
+            }
+            return sb.toString();
+        }
+    }
+
+    /**
      * A new tool call initiated by the agent.
      *
      * @param toolCallId          unique ID correlating with {@link ToolCallUpdate}
@@ -272,13 +288,10 @@ public sealed interface SessionUpdate
     ) implements SessionUpdate {
     }
 
-    /**
-     * Turn-level token and cost statistics.
-     */
     record TurnUsage(
         int inputTokens,
         int outputTokens,
-        double costUsd
+        @Nullable Double costUsd
     ) implements SessionUpdate {
     }
 

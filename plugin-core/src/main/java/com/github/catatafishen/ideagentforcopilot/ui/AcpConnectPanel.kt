@@ -1,11 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.github.catatafishen.ideagentforcopilot.bridge.TransportType
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
-import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
-import com.github.catatafishen.ideagentforcopilot.services.AgentProfile
-import com.github.catatafishen.ideagentforcopilot.services.McpHttpServer
-import com.github.catatafishen.ideagentforcopilot.services.McpServerControl
+import com.github.catatafishen.ideagentforcopilot.services.*
+import com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService
+import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
@@ -41,6 +39,23 @@ class AcpConnectPanel(
     companion object {
         private const val START_SERVER = "Start server"
         private const val STOP_SERVER = "Stop server"
+        private val SESSION_DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US)
+    }
+
+    /** Item model for the session resume dropdown. */
+    sealed class SessionChoice(val displayText: String) {
+        /** Resume the most recent session (default). */
+        class Latest(val record: SessionStoreV2.SessionRecord) :
+            SessionChoice("Resume: ${SESSION_DATE_FORMAT.format(Date(record.updatedAt))} (${record.agent})")
+
+        /** Start a fresh session without resuming. */
+        data object None : SessionChoice("None (fresh session)")
+
+        /** Resume a specific older session. */
+        class Older(val record: SessionStoreV2.SessionRecord) :
+            SessionChoice("${SESSION_DATE_FORMAT.format(Date(record.updatedAt))} (${record.agent})")
+
+        override fun toString(): String = displayText
     }
 
     private val agentManager = ActiveAgentManager.getInstance(project)
@@ -70,6 +85,7 @@ class AcpConnectPanel(
     // ACP controls
     private var acpSection: JComponent = JBPanel<JBPanel<*>>()
     private val profileCombo = ComboBox<AgentProfile>()
+    private val sessionCombo = ComboBox<SessionChoice>()
     private val connectButton = JButton("Connect")
     private val acpAutoConnectCheckbox = JBCheckBox("Auto-connect on startup")
     private val acpHintLabel = JBLabel("Start the tool server above first").apply {
@@ -256,6 +272,10 @@ class AcpConnectPanel(
         section.add(createProfileSelector())
         section.add(Box.createVerticalStrut(JBUI.scale(8)))
 
+        // Session resume selector
+        section.add(createSessionSelector())
+        section.add(Box.createVerticalStrut(JBUI.scale(8)))
+
         // Hint shown when MCP is not running
         section.add(acpHintLabel)
         section.add(Box.createVerticalStrut(JBUI.scale(12)))
@@ -318,6 +338,43 @@ class AcpConnectPanel(
         val active = profiles.find { it.id == activeId }
         if (active != null) {
             profileCombo.selectedItem = active
+        }
+    }
+
+    private fun createSessionSelector(): JComponent {
+        val panel = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+        }
+        panel.add(JBLabel("Resume session").apply {
+            font = JBUI.Fonts.smallFont()
+            foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
+            alignmentX = LEFT_ALIGNMENT
+        })
+        panel.add(Box.createVerticalStrut(JBUI.scale(4)))
+
+        refreshSessionCombo()
+        sessionCombo.renderer = SimpleListCellRenderer.create { label, value, _ ->
+            label.text = value?.displayText ?: ""
+        }
+        sessionCombo.alignmentX = LEFT_ALIGNMENT
+        sessionCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+        panel.add(sessionCombo)
+        return panel
+    }
+
+    private fun refreshSessionCombo() {
+        sessionCombo.removeAllItems()
+        val sessionStore = SessionStoreV2.getInstance(project)
+        val sessions = sessionStore.listSessions(project.basePath)
+
+        if (sessions.isNotEmpty()) {
+            sessionCombo.addItem(SessionChoice.Latest(sessions.first()))
+        }
+        sessionCombo.addItem(SessionChoice.None)
+        for (i in 1 until sessions.size) {
+            sessionCombo.addItem(SessionChoice.Older(sessions[i]))
         }
     }
 
@@ -532,20 +589,66 @@ class AcpConnectPanel(
 
         val profileId = selectedProfile.id
 
-        // ANTHROPIC_DIRECT profiles call the API directly — no subprocess start command needed.
-        val needsStartCommand = selectedProfile.transportType != TransportType.ANTHROPIC_DIRECT
-        val cmd = if (needsStartCommand) agentManager.getCustomAcpCommandFor(profileId) else ""
-        if (needsStartCommand && cmd.isBlank()) {
+        val cmd = agentManager.getCustomAcpCommandFor(profileId)
+        if (cmd.isBlank()) {
             statusBanner.showError("No start command configured for ${selectedProfile.displayName} — check Settings.")
             return
         }
 
         val customCommand = if (cmd.isNotBlank() && cmd != selectedProfile.defaultStartCommand) cmd else null
 
+        // Apply session selection: clear or set the resume session ID
+        applySessionChoice(profileId)
+
         statusBanner.dismissCurrent()
         connectButton.isEnabled = false
         connectButton.text = "Connecting\u2026"
         onConnect(profileId, customCommand)
+    }
+
+    private fun applySessionChoice(profileId: String) {
+        val settings = GenericSettings(profileId, project)
+        val sameAgent = agentManager.activeProfileId == profileId
+        val sessionSwitch = SessionSwitchService.getInstance(project)
+
+        when (val choice = sessionCombo.selectedItem as? SessionChoice) {
+            is SessionChoice.None -> {
+                settings.resumeSessionId = null
+                // Clear Claude CLI resume state so it starts fresh (no --resume).
+                if (sameAgent) sessionSwitch.clearClaudeResumeState()
+            }
+
+            is SessionChoice.Latest -> {
+                // Re-export the current session so the JSONL has the correct last-prompt.
+                // Without this, a stale export (e.g. from a previous IDE session) would be
+                // reused and Claude CLI could branch from the wrong message.
+                if (sameAgent) sessionSwitch.exportForRestart(profileId)
+            }
+
+            is SessionChoice.Older -> {
+                switchCurrentSession(choice.record.id)
+                settings.resumeSessionId = null
+                // Export the older session to Claude CLI format. switchCurrentSession()
+                // already updated .current-session-id, so exportForRestart() will pick
+                // up the correct session. For agent switches, onAgentSwitch() handles this.
+                if (sameAgent) sessionSwitch.exportForRestart(profileId)
+            }
+
+            null -> { /* no selection — keep defaults */
+            }
+        }
+    }
+
+    private fun switchCurrentSession(sessionId: String) {
+        val basePath = project.basePath ?: return
+        val sessionsDir = java.io.File(basePath, ".agent-work/sessions")
+        val currentIdFile = java.io.File(sessionsDir, ".current-session-id")
+        try {
+            sessionsDir.mkdirs()
+            currentIdFile.writeText(sessionId)
+        } catch (e: Exception) {
+            statusBanner.showError("Failed to switch session: ${e.message}")
+        }
     }
 
     // ── Public API for AgenticCopilotToolWindowContent ──
@@ -610,6 +713,7 @@ class AcpConnectPanel(
             connectButton.isEnabled = true
             connectButton.text = "Connect"
             refreshProfileCombo()
+            refreshSessionCombo()
         }
     }
 

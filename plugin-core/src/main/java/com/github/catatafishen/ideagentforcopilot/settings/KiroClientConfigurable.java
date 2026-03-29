@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient;
+import com.github.catatafishen.ideagentforcopilot.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
@@ -12,6 +13,7 @@ import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -31,6 +33,7 @@ public final class KiroClientConfigurable implements Configurable {
 
     private JBLabel statusLabel;
     private JBTextField binaryPathField;
+    private @Nullable ThemeColorComboBox bubbleColorCombo;
     private JPanel panel;
 
     @Override
@@ -40,6 +43,8 @@ public final class KiroClientConfigurable implements Configurable {
         binaryPathField = new JBTextField();
         binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
         binaryPathField.setToolTipText("Absolute path to the kiro-cli binary. Leave empty to find it on PATH.");
+
+        bubbleColorCombo = new ThemeColorComboBox();
 
         HyperlinkLabel docsLink = new HyperlinkLabel("Kiro CLI documentation at kiro.dev/docs/cli/acp");
         docsLink.setHyperlinkTarget("https://kiro.dev/docs/cli/acp/");
@@ -56,6 +61,8 @@ public final class KiroClientConfigurable implements Configurable {
             .addSeparator(8)
             .addLabeledComponent("Kiro binary:", binaryPathField)
             .addTooltip("Leave empty to auto-detect on PATH.")
+            .addLabeledComponent("Bubble color:", bubbleColorCombo)
+            .addTooltip("Choose a theme-aware accent color for message bubbles when using Kiro.")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -66,13 +73,23 @@ public final class KiroClientConfigurable implements Configurable {
     public boolean isModified() {
         if (binaryPathField == null) return false;
         String stored = nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID));
-        return !binaryPathField.getText().trim().equals(stored);
+        if (!binaryPathField.getText().trim().equals(stored)) return true;
+        if (bubbleColorCombo != null) {
+            ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
+            String key = tc != null ? tc.name() : null;
+            if (!java.util.Objects.equals(key, AcpClient.loadAgentBubbleColorKey(AGENT_ID))) return true;
+        }
+        return false;
     }
 
     @Override
     public void apply() {
         if (binaryPathField == null) return;
         AcpClient.saveCustomBinaryPath(AGENT_ID, binaryPathField.getText().trim());
+        if (bubbleColorCombo != null) {
+            ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
+            AcpClient.saveAgentBubbleColorKey(AGENT_ID, tc != null ? tc.name() : null);
+        }
     }
 
     @Override
@@ -80,12 +97,16 @@ public final class KiroClientConfigurable implements Configurable {
         if (binaryPathField == null) return;
         refreshStatusAsync();
         binaryPathField.setText(nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID)));
+        if (bubbleColorCombo != null) {
+            bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)));
+        }
     }
 
     @Override
     public void disposeUIResources() {
         statusLabel = null;
         binaryPathField = null;
+        bubbleColorCombo = null;
         panel = null;
     }
 

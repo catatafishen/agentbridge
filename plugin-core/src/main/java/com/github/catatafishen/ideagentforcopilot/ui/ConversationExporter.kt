@@ -50,45 +50,118 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
 
     /**
      * Produce a compressed summary of the conversation for context injection.
-     * Omits thinking blocks, truncates long responses, and caps total size.
+     *
+     * - Groups entries into named turns (t1, t2, …).
+     * - Last 3 turns: full user input + full agent text.
+     * - Older turns: first 500 chars of each, marked as truncated.
+     * - Tool calls, thoughts, sub-agents: replaced with count markers, e.g. [5 tool calls, 2 thoughts].
+     * - Builds from newest → oldest within [maxChars] budget.
      */
     fun getCompressedSummary(maxChars: Int = 8000): String {
-        if (entries.isEmpty()) return ""
-        val sb = StringBuilder()
-        sb.appendLine("[Previous conversation summary]")
-        for (e in entries) when (e) {
-            is EntryData.Prompt -> sb.appendLine("User: ${e.text}")
-            is EntryData.Text -> {
-                val raw = e.raw.toString().trim()
-                if (raw.isNotEmpty()) {
-                    val truncated = if (raw.length > 600) raw.take(600) + "...[truncated]" else raw
-                    sb.appendLine("Agent: $truncated")
+        val turns = groupIntoTurns()
+        if (turns.isEmpty()) return ""
+
+        val totalTurns = turns.size
+        val recentFullTurns = 3
+
+        val blocks = ArrayDeque<String>()
+        var usedChars = 0
+
+        for (i in turns.indices.reversed()) {
+            val isFull = i >= totalTurns - recentFullTurns
+            val block = formatTurnForSummary(turns[i], full = isFull)
+            if (usedChars + block.length > maxChars && blocks.isNotEmpty()) break
+            blocks.addFirst(block)
+            usedChars += block.length
+        }
+
+        val shown = blocks.size
+        val hint = "Use search_conversation_history(file='current', turn_id='tN') to read any turn in full."
+        val header = if (shown < totalTurns) {
+            "[Previous conversation: $totalTurns turns. Showing $shown most recent. $hint]\n\n"
+        } else {
+            "[Previous conversation: $totalTurns turn${if (totalTurns > 1) "s" else ""}. $hint]\n\n"
+        }
+        return header + blocks.joinToString("\n")
+    }
+
+    private data class TurnData(
+        val id: String,
+        val userText: String,
+        val agentText: String,
+        val toolCallCount: Int,
+        val thinkingCount: Int,
+        val subAgentCount: Int,
+    )
+
+    private fun groupIntoTurns(): List<TurnData> {
+        val turns = mutableListOf<TurnData>()
+        var currentPrompt: EntryData.Prompt? = null
+        val agentTextBuf = StringBuilder()
+        var toolCount = 0
+        var thinkCount = 0
+        var subAgentCount = 0
+
+        fun flush() {
+            val p = currentPrompt ?: return
+            turns.add(
+                TurnData(
+                    id = "t${turns.size + 1}",
+                    userText = p.text,
+                    agentText = agentTextBuf.toString().trim(),
+                    toolCallCount = toolCount,
+                    thinkingCount = thinkCount,
+                    subAgentCount = subAgentCount,
+                )
+            )
+        }
+
+        for (e in entries) {
+            when (e) {
+                is EntryData.Prompt -> {
+                    flush()
+                    currentPrompt = e
+                    agentTextBuf.clear()
+                    toolCount = 0
+                    thinkCount = 0
+                    subAgentCount = 0
+                }
+
+                is EntryData.Text -> agentTextBuf.append(e.raw)
+                is EntryData.ToolCall -> toolCount++
+                is EntryData.Thinking -> thinkCount++
+                is EntryData.SubAgent -> subAgentCount++
+                is EntryData.ContextFiles,
+                is EntryData.SessionSeparator,
+                is EntryData.Status -> { /* not relevant for turn grouping */
                 }
             }
-
-            is EntryData.ToolCall -> {
-                val info = TOOL_DISPLAY_INFO[e.title]
-                val name = info?.displayName ?: e.title
-                sb.appendLine(name)
-            }
-
-            is EntryData.SubAgent -> {
-                val info = SUB_AGENT_INFO[e.agentType]
-                sb.appendLine("${info?.displayName ?: e.agentType} — ${e.description}")
-            }
-
-            is EntryData.ContextFiles -> sb.appendLine("Context: ${e.files.joinToString(", ") { it.first }}")
-            is EntryData.SessionSeparator -> sb.appendLine("--- ${formatTimestamp(e.timestamp)} ---")
-            is EntryData.Thinking -> { /* Thinking entries are rendered in HTML only */
-            }
-
-            is EntryData.Status -> { /* Status entries are rendered in HTML only */
-            }
         }
-        val result = sb.toString()
-        if (result.length <= maxChars) return result
-        return "[Previous conversation summary - trimmed to recent]\n..." +
-            result.substring(result.length - maxChars + 60)
+        flush()
+        return turns
+    }
+
+    private fun formatTurnForSummary(turn: TurnData, full: Boolean): String {
+        val sb = StringBuilder()
+        sb.appendLine("[${turn.id}] User: ${truncateField(turn.userText, full, "use turn_id='${turn.id}' for full")}")
+        if (turn.agentText.isNotEmpty()) {
+            sb.appendLine("Agent: ${truncateField(turn.agentText, full, "truncated")}")
+        }
+        val markerLine = buildMarkerLine(turn)
+        if (markerLine != null) sb.appendLine(markerLine)
+        return sb.toString()
+    }
+
+    private fun truncateField(text: String, full: Boolean, hint: String): String =
+        if (full || text.length <= 500) text else text.take(500) + "…[$hint]"
+
+    private fun buildMarkerLine(turn: TurnData): String? {
+        val markers = buildList {
+            if (turn.toolCallCount > 0) add("${turn.toolCallCount} tool call${if (turn.toolCallCount > 1) "s" else ""}")
+            if (turn.thinkingCount > 0) add("${turn.thinkingCount} thinking block${if (turn.thinkingCount > 1) "s" else ""}")
+            if (turn.subAgentCount > 0) add("${turn.subAgentCount} sub-agent${if (turn.subAgentCount > 1) "s" else ""}")
+        }
+        return if (markers.isNotEmpty()) "[${markers.joinToString(", ")}]" else null
     }
 
     /** Returns the conversation as a self-contained HTML document */

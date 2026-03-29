@@ -80,6 +80,7 @@ class AcpMessageParser {
         return switch (type) {
             case "agent_message_chunk" -> parseMessageChunk(params);
             case "agent_thought_chunk" -> parseThoughtChunk(params);
+            case "user_message_chunk" -> parseUserMessageChunk(params);
             case "tool_call" -> parseToolCall(params);
             case "tool_call_update" -> parseToolCallUpdate(params);
             case "plan" -> parsePlan(params);
@@ -102,6 +103,10 @@ class AcpMessageParser {
 
     private SessionUpdate.AgentThoughtChunk parseThoughtChunk(JsonObject params) {
         return new SessionUpdate.AgentThoughtChunk(parseContentBlocks(params));
+    }
+
+    private SessionUpdate.UserMessageChunk parseUserMessageChunk(JsonObject params) {
+        return new SessionUpdate.UserMessageChunk(parseContentBlocks(params));
     }
 
     private SessionUpdate.ToolCall parseToolCall(JsonObject params) {
@@ -212,10 +217,13 @@ class AcpMessageParser {
 
     private SessionUpdate.TurnUsage parseUsageUpdate(JsonObject params) {
         int used = params.has("used") ? params.get("used").getAsInt() : 0;
-        double cost = 0.0;
+        Double cost = null;
         if (params.has("cost") && params.get("cost").isJsonObject()) {
             JsonObject costObj = params.getAsJsonObject("cost");
-            cost = costObj.has("amount") ? costObj.get("amount").getAsDouble() : 0.0;
+            JsonElement amountEl = costObj.get("amount");
+            if (amountEl != null && amountEl.isJsonPrimitive()) {
+                cost = amountEl.getAsDouble();
+            }
         }
         return new SessionUpdate.TurnUsage(used, 0, cost);
     }

@@ -293,11 +293,14 @@ public final class ChatWebServer implements Disposable {
         server.createContext("/", this::handleRoot);
         server.createContext("/chat.css", ex -> serveClasspath(ex, "/chat/chat.css", "text/css; charset=utf-8"));
         server.createContext("/chat.bundle.js", ex -> serveClasspath(ex, "/chat/chat-components.js", "application/javascript; charset=utf-8"));
+        server.createContext("/web-app.js", ex -> serveClasspath(ex, "/chat/web-app.js", "application/javascript; charset=utf-8"));
+        server.createContext("/web-app.css", ex -> serveClasspath(ex, "/chat/web-app.css", "text/css; charset=utf-8"));
         server.createContext("/icon.svg", this::handleIconSvg);
         server.createContext("/icon-192.png", ex -> handleIconPng(ex, 192));
         server.createContext("/icon-512.png", ex -> handleIconPng(ex, 512));
-        server.createContext("/manifest.json", this::handleManifest);
-        server.createContext("/sw.js", this::handleServiceWorker);
+        server.createContext("/badge-96.png", this::handleBadgePng);
+        server.createContext("/manifest.json", ex -> serveClasspath(ex, "/chat/manifest.json", "application/json; charset=utf-8"));
+        server.createContext("/sw.js", ex -> serveClasspath(ex, "/chat/sw.js", "application/javascript; charset=utf-8"));
         server.createContext("/cert.crt", this::handleCert);
         server.createContext("/events", this::handleSse);
         server.createContext("/state", this::handleState);
@@ -774,81 +777,6 @@ public final class ChatWebServer implements Disposable {
         exchange.close();
     }
 
-    private void handleManifest(HttpExchange exchange) throws IOException {
-        String manifest = "{"
-            + "\"name\":\"AgentBridge\","
-            + "\"short_name\":\"AgentBridge\","
-            + "\"id\":\"/\","
-            + "\"start_url\":\"/\","
-            + "\"scope\":\"/\","
-            + "\"display\":\"standalone\","
-            + "\"theme_color\":\"#1e1f22\","
-            + "\"background_color\":\"#1e1f22\","
-            + "\"icons\":["
-            + "{\"src\":\"/icon-192.png\",\"sizes\":\"192x192\",\"type\":\"image/png\",\"purpose\":\"any maskable\"},"
-            + "{\"src\":\"/icon-512.png\",\"sizes\":\"512x512\",\"type\":\"image/png\",\"purpose\":\"any maskable\"},"
-            + "{\"src\":\"/icon.svg\",\"sizes\":\"any\",\"type\":\"image/svg+xml\"}"
-            + "]}";
-        sendJson(exchange, manifest);
-    }
-
-    private void handleServiceWorker(HttpExchange exchange) throws IOException {
-        String sw = "self.addEventListener('install',()=>self.skipWaiting());\n"
-            + "self.addEventListener('activate',e=>e.waitUntil(clients.claim()));\n"
-            + "self.addEventListener('fetch',e=>{"
-            + "if(new URL(e.request.url).pathname==='/events')return;"
-            + "const offlineHtml='<!DOCTYPE html><html><body style=\"font-family:sans-serif;padding:2em;text-align:center;background:#1a1a1a;color:#e0e0e0\">"
-            + "<h2>Connection failed</h2>"
-            + "<p>Could not reach the server. Make sure:</p>"
-            + "<ul style=\"text-align:left;display:inline-block\">"
-            + "<li>The IDE plugin is running</li>"
-            + "<li>Your phone is on the same network as your computer</li>"
-            + "<li>The CA certificate is installed (System &rarr; Encryption &rarr; CA certs)</li>"
-            + "</ul>"
-            + "<p><a href=\"/\" style=\"color:#7ab8ff\">Retry</a></p>"
-            + "</body></html>';"
-            + "e.respondWith(fetch(e.request).catch(()=>new Response(offlineHtml,{status:503,headers:{'Content-Type':'text/html'}})));"
-            + "});\n"
-            // Web Push: fetch event data from local server and show notification
-            + "self.addEventListener('push',e=>{\n"
-            + "  e.waitUntil((async()=>{\n"
-            + "    let title='AgentBridge',body='';\n"
-            + "    try{\n"
-            + "      const data=e.data?JSON.parse(e.data.text()):{};\n"
-            + "      title=data.title||'AgentBridge';\n"
-            + "      if(data.seq){\n"
-            + "        const r=await fetch('/state');\n"
-            + "        const st=await r.json();\n"
-            + "        const ev=(st.events||[]).slice().reverse().find(ev=>ev.notification&&ev.seq>=data.seq);\n"
-            + "        if(ev&&ev.body)body=ev.body;\n"
-            + "      }\n"
-            + "    }catch(err){}\n"
-            + "    await self.registration.showNotification(title,{body,icon:'/icon-192.png',tag:'agentbridge',requireInteraction:false});\n"
-            + "  })());\n"
-            + "});\n"
-            + "self.addEventListener('message',e=>{\n"
-            + "  if(e.data&&e.data.type==='SHOW_NOTIFICATION'){\n"
-            + "    const opts={body:e.data.body||'',icon:'/icon-192.png',tag:'agentbridge',requireInteraction:false};\n"
-            + "    if(e.data.actions&&e.data.actions.length)opts.actions=e.data.actions;\n"
-            + "    e.waitUntil(self.registration.showNotification(e.data.title||'AgentBridge',opts));\n"
-            + "  }\n"
-            + "});\n"
-            + "self.addEventListener('notificationclick',e=>{\n"
-            + "  e.notification.close();\n"
-            + "  e.waitUntil(clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{\n"
-            + "    const c=list.find(w=>w.url.startsWith(self.location.origin));\n"
-            + "    if(c)return c.focus();\n"
-            + "    return clients.openWindow('/');\n"
-            + "  }));\n"
-            + "});\n";
-        byte[] bytes = sw.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/javascript; charset=utf-8");
-        exchange.getResponseHeaders().set("Cache-Control", "no-cache");
-        exchange.sendResponseHeaders(200, bytes.length);
-        exchange.getResponseBody().write(bytes);
-        exchange.close();
-    }
-
     private void handleIconSvg(HttpExchange exchange) throws IOException {
         if (!"GET".equals(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
@@ -874,6 +802,88 @@ public final class ChatWebServer implements Disposable {
         exchange.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
         exchange.sendResponseHeaders(200, bytes.length);
         exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    // ── Badge icon (monochrome silhouette for Android status bar) ─────────────
+
+    private static final byte[] BADGE_96_PNG;
+
+    static {
+        BADGE_96_PNG = generateBadgePng(96);
+    }
+
+    private static byte[] generateBadgePng(int size) {
+        java.awt.image.BufferedImage img =
+            new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        java.awt.Graphics2D g = img.createGraphics();
+        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(java.awt.RenderingHints.KEY_STROKE_CONTROL, java.awt.RenderingHints.VALUE_STROKE_PURE);
+
+        // White silhouette on transparent background — Android masks to monochrome
+        double pad = size * 0.10;
+        double scale = (size - 2 * pad) / 13.0;
+        g.translate(pad, pad);
+        g.scale(scale, scale);
+
+        g.setColor(java.awt.Color.WHITE);
+
+        // Lightning bolt (filled)
+        java.awt.geom.Path2D.Double bolt = new java.awt.geom.Path2D.Double();
+        bolt.moveTo(7.925, 0);
+        bolt.lineTo(3.907, 6.5);
+        bolt.lineTo(6.98, 6.5);
+        bolt.lineTo(3.907, 13);
+        bolt.lineTo(9.58, 5.318);
+        bolt.lineTo(6.389, 5.318);
+        bolt.closePath();
+        g.fill(bolt);
+
+        // Corner circles (stroked)
+        float sw = 0.709f;
+        g.setStroke(new java.awt.BasicStroke(sw, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+        double r = 1.182;
+        double[][] corners = {{1.536, 1.536}, {11.464, 1.536}, {1.536, 11.464}, {11.464, 11.464}};
+        for (double[] c : corners) {
+            g.draw(new java.awt.geom.Ellipse2D.Double(c[0] - r, c[1] - r, r * 2, r * 2));
+        }
+
+        // Arms connecting corners to center
+        java.awt.geom.Path2D.Double arms = new java.awt.geom.Path2D.Double();
+        arms.moveTo(1.536, 2.718);
+        arms.lineTo(1.536, 5.082);
+        arms.lineTo(2.955, 6.5);
+        arms.moveTo(11.464, 2.718);
+        arms.lineTo(11.464, 5.082);
+        arms.lineTo(10.045, 6.5);
+        arms.moveTo(1.536, 10.282);
+        arms.lineTo(1.536, 7.918);
+        arms.lineTo(2.955, 6.5);
+        arms.moveTo(11.464, 10.282);
+        arms.lineTo(11.464, 7.918);
+        arms.lineTo(10.045, 6.5);
+        g.draw(arms);
+
+        g.dispose();
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try {
+            javax.imageio.ImageIO.write(img, "PNG", baos);
+        } catch (IOException ignored) {
+        }
+        return baos.toByteArray();
+    }
+
+    private void handleBadgePng(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        exchange.getResponseHeaders().set("Content-Type", "image/png");
+        exchange.getResponseHeaders().set("Cache-Control", "public, max-age=86400");
+        exchange.sendResponseHeaders(200, BADGE_96_PNG.length);
+        exchange.getResponseBody().write(BADGE_96_PNG);
         exchange.close();
     }
 
@@ -1253,23 +1263,19 @@ public final class ChatWebServer implements Disposable {
             + "<head>\n"
             + "  <meta charset=\"utf-8\">\n"
             + "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">\n"
-            + "  <title>AgentBridge \u2014 " + escHtml(projectName) + "</title>\n"
+            + "  <title>AgentBridge — " + escHtml(projectName) + "</title>\n"
             + "  <link rel=\"manifest\" href=\"/manifest.json\">\n"
             + "  <link rel=\"stylesheet\" href=\"/chat.css\">\n"
-            + "  <style>\n"
-            + "    :root { " + cssVars + " }\n"
-            + "  </style>\n"
-            + "  <style>\n"
-            + WEB_APP_CSS
-            + "  </style>\n"
+            + "  <link rel=\"stylesheet\" href=\"/web-app.css\">\n"
+            + "  <style>:root { " + cssVars + " }</style>\n"
             + "</head>\n"
             + "<body class=\"" + bodyClass + "\">\n"
-            + "  <div id=\"ab-offline\">Connection lost, reconnecting\u2026</div>\n"
+            + "  <div id=\"ab-offline\">Connection lost, reconnecting…</div>\n"
             + "  <div id=\"ab-header\">\n"
-            + "    <div id=\"ab-title\">AgentBridge \u2014 " + escHtml(projectName) + "</div>\n"
+            + "    <div id=\"ab-title\">AgentBridge — " + escHtml(projectName) + "</div>\n"
             + "    <div id=\"ab-model\"></div>\n"
-            + "    <div id=\"ab-status\" title=\"Connecting\u2026\"></div>\n"
-            + "    <button id=\"ab-menu-btn\" aria-label=\"Menu\" title=\"Menu\">\u2630</button>\n"
+            + "    <div id=\"ab-status\" title=\"Connecting…\"></div>\n"
+            + "    <button id=\"ab-menu-btn\" aria-label=\"Menu\" title=\"Menu\">☰</button>\n"
             + "  </div>\n"
             + "  <div id=\"ab-menu\" hidden>\n"
             + "    <div id=\"ab-menu-version\"></div>\n"
@@ -1277,9 +1283,9 @@ public final class ChatWebServer implements Disposable {
             + "      <label id=\"ab-menu-model-label\">Model</label>\n"
             + "      <select id=\"ab-menu-model\"></select>\n"
             + "    </div>\n"
-            + "    <button id=\"ab-menu-disconnect\">\u2715\ufe0f Disconnect ACP</button>\n"
+            + "    <button id=\"ab-menu-disconnect\">✕️ Disconnect ACP</button>\n"
             + "    <div class=\"ab-menu-sep\"></div>\n"
-            + "    <button id=\"ab-menu-reload\">\ud83d\udd04 Hard reload</button>\n"
+            + "    <button id=\"ab-menu-reload\">\uD83D\uDD04 Hard reload</button>\n"
             + "  </div>\n"
             + "  <div id=\"ab-connect-page\" hidden>\n"
             + "    <div id=\"ab-connect-wrapper\">\n"
@@ -1310,14 +1316,12 @@ public final class ChatWebServer implements Disposable {
             + "  </div>\n"
             + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
             + "  <div id=\"ab-footer\">\n"
-            + "    <textarea id=\"ab-input\" rows=\"1\" placeholder=\"Message\u2026\" enterkeyhint=\"send\"></textarea>\n"
+            + "    <textarea id=\"ab-input\" rows=\"1\" placeholder=\"Message…\" enterkeyhint=\"send\"></textarea>\n"
             + "    <button id=\"ab-send\">" + iconSvg + "<span>Send</span></button>\n"
             + "  </div>\n"
             + "  <script src=\"/chat.bundle.js\"></script>\n"
-            + "  <script>\n"
-            + "    window.ICON_SVG = " + escJs(iconSvg) + ";\n"
-            + WEB_APP_JS
-            + "  </script>\n"
+            + "  <script>window.ICON_SVG = " + escJs(iconSvg) + ";</script>\n"
+            + "  <script src=\"/web-app.js\"></script>\n"
             + "</body>\n"
             + "</html>\n";
     }
@@ -1329,336 +1333,6 @@ public final class ChatWebServer implements Disposable {
     private static String escJs(String s) {
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r") + "\"";
     }
-
-    // ── Web app CSS ───────────────────────────────────────────────────────────
-
-    private static final String WEB_APP_CSS = ""
-        + "html,body{height:100%;margin:0;padding:0;background:var(--bg);color:var(--fg);overflow:hidden;}\n"
-        + "body{display:flex;flex-direction:column;height:100dvh;font-family:var(--font-family);font-size:var(--font-size);}\n"
-        + "#ab-offline{display:none;position:fixed;top:48px;left:0;right:0;background:var(--error);color:#fff;text-align:center;padding:4px 8px;font-size:.85em;z-index:200;}\n"
-        + "#ab-offline.visible{display:block;}\n"
-        + "#ab-header{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--fg-a16);background:var(--bg);min-height:36px;}\n"
-        + "#ab-title{font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}\n"
-        + "#ab-model{font-size:.82em;color:var(--fg-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;}\n"
-        + "#ab-status{width:8px;height:8px;border-radius:50%;background:var(--fg-a16);flex:0 0 8px;transition:background .3s;}\n"
-        + "#ab-status.connected{background:var(--kind-execute);}\n"
-        + "#ab-status.running{background:var(--agent);animation:ab-pulse 1.5s infinite;}\n"
-        + "@keyframes ab-pulse{0%,100%{opacity:1}50%{opacity:.35}}\n"
-        + "#ab-chat{flex:1;overflow:hidden;position:relative;}\n"
-        + "chat-container{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:6px 8px;box-sizing:border-box;}\n"
-        + "#ab-footer{flex:0 0 auto;border-top:1px solid var(--fg-a16);display:flex;align-items:flex-end;background:var(--bg);}\n"
-        + "#ab-input{flex:1;border:0;background:var(--fg-a05);color:var(--fg);padding:6px 8px;font:inherit;resize:none;min-height:36px;max-height:120px;overflow-y:auto;outline:none;}\n"
-        + "#ab-send{border:none;padding:6px 10px;cursor:pointer;font:inherit;background:var(--user-a12);color:var(--user);font-size:.88em;white-space:nowrap;height:100%;display:flex;align-items:center;}\n"
-        + "#ab-send:hover{background:var(--user-a16);}\n"
-        + "#ab-nudge{border:none;border-radius:var(--r-md);padding:6px 10px;cursor:pointer;font:inherit;background:var(--tool-a08);color:var(--tool);font-size:.88em;white-space:nowrap;}\n"
-        + "#ab-nudge:hover{background:var(--tool-a16);}\n"
-        + "#ab-send:disabled,#ab-nudge:disabled{opacity:.38;cursor:default;}\n"
-        + "/* Disable tool chip clicks in web context */\n"
-        + "tool-chip{pointer-events:none;}\n"
-        + "tool-chip .chip-expand{display:none;}\n"
-        + "/* Hamburger menu */\n"
-        + "#ab-menu-btn{border:none;background:transparent;color:var(--fg);cursor:pointer;font-size:1.1em;padding:2px 6px;border-radius:4px;line-height:1;flex:0 0 auto;}\n"
-        + "#ab-menu-btn:hover{background:var(--fg-a08);}\n"
-        + "#ab-menu{position:fixed;top:44px;right:8px;z-index:150;background:var(--bg);border:1px solid var(--fg-a16);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.25);min-width:200px;padding:8px 0;}\n"
-        + "#ab-menu-version{padding:6px 14px 8px;font-size:.82em;color:var(--fg-muted);border-bottom:1px solid var(--fg-a08);margin-bottom:4px;}\n"
-        + "#ab-menu-reload{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--fg);cursor:pointer;padding:7px 14px;font:inherit;font-size:.9em;}\n"
-        + "#ab-menu-reload:hover{background:var(--fg-a08);}\n"
-        + "#ab-menu-model-section{padding:6px 14px 8px;border-bottom:1px solid var(--fg-a08);}\n"
-        + "#ab-menu-model-label{display:block;font-size:.78em;color:var(--fg-muted);margin-bottom:4px;}\n"
-        + "#ab-menu-model{width:100%;background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:4px;padding:4px 6px;font:inherit;font-size:.88em;cursor:pointer;}\n"
-        + "#ab-menu-model:focus{outline:1px solid var(--user);}\n"
-        + "#ab-menu-disconnect{display:block;width:100%;text-align:left;border:none;background:transparent;color:var(--error,#e06c75);cursor:pointer;padding:7px 14px;font:inherit;font-size:.9em;}\n"
-        + "#ab-menu-disconnect:hover{background:var(--fg-a08);}\n"
-        + ".ab-menu-sep{height:1px;background:var(--fg-a08);margin:4px 0;}\n"
-        + "/* Connect page */\n"
-        + "#ab-connect-page{flex:1;display:none;align-items:center;justify-content:center;background:var(--bg);overflow:auto;padding:24px;}\n"
-        + "#ab-connect-page:not([hidden]){display:flex;}\n"
-        + "#ab-connect-wrapper{display:flex;flex-direction:column;gap:16px;width:min(360px,90vw);max-height:600px;}\n"
-        + "#ab-mcp-card,#ab-acp-card{display:flex;flex-direction:column;gap:8px;background:var(--bg);border:1px solid var(--fg-a16);border-radius:10px;padding:16px;}\n"
-        + ".ab-card-header{font-weight:600;font-size:1em;display:flex;align-items:center;justify-content:space-between;}\n"
-        + ".ab-card-content{display:flex;flex-direction:column;gap:8px;}\n"
-        + ".ab-status-row{display:flex;align-items:center;justify-content:space-between;gap:12px;}\n"
-        + ".ab-status-label{font-size:.85em;color:var(--fg-muted);min-width:60px;}\n"
-        + ".ab-status-indicator{display:flex;align-items:center;gap:6px;flex:1;}\n"
-        + ".ab-status-dot{width:10px;height:10px;border-radius:50%;background:var(--fg-a16);flex:0 0 10px;transition:background .3s;}\n"
-        + ".ab-status-dot.connected{background:var(--kind-execute);}\n"
-        + ".ab-status-dot.running{background:var(--agent);animation:ab-pulse 1.5s infinite;}\n"
-        + "#ab-mcp-text{font-size:.9em;color:var(--fg);}\n"
-        + ".ab-card-stop-btn{border:none;background:transparent;color:var(--error,#e06c75);cursor:pointer;font-size:.95em;padding:4px 8px;border-radius:4px;flex:0 0 auto;}\n"
-        + ".ab-card-stop-btn:hover{background:var(--fg-a08);}\n"
-        + "#ab-connect-profile{background:var(--fg-a05);color:var(--fg);border:1px solid var(--fg-a16);border-radius:6px;padding:7px 10px;font:inherit;cursor:pointer;width:100%;box-sizing:border-box;}\n"
-        + "#ab-connect-profile:focus{outline:1px solid var(--user);}\n"
-        + "#ab-connect-btn{border:none;border-radius:6px;padding:9px 16px;background:var(--user-a12);color:var(--user);cursor:pointer;font:inherit;font-weight:600;font-size:.95em;width:100%;}\n"
-        + "#ab-connect-btn:hover{background:var(--user-a16);}\n"
-        + "#ab-connect-btn:disabled{opacity:.4;cursor:default;}\n"
-        + "#ab-connect-status{font-size:.85em;color:var(--fg-muted);min-height:1.2em;}\n";
-
-    // ── Web app JS ────────────────────────────────────────────────────────────
-
-    private static final String WEB_APP_JS = ""
-        // Bridge: replaces native Kotlin bridge with fetch-based implementations
-        + "window._bridge={"
-        + "openFile:()=>{},"
-        + "openUrl:url=>window.open(url,'_blank'),"
-        + "setCursor:c=>{document.body.style.cursor=c;},"
-        + "loadMore:()=>webPost('/load-more',{}),"
-        + "quickReply:text=>webPost('/reply',{text}),"
-        + "permissionResponse:data=>{"
-        + "  const parts=data.split(':');const resp=parts.pop();const reqId=parts.join(':');"
-        + "  webPost('/permission',{reqId,response:resp});"
-        + "},"
-        + "openScratch:()=>{},"
-        + "showToolPopup:()=>{},"
-        + "cancelNudge:id=>webPost('/cancel-nudge',{id})"
-        + "};\n"
-        + "function webPost(path,body){return fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});}\n"
-        // DOM refs
-        + "const statusDot=document.getElementById('ab-status');\n"
-        + "const modelEl=document.getElementById('ab-model');\n"
-        + "const offlineEl=document.getElementById('ab-offline');\n"
-        + "const inputEl=document.getElementById('ab-input');\n"
-        + "const sendBtn=document.getElementById('ab-send');\n"
-        + "const chatEl=document.querySelector('chat-container');\n"
-        + "const menuBtn=document.getElementById('ab-menu-btn');\n"
-        + "const menuEl=document.getElementById('ab-menu');\n"
-        + "const menuVersionEl=document.getElementById('ab-menu-version');\n"
-        + "const menuReloadBtn=document.getElementById('ab-menu-reload');\n"
-        + "const menuModelSel=document.getElementById('ab-menu-model');\n"
-        + "const menuDisconnectBtn=document.getElementById('ab-menu-disconnect');\n"
-        + "const connectPageEl=document.getElementById('ab-connect-page');\n"
-        + "const connectProfileSel=document.getElementById('ab-connect-profile');\n"
-        + "const connectBtn=document.getElementById('ab-connect-btn');\n"
-        + "const connectStatusEl=document.getElementById('ab-connect-status');\n"
-        + "const connectStopBtn=document.getElementById('ab-connect-stop-btn');\n"
-        + "const mcpDot=document.getElementById('ab-mcp-dot');\n"
-        + "const mcpText=document.getElementById('ab-mcp-text');\n"
-        + "const chatAreaEl=document.getElementById('ab-chat');\n"
-        + "const footerEl=document.getElementById('ab-footer');\n"
-        // Auto-scroll: track whether user is near the bottom
-        + "let atBottom=true;\n"
-        + "chatEl.addEventListener('scroll',()=>{"
-        + "  atBottom=chatEl.scrollHeight-chatEl.scrollTop-chatEl.clientHeight<120;"
-        + "},{passive:true});\n"
-        + "function scrollToBottom(){chatEl.scrollTop=chatEl.scrollHeight;}\n"
-        // Track agent state via ChatController overrides
-        + "let agentRunning=false;\n"
-        + "const _origWI=ChatController.showWorkingIndicator.bind(ChatController);\n"
-        + "ChatController.showWorkingIndicator=function(){_origWI();agentRunning=true;updateButtons();};\n"
-        + "const _origFT=ChatController.finalizeTurn.bind(ChatController);\n"
-        + "ChatController.finalizeTurn=function(...a){_origFT(...a);agentRunning=false;updateButtons();};\n"
-        + "const _origCA=ChatController.cancelAllRunning.bind(ChatController);\n"
-        + "ChatController.cancelAllRunning=function(){_origCA();agentRunning=false;updateButtons();};\n"
-        // Track model display
-        + "const _origSCM=ChatController.setCurrentModel.bind(ChatController);\n"
-        + "ChatController.setCurrentModel=function(m){_origSCM(m);modelEl.textContent=m?m.substring(m.lastIndexOf('/')+1):'';syncModelSelect(m);};\n"
-        + "function updateButtons(){"
-        + "  statusDot.className=agentRunning?'running':'connected';"
-        + "  mcpDot.className=agentRunning?'running':'connected';"
-        + "  mcpText.textContent=agentRunning?'Running':'Ready';"
-        + "  connectStopBtn.hidden=!agentRunning;"
-        + "  sendBtn.innerHTML=window.ICON_SVG + '<span>' + (agentRunning?'Nudge':'Send') + '</span>';"
-        + "}\n"
-        + "ChatController.setClientType=(type,iconSvg)=>{"
-        + "  if(iconSvg)window.ICON_SVG=iconSvg.replace('<svg','<svg style=\"vertical-align:text-bottom;margin-right:4px\" fill=\"currentColor\" width=\"14\" height=\"14\"');"
-        + "  updateButtons();"
-        + "};\n"
-        // Connection state helpers
-        + "function showChatView(){"
-        + "  connectPageEl.hidden=true;"
-        + "  chatAreaEl.style.display='';"
-        + "  footerEl.style.display='';"
-        + "  menuDisconnectBtn.style.display='';"
-        + "  document.getElementById('ab-menu-model-section').style.display='';"
-        + "}\n"
-        + "function showConnectView(profiles){"
-        + "  chatAreaEl.style.display='none';"
-        + "  footerEl.style.display='none';"
-        + "  connectPageEl.hidden=false;"
-        + "  menuDisconnectBtn.style.display='none';"
-        + "  document.getElementById('ab-menu-model-section').style.display='none';"
-        + "  connectStatusEl.textContent='';"
-        + "  connectBtn.disabled=false;"
-        + "  connectBtn.textContent='Connect';"
-        + "  connectStopBtn.hidden=!agentRunning;"
-        + "  mcpDot.className=agentRunning?'running':'connected';"
-        + "  mcpText.textContent=agentRunning?'Running':'Ready';"
-        + "  if(profiles&&profiles.length){"
-        + "    const prev=connectProfileSel.value;"
-        + "    connectProfileSel.innerHTML=profiles.map(p=>`<option value=\"${p.id}\">${p.name}</option>`).join('');"
-        + "    if(prev)connectProfileSel.value=prev;"
-        + "  }"
-        + "}\n"
-        // Populate model select from info
-        + "function populateModels(models,currentModelId){"
-        + "  menuModelSel.innerHTML=(models||[]).map(m=>`<option value=\"${m.id}\">${m.name}</option>`).join('');"
-        + "  if(currentModelId)syncModelSelect(currentModelId);"
-        + "}\n"
-        + "function syncModelSelect(modelId){"
-        + "  if(modelId)menuModelSel.value=modelId;"
-        + "}\n"
-        // Info fetch
-        + "let _pluginVersion='';\n"
-        + "fetch('/info').then(r=>r.json()).then(info=>{"
-        + "  if(info.model){modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);}\n"
-        + "  agentRunning=info.running||false;updateButtons();"
-        + "  _pluginVersion=info.version||'';"
-        + "  populateModels(info.models,info.model);"
-        + "  if(info.connected)showChatView();else showConnectView(info.profiles);"
-        + "}).catch(()=>{});\n"
-        // Hamburger menu
-        + "menuBtn.addEventListener('click',e=>{"
-        + "  e.stopPropagation();"
-        + "  const open=!menuEl.hidden;"
-        + "  menuEl.hidden=open;"
-        + "  if(!open)menuVersionEl.textContent='Plugin v'+(_pluginVersion||'?');"
-        + "});\n"
-        + "document.addEventListener('click',e=>{"
-        + "  if(!menuEl.hidden&&!menuEl.contains(e.target))menuEl.hidden=true;"
-        + "});\n"
-        // Hard reload — navigate to /?v=timestamp to bypass HTTP cache
-        + "menuReloadBtn.addEventListener('click',()=>{"
-        + "  menuEl.hidden=true;"
-        + "  if('serviceWorker'in navigator){"
-        + "    navigator.serviceWorker.getRegistrations().then(regs=>Promise.all(regs.map(r=>r.unregister())));"
-        + "    if('caches'in window)caches.keys().then(keys=>Promise.all(keys.map(k=>caches.delete(k))));"
-        + "  }"
-        + "  setTimeout(()=>{location.href='/?v='+Date.now();},150);"
-        + "});\n"
-        // Model select change
-        + "menuModelSel.addEventListener('change',()=>{"
-        + "  const id=menuModelSel.value;if(id)webPost('/set-model',{modelId:id});"
-        + "});\n"
-        // Disconnect
-        + "menuDisconnectBtn.addEventListener('click',()=>{"
-        + "  menuEl.hidden=true;"
-        + "  webPost('/disconnect',{});"
-        + "});\n"
-        // Connect page submit
-        + "connectBtn.addEventListener('click',()=>{"
-        + "  const profileId=connectProfileSel.value;if(!profileId)return;"
-        + "  connectBtn.disabled=true;connectBtn.textContent='Connecting\u2026';"
-        + "  connectStatusEl.textContent='';"
-        + "  webPost('/connect',{profileId}).catch(()=>{"
-        + "    connectBtn.disabled=false;connectBtn.textContent='Connect';"
-        + "    connectStatusEl.textContent='Connection error \u2014 check the IDE plugin.';"
-        + "  });"
-        + "});\n"
-        + "// Connect page stop button\n"
-        + "connectStopBtn.addEventListener('click',()=>{"
-        + "  webPost('/stop',{});"
-        + "});\n"
-        // handleConnected / handleDisconnected — called via SSE broadcastTransient
-        + "function handleConnected(modelsJsonStr,profilesJsonStr){"
-        + "  try{"
-        + "    const models=JSON.parse(modelsJsonStr||'[]');"
-        + "    const profiles=JSON.parse(profilesJsonStr||'[]');"
-        + "    populateModels(models,'');"
-        + "    fetch('/info').then(r=>r.json()).then(info=>{"
-        + "      if(info.model)modelEl.textContent=info.model.substring(info.model.lastIndexOf('/')+1);"
-        + "      populateModels(info.models,info.model);"
-        + "    }).catch(()=>{});"
-        + "    showChatView();"
-        + "  }catch(e){showChatView();}"
-        + "}\n"
-        + "function handleDisconnected(profilesJsonStr){"
-        + "  try{"
-        + "    const profiles=JSON.parse(profilesJsonStr||'[]');"
-        + "    showConnectView(profiles);"
-        + "  }catch(e){showConnectView([]);}"
-        + "}\n"
-        // State load + SSE connect
-        + "let lastSeq=0;\n"
-        + "let sseRetry=null;\n"
-        + "fetch('/state').then(r=>r.json()).then(st=>{"
-        + "  (st.events||[]).forEach(ev=>processEvent(ev,true));"
-        + "  lastSeq=st.seq||0;"
-        + "  requestAnimationFrame(scrollToBottom);"
-        + "  connectSSE();"
-        + "}).catch(()=>connectSSE());\n"
-        // Event processing
-        + "function processEvent(ev,replaying){"
-        + "  if(ev.notification){if(!replaying)showNotification(ev.title||'AgentBridge',ev.body||'');return;}\n"
-        + "  if(ev.js){try{(0,eval)(ev.js);}catch(e){console.warn('event eval:',e,ev.js&&ev.js.substring(0,80));}}\n"
-        + "  if(ev.seq>lastSeq)lastSeq=ev.seq;"
-        + "  if(!replaying&&atBottom)requestAnimationFrame(scrollToBottom);"
-        + "}\n"
-        // SSE
-        + "function connectSSE(){"
-        + "  const es=new EventSource('/events?from='+lastSeq);"
-        + "  es.onopen=()=>{statusDot.className=agentRunning?'running':'connected';offlineEl.classList.remove('visible');};"
-        + "  es.onmessage=e=>{"
-        + "    try{const ev=JSON.parse(e.data);if(!ev.seq||ev.seq>lastSeq){processEvent(ev,false);if(ev.seq)lastSeq=ev.seq;}}catch(err){}"
-        + "  };"
-        + "  es.onerror=()=>{"
-        + "    es.close();statusDot.className='';offlineEl.classList.add('visible');"
-        + "    clearTimeout(sseRetry);sseRetry=setTimeout(connectSSE,3000);"
-        + "  };"
-        + "}\n"
-        // Notifications
-        + "function showNotification(title,body,actions){"
-        + "  if(navigator.serviceWorker&&navigator.serviceWorker.controller){"
-        + "    navigator.serviceWorker.controller.postMessage({type:'SHOW_NOTIFICATION',title,body,actions});"
-        + "  }else if('Notification'in window&&Notification.permission==='granted'){"
-        + "    try{new Notification(title,{body,icon:'/icon.svg',tag:'ab'});}catch(e){}"
-        + "  }"
-        + "}\n"
-        + "function subscribePush(vapidKey){"
-        + "  if(!('serviceWorker'in navigator&&'PushManager'in window)){console.warn('[AB] Push not supported');return;}"
-        + "  navigator.serviceWorker.ready.then(reg=>{"
-        + "    reg.pushManager.getSubscription().then(existing=>{"
-        + "      if(existing){console.log('[AB] Push subscription exists');webPost('/push-subscribe',existing.toJSON()).catch(e=>console.error('[AB] Failed to post existing sub:',e));return;}"
-        + "      try{"
-        + "        const appKey=Uint8Array.from(atob(vapidKey.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));"
-        + "        reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:appKey})"
-        + "          .then(sub=>{console.log('[AB] Subscribed to push');webPost('/push-subscribe',sub.toJSON()).catch(e=>console.error('[AB] Failed to post new sub:',e));})"
-        + "          .catch(e=>console.error('[AB] Subscribe failed:',e));"
-        + "      }catch(e){console.error('[AB] Push key decode error:',e);}"
-        + "    }).catch(e=>console.error('[AB] getSubscription error:',e));"
-        + "  }).catch(e=>console.error('[AB] serviceWorker.ready error:',e));"
-        + "}\n"
-        + "function reqNotifPerm(){"
-        + "  if('Notification'in window){"
-        + "    console.log('[AB] Notification permission:', Notification.permission);"
-        + "    if(Notification.permission==='default'){"
-        + "      Notification.requestPermission().then(p=>{"
-        + "        console.log('[AB] Permission result:', p);"
-        + "        if(p==='granted')fetch('/info').then(r=>r.json()).then(info=>{console.log('[AB] VAPID key present:', !!info.vapidKey);if(info.vapidKey)subscribePush(info.vapidKey);}).catch(e=>console.error('[AB] Failed to fetch info:',e));"
-        + "      }).catch(e=>console.error('[AB] requestPermission error:',e));"
-        + "    }"
-        + "  }else{console.warn('[AB] Notification API not supported');}"
-        + "}\n"
-        + "document.addEventListener('click',reqNotifPerm,{once:true});\n"
-        // Quick-reply bridge (ask_user responses)
-        + "document.addEventListener('quick-reply',e=>window._bridge.quickReply(e.detail.text));\n"
-        // Input auto-resize
-        + "inputEl.addEventListener('input',()=>{"
-        + "  inputEl.style.height='auto';"
-        + "  inputEl.style.height=Math.min(inputEl.scrollHeight,120)+'px';"
-        + "});\n"
-        + "inputEl.addEventListener('keydown',e=>{"
-        + "  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAction();}"
-        + "});\n"
-        // Send/nudge actions
-        + "sendBtn.onclick=sendAction;\n"
-        + "function sendAction(){"
-        + "  const t=inputEl.value.trim();if(!t)return;"
-        + "  inputEl.value='';inputEl.style.height='auto';"
-        + "  webPost(agentRunning?'/nudge':'/prompt',{text:t});"
-        + "}\n"
-        // Register service worker; once ready, subscribe to push if permission already granted
-        + "if('serviceWorker'in navigator){\n"
-        + "  navigator.serviceWorker.register('/sw.js').then(()=>{\n"
-        + "    console.log('[AB] Service worker registered');\n"
-        + "    if(Notification.permission==='granted'){\n"
-        + "      console.log('[AB] Notification permission granted, subscribing to push...');\n"
-        + "      fetch('/info').then(r=>r.json()).then(info=>{if(info.vapidKey)subscribePush(info.vapidKey);}).catch(e=>console.error('[AB] Push subscribe error:',e));\n"
-        + "    }else{\n"
-        + "      console.log('[AB] Notification permission: '+Notification.permission);\n"
-        + "    }\n"
-        + "  }).catch(e=>console.error('[AB] SW register failed:',e));\n"
-        + "}else{\n"
-        + "  console.warn('[AB] Service Worker not supported');\n"
-        + "}\n";
 
     // ── SSE client ────────────────────────────────────────────────────────────
 

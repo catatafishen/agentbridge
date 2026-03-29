@@ -1,0 +1,10 @@
+{
+  "name": "opencode-zod-validator",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Validates exported session data against OpenCode's Zod schemas (test-only)",
+  "dependencies": {
+    "zod": "^3.25.0"
+  }
+}
