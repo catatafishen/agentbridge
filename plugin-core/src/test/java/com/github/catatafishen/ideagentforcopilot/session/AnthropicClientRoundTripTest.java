@@ -434,6 +434,102 @@ class AnthropicClientRoundTripTest {
         assertEquals(3, toolCount, "All 3 tool results should round-trip");
     }
 
+    /**
+     * Validates that sequential tool use turns (tool → result → text → tool → result → text)
+     * within a single v2 assistant message are split into separate Anthropic API turns.
+     * The Anthropic API requires each tool_use turn to be a separate assistant message
+     * followed by a user message with tool_results.
+     */
+    @Test
+    void exportSplitsSequentialToolUseTurns() throws IOException {
+        // Simulates sequential tool calls: tool A → text → tool B → text
+        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "data A");
+        JsonObject tool2 = toolInvocationPart("tc2", "search", "{\"q\":\"test\"}", "found it");
+
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant",
+            List.of(tool1, textPart("Found the file."), tool2, textPart("All done.")),
+            System.currentTimeMillis(), null, null);
+
+        Path target = tempDir.resolve("sequential-tools.jsonl");
+        AnthropicClientExporter.exportToFile(List.of(userMessage("Do both"), assistant), target);
+
+        List<JsonObject> exported = new ArrayList<>();
+        for (String line : Files.readAllLines(target, StandardCharsets.UTF_8)) {
+            if (!line.isBlank()) exported.add(JsonParser.parseString(line).getAsJsonObject());
+        }
+
+        // Should be: user, assistant(tool_use), user(tool_result),
+        //            assistant(text+tool_use), user(tool_result),
+        //            assistant(text)
+        assertEquals(6, exported.size());
+
+        // Turn 1: assistant with tool_use(tc1)
+        var turn1Content = exported.get(1).getAsJsonArray("content");
+        assertEquals(1, turn1Content.size());
+        assertEquals("tool_use", turn1Content.get(0).getAsJsonObject().get("type").getAsString());
+        assertEquals("tc1", turn1Content.get(0).getAsJsonObject().get("id").getAsString());
+
+        // Turn 1: user with tool_result(tc1)
+        var turn1Results = exported.get(2).getAsJsonArray("content");
+        assertEquals(1, turn1Results.size());
+        assertEquals("tool_result", turn1Results.get(0).getAsJsonObject().get("type").getAsString());
+
+        // Turn 2: assistant with text + tool_use(tc2)
+        var turn2Content = exported.get(3).getAsJsonArray("content");
+        assertEquals(2, turn2Content.size());
+        assertEquals("text", turn2Content.get(0).getAsJsonObject().get("type").getAsString());
+        assertEquals("tool_use", turn2Content.get(1).getAsJsonObject().get("type").getAsString());
+
+        // Turn 2: user with tool_result(tc2)
+        var turn2Results = exported.get(4).getAsJsonArray("content");
+        assertEquals(1, turn2Results.size());
+        assertEquals("tool_result", turn2Results.get(0).getAsJsonObject().get("type").getAsString());
+
+        // Final: assistant with text only
+        var finalContent = exported.get(5).getAsJsonArray("content");
+        assertEquals(1, finalContent.size());
+        assertEquals("text", finalContent.get(0).getAsJsonObject().get("type").getAsString());
+        assertEquals("All done.", finalContent.get(0).getAsJsonObject().get("text").getAsString());
+    }
+
+    /**
+     * Verifies that parallel tool calls (multiple tool_uses without text between them)
+     * stay in a single assistant message — only text between tool_uses triggers a split.
+     */
+    @Test
+    void exportKeepsParallelToolCallsTogether() throws IOException {
+        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "data A");
+        JsonObject tool2 = toolInvocationPart("tc2", "read_file", "{\"path\":\"/b\"}", "data B");
+        JsonObject tool3 = toolInvocationPart("tc3", "search", "{\"q\":\"test\"}", "found");
+
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant",
+            List.of(textPart("Reading files."), tool1, tool2, tool3),
+            System.currentTimeMillis(), null, null);
+
+        Path target = tempDir.resolve("parallel-tools.jsonl");
+        AnthropicClientExporter.exportToFile(List.of(userMessage("Read both"), assistant), target);
+
+        List<JsonObject> exported = new ArrayList<>();
+        for (String line : Files.readAllLines(target, StandardCharsets.UTF_8)) {
+            if (!line.isBlank()) exported.add(JsonParser.parseString(line).getAsJsonObject());
+        }
+
+        // No text between tools → single turn: user, assistant(text+3*tool_use), user(3*tool_result)
+        assertEquals(3, exported.size());
+
+        var assistantContent = exported.get(1).getAsJsonArray("content");
+        assertEquals(4, assistantContent.size());
+        assertEquals("text", assistantContent.get(0).getAsJsonObject().get("type").getAsString());
+        assertEquals("tool_use", assistantContent.get(1).getAsJsonObject().get("type").getAsString());
+        assertEquals("tool_use", assistantContent.get(2).getAsJsonObject().get("type").getAsString());
+        assertEquals("tool_use", assistantContent.get(3).getAsJsonObject().get("type").getAsString());
+
+        var toolResults = exported.get(2).getAsJsonArray("content");
+        assertEquals(3, toolResults.size());
+    }
+
     @Test
     void exportFiltersEmptyTextBlocksFromAssistantMessages() throws IOException {
         JsonObject emptyTextPart = new JsonObject();
