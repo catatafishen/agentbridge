@@ -268,7 +268,13 @@ public final class ClaudeCliExporter {
             messagePayload.addProperty("id", "msg_" + uuid.replace("-", "").substring(0, 24));
             messagePayload.addProperty("type", "message");
             messagePayload.addProperty("model", "claude-sonnet-4-6");
-            messagePayload.addProperty("stop_reason", "end_turn");
+
+            // stop_reason must be "tool_use" when the message contains tool_use blocks,
+            // "end_turn" otherwise.  Claude CLI uses this to determine conversation flow
+            // when rebuilding context for --resume.
+            boolean hasToolUse = msg.contentBlocks.stream()
+                .anyMatch(b -> b.has("type") && "tool_use".equals(b.get("type").getAsString()));
+            messagePayload.addProperty("stop_reason", hasToolUse ? "tool_use" : "end_turn");
             messagePayload.add("stop_sequence", JsonNull.INSTANCE);
         }
 
