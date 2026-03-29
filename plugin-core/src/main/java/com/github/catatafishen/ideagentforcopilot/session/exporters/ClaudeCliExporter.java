@@ -55,7 +55,6 @@ public final class ClaudeCliExporter {
         @NotNull String cwd) throws IOException {
 
         List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(messages);
-        anthropicMessages = AnthropicClientExporter.ensureUserFirst(anthropicMessages);
 
         String cliVersion = detectCliVersion(targetPath.getParent());
         String gitBranch = detectGitBranch(cwd);

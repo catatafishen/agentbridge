@@ -45,8 +45,6 @@ public final class KiroClientExporter {
     private static final String FIELD_TOOL_INVOCATION = "toolInvocation";
     private static final String STATE_RESULT = "result";
 
-    private static final int DEFAULT_MAX_TOKEN_ESTIMATE = 20_000;
-
     private KiroClientExporter() {
     }
 
@@ -153,10 +151,7 @@ public final class KiroClientExporter {
         @NotNull String sessionId,
         @NotNull Path sessionsDir) throws IOException {
 
-        List<SessionMessage> budgeted = AnthropicClientExporter.applyTokenBudget(
-            messages, DEFAULT_MAX_TOKEN_ESTIMATE);
-
-        List<JsonObject> kiroMessages = toKiroMessages(budgeted);
+        List<JsonObject> kiroMessages = toKiroMessages(messages);
 
         StringBuilder sb = new StringBuilder();
         for (JsonObject msg : kiroMessages) {
@@ -185,16 +180,6 @@ public final class KiroClientExporter {
                 default -> LOG.debug("Skipping unknown role: " + msg.role);
             }
         }
-
-        // Kiro requires conversation history to start with a Prompt.
-        // When switching from another agent, the exported messages may begin
-        // with an AssistantMessage (no user turn in the current session).
-        if (!result.isEmpty() && !KIND_PROMPT.equals(result.getFirst().get("kind").getAsString())) {
-            JsonArray content = new JsonArray();
-            content.add(textContentBlock("[Previous conversation context]"));
-            result.addFirst(wrapMessage(KIND_PROMPT, UUID.randomUUID().toString(), content));
-        }
-
         return result;
     }
 

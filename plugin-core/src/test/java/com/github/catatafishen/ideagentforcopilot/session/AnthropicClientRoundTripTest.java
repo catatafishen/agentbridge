@@ -178,25 +178,6 @@ class AnthropicClientRoundTripTest {
         assertTrue(content.contains("Answer"));
     }
 
-    @Test
-    void exportAppliesTokenBudget() throws IOException {
-        SessionMessage longMsg = assistantMessage("x".repeat(80_000)); // ~20000 tokens
-        List<SessionMessage> messages = List.of(
-            userMessage("old question"),
-            assistantMessage("old answer"),
-            userMessage("new question"),
-            longMsg
-        );
-
-        Path target = tempDir.resolve("budget.jsonl");
-        // With budget of 20000, the long message alone fills the budget
-        AnthropicClientExporter.exportToFile(messages, target, 20_000);
-
-        String content = Files.readString(target, StandardCharsets.UTF_8);
-        // The most recent messages should be kept, older ones may be trimmed
-        assertTrue(content.contains("x".repeat(100)), "Most recent content should be present");
-    }
-
     // ── Round-trip tests ────────────────────────────────────────────
 
     @Test

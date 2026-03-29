@@ -111,9 +111,8 @@ class KiroClientExporterTest {
     @Test
     void assistantTextBecomesAssistantMessage() {
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(assistantMessage("I can help")));
+            List.of(userMessage("Hi"), assistantMessage("I can help")));
 
-        // Index 0 is synthetic Prompt, index 1 is the actual AssistantMessage
         assertEquals(2, kiroMessages.size());
         JsonObject msg = kiroMessages.get(1);
 
@@ -137,10 +136,10 @@ class KiroClientExporterTest {
             List.of(textPart("Let me read that."), toolPart),
             System.currentTimeMillis(), null, null);
 
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(List.of(assistant));
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(userMessage("read it"), assistant));
 
-        // Index 0 = synthetic Prompt, 1 = AssistantMessage, 2 = ToolResults
-        assertEquals(3, kiroMessages.size(), "Synthetic Prompt + AssistantMessage + ToolResults");
+        assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
 
         JsonObject assistantMsg = kiroMessages.get(1);
         assertEquals("AssistantMessage", assistantMsg.get("kind").getAsString());
@@ -175,10 +174,10 @@ class KiroClientExporterTest {
             List.of(textPart("Reading files..."), tool1, tool2),
             System.currentTimeMillis(), null, null);
 
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(List.of(assistant));
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(userMessage("do it"), assistant));
 
-        // Index 0 = synthetic Prompt, 1 = AssistantMessage, 2 = ToolResults
-        assertEquals(3, kiroMessages.size(), "Synthetic Prompt + AssistantMessage + ToolResults");
+        assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
 
         var assistantContent = kiroMessages.get(1).getAsJsonObject("data").getAsJsonArray("content");
         assertEquals(3, assistantContent.size(), "text + 2 toolUse blocks");
@@ -196,10 +195,11 @@ class KiroClientExporterTest {
             List.of(textPart("First."), tool1, textPart("After tool.")),
             System.currentTimeMillis(), null, null);
 
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(List.of(assistant));
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(userMessage("go"), assistant));
 
-        // Index 0 = synthetic Prompt, then: AssistantMessage(text+toolUse), ToolResults, AssistantMessage(text)
-        assertEquals(4, kiroMessages.size());
+        assertEquals(4, kiroMessages.size(),
+            "Prompt, AssistantMessage(text+toolUse), ToolResults, AssistantMessage(text)");
         assertEquals("Prompt", kiroMessages.get(0).get("kind").getAsString());
         assertEquals("AssistantMessage", kiroMessages.get(1).get("kind").getAsString());
         assertEquals("ToolResults", kiroMessages.get(2).get("kind").getAsString());
@@ -236,16 +236,6 @@ class KiroClientExporterTest {
     }
 
     @Test
-    void historyStartingWithAssistantGetsSyntheticPrompt() {
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(assistantMessage("I can help")));
-
-        assertEquals(2, kiroMessages.size(), "Synthetic Prompt + AssistantMessage");
-        assertEquals("Prompt", kiroMessages.get(0).get("kind").getAsString());
-        assertEquals("AssistantMessage", kiroMessages.get(1).get("kind").getAsString());
-    }
-
-    @Test
     void eachSplitTurnGetsUniqueMessageId() {
         JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{}", "data");
 
@@ -254,9 +244,10 @@ class KiroClientExporterTest {
             List.of(textPart("First."), tool1, textPart("After tool.")),
             System.currentTimeMillis(), null, null);
 
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(List.of(assistant));
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(userMessage("go"), assistant));
 
-        // Skip the synthetic Prompt at index 0
+        // Prompt at 0, AssistantMessages at 1 and 3
         String id1 = kiroMessages.get(1).getAsJsonObject("data").get("message_id").getAsString();
         String id2 = kiroMessages.get(3).getAsJsonObject("data").get("message_id").getAsString();
         assertNotEquals(id1, id2, "Split turns should have unique message_ids");
@@ -288,9 +279,9 @@ class KiroClientExporterTest {
             "a1", "assistant", List.of(toolPart),
             System.currentTimeMillis(), null, null);
 
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(List.of(assistant));
-        // Index 0 = synthetic Prompt, 1 = AssistantMessage, 2 = ToolResults
-        assertEquals(3, kiroMessages.size());
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(userMessage("search"), assistant));
+        assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
 
         JsonObject results = kiroMessages.get(2).getAsJsonObject("data").getAsJsonObject("results");
         JsonObject tc1 = results.getAsJsonObject("tc1");
