@@ -5,7 +5,6 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunConfigCrudRend
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Creates a new run configuration of any type supported by the IDE.

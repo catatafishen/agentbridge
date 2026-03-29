@@ -6,7 +6,6 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.CoverageRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.nio.file.Files;
