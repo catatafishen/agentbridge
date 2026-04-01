@@ -36,14 +36,13 @@ internal class CopilotBillingClient {
 
     companion object {
         private val LOG = Logger.getInstance(CopilotBillingClient::class.java)
-        private const val OS_NAME_PROPERTY = "os.name"
         private const val API_ENDPOINT = "/copilot_internal/user"
         private const val GH_CLI_TIMEOUT_SECONDS = 10L
         private const val AUTH_TIMEOUT_SECONDS = 5L
     }
 
     fun findGhCli(): String? {
-        return com.github.catatafishen.ideagentforcopilot.settings.GhBinaryDetector().resolveGh()
+        return com.github.catatafishen.ideagentforcopilot.settings.GhBinaryDetector().resolve("gh")
     }
 
     /**

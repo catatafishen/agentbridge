@@ -1,14 +1,18 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
 import java.util.List;
 
 /**
  * Binary detector for the {@code gh} CLI, used for Copilot billing data.
- * Reads the user-configured path from {@link BillingSettings}, then falls back to
- * auto-detection via the shell environment and known install locations.
+ *
+ * <p>Reads the user-configured path from {@link BillingSettings}, then falls back to
+ * the standard PATH-based detection (handled by the base class). Only provides
+ * paths that are truly unique to the {@code gh} binary — generic directories like
+ * {@code /opt/homebrew/bin} and {@code /usr/local/bin} are already covered by
+ * {@link BinaryDetector#findBinaryPath(String)}.
  */
 public final class GhBinaryDetector extends ClientBinaryDetector {
 
@@ -20,21 +24,16 @@ public final class GhBinaryDetector extends ClientBinaryDetector {
     }
 
     /**
-     * Resolves the {@code gh} CLI path, also checking known OS-specific install
-     * locations when PATH-based detection fails.
+     * {@code gh}-specific install locations that fall outside the generic known directories.
+     * <ul>
+     *   <li>Linux: snap packages, Linuxbrew, {@code ~/.local/bin}</li>
+     *   <li>Windows: GitHub CLI installer paths under Program Files / AppData</li>
+     *   <li>macOS: nothing unique — all locations covered by the base-class lookup</li>
+     * </ul>
      */
-    @Nullable
-    public String resolveGh() {
-        String found = resolve("gh");
-        if (found != null) return found;
-        // Last-resort: check known install locations not always in PATH
-        return knownPaths().stream()
-            .filter(p -> new File(p).canExecute())
-            .findFirst()
-            .orElse(null);
-    }
-
-    private List<String> knownPaths() {
+    @Override
+    @NotNull
+    protected List<String> additionalSearchPaths() {
         String os = System.getProperty("os.name", "").toLowerCase();
         if (os.contains("win")) {
             return List.of(
@@ -43,19 +42,12 @@ public final class GhBinaryDetector extends ClientBinaryDetector {
                 System.getProperty("user.home") + "\\AppData\\Local\\GitHub CLI\\gh.exe"
             );
         }
-        if (os.contains("mac")) {
-            return List.of(
-                "/opt/homebrew/bin/gh",
-                "/usr/local/bin/gh",
-                "/usr/bin/gh"
-            );
-        }
+        // macOS paths (/opt/homebrew/bin, /usr/local/bin) are covered by BinaryDetector.
+        // Only add Linux-specific locations here.
         return List.of(
-            "/usr/bin/gh",
-            "/usr/local/bin/gh",
-            System.getProperty("user.home") + "/.local/bin/gh",
             "/snap/bin/gh",
-            "/home/linuxbrew/.linuxbrew/bin/gh"
+            "/home/linuxbrew/.linuxbrew/bin/gh",
+            System.getProperty("user.home") + "/.local/bin/gh"
         );
     }
 }
