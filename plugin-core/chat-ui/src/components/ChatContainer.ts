@@ -1,6 +1,7 @@
 export default class ChatContainer extends HTMLElement {
     private _init = false;
     private _autoScroll = true;
+    private _autoScrollLocked = false; // true when user explicitly disabled via toggle
     private _messages!: HTMLDivElement;
     private _workingIndicator!: HTMLElement;
     private _scrollRAF: number | null = null;
@@ -31,7 +32,7 @@ export default class ChatContainer extends HTMLElement {
                 return;
             }
             const atBottom = this.scrollTop + this.clientHeight >= this.scrollHeight - 40;
-            if (atBottom) {
+            if (atBottom && !this._autoScrollLocked) {
                 this._autoScroll = true;
             } else if (this.scrollTop < this._prevScrollTop) {
                 // User intentionally scrolled up — disable auto-scroll
@@ -159,6 +160,7 @@ export default class ChatContainer extends HTMLElement {
     }
 
     set autoScroll(enabled: boolean) {
+        this._autoScrollLocked = !enabled;
         this._autoScroll = enabled;
         if (enabled) {
             this._programmaticScroll = true;

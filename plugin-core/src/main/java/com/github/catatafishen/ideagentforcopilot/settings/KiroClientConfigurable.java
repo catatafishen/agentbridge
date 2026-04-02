@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient;
+import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
@@ -72,7 +73,7 @@ public final class KiroClientConfigurable implements Configurable {
     @Override
     public boolean isModified() {
         if (binaryPathField == null) return false;
-        String stored = nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID));
+        String stored = nullToEmpty(AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID));
         if (!binaryPathField.getText().trim().equals(stored)) return true;
         if (bubbleColorCombo != null) {
             ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
@@ -85,7 +86,7 @@ public final class KiroClientConfigurable implements Configurable {
     @Override
     public void apply() {
         if (binaryPathField == null) return;
-        AcpClient.saveCustomBinaryPath(AGENT_ID, binaryPathField.getText().trim());
+        AgentProfileManager.getInstance().saveBinaryPath(AGENT_ID, binaryPathField.getText().trim());
         if (bubbleColorCombo != null) {
             ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
             AcpClient.saveAgentBubbleColorKey(AGENT_ID, tc != null ? tc.name() : null);
@@ -96,7 +97,7 @@ public final class KiroClientConfigurable implements Configurable {
     public void reset() {
         if (binaryPathField == null) return;
         refreshStatusAsync();
-        binaryPathField.setText(nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID)));
+        binaryPathField.setText(nullToEmpty(AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)));
         if (bubbleColorCombo != null) {
             bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)));
         }
@@ -116,9 +117,7 @@ public final class KiroClientConfigurable implements Configurable {
         statusLabel.setForeground(UIUtil.getLabelForeground());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            String customPath = AcpClient.loadCustomBinaryPath(AGENT_ID);
-            String binary = customPath != null ? customPath : "kiro-cli";
-            String version = BinaryDetector.detectBinaryVersion(binary, new String[0]);
+            String version = new AcpClientBinaryResolver(AGENT_ID, "kiro-cli", "kiro").detectVersion();
             SwingUtilities.invokeLater(() -> {
                 if (statusLabel == null) return;
                 if (version != null) {

@@ -37,13 +37,12 @@ public final class GitDiffTool extends GitTool {
         return "Show changes as a diff";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

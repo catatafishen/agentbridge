@@ -53,8 +53,8 @@ public final class RefactorTool extends RefactoringTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 
     @Override

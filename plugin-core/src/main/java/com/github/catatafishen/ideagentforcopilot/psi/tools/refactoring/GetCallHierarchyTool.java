@@ -35,13 +35,12 @@ public final class GetCallHierarchyTool extends RefactoringTool {
         return "Find all callers of a method with file paths and line numbers";
     }
 
-
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

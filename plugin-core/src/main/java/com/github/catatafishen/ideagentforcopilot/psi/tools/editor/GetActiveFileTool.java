@@ -36,13 +36,12 @@ public final class GetActiveFileTool extends EditorTool {
         return "Get the path and content of the currently active editor file";
     }
 
-
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

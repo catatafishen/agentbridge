@@ -113,6 +113,10 @@ public abstract class GitTool extends Tool {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.directory(new File(basePath));
         pb.redirectErrorStream(false);
+        // Prevent git from opening a text editor (e.g. for revert/commit without --no-edit).
+        // "true" is a POSIX no-op that exits 0, causing git to use the default message.
+        pb.environment().put("GIT_EDITOR", "true");
+        pb.environment().put("GIT_TERMINAL_PROMPT", "0");
         Process p = pb.start();
 
         String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);

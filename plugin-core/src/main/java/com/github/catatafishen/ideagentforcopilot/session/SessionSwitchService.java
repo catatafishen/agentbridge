@@ -9,6 +9,7 @@ import com.github.catatafishen.ideagentforcopilot.session.exporters.AnthropicCli
 import com.github.catatafishen.ideagentforcopilot.session.exporters.ClaudeCliExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.CodexClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.CopilotClientExporter;
+import com.github.catatafishen.ideagentforcopilot.session.exporters.KiroClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.AnthropicClientImporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.CodexClientImporter;
@@ -489,15 +490,22 @@ public final class SessionSwitchService implements Disposable {
     // ── ACP local session export (Kiro / Junie) ─────────────────────────────
 
     /**
-     * Exports v2 session messages to a Kiro local session directory.
-     * Delegates to {@link #exportToAcpLocalSession}.
+     * Exports v2 session messages to Kiro's native CLI session format.
+     *
+     * <p>Kiro stores sessions as flat files in {@code ~/.kiro/sessions/cli/}
+     * ({@code <uuid>.json} + {@code <uuid>.jsonl}), not as subdirectories.
+     * Delegates to {@link KiroClientExporter} which handles the Kiro-specific format.
      */
     private void exportToKiro(
         @NotNull List<SessionMessage> messages,
         @Nullable String basePath,
         @NotNull String toProfileId) {
-        Path dir = Path.of(System.getProperty(USER_HOME_PROPERTY), KIRO_HOME, KIRO_SESSIONS_DIR);
-        exportToAcpLocalSession(messages, basePath, toProfileId, dir, "Kiro");
+        Path sessionsDir = KiroClientExporter.defaultSessionsDir();
+        String sessionId = KiroClientExporter.exportSession(messages, basePath, sessionsDir);
+        if (sessionId != null) {
+            new GenericSettings(toProfileId, project).setResumeSessionId(sessionId);
+            LOG.info("Exported v2 session to Kiro: " + sessionId + " for profile " + toProfileId);
+        }
     }
 
     /**

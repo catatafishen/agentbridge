@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -34,13 +33,12 @@ public final class GitRevertTool extends GitTool {
         return "Revert a commit by creating a new commit";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
-    }
-@Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {PARAM_COMMIT, TYPE_STRING, "Commit SHA to revert"},
@@ -62,7 +60,10 @@ public final class GitRevertTool extends GitTool {
             cmdArgs.add("--no-commit");
         }
 
-        if (args.has(PARAM_NO_EDIT) && args.get(PARAM_NO_EDIT).getAsBoolean()) {
+        // Default to --no-edit: git revert without it tries to open $EDITOR which hangs.
+        // Only skip it when the caller explicitly passes no_edit: false.
+        boolean wantsEditor = args.has(PARAM_NO_EDIT) && !args.get(PARAM_NO_EDIT).getAsBoolean();
+        if (!wantsEditor) {
             cmdArgs.add("--no-edit");
         }
 

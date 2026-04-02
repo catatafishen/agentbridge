@@ -38,13 +38,12 @@ public final class GitStashTool extends GitTool {
         return "Push, pop, apply, list, or drop stashed changes";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
-    }
-@Override
     public @NotNull String permissionTemplate() {
         return "{action} stash";
     }
@@ -107,7 +106,9 @@ public final class GitStashTool extends GitTool {
 
     private static @Nullable String stashRef(JsonObject args) {
         if (args.has(PARAM_INDEX) && !args.get(PARAM_INDEX).getAsString().isEmpty()) {
-            return "stash@{" + args.get(PARAM_INDEX).getAsString() + "}";
+            String idx = args.get(PARAM_INDEX).getAsString();
+            // Accept both "0" (numeric index) and "stash@{0}" (full ref) without double-wrapping.
+            return idx.startsWith("stash@{") ? idx : "stash@{" + idx + "}";
         }
         return null;
     }

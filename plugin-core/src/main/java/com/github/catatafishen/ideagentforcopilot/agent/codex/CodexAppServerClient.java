@@ -132,7 +132,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         p.setMcpMethod(McpInjectionMethod.NONE);
         p.setSupportsMcpConfigFlag(false);
         p.setSupportsModelFlag(true);
-        p.setSupportsConfigDir(false);
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(true);
         p.setPermissionInjectionMethod(PermissionInjectionMethod.NONE);

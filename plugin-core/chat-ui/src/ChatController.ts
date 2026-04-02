@@ -59,7 +59,7 @@ const ChatController = {
         return this._ctx[key];
     },
 
-    _ensureMsg(turnId: string, agentId: string): TurnContext & {
+    _ensureMsg(turnId: string, agentId: string, timestamp?: string): TurnContext & {
         thinkingMsg?: HTMLElement | null;
         thinkingChip?: HTMLElement | null
     } {
@@ -69,8 +69,10 @@ const ChatController = {
             msg.setAttribute('type', 'agent');
             const meta = document.createElement('message-meta');
             meta.className = 'meta';
-            const now = new Date();
-            const ts = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+            const ts = timestamp || (() => {
+                const now = new Date();
+                return String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+            })();
             const tsSpan = document.createElement('span');
             tsSpan.className = 'ts';
             tsSpan.textContent = ts;
@@ -150,14 +152,14 @@ const ChatController = {
         this._container()?.forceScroll();
     },
 
-    appendAgentText(turnId: string, agentId: string, text: string): void {
+    appendAgentText(turnId: string, agentId: string, text: string, timestamp?: string): void {
         try {
             this._resetWorkingTimer();
             const ctx = this._getCtx(turnId, agentId);
             this._collapseThinkingFor(ctx);
             if (!ctx.textBubble) {
                 if (!text.trim()) return;
-                const c = this._ensureMsg(turnId, agentId);
+                const c = this._ensureMsg(turnId, agentId, timestamp);
                 const bubble = document.createElement('message-bubble');
                 bubble.setAttribute('streaming', '');
                 c.msg!.appendChild(bubble);

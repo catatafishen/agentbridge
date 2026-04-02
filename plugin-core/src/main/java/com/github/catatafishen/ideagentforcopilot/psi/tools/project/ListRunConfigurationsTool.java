@@ -33,13 +33,12 @@ public final class ListRunConfigurationsTool extends ProjectTool {
         return "List all available run configurations in the project";
     }
 
-
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

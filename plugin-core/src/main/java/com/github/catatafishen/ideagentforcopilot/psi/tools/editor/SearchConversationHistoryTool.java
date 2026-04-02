@@ -75,8 +75,8 @@ public final class SearchConversationHistoryTool extends EditorTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 
     @Override

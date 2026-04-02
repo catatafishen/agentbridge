@@ -17,6 +17,7 @@ public final class GitCommitTool extends GitTool {
 
     private static final String PARAM_MESSAGE = "message";
     private static final String PARAM_AMEND = "amend";
+    private static final String PARAM_AUTHOR = "author";
 
     public GitCommitTool(Project project) {
         super(project);
@@ -37,11 +38,11 @@ public final class GitCommitTool extends GitTool {
         return "Commit staged changes with a message";
     }
 
-    
+
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public @NotNull String permissionTemplate() {
@@ -53,6 +54,7 @@ public final class GitCommitTool extends GitTool {
         return schema(new Object[][]{
             {PARAM_MESSAGE, TYPE_STRING, "Commit message (use conventional commit format)"},
             {PARAM_AMEND, TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"},
+            {PARAM_AUTHOR, TYPE_STRING, "Override the commit author (e.g. 'Name <email@example.com>')"},
             {"all", TYPE_BOOLEAN, "If true, automatically stage all modified and deleted files"}
         }, PARAM_MESSAGE);
     }
@@ -65,6 +67,14 @@ public final class GitCommitTool extends GitTool {
             return "Error: 'message' parameter is required";
         }
 
+        // Open Version Control tool window in follow mode
+        if (com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            com.github.catatafishen.ideagentforcopilot.psi.EdtUtil.invokeLater(() -> {
+                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Version Control");
+                if (tw != null) tw.activate(null);
+            });
+        }
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("commit");
 
@@ -74,6 +84,11 @@ public final class GitCommitTool extends GitTool {
 
         if (args.has("all") && args.get("all").getAsBoolean()) {
             cmdArgs.add("--all");
+        }
+
+        if (args.has(PARAM_AUTHOR) && !args.get(PARAM_AUTHOR).getAsString().isEmpty()) {
+            cmdArgs.add("--author");
+            cmdArgs.add(args.get(PARAM_AUTHOR).getAsString());
         }
 
         cmdArgs.add("-m");

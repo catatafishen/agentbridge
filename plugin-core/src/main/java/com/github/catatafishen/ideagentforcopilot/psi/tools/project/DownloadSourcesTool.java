@@ -54,8 +54,8 @@ public final class DownloadSourcesTool extends ProjectTool {
     
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 @Override
     public boolean isReadOnly() {

@@ -98,10 +98,11 @@ public abstract class AcpClient extends AbstractAgentClient {
     private @Nullable String launchCwd;
     /**
      * Tracks the resume session ID requested in the current launch cycle.
-     * Set at the start of {@link #createSession}, used by {@link #loadSession} and
-     * {@link #enableInjectionFallback}.
+     * Set at the start of {@link #createSession}, used by {@link #loadSession},
+     * {@link #enableInjectionFallback}, and subclass {@link #customizeNewSession} overrides
+     * that embed the resume ID directly in the {@code session/new} request (e.g. Junie, Kiro).
      */
-    private @Nullable String requestedResumeId;
+    protected @Nullable String requestedResumeId;
     private final List<Model> availableModels = new ArrayList<>();
     private final List<AbstractAgentClient.AgentMode> availableModes = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
@@ -325,13 +326,13 @@ public abstract class AcpClient extends AbstractAgentClient {
                         // Agent loaded the session but didn't replay any history.
                         // It may not have conversation context — inject as a safety net.
                         LOG.info(displayName() + ": session loaded but no history replayed — enabling injection fallback");
-                        enableInjectionFallback(requestedResumeId);
+                        enableInjectionFallback(requestedResumeId, supportsSessionResumption());
                     }
                     return loaded;
                 } catch (Exception e) {
                     LOG.warn(displayName() + ": session/load failed for " + requestedResumeId
                         + ", falling back to session/new: " + e.getMessage());
-                    enableInjectionFallback(requestedResumeId);
+                    enableInjectionFallback(requestedResumeId, supportsSessionResumption());
                 }
             }
 
@@ -447,13 +448,26 @@ public abstract class AcpClient extends AbstractAgentClient {
      * @see <a href="https://agentclientprotocol.com/protocol/session-setup">ACP Session Setup</a>
      */
     protected String loadSession(String cwd, String sessionId) throws Exception {
-        if (capabilities == null
-            || capabilities.agentCapabilities() == null
-            || !Boolean.TRUE.equals(capabilities.agentCapabilities().loadSession())) {
+        if (!supportsSessionResumption()) {
             throw new AgentSessionException(
                 displayName() + " does not advertise loadSession capability");
         }
         return sendLoadSessionRequest("session/load", cwd, sessionId);
+    }
+
+    /**
+     * Whether this agent supports session resumption via {@link #loadSession}.
+     * <p>
+     * Default: checks if the agent advertised the {@code loadSession} capability
+     * during initialization. Subclasses can override to return {@code false}
+     * for agents known not to support resumption even if the capability is
+     * accidentally advertised, or to return {@code true} for agents that use
+     * non-standard resumption methods.
+     */
+    protected boolean supportsSessionResumption() {
+        return capabilities != null
+            && capabilities.agentCapabilities() != null
+            && Boolean.TRUE.equals(capabilities.agentCapabilities().loadSession());
     }
 
     /**
@@ -525,11 +539,19 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     /**
      * Enables conversation history injection as a fallback when session loading fails.
-     * Shows a notification to the user explaining the limitation.
+     * Shows a notification to the user explaining the limitation if resumption was expected.
+     *
+     * @param requestedId the session ID that was requested for resumption
+     * @param expected    whether resumption was expected to work for this agent
      */
-    private void enableInjectionFallback(String requestedId) {
+    private void enableInjectionFallback(String requestedId, boolean expected) {
         if (!ActiveAgentManager.getInjectConversationHistory(project)) {
             ActiveAgentManager.setInjectConversationHistory(project, true);
+        }
+
+        if (!expected) {
+            LOG.info(displayName() + ": session resume not supported — silently enabled injection fallback");
+            return;
         }
 
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
@@ -1034,29 +1056,9 @@ public abstract class AcpClient extends AbstractAgentClient {
         return process;
     }
 
-    // ─── Per-agent binary path settings (application-level) ────────────────
+    // ─── Per-agent bubble color settings (application-level) ────────────────
 
-    private static final String PROP_CUSTOM_BINARY = "agentbridge.%s.customBinary";
     private static final String PROP_AGENT_BUBBLE_COLOR = "agentbridge.client.%s.bubbleColor";
-
-    /**
-     * Returns the user-configured binary path for the given agent ID,
-     * or {@code null} if not set (auto-detect will be used instead).
-     */
-    public static @Nullable String loadCustomBinaryPath(String agentId) {
-        String stored = PropertiesComponent.getInstance()
-            .getValue(PROP_CUSTOM_BINARY.formatted(agentId), "").trim();
-        return stored.isEmpty() ? null : stored;
-    }
-
-    /**
-     * Persists a custom binary path for the given agent ID.
-     * Pass {@code null} or blank to clear the override and use auto-detection.
-     */
-    public static void saveCustomBinaryPath(String agentId, @Nullable String path) {
-        PropertiesComponent.getInstance()
-            .setValue(PROP_CUSTOM_BINARY.formatted(agentId), path != null ? path.trim() : "", "");
-    }
 
     /**
      * Returns the user-configured bubble color key (a {@link com.github.catatafishen.ideagentforcopilot.ui.ThemeColor}
@@ -1081,30 +1083,23 @@ public abstract class AcpClient extends AbstractAgentClient {
     // ────────────────────────────────────────────────────────────────────────
 
     private List<String> resolveCommand(List<String> command) {
-        if (command.isEmpty()) {
-            return command;
-        }
+        if (command.isEmpty()) return command;
         String binaryName = command.getFirst();
 
-        // User-configured override takes priority over auto-detection
-        String customPath = loadCustomBinaryPath(agentId());
-        if (customPath != null) {
+        // Already an absolute or relative path — no resolution needed
+        if (binaryName.startsWith("/") || binaryName.startsWith("./")) return command;
+
+        // Check user-configured override first, then auto-detect via shell environment
+        var profile = com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager.getInstance().getProfile(agentId());
+        String[] alternates = profile != null ? profile.getAlternateNames().toArray(new String[0]) : new String[0];
+
+        String resolvedPath = new com.github.catatafishen.ideagentforcopilot.settings.AcpClientBinaryDetector(agentId()).resolve(binaryName, alternates);
+        if (resolvedPath != null && !resolvedPath.isEmpty()) {
             List<String> resolved = new ArrayList<>(command);
-            resolved.set(0, customPath);
+            resolved.set(0, resolvedPath);
             return resolved;
         }
 
-        // Already absolute — no resolution needed
-        if (binaryName.startsWith("/") || binaryName.startsWith("./")) {
-            return command;
-        }
-        String absolutePath = com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector.findBinaryPath(binaryName);
-        if (absolutePath != null && !absolutePath.isEmpty()) {
-            List<String> resolved = new ArrayList<>(command);
-            resolved.set(0, absolutePath);
-            return resolved;
-        }
-        // Fall back to original name; will fail at exec with a helpful error
         LOG.warn("Could not resolve absolute path for '" + binaryName + "'; attempting launch with unresolved name");
         return command;
     }

@@ -4,6 +4,11 @@ import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliClient;
 import com.github.catatafishen.ideagentforcopilot.agent.claude.ClaudeCliCredentials;
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.ideagentforcopilot.bridge.TransportType;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.Service;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -13,32 +18,182 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Manages all built-in agent profiles. Profiles are static defaults; no persistence.
+ * Manages all built-in agent profiles with delta persistence.
  *
- * <p>Thread-safe: all reads are synchronized on this instance.</p>
+ * <p>On startup, profiles are built from hardcoded defaults.  Any user
+ * customisations (binary path, custom models, instructions file) that were
+ * saved in a previous session are then overlaid.  This ensures new defaults
+ * from plugin updates take effect for fields the user has not touched.</p>
+ *
+ * <p>Thread-safe: all public reads are synchronized on this instance.</p>
  */
-public final class AgentProfileManager {
+@Service(Service.Level.APP)
+@State(name = "AgentProfileOverrides", storages = @Storage("ideAgentProfiles.xml"))
+public final class AgentProfileManager implements PersistentStateComponent<AgentProfileManager.PersistedState> {
 
     public static final String COPILOT_PROFILE_ID = "copilot";
     public static final String OPENCODE_PROFILE_ID = "opencode";
-
     public static final String CLAUDE_CLI_PROFILE_ID = ClaudeCliClient.PROFILE_ID;
     public static final String JUNIE_PROFILE_ID = "junie";
     public static final String KIRO_PROFILE_ID = "kiro";
     public static final String CODEX_PROFILE_ID = CodexAppServerClient.PROFILE_ID;
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
+    private PersistedState persistedState = new PersistedState();
 
     public AgentProfileManager() {
         ensureDefaults();
     }
 
-    private static final AgentProfileManager INSTANCE = new AgentProfileManager();
-
     @NotNull
     public static AgentProfileManager getInstance() {
-        return INSTANCE;
+        return ApplicationManager.getApplication().getService(AgentProfileManager.class);
     }
+
+    // ── Persistence ────────────────────────────────────────────────
+
+    /**
+     * User-customisable fields for a single profile.
+     *
+     * <p>Only fields that users can change through Settings UI are persisted.
+     * All other profile fields are always rebuilt from hardcoded defaults so
+     * that plugin updates can modify them freely.</p>
+     */
+    public static class ProfileOverride {
+        public String profileId = "";
+        public String customBinaryPath = "";
+        public String prependInstructionsTo = "";
+        public List<String> customCliModels = new ArrayList<>();
+    }
+
+    /**
+     * Root state object serialised to {@code ideAgentProfiles.xml}.
+     */
+    public static class PersistedState {
+        public List<ProfileOverride> overrides = new ArrayList<>();
+    }
+
+    @Override
+    public @NotNull PersistedState getState() {
+        snapshotOverrides();
+        return persistedState;
+    }
+
+    @Override
+    public void loadState(@NotNull PersistedState state) {
+        this.persistedState = state;
+        migrateFromPropertiesComponent();
+        applyOverrides();
+    }
+
+    /**
+     * Captures current user-customisable values from in-memory profiles into
+     * {@link #persistedState} so they survive a restart.  Only fields that
+     * differ from the hardcoded default are persisted, so plugin updates can
+     * change defaults without being overridden by stale saved data.
+     */
+    private synchronized void snapshotOverrides() {
+        persistedState.overrides.clear();
+        for (AgentProfile profile : profiles.values()) {
+            AgentProfile defaults = createDefaultProfile(profile.getId());
+            if (defaults == null) continue;
+            ProfileOverride o = toDelta(profile, defaults);
+            if (hasUserData(o)) {
+                persistedState.overrides.add(o);
+            }
+        }
+    }
+
+    /**
+     * Overlays previously persisted user customisations onto the in-memory
+     * profiles that were already built from hardcoded defaults.
+     */
+    private synchronized void applyOverrides() {
+        for (ProfileOverride o : persistedState.overrides) {
+            AgentProfile profile = profiles.get(o.profileId);
+            if (profile == null) continue;
+            if (o.customBinaryPath != null && !o.customBinaryPath.isEmpty()) {
+                profile.setCustomBinaryPath(o.customBinaryPath);
+            }
+            if (o.prependInstructionsTo != null && !o.prependInstructionsTo.isEmpty()) {
+                profile.setPrependInstructionsTo(o.prependInstructionsTo);
+            }
+            if (o.customCliModels != null && !o.customCliModels.isEmpty()) {
+                profile.setCustomCliModels(new ArrayList<>(o.customCliModels));
+            }
+        }
+    }
+
+    private static ProfileOverride toDelta(AgentProfile current, AgentProfile defaults) {
+        ProfileOverride o = new ProfileOverride();
+        o.profileId = current.getId();
+        String cbp = nullToEmpty(current.getCustomBinaryPath());
+        o.customBinaryPath = cbp.equals(nullToEmpty(defaults.getCustomBinaryPath())) ? "" : cbp;
+        String pit = nullToEmpty(current.getPrependInstructionsTo());
+        o.prependInstructionsTo = pit.equals(nullToEmpty(defaults.getPrependInstructionsTo())) ? "" : pit;
+        List<String> models = current.getCustomCliModels();
+        o.customCliModels = models.equals(defaults.getCustomCliModels()) ? new ArrayList<>() : new ArrayList<>(models);
+        return o;
+    }
+
+    private static boolean hasUserData(ProfileOverride o) {
+        return !o.customBinaryPath.isEmpty()
+            || !o.prependInstructionsTo.isEmpty()
+            || !o.customCliModels.isEmpty();
+    }
+
+    private static String nullToEmpty(@Nullable String s) {
+        return s == null ? "" : s;
+    }
+
+    /**
+     * Returns the user-configured binary path for the given agent, or {@code null}
+     * if not set (auto-detect will be used instead).  This is the single source of
+     * truth for all agents — both ACP and profile-based.
+     */
+    @Nullable
+    public synchronized String loadBinaryPath(@NotNull String agentId) {
+        ensureDefaults();
+        AgentProfile profile = profiles.get(agentId);
+        if (profile == null) return null;
+        String path = profile.getCustomBinaryPath();
+        return path.isEmpty() ? null : path;
+    }
+
+    /**
+     * Persists a custom binary path for the given agent.
+     * Pass {@code null} or blank to clear the override and use auto-detection.
+     */
+    public synchronized void saveBinaryPath(@NotNull String agentId, @Nullable String path) {
+        ensureDefaults();
+        AgentProfile profile = profiles.get(agentId);
+        if (profile == null) return;
+        profile.setCustomBinaryPath(path != null ? path.trim() : "");
+    }
+
+    /**
+     * One-time migration: reads binary paths stored in the legacy
+     * {@code PropertiesComponent} keys ({@code agentbridge.<id>.customBinary})
+     * and copies them into the corresponding {@link AgentProfile}.
+     * Called once during {@link #loadState} before applying XML overrides,
+     * so that XML-persisted values (if any) win over legacy values.
+     */
+    private void migrateFromPropertiesComponent() {
+        var props = com.intellij.ide.util.PropertiesComponent.getInstance();
+        for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
+            JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID)) {
+            String key = "agentbridge." + id + ".customBinary";
+            String legacy = props.getValue(key, "").trim();
+            if (legacy.isEmpty()) continue;
+            AgentProfile profile = profiles.get(id);
+            if (profile != null && profile.getCustomBinaryPath().isEmpty()) {
+                profile.setCustomBinaryPath(legacy);
+            }
+            props.unsetValue(key);
+        }
+    }
+
+    // ── Public API ─────────────────────────────────────────────────
 
     /**
      * Returns a human-readable Claude CLI authentication status string for display in settings UI.
@@ -66,6 +221,8 @@ public final class AgentProfileManager {
         ensureDefaults();
         return profiles.get(id);
     }
+
+    // ── Defaults ───────────────────────────────────────────────────
 
     private void ensureDefaults() {
         for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
@@ -121,7 +278,7 @@ public final class AgentProfileManager {
         p.setBinaryName(JUNIE_PROFILE_ID);
         p.setInstallHint("Install from junie.jetbrains.com and run 'junie' to authenticate.");
         p.setInstallUrl("https://junie.jetbrains.com/docs/junie-cli.html");
-        p.setSendResourceReferences(false); // Junie doesn't support Resource content blocks - append to prompt instead
+        p.setSendResourceReferences(false);
         return p;
     }
 
@@ -151,5 +308,4 @@ public final class AgentProfileManager {
         p.setInstallUrl("https://opencode.ai/docs");
         return p;
     }
-
 }

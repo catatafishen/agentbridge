@@ -7,7 +7,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -17,28 +17,24 @@ import java.util.concurrent.TimeUnit;
 public class BinaryDetector {
     private static final Logger LOG = Logger.getInstance(BinaryDetector.class);
 
+    private BinaryDetector() {
+    }
+
     /**
      * Detect if a binary exists and get its version, trying alternate names if primary fails.
-     * Uses the captured shell environment, so works with nvm, sdkman, etc.
      *
-     * @param binaryName     Name of the binary (e.g., "junie", "copilot", "opencode")
+     * @param binaryName     Name of the binary (e.g., "copilot", "opencode")
      * @param alternateNames Alternate names to try if primary name not found
      * @return Version string like "v1.2.3", or null if not found
      */
     @Nullable
     public static String detectBinaryVersion(@NotNull String binaryName, @NotNull String[] alternateNames) {
-        // Try primary name first
         String version = tryDetectBinary(binaryName);
-        if (version != null) {
-            return version;
-        }
+        if (version != null) return version;
 
-        // Try alternates
         for (String altName : alternateNames) {
             version = tryDetectBinary(altName);
-            if (version != null) {
-                return version;
-            }
+            if (version != null) return version;
         }
 
         return null;
@@ -46,56 +42,19 @@ public class BinaryDetector {
 
     @Nullable
     private static String tryDetectBinary(@NotNull String binaryName) {
-        try {
-            String os = System.getProperty("os.name", "").toLowerCase();
-            ProcessBuilder pb;
+        String os = System.getProperty("os.name", "").toLowerCase();
+        List<String> cmd = os.contains("win")
+            ? List.of("cmd.exe", "/c", binaryName + " --version")
+            : List.of("sh", "-c", "command -v " + binaryName + " >/dev/null && " + binaryName + " --version");
 
-            if (os.contains("win")) {
-                // Windows: use cmd.exe
-                pb = new ProcessBuilder("cmd.exe", "/c", binaryName + " --version");
-            } else {
-                // Unix: use sh -c to respect PATH
-                pb = new ProcessBuilder("sh", "-c", binaryName + " --version");
-            }
+        String output = runCommand(cmd, 5);
+        if (output == null) return null;
 
-            // Use captured shell environment which includes nvm, sdkman, etc.
-            Map<String, String> shellEnv = ShellEnvironment.getEnvironment();
-            pb.environment().clear();
-            pb.environment().putAll(shellEnv);
-
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append("\n");
-                }
-            }
-
-            boolean finished = process.waitFor(5, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                return null;
-            }
-
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                return null;
-            }
-
-            String version = parseVersion(output.toString());
-            if (version != null) {
-                LOG.info("Detected " + binaryName + " version: " + version);
-            }
-            return version;
-
-        } catch (Exception e) {
-            LOG.debug("Failed to detect " + binaryName + ": " + e.getMessage());
-            return null;
+        String version = parseVersion(output);
+        if (version != null) {
+            LOG.info("Detected " + binaryName + " version: " + version);
         }
+        return version;
     }
 
     /**
@@ -106,26 +65,31 @@ public class BinaryDetector {
      */
     @Nullable
     public static String findBinaryPath(@NotNull String binaryName) {
+        String os = System.getProperty("os.name", "").toLowerCase();
+        List<String> cmd = os.contains("win")
+            ? List.of("cmd.exe", "/c", "where " + binaryName)
+            : List.of("sh", "-c", "command -v " + binaryName);
+
+        String output = runCommand(cmd, 3);
+        if (output == null || output.isBlank()) return null;
+
+        String path = output.trim().split("\n")[0].trim();
+        LOG.info("Found " + binaryName + " at: " + path);
+        return path;
+    }
+
+    /**
+     * Run a command with the captured shell environment and return stdout, or null on failure.
+     */
+    @Nullable
+    private static String runCommand(@NotNull List<String> cmd, int timeoutSeconds) {
         try {
-            String os = System.getProperty("os.name", "").toLowerCase();
-            ProcessBuilder pb;
-
-            if (os.contains("win")) {
-                // Windows: use where
-                pb = new ProcessBuilder("cmd.exe", "/c", "where " + binaryName);
-            } else {
-                // Unix: use which
-                pb = new ProcessBuilder("sh", "-c", "which " + binaryName);
-            }
-
-            // Use captured shell environment
-            Map<String, String> shellEnv = ShellEnvironment.getEnvironment();
+            ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.environment().clear();
-            pb.environment().putAll(shellEnv);
-
+            pb.environment().putAll(ShellEnvironment.getEnvironment());
             pb.redirectErrorStream(true);
-            Process process = pb.start();
 
+            Process process = pb.start();
             StringBuilder output = new StringBuilder();
             try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -135,50 +99,32 @@ public class BinaryDetector {
                 }
             }
 
-            boolean finished = process.waitFor(5, TimeUnit.SECONDS);
-            if (!finished) {
+            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 return null;
             }
 
-            int exitCode = process.exitValue();
-            if (exitCode != 0) {
-                return null;
-            }
+            return process.exitValue() == 0 ? output.toString() : null;
 
-            String path = output.toString().trim();
-            if (!path.isEmpty()) {
-                // On Windows, 'where' may return multiple paths - take the first
-                String[] lines = path.split("\n");
-                path = lines[0].trim();
-                LOG.info("Found " + binaryName + " at: " + path);
-                return path;
-            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
             return null;
-
         } catch (Exception e) {
-            LOG.debug("Failed to find " + binaryName + " path: " + e.getMessage());
+            LOG.debug("Command failed " + cmd + ": " + e.getMessage());
             return null;
         }
     }
 
     @Nullable
     private static String parseVersion(@NotNull String output) {
-        String[] lines = output.split("\n");
-        for (String line : lines) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
+        for (String line : output.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
 
-            // Skip noise like "Welcome to", "Loading", etc.
-            if (line.toLowerCase().contains("welcome") ||
-                line.toLowerCase().contains("loading") ||
-                line.toLowerCase().contains("initializing")) {
-                continue;
-            }
-
-            // Look for version patterns: "1.2.3" or "v1.2.3"
-            if (line.matches(".*\\d+\\.\\d+.*")) {
-                return line;
+            String lower = trimmed.toLowerCase();
+            boolean isNoise = lower.contains("welcome") || lower.contains("loading") || lower.contains("initializing");
+            if (!isNoise && trimmed.matches(".*\\d+\\.\\d+.*")) {
+                return trimmed;
             }
         }
         return null;

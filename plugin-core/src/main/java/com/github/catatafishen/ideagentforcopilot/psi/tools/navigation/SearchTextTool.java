@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
@@ -10,10 +11,20 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiManager;
+import com.intellij.usageView.UsageInfo;
+import com.intellij.usages.Usage;
+import com.intellij.usages.UsageInfo2UsageAdapter;
+import com.intellij.usages.UsageTarget;
+import com.intellij.usages.UsageViewManager;
+import com.intellij.usages.UsageViewPresentation;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,9 +37,15 @@ public final class SearchTextTool extends NavigationTool {
     private static final String PARAM_MAX_RESULTS = "max_results";
     private static final String PARAM_CONTEXT_LINES = "context_lines";
 
+    /**
+     * Holds a single match position for visual display in follow-agent mode.
+     */
+    private record MatchPosition(VirtualFile vf, int startOffset, int endOffset) {
+    }
+
     private record SearchParams(Pattern pattern, String basePath, String filePattern,
-                                List<String> results, AtomicInteger skippedLarge,
-                                int maxResults, int contextLines) {
+                                List<String> results, @Nullable List<MatchPosition> positions,
+                                AtomicInteger skippedLarge, int maxResults, int contextLines) {
     }
 
     public SearchTextTool(Project project) {
@@ -51,8 +68,8 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 
     @Override
@@ -87,18 +104,20 @@ public final class SearchTextTool extends NavigationTool {
         boolean caseSensitive = !args.has(PARAM_CASE_SENSITIVE) || args.get(PARAM_CASE_SENSITIVE).getAsBoolean();
         int maxResults = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
         int contextLines = args.has(PARAM_CONTEXT_LINES) ? args.get(PARAM_CONTEXT_LINES).getAsInt() : 0;
+        boolean followAgent = ActiveAgentManager.getFollowAgentFiles(project);
 
         showSearchFeedback("Searching text: " + query);
         // Cast required: disambiguates Computable<T> vs ThrowableComputable<T,E> overloads.
         // The IDE falsely reports this as redundant; Gradle fails without it.
-        Computable<String> action = () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults, contextLines);
+        Computable<String> action = () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults, contextLines, followAgent);
         String result = ApplicationManager.getApplication().runReadAction(action);
         showSearchFeedback("Text search complete: " + query);
         return result;
     }
 
     private String performSearch(String query, String filePattern, boolean isRegex,
-                                 boolean caseSensitive, int maxResults, int contextLines) {
+                                 boolean caseSensitive, int maxResults, int contextLines,
+                                 boolean followAgent) {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -106,9 +125,14 @@ public final class SearchTextTool extends NavigationTool {
         if (pattern == null) return "Error: invalid regex: " + query;
 
         List<String> results = new ArrayList<>();
+        List<MatchPosition> positions = followAgent ? new ArrayList<>() : null;
         AtomicInteger skippedLarge = new AtomicInteger(0);
-        var params = new SearchParams(pattern, basePath, filePattern, results, skippedLarge, maxResults, contextLines);
+        var params = new SearchParams(pattern, basePath, filePattern, results, positions, skippedLarge, maxResults, contextLines);
         ProjectFileIndex.getInstance(project).iterateContent(vf -> processFile(vf, params));
+
+        if (positions != null && !positions.isEmpty()) {
+            showResultsInUsageView(query, positions);
+        }
 
         StringBuilder sb = new StringBuilder();
         if (results.isEmpty()) {
@@ -124,6 +148,31 @@ public final class SearchTextTool extends NavigationTool {
         return sb.toString();
     }
 
+    /**
+     * Displays the pre-collected match positions in IntelliJ's Usage View — no second search.
+     * Must be called from a read action; schedules EDT work via invokeLater.
+     */
+    private void showResultsInUsageView(String query, List<MatchPosition> positions) {
+        // Capture the positions as a snapshot; PsiManager lookups happen on EDT (implicit read lock).
+        List<MatchPosition> snapshot = List.copyOf(positions);
+        ApplicationManager.getApplication().invokeLater(() -> {
+            Usage[] usages = snapshot.stream()
+                .map(pos -> {
+                    PsiFile psiFile = PsiManager.getInstance(project).findFile(pos.vf());
+                    if (psiFile == null) return null;
+                    return (Usage) new UsageInfo2UsageAdapter(
+                        new UsageInfo(psiFile, pos.startOffset(), pos.endOffset())
+                    );
+                })
+                .filter(Objects::nonNull)
+                .toArray(Usage[]::new);
+
+            UsageViewPresentation pres = new UsageViewPresentation();
+            pres.setTabText("Search: " + query);
+            UsageViewManager.getInstance(project).showUsages(UsageTarget.EMPTY_ARRAY, usages, pres);
+        });
+    }
+
     private boolean processFile(VirtualFile vf, SearchParams p) {
         if (vf.isDirectory()) return true;
         String relPath = relativize(p.basePath(), vf.getPath());
@@ -133,12 +182,13 @@ public final class SearchTextTool extends NavigationTool {
             p.skippedLarge().incrementAndGet();
             return p.results().size() < p.maxResults();
         }
-        searchFileForPattern(vf, p.pattern(), relPath, p.results(), p.maxResults(), p.contextLines());
+        searchFileForPattern(vf, p.pattern(), relPath, p.results(), p.positions(), p.maxResults(), p.contextLines());
         return p.results().size() < p.maxResults();
     }
 
     private static void searchFileForPattern(VirtualFile vf, Pattern pattern,
                                              String relPath, List<String> results,
+                                             @Nullable List<MatchPosition> positions,
                                              int maxResults, int contextLines) {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return;
@@ -151,6 +201,9 @@ public final class SearchTextTool extends NavigationTool {
                 results.add(String.format(FORMAT_LINE_REF, relPath, matchLine, lineText));
             } else {
                 results.add(buildMatchWithContext(doc, relPath, matchLine, lineText, contextLines));
+            }
+            if (positions != null) {
+                positions.add(new MatchPosition(vf, matcher.start(), matcher.end()));
             }
         }
     }

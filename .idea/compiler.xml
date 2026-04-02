@@ -5,6 +5,9 @@
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="com.github.catatafishen.ideagentforcopilot.ide-agent-for-copilot.plugin-core" options="-parameters -Xlint:deprecation" />
+      <module name="com.github.catatafishen.ideagentforcopilot.ide-agent-for-copilot.plugin-core.main" options="-parameters -Xlint:deprecation" />
+      <module name="com.github.catatafishen.ideagentforcopilot.ide-agent-for-copilot.plugin-core.test" options="-parameters -Xlint:deprecation" />
       <module name="ide-agent-for-copilot.integration-tests" options="-parameters" />
       <module name="ide-agent-for-copilot.integration-tests.main" options="-parameters" />
       <module name="ide-agent-for-copilot.integration-tests.test" options="-parameters" />

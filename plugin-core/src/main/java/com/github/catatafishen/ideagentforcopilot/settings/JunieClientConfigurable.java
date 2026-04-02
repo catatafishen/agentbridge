@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient;
 import com.github.catatafishen.ideagentforcopilot.agent.junie.JunieKeyStore;
+import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
@@ -94,7 +95,7 @@ public final class JunieClientConfigurable implements Configurable {
     @Override
     public boolean isModified() {
         if (binaryPathField == null || authTokenField == null) return false;
-        String storedPath = nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID));
+        String storedPath = nullToEmpty(AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID));
         String storedToken = nullToEmpty(JunieKeyStore.getAuthToken());
         if (!binaryPathField.getText().trim().equals(storedPath)) return true;
         if (!new String(authTokenField.getPassword()).equals(storedToken)) return true;
@@ -114,7 +115,7 @@ public final class JunieClientConfigurable implements Configurable {
         String newToken = new String(authTokenField.getPassword()).trim();
         boolean tokenChanged = !nullToEmpty(oldToken).equals(newToken);
 
-        AcpClient.saveCustomBinaryPath(AGENT_ID, binaryPathField.getText().trim());
+        AgentProfileManager.getInstance().saveBinaryPath(AGENT_ID, binaryPathField.getText().trim());
 
         if (newToken.isEmpty()) {
             JunieKeyStore.setAuthToken(null);
@@ -156,7 +157,7 @@ public final class JunieClientConfigurable implements Configurable {
     public void reset() {
         if (binaryPathField == null || authTokenField == null) return;
         refreshStatusAsync();
-        binaryPathField.setText(nullToEmpty(AcpClient.loadCustomBinaryPath(AGENT_ID)));
+        binaryPathField.setText(nullToEmpty(AgentProfileManager.getInstance().loadBinaryPath(AGENT_ID)));
         authTokenField.setText(nullToEmpty(JunieKeyStore.getAuthToken()));
         if (bubbleColorCombo != null) {
             bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)));
@@ -178,9 +179,7 @@ public final class JunieClientConfigurable implements Configurable {
         statusLabel.setForeground(UIUtil.getLabelForeground());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            String customPath = AcpClient.loadCustomBinaryPath(AGENT_ID);
-            String binary = customPath != null ? customPath : "junie";
-            String version = BinaryDetector.detectBinaryVersion(binary, new String[0]);
+            String version = new AcpClientBinaryResolver(AGENT_ID, "junie").detectVersion();
             SwingUtilities.invokeLater(() -> {
                 if (statusLabel == null) return;
                 if (version != null) {

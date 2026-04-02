@@ -41,8 +41,8 @@ public final class CreateFileTool extends FileTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 
     @Override

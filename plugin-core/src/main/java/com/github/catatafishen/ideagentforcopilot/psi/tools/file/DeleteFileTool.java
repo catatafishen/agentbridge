@@ -43,8 +43,8 @@ public final class DeleteFileTool extends FileTool {
 
 
     @Override
-    public @NotNull String kind() {
-        return "execute";
+    public @NotNull Kind kind() {
+        return Kind.EXECUTE;
     }
 @Override
     public boolean isDestructive() {

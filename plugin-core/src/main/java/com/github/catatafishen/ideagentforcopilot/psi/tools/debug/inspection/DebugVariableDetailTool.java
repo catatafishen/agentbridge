@@ -51,8 +51,8 @@ public final class DebugVariableDetailTool extends DebugTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 
     @Override

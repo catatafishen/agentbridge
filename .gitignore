@@ -11,6 +11,7 @@ build/
 .idea/shelf/
 .idea/gradle.xml
 .idea/mcpServer.xml
+.idea/chatWebServer.xml
 .idea/modules.xml
 .idea/sonarlint.xml
 .idea/sonarlint/

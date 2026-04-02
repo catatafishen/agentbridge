@@ -4,7 +4,6 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.util.EnvironmentUtil
-import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -37,45 +36,13 @@ internal class CopilotBillingClient {
 
     companion object {
         private val LOG = Logger.getInstance(CopilotBillingClient::class.java)
-        private const val OS_NAME_PROPERTY = "os.name"
         private const val API_ENDPOINT = "/copilot_internal/user"
         private const val GH_CLI_TIMEOUT_SECONDS = 10L
         private const val AUTH_TIMEOUT_SECONDS = 5L
     }
 
-    /**
-     * Finds the `gh` CLI executable, checking PATH and known install locations.
-     */
     fun findGhCli(): String? {
-        try {
-            val cmd = if (System.getProperty(OS_NAME_PROPERTY).lowercase().contains("win")) "where" else "which"
-            val pb = ProcessBuilder(cmd, "gh")
-            // Use the user's actual shell environment to ensure PATH is correct
-            pb.environment().putAll(EnvironmentUtil.getEnvironmentMap())
-            val check = pb.start()
-            if (check.waitFor() == 0) return "gh"
-        } catch (_: Exception) {
-            // gh CLI detection is best-effort
-        }
-
-        val isWindows = System.getProperty(OS_NAME_PROPERTY).lowercase().contains("win")
-        val knownPaths = if (isWindows) {
-            listOf(
-                "C:\\Program Files\\GitHub CLI\\gh.exe",
-                "C:\\Program Files (x86)\\GitHub CLI\\gh.exe",
-                "C:\\Tools\\gh\\bin\\gh.exe",
-                System.getProperty("user.home") + "\\AppData\\Local\\GitHub CLI\\gh.exe"
-            )
-        } else {
-            listOf(
-                "/usr/bin/gh",
-                "/usr/local/bin/gh",
-                System.getProperty("user.home") + "/.local/bin/gh",
-                "/snap/bin/gh",
-                "/home/linuxbrew/.linuxbrew/bin/gh"
-            )
-        }
-        return knownPaths.firstOrNull { File(it).exists() }
+        return com.github.catatafishen.ideagentforcopilot.settings.GhBinaryDetector().resolve("gh")
     }
 
     /**

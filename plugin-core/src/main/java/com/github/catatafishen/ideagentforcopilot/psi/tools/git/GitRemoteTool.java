@@ -33,15 +33,14 @@ public final class GitRemoteTool extends GitTool {
         return "List, add, remove, or update remote repositories";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
-    public boolean isReadOnly() {
-        return true;
+    public @NotNull String permissionTemplate() {
+        return "{action} remote {name}";
     }
 
     @Override

@@ -56,8 +56,8 @@ private enum class KindGroup(val label: String, val description: String) {
 /** Maps a [ToolDefinition] to its batch [KindGroup], or null for unclassified tools. */
 private fun ToolDefinition.kindGroup(): KindGroup? = when {
     isReadOnly -> KindGroup.READ
-    kind() == "edit" -> KindGroup.EDIT
-    kind() == "execute" -> KindGroup.EXECUTE
+    kind() == ToolDefinition.Kind.EDIT || kind() == ToolDefinition.Kind.WRITE -> KindGroup.EDIT
+    kind() == ToolDefinition.Kind.EXECUTE -> KindGroup.EXECUTE
     else -> null
 }
 

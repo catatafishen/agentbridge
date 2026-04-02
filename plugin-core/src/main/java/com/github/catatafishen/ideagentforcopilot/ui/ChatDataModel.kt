@@ -29,7 +29,7 @@ internal val THINK_COLOR: Color
 internal const val ICON_ERROR = "\u274C"
 
 /** Matches `[quick-reply: Option A | Option B | ...]` tags. */
-internal val QUICK_REPLY_TAG_REGEX = Regex("""\[quick-reply:\s*([^\]]+)]""", RegexOption.MULTILINE)
+internal val QUICK_REPLY_TAG_REGEX = Regex("""\[\s*quick-reply:\s*([^\]]+)]""", RegexOption.MULTILINE)
 
 // ── Data model ────────────────────────────────────────────────────────────────
 

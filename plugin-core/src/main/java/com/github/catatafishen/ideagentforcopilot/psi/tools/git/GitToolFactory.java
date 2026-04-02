@@ -25,6 +25,7 @@ public final class GitToolFactory {
             new GitShowTool(project),
             new GetFileHistoryTool(project),
             new GitRemoteTool(project),
+            new GitConfigTool(project),
             new GitCommitTool(project),
             new GitStageTool(project),
             new GitUnstageTool(project),

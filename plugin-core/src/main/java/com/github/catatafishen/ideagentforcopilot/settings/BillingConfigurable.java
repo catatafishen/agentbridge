@@ -6,6 +6,7 @@ import com.intellij.openapi.options.Configurable;
 import com.intellij.ui.HyperlinkLabel;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
+import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.FormBuilder;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
@@ -20,6 +21,7 @@ public final class BillingConfigurable implements Configurable {
     public static final String ID = "com.github.catatafishen.ideagentforcopilot.billing";
 
     private JBCheckBox showCopilotUsageCb;
+    private JBTextField ghBinaryPathField;
     private BillingSettings settings;
     private JBLabel statusLabel;
     private JPanel mainPanel;
@@ -34,6 +36,8 @@ public final class BillingConfigurable implements Configurable {
         settings = BillingSettings.getInstance();
 
         statusLabel = new JBLabel();
+        ghBinaryPathField = new JBTextField();
+        ghBinaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
 
         JBLabel explanationLabel = new JBLabel(
             "<html><b>Why GitHub CLI is needed:</b><br/>" +
@@ -65,6 +69,8 @@ public final class BillingConfigurable implements Configurable {
                 "<html>Configure how billing and usage data is displayed in the IDE.</html>"))
             .addSeparator(8)
             .addLabeledComponent("GitHub CLI Status:", statusPanel)
+            .addLabeledComponent("GitHub CLI binary:", ghBinaryPathField)
+            .addTooltip("Absolute path to gh CLI binary. Leave empty to auto-detect on PATH.")
             .addComponent(explanationLabel, 2)
             .addComponent(installNote, 2)
             .addComponent(installLink, 2)
@@ -81,17 +87,24 @@ public final class BillingConfigurable implements Configurable {
 
     @Override
     public boolean isModified() {
-        return showCopilotUsageCb.isSelected() != settings.isShowCopilotUsage();
+        if (showCopilotUsageCb.isSelected() != settings.isShowCopilotUsage()) return true;
+        String currentGhPath = settings.getGhBinaryPath();
+        String fieldText = ghBinaryPathField.getText().trim();
+        return !fieldText.equals(currentGhPath == null ? "" : currentGhPath);
     }
 
     @Override
     public void apply() {
         settings.setShowCopilotUsage(showCopilotUsageCb.isSelected());
+        String ghPath = ghBinaryPathField.getText().trim();
+        settings.setGhBinaryPath(ghPath.isEmpty() ? null : ghPath);
     }
 
     @Override
     public void reset() {
         showCopilotUsageCb.setSelected(settings.isShowCopilotUsage());
+        String ghPath = settings.getGhBinaryPath();
+        ghBinaryPathField.setText(ghPath != null ? ghPath : "");
         refreshGhCliStatusAsync();
     }
 
@@ -99,6 +112,7 @@ public final class BillingConfigurable implements Configurable {
     public void disposeUIResources() {
         mainPanel = null;
         showCopilotUsageCb = null;
+        ghBinaryPathField = null;
         statusLabel = null;
     }
 

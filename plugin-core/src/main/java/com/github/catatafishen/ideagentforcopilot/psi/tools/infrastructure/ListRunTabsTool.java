@@ -40,8 +40,8 @@ public final class ListRunTabsTool extends InfrastructureTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 
     @Override

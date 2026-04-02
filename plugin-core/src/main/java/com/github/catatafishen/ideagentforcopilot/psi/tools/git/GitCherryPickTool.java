@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -36,13 +35,12 @@ public final class GitCherryPickTool extends GitTool {
         return "Apply specific commits from another branch";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
-    }
-@Override
     public @NotNull String permissionTemplate() {
         return "Cherry-pick {commits}";
     }
@@ -68,7 +66,8 @@ public final class GitCherryPickTool extends GitTool {
         }
 
         if (args.has(PARAM_CONTINUE_PICK) && args.get(PARAM_CONTINUE_PICK).getAsBoolean()) {
-            return runGit(CHERRY_PICK, "--continue");
+            // --no-edit prevents git from opening $EDITOR for the commit message.
+            return runGit(CHERRY_PICK, "--continue", "--no-edit");
         }
 
         if (!args.has(PARAM_COMMITS) || !args.get(PARAM_COMMITS).isJsonArray()) {

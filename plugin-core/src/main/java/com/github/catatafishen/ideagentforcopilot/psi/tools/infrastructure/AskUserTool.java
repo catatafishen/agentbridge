@@ -51,8 +51,8 @@ public final class AskUserTool extends InfrastructureTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "other";
+    public @NotNull Kind kind() {
+        return Kind.OTHER;
     }
 
     @Override

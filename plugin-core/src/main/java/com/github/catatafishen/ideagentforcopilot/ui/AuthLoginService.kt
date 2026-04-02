@@ -102,7 +102,7 @@ class AuthLoginService(private val project: Project) {
     private fun resolveAuthCommand(): List<String> {
         val agentManager = ActiveAgentManager.getInstance(project)
         val profile = agentManager.getActiveProfile()
-        val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
+        val config = ProfileBasedAgentConfig.create(profile, ToolRegistry.getInstance(project), project)
 
         // Resolve binary path without relying on the running client
         val binaryPath = config.agentBinaryPath
@@ -392,7 +392,7 @@ class AuthLoginService(private val project: Project) {
         try {
             val agentManager = ActiveAgentManager.getInstance(project)
             val profile = agentManager.getActiveProfile()
-            val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
+            val config = ProfileBasedAgentConfig.create(profile, ToolRegistry.getInstance(project), project)
             // Use login-specific env so HOME is NOT overridden (overriding HOME breaks copilot npm wrapper)
             config.configureLoginCommandEnvironment(pb.environment(), project.basePath)
         } catch (e: Exception) {
@@ -408,7 +408,7 @@ class AuthLoginService(private val project: Project) {
         return try {
             val agentManager = ActiveAgentManager.getInstance(project)
             val profile = agentManager.getActiveProfile()
-            val config = ProfileBasedAgentConfig(profile, ToolRegistry.getInstance(project))
+            val config = ProfileBasedAgentConfig.create(profile, ToolRegistry.getInstance(project), project)
             val envMap = mutableMapOf<String, String>()
             config.configureLoginCommandEnvironment(envMap, project.basePath)
             envMap

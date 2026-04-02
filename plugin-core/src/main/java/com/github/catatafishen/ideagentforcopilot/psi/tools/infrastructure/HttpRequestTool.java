@@ -44,8 +44,8 @@ public final class HttpRequestTool extends InfrastructureTool {
 
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public boolean isOpenWorld() {

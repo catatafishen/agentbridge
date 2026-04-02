@@ -25,10 +25,46 @@ public interface ToolDefinition {
     String id();
 
     /**
-     * Semantic kind for UI coloring (read/edit/execute/other).
+     * Semantic kind used for UI coloring and Copilot agent-set filtering.
      * Each tool must explicitly declare its kind.
      */
-    @NotNull String kind();
+    @NotNull Kind kind();
+
+    /**
+     * Semantic kind for a tool.
+     * <p>
+     * Used to color tool chips in the UI and to derive which tools belong
+     * to which Copilot agent set (ALL / Explore / Edit).
+     */
+    enum Kind {
+        /**
+         * Read-only operation — included in ALL, Explore, and Edit agent sets.
+         */
+        READ,
+        /**
+         * Mutates IDE state (file edits, refactoring, settings) — included in ALL and Edit.
+         */
+        EDIT,
+        /**
+         * Mutates debug state (stepping, breakpoints) — included in ALL only.
+         */
+        WRITE,
+        /**
+         * Runs external process or irreversible action — included in ALL only.
+         */
+        EXECUTE,
+        /**
+         * Fallback for tools that don't fit any other kind.
+         */
+        OTHER;
+
+        /**
+         * Lowercase wire value used for serialization and {@link ToolChipRegistry}.
+         */
+        public String value() {
+            return name().toLowerCase(java.util.Locale.ROOT);
+        }
+    }
 
     /**
      * Human-readable name shown in the UI (e.g. "Git Push").

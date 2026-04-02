@@ -105,7 +105,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     companion object {
         private val LOG = com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
-        private val QUICK_REPLY_TAG_REGEX = Regex("\\[quick-reply:\\s*([^]]+)]")
+        private val QUICK_REPLY_TAG_REGEX = Regex("\\[\\s*quick-reply:\\s*([^]]+)]")
 
         /** Active panels keyed by project — used by MCP tool to retrieve page HTML. */
         private val instances = java.util.concurrent.ConcurrentHashMap<Project, ChatConsolePanel>()
@@ -346,7 +346,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             currentTextData = EntryData.Text(StringBuilder(), timestamp(), currentAgent).also { entries.add(it) }
         }
         currentTextData!!.raw.append(text)
-        executeJs("ChatController.appendAgentText('$currentTurnId','main','${escJs(text)}')")
+        val ts = displayTs(currentTextData!!.timestamp)
+        executeJs("ChatController.appendAgentText('$currentTurnId','main','${escJs(text)}','$ts')")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.append(text) } }
     }
 
@@ -531,7 +532,19 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
-        val isExternal = def == null  // Not from our MCP plugin
+
+        // Check if MCP handled this via hash correlation
+        val argsObj = arguments?.let {
+            try {
+                JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val registration = registry.registerClientSide(cleanTitle, argsObj, toolId)
+        val isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
+        val isExternal = !isMcpHandled
+
         executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson','$safeKind',$isExternal)")
     }
 

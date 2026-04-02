@@ -81,8 +81,8 @@ public final class RunTestsTool extends TestingTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 
     @Override

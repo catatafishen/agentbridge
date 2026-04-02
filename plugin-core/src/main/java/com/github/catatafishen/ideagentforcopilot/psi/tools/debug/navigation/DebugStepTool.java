@@ -33,8 +33,8 @@ public final class DebugStepTool extends DebugTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "write";
+    public @NotNull Kind kind() {
+        return Kind.WRITE;
     }
 
     @Override

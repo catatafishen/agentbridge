@@ -1,11 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.project;
 
 import com.github.catatafishen.ideagentforcopilot.psi.RunConfigurationService;
+import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunConfigCrudRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
-import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunConfigCrudRenderer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Deletes a run configuration by name.
@@ -34,13 +33,12 @@ public final class DeleteRunConfigurationTool extends ProjectTool {
         return "Delete a run configuration by name";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.EXECUTE;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "execute";
-    }
-@Override
     public boolean isDestructive() {
         return true;
     }

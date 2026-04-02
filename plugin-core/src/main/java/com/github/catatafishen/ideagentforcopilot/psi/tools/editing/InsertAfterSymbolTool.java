@@ -47,8 +47,8 @@ public final class InsertAfterSymbolTool extends EditingTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 
     @Override

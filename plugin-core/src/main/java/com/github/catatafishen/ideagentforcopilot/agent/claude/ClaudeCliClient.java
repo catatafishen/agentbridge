@@ -107,7 +107,6 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         p.setMcpMethod(McpInjectionMethod.CONFIG_FLAG);
         p.setSupportsMcpConfigFlag(true);
         p.setSupportsModelFlag(true);
-        p.setSupportsConfigDir(false);
         // requiresResourceDuplication removed (always false for CLI agents)
         p.setExcludeAgentBuiltInTools(true);
         p.setUsePluginPermissions(true);
@@ -271,7 +270,25 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     @Override
     public @NotNull List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> getAvailableModels() {
-        return KNOWN_MODELS;
+        List<String> custom = profile.getCustomCliModels();
+        if (custom.isEmpty()) {
+            return KNOWN_MODELS;
+        }
+
+        // Known model IDs for dedup
+        java.util.Set<String> knownIds = new java.util.HashSet<>();
+        for (var m : KNOWN_MODELS) {
+            knownIds.add(m.id());
+        }
+
+        List<com.github.catatafishen.ideagentforcopilot.acp.model.Model> merged = new ArrayList<>(KNOWN_MODELS);
+        for (String id : custom) {
+            if (!id.isBlank() && !knownIds.contains(id.trim())) {
+                merged.add(new com.github.catatafishen.ideagentforcopilot.acp.model.Model(
+                    id.trim(), id.trim(), null, null));
+            }
+        }
+        return java.util.Collections.unmodifiableList(merged);
     }
 
     // ── Prompt execution ─────────────────────────────────────────────────────
@@ -833,41 +850,20 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     // ── Binary resolution ────────────────────────────────────────────────────
 
-    @NotNull
     private String resolveBinary() throws AgentException {
         String custom = profile.getCustomBinaryPath();
         if (!custom.isEmpty()) {
             if (Files.isExecutable(Path.of(custom))) return custom;
             throw new AgentException("Claude binary not found at: " + custom, null, false);
         }
-        for (String name : candidateNames()) {
-            String found = findOnPath(name);
-            if (found != null) return found;
-        }
+        // Auto-detect using the unified detector (shell environment + known paths)
+        com.github.catatafishen.ideagentforcopilot.settings.ProfileBinaryDetector detector =
+            new com.github.catatafishen.ideagentforcopilot.settings.ProfileBinaryDetector(profile);
+        String found = detector.resolve("claude");
+        if (found != null) return found;
         throw new AgentException(
             "Claude CLI not found. Install it from code.claude.com and run 'claude auth login'.",
             null, false);
-    }
-
-    @NotNull
-    private List<String> candidateNames() {
-        List<String> names = new ArrayList<>();
-        String primary = profile.getBinaryName();
-        if (!primary.isEmpty()) names.add(primary);
-        names.addAll(profile.getAlternateNames());
-        if (!names.contains("claude")) names.add("claude");
-        return names;
-    }
-
-    @Nullable
-    private static String findOnPath(@NotNull String name) {
-        String pathEnv = System.getenv("PATH");
-        if (pathEnv == null) return null;
-        for (String dir : pathEnv.split(File.pathSeparator)) {
-            Path candidate = Path.of(dir, name);
-            if (Files.isExecutable(candidate)) return candidate.toString();
-        }
-        return null;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

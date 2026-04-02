@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.settings;
 
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.ideagentforcopilot.agent.codex.CodexCredentials;
+import com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager;
 import com.github.catatafishen.ideagentforcopilot.ui.AuthTerminalHelperKt;
 import com.github.catatafishen.ideagentforcopilot.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
@@ -143,9 +144,7 @@ public final class CodexClientConfigurable implements Configurable {
         authStatusLabel.setForeground(UIUtil.getLabelForeground());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            String customPath = loadCustomBinaryPath();
-            String binary = customPath != null && !customPath.isEmpty() ? customPath : "codex";
-            String version = BinaryDetector.detectBinaryVersion(binary, new String[0]);
+            String version = new AcpClientBinaryResolver(CodexAppServerClient.PROFILE_ID, "codex").detectVersion();
             CodexCredentials creds = CodexCredentials.read();
             SwingUtilities.invokeLater(() -> applyStatusResults(version, creds));
         });
@@ -211,16 +210,16 @@ public final class CodexClientConfigurable implements Configurable {
         });
     }
 
-    // ── Storage helpers (delegate to AcpClient persistence) ──────────────────
+    // ── Storage helpers (delegate to AgentProfileManager) ──────────────────
 
     private String loadCustomBinaryPath() {
-        return com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient
-            .loadCustomBinaryPath(CodexAppServerClient.PROFILE_ID);
+        return AgentProfileManager.getInstance()
+            .loadBinaryPath(CodexAppServerClient.PROFILE_ID);
     }
 
     private void saveCustomBinaryPath(String path) {
-        com.github.catatafishen.ideagentforcopilot.acp.client.AcpClient
-            .saveCustomBinaryPath(CodexAppServerClient.PROFILE_ID, path);
+        AgentProfileManager.getInstance()
+            .saveBinaryPath(CodexAppServerClient.PROFILE_ID, path);
     }
 
     private @Nullable String loadBubbleColorKey() {

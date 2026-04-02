@@ -55,15 +55,14 @@ public final class ClaudeCliExporter {
         @NotNull String cwd) throws IOException {
 
         List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(messages);
-        anthropicMessages = AnthropicClientExporter.ensureUserFirst(anthropicMessages);
 
         String cliVersion = detectCliVersion(targetPath.getParent());
         String gitBranch = detectGitBranch(cwd);
 
         // Use the earliest message timestamp for queue events, falling back to now
-        Instant sessionStart = anthropicMessages.isEmpty() || anthropicMessages.getFirst().createdAt == 0
+        Instant sessionStart = anthropicMessages.isEmpty() || anthropicMessages.getFirst().createdAt() == 0
             ? Instant.now()
-            : Instant.ofEpochMilli(anthropicMessages.getFirst().createdAt);
+            : Instant.ofEpochMilli(anthropicMessages.getFirst().createdAt());
 
         var ctx = new EventContext(sessionId, cwd, cliVersion, gitBranch);
         StringBuilder sb = new StringBuilder();
@@ -77,13 +76,13 @@ public final class ClaudeCliExporter {
 
         for (AnthropicMessage msg : anthropicMessages) {
             String uuid = UUID.randomUUID().toString();
-            Instant msgTimestamp = msg.createdAt > 0
-                ? Instant.ofEpochMilli(msg.createdAt)
+            Instant msgTimestamp = msg.createdAt() > 0
+                ? Instant.ofEpochMilli(msg.createdAt())
                 : sessionStart;
 
-            boolean hasToolUse = "assistant".equals(msg.role) && msg.contentBlocks.stream()
+            boolean hasToolUse = "assistant".equals(msg.role()) && msg.contentBlocks().stream()
                 .anyMatch(b -> b.has("type") && "tool_use".equals(b.get("type").getAsString()));
-            boolean hasToolResult = "user".equals(msg.role) && msg.contentBlocks.stream()
+            boolean hasToolResult = "user".equals(msg.role()) && msg.contentBlocks().stream()
                 .anyMatch(b -> b.has("type") && "tool_result".equals(b.get("type").getAsString()));
 
             String sourceAssistantUuid = hasToolResult ? lastToolAssistantUuid : null;
@@ -205,9 +204,9 @@ public final class ClaudeCliExporter {
     private static String extractLastUserPromptText(@NotNull List<AnthropicMessage> messages) {
         String lastText = "";
         for (AnthropicMessage msg : messages) {
-            if (!"user".equals(msg.role)) continue;
+            if (!"user".equals(msg.role())) continue;
             StringBuilder sb = new StringBuilder();
-            for (JsonObject block : msg.contentBlocks) {
+            for (JsonObject block : msg.contentBlocks()) {
                 if (block.has("text")) {
                     sb.append(block.get("text").getAsString());
                 }
@@ -248,7 +247,7 @@ public final class ClaudeCliExporter {
 
         JsonObject event = new JsonObject();
 
-        if ("user".equals(msg.role)) {
+        if ("user".equals(msg.role())) {
             event.addProperty("type", "user");
             event.addProperty("promptId", UUID.randomUUID().toString());
             event.addProperty("permissionMode", "bypassPermissions");
@@ -279,14 +278,14 @@ public final class ClaudeCliExporter {
         event.addProperty("isSidechain", false);
 
         JsonObject messagePayload = new JsonObject();
-        messagePayload.addProperty("role", msg.role);
+        messagePayload.addProperty("role", msg.role());
         JsonArray contentArray = new JsonArray();
-        msg.contentBlocks.forEach(contentArray::add);
+        msg.contentBlocks().forEach(contentArray::add);
         messagePayload.add("content", contentArray);
 
         // Assistant messages must match the Anthropic API response structure that Claude CLI
         // expects when rebuilding conversation context during --resume.
-        if ("assistant".equals(msg.role)) {
+        if ("assistant".equals(msg.role())) {
             messagePayload.addProperty("id", "msg_" + uuid.replace("-", "").substring(0, 24));
             messagePayload.addProperty("type", "message");
             messagePayload.addProperty("model", "claude-sonnet-4-6");
@@ -294,7 +293,7 @@ public final class ClaudeCliExporter {
             // stop_reason must be "tool_use" when the message contains tool_use blocks,
             // "end_turn" otherwise.  Claude CLI uses this to determine conversation flow
             // when rebuilding context for --resume.
-            boolean hasToolUse = msg.contentBlocks.stream()
+            boolean hasToolUse = msg.contentBlocks().stream()
                 .anyMatch(b -> b.has("type") && "tool_use".equals(b.get("type").getAsString()));
             messagePayload.addProperty("stop_reason", hasToolUse ? "tool_use" : "end_turn");
             messagePayload.add("stop_sequence", JsonNull.INSTANCE);

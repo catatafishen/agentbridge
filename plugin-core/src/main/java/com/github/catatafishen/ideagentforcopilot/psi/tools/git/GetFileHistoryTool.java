@@ -3,7 +3,6 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.git;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 @SuppressWarnings("java:S112")
 public final class GetFileHistoryTool extends GitTool {
@@ -30,13 +29,12 @@ public final class GetFileHistoryTool extends GitTool {
         return "Get git commit history for a file, including renames";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

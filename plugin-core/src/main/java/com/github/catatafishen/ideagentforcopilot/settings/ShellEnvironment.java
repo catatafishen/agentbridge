@@ -20,6 +20,9 @@ public class ShellEnvironment {
     private static volatile Map<String, String> cachedEnvironment = null;
     private static final Object LOCK = new Object();
 
+    private ShellEnvironment() {
+    }
+
     /**
      * Get the captured shell environment, capturing it on first call and caching thereafter.
      *
@@ -63,9 +66,21 @@ public class ShellEnvironment {
     @NotNull
     private static Map<String, String> captureUnixEnvironment() {
         try {
-            // Use interactive shell to get full environment including nvm, sdkman from .bashrc
-            // Redirect stderr to suppress "cannot set terminal process group" warnings
-            ProcessBuilder pb = new ProcessBuilder("bash", "-i", "-c", "env 2>/dev/null");
+            String userShell = System.getenv("SHELL");
+            if (userShell == null || userShell.isBlank()) {
+                userShell = "/bin/sh";
+            }
+
+            // Run a login shell to pick up /etc/profile and ~/.bash_profile / ~/.profile.
+            // Then ALSO source well-known version-manager init scripts directly, because:
+            // - ~/.bashrc is NOT sourced by bash login shells on Linux (only by interactive shells)
+            // - ~/.bashrc often has "case $- in *i*) ;; *) return ;;" which skips nvm/sdkman init
+            //   even if sourced explicitly
+            // - nvm.sh and sdkman-init.sh are designed to be sourced without interactive guards
+            String home = System.getProperty("user.home");
+            String command = buildEnvCaptureCommand(home);
+
+            ProcessBuilder pb = new ProcessBuilder(userShell, "-l", "-c", command);
             pb.redirectErrorStream(false);
 
             Process process = pb.start();
@@ -77,9 +92,7 @@ public class ShellEnvironment {
                 while ((line = reader.readLine()) != null) {
                     int idx = line.indexOf('=');
                     if (idx > 0) {
-                        String key = line.substring(0, idx);
-                        String value = line.substring(idx + 1);
-                        env.put(key, value);
+                        env.put(line.substring(0, idx), line.substring(idx + 1));
                     }
                 }
             }
@@ -98,15 +111,35 @@ public class ShellEnvironment {
             LOG.info("Captured shell environment with PATH: " + env.get("PATH"));
             return Collections.unmodifiableMap(env);
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Shell environment capture interrupted");
+            return System.getenv();
         } catch (Exception e) {
             LOG.warn("Failed to capture shell environment: " + e.getMessage(), e);
             return System.getenv();
         }
     }
 
+    /**
+     * Builds a shell command that sources well-known version manager init scripts
+     * (nvm, sdkman, cargo, pyenv, etc.) before printing the environment.
+     * These scripts are safe to source in non-interactive shells — unlike ~/.bashrc.
+     */
+    @NotNull
+    private static String buildEnvCaptureCommand(@NotNull String home) {
+        // Each line: source the script if it exists, silently ignore errors
+        return "{ "
+            + "[ -s '" + home + "/.nvm/nvm.sh' ] && . '" + home + "/.nvm/nvm.sh' 2>/dev/null; "
+            + "[ -s '" + home + "/.sdkman/bin/sdkman-init.sh' ] && . '" + home + "/.sdkman/bin/sdkman-init.sh' 2>/dev/null; "
+            + "[ -s '" + home + "/.cargo/env' ] && . '" + home + "/.cargo/env' 2>/dev/null; "
+            + "[ -f '" + home + "/.pyenv/bin/pyenv' ] && export PATH='" + home + "/.pyenv/bin:$PATH' 2>/dev/null; "
+            + "env 2>/dev/null; }";
+    }
+
     @NotNull
     private static Map<String, String> captureWindowsEnvironment() {
-        // Just use system environment - we override USERPROFILE/HOME in buildEnvironment() anyway
+        // Just use system environment - HOME/USERPROFILE are set correctly on Windows
         LOG.info("Using system environment for Windows");
         return System.getenv();
     }

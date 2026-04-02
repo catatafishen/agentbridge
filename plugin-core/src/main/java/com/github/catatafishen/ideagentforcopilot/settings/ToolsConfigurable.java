@@ -242,8 +242,8 @@ public final class ToolsConfigurable implements Configurable {
     private static Color kindColorFor(ToolDefinition tool, McpServerSettings settings) {
         if (tool.isReadOnly()) return ToolKindColors.readColor(settings);
         return switch (tool.kind()) {
-            case "edit" -> ToolKindColors.editColor(settings);
-            case "execute" -> ToolKindColors.executeColor(settings);
+            case EDIT, WRITE -> ToolKindColors.editColor(settings);
+            case EXECUTE -> ToolKindColors.executeColor(settings);
             default -> ToolKindColors.readColor(settings);
         };
     }

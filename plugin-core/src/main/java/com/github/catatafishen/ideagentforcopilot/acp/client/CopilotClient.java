@@ -6,6 +6,8 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
+import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
+import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -18,6 +20,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 /**
  * GitHub Copilot ACP client.
@@ -49,69 +52,38 @@ public final class CopilotClient extends AcpClient {
     // ─── MCP tool sets ───────────────────────────────
 
     /**
-     * All MCP tools exposed by our server (excludes internal-only: get_chat_html, search_conversation_history).
+     * All non-built-in MCP tools.
      */
-    private static final List<String> ALL_MCP_TOOLS = List.of(
-        "add_to_dictionary", "apply_action", "apply_quickfix", "build_project",
-        "create_file", "create_run_configuration", "create_scratch_file",
-        "delete_file", "delete_run_configuration", "download_sources",
-        "edit_project_structure", "edit_run_configuration", "edit_text",
-        "find_implementations", "find_references", "format_code",
-        "get_action_options", "get_active_file", "get_available_actions",
-        "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
-        "get_coverage", "get_documentation", "get_file_history", "get_file_outline",
-        "get_highlights", "get_indexing_status", "get_notifications", "get_open_editors",
-        "get_problems", "get_project_info", "get_sonar_rule_description", "get_type_hierarchy",
-        "git_blame", "git_branch", "git_cherry_pick", "git_commit", "git_diff",
-        "git_fetch", "git_log", "git_merge", "git_pull", "git_push", "git_rebase",
-        "git_remote", "git_reset", "git_revert", "git_show", "git_stage", "git_stash",
-        "git_status", "git_tag", "git_unstage", "go_to_declaration", "http_request",
-        "insert_after_symbol", "insert_before_symbol", "list_project_files",
-        "list_run_configurations", "list_scratch_files", "list_terminals", "list_tests",
-        "list_themes", "mark_directory", "move_file", "open_in_editor", "optimize_imports",
-        "read_build_output", "read_file", "read_ide_log", "read_run_output",
-        "read_terminal_output", "redo", "refactor", "reload_from_disk", "rename_file",
-        "replace_symbol_body", "run_command", "run_configuration", "run_in_terminal",
-        "run_qodana", "run_scratch_file", "run_sonarqube_analysis", "run_tests",
-        "search_symbols", "search_text", "set_theme", "show_diff", "suppress_inspection",
-        "undo", "write_file", "write_terminal_input"
-    );
+    private List<String> allMcpToolIds() {
+        return ToolRegistry.getInstance(project).getAllTools().stream()
+            .filter(t -> !t.isBuiltIn())
+            .map(ToolDefinition::id)
+            .sorted()
+            .collect(Collectors.toList());
+    }
 
     /**
-     * Read-only tools for the explore agent — no file writes, no shell execution, no git mutations.
+     * Read-only tools only — no writes, no execution.
      */
-    private static final List<String> EXPLORE_MCP_TOOLS = List.of(
-        "find_implementations", "find_references",
-        "get_action_options", "get_active_file", "get_available_actions",
-        "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
-        "get_coverage", "get_documentation", "get_file_history", "get_file_outline",
-        "get_highlights", "get_indexing_status", "get_notifications", "get_open_editors",
-        "get_problems", "get_project_info", "get_sonar_rule_description", "get_type_hierarchy",
-        "git_blame", "git_branch", "git_diff", "git_log", "git_remote",
-        "git_show", "git_stash", "git_status", "git_tag",
-        "go_to_declaration", "list_project_files", "list_run_configurations",
-        "list_scratch_files", "list_terminals", "list_tests",
-        "read_build_output", "read_file", "read_ide_log", "read_run_output",
-        "read_terminal_output", "search_symbols", "search_text", "show_diff"
-    );
+    private List<String> exploreMcpToolIds() {
+        return ToolRegistry.getInstance(project).getAllTools().stream()
+            .filter(t -> !t.isBuiltIn() && t.kind() == ToolDefinition.Kind.READ)
+            .map(ToolDefinition::id)
+            .sorted()
+            .collect(Collectors.toList());
+    }
 
     /**
-     * Focused editing tools — no system shell, no Gradle wrappers, no cosmetic tools.
+     * Editing tools — read + edit kinds, excludes execute/write (shell, debug, terminal).
      */
-    private static final List<String> EDIT_MCP_TOOLS = List.of(
-        "apply_action", "apply_quickfix", "build_project", "create_file", "delete_file",
-        "edit_text", "find_implementations", "find_references", "format_code",
-        "get_action_options", "get_active_file", "get_available_actions",
-        "get_call_hierarchy", "get_class_outline", "get_compilation_errors",
-        "get_documentation", "get_file_history", "get_file_outline", "get_highlights",
-        "get_problems", "get_project_info", "get_type_hierarchy",
-        "git_blame", "git_diff", "git_log", "git_status",
-        "go_to_declaration", "insert_after_symbol", "insert_before_symbol",
-        "list_project_files", "move_file", "open_in_editor", "optimize_imports",
-        "read_build_output", "read_file", "redo", "refactor", "reload_from_disk",
-        "rename_file", "replace_symbol_body", "run_tests", "search_symbols",
-        "search_text", "show_diff", "suppress_inspection", "undo", "write_file"
-    );
+    private List<String> editMcpToolIds() {
+        return ToolRegistry.getInstance(project).getAllTools().stream()
+            .filter(t -> !t.isBuiltIn()
+                && (t.kind() == ToolDefinition.Kind.READ || t.kind() == ToolDefinition.Kind.EDIT))
+            .map(ToolDefinition::id)
+            .sorted()
+            .collect(Collectors.toList());
+    }
 
     /**
      * Copilot built-in web tools (not from our MCP server).
@@ -402,7 +374,7 @@ public final class CopilotClient extends AcpClient {
 
     // ─── Agent definitions ───────────────────────────
 
-    private static void writeAgentDefinitions(String configDir) throws IOException {
+    private void writeAgentDefinitions(String configDir) throws IOException {
         Path agentsDir = Path.of(configDir, "agents");
         Files.createDirectories(agentsDir);
         writeAgentFile(agentsDir.resolve("intellij-default.md"), buildDefaultAgentDefinition());
@@ -439,11 +411,11 @@ public final class CopilotClient extends AcpClient {
         Files.writeString(path, content);
     }
 
-    private static String buildDefaultAgentDefinition() {
+    private String buildDefaultAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Default",
             "Full-featured IntelliJ coding assistant with access to all IDE tools",
-            merge(ALL_MCP_TOOLS, WEB_TOOLS),
+            merge(allMcpToolIds(), WEB_TOOLS),
             """
                 You are a coding assistant with full access to IntelliJ IDEA tools.
 
@@ -459,11 +431,11 @@ public final class CopilotClient extends AcpClient {
         );
     }
 
-    private static String buildExploreAgentDefinition() {
+    private String buildExploreAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Explore",
             "Read-only IntelliJ code explorer for analysing and understanding a codebase",
-            merge(EXPLORE_MCP_TOOLS, WEB_TOOLS),
+            merge(exploreMcpToolIds(), WEB_TOOLS),
             """
                 You are a read-only code analysis assistant. Your role is to explore, search,
                 and explain the codebase — not to make any changes.
@@ -479,11 +451,11 @@ public final class CopilotClient extends AcpClient {
         );
     }
 
-    private static String buildEditAgentDefinition() {
+    private String buildEditAgentDefinition() {
         return buildAgentDefinition(
             "Intellij-Edit",
             "Focused IntelliJ code editing assistant — makes targeted changes and validates them",
-            merge(EDIT_MCP_TOOLS, WEB_TOOLS),
+            merge(editMcpToolIds(), WEB_TOOLS),
             """
                 You are a precise code editing assistant. Make targeted, minimal changes
                 and verify them with build_project or run_tests after each edit.

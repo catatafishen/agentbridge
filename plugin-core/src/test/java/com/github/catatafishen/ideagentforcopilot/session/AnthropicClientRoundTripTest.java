@@ -159,6 +159,37 @@ class AnthropicClientRoundTripTest {
     }
 
     @Test
+    void exportSanitizesLongToolNames() throws IOException {
+        String longName = "git add " + "plugin-core/src/main/java/com/example/".repeat(10) + "Foo.java";
+        assertTrue(longName.length() > 200, "Test precondition: raw name should exceed 200 chars");
+
+        JsonObject toolPart = toolInvocationPart("tc1", longName, "{}", "ok");
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+
+        Path target = tempDir.resolve("exported-long-tool-name.jsonl");
+        AnthropicClientExporter.exportToFile(List.of(userMessage("commit"), assistant), target);
+
+        String content = Files.readString(target, StandardCharsets.UTF_8);
+        // Parse the assistant message line (first non-user line) and check tool_use name length
+        for (String line : content.split("\n")) {
+            JsonObject msg = JsonParser.parseString(line).getAsJsonObject();
+            if (msg.has("content") && msg.get("content").isJsonArray()) {
+                for (var block : msg.getAsJsonArray("content")) {
+                    JsonObject b = block.getAsJsonObject();
+                    if ("tool_use".equals(b.get("type").getAsString())) {
+                        String exportedName = b.get("name").getAsString();
+                        assertTrue(exportedName.length() <= 200,
+                            "Exported tool_use name should be at most 200 chars, was " + exportedName.length());
+                        assertFalse(exportedName.contains(" "), "Name should not contain spaces");
+                        assertFalse(exportedName.contains("/"), "Name should not contain slashes");
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     void exportSkipsReasoningParts() throws IOException {
         JsonObject reasoningPart = new JsonObject();
         reasoningPart.addProperty("type", "reasoning");
@@ -176,25 +207,6 @@ class AnthropicClientRoundTripTest {
         String content = Files.readString(target, StandardCharsets.UTF_8);
         assertFalse(content.contains("Thinking..."), "Reasoning should not appear in Anthropic export");
         assertTrue(content.contains("Answer"));
-    }
-
-    @Test
-    void exportAppliesTokenBudget() throws IOException {
-        SessionMessage longMsg = assistantMessage("x".repeat(80_000)); // ~20000 tokens
-        List<SessionMessage> messages = List.of(
-            userMessage("old question"),
-            assistantMessage("old answer"),
-            userMessage("new question"),
-            longMsg
-        );
-
-        Path target = tempDir.resolve("budget.jsonl");
-        // With budget of 20000, the long message alone fills the budget
-        AnthropicClientExporter.exportToFile(messages, target, 20_000);
-
-        String content = Files.readString(target, StandardCharsets.UTF_8);
-        // The most recent messages should be kept, older ones may be trimmed
-        assertTrue(content.contains("x".repeat(100)), "Most recent content should be present");
     }
 
     // ── Round-trip tests ────────────────────────────────────────────
@@ -633,6 +645,37 @@ class AnthropicClientRoundTripTest {
         part.addProperty("type", "tool-invocation");
         part.add("toolInvocation", invocation);
         return part;
+    }
+
+    @Test
+    void sanitizeToolNameTruncatesLongNames() {
+        String longName = "git add " + "a/".repeat(200) + "Foo.java";
+        String sanitized = AnthropicClientExporter.sanitizeToolName(longName);
+        assertTrue(sanitized.length() <= 200,
+            "Sanitized name should be at most 200 chars, was " + sanitized.length());
+        assertFalse(sanitized.contains(" "), "Sanitized name should not contain spaces");
+    }
+
+    @Test
+    void sanitizeToolNamePreservesValidNames() {
+        assertEquals("read_file", AnthropicClientExporter.sanitizeToolName("read_file"));
+        assertEquals("mcp__agentbridge__read_file",
+            AnthropicClientExporter.sanitizeToolName("mcp__agentbridge__read_file"));
+    }
+
+    @Test
+    void sanitizeToolNameReplacesInvalidChars() {
+        assertEquals("git_add_src_Foo-java",
+            AnthropicClientExporter.sanitizeToolName("git add src/Foo-java"));
+        assertEquals("Viewing__ChatConsolePanel_kt",
+            AnthropicClientExporter.sanitizeToolName("Viewing .../ChatConsolePanel.kt"));
+    }
+
+    @Test
+    void sanitizeToolNameHandlesEdgeCases() {
+        assertEquals("unknown_tool", AnthropicClientExporter.sanitizeToolName(""));
+        assertEquals("unknown_tool", AnthropicClientExporter.sanitizeToolName("..."));
+        assertEquals("a", AnthropicClientExporter.sanitizeToolName("a"));
     }
 
     private static String extractText(SessionMessage msg) {

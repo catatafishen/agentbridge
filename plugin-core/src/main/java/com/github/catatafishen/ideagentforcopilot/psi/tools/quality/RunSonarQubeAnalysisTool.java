@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.SonarQubeIntegration;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Runs SonarQube for IDE (SonarLint) analysis on the full project or changed files.
@@ -30,13 +29,12 @@ public final class RunSonarQubeAnalysisTool extends QualityTool {
         return "Run SonarQube for IDE (SonarLint) analysis on the full project or changed files";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

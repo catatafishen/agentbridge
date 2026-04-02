@@ -39,8 +39,8 @@ class ToolDefinitionTest {
             }
 
             @Override
-            public @NotNull String kind() {
-                return readOnly ? "read" : "edit";
+            public @NotNull Kind kind() {
+                return readOnly ? Kind.READ : Kind.EDIT;
             }
 
             @Override
@@ -141,8 +141,8 @@ class ToolDefinitionTest {
                 }
 
                 @Override
-                public @NotNull String kind() {
-                    return "edit";
+                public @NotNull Kind kind() {
+                    return Kind.EDIT;
                 }
 
                 @Override
@@ -181,8 +181,8 @@ class ToolDefinitionTest {
                 }
 
                 @Override
-                public @NotNull String kind() {
-                    return "edit";
+                public @NotNull Kind kind() {
+                    return Kind.EDIT;
                 }
 
                 @Override

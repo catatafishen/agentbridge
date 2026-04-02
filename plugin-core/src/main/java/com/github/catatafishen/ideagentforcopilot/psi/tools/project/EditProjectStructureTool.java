@@ -77,8 +77,8 @@ public final class EditProjectStructureTool extends ProjectTool {
 
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public @NotNull JsonObject inputSchema() {

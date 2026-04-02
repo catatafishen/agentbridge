@@ -4,7 +4,6 @@ import com.github.catatafishen.ideagentforcopilot.psi.QodanaAnalyzer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Runs Qodana static analysis and returns findings.
@@ -33,13 +32,12 @@ public final class RunQodanaTool extends QualityTool {
         return "Run Qodana static analysis and return findings";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

@@ -910,3 +910,11 @@
     "NEW INSTRUCTION": "WHEN rendering the web UI footer THEN set font to sans-serif and use active agent icon"
 }
 
+[2026-03-29 17:00] - Updated by Junie
+{
+    "TYPE": "positive",
+    "CATEGORY": "Junie switch success",
+    "EXPECTATION": "Switching to Junie worked, and they want a quick new magic word.",
+    "NEW INSTRUCTION": "WHEN user asks for a new magic word THEN reply with a single uppercase word only"
+}
+

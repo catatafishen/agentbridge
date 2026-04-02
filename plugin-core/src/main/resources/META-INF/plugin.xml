@@ -298,6 +298,8 @@
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings"/>
     <applicationService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.StartupInstructionsSettings"/>
+    <applicationService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager"/>
 
     <!-- Project Services -->
     <projectService

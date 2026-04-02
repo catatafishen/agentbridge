@@ -34,8 +34,8 @@ public final class GetClassOutlineTool extends NavigationTool {
 
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 @Override
     public boolean isReadOnly() {

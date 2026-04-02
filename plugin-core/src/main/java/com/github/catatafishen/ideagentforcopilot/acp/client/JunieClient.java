@@ -169,6 +169,28 @@ public final class JunieClient extends AcpClient {
         JsonArray servers = new JsonArray();
         servers.add(server);
         params.add("mcpServers", servers);
+
+        // Junie resumes sessions via resumeSessionId in session/new (not via session/load RPC).
+        // Pass it here so Junie restores conversation history natively when available.
+        if (requestedResumeId != null) {
+            params.addProperty("resumeSessionId", requestedResumeId);
+        }
+    }
+
+    @Override
+    protected String loadSession(String cwd, String sessionId) throws Exception {
+        // Junie restores sessions via resumeSessionId in session/new (not via session/load RPC).
+        // Throw here so createSession falls through to session/new where we add resumeSessionId.
+        throw new com.github.catatafishen.ideagentforcopilot.agent.AgentSessionException(
+            "Junie uses resumeSessionId in session/new — skipping session/load");
+    }
+
+    @Override
+    protected boolean supportsSessionResumption() {
+        // Junie resumes via resumeSessionId in session/new (see customizeNewSession + loadSession).
+        // Return false so the "session resume not available" notification is suppressed — resume
+        // is handled transparently by session/new rather than via a separate session/load RPC.
+        return false;
     }
 
     @Override

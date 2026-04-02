@@ -39,8 +39,8 @@ public final class GitPullTool extends GitTool {
     
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public boolean isOpenWorld() {

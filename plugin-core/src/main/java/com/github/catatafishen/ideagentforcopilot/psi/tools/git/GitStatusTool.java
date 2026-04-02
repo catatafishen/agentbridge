@@ -29,13 +29,12 @@ public final class GitStatusTool extends GitTool {
         return "Show working tree status";
     }
 
-
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

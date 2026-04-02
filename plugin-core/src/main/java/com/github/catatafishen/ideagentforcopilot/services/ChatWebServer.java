@@ -645,7 +645,20 @@ public final class ChatWebServer implements Disposable {
         }
     }
 
+    /**
+     * Resolves the path to the {@code keytool} executable bundled with the running JDK.
+     * Using {@code java.home} guarantees we find it even when the JDK {@code bin/} directory
+     * is not on the system {@code PATH} (common on Linux/macOS developer machines where
+     * only the {@code java} launcher is symlinked into {@code /usr/bin}).
+     */
+    private static String keytoolPath() {
+        return System.getProperty("java.home")
+            + java.io.File.separator + "bin"
+            + java.io.File.separator + "keytool";
+    }
+
     private static void runKeytool(String[] cmd) throws IOException {
+        cmd[0] = keytoolPath();
         Process process = new ProcessBuilder(cmd).start();
         String error;
         try {

@@ -61,8 +61,8 @@ public final class RunScratchFileTool extends EditorTool {
     
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public @NotNull JsonObject inputSchema() {

@@ -5,7 +5,6 @@ import com.github.catatafishen.ideagentforcopilot.ui.renderers.RunConfigCrudRend
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Creates a new run configuration of any type supported by the IDE.
@@ -34,13 +33,12 @@ public final class CreateRunConfigurationTool extends ProjectTool {
         return "Create a new run configuration of any type supported by the IDE (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python')";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
-    }
-@Override
     public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(new Object[][]{
             {"name", TYPE_STRING, "Name for the new run configuration"},

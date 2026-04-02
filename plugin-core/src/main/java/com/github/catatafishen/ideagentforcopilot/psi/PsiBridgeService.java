@@ -268,7 +268,7 @@ public final class PsiBridgeService implements Disposable {
             try {
                 // Register with chip registry BEFORE executing so the chip can transition to "running"
                 // Pass the resolved kind so the chip can update its color immediately.
-                ToolChipRegistry.getInstance(project).registerMcp(toolName, arguments, def.kind(), toolUseId);
+                ToolChipRegistry.getInstance(project).registerMcp(toolName, arguments, def.kind().value(), toolUseId);
                 result = def.execute(arguments, argumentsHash);
             } finally {
                 if (syncLock != null) syncLock.unlock();

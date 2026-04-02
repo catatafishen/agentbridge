@@ -40,8 +40,8 @@ public final class SetThemeTool extends EditorTool {
     
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public @NotNull String permissionTemplate() {

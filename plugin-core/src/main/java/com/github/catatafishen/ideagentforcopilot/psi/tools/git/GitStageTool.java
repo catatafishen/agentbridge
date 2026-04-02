@@ -36,11 +36,11 @@ public final class GitStageTool extends GitTool {
         return "Stage one or more files for the next commit";
     }
 
-    
+
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public @NotNull String permissionTemplate() {
@@ -61,6 +61,14 @@ public final class GitStageTool extends GitTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
+
+        // Open Version Control tool window in follow mode
+        if (com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            com.github.catatafishen.ideagentforcopilot.psi.EdtUtil.invokeLater(() -> {
+                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Version Control");
+                if (tw != null) tw.activate(null);
+            });
+        }
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("add");

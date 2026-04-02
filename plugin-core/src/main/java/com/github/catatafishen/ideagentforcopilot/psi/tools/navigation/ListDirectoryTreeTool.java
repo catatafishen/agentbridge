@@ -41,8 +41,8 @@ public final class ListDirectoryTreeTool extends NavigationTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 
     @Override

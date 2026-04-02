@@ -54,8 +54,8 @@ public final class MarkDirectoryTool extends ProjectTool {
     
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public @NotNull String permissionTemplate() {

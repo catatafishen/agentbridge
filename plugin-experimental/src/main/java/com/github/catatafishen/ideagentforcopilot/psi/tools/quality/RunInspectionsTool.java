@@ -71,8 +71,8 @@ public final class RunInspectionsTool extends QualityTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 
     @Override

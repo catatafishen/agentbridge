@@ -21,7 +21,6 @@ import org.jetbrains.annotations.Nullable;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -32,21 +31,10 @@ import java.util.Map;
  * Generic {@link AgentConfig} implementation driven entirely by an {@link AgentProfile}.
  * Primarily intended for custom agents that the end user might want to add manually.
  */
-public final class ProfileBasedAgentConfig implements AgentConfig {
+public class ProfileBasedAgentConfig implements AgentConfig {
 
     private static final Logger LOG = Logger.getInstance(ProfileBasedAgentConfig.class);
     private static final String MCP_SERVERS_KEY = "mcpServers";
-    private static final String AGENT_ID_OPENCODE = "opencode";
-    private static final String AGENT_WORK_DIR = ".agent-work";
-    private static final String OPENCODE_CONFIG_FILE = "opencode.json";
-    /**
-     * OpenCode's native built-in tool names. Denied in the generated config so the model
-     * uses agentbridge MCP tools instead of OpenCode's own file/search/shell tools.
-     */
-    private static final List<String> OPENCODE_NATIVE_TOOLS = List.of(
-        "grep", "glob", "ls", "read", "write", "edit", "patch",
-        "bash", "webfetch", "task", "todoread", "todowrite"
-    );
 
     private final AgentProfile profile;
     @Nullable
@@ -70,6 +58,59 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         this.profile = profile;
         this.registry = registry;
         this.project = project;
+    }
+
+    /**
+     * Creates the appropriate {@link ProfileBasedAgentConfig} subclass for the given profile.
+     * Returns an {@link OpenCodeAgentConfig} for OpenCode, or a base {@code ProfileBasedAgentConfig}
+     * for all other agents.
+     */
+    public static ProfileBasedAgentConfig create(@NotNull AgentProfile profile,
+                                                 @Nullable ToolRegistry registry,
+                                                 @Nullable Project project) {
+        if (OpenCodeAgentConfig.PROFILE_ID.equals(profile.getId())) {
+            return new OpenCodeAgentConfig(profile, registry, project);
+        }
+        return new ProfileBasedAgentConfig(profile, registry, project);
+    }
+
+    // ── Extension hooks for agent-specific subclasses ────────────────────────
+
+    /**
+     * Called at the end of {@link #buildAcpProcess} to allow subclasses to perform
+     * agent-specific process configuration (e.g. writing config files, setting env vars).
+     * Default implementation is a no-op.
+     */
+    protected void configureProcess(@NotNull ProcessBuilder pb,
+                                    @Nullable String projectBasePath,
+                                    int mcpPort) {
+        // No-op by default
+    }
+
+    /**
+     * Returns additional config file paths to check for existing MCP server registrations.
+     * Appended to the default list ({@code ~/.copilot/mcp-config.json}, etc.) in
+     * {@link #detectExistingMcpRegistration}.
+     */
+    protected @NotNull List<Path> getAdditionalMcpConfigPaths() {
+        return List.of();
+    }
+
+    /**
+     * Returns the JSON key that contains MCP server definitions in config files.
+     * Default is {@code "mcpServers"}; OpenCode overrides to {@code "mcp"}.
+     */
+    protected @NotNull String getMcpContainerKey() {
+        return MCP_SERVERS_KEY;
+    }
+
+    /**
+     * Returns agent-specific native tool names that should be denied in generated configs.
+     * Only applied when {@link AgentProfile#isExcludeAgentBuiltInTools()} is {@code true}.
+     * Default returns an empty list.
+     */
+    protected @NotNull List<String> getNativeToolDenyList() {
+        return List.of();
     }
 
     @Override
@@ -102,7 +143,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
 
     @Override
     public @NotNull String findAgentBinary() throws AgentException {
-        // 1. User-provided custom path takes priority
+        // 1. User-provided custom path takes priority; validate it exists
         String customPath = profile.getCustomBinaryPath();
         if (!customPath.isEmpty()) {
             File custom = new File(customPath);
@@ -114,22 +155,25 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
                 null, false);
         }
 
-        // 2. Search PATH and common locations for the primary binary name
+        // 2. Auto-detect primary binary name and alternates
+        com.github.catatafishen.ideagentforcopilot.settings.ProfileBinaryDetector detector =
+            new com.github.catatafishen.ideagentforcopilot.settings.ProfileBinaryDetector(profile);
         String binaryName = profile.getBinaryName();
         if (!binaryName.isEmpty()) {
-            String found = searchForBinary(binaryName);
+            String found = detector.resolve(binaryName,
+                profile.getAlternateNames().toArray(String[]::new));
             if (found != null) {
                 resolvedBinaryPath = found;
                 return found;
             }
-        }
-
-        // 3. Try alternate names
-        for (String altName : profile.getAlternateNames()) {
-            String found = searchForBinary(altName);
-            if (found != null) {
-                resolvedBinaryPath = found;
-                return found;
+        } else {
+            // No primary name - try alternates only
+            for (String altName : profile.getAlternateNames()) {
+                String found = com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector.findBinaryPath(altName);
+                if (found != null) {
+                    resolvedBinaryPath = found;
+                    return found;
+                }
             }
         }
 
@@ -150,7 +194,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         addNodeAndCommand(cmd, binaryPath);
         cmd.addAll(profile.getAcpArgs());
         addModelFlagIfSupported(cmd);
-        addConfigDirIfSupported(cmd, projectBasePath);
 
         if (profile.isSupportsMcpConfigFlag() && profile.getMcpMethod() == McpInjectionMethod.CONFIG_FLAG) {
             addMcpConfigFlag(cmd, mcpPort);
@@ -170,13 +213,8 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         // Set agent-specific config directory environment variables
         setAgentConfigDirEnvVars(pb, projectBasePath);
 
-        // Write OpenCode config file and set env var if needed
-        if (AGENT_ID_OPENCODE.equals(profile.getId()) && mcpPort > 0 && projectBasePath != null) {
-            writeOpenCodeConfigFile(projectBasePath, mcpPort);
-            // Set OPENCODE_CONFIG env var pointing to the config file
-            String configPath = Path.of(projectBasePath, AGENT_WORK_DIR, AGENT_ID_OPENCODE, OPENCODE_CONFIG_FILE).toString();
-            pb.environment().put("OPENCODE_CONFIG", configPath);
-        }
+        // Agent-specific process configuration (e.g. OpenCode writes its own config file)
+        configureProcess(pb, projectBasePath, mcpPort);
 
         return pb;
     }
@@ -203,15 +241,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     /**
-     * Previously added {@code --config-dir} pointing at {@code .agent-work/<agent>/}.
-     * Removed: CLIs should use their standard home directories so features like
-     * {@code --resume} resolve session files from the correct location.
-     */
-    private void addConfigDirIfSupported(@NotNull List<String> cmd, @Nullable String projectBasePath) {
-        // No-op — intentionally removed to let CLIs use their standard directories
-    }
-
-    /**
      * Sets agent-specific config directory environment variables for agents that require them.
      * Each agent gets its own subdirectory under .agent-work/<agent-id>/
      */
@@ -231,15 +260,9 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
      * @param projectBasePath The project base path, null if not available
      */
     public void configureAgentEnvironment(@NotNull Map<String, String> environment, @Nullable String projectBasePath) {
-        if (projectBasePath == null) return;
-        String agentId = profile.getId();
-
-        if (AGENT_ID_OPENCODE.equals(agentId)) {
-            // OpenCode uses OPENCODE_CONFIG pointing to the config.json file
-            // This is handled in buildAcpProcess as it needs mcpPort
-        }
-        // All other agents (copilot, claude, kiro, junie) use their standard
-        // home directories without environment overrides.
+        // No-op by default — subclasses can override for agent-specific env vars.
+        // Most agents (copilot, claude, kiro, junie) use their standard home directories
+        // without environment overrides.
     }
 
     /**
@@ -253,50 +276,10 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     }
 
     /**
-     * Writes the OpenCode config file to disk so OpenCode can read it via OPENCODE_CONFIG env var.
-     * This includes MCP server config and tool permissions.
-     */
-    private void writeOpenCodeConfigFile(@Nullable String projectBasePath, int mcpPort) {
-        if (projectBasePath == null || mcpPort <= 0) {
-            LOG.warn("Failed to write OpenCode config file: projectBasePath=" + projectBasePath + ", mcpPort=" + mcpPort);
-            return;
-        }
-
-        try {
-            String agentWorkDir = Path.of(projectBasePath, AGENT_WORK_DIR, AGENT_ID_OPENCODE).toString();
-            Path configPath = Path.of(agentWorkDir, OPENCODE_CONFIG_FILE);
-
-            // Create directory if it doesn't exist
-            Files.createDirectories(Path.of(agentWorkDir));
-
-            // Resolve MCP config template with permissions
-            String resolved = resolveMcpTemplate(mcpPort);
-            if (resolved == null || resolved.isEmpty()) {
-                LOG.warn("Failed to resolve MCP config template for OpenCode (null or empty)");
-                return;
-            }
-
-            // Merge permissions into the config
-            String configWithPermissions = mergePermissionsIntoConfig(resolved);
-
-            // OpenCode expects "mcp" as an object, not "mcpServers" as an array
-            String finalConfig = fixOpenCodeConfigForFile(configWithPermissions);
-
-            // Pretty-print the JSON for readability
-            String formattedConfig = formatJsonSafely(finalConfig);
-
-            Files.writeString(configPath, formattedConfig, StandardCharsets.UTF_8);
-            LOG.info("OpenCode config written to " + configPath + " (length: " + formattedConfig.length() + ")");
-        } catch (Exception e) {
-            LOG.warn("Failed to write OpenCode config file", e);
-        }
-    }
-
-    /**
      * Format JSON with pretty printing, falling back to raw content if formatting fails.
      */
     @NotNull
-    private String formatJsonSafely(@NotNull String json) {
+    protected String formatJsonSafely(@NotNull String json) {
         try {
             return new com.google.gson.GsonBuilder()
                 .setPrettyPrinting()
@@ -378,20 +361,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     public boolean sendResourceReferences() {
         return profile.isSendResourceReferences();
-    }
-
-    /**
-     * Search for a binary by name on PATH and common installation locations.
-     */
-    @Nullable
-    private String searchForBinary(@NotNull String binaryName) {
-        // Delegate to BinaryDetector which uses a login shell to find binaries
-        // This ensures we see the same PATH as the user's terminal (nvm, sdkman, etc.)
-        String path = com.github.catatafishen.ideagentforcopilot.settings.BinaryDetector.findBinaryPath(binaryName);
-        if (path != null) {
-            LOG.info("Found " + binaryName + " at: " + path);
-        }
-        return path;
     }
 
     /**
@@ -491,9 +460,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
         ));
 
         // For OpenCode, also check ~/.config/opencode/opencode.json
-        if (AGENT_ID_OPENCODE.equals(profile.getId())) {
-            candidates.add(Path.of(userHome, ".config", AGENT_ID_OPENCODE, OPENCODE_CONFIG_FILE));
-        }
+        candidates.addAll(getAdditionalMcpConfigPaths());
 
         for (Path configPath : candidates) {
             String found = scanConfigFileForMcpRegistration(configPath, targetUrl);
@@ -514,8 +481,8 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
             String content = Files.readString(configPath);
             JsonObject root = JsonParser.parseString(content).getAsJsonObject();
 
-            // OpenCode uses "mcp", others use "mcpServers" or root
-            String mcpKey = AGENT_ID_OPENCODE.equals(profile.getId()) ? "mcp" : MCP_SERVERS_KEY;
+            // Subclasses may override getMcpContainerKey() (e.g. OpenCode uses "mcp")
+            String mcpKey = getMcpContainerKey();
 
             JsonObject servers;
             if (root.has(mcpKey) && root.get(mcpKey).isJsonObject()) {
@@ -575,7 +542,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
      * {@code "permission": {"toolId": "allow|ask|deny", ...}}.
      */
     @NotNull
-    private String mergePermissionsIntoConfig(@NotNull String configJson) {
+    protected String mergePermissionsIntoConfig(@NotNull String configJson) {
         try {
             var parsed = com.google.gson.JsonParser.parseString(configJson).getAsJsonObject();
             var permObj = buildPermissionJsonObject();
@@ -594,10 +561,9 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     private com.google.gson.JsonObject buildPermissionJsonObject() {
         var permObj = new com.google.gson.JsonObject();
 
-        // For OpenCode: deny native agent tools so the model is forced to use agentbridge MCP tools.
-        // This runs regardless of the registry state so the deny entries are always present.
-        if (AGENT_ID_OPENCODE.equals(profile.getId()) && profile.isExcludeAgentBuiltInTools()) {
-            for (String nativeTool : OPENCODE_NATIVE_TOOLS) {
+        // Subclasses may deny their agent's native built-in tools
+        if (profile.isExcludeAgentBuiltInTools()) {
+            for (String nativeTool : getNativeToolDenyList()) {
                 permObj.addProperty(nativeTool, "deny");
             }
         }
@@ -622,7 +588,7 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
      * Placeholders: {mcpPort}, {mcpJarPath}, {javaPath}
      */
     @Nullable
-    private String resolveMcpTemplate(int mcpPort) {
+    protected String resolveMcpTemplate(int mcpPort) {
         String template = profile.getMcpConfigTemplate();
         if (template.isEmpty()) return null;
 
@@ -687,35 +653,6 @@ public final class ProfileBasedAgentConfig implements AgentConfig {
     @Override
     public boolean requiresMcpInSessionNew() {
         return profile.getMcpMethod() == McpInjectionMethod.SESSION_NEW;
-    }
-
-    /**
-     * Converts "mcpServers" array to "mcp" object for OpenCode's opencode.json.
-     */
-    @NotNull
-    private String fixOpenCodeConfigForFile(@NotNull String configJson) {
-        if (!AGENT_ID_OPENCODE.equals(profile.getId())) return configJson;
-        try {
-            JsonObject root = JsonParser.parseString(configJson).getAsJsonObject();
-            if (root.has(MCP_SERVERS_KEY) && root.get(MCP_SERVERS_KEY).isJsonArray()) {
-                JsonArray servers = root.getAsJsonArray(MCP_SERVERS_KEY);
-                JsonObject mcp = new JsonObject();
-                for (JsonElement el : servers) {
-                    if (!el.isJsonObject()) continue;
-                    JsonObject s = el.getAsJsonObject();
-                    String name = s.has("name") ? s.get("name").getAsString() : "agentbridge";
-                    JsonObject entry = s.deepCopy();
-                    entry.remove("name"); // OpenCode uses name as key
-                    mcp.add(name, entry);
-                }
-                root.remove(MCP_SERVERS_KEY);
-                root.add("mcp", mcp);
-            }
-            return new com.google.gson.Gson().toJson(root);
-        } catch (Exception e) {
-            LOG.warn("Failed to fix OpenCode config structure", e);
-            return configJson;
-        }
     }
 
     @Override

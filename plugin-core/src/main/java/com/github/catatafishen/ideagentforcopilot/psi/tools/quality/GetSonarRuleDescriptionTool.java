@@ -39,13 +39,12 @@ public final class GetSonarRuleDescriptionTool extends QualityTool {
             "Use after run_sonarqube_analysis to understand specific findings.";
     }
 
-    
+    @Override
+    public @NotNull Kind kind() {
+        return Kind.READ;
+    }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
-    }
-@Override
     public boolean isReadOnly() {
         return true;
     }

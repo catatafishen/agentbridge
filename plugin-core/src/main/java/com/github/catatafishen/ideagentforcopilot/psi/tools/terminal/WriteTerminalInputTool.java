@@ -36,8 +36,8 @@ public final class WriteTerminalInputTool extends TerminalTool {
     
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public boolean isOpenWorld() {

@@ -73,7 +73,6 @@ public final class AgentProfile {
     // ── Feature Flags ────────────────────────────────────────────────────────
 
     private boolean supportsModelFlag;
-    private boolean supportsConfigDir;
     private boolean supportsMcpConfigFlag;
     private boolean sendResourceReferences = true;
 
@@ -114,12 +113,12 @@ public final class AgentProfile {
     private String additionalInstructions = "";
 
     /**
-     * Custom model list for CLI-mode profiles.
+     * Additional model IDs for CLI-mode profiles (e.g. Claude CLI).
      *
-     * <p>Each entry is {@code "model-id=Display Name"}, e.g.
-     * {@code "claude-opus-4-6=Claude Opus 4.6"}.  When non-empty this list
-     * is returned by {@code ClaudeCliClient.listModels()} instead of the
-     * built-in defaults.  Empty means "use defaults".</p>
+     * <p>Each entry is a bare model ID or alias (e.g. {@code "claude-opus-4-6"}).
+     * When non-empty, these are appended to the built-in model list returned by
+     * {@code ClaudeCliClient.getAvailableModels()} — duplicates of built-in IDs
+     * are silently dropped.  Empty means "use built-in defaults only".</p>
      *
      * <p>This field exists because the Claude CLI has no stable
      * {@code models} subcommand — {@code claude models} is treated as a
@@ -136,11 +135,10 @@ public final class AgentProfile {
         this.alternateNames = new ArrayList<>();
         this.installHint = "";
         this.customBinaryPath = "";
-        this.acpArgs = List.of("--acp", "--stdio");
+        this.acpArgs = new ArrayList<>(List.of("--acp", "--stdio"));
         this.mcpMethod = McpInjectionMethod.CONFIG_FLAG;
         this.mcpConfigTemplate = "";
         this.supportsModelFlag = true;
-        this.supportsConfigDir = true;
         this.supportsMcpConfigFlag = true;
         this.agentsDirectory = null;
     }
@@ -165,7 +163,6 @@ public final class AgentProfile {
         copy.mcpConfigTemplate = mcpConfigTemplate;
         copy.mcpServerName = mcpServerName;
         copy.supportsModelFlag = supportsModelFlag;
-        copy.supportsConfigDir = supportsConfigDir;
         copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
         copy.sendResourceReferences = sendResourceReferences;
         copy.agentsDirectory = agentsDirectory;
@@ -200,7 +197,6 @@ public final class AgentProfile {
         copy.mcpConfigTemplate = mcpConfigTemplate;
         copy.mcpServerName = mcpServerName;
         copy.supportsModelFlag = supportsModelFlag;
-        copy.supportsConfigDir = supportsConfigDir;
         copy.supportsMcpConfigFlag = supportsMcpConfigFlag;
         copy.sendResourceReferences = sendResourceReferences;
         copy.agentsDirectory = agentsDirectory;
@@ -235,7 +231,6 @@ public final class AgentProfile {
         this.mcpConfigTemplate = other.mcpConfigTemplate;
         this.mcpServerName = other.mcpServerName;
         this.supportsModelFlag = other.supportsModelFlag;
-        this.supportsConfigDir = other.supportsConfigDir;
         this.supportsMcpConfigFlag = other.supportsMcpConfigFlag;
         this.sendResourceReferences = other.sendResourceReferences;
         this.agentsDirectory = other.agentsDirectory;
@@ -407,14 +402,6 @@ public final class AgentProfile {
 
     public void setSupportsModelFlag(boolean supportsModelFlag) {
         this.supportsModelFlag = supportsModelFlag;
-    }
-
-    public boolean isSupportsConfigDir() {
-        return supportsConfigDir;
-    }
-
-    public void setSupportsConfigDir(boolean supportsConfigDir) {
-        this.supportsConfigDir = supportsConfigDir;
     }
 
     public boolean isSupportsMcpConfigFlag() {

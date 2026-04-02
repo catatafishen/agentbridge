@@ -59,8 +59,8 @@ public final class MacroToolHandler implements ToolDefinition {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 
     @Override

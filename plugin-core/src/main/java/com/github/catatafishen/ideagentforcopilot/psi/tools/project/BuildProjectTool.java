@@ -39,8 +39,8 @@ public final class BuildProjectTool extends ProjectTool {
 
 
     @Override
-    public @NotNull String kind() {
-        return "edit";
+    public @NotNull Kind kind() {
+        return Kind.EDIT;
     }
 @Override
     public @NotNull String permissionTemplate() {
@@ -66,6 +66,14 @@ public final class BuildProjectTool extends ProjectTool {
         }
 
         String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
+
+        // Open Build tool window in follow mode
+        if (com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            com.github.catatafishen.ideagentforcopilot.psi.EdtUtil.invokeLater(() -> {
+                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Build");
+                if (tw != null) tw.activate(null);
+            });
+        }
 
         return com.github.catatafishen.ideagentforcopilot.psi.java.ProjectBuildSupport.buildProject(
             project, moduleName, buildInProgress);

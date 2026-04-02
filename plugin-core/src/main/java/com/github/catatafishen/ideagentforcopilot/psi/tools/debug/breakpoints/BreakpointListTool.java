@@ -46,8 +46,8 @@ public final class BreakpointListTool extends DebugTool {
     }
 
     @Override
-    public @NotNull String kind() {
-        return "read";
+    public @NotNull Kind kind() {
+        return Kind.READ;
     }
 
     @Override
