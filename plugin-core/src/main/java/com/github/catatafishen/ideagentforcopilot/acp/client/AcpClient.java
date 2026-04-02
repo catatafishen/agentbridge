@@ -98,10 +98,11 @@ public abstract class AcpClient extends AbstractAgentClient {
     private @Nullable String launchCwd;
     /**
      * Tracks the resume session ID requested in the current launch cycle.
-     * Set at the start of {@link #createSession}, used by {@link #loadSession} and
-     * {@link #enableInjectionFallback}.
+     * Set at the start of {@link #createSession}, used by {@link #loadSession},
+     * {@link #enableInjectionFallback}, and subclass {@link #customizeNewSession} overrides
+     * that embed the resume ID directly in the {@code session/new} request (e.g. Junie, Kiro).
      */
-    private @Nullable String requestedResumeId;
+    protected @Nullable String requestedResumeId;
     private final List<Model> availableModels = new ArrayList<>();
     private final List<AbstractAgentClient.AgentMode> availableModes = new ArrayList<>();
     private @Nullable String currentModeSlug = null;
@@ -414,8 +415,8 @@ public abstract class AcpClient extends AbstractAgentClient {
             for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
                 List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                     : opt.values().stream()
-                      .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
-                      .toList();
+                    .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
+                    .toList();
                 String optId = opt.id() != null ? opt.id() : "";
                 String label = opt.label() != null ? opt.label() : optId;
                 availableConfigOptions.add(
