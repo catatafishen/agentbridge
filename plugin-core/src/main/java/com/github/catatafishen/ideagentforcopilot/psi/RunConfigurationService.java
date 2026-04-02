@@ -49,6 +49,7 @@ public final class RunConfigurationService {
     private static final String PARAM_SHARED = "shared";
     private static final String PARAM_TASKS = "tasks";
     private static final String PARAM_SCRIPT_PARAMETERS = "script_parameters";
+    private static final String PARAM_SCRIPT_PATH = "script_path";
     private static final String ERROR_CONFIG_NOT_FOUND = "Run configuration not found: '";
     private static final String ERROR_CONFIG_LIST_HINT = "'. Use list_run_configurations to see available configs.";
 
@@ -199,6 +200,16 @@ public final class RunConfigurationService {
 
     public String createRunConfiguration(JsonObject args) throws Exception {
         String name = args.get("name").getAsString();
+
+        // raw_xml path: write the XML to .idea/runConfigurations/ and let the IDE pick it up.
+        if (args.has("raw_xml")) {
+            return createRunConfigFromXml(name, args.get("raw_xml").getAsString());
+        }
+
+        if (!args.has("type")) {
+            return "Error: 'type' is required unless 'raw_xml' is provided. "
+                + "Available types: " + String.join(", ", PlatformApiCompat.listConfigurationTypeNames());
+        }
         String type = args.get("type").getAsString().toLowerCase();
 
         // Abuse detection on program_args — same rules as run_command
@@ -250,6 +261,32 @@ public final class RunConfigurationService {
         });
 
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private String createRunConfigFromXml(String name, String rawXml) {
+        String basePath = project.getBasePath();
+        if (basePath == null) return "Error: project base path is not available";
+
+        String filename = name.replaceAll("[^a-zA-Z0-9._-]", "_") + ".xml";
+        java.io.File runConfigsDir = new java.io.File(basePath, ".idea/runConfigurations");
+        java.io.File xmlFile = new java.io.File(runConfigsDir, filename);
+
+        if (!runConfigsDir.exists() && !runConfigsDir.mkdirs()) {
+            return "Error: could not create directory " + runConfigsDir.getPath();
+        }
+        try (var writer = new java.io.FileWriter(xmlFile, java.nio.charset.StandardCharsets.UTF_8)) {
+            writer.write(rawXml);
+        } catch (java.io.IOException e) {
+            return "Error writing run configuration XML: " + e.getMessage();
+        }
+
+        // Refresh the VFS so IntelliJ's RunManager picks up the new file immediately.
+        var vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+            .refreshAndFindFileByIoFile(xmlFile);
+        if (vf != null) vf.refresh(false, false);
+
+        return "Created run configuration '" + name + "' from XML → " + xmlFile.getPath()
+            + "\nUse run_configuration to execute it.";
     }
 
     public String editRunConfiguration(JsonObject args) throws Exception {
@@ -308,6 +345,7 @@ public final class RunConfigurationService {
         if (args.has(PARAM_TEST_CLASS)) changes.add("test class");
         if (args.has(PARAM_TASKS)) changes.add("Gradle tasks");
         if (args.has(PARAM_SCRIPT_PARAMETERS)) changes.add("script parameters");
+        if (args.has(PARAM_SCRIPT_PATH)) changes.add("script path");
 
         return changes;
     }
@@ -390,6 +428,11 @@ public final class RunConfigurationService {
         // Gradle: tasks and script parameters via ExternalSystemRunConfiguration
         applyGradleProperties(config, args);
 
+        // Shell Script: script path via ShRunConfiguration
+        if (args.has(PARAM_SCRIPT_PATH)) {
+            applyShellScriptProperties(config, args);
+        }
+
         if (args.has(PARAM_MODULE_NAME)) {
             applyModuleProperty(config, args);
         }
@@ -454,6 +497,18 @@ public final class RunConfigurationService {
             .findModuleByName(args.get(PARAM_MODULE_NAME).getAsString());
         if (module != null) {
             trySetModuleOnConfig(config, module);
+        }
+    }
+
+    private void applyShellScriptProperties(RunConfiguration config, JsonObject args) {
+        String scriptPath = args.get(PARAM_SCRIPT_PATH).getAsString();
+        setViaReflection(config, "setScriptPath", scriptPath, new ArrayList<>(), null);
+        // Ensure the config runs the file, not a stdin script snippet.
+        try {
+            var method = config.getClass().getMethod("setExecuteScriptFile", boolean.class);
+            method.invoke(config, true);
+        } catch (Exception ignored) {
+            // ShRunConfiguration not available (Shell Script plugin not installed)
         }
     }
 

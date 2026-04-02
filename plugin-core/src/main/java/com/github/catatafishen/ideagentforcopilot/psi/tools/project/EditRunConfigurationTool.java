@@ -47,6 +47,7 @@ public final class EditRunConfigurationTool extends ProjectTool {
             {"working_dir", TYPE_STRING, "Optional: new working directory"},
             {"tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')"},
             {"script_parameters", TYPE_STRING, "Optional: Gradle script parameters (e.g., '--info')"},
+            {"script_path", TYPE_STRING, "Optional: path to the script file (for Shell Script configs)"},
             {"shared", TYPE_BOOLEAN, "Optional: toggle shared (project file) vs workspace-local storage"}
         }, "name");
         addDictProperty(s, "env", "Environment variables as key-value pairs");

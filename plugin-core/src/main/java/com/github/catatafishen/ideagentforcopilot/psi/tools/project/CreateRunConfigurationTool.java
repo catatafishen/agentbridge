@@ -30,7 +30,10 @@ public final class CreateRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Create a new run configuration of any type supported by the IDE (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python')";
+        return "Create a new run configuration of any type supported by the IDE (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python'). "
+            + "If unknown, an error will list all available types. "
+            + "For config types with no public Java API (e.g. Shell Script), pass 'raw_xml' with the full XML content instead — "
+            + "it is written directly to .idea/runConfigurations/<name>.xml.";
     }
 
     @Override
@@ -42,7 +45,7 @@ public final class CreateRunConfigurationTool extends ProjectTool {
     public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(new Object[][]{
             {"name", TYPE_STRING, "Name for the new run configuration"},
-            {"type", TYPE_STRING, "Configuration type: any IDE-supported type name (e.g., 'application', 'junit', 'gradle', 'maven', 'npm', 'python'). If unknown, an error will list all available types."},
+            {"type", TYPE_STRING, "Configuration type (e.g., 'application', 'junit', 'gradle', 'Shell Script'). Required unless 'raw_xml' is provided. If unknown, an error will list all available types."},
             {"jvm_args", TYPE_STRING, "Optional: JVM arguments (e.g., '-Xmx512m')"},
             {"program_args", TYPE_STRING, "Optional: program arguments"},
             {"working_dir", TYPE_STRING, "Optional: working directory path"},
@@ -51,8 +54,10 @@ public final class CreateRunConfigurationTool extends ProjectTool {
             {"module_name", TYPE_STRING, "Optional: IntelliJ module name (from project structure)"},
             {"tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')"},
             {"script_parameters", TYPE_STRING, "Optional: Gradle script parameters (e.g., '--info')"},
+            {"script_path", TYPE_STRING, "Optional: path to the script file (for Shell Script configs)"},
+            {"raw_xml", TYPE_STRING, "Optional: full XML content to write to .idea/runConfigurations/<name>.xml. Use for Shell Script or any config type whose Java API is inaccessible. When provided, 'type' is not required."},
             {"shared", TYPE_BOOLEAN, "Store as shared project file (default: true). If false, stored in workspace only"}
-        }, "name", "type");
+        }, "name");  // 'type' is required unless 'raw_xml' is provided
         addDictProperty(s, "env", "Environment variables as key-value pairs");
         return s;
     }

@@ -184,6 +184,11 @@ public final class CopilotClient extends AcpClient {
     }
 
     @Override
+    protected boolean supportsSessionResumption() {
+        return false;
+    }
+
+    @Override
     protected String loadSession(String cwd, String sessionId) throws Exception {
         // Copilot CLI does not support session/load (ACP spec) nor session/resume.
         // The --resume CLI flag is the only mechanism, and it is broken in ACP mode as of v1.0.12.
