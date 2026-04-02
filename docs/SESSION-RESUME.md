@@ -933,3 +933,28 @@ became a dead branch, invisible to Claude's context.
 entry to `ClaudeCliExporter.exportToFile()`. The `lastPrompt` field is populated with the text
 of the last text-bearing user message in the exported conversation. With this entry, Claude CLI
 correctly identifies the conversation head and continues from after the last assistant response.
+
+### Bug 30: Codex resume falls back to a fresh thread because rollout parsing fails (2026-04-02)
+
+**Symptom**: Switching from Copilot to Codex looks like a resume, but Codex does not load the
+previous thread. The IDE logs show `thread/resume` failing on the exported rollout file, then the
+plugin immediately starting a brand new Codex thread.
+
+**Observed behavior**:
+
+- `SessionSwitchService` saves the current v2 session and exports it for Codex.
+- `CodexClientExporter` writes `~/.codex/sessions/<thread-id>/rollout.jsonl`.
+- The plugin sends `thread/resume` for the exported thread ID.
+- Codex rejects the resume with `failed to load rollout .../rollout.jsonl: failed to parse thread ID from rollout file`.
+- The plugin falls back to `thread/start`, so the conversation continues in a fresh thread instead of
+  reusing the native Codex session.
+
+**Current status**: The fallback path keeps the UI usable, but the native Codex resume workflow is
+broken because the exported rollout file is not accepted by Codex.
+
+**Fix needed**:
+
+- Inspect the Codex exporter and the rollout file format it writes.
+- Compare the generated file against a real Codex rollout produced by the CLI.
+- Ensure the exported rollout contains the metadata Codex expects for `thread/resume`.
+- Keep the fallback path as a safety net, but make the primary resume path succeed.

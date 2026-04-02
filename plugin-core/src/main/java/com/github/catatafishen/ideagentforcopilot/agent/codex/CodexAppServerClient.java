@@ -95,6 +95,9 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private static final String F_TOOL = "tool";
     private static final String F_ARGUMENTS = "arguments";
     private static final String F_COMMAND = "command";
+    private static final String AGENTBRIDGE_PREFIX = "agentbridge_";
+    private static final String TYPE_MCP_TOOL_CALL = "mcpToolCall";
+    private static final String MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX = "mcp_tool_call_approval_";
     private static final String AGENTS_MD = "AGENTS.md";
 
     private static final long TURN_WAIT_POLL_MILLIS = 1000;
@@ -191,6 +194,13 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private final Map<String, Map<String, String>> sessionOptions = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean> sessionCancelled = new ConcurrentHashMap<>();
     private final Map<String, java.util.Set<String>> sessionApprovalAllows = new ConcurrentHashMap<>();
+
+    /**
+     * Tracks in-flight MCP tool calls: {@code callId → toolName}.
+     * Populated from {@code item/started} notifications, consumed by {@code item/tool/requestUserInput}
+     * to resolve tool names for permission checks, cleaned up on {@code item/completed}.
+     */
+    private final Map<String, String> pendingMcpToolNames = new ConcurrentHashMap<>();
 
     // Active turn state — one turn at a time over stdio
     private volatile String activeTurnId;
@@ -890,6 +900,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         switch (method) {
             case "item/commandExecution/requestApproval", "item/fileChange/requestApproval" ->
                 handleNativeApprovalRequest(id, method, params);
+            case "item/tool/requestUserInput" -> handleUserInputRequest(id, params);
             case "item/tool/call" -> {
                 String toolName = params.has(F_TOOL) ? params.get(F_TOOL).getAsString() : "unknown";
                 if ("request_user_input".equals(toolName) && project != null) {
@@ -917,6 +928,129 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 errResp.add(F_ERROR, error);
                 writeMessage(errResp);
             }
+        }
+    }
+
+    /**
+     * Handles {@code item/tool/requestUserInput} — a generic user-input mechanism that
+     * Codex uses both for MCP tool call approvals and potentially other question types.
+     *
+     * <p>MCP tool approval questions are identified by ID prefix {@code mcp_tool_call_approval_}
+     * (matching Codex's {@code MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}). These are auto-approved
+     * at the protocol level for ALLOW/ASK tools (the real permission enforcement happens in
+     * {@link com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService#callTool}),
+     * and declined early for DENY tools to avoid unnecessary MCP round-trips.</p>
+     *
+     * <p>Non-approval questions are forwarded to the user via {@link AskUserTool}.</p>
+     *
+     * <p><b>Wire format</b> (per Codex app-server protocol spec):</p>
+     * <pre>
+     * Response: { answers: { questionId: { answers: ["label"] } } }
+     * </pre>
+     *
+     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ToolRequestUserInputResponse.ts">ToolRequestUserInputResponse</a>
+     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs">mcp_tool_call.rs</a>
+     */
+    private void handleUserInputRequest(@NotNull JsonElement id, @NotNull JsonObject params) {
+        JsonArray questions = params.has("questions") ? params.getAsJsonArray("questions") : new JsonArray();
+        String itemId = params.has("itemId") ? params.get("itemId").getAsString() : "";
+
+        JsonObject answers = new JsonObject();
+        for (JsonElement elem : questions) {
+            if (!elem.isJsonObject()) continue;
+            JsonObject q = elem.getAsJsonObject();
+            String qId = q.has(F_ID) ? q.get(F_ID).getAsString() : "";
+
+            String answerLabel;
+            if (isMcpToolApprovalQuestion(qId)) {
+                answerLabel = resolveMcpToolApprovalAnswer(itemId, qId);
+            } else {
+                answerLabel = askUserForQuestionAnswer(q);
+            }
+
+            JsonObject answerObj = new JsonObject();
+            JsonArray answerArr = new JsonArray();
+            answerArr.add(answerLabel);
+            answerObj.add("answers", answerArr);
+            answers.add(qId, answerObj);
+        }
+        JsonObject result = new JsonObject();
+        result.add("answers", answers);
+        sendResponse(id, result);
+    }
+
+    /**
+     * Matches Codex's {@code MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX}: questions whose ID
+     * starts with {@code mcp_tool_call_approval_} are MCP tool call approval prompts.
+     */
+    private static boolean isMcpToolApprovalQuestion(@NotNull String questionId) {
+        return questionId.startsWith(MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX);
+    }
+
+    /**
+     * Resolves an MCP tool approval answer using the plugin's shared permission infrastructure.
+     *
+     * <p>Looks up the tool name from the {@link #pendingMcpToolNames} cache (populated by
+     * {@code item/started} notifications) and checks {@link ToolLayerSettings#getToolPermission}.
+     * DENY tools are declined at this level to avoid an unnecessary MCP round-trip.
+     * ALLOW and ASK tools are auto-approved here — matching the Copilot CLI approach where real
+     * permission enforcement happens at the MCP server layer
+     * ({@link com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService#callTool}).</p>
+     *
+     * @see <a href="https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs">
+     * Codex MCP_TOOL_APPROVAL_ACCEPT / CANCEL constants</a>
+     */
+    @NotNull
+    private String resolveMcpToolApprovalAnswer(@NotNull String itemId, @NotNull String questionId) {
+        String toolName = pendingMcpToolNames.get(itemId);
+        if (toolName != null) {
+            ToolPermission permission = resolveNativeApprovalPermission(toolName);
+            if (permission == ToolPermission.DENY) {
+                LOG.info("Declining MCP tool at Codex protocol level: " + toolName + " (DENY in settings)");
+                return "Cancel";
+            }
+        }
+        LOG.info("Auto-approving MCP tool at Codex protocol level: " + questionId
+            + (toolName != null ? " (tool=" + toolName + ")" : " (tool name not cached)"));
+        return "Allow for this session";
+    }
+
+    /**
+     * Forwards a non-approval {@code requestUserInput} question to the user via {@link AskUserTool}.
+     * Extracts the question text and options from the Codex protocol format and translates the
+     * user's response back to an answer label.
+     */
+    @NotNull
+    private String askUserForQuestionAnswer(@NotNull JsonObject question) {
+        String questionText = question.has("question") ? question.get("question").getAsString() : "";
+        List<String> optionLabels = new ArrayList<>();
+        if (question.has("options") && question.get("options").isJsonArray()) {
+            for (JsonElement opt : question.getAsJsonArray("options")) {
+                if (opt.isJsonObject() && opt.getAsJsonObject().has("label")) {
+                    optionLabels.add(opt.getAsJsonObject().get("label").getAsString());
+                }
+            }
+        }
+
+        JsonObject toolArgs = new JsonObject();
+        toolArgs.addProperty("question", questionText);
+        if (!optionLabels.isEmpty()) {
+            JsonArray opts = new JsonArray();
+            optionLabels.forEach(opts::add);
+            toolArgs.add("options", opts);
+        }
+
+        try {
+            String response = new AskUserTool(project).execute(toolArgs);
+            // If the response matches an option label, use it directly
+            for (String label : optionLabels) {
+                if (label.equalsIgnoreCase(response.trim())) return label;
+            }
+            return response.trim();
+        } catch (Exception e) {
+            LOG.warn("AskUserTool failed for Codex requestUserInput question", e);
+            // Return the last option (typically "Cancel") as a safe fallback
+            return optionLabels.isEmpty() ? "Cancel" : optionLabels.getLast();
         }
     }
 
@@ -957,12 +1091,21 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     }
 
     private void handleItemStarted(@NotNull JsonObject params) {
-        Consumer<SessionUpdate> cb = activeTurnCallback;
-        if (cb == null || !params.has(F_ITEM)) return;
+        if (!params.has(F_ITEM)) return;
         JsonObject item = params.getAsJsonObject(F_ITEM);
         String type = item.has(F_TYPE) ? item.get(F_TYPE).getAsString() : "";
+
+        // Cache tool name for in-flight MCP calls (used by handleUserInputRequest for permission checks)
+        if (TYPE_MCP_TOOL_CALL.equals(type) && item.has(F_ID) && item.has(F_TOOL)) {
+            String rawTool = item.get(F_TOOL).getAsString();
+            String toolName = rawTool.startsWith(AGENTBRIDGE_PREFIX) ? rawTool.substring(AGENTBRIDGE_PREFIX.length()) : rawTool;
+            pendingMcpToolNames.put(item.get(F_ID).getAsString(), toolName);
+        }
+
+        Consumer<SessionUpdate> cb = activeTurnCallback;
+        if (cb == null) return;
         switch (type) {
-            case "mcpToolCall" -> emitMcpToolCallStart(item, cb);
+            case TYPE_MCP_TOOL_CALL -> emitMcpToolCallStart(item, cb);
             case "reasoning" -> {
                 // Emit one thinking chip per turn, then stream any available reasoning text into it.
                 if (!reasoningActive) {
@@ -981,7 +1124,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         String type = item.has(F_TYPE) ? item.get(F_TYPE).getAsString() : "";
 
         switch (type) {
-            case "mcpToolCall" -> {
+            case TYPE_MCP_TOOL_CALL -> {
+                if (item.has(F_ID)) pendingMcpToolNames.remove(item.get(F_ID).getAsString());
                 if (cb != null) emitMcpToolCallEnd(item, cb);
             }
             case "commandExecution" -> {
@@ -1104,7 +1248,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         // MCP tool call fields: server, tool, arguments
         String rawTool = item.has(F_TOOL) ? item.get(F_TOOL).getAsString() : "tool";
         // Strip "agentbridge_" prefix if the server namespaces tool names
-        String toolName = rawTool.startsWith("agentbridge_") ? rawTool.substring("agentbridge_".length()) : rawTool;
+        String toolName = rawTool.startsWith(AGENTBRIDGE_PREFIX) ? rawTool.substring(AGENTBRIDGE_PREFIX.length()) : rawTool;
         JsonObject args = item.has(F_ARGUMENTS) && item.get(F_ARGUMENTS).isJsonObject()
             ? item.getAsJsonObject(F_ARGUMENTS) : new JsonObject();
 
