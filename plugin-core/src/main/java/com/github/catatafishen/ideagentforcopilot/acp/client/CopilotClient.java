@@ -146,6 +146,13 @@ public final class CopilotClient extends AcpClient {
     protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
         Path home = copilotHome();
         writeAgentDefinitions(home.toString());
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            java.util.Set<String> builtInSlugs = java.util.Set.of(
+                DEFAULT_AGENT_SLUG, "intellij-explore", "intellij-edit");
+            ProjectAgentScanner.copyToGlobalAgentsDir(
+                Path.of(basePath), home.resolve("agents"), builtInSlugs);
+        }
         mergeMcpConfig(home, mcpPort);
         migrateResumeSessionFromLegacyPath();
     }
@@ -169,14 +176,24 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     public List<AbstractAgentClient.AgentMode> getAvailableAgents() {
-        return List.of(
+        List<AbstractAgentClient.AgentMode> agents = new java.util.ArrayList<>(List.of(
             new AbstractAgentClient.AgentMode(DEFAULT_AGENT_SLUG, "Intellij-Default",
                 "Full IntelliJ toolset with abuse-detection instructions"),
             new AbstractAgentClient.AgentMode("intellij-explore", "Intellij-Explore",
                 "Read-only code navigation, no file edits or shell execution"),
             new AbstractAgentClient.AgentMode("intellij-edit", "Intellij-Edit",
                 "Focused editing and refactoring tools, no system shell")
-        );
+        ));
+
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            java.util.Set<String> builtInSlugs = java.util.Set.of(
+                DEFAULT_AGENT_SLUG, "intellij-explore", "intellij-edit");
+            agents.addAll(ProjectAgentScanner.scanProjectAgents(
+                Path.of(basePath), builtInSlugs));
+        }
+
+        return agents;
     }
 
     // ─── Process ─────────────────────────────────────
