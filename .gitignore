@@ -16,6 +16,7 @@ build/
 .idea/sonarlint.xml
 .idea/sonarlint/
 .idea/.idea/
+.idea/runConfigurations/Issue_Fixer__poll_GitHub_.xml
 *.iml
 *.iws
 out/
