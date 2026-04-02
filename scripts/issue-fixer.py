@@ -239,6 +239,10 @@ and push a corrected commit.
 
 # ── GitHub API ─────────────────────────────────────────────────────────────────
 
+class GitHubRateLimitError(Exception):
+    """Raised on HTTP 403 from GitHub — stops the current poll cycle."""
+
+
 def _gh_request(path: str) -> Any:
     """GET request to the GitHub repos API for GITHUB_REPO."""
     url = f"https://api.github.com/repos/{GITHUB_REPO}/{path}"
@@ -254,9 +258,14 @@ def _gh_raw_request(url: str, method: str = "GET", data: bytes | None = None) ->
         req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
     if data:
         req.add_header("Content-Type", "application/json")
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        body = resp.read()
-        return json.loads(body) if body else {}
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = resp.read()
+            return json.loads(body) if body else {}
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403:
+            raise GitHubRateLimitError(f"GitHub API rate limit (403) for {url}") from exc
+        raise
 
 
 def _gh_search(query: str) -> list[dict]:
@@ -311,7 +320,9 @@ def find_prs_for_issue(issue_number: int) -> list[dict]:
         results = _gh_search(query)
         pr_numbers = {p["number"] for p in open_prs}
         return [r for r in results if r["number"] in pr_numbers]
-    except Exception as exc:
+    except GitHubRateLimitError:
+        raise
+    except (urllib.error.URLError, urllib.error.HTTPError) as exc:
         print(f"  [warn] PR search for issue #{issue_number} failed: {exc}")
         return []
 
@@ -486,6 +497,14 @@ def _mark_resolved_issues(issues_state: dict, open_numbers: set[str]) -> None:
 
 
 def process_issues(state: dict, dry_run: bool) -> None:
+    """Dispatch at most ONE issue action per poll cycle, then return.
+
+    Priority order:
+    1. Author replied to a previously-dispatched issue → re-dispatch with clarification
+    2. New issue (oldest first) → dispatch fix prompt
+
+    This ensures the agent finishes one task before receiving the next.
+    """
     issues_state: dict = state.setdefault("issues", {})
 
     print("[poll] fetching open issues…")
@@ -494,27 +513,37 @@ def process_issues(state: dict, dry_run: bool) -> None:
 
     _mark_resolved_issues(issues_state, open_numbers)
 
-    new_issues = [i for i in open_issues if str(i["number"]) not in issues_state]
     dispatched_issues = [
         i for i in open_issues
         if issues_state.get(str(i["number"]), {}).get("status") == ISSUE_STATUS_DISPATCHED
     ]
+    new_issues = [i for i in open_issues if str(i["number"]) not in issues_state]
 
     if not new_issues and not dispatched_issues:
         print("[poll] no new or active issues")
         return
 
     if new_issues:
-        print(f"[poll] {len(new_issues)} new issue(s): {[i['number'] for i in new_issues]}")
+        print(f"[poll] {len(new_issues)} new issue(s) queued: {[i['number'] for i in new_issues]}")
     if dispatched_issues:
         print(f"[poll] {len(dispatched_issues)} dispatched issue(s) to monitor: "
               f"{[i['number'] for i in dispatched_issues]}")
 
-    changed = any(_dispatch_new_issue(i, issues_state, dry_run) for i in new_issues)
-    changed = any(_check_author_response(i, issues_state, dry_run) for i in dispatched_issues) or changed
+    # Priority 1: check for author replies on dispatched issues (oldest first)
+    for issue in reversed(dispatched_issues):
+        if _check_author_response(issue, issues_state, dry_run):
+            if not dry_run:
+                save_state(state)
+            return
 
-    if changed and not dry_run:
-        save_state(state)
+    # Priority 2: dispatch ONE new issue (oldest first)
+    if new_issues:
+        issue = new_issues[-1]  # list is newest-first, so last = oldest
+        print(f"[poll] dispatching oldest new issue #{issue['number']} "
+              f"({len(new_issues) - 1} remaining in queue)")
+        if _dispatch_new_issue(issue, issues_state, dry_run):
+            if not dry_run:
+                save_state(state)
 
 
 def _dispatch_new_issue(issue: dict, issues_state: dict, dry_run: bool) -> bool:
@@ -772,11 +801,19 @@ def poll_once(dry_run: bool) -> None:
 
     try:
         process_issues(state, dry_run)
+    except GitHubRateLimitError as exc:
+        print(f"[error] GitHub rate limit hit — stopping this cycle: {exc}")
+        state["last_check"] = datetime.now(timezone.utc).isoformat()
+        if not dry_run:
+            save_state(state)
+        return
     except Exception as exc:
         print(f"[error] issue processing: {exc}")
 
     try:
         process_prs(state, dry_run)
+    except GitHubRateLimitError as exc:
+        print(f"[error] GitHub rate limit hit — stopping this cycle: {exc}")
     except Exception as exc:
         print(f"[error] PR processing: {exc}")
 
