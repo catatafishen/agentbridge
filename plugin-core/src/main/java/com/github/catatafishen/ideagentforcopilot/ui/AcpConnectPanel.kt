@@ -46,16 +46,24 @@ class AcpConnectPanel(
     sealed class SessionChoice(val displayText: String) {
         /** Resume the most recent session (default). */
         class Latest(val record: SessionStoreV2.SessionRecord) :
-            SessionChoice("Resume: ${SESSION_DATE_FORMAT.format(Date(record.updatedAt))} (${record.agent})")
+            SessionChoice(formatSession(record))
 
         /** Start a fresh session without resuming. */
         data object None : SessionChoice("None (fresh session)")
 
         /** Resume a specific older session. */
         class Older(val record: SessionStoreV2.SessionRecord) :
-            SessionChoice("${SESSION_DATE_FORMAT.format(Date(record.updatedAt))} (${record.agent})")
+            SessionChoice(formatSession(record))
 
         override fun toString(): String = displayText
+
+        companion object {
+            private fun formatSession(record: SessionStoreV2.SessionRecord): String {
+                val date = SESSION_DATE_FORMAT.format(Date(record.updatedAt))
+                val base = "$date (${record.agent})"
+                return if (record.turnCount > 0) "$base — ${record.turnCount} turns" else base
+            }
+        }
     }
 
     private val agentManager = ActiveAgentManager.getInstance(project)
