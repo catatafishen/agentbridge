@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
@@ -48,6 +49,12 @@ public final class CopilotClient extends AcpClient {
     private static final String MCP_TYPE_HTTP = "http";
     private static final String KEY_RAW_INPUT = "rawInput";
     private static final String SESSION_STATE_DIR = "session-state";
+
+    /**
+     * Slugs of the built-in agents that are always written by this client; never shadowed by project agents.
+     */
+    private static final Set<String> BUILT_IN_AGENT_SLUGS =
+        Set.of(DEFAULT_AGENT_SLUG, "intellij-explore", "intellij-edit");
 
     // ─── MCP tool sets ───────────────────────────────
 
@@ -118,6 +125,13 @@ public final class CopilotClient extends AcpClient {
     protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
         Path home = copilotHome();
         writeAgentDefinitions(home.toString());
+
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            ProjectAgentScanner.copyToGlobalAgentsDir(
+                Path.of(basePath), home.resolve("agents"), BUILT_IN_AGENT_SLUGS);
+        }
+
         mergeMcpConfig(home, mcpPort);
         migrateResumeSessionFromLegacyPath();
     }
@@ -141,14 +155,21 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     public List<AbstractAgentClient.AgentMode> getAvailableAgents() {
-        return List.of(
+        List<AbstractAgentClient.AgentMode> agents = new java.util.ArrayList<>(List.of(
             new AbstractAgentClient.AgentMode(DEFAULT_AGENT_SLUG, "Intellij-Default",
                 "Full IntelliJ toolset with abuse-detection instructions"),
             new AbstractAgentClient.AgentMode("intellij-explore", "Intellij-Explore",
                 "Read-only code navigation, no file edits or shell execution"),
             new AbstractAgentClient.AgentMode("intellij-edit", "Intellij-Edit",
                 "Focused editing and refactoring tools, no system shell")
-        );
+        ));
+
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            agents.addAll(ProjectAgentScanner.scanProjectAgents(Path.of(basePath), BUILT_IN_AGENT_SLUGS));
+        }
+
+        return agents;
     }
 
     // ─── Process ─────────────────────────────────────
