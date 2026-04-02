@@ -20,6 +20,9 @@ public class ShellEnvironment {
     private static volatile Map<String, String> cachedEnvironment = null;
     private static final Object LOCK = new Object();
 
+    private ShellEnvironment() {
+    }
+
     /**
      * Get the captured shell environment, capturing it on first call and caching thereafter.
      *
@@ -63,14 +66,20 @@ public class ShellEnvironment {
     @NotNull
     private static Map<String, String> captureUnixEnvironment() {
         try {
-            // Use the user's actual login shell to capture the full environment.
-            // On macOS (zsh default since Catalina), -l loads ~/.zprofile where
-            // Homebrew adds /opt/homebrew/bin via `eval "$(brew shellenv)"`.
             String userShell = System.getenv("SHELL");
             if (userShell == null || userShell.isBlank()) {
                 userShell = "/bin/sh";
             }
-            ProcessBuilder pb = new ProcessBuilder(userShell, "-l", "-c", "env 2>/dev/null");
+
+            // Run as a login shell (-l) to pick up /etc/profile, ~/.bash_profile, etc.
+            // Then ALSO explicitly source the interactive rc file (~/.bashrc / ~/.zshrc)
+            // because on Linux, bash login shells do NOT source ~/.bashrc unless
+            // ~/.bash_profile explicitly does so — and tools like nvm/sdkman live in ~/.bashrc.
+            String home = System.getProperty("user.home");
+            String rcFile = userShell.contains("zsh") ? home + "/.zshrc" : home + "/.bashrc";
+            String command = "[ -f '" + rcFile + "' ] && . '" + rcFile + "' 2>/dev/null; env 2>/dev/null";
+
+            ProcessBuilder pb = new ProcessBuilder(userShell, "-l", "-c", command);
             pb.redirectErrorStream(false);
 
             Process process = pb.start();
@@ -82,9 +91,7 @@ public class ShellEnvironment {
                 while ((line = reader.readLine()) != null) {
                     int idx = line.indexOf('=');
                     if (idx > 0) {
-                        String key = line.substring(0, idx);
-                        String value = line.substring(idx + 1);
-                        env.put(key, value);
+                        env.put(line.substring(0, idx), line.substring(idx + 1));
                     }
                 }
             }
@@ -103,6 +110,10 @@ public class ShellEnvironment {
             LOG.info("Captured shell environment with PATH: " + env.get("PATH"));
             return Collections.unmodifiableMap(env);
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("Shell environment capture interrupted");
+            return System.getenv();
         } catch (Exception e) {
             LOG.warn("Failed to capture shell environment: " + e.getMessage(), e);
             return System.getenv();
@@ -111,7 +122,7 @@ public class ShellEnvironment {
 
     @NotNull
     private static Map<String, String> captureWindowsEnvironment() {
-        // Just use system environment - we override USERPROFILE/HOME in buildEnvironment() anyway
+        // Just use system environment - HOME/USERPROFILE are set correctly on Windows
         LOG.info("Using system environment for Windows");
         return System.getenv();
     }
