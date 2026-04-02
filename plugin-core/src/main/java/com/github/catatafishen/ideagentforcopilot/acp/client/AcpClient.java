@@ -1068,7 +1068,10 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (binaryName.startsWith("/") || binaryName.startsWith("./")) return command;
 
         // Check user-configured override first, then auto-detect via shell environment
-        String resolvedPath = new com.github.catatafishen.ideagentforcopilot.settings.AcpClientBinaryDetector(agentId()).resolve(binaryName);
+        var profile = com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager.getInstance().getProfile(agentId());
+        String[] alternates = profile != null ? profile.getAlternateNames().toArray(new String[0]) : new String[0];
+
+        String resolvedPath = new com.github.catatafishen.ideagentforcopilot.settings.AcpClientBinaryDetector(agentId()).resolve(binaryName, alternates);
         if (resolvedPath != null && !resolvedPath.isEmpty()) {
             List<String> resolved = new ArrayList<>(command);
             resolved.set(0, resolvedPath);
