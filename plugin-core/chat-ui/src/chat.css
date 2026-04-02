@@ -255,6 +255,15 @@ chat-message.client-codex .agent-bubble {
     font-family: inherit;
 }
 
+/* Streaming cursor — shown while agent tokens are arriving */
+message-bubble[streaming]::after {
+    content: '▍';
+    display: inline-block;
+    color: var(--agent);
+    opacity: 0.7;
+    animation: blink 1s step-end infinite;
+}
+
 /* ── Working indicator ───────────────────────────────── */
 working-indicator {
     display: block;

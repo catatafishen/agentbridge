@@ -1,4 +1,4 @@
-import {beforeEach, describe, expect, it} from 'vitest';
+import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 // Helper to wait for custom element upgrades
 function flush() {
@@ -83,15 +83,29 @@ describe('message-bubble', () => {
         document.body.appendChild(bubble);
     });
 
-    it('appendStreamingText adds text', () => {
-        bubble.appendStreamingText('Hello');
-        expect(bubble.textContent).toContain('Hello');
+    it('appendStreamingText renders Markdown after RAF', async () => {
+        vi.useFakeTimers();
+        bubble.appendStreamingText('**Hello**');
+        vi.advanceTimersByTime(20);
+        vi.useRealTimers();
+        expect(bubble.innerHTML).toContain('<b>Hello</b>');
     });
 
-    it('appendStreamingText accumulates', () => {
+    it('appendStreamingText accumulates multiple tokens', async () => {
+        vi.useFakeTimers();
         bubble.appendStreamingText('Hello ');
         bubble.appendStreamingText('World');
+        vi.advanceTimersByTime(20);
+        vi.useRealTimers();
         expect(bubble.textContent).toContain('Hello World');
+    });
+
+    it('appendStreamingText renders inline code', async () => {
+        vi.useFakeTimers();
+        bubble.appendStreamingText('Use `npm install` to set up.');
+        vi.advanceTimersByTime(20);
+        vi.useRealTimers();
+        expect(bubble.innerHTML).toContain('<code>npm install</code>');
     });
 
     it('finalize replaces content with HTML', () => {
@@ -276,7 +290,7 @@ describe('quick-replies', () => {
         let received = null;
         document.addEventListener('quick-reply', e => {
             received = e.detail.text;
-        }, { once: true });
+        }, {once: true});
         qr.options = ['Force push:danger'];
         qr.querySelector('.quick-reply-btn').click();
         expect(received).toBe('Force push');
@@ -295,7 +309,7 @@ describe('quick-replies', () => {
         let received = false;
         document.addEventListener('quick-reply', () => {
             received = true;
-        }, { once: true });
+        }, {once: true});
         qr.options = ['Ok:dismiss'];
         const btn = qr.querySelector('.quick-reply-btn');
         expect(btn.textContent).toBe('Ok');

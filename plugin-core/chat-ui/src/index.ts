@@ -78,7 +78,7 @@ document.addEventListener('mouseover', (e: MouseEvent) => {
     let c = 'default';
     if (el.closest('a,.turn-chip,.chip-close,.prompt-ctx-chip,.quick-reply-btn,.code-action-btn')) c = 'pointer';
     else if (el.closest('.chip-strip')) c = 'grab';
-    else if (el.closest('p,pre,code,li,td,th,.thinking-content,.streaming')) c = 'text';
+    else if (el.closest('p,pre,code,li,td,th,.thinking-content,message-bubble[streaming]')) c = 'text';
     if (c !== lastCursor) {
         lastCursor = c;
         globalThis._bridge?.setCursor(c);
