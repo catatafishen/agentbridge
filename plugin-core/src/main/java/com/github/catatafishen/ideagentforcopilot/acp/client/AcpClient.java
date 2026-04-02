@@ -325,13 +325,13 @@ public abstract class AcpClient extends AbstractAgentClient {
                         // Agent loaded the session but didn't replay any history.
                         // It may not have conversation context — inject as a safety net.
                         LOG.info(displayName() + ": session loaded but no history replayed — enabling injection fallback");
-                        enableInjectionFallback(requestedResumeId);
+                        enableInjectionFallback(requestedResumeId, supportsSessionResumption());
                     }
                     return loaded;
                 } catch (Exception e) {
                     LOG.warn(displayName() + ": session/load failed for " + requestedResumeId
                         + ", falling back to session/new: " + e.getMessage());
-                    enableInjectionFallback(requestedResumeId);
+                    enableInjectionFallback(requestedResumeId, supportsSessionResumption());
                 }
             }
 
@@ -447,13 +447,26 @@ public abstract class AcpClient extends AbstractAgentClient {
      * @see <a href="https://agentclientprotocol.com/protocol/session-setup">ACP Session Setup</a>
      */
     protected String loadSession(String cwd, String sessionId) throws Exception {
-        if (capabilities == null
-            || capabilities.agentCapabilities() == null
-            || !Boolean.TRUE.equals(capabilities.agentCapabilities().loadSession())) {
+        if (!supportsSessionResumption()) {
             throw new AgentSessionException(
                 displayName() + " does not advertise loadSession capability");
         }
         return sendLoadSessionRequest("session/load", cwd, sessionId);
+    }
+
+    /**
+     * Whether this agent supports session resumption via {@link #loadSession}.
+     * <p>
+     * Default: checks if the agent advertised the {@code loadSession} capability
+     * during initialization. Subclasses can override to return {@code false}
+     * for agents known not to support resumption even if the capability is
+     * accidentally advertised, or to return {@code true} for agents that use
+     * non-standard resumption methods.
+     */
+    protected boolean supportsSessionResumption() {
+        return capabilities != null
+            && capabilities.agentCapabilities() != null
+            && Boolean.TRUE.equals(capabilities.agentCapabilities().loadSession());
     }
 
     /**
@@ -525,11 +538,19 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     /**
      * Enables conversation history injection as a fallback when session loading fails.
-     * Shows a notification to the user explaining the limitation.
+     * Shows a notification to the user explaining the limitation if resumption was expected.
+     *
+     * @param requestedId the session ID that was requested for resumption
+     * @param expected    whether resumption was expected to work for this agent
      */
-    private void enableInjectionFallback(String requestedId) {
+    private void enableInjectionFallback(String requestedId, boolean expected) {
         if (!ActiveAgentManager.getInjectConversationHistory(project)) {
             ActiveAgentManager.setInjectConversationHistory(project, true);
+        }
+
+        if (!expected) {
+            LOG.info(displayName() + ": session resume not supported — silently enabled injection fallback");
+            return;
         }
 
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
