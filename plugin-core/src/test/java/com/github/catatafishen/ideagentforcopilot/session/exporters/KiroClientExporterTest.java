@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.session.exporters;
 
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
@@ -337,6 +338,53 @@ class KiroClientExporterTest {
 
         assertTrue(tc1.has("result"));
         assertTrue(tc1.getAsJsonObject("result").has("Success"));
+    }
+
+    @Test
+    void consecutivePromptsDeduped() {
+        // Regression test: duplicate user messages (e.g. user clicked Send twice, or
+        // a rate-limit error was followed by a retry prompt) produce consecutive Prompts
+        // that Kiro rejects as "invalid conversation history".
+        SessionMessage user1 = userMessage("Please continue");
+        SessionMessage user2 = userMessage("Please continue");
+        SessionMessage assistant = new SessionMessage(
+            "a1", "assistant", List.of(textPart("Here is the continuation.")),
+            System.currentTimeMillis(), null, null);
+
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(user1, user2, assistant));
+
+        // The earlier of the two consecutive Prompts should be removed, keeping the later one
+        List<String> kinds = kiroMessages.stream()
+            .map(m -> m.get("kind").getAsString())
+            .toList();
+        assertEquals(List.of("Prompt", "AssistantMessage"), kinds,
+            "Consecutive Prompts should be deduplicated; got: " + kinds);
+
+        // The remaining Prompt should be the last one (user2)
+        JsonArray content = kiroMessages.getFirst().getAsJsonObject("data").getAsJsonArray("content");
+        assertEquals(1, content.size(), "Deduplicated Prompt should have 1 content block");
+    }
+
+    @Test
+    void threeConsecutivePromptsDeduped() {
+        SessionMessage u1 = userMessage("Msg A");
+        SessionMessage u2 = userMessage("Msg B");
+        SessionMessage u3 = userMessage("Msg C");
+
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(List.of(u1, u2, u3));
+
+        List<String> kinds = kiroMessages.stream()
+            .map(m -> m.get("kind").getAsString())
+            .toList();
+        assertEquals(List.of("Prompt"), kinds,
+            "Three consecutive Prompts should collapse to one");
+
+        // Should keep the last Prompt (u3 = "Msg C")
+        String text = kiroMessages.getFirst()
+            .getAsJsonObject("data").getAsJsonArray("content")
+            .get(0).getAsJsonObject().get("data").getAsString();
+        assertEquals("Msg C", text, "Should keep the last Prompt's text");
     }
 
     // ── Helper methods ──────────────────────────────────────────────

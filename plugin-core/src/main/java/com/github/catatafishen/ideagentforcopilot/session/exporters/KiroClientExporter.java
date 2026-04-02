@@ -194,7 +194,35 @@ public final class KiroClientExporter {
             result.addFirst(wrapMessage(KIND_PROMPT, UUID.randomUUID().toString(), content));
         }
 
+        // Kiro rejects consecutive Prompt messages ("invalid conversation history").
+        // Merge any consecutive Prompts by appending the later content into the earlier one.
+        mergeConsecutivePrompts(result);
+
         return result;
+    }
+
+    /**
+     * Removes duplicate consecutive {@code Prompt} messages in-place, keeping the last one.
+     *
+     * <p>Kiro rejects conversation history that contains two Prompts in a row without an
+     * intervening {@code AssistantMessage}. This can happen when the user sends duplicate
+     * messages or when a rate-limit/error turn is followed immediately by a retry prompt.
+     * We drop the earlier duplicate and keep the later one.</p>
+     */
+    private static void mergeConsecutivePrompts(@NotNull List<JsonObject> messages) {
+        int i = 0;
+        while (i < messages.size() - 1) {
+            JsonObject current = messages.get(i);
+            JsonObject next = messages.get(i + 1);
+            if (KIND_PROMPT.equals(current.get("kind").getAsString())
+                && KIND_PROMPT.equals(next.get("kind").getAsString())) {
+                LOG.warn("Kiro export: removing duplicate consecutive Prompt at index " + i);
+                messages.remove(i);
+                // don't advance i — the item now at i may also be followed by another Prompt
+            } else {
+                i++;
+            }
+        }
     }
 
     @Nullable
