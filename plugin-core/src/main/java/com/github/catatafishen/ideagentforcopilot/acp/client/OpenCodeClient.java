@@ -6,6 +6,8 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -42,7 +44,37 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        return List.of(AGENT_ID, "acp");
+        // On Windows, opencode is installed via npm and the native binary is not on PATH.
+        // Probe the project-local node_modules path as a fallback.
+        String windowsPath = resolveWindowsOpenCodePath(cwd);
+        return List.of(windowsPath != null ? windowsPath : AGENT_ID, "acp");
+    }
+
+    /**
+     * On Windows, opencode is shipped as a native binary inside its npm package and is not
+     * added to PATH by default. Probes the project-local {@code node_modules} tree for the
+     * {@code opencode-windows-x64} binary bundled by {@code opencode-ai}.
+     *
+     * <p>Package-private and static so unit tests can call it directly without an
+     * IntelliJ application context.</p>
+     *
+     * @param projectBasePath the project root directory, or {@code null} if unavailable
+     * @return absolute path to {@code opencode.exe}, or {@code null} if not found or not on Windows
+     */
+    @Nullable
+    static String resolveWindowsOpenCodePath(@Nullable String projectBasePath) {
+        if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+            return null;
+        }
+        if (projectBasePath == null || projectBasePath.isEmpty()) {
+            return null;
+        }
+        Path candidate = Path.of(projectBasePath,
+            "node_modules", "opencode-ai", "node_modules", "opencode-windows-x64", "bin", "opencode.exe");
+        if (Files.isRegularFile(candidate)) {
+            return candidate.toString();
+        }
+        return null;
     }
 
     @Override
