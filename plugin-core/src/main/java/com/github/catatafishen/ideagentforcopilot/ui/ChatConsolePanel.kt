@@ -527,12 +527,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         kind: String?
     ) {
         val saDid = domId(subAgentId)
-        val toolDid = domId(toolId)
         val resolvedKind = kind ?: "other"
         val cleanTitle = title.trim('\'', '"')
-        val entry = EntryData.ToolCall(cleanTitle, arguments, resolvedKind)
-        toolCallNames[toolDid] = cleanTitle
-        toolCallEntries[toolDid] = entry
 
         val def = toolRegistry?.findById(cleanTitle)
         val info = TOOL_DISPLAY_INFO[cleanTitle]
@@ -543,7 +539,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
 
-        // Check if MCP handled this via hash correlation
+        // Register with chip registry to get the hash-based chipId.
+        // The DOM chip MUST use "t-$chipId" so the kindStateListener can find it
+        // when MCP fires markMcpHandled with the same "t-$chipId".
         val argsObj = arguments?.let {
             try {
                 JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
@@ -552,10 +550,20 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             }
         }
         val registration = registry.registerClientSide(cleanTitle, argsObj, toolId)
+        val chipId = registration.chipId()
+        val toolDid = "t-$chipId"
         val isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
         val isExternal = !isMcpHandled
 
+        val entry = EntryData.ToolCall(cleanTitle, arguments, resolvedKind)
+        if (isMcpHandled) entry.mcpHandled = true
+        toolCallNames[toolDid] = cleanTitle
+        toolCallEntries[toolDid] = entry
+
         executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson','$safeKind',$isExternal)")
+        if (isMcpHandled) {
+            executeJs("ChatController.markMcpHandled('$toolDid')")
+        }
     }
 
     /** Update a sub-agent internal tool call (no segment break). */
@@ -567,7 +575,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         autoDenied: Boolean,
         denialReason: String?
     ) {
-        val did = domId(toolId)
+        val chipId = registry.findChipIdByClientId(toolId)
+        val did = if (chipId != null) "t-$chipId" else domId(toolId)
         toolCallEntries[did]?.let {
             it.result = details
             it.status = status
