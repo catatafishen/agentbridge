@@ -332,6 +332,12 @@ public final class PlatformApiCompat {
      * immediately. Instead, it registers a {@code DataPackChangeListener} and triggers a VCS log
      * refresh. When the log finishes refreshing (and the new commit is indexed), it navigates.
      * <p>
+     * <b>Why extracted:</b> {@code DataPackChangeListener} changed its SAM method parameter type
+     * from {@code DataPack} to {@code VcsLogGraphData} between 2024.3 and 2025.2. A lambda compiled
+     * against one version throws {@code AbstractMethodError} on the other. Using
+     * {@link java.lang.reflect.Proxy} avoids the binary incompatibility since we never use the
+     * parameter.
+     * <p>
      * Note: {@code DataPack} is deprecated (scheduled for removal) but there is no non-internal
      * replacement listener API yet. {@code VcsLogProgress.ProgressListener} exists but requires
      * {@code VcsLogData.DATA_PACK_REFRESH} which is {@code @ApiStatus.Internal}. Using deprecated
@@ -360,17 +366,25 @@ public final class PlatformApiCompat {
         }
 
         var navigated = new java.util.concurrent.atomic.AtomicBoolean(false);
-        com.intellij.vcs.log.data.DataPackChangeListener[] listenerRef =
-            new com.intellij.vcs.log.data.DataPackChangeListener[1];
 
-        listenerRef[0] = dataPack -> {
-            if (!navigated.compareAndSet(false, true)) return;
-            data.removeDataPackChangeListener(listenerRef[0]);
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
-        };
+        // Use Proxy instead of a lambda to avoid AbstractMethodError when the SAM method
+        // signature changes between IDE versions (DataPack → VcsLogGraphData).
+        com.intellij.vcs.log.data.DataPackChangeListener listener =
+            (com.intellij.vcs.log.data.DataPackChangeListener) java.lang.reflect.Proxy.newProxyInstance(
+                com.intellij.vcs.log.data.DataPackChangeListener.class.getClassLoader(),
+                new Class<?>[]{com.intellij.vcs.log.data.DataPackChangeListener.class},
+                (proxy, method, args) -> {
+                    if ("onDataPackChange".equals(method.getName())) {
+                        if (!navigated.compareAndSet(false, true)) return null;
+                        data.removeDataPackChangeListener(
+                            (com.intellij.vcs.log.data.DataPackChangeListener) proxy);
+                        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+                            com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
+                    }
+                    return null;
+                });
 
-        data.addDataPackChangeListener(listenerRef[0]);
+        data.addDataPackChangeListener(listener);
 
         // Trigger VCS log refresh to pick up the new commit
         String basePath = project.getBasePath();
@@ -385,7 +399,7 @@ public final class PlatformApiCompat {
         com.intellij.util.concurrency.AppExecutorUtil.getAppScheduledExecutorService()
             .schedule(() -> {
                 if (navigated.compareAndSet(false, true)) {
-                    data.removeDataPackChangeListener(listenerRef[0]);
+                    data.removeDataPackChangeListener(listener);
                 }
             }, 5, java.util.concurrent.TimeUnit.SECONDS);
     }
