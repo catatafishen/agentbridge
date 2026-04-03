@@ -49,6 +49,9 @@ test-output/
 *.swp
 *~
 
+# Local environment exports (captured shell env, machine-specific)
+.env
+
 # Scripts local config
 scripts/.env
 scripts/*.env
