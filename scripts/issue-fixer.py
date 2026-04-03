@@ -8,9 +8,8 @@ Usage:
 
 Configuration (env vars):
     GITHUB_REPO               owner/repo  (default: catatafishen/agentbridge)
-    GITHUB_APP_ID             GitHub App ID (preferred — enables app-identity auth)
-    GITHUB_APP_PRIVATE_KEY_FILE  path to the App's RSA private key PEM file
-    GITHUB_TOKEN              personal access token fallback (used if App auth not configured)
+    GITHUB_APP_ID             GitHub App ID (required)
+    GITHUB_APP_PRIVATE_KEY_FILE  path to the App's RSA private key PEM file (required)
     AGENT_GITHUB_LOGIN        GitHub login of the bot account (used to skip bot's own PR comments)
     PLUGIN_URL           base URL of the Chat Web Server  (default: https://localhost:9642)
     STATE_FILE           path to JSON state file  (default: ~/.local/share/issue-fixer/state.json)
@@ -57,12 +56,31 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# ── .env loading ───────────────────────────────────────────────────────────────
+# Auto-load scripts/.env (sibling to this script) so credentials don't need to
+# be set in the shell or run configuration.  Existing env vars take precedence.
+
+def _load_dotenv() -> None:
+    env_path = Path(__file__).resolve().parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+_load_dotenv()
+
 # ── Configuration ──────────────────────────────────────────────────────────────
 
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "catatafishen/agentbridge")
 GITHUB_APP_ID = os.environ.get("GITHUB_APP_ID", "")
 GITHUB_APP_PRIVATE_KEY_FILE = os.environ.get("GITHUB_APP_PRIVATE_KEY_FILE", "")
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 AGENT_GITHUB_LOGIN = os.environ.get("AGENT_GITHUB_LOGIN", "")
 PLUGIN_URL = os.environ.get("PLUGIN_URL", "https://localhost:9642")
 STATE_FILE = Path(os.environ.get("STATE_FILE",
@@ -70,6 +88,12 @@ STATE_FILE = Path(os.environ.get("STATE_FILE",
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "300"))
 BUSY_WAIT_INTERVAL = int(os.environ.get("BUSY_WAIT_INTERVAL", "60"))
 BUSY_WAIT_TIMEOUT = int(os.environ.get("BUSY_WAIT_TIMEOUT", "86400"))
+
+# Path where the current GitHub App installation token is written so that the
+# agent can use it for `gh` CLI commands (via GH_TOKEN env var).  The token is
+# refreshed each time _get_auth_token() obtains a new one.  Keeping the token
+# in a file avoids sending it through Copilot's servers in the prompt text.
+GH_APP_TOKEN_FILE = STATE_FILE.parent / "gh-app-token"
 
 # ── Prompt templates ───────────────────────────────────────────────────────────
 
@@ -241,17 +265,19 @@ _installation_token_cache: tuple[str, float] | None = None
 
 
 def _get_auth_token() -> str:
-    """Returns a valid GitHub bearer token.
+    """Returns a valid GitHub App installation bearer token.
 
-    Prefers GitHub App installation tokens (when GITHUB_APP_ID and
-    GITHUB_APP_PRIVATE_KEY_FILE are configured) for higher rate limits (5 000/hr)
-    and app-identity authorship.  Falls back to GITHUB_TOKEN (personal access
-    token or empty string for unauthenticated access).
+    Requires GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_FILE to be configured.
+    Raises RuntimeError if App credentials are missing — personal tokens are
+    intentionally not supported to ensure all operations use the App identity.
     """
     global _installation_token_cache
 
     if not GITHUB_APP_ID or not GITHUB_APP_PRIVATE_KEY_FILE:
-        return GITHUB_TOKEN
+        raise RuntimeError(
+            "GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_FILE are required. "
+            "Configure them in scripts/.env or as environment variables."
+        )
 
     now = time.time()
     if _installation_token_cache is not None and now < _installation_token_cache[1] - 60:
@@ -282,6 +308,16 @@ def _get_auth_token() -> str:
     )
     token = result["token"]
     _installation_token_cache = (token, now + 3600)
+
+    # Write the token to a file so the agent can use it for `gh` CLI commands
+    # via GH_TOKEN — avoids sending the token through Copilot's servers.
+    try:
+        GH_APP_TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+        GH_APP_TOKEN_FILE.write_text(token)
+        GH_APP_TOKEN_FILE.chmod(0o600)
+    except OSError as exc:
+        print(f"[warn] could not write token file {GH_APP_TOKEN_FILE}: {exc}")
+
     print(f"[auth] obtained GitHub App installation token (expires in ~1h)")
     return token
 
@@ -479,7 +515,38 @@ def wait_for_agent_free(timeout: int = BUSY_WAIT_TIMEOUT) -> bool:
     return False
 
 
+def _get_gh_credentials_instruction() -> str:
+    """Returns a prompt instruction block for the agent to authenticate `gh` CLI
+    commands using the GitHub App installation token.
+
+    The token is stored in a local file (never included in the prompt text) so
+    it doesn't travel through Copilot's servers.  Returns an empty string when
+    App auth is not configured.
+    """
+    if not GITHUB_APP_ID or not GITHUB_APP_PRIVATE_KEY_FILE:
+        return ""
+    if not GH_APP_TOKEN_FILE.exists():
+        # First token hasn't been obtained yet — trigger it now
+        _get_auth_token()
+    if not GH_APP_TOKEN_FILE.exists():
+        return ""
+    return (
+        "\n\n**GitHub credentials:**\n"
+        "Before running any `gh` CLI command, set the `GH_TOKEN` environment variable "
+        "so that operations are attributed to the GitHub App (not a personal account):\n"
+        "```\n"
+        f"export GH_TOKEN=$(cat {GH_APP_TOKEN_FILE})\n"
+        "```\n"
+        "Run this once at the start of your session. All subsequent `gh` commands "
+        "will use the App token automatically.\n"
+    )
+
+
 def send_prompt(text: str, dry_run: bool = False) -> None:
+    # Append GitHub App credential instructions so the agent uses the App
+    # token for `gh` CLI commands instead of the user's personal token.
+    text += _get_gh_credentials_instruction()
+
     if dry_run:
         print(f"[dry-run] Would POST prompt:\n{text[:400]}…\n")
         return
@@ -1000,10 +1067,10 @@ def main() -> None:
     print(f"issue-fixer starting — repo={GITHUB_REPO} plugin={PLUGIN_URL}")
     if GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_FILE:
         print(f"  [auth] GitHub App ID={GITHUB_APP_ID} (installation token, 5 000 req/hr)")
-    elif GITHUB_TOKEN:
-        print(f"  [auth] personal access token (5 000 req/hr)")
     else:
-        print("  [auth] unauthenticated (60 req/hr — set GITHUB_TOKEN or GITHUB_APP_* in .env)")
+        print("  [error] GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY_FILE are required.")
+        print("          Configure them in scripts/.env or as environment variables.")
+        raise SystemExit(1)
     if args.dry_run:
         print("  [dry-run mode — no prompts will be sent]\n")
 
