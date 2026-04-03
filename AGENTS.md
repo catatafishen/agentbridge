@@ -55,6 +55,15 @@ Examples: `[ quick-reply: Yes | No ]`  `[ quick-reply: Keep | Delete all:danger 
             > End of auto-generated instructions
 ---
 
+# Development Workflow
+
+Each feature or bug fix must be done in its own branch and a PR created when the work is done.
+
+- Branch name: `feat/<short-description>` or `fix/<short-description>` (matching the commit convention)
+- One logical change per branch — do not bundle unrelated changes
+- Create a PR as soon as the branch is ready for review
+- Do not commit directly to `master`
+
 # Agent Definition Formats
 
 Different ACP agents support custom agent definitions with tool filtering, but use different formats.
@@ -181,12 +190,12 @@ See [JUNIE-TOOL-WORKAROUND.md](docs/JUNIE-TOOL-WORKAROUND.md).
 
 ## Summary Table
 
-| Agent    | MCP Tool Prefix | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests  | Bundled Agents               | Status                     |
-|----------|-----------------|----------------------------------|------------------------------------------------------------|----------------------|------------------------------|----------------------------|
-| Copilot  | `agentbridge-`  | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools    | 2 (intellij-explore, intellij-task)    | Working (filtering broken) |
-| OpenCode | `agentbridge_`  | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | 2 (ide-general, intellij-explore) | ✅ Working                  |
-| Junie    | `agentbridge-`  | ❌ No support                     | N/A                                                        | ❌ No (auto-executes) | 0                            | Prompt workaround only     |
-| Kiro     | `@agentbridge/` | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts  | 1 (intellij-agent)           | ⚠️ Experimental (hangs)    |
+| Agent    | MCP Tool Prefix | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests  | Bundled Agents                      | Status                     |
+|----------|-----------------|----------------------------------|------------------------------------------------------------|----------------------|-------------------------------------|----------------------------|
+| Copilot  | `agentbridge-`  | ✅ `~/.copilot/agents/*.md`       | YAML array: `tools: [tool1, tool2]`                        | ✅ For write tools    | 2 (intellij-explore, intellij-task) | Working (filtering broken) |
+| OpenCode | `agentbridge_`  | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | 2 (ide-general, intellij-explore)   | ✅ Working                  |
+| Junie    | `agentbridge-`  | ❌ No support                     | N/A                                                        | ❌ No (auto-executes) | 0                                   | Prompt workaround only     |
+| Kiro     | `@agentbridge/` | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts  | 1 (intellij-agent)                  | ⚠️ Experimental (hangs)    |
 
 See [.agent-work/OPENCODE-AGENT-FINDINGS.md](.agent-work/OPENCODE-AGENT-FINDINGS.md) for detailed OpenCode
 investigation and [.agent-work/KIRO-AGENT-FINDINGS.md](.agent-work/KIRO-AGENT-FINDINGS.md) for Kiro findings.
