@@ -649,6 +649,14 @@ public abstract class AcpClient extends AbstractAgentClient {
             Thread.currentThread().interrupt();
             throw new AgentPromptException("Prompt interrupted for " + displayName(), e);
         } catch (Exception e) {
+            // On timeout, cancel the remote session so the agent stops working
+            if (e instanceof java.util.concurrent.TimeoutException && currentSessionId != null) {
+                try {
+                    cancelSession(currentSessionId);
+                } catch (Exception cancelEx) {
+                    LOG.warn(displayName() + ": failed to cancel session after timeout", cancelEx);
+                }
+            }
             PromptResponse recovery = tryRecoverPromptException(e);
             if (recovery != null) return recovery;
             String rootMsg = extractRootCauseMessage(e);

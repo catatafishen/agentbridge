@@ -47,7 +47,7 @@ public final class ActiveAgentManager implements Disposable {
     private static final String KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS = "agent.sharedInactivityTimeoutSeconds";
     private static final String KEY_SHARED_MAX_TOOL_CALLS = "agent.sharedMaxToolCallsPerTurn";
     private static final int DEFAULT_TURN_TIMEOUT_MINUTES = 120;
-    private static final int DEFAULT_INACTIVITY_TIMEOUT_SECONDS = 300;
+    private static final int DEFAULT_INACTIVITY_TIMEOUT_SECONDS = 3000;
     private static final int DEFAULT_MAX_TOOL_CALLS_PER_TURN = 0;
 
     private final Project project;

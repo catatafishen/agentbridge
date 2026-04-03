@@ -16,8 +16,8 @@ class ActiveAgentManagerTest {
     @Test
     void normalizeSharedInactivityTimeoutSecondsUsesStoredValueOrDefaultAndClamps() {
         assertEquals(30, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds("10"));
-        assertEquals(300, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds("bad"));
-        assertEquals(300, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds(null));
+        assertEquals(3000, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds("bad"));
+        assertEquals(3000, ActiveAgentManager.normalizeSharedInactivityTimeoutSeconds(null));
     }
 
     @Test
