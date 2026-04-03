@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.navigation;
 
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
+import com.github.catatafishen.ideagentforcopilot.services.AgentTabTracker;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
@@ -168,8 +169,10 @@ public final class SearchTextTool extends NavigationTool {
                 .toArray(Usage[]::new);
 
             UsageViewPresentation pres = new UsageViewPresentation();
-            pres.setTabText("Search: " + query);
+            String tabText = "Search: " + query;
+            pres.setTabText(tabText);
             UsageViewManager.getInstance(project).showUsages(UsageTarget.EMPTY_ARRAY, usages, pres);
+            AgentTabTracker.getInstance(project).trackTab("Find", tabText);
         });
     }
 

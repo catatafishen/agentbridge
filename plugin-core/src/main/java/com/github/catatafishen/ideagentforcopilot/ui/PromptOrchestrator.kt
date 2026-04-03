@@ -10,6 +10,8 @@ import com.github.catatafishen.ideagentforcopilot.bridge.PermissionResponse
 import com.github.catatafishen.ideagentforcopilot.psi.CodeChangeTracker
 import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager
+import com.github.catatafishen.ideagentforcopilot.services.AgentScratchTracker
+import com.github.catatafishen.ideagentforcopilot.services.AgentTabTracker
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -122,6 +124,10 @@ class PromptOrchestrator(
 
     private fun executePrompt(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String) {
         try {
+            // Clean up agent resources from previous turns before starting a new one
+            AgentTabTracker.getInstance(project).closeTrackedTabs()
+            AgentScratchTracker.getInstance(project).cleanupExpired()
+
             if (isBlockedByAuth()) return
 
             val pending = pendingBanner

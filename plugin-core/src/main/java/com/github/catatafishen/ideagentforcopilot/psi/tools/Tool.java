@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.services.AgentTabTracker;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.google.gson.JsonObject;
 import com.intellij.execution.RunContentExecutor;
@@ -160,6 +161,8 @@ public abstract class Tool implements ToolDefinition {
                 processHandler.startNotify();
             }
         });
+
+        AgentTabTracker.getInstance(project).trackTab("Run", title);
 
         try {
             int exitCode = exitFuture.get(timeoutSec, TimeUnit.SECONDS);

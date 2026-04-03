@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.editor;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings;
+import com.github.catatafishen.ideagentforcopilot.services.AgentScratchTracker;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.ScratchFileRenderer;
 import com.google.gson.JsonObject;
@@ -45,7 +46,7 @@ public final class CreateScratchFileTool extends EditorTool {
         return "Create a temporary scratch file with the given name and content";
     }
 
-    
+
 
     @Override
     public @NotNull Kind kind() {
@@ -122,6 +123,7 @@ public final class CreateScratchFileTool extends EditorTool {
             if (resultFile[0] != null) {
                 boolean focusScratch = ToolLayerSettings.getInstance(project).getFollowAgentFiles();
                 FileEditorManager.getInstance(project).openFile(resultFile[0], focusScratch);
+                AgentScratchTracker.getInstance(project).trackScratchFile(resultFile[0].getPath());
             }
         } catch (Exception e) {
             LOG.warn("Failed in EDT execution", e);

@@ -2,6 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.psi.tools.terminal;
 
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.Tool;
+import com.github.catatafishen.ideagentforcopilot.services.AgentTabTracker;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -104,6 +105,7 @@ public abstract class TerminalTool extends Tool {
         var createSession = managerClass.getMethod("createNewSession",
             String.class, String.class, List.class, boolean.class, boolean.class);
         Object widget = createSession.invoke(manager, project.getBasePath(), title, shellCommand, true, true);
+        AgentTabTracker.getInstance(project).trackTab(TERMINAL_TOOL_WINDOW_ID, title);
         return new TerminalWidgetResult(widget, title + " (new)");
     }
 

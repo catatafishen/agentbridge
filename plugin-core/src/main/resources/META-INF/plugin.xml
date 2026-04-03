@@ -333,6 +333,14 @@
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2"/>
 
+    <!-- Agent resource cleanup services -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.CleanupSettings"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentTabTracker"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentScratchTracker"/>
+
     <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
       parentId="tools"
@@ -364,6 +372,12 @@
       instance="com.github.catatafishen.ideagentforcopilot.settings.ChatHistoryConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.chatHistory"
       displayName="Chat History"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.settings"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.CleanupConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.cleanup"
+      displayName="Cleanup"/>
 
     <!-- ── MCP section ── -->
     <projectConfigurable
