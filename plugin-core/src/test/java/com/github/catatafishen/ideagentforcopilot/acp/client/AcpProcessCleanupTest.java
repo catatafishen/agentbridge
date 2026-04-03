@@ -22,9 +22,7 @@ class AcpProcessCleanupTest {
             AcpClient.destroyProcessTree(process);
 
             assertFalse(process.isAlive(), "Parent process should be terminated");
-            for (ProcessHandle descendant : descendants) {
-                assertFalse(descendant.isAlive(), "Child process " + descendant.pid() + " should be terminated");
-            }
+            awaitAllTerminated(descendants, 5_000L);
         } finally {
             AcpClient.destroyProcessTree(process);
         }
@@ -48,5 +46,20 @@ class AcpProcessCleanupTest {
             fail("Process did not spawn descendants before timeout");
         }
         return descendants;
+    }
+
+    private static void awaitAllTerminated(List<ProcessHandle> handles, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        for (ProcessHandle h : handles) {
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining > 0) {
+                try {
+                    h.onExit().orTimeout(remaining, java.util.concurrent.TimeUnit.MILLISECONDS).join();
+                } catch (java.util.concurrent.CompletionException ignored) {
+                    // timeout — fall through to assertion
+                }
+            }
+            assertFalse(h.isAlive(), "Child process " + h.pid() + " should be terminated");
+        }
     }
 }

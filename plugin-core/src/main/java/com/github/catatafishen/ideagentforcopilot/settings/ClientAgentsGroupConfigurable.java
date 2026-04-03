@@ -21,6 +21,7 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
     private JSpinner turnTimeoutSpinner;
     private JSpinner inactivityTimeoutSpinner;
     private JSpinner maxToolCallsSpinner;
+    private JCheckBox branchSessionCheckbox;
     private JPanel panel;
 
     public ClientAgentsGroupConfigurable(@NotNull Project project) {
@@ -43,6 +44,8 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
         inactivityTimeoutSpinner.setMaximumSize(spinnerSize);
         maxToolCallsSpinner.setMaximumSize(spinnerSize);
 
+        branchSessionCheckbox = new JCheckBox("Branch session at startup");
+
         JBLabel introLabel = new JBLabel(
             "<html>Global behavior settings for all agent sessions. "
                 + "Configure individual agent clients in the sub-pages below.</html>");
@@ -57,6 +60,10 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
             .addTooltip("Maximum silence before a turn is considered stalled (30–86400 seconds).")
             .addLabeledComponent("Max tool calls per turn:", maxToolCallsSpinner)
             .addTooltip("Limit how many tools the agent can call in a single turn. 0 = unlimited.")
+            .addSeparator(8)
+            .addComponent(branchSessionCheckbox)
+            .addTooltip("Snapshot the current session before each new session starts, "
+                + "so you can restore it from the session history picker.")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -67,18 +74,22 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
 
     @Override
     public boolean isModified() {
+        if (turnTimeoutSpinner == null) return false;
         ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
         if ((int) turnTimeoutSpinner.getValue() != manager.getSharedTurnTimeoutMinutes()) return true;
         if ((int) inactivityTimeoutSpinner.getValue() != manager.getSharedInactivityTimeoutSeconds()) return true;
-        return (int) maxToolCallsSpinner.getValue() != manager.getSharedMaxToolCallsPerTurn();
+        if ((int) maxToolCallsSpinner.getValue() != manager.getSharedMaxToolCallsPerTurn()) return true;
+        return branchSessionCheckbox.isSelected() != manager.isBranchSessionAtStartup();
     }
 
     @Override
     public void apply() {
+        if (turnTimeoutSpinner == null) return;
         ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
         manager.setSharedTurnTimeoutMinutes((int) turnTimeoutSpinner.getValue());
         manager.setSharedInactivityTimeoutSeconds((int) inactivityTimeoutSpinner.getValue());
         manager.setSharedMaxToolCallsPerTurn((int) maxToolCallsSpinner.getValue());
+        manager.setBranchSessionAtStartup(branchSessionCheckbox.isSelected());
     }
 
     @Override
@@ -88,6 +99,7 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
         turnTimeoutSpinner.setValue(manager.getSharedTurnTimeoutMinutes());
         inactivityTimeoutSpinner.setValue(manager.getSharedInactivityTimeoutSeconds());
         maxToolCallsSpinner.setValue(manager.getSharedMaxToolCallsPerTurn());
+        branchSessionCheckbox.setSelected(manager.isBranchSessionAtStartup());
     }
 
     @Override
@@ -95,6 +107,7 @@ public final class ClientAgentsGroupConfigurable implements Configurable, Config
         turnTimeoutSpinner = null;
         inactivityTimeoutSpinner = null;
         maxToolCallsSpinner = null;
+        branchSessionCheckbox = null;
         panel = null;
     }
 

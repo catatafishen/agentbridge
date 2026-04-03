@@ -207,6 +207,21 @@ public final class ActiveAgentManager implements Disposable {
         );
     }
 
+    private static final String KEY_BRANCH_SESSION_AT_STARTUP = "agent.branchSessionAtStartup";
+
+    /**
+     * Whether to snapshot the current session before each new session starts.
+     * When {@code true}, a copy of the current session JSONL is saved with a timestamp label
+     * so the user can revert to the state captured at that point via the session history picker.
+     */
+    public boolean isBranchSessionAtStartup() {
+        return PropertiesComponent.getInstance(project).getBoolean(KEY_BRANCH_SESSION_AT_STARTUP, false);
+    }
+
+    public void setBranchSessionAtStartup(boolean enabled) {
+        PropertiesComponent.getInstance(project).setValue(KEY_BRANCH_SESSION_AT_STARTUP, enabled, false);
+    }
+
     /**
      * Returns the agent client, starting it if necessary.
      */

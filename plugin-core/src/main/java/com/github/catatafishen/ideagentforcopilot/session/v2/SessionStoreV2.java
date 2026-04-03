@@ -58,6 +58,7 @@ public final class SessionStoreV2 implements Disposable {
     private static final String KEY_UPDATED_AT = "updatedAt";
     private static final String KEY_JSONL_PATH = "jsonlPath";
     private static final String KEY_TURN_COUNT = "turnCount";
+    private static final String KEY_DIRECTORY = "directory";
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -174,6 +175,84 @@ public final class SessionStoreV2 implements Disposable {
             Files.deleteIfExists(sessionIdFile.toPath());
         } catch (IOException e) {
             LOG.warn("Could not delete current-session-id file", e);
+        }
+    }
+
+    /**
+     * Snapshots the current session JSONL as a new immutable branch entry in the sessions index.
+     * Called at agent startup when "Branch session at startup" is enabled.
+     *
+     * <p>The branch is a verbatim copy of the current JSONL assigned a new UUID and registered
+     * in the sessions index with a {@code "(branch)"} label. It appears in the session history
+     * picker so the user can reload it.</p>
+     *
+     * @param basePath project base path (may be null)
+     */
+    public void branchCurrentSession(@Nullable String basePath) {
+        File sessionsDir = sessionsDir(basePath);
+        File idFile = currentSessionIdFile(basePath);
+        if (!idFile.exists()) {
+            LOG.info("branchCurrentSession: no current session to branch");
+            return;
+        }
+
+        String sessionId;
+        try {
+            sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
+        } catch (IOException e) {
+            LOG.warn("branchCurrentSession: could not read current-session-id", e);
+            return;
+        }
+        if (sessionId.isEmpty()) return;
+
+        File sourceFile = new File(sessionsDir, sessionId + JSONL_EXT);
+        if (!sourceFile.exists() || sourceFile.length() < 2) {
+            LOG.info("branchCurrentSession: no JSONL data to snapshot (session " + sessionId + ")");
+            return;
+        }
+
+        String branchId = UUID.randomUUID().toString();
+        File branchFile = new File(sessionsDir, branchId + JSONL_EXT);
+
+        try {
+            Files.createDirectories(sessionsDir.toPath());
+            Files.copy(sourceFile.toPath(), branchFile.toPath());
+
+            File indexFile = new File(sessionsDir, SESSIONS_INDEX);
+            List<JsonObject> records = readIndexRecords(indexFile);
+
+            int turnCount = 0;
+            for (JsonObject rec : records) {
+                if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
+                    if (rec.has(KEY_TURN_COUNT)) turnCount = rec.get(KEY_TURN_COUNT).getAsInt();
+                    break;
+                }
+            }
+
+            long now = System.currentTimeMillis();
+            String timestamp = java.time.Instant.ofEpochMilli(now)
+                .atZone(java.time.ZoneId.systemDefault())
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+
+            JsonObject branchRec = new JsonObject();
+            branchRec.addProperty(KEY_ID, branchId);
+            branchRec.addProperty(KEY_AGENT, currentAgent + " (branch " + timestamp + ")");
+            branchRec.addProperty(KEY_DIRECTORY, basePath != null ? basePath : "");
+            branchRec.addProperty(KEY_CREATED_AT, now);
+            branchRec.addProperty(KEY_UPDATED_AT, now);
+            branchRec.addProperty(KEY_JSONL_PATH, branchFile.getName());
+            branchRec.addProperty(KEY_TURN_COUNT, turnCount);
+            branchRec.addProperty("branchedFrom", sessionId);
+            records.add(branchRec);
+
+            JsonArray arr = new JsonArray();
+            records.forEach(arr::add);
+            Files.writeString(indexFile.toPath(), GSON.toJson(arr), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+            LOG.info("Branched session " + sessionId + " → " + branchId + " at " + timestamp);
+        } catch (IOException e) {
+            LOG.warn("Failed to branch session " + sessionId, e);
         }
     }
 
@@ -320,7 +399,7 @@ public final class SessionStoreV2 implements Disposable {
             JsonObject newRec = new JsonObject();
             newRec.addProperty(KEY_ID, sessionId);
             newRec.addProperty(KEY_AGENT, agentName);
-            newRec.addProperty("directory", directory);
+            newRec.addProperty(KEY_DIRECTORY, directory);
             newRec.addProperty(KEY_CREATED_AT, now);
             newRec.addProperty(KEY_UPDATED_AT, now);
             newRec.addProperty(KEY_JSONL_PATH, jsonlFileName);
@@ -364,7 +443,7 @@ public final class SessionStoreV2 implements Disposable {
                 JsonObject newRec = new JsonObject();
                 newRec.addProperty(KEY_ID, sessionId);
                 newRec.addProperty(KEY_AGENT, agentName);
-                newRec.addProperty("directory", basePath != null ? basePath : "");
+                newRec.addProperty(KEY_DIRECTORY, basePath != null ? basePath : "");
                 newRec.addProperty(KEY_CREATED_AT, now);
                 newRec.addProperty(KEY_UPDATED_AT, now);
                 newRec.addProperty(KEY_JSONL_PATH, sessionId + JSONL_EXT);

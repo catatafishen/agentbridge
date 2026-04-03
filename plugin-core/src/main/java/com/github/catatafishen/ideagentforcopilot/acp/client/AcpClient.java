@@ -21,6 +21,7 @@ import com.github.catatafishen.ideagentforcopilot.bridge.McpServerJarLocator;
 import com.github.catatafishen.ideagentforcopilot.bridge.SessionOption;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.McpServerControl;
+import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2;
 import com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -309,6 +310,14 @@ public abstract class AcpClient extends AbstractAgentClient {
             return currentSessionId;
         }
         try {
+            // Snapshot the current session before it starts so the user can revert to it.
+            if (ActiveAgentManager.getInstance(project).isBranchSessionAtStartup()) {
+                try {
+                    SessionStoreV2.getInstance(project).branchCurrentSession(cwd);
+                } catch (Exception e) {
+                    LOG.warn("Failed to branch session at startup — continuing without snapshot", e);
+                }
+            }
             beforeCreateSession(cwd);
             requestedResumeId = loadResumeSessionId();
 
