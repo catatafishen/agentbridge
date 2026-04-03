@@ -126,6 +126,14 @@ public final class PsiBridgeService implements Disposable {
         onNudgeConsumed = callback;
     }
 
+    public void addOnNudgeConsumed(@NotNull Runnable callback) {
+        Runnable current = onNudgeConsumed;
+        onNudgeConsumed = current == null ? callback : () -> {
+            current.run();
+            callback.run();
+        };
+    }
+
     public void enqueueMessage(@NotNull String message) {
         if (!message.trim().isEmpty()) {
             messageQueue.offer(message.trim());

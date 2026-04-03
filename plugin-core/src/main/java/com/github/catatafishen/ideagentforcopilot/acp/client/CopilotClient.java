@@ -5,6 +5,7 @@ import com.github.catatafishen.ideagentforcopilot.acp.model.Model;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptRequest;
 import com.github.catatafishen.ideagentforcopilot.acp.model.PromptResponse;
 import com.github.catatafishen.ideagentforcopilot.agent.AbstractAgentClient;
+import com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService;
 import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
@@ -509,6 +510,17 @@ public final class CopilotClient extends AcpClient {
     protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
         if (!userApproved) {
             misusedBuiltInTools.add(toolId);
+            // Inject reprimand into the next MCP tool result for immediate mid-turn
+            // feedback — the agent corrects behaviour within the same turn instead of
+            // waiting until the user sends another prompt.
+            String notice = buildSingleToolReprimand(toolId);
+            PsiBridgeService psi = PsiBridgeService.getInstance(project);
+            psi.setPendingNudge(notice);
+            // Once the nudge is consumed (agent saw it), clear the tracking set so
+            // beforeSendPrompt() doesn't repeat the same reprimand on the next prompt.
+            // Use addOnNudgeConsumed (not set) to chain with any existing callback,
+            // e.g. the UI callback from onNudgeClicked that clears pendingNudgeId.
+            psi.addOnNudgeConsumed(misusedBuiltInTools::clear);
         }
     }
 
@@ -538,6 +550,13 @@ public final class CopilotClient extends AcpClient {
         }
         sb.append("All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.");
         return sb.toString();
+    }
+
+    private static String buildSingleToolReprimand(String toolId) {
+        return "[System notice] You used the following built-in tools which duplicate our MCP tools. "
+            + "Do NOT use these again — use the MCP alternatives instead:\n"
+            + "  • " + toolId + " → use " + mcpAlternative(toolId) + "\n"
+            + "All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.";
     }
 
     private static String mcpAlternative(String builtInTool) {
