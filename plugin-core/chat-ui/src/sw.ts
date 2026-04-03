@@ -45,11 +45,7 @@ self.addEventListener('fetch', (e) => {
 
 interface PushData {
     title?: string;
-    seq?: number;
-}
-
-interface StateResponse {
-    events?: Array<{ notification?: boolean; seq?: number; body?: string }>;
+    body?: string;
 }
 
 self.addEventListener('push', (e) => {
@@ -59,33 +55,22 @@ self.addEventListener('push', (e) => {
         try {
             const data: PushData = e.data ? JSON.parse(e.data.text()) : {};
             title = data.title || 'AgentBridge';
-            if (data.seq) {
-                const r = await fetch('/state');
-                const st: StateResponse = await r.json();
-                const ev = (st.events || []).slice().reverse()
-                    .find(ev => ev.notification && ev.seq != null && ev.seq >= data.seq!);
-                if (ev?.body) body = ev.body;
-            }
+            body = data.body || '';
         } catch {
-            // ignore parse/fetch errors
+            // ignore parse errors — show notification with defaults
         }
         // showNotification MUST always be called (Chrome enforces userVisibleOnly: true).
-        // Wrap in try-catch so the waitUntil promise always resolves — if it rejects,
-        // Chrome logs a violation and may eventually revoke the push subscription.
         try {
             await self.registration.showNotification(title, {
                 body,
                 icon: '/icon-192.png',
                 badge: '/badge-96.png',
                 tag: 'agentbridge',
-                // Required: alerts the user even when replacing an existing notification
-                // with the same tag (otherwise the replacement is completely silent).
                 renotify: true,
                 requireInteraction: false,
             });
         } catch {
             // Permission may have been revoked between subscription and push delivery.
-            // Nothing we can do — Chrome will show its generic fallback notification.
         }
     })());
 });

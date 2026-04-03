@@ -357,8 +357,15 @@ function processEvent(ev: SseEvent, replaying: boolean): void {
 
 // ── SSE ─────────────────────────────────────────────────────────────────────
 
+let currentEs: EventSource | null = null;
+
 function connectSSE(): void {
+    if (currentEs) {
+        currentEs.close();
+        currentEs = null;
+    }
     const es = new EventSource('/events?from=' + lastSeq);
+    currentEs = es;
     es.onopen = () => {
         statusDot.className = agentRunning ? 'running' : 'connected';
         offlineEl.classList.remove('visible');
@@ -376,6 +383,7 @@ function connectSSE(): void {
     };
     es.onerror = () => {
         es.close();
+        if (currentEs === es) currentEs = null;
         statusDot.className = '';
         offlineEl.classList.add('visible');
         if (sseRetry) clearTimeout(sseRetry);
@@ -383,9 +391,22 @@ function connectSSE(): void {
     };
 }
 
+// Reconnect SSE when the page becomes visible again — mobile browsers
+// freeze/kill background connections, so we need to re-establish on wake.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        if (!currentEs || currentEs.readyState === EventSource.CLOSED) {
+            if (sseRetry) clearTimeout(sseRetry);
+            connectSSE();
+        }
+    }
+});
+
 // ── Notifications ───────────────────────────────────────────────────────────
 
 function showNotification(title: string, body: string): void {
+    // Skip if the page is visible — the user can see the chat directly
+    if (document.visibilityState === 'visible') return;
     if (navigator.serviceWorker?.controller) {
         navigator.serviceWorker.controller.postMessage({
             type: 'SHOW_NOTIFICATION', title, body,

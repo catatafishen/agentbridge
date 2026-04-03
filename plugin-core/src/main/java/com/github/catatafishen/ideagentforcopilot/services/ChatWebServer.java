@@ -461,7 +461,7 @@ public final class ChatWebServer implements Disposable {
         WebPushSender wp = webPush; // read volatile once; null if not yet initialised
         if (wp != null) {
             if (wp.hasSubscriptions()) {
-                String payload = "{\"seq\":" + seq + ",\"title\":" + GSON.toJson(title) + "}";
+                String payload = "{\"title\":" + GSON.toJson(title) + ",\"body\":" + GSON.toJson(body) + "}";
                 wp.sendToAll(payload);
             } else {
                 LOG.debug("[Chat] Web Push configured but no subscriptions registered for: " + title);
