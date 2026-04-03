@@ -115,6 +115,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
         private const val STREAMING_FRAME_RATE = 60
         private const val IDLE_FRAME_RATE = 10
+
+        private val TERMINAL_TOOLS = setOf(
+            "run_in_terminal", "read_terminal_output", "write_terminal_input", "list_terminals"
+        )
+        private val RUN_TOOLS = setOf(
+            "run_command", "read_run_output", "run_configuration", "run_tests"
+        )
+        private val BUILD_TOOLS = setOf(
+            "read_build_output", "build_project"
+        )
     }
 
     // ── Init ───────────────────────────────────────────────────────
@@ -1322,6 +1332,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn()) toolDef.description() else null
         val autoDenied = entry?.autoDenied ?: false
         val denialReason = entry?.denialReason
+
+        val toolWindowId = resolveToolWindowId(baseName)
+        if (toolWindowId != null) {
+            val tabName = extractTabName(baseName, entry?.arguments)
+            ApplicationManager.getApplication().invokeLater {
+                activateToolWindowTab(toolWindowId, tabName)
+            }
+            return
+        }
+
         val resultPanel =
             renderToolResultPanel(
                 baseName,
@@ -1347,6 +1367,61 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 autoDenied,
                 denialReason
             )
+        }
+    }
+
+    private fun resolveToolWindowId(baseName: String?): String? {
+        val name = baseName?.trim('\'', '"') ?: return null
+        return when (name) {
+            in TERMINAL_TOOLS -> "Terminal"
+            in RUN_TOOLS -> "Run"
+            in BUILD_TOOLS -> "Build"
+            else -> null
+        }
+    }
+
+    private fun extractTabName(baseName: String?, arguments: String?): String? {
+        if (arguments.isNullOrBlank()) return null
+        val name = baseName?.trim('\'', '"') ?: return null
+        return try {
+            val json = JsonParser.parseString(arguments).asJsonObject
+            when (name) {
+                "run_in_terminal", "read_terminal_output", "write_terminal_input" ->
+                    json["tab_name"]?.asString
+
+                "run_command" ->
+                    json["title"]?.asString
+
+                "read_run_output", "read_build_output" ->
+                    json["tab_name"]?.asString
+
+                "run_configuration" ->
+                    json["name"]?.asString
+
+                "run_tests" ->
+                    json["target"]?.asString
+
+                else -> null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun activateToolWindowTab(toolWindowId: String, tabName: String?) {
+        val toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+            .getToolWindow(toolWindowId) ?: return
+        toolWindow.activate {
+            if (tabName != null) {
+                val cm = toolWindow.contentManager
+                for (content in cm.contents) {
+                    val displayName = content.displayName ?: continue
+                    if (displayName.contains(tabName, ignoreCase = true)) {
+                        cm.setSelectedContent(content)
+                        break
+                    }
+                }
+            }
         }
     }
 
