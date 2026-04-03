@@ -1341,6 +1341,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             }
             return
         }
+        if (baseName?.trim('\'', '"') == "git_commit" && tryNavigateToCommit(entry?.result)) {
+            return
+        }
 
         val resultPanel =
             renderToolResultPanel(
@@ -1423,6 +1426,38 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 }
             }
         }
+    }
+
+    /**
+     * Extracts abbreviated commit hash from git commit output (e.g. `[master f63d935] ...`)
+     * resolves it to a full hash via `git rev-parse`, and navigates to it in the VCS Log.
+     * Returns true if a hash was found (navigation is async), false otherwise.
+     */
+    private fun tryNavigateToCommit(result: String?): Boolean {
+        if (result.isNullOrBlank()) return false
+        val match = Regex("""\[[\w/.#-]+\s+([0-9a-f]{7,40})]""").find(result) ?: return false
+        val abbreviatedHash = match.groupValues[1]
+        val basePath = project.basePath ?: return false
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val process = ProcessBuilder("git", "rev-parse", abbreviatedHash)
+                    .directory(java.io.File(basePath))
+                    .redirectErrorStream(true)
+                    .start()
+                val fullHash = process.inputStream.bufferedReader().readText().trim()
+                process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+                if (fullHash.length == 40) {
+                    ApplicationManager.getApplication().invokeLater {
+                        com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat
+                            .showRevisionInLog(project, fullHash)
+                    }
+                }
+            } catch (_: Exception) {
+                // best-effort navigation
+            }
+        }
+        return true
     }
 
     private fun isJson(text: String): Boolean =
