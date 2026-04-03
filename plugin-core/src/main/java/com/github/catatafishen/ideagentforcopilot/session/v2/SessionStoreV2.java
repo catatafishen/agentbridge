@@ -57,6 +57,7 @@ public final class SessionStoreV2 implements Disposable {
     private static final String KEY_CREATED_AT = "createdAt";
     private static final String KEY_UPDATED_AT = "updatedAt";
     private static final String KEY_JSONL_PATH = "jsonlPath";
+    private static final String KEY_TURN_COUNT = "turnCount";
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -98,12 +99,14 @@ public final class SessionStoreV2 implements Disposable {
      * @param agent     display name of the agent (e.g. "GitHub Copilot")
      * @param createdAt epoch millis when the session was created
      * @param updatedAt epoch millis when the session was last updated
+     * @param turnCount number of user turns in the session (0 if unknown / old index entry)
      */
     public record SessionRecord(
         @NotNull String id,
         @NotNull String agent,
         long createdAt,
-        long updatedAt) {
+        long updatedAt,
+        int turnCount) {
     }
 
     @NotNull
@@ -117,7 +120,8 @@ public final class SessionStoreV2 implements Disposable {
             String agent = rec.has(KEY_AGENT) ? rec.get(KEY_AGENT).getAsString() : "Unknown";
             long createdAt = rec.has(KEY_CREATED_AT) ? rec.get(KEY_CREATED_AT).getAsLong() : 0;
             long updatedAt = rec.has(KEY_UPDATED_AT) ? rec.get(KEY_UPDATED_AT).getAsLong() : 0;
-            result.add(new SessionRecord(id, agent, createdAt, updatedAt));
+            int turnCount = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
+            result.add(new SessionRecord(id, agent, createdAt, updatedAt, turnCount));
         }
         result.sort(Comparator.comparingLong(SessionRecord::updatedAt).reversed());
         return result;
@@ -270,13 +274,15 @@ public final class SessionStoreV2 implements Disposable {
 
             File jsonlFile = new File(sessionsDir, sessionId + JSONL_EXT);
             StringBuilder sb = new StringBuilder();
+            int turnCount = 0;
             for (SessionMessage msg : messages) {
                 sb.append(GSON.toJson(msg)).append('\n');
+                if ("user".equals(msg.role)) turnCount++;
             }
             Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
-            updateSessionsIndex(basePath, sessionId, sessionsDir, jsonlFile.getName());
+            updateSessionsIndex(basePath, sessionId, sessionsDir, jsonlFile.getName(), turnCount);
 
         } catch (Exception e) {
             LOG.warn("Failed to write v2 session JSONL", e);
@@ -287,7 +293,8 @@ public final class SessionStoreV2 implements Disposable {
         @Nullable String basePath,
         @NotNull String sessionId,
         @NotNull File sessionsDir,
-        @NotNull String jsonlFileName) throws IOException {
+        @NotNull String jsonlFileName,
+        int turnCount) throws IOException {
 
         File indexFile = new File(sessionsDir, SESSIONS_INDEX);
         List<JsonObject> records = readIndexRecords(indexFile);
@@ -300,6 +307,7 @@ public final class SessionStoreV2 implements Disposable {
             if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
                 rec.addProperty(KEY_UPDATED_AT, now);
                 rec.addProperty(KEY_AGENT, currentAgent);
+                rec.addProperty(KEY_TURN_COUNT, turnCount);
                 found = true;
                 break;
             }
@@ -312,6 +320,7 @@ public final class SessionStoreV2 implements Disposable {
             newRec.addProperty(KEY_CREATED_AT, now);
             newRec.addProperty(KEY_UPDATED_AT, now);
             newRec.addProperty(KEY_JSONL_PATH, jsonlFileName);
+            newRec.addProperty(KEY_TURN_COUNT, turnCount);
             records.add(newRec);
         }
 
