@@ -82,6 +82,9 @@ Please investigate GitHub issue #{number}: **{title}**
 **Existing PRs referencing this issue:**
 {existing_prs}
 
+**Other open PRs (for stacking decisions):**
+{open_prs_for_stacking}
+
 **Instructions:**
 
 1. Read the issue description carefully. If it is **unclear, incomplete, or lacks enough \
@@ -97,14 +100,18 @@ switch to reviewing that PR rather than creating a new one. \
 Fetch the branch, verify the implementation, and either approve/merge or push improvements.
 
 3. If the issue is clear and no open PR exists:
-   a. Create a branch named `fix/issue-{number}-{slug}` from the latest HEAD of the remote default branch.
-   b. Investigate the root cause. Note the issue may have been filed against an older release — \
+   a. **Choose the base branch:** Look at the "Other open PRs" list above. If any open PR \
+modifies files you will also need to change, branch from that PR's branch instead of master \
+and set your PR's base branch to that PR's branch. This avoids merge conflicts and creates a \
+clean stacked-PR chain. If no open PR overlaps with your changes, branch from master as usual.
+   b. Create a branch named `fix/issue-{number}-{slug}` from your chosen base.
+   c. Investigate the root cause. Note the issue may have been filed against an older release — \
 check commit history and release timestamps.
-   c. Implement the fix using test-driven development where feasible. \
+   d. Implement the fix using test-driven development where feasible. \
 Address all IDE warnings and ensure test coverage exists.
-   d. Run the full test suite; ensure everything passes.
-   e. Commit: `fix: <short description> (closes #{number})`
-   f. Open a pull request targeting the default branch with:
+   e. Run the full test suite; ensure everything passes.
+   f. Commit: `fix: <short description> (closes #{number})`
+   g. Open a pull request targeting your chosen base branch with:
       - Title: `fix: <short description>`
       - Body: root cause explanation + fix summary + `Closes #{number}`
 
@@ -145,14 +152,19 @@ GitHub issue #{number} (**{title}**) has a new response from the author.
 **New comment(s) from @{author}:**
 {new_comments}
 
+**Other open PRs (for stacking decisions):**
+{open_prs_for_stacking}
+
 **Instructions:**
 
 1. Re-read the issue and the new comment(s). If sufficient detail is now available, \
 proceed with the fix:
-   a. Create a branch named `fix/issue-{number}-{slug}` from the latest HEAD of \
-the remote default branch.
-   b. Implement the fix, run tests, commit: `fix: <short description> (closes #{number})`.
-   c. Open a pull request targeting the default branch.
+   a. **Choose the base branch:** Look at the "Other open PRs" list above. If any open PR \
+modifies files you will also need to change, branch from that PR's branch instead of master \
+and set your PR's base branch to that PR's branch. If no overlap, branch from master as usual.
+   b. Create a branch named `fix/issue-{number}-{slug}` from your chosen base.
+   c. Implement the fix, run tests, commit: `fix: <short description> (closes #{number})`.
+   d. Open a pull request targeting your chosen base branch.
 
 2. If the clarification is still insufficient, post another comment asking for the \
 specific missing detail.
@@ -353,6 +365,23 @@ def fetch_pr_detail(pr_number: int) -> dict | None:
         return None
 
 
+def fetch_pr_changed_files(pr_number: int) -> list[str]:
+    """Returns the list of file paths changed by a PR."""
+    try:
+        files = _gh_request(f"pulls/{pr_number}/files?per_page=100")
+        return [f["filename"] for f in files]
+    except (urllib.error.URLError, urllib.error.HTTPError, GitHubRateLimitError):
+        return []
+
+
+def fetch_open_prs_with_files() -> list[dict]:
+    """Returns open PRs, each augmented with a 'changed_files' list."""
+    prs = fetch_open_prs()
+    for pr in prs:
+        pr["changed_files"] = fetch_pr_changed_files(pr["number"])
+    return prs
+
+
 def find_prs_for_issue(issue_number: int) -> list[dict]:
     """Finds open PRs that reference this issue via branch naming convention or body search."""
     open_prs = fetch_open_prs()
@@ -531,6 +560,24 @@ def format_prs(prs: list[dict]) -> str:
     )
 
 
+def format_open_prs_for_stacking(open_prs: list[dict]) -> str:
+    """Formats open PRs with their changed files for stacking decisions."""
+    if not open_prs:
+        return "None."
+    lines = []
+    for p in open_prs:
+        files = p.get("changed_files", [])
+        files_str = ", ".join(files[:20]) if files else "unknown"
+        if len(files) > 20:
+            files_str += f" … (+{len(files) - 20} more)"
+        lines.append(
+            f"- PR #{p['number']} (`{p['head']['ref']}`): {p['title']}\n"
+            f"  Files: {files_str}\n"
+            f"  URL: {p['html_url']}"
+        )
+    return "\n".join(lines)
+
+
 def is_bot(login: str) -> bool:
     return login.endswith("[bot]") or (bool(AGENT_GITHUB_LOGIN) and login == AGENT_GITHUB_LOGIN)
 
@@ -579,8 +626,15 @@ def process_issues(state: dict, dry_run: bool) -> None:
               f"{[i['number'] for i in dispatched_issues]}")
 
     # Priority 1: check for author replies on dispatched issues (oldest first)
+    print("[poll] fetching open PRs with changed files for stacking decisions…")
+    try:
+        all_open_prs_with_files = fetch_open_prs_with_files()
+    except Exception as exc:
+        print(f"  [warn] failed to fetch open PRs for stacking: {exc}")
+        all_open_prs_with_files = []
+
     for issue in reversed(dispatched_issues):
-        if _check_author_response(issue, issues_state, dry_run):
+        if _check_author_response(issue, issues_state, all_open_prs_with_files, dry_run):
             if not dry_run:
                 save_state(state)
             return
@@ -590,12 +644,13 @@ def process_issues(state: dict, dry_run: bool) -> None:
         issue = new_issues[-1]  # list is newest-first, so last = oldest
         print(f"[poll] dispatching oldest new issue #{issue['number']} "
               f"({len(new_issues) - 1} remaining in queue)")
-        if _dispatch_new_issue(issue, issues_state, dry_run):
+        if _dispatch_new_issue(issue, issues_state, all_open_prs_with_files, dry_run):
             if not dry_run:
                 save_state(state)
 
 
-def _dispatch_new_issue(issue: dict, issues_state: dict, dry_run: bool) -> bool:
+def _dispatch_new_issue(issue: dict, issues_state: dict,
+                        all_open_prs: list[dict], dry_run: bool) -> bool:
     number = issue["number"]
     title = issue["title"]
     body = truncate((issue.get("body") or "").strip())
@@ -628,11 +683,15 @@ def _dispatch_new_issue(issue: dict, issues_state: dict, dry_run: bool) -> bool:
             pr_state=pr.get("state", "open"),
         )
     else:
+        # Exclude PRs that already address this issue from the stacking candidates
+        existing_pr_numbers = {p["number"] for p in existing_prs}
+        stacking_candidates = [p for p in all_open_prs if p["number"] not in existing_pr_numbers]
         prompt = ISSUE_PROMPT.format(
             number=number,
             title=title,
             body=body or NO_DESCRIPTION,
             existing_prs=format_prs(existing_prs),
+            open_prs_for_stacking=format_open_prs_for_stacking(stacking_candidates),
             slug=slugify(title),
         )
 
@@ -650,7 +709,8 @@ def _dispatch_new_issue(issue: dict, issues_state: dict, dry_run: bool) -> bool:
         return False
 
 
-def _check_author_response(issue: dict, issues_state: dict, dry_run: bool) -> bool:
+def _check_author_response(issue: dict, issues_state: dict,
+                           all_open_prs: list[dict], dry_run: bool) -> bool:
     """Re-dispatches a previously-dispatched issue if the original author posted new comments."""
     number = issue["number"]
     key = str(number)
@@ -688,6 +748,7 @@ def _check_author_response(issue: dict, issues_state: dict, dry_run: bool) -> bo
         body=body or NO_DESCRIPTION,
         author=issue_author,
         new_comments=new_comments_text,
+        open_prs_for_stacking=format_open_prs_for_stacking(all_open_prs),
         slug=slugify(title),
     )
 
