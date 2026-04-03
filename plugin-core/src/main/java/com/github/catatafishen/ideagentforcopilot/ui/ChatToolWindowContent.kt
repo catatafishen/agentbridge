@@ -65,7 +65,13 @@ class ChatToolWindowContent(
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
     private var isSending = false
+
+    // @Volatile: written by the onNudgeConsumed callback on the HTTP handler thread,
+    // read by setSendingState(false) which may arrive on the orchestrator thread before the
+    // EDT has a chance to flush — @Volatile ensures cross-thread visibility.
+    @Volatile
     private var pendingNudgeId: String? = null
+    @Volatile
     private var pendingNudgeText: String? = null
     private lateinit var processingTimerPanel: ProcessingTimerPanel
     private lateinit var promptOrchestrator: PromptOrchestrator
