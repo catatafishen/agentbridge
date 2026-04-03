@@ -29,6 +29,7 @@ public final class ToolRegistry {
         TERMINAL("Terminal"),
         DEBUG("Debugging"),
         EDITOR("Editor"),
+        DATABASE("Database"),
         SHELL("Shell (built-in)"),
         OTHER("Other"),
         MACRO("Recorded Macros");

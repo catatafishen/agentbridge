@@ -276,6 +276,7 @@
   <depends optional="true" config-file="gradle-features.xml">org.jetbrains.plugins.gradle</depends>
   <depends optional="true" config-file="maven-features.xml">org.jetbrains.idea.maven</depends>
   <depends optional="true" config-file="sonarlint-features.xml">org.sonarlint.idea</depends>
+  <depends optional="true" config-file="database-features.xml">com.intellij.database</depends>
 
   <!-- Extension points and implementations -->
   <extensions defaultExtensionNs="com.intellij">
