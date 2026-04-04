@@ -31,7 +31,8 @@ public final class ToolRegistry {
         EDITOR("Editor"),
         SHELL("Shell (built-in)"),
         OTHER("Other"),
-        MACRO("Recorded Macros");
+        MACRO("Recorded Macros"),
+        CUSTOM_MCP("Custom MCP Servers");
 
         public final String displayName;
 

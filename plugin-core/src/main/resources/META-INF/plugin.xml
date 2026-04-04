@@ -341,6 +341,12 @@
     <projectService
       serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentScratchTracker"/>
 
+    <!-- Custom external MCP server proxy -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpSettings"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpRegistrar"/>
+
     <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
       parentId="tools"
@@ -397,6 +403,12 @@
       instance="com.github.catatafishen.ideagentforcopilot.settings.ToolsConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.mcp.tools"
       displayName="Tools"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
+      instance="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.mcp.customServers"
+      displayName="Custom Servers"/>
 
     <!-- ── Agents section ── -->
     <projectConfigurable
@@ -458,6 +470,10 @@
     <!-- Start PSI Bridge when the project opens -->
     <postStartupActivity
       implementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeStartup"/>
+
+    <!-- Connect to custom external MCP servers when the project opens -->
+    <postStartupActivity
+      implementation="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpStartupActivity"/>
 
     <!-- Notification Group for status messages -->
     <notificationGroup id="AgentBridge Notifications" displayType="STICKY_BALLOON"/>
