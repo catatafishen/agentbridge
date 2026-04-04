@@ -132,6 +132,8 @@ public final class CodexClientExporter {
         if (cwd != null) {
             payload.addProperty("cwd", cwd);
         }
+        payload.addProperty("originator", "intellij-copilot-plugin");
+        payload.addProperty("cli_version", "0.0.0");
         payload.addProperty("source", "vscode");
         payload.addProperty("model_provider", "openai");
 

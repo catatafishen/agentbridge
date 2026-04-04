@@ -151,6 +151,8 @@ class CodexClientRoundTripTest {
         JsonObject payload = firstLine.getAsJsonObject("payload");
         assertEquals(threadId, payload.get("id").getAsString());
         assertEquals("/test/cwd", payload.get("cwd").getAsString());
+        assertEquals("intellij-copilot-plugin", payload.get("originator").getAsString());
+        assertEquals("0.0.0", payload.get("cli_version").getAsString());
 
         // Content lines must be wrapped in response_item envelopes
         JsonObject secondLine = new Gson().fromJson(lines.get(1), JsonObject.class);
