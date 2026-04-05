@@ -11,80 +11,84 @@ The in-memory model uses `EntryData` (defined in `ChatDataModel.kt`) with 8 subt
 ### `Prompt` — user message
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
 |-------|------|---------|---------|:------------:|:------------:|
-| `text` | `String` | *(required)* | No | ✅ | ✅ |
-| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
-| `contextFiles` | `List<Triple<name,path,line>>?` | `null` | No | ✅ (`ctxFiles`) | ✅ (`file` parts with `line`) |
-| `id` | `String` | `""` | No | ✅ (`id`) | ❌ |
-| `entryId` | `String` | UUID or `id` | No | ✅ (`eid`) | ✅ (part `eid`) |
+| `text` | `String` | *(required)* | No | ✅ | ✅ (`text`) |
+| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (`timestamp`) |
+| `contextFiles` | `List<Triple<name,path,line>>?` | `null` | No | ✅ (`ctxFiles`) | ✅ (`contextFiles` array) |
+| `id` | `String` | `""` | No | ✅ (`id`) | ✅ (`id`) |
+| `entryId` | `String` | UUID or `id` | No | ✅ (`eid`) | ✅ (`entryId`) |
 
 ### `Text` — assistant text response
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
 |-------|------|---------|---------|:------------:|:------------:|
-| `raw` | `StringBuilder` | `StringBuilder()` | Content appended during streaming | ✅ (`raw`) | ✅ (`text`) |
-| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
-| `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (message `agent`) |
-| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (part `eid`) |
+| `raw` | `StringBuilder` | `StringBuilder()` | Content appended during streaming | ✅ (`raw`) | ✅ (`raw`) |
+| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (`timestamp`) |
+| `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (`agent`) |
+| `model` | `String` | `""` | No | ❌ | ✅ (`model`) |
+| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (`entryId`) |
 
 ### `Thinking` — reasoning/thinking block
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
 |-------|------|---------|---------|:------------:|:------------:|
-| `raw` | `StringBuilder` | `StringBuilder()` | Content appended during streaming | ✅ (`raw`) | ✅ (`text`) |
-| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
-| `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (message `agent`) |
-| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (part `eid`) |
+| `raw` | `StringBuilder` | `StringBuilder()` | Content appended during streaming | ✅ (`raw`) | ✅ (`raw`) |
+| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (`timestamp`) |
+| `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (`agent`) |
+| `model` | `String` | `""` | No | ❌ | ✅ (`model`) |
+| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (`entryId`) |
 
 ### `ToolCall` — tool invocation and result
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
 |-------|------|---------|---------|:------------:|:------------:|
-| `title` | `String` | *(required)* | No | ✅ (`title`) | ✅ (`toolName`) |
-| `arguments` | `String?` | `null` | No | ✅ (`args`) | ✅ (`args`) |
+| `title` | `String` | *(required)* | No | ✅ (`title`) | ✅ (`title`) |
+| `arguments` | `String?` | `null` | No | ✅ (`args`) | ✅ (`arguments`) |
 | `kind` | `String` | `"other"` | Yes | ✅ (`kind`) | ✅ (`kind`) |
 | `result` | `String?` | `null` | Yes | ✅ (`result`) | ✅ (`result`) |
 | `status` | `String?` | `null` | Yes | ✅ (`status`) | ✅ (`status`) |
 | `description` | `String?` | `null` | Yes | ✅ (`description`) | ✅ (`description`) |
 | `filePath` | `String?` | `null` | Yes | ✅ (`filePath`) | ✅ (`filePath`) |
-| `autoDenied` | `Boolean` | `false` | Yes | ✅ (`autoDenied`) | ✅ (via `denialReason`) |
+| `autoDenied` | `Boolean` | `false` | Yes | ✅ (`autoDenied`) | ✅ (`autoDenied`) |
 | `denialReason` | `String?` | `null` | Yes | ✅ (`denialReason`) | ✅ (`denialReason`) |
 | `mcpHandled` | `Boolean` | `false` | Yes | ✅ (`mcpHandled`) | ✅ (`mcpHandled`) |
-| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
-| `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (message `agent`) |
-| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (part `eid`) |
+| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (`timestamp`) |
+| `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (`agent`) |
+| `model` | `String` | `""` | No | ❌ | ✅ (`model`) |
+| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (`entryId`) |
 
 ### `SubAgent` — sub-agent invocation
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
 |-------|------|---------|---------|:------------:|:------------:|
-| `agentType` | `String` | *(required)* | No | ✅ | ✅ |
-| `description` | `String` | *(required)* | No | ✅ | ✅ |
-| `prompt` | `String?` | `null` | No | ✅ | ✅ |
-| `result` | `String?` | `null` | Yes | ✅ | ✅ |
-| `status` | `String?` | `null` | Yes | ✅ | ✅ |
-| `colorIndex` | `Int` | `0` | Yes | ✅ | ✅ |
+| `agentType` | `String` | *(required)* | No | ✅ | ✅ (`agentType`) |
+| `description` | `String` | *(required)* | No | ✅ | ✅ (`description`) |
+| `prompt` | `String?` | `null` | No | ✅ | ✅ (`prompt`) |
+| `result` | `String?` | `null` | Yes | ✅ | ✅ (`result`) |
+| `status` | `String?` | `null` | Yes | ✅ | ✅ (`status`) |
+| `colorIndex` | `Int` | `0` | Yes | ✅ | ✅ (`colorIndex`) |
 | `callId` | `String?` | `null` | No | ✅ (`callId`) | ✅ (`callId`) |
 | `autoDenied` | `Boolean` | `false` | Yes | ✅ | ✅ (`autoDenied`) |
 | `denialReason` | `String?` | `null` | Yes | ✅ | ✅ (`denialReason`) |
-| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
-| `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (message `agent`) |
-| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (part `eid`) |
+| `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (`timestamp`) |
+| `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (`agent`) |
+| `model` | `String` | `""` | No | ❌ | ✅ (`model`) |
+| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (`entryId`) |
 
 ### `ContextFiles` — attached file references (transient)
 | Field | Type | Persisted V1 | Persisted V2 |
 |-------|------|:------------:|:------------:|
-| `files` | `List<Pair<name, path>>` | ✅ (`context`) | ✅ (`file` parts on user message) |
-| `entryId` | `String` | ✅ (`eid`) | ❌ (consumed into Prompt's `file` parts) |
+| `files` | `List<Pair<name, path>>` | ✅ (`context`) | ✅ (`files` array) |
+| `entryId` | `String` | ✅ (`eid`) | ✅ (`entryId`) |
 
 ### `Status` — status indicator (transient)
 | Field | Type | Persisted V1 | Persisted V2 |
 |-------|------|:------------:|:------------:|
-| `icon` | `String` | ✅ | ✅ |
-| `message` | `String` | ✅ | ✅ |
-| `entryId` | `String` | ✅ (`eid`) | ✅ (part `eid`) |
+| `icon` | `String` | ✅ | ✅ (`icon`) |
+| `message` | `String` | ✅ | ✅ (`message`) |
+| `entryId` | `String` | ✅ (`eid`) | ✅ (`entryId`) |
 
 ### `SessionSeparator` — session boundary marker
 | Field | Type | Persisted V1 | Persisted V2 |
 |-------|------|:------------:|:------------:|
-| `timestamp` | `String` | ✅ | ✅ (message `createdAt`) |
-| `agent` | `String` | ✅ | ✅ (message `agent`) |
-| `entryId` | `String` | ✅ (`eid`) | ❌ (not part-level) |
+| `timestamp` | `String` | ✅ | ✅ (`timestamp`) |
+| `agent` | `String` | ✅ | ✅ (`agent`) |
+| `entryId` | `String` | ✅ (`eid`) | ✅ (`entryId`) |
 
 ---
 
@@ -115,32 +119,41 @@ A flat JSON array where each element is one `EntryData`. Type discriminator: `"t
 
 **Type values:** `prompt`, `text`, `thinking`, `tool`, `subagent`, `context`, `status`, `separator`
 
-### V2 — JSONL (`SessionStoreV2` + `EntryDataConverter`)
+### V2 — JSONL (`SessionStoreV2` + `EntryDataJsonAdapter`)
 
 **Directory:** `<projectBase>/.agent-work/sessions/`
 - `sessions-index.json` — array of session metadata
-- `<uuid>.jsonl` — one `SessionMessage` per line
+- `<uuid>.jsonl` — one `EntryData` per line (1:1 mapping)
 
-Each `SessionMessage` groups consecutive same-agent entries:
+Each line is a single `EntryData` entry serialized directly via `EntryDataJsonAdapter`.
+The `"type"` discriminator determines the entry subtype. Field names match Kotlin property names.
+Null/empty/false/zero-default fields are omitted to keep JSON compact.
 
 ```json
-{"id":"m1","role":"user","parts":[{"type":"text","text":"Hello","ts":"2026-04-01T10:00:00Z"}],"createdAt":1743505200000,"agent":null,"model":null}
-{"id":"m2","role":"assistant","parts":[{"type":"reasoning","text":"thinking...","ts":"2026-04-01T10:00:01Z"},{"type":"text","text":"Response","ts":"2026-04-01T10:00:02Z"}],"createdAt":1743505201000,"agent":"copilot","model":null}
+{"type":"prompt","text":"Hello","timestamp":"2026-04-01T10:00:00Z","contextFiles":[{"name":"Main.java","path":"/src/Main.java","line":42}],"id":"p1","entryId":"eid-1"}
+{"type":"text","raw":"Response","timestamp":"2026-04-01T10:00:01Z","agent":"copilot","model":"claude-sonnet-4-6","entryId":"eid-2"}
+{"type":"thinking","raw":"Let me think...","timestamp":"2026-04-01T10:00:01Z","agent":"copilot","model":"claude-sonnet-4-6","entryId":"eid-3"}
+{"type":"tool","title":"read_file","arguments":"{}","kind":"read","result":"content","status":"completed","description":"Read a file","filePath":"/src/Main.java","mcpHandled":true,"timestamp":"2026-04-01T10:00:02Z","agent":"copilot","model":"claude-sonnet-4-6","entryId":"eid-4"}
+{"type":"subagent","agentType":"explore","description":"Find code","prompt":"search","result":"found","status":"completed","colorIndex":2,"callId":"call-1","timestamp":"2026-04-01T10:00:03Z","agent":"copilot","model":"gpt-4o","entryId":"eid-5"}
+{"type":"context","files":[{"name":"A.java","path":"/src/A.java"}],"entryId":"eid-6"}
+{"type":"status","icon":"ℹ","message":"Processing...","entryId":"eid-7"}
+{"type":"separator","timestamp":"2026-04-01T11:00:00Z","agent":"copilot","entryId":"eid-8"}
 ```
 
-**Message roles:** `user`, `assistant`, `separator`
+**Type values:** `prompt`, `text`, `thinking`, `tool`, `subagent`, `context`, `status`, `separator`
 
-**Part types:**
-| Part type | Maps to | Key fields |
-|-----------|---------|------------|
-| `text` | `Prompt` (if user) / `Text` (if assistant) | `text`, `ts` |
-| `reasoning` | `Thinking` | `text`, `ts` |
-| `tool-invocation` | `ToolCall` | `toolInvocation.{toolName,args,result,kind,status,description,filePath,denialReason,mcpHandled}`, `ts` |
-| `subagent` | `SubAgent` | `agentType`, `description`, `prompt`, `result`, `status`, `colorIndex`, `callId`, `autoDenied`, `denialReason`, `ts` |
-| `status` | `Status` | `icon`, `message` |
-| `file` | `ContextFiles` | `filename`, `path` |
+#### Backward Compatibility (Legacy SessionMessage JSONL)
 
-**Per-entry timestamps:** Each part carries its own `"ts"` (ISO 8601) preserving the original entry timestamp. The message-level `createdAt` (epoch millis) is a fallback for parts written before this enrichment.
+Files written before Phase 4 use the older `SessionMessage` format where each line has
+`"role"` instead of `"type"`. On load, format is auto-detected per line:
+- Line contains `"type":` → new EntryData format → `EntryDataJsonAdapter.deserialize()`
+- Line contains `"role":` → legacy SessionMessage format → `EntryDataConverter.fromMessages()`
+
+Legacy format (for reference — no longer written):
+```json
+{"id":"m1","role":"user","parts":[{"type":"text","text":"Hello","ts":"...","eid":"..."}],"createdAt":1743505200000,"agent":null,"model":null}
+{"id":"m2","role":"assistant","parts":[{"type":"text","text":"Reply","ts":"...","eid":"..."}],"createdAt":1743505201000,"agent":"copilot","model":"claude-sonnet-4-6"}
+```
 
 ---
 
@@ -211,22 +224,21 @@ The event log size and DOM message limit are also sent to web/PWA clients:
 
 ```
 EntryData (in memory)
-  → EntryDataConverter.toMessages()
-  → List<SessionMessage>
-  → GSON.toJson() per message
-  → UUID.jsonl (V2 JSONL on disk)
+  → EntryDataJsonAdapter.serialize() per entry
+  → GSON.toJson() per JsonObject
+  → UUID.jsonl (V2 JSONL on disk, one entry per line)
 ```
 
 `ChatToolWindowContent.saveConversation()` → `SessionStoreV2.saveEntriesAsync()`.
-No V1 intermediary. The `ConversationSerializer` is not invoked on save.
+No `SessionMessage` intermediary. No V1 intermediary. Direct 1:1 serialization.
 
 ### Load Path (current)
 
 ```
 UUID.jsonl (V2 JSONL on disk)
-  → GSON.fromJson() per line
-  → List<SessionMessage>
-  → EntryDataConverter.fromMessages()
+  → auto-detect per line ("type:" = new, "role:" = legacy)
+  → EntryDataJsonAdapter.deserialize() per line (new format)
+    OR EntryDataConverter.fromMessages() (legacy format)
   → List<EntryData> (in memory)
   → ConversationReplayer.loadAndSplit()
   → recent / deferred split
@@ -234,6 +246,19 @@ UUID.jsonl (V2 JSONL on disk)
 
 `ChatToolWindowContent.restoreConversation()` → `SessionStoreV2.loadEntries()`.
 Falls back to V1 `conversation.json` if V2 JSONL is absent (legacy installs).
+
+### Export Path (external formats)
+
+```
+EntryData (in memory)
+  → EntryDataConverter.toMessages()
+  → List<SessionMessage> (role-grouped)
+  → CopilotClientExporter / OpenCodeClientExporter / etc.
+  → client-specific JSONL
+```
+
+`SessionMessage` is only used for external export/import where the target format
+requires role-based grouping. It is no longer used for persistence.
 
 ### V1→V2 Migration (one-shot)
 

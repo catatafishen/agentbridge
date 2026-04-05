@@ -266,14 +266,9 @@ public final class SessionStoreV2 implements Disposable {
         saveEntries(basePath, entries);
     }
 
-    /**
-     * Saves the conversation directly from EntryData entries to V2 JSONL,
-     * bypassing the V1 JSON intermediary. This is the preferred save path.
-     */
     public void saveEntries(@Nullable String basePath, @NotNull List<EntryData> entries) {
         try {
             String agent = currentAgent;
-            List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
 
             String sessionId = getCurrentSessionId(basePath);
             File dir = sessionsDir(basePath);
@@ -283,9 +278,9 @@ public final class SessionStoreV2 implements Disposable {
             File jsonlFile = new File(dir, sessionId + JSONL_EXT);
             StringBuilder sb = new StringBuilder();
             int turnCount = 0;
-            for (SessionMessage msg : messages) {
-                sb.append(GSON.toJson(msg)).append('\n');
-                if ("user".equals(msg.role)) turnCount++;
+            for (EntryData entry : entries) {
+                sb.append(GSON.toJson(EntryDataJsonAdapter.serialize(entry))).append('\n');
+                if (entry instanceof EntryData.Prompt) turnCount++;
             }
             Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
@@ -377,7 +372,9 @@ public final class SessionStoreV2 implements Disposable {
     }
 
     /**
-     * Loads entries directly from V2 JSONL file without going through V1 JSON.
+     * Loads entries directly from V2 JSONL file.
+     * Auto-detects format per line: {@code "type":} → new EntryData format,
+     * {@code "role":} → old SessionMessage format (converted via fromMessages).
      */
     @Nullable
     private List<EntryData> loadEntriesFromV2(@Nullable String basePath) {
@@ -399,9 +396,7 @@ public final class SessionStoreV2 implements Disposable {
 
         try {
             String content = Files.readString(jsonlFile.toPath(), StandardCharsets.UTF_8);
-            List<SessionMessage> messages = parseJsonl(content);
-            if (messages.isEmpty()) return null;
-            return EntryDataConverter.fromMessages(messages);
+            return parseJsonlAutoDetect(content);
         } catch (Exception e) {
             LOG.warn("Failed to parse v2 JSONL for session " + sessionId, e);
             return null;
@@ -525,48 +520,41 @@ public final class SessionStoreV2 implements Disposable {
 
     @Nullable
     private String loadFromV2(@Nullable String basePath) {
-        File sessionsDir = sessionsDir(basePath);
-        File idFile = currentSessionIdFile(basePath);
-        if (!idFile.exists()) return null;
-
-        String sessionId;
-        try {
-            sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
-        } catch (IOException e) {
-            LOG.warn("Could not read current-session-id", e);
-            return null;
-        }
-        if (sessionId.isEmpty()) return null;
-
-        File jsonlFile = new File(sessionsDir, sessionId + JSONL_EXT);
-        if (!jsonlFile.exists() || jsonlFile.length() < 2) return null;
-
-        try {
-            String content = Files.readString(jsonlFile.toPath(), StandardCharsets.UTF_8);
-            List<SessionMessage> messages = parseJsonl(content);
-            if (messages.isEmpty()) return null;
-            var entries = EntryDataConverter.fromMessages(messages);
-            return ConversationSerializer.INSTANCE.serialize(entries);
-        } catch (Exception e) {
-            LOG.warn("Failed to parse v2 JSONL for session " + sessionId, e);
-            return null;
-        }
+        List<EntryData> entries = loadEntriesFromV2(basePath);
+        if (entries == null || entries.isEmpty()) return null;
+        return ConversationSerializer.INSTANCE.serialize(entries);
     }
 
-    @NotNull
-    private static List<SessionMessage> parseJsonl(@NotNull String content) {
-        List<SessionMessage> messages = new ArrayList<>();
+    /**
+     * Parses a JSONL string with auto-detection: lines with {@code "type":} are the new
+     * EntryData format (deserialized directly), lines with {@code "role":} are the old
+     * SessionMessage format (batch-converted via {@link EntryDataConverter#fromMessages}).
+     */
+    @Nullable
+    private List<EntryData> parseJsonlAutoDetect(@NotNull String content) {
+        List<EntryData> directEntries = new ArrayList<>();
+        List<SessionMessage> legacyMessages = new ArrayList<>();
+
         for (String line : content.split("\n")) {
             line = line.trim();
             if (line.isEmpty()) continue;
             try {
-                SessionMessage msg = GSON.fromJson(line, SessionMessage.class);
-                if (msg != null) messages.add(msg);
+                if (EntryDataJsonAdapter.isEntryFormat(line)) {
+                    JsonObject obj = GSON.fromJson(line, JsonObject.class);
+                    EntryData entry = EntryDataJsonAdapter.deserialize(obj);
+                    if (entry != null) directEntries.add(entry);
+                } else {
+                    SessionMessage msg = GSON.fromJson(line, SessionMessage.class);
+                    if (msg != null) legacyMessages.add(msg);
+                }
             } catch (Exception e) {
                 LOG.warn("Skipping malformed JSONL line: " + line, e);
             }
         }
-        return messages;
+
+        if (!directEntries.isEmpty()) return directEntries;
+        if (!legacyMessages.isEmpty()) return EntryDataConverter.fromMessages(legacyMessages);
+        return null;
     }
 
     // ── session finalisation ──────────────────────────────────────────────────

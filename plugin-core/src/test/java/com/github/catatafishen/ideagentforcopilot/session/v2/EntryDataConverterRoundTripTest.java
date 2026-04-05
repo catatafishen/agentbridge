@@ -322,10 +322,10 @@ class EntryDataConverterRoundTripTest {
 
         List<EntryData> entries = List.of(
             new EntryData.Prompt("Hello", "2026-04-01T10:00:00Z", null, "p1", eid1),
-            new EntryData.Text(new StringBuilder("Reply"), "2026-04-01T10:00:05Z", "copilot", eid2),
+            new EntryData.Text(new StringBuilder("Reply"), "2026-04-01T10:00:05Z", "copilot", "", eid2),
             new EntryData.ToolCall("read_file", "{}", "read", "result", "completed",
                 "Read a file", "/src/Main.java", false, null, true,
-                "2026-04-01T10:00:10Z", "copilot", eid3)
+                "2026-04-01T10:00:10Z", "copilot", "", eid3)
         );
 
         List<SessionMessage> messages = EntryDataConverter.toMessages(entries);

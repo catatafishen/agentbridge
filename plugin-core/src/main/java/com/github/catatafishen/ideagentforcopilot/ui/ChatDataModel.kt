@@ -48,6 +48,7 @@ sealed class EntryData {
         val raw: StringBuilder = StringBuilder(),
         val timestamp: String = "",
         val agent: String = "",
+        val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
@@ -55,6 +56,7 @@ sealed class EntryData {
         val raw: StringBuilder = StringBuilder(),
         val timestamp: String = "",
         val agent: String = "",
+        val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
@@ -71,6 +73,7 @@ sealed class EntryData {
         var mcpHandled: Boolean = false,
         val timestamp: String = "",
         val agent: String = "",
+        val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
@@ -86,6 +89,7 @@ sealed class EntryData {
         var denialReason: String? = null,
         val timestamp: String = "",
         val agent: String = "",
+        val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
