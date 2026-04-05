@@ -110,6 +110,27 @@ internal object ConversationSerializer {
                 obj.addProperty("timestamp", e.timestamp)
                 obj.addProperty("agent", e.agent)
             }
+
+            is EntryData.TurnStats -> {
+                obj.addProperty("type", "turnStats")
+                obj.addProperty("turnId", e.turnId)
+                obj.addProperty("durationMs", e.durationMs)
+                obj.addProperty("inputTokens", e.inputTokens)
+                obj.addProperty("outputTokens", e.outputTokens)
+                obj.addProperty("costUsd", e.costUsd)
+                obj.addProperty("toolCallCount", e.toolCallCount)
+                obj.addProperty("linesAdded", e.linesAdded)
+                obj.addProperty("linesRemoved", e.linesRemoved)
+                obj.addProperty("model", e.model)
+                obj.addProperty("multiplier", e.multiplier)
+                obj.addProperty("totalDurationMs", e.totalDurationMs)
+                obj.addProperty("totalInputTokens", e.totalInputTokens)
+                obj.addProperty("totalOutputTokens", e.totalOutputTokens)
+                obj.addProperty("totalCostUsd", e.totalCostUsd)
+                obj.addProperty("totalToolCalls", e.totalToolCalls)
+                obj.addProperty("totalLinesAdded", e.totalLinesAdded)
+                obj.addProperty("totalLinesRemoved", e.totalLinesRemoved)
+            }
         }
         obj.addProperty("eid", e.entryId)
         return obj
@@ -215,6 +236,27 @@ internal object ConversationSerializer {
             "separator" -> EntryData.SessionSeparator(
                 obj["timestamp"]?.asString ?: "",
                 obj["agent"]?.asString ?: "",
+                entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
+            )
+
+            "turnStats" -> EntryData.TurnStats(
+                turnId = obj["turnId"]?.asString ?: "",
+                durationMs = obj["durationMs"]?.asLong ?: 0,
+                inputTokens = obj["inputTokens"]?.asLong ?: 0,
+                outputTokens = obj["outputTokens"]?.asLong ?: 0,
+                costUsd = obj["costUsd"]?.asDouble ?: 0.0,
+                toolCallCount = obj["toolCallCount"]?.asInt ?: 0,
+                linesAdded = obj["linesAdded"]?.asInt ?: 0,
+                linesRemoved = obj["linesRemoved"]?.asInt ?: 0,
+                model = obj["model"]?.asString ?: "",
+                multiplier = obj["multiplier"]?.asString ?: "",
+                totalDurationMs = obj["totalDurationMs"]?.asLong ?: 0,
+                totalInputTokens = obj["totalInputTokens"]?.asLong ?: 0,
+                totalOutputTokens = obj["totalOutputTokens"]?.asLong ?: 0,
+                totalCostUsd = obj["totalCostUsd"]?.asDouble ?: 0.0,
+                totalToolCalls = obj["totalToolCalls"]?.asInt ?: 0,
+                totalLinesAdded = obj["totalLinesAdded"]?.asInt ?: 0,
+                totalLinesRemoved = obj["totalLinesRemoved"]?.asInt ?: 0,
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 

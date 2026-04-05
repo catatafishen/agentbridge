@@ -119,6 +119,9 @@ public final class EntryDataConverter {
                     result.add(userMsg.build());
                 }
 
+            } else if (entry instanceof EntryData.TurnStats) {
+                continue;
+
             } else {
                 // All remaining types belong to assistant messages
                 String agent = agentOf(entry);

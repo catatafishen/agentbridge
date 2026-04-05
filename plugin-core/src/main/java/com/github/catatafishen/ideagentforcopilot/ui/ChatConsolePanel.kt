@@ -729,6 +729,34 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             ?.pushNotification("Turn complete", "Agent finished ($toolCallCount tool calls)")
     }
 
+    override fun emitTurnStats(
+        durationMs: Long, inputTokens: Int, outputTokens: Int, costUsd: Double,
+        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String
+    ) {
+        val prev = entries.filterIsInstance<EntryData.TurnStats>().lastOrNull()
+        entries.add(
+            EntryData.TurnStats(
+                turnId = currentTurnId,
+                durationMs = durationMs,
+                inputTokens = inputTokens.toLong(),
+                outputTokens = outputTokens.toLong(),
+                costUsd = costUsd,
+                toolCallCount = toolCallCount,
+                linesAdded = linesAdded,
+                linesRemoved = linesRemoved,
+                model = model,
+                multiplier = multiplier,
+                totalDurationMs = (prev?.totalDurationMs ?: 0) + durationMs,
+                totalInputTokens = (prev?.totalInputTokens ?: 0) + inputTokens.toLong(),
+                totalOutputTokens = (prev?.totalOutputTokens ?: 0) + outputTokens.toLong(),
+                totalCostUsd = (prev?.totalCostUsd ?: 0.0) + costUsd,
+                totalToolCalls = (prev?.totalToolCalls ?: 0) + toolCallCount,
+                totalLinesAdded = (prev?.totalLinesAdded ?: 0) + linesAdded,
+                totalLinesRemoved = (prev?.totalLinesRemoved ?: 0) + linesRemoved,
+            )
+        )
+    }
+
     override fun showQuickReplies(options: List<String>) {
         if (options.isEmpty()) return
         val json = options.joinToString(",") { "'${escJs(it)}'" }
@@ -828,7 +856,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     i++
                 }
 
-                is EntryData.Status, is EntryData.ContextFiles -> i++ // transient / non-visual in restored HTML
+                is EntryData.Status, is EntryData.ContextFiles, is EntryData.TurnStats -> i++ // transient / non-visual in restored HTML
                 else -> i = appendAgentTurn(entries, i, sb)
             }
         }
@@ -895,7 +923,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         while (i < entries.size) {
             val e = entries[i]
             if (e is EntryData.Prompt || e is EntryData.SessionSeparator || e is EntryData.Status) break
-            if (e is EntryData.ContextFiles) {
+            if (e is EntryData.ContextFiles || e is EntryData.TurnStats) {
                 i++; continue
             }
             if (hadToolOrSubagent && (e is EntryData.Text || e is EntryData.Thinking)) flushSegment()

@@ -90,6 +90,40 @@ The in-memory model uses `EntryData` (defined in `ChatDataModel.kt`) with 8 subt
 | `agent` | `String` | ✅ | ✅ (`agent`) |
 | `entryId` | `String` | ✅ (`eid`) | ✅ (`entryId`) |
 
+### `TurnStats` — per-turn statistics (metadata only)
+
+Metadata-only entry appended after each completed turn. Not rendered in the chat UI.
+Used to restore session-level aggregates (elapsed time, tokens, lines changed) on session resume.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `type` | `"turnStats"` | — | Type discriminator |
+| `turnId` | string | — | Matches the Prompt ID (e.g., `"t0"`, `"t1"`) |
+| `durationMs` | long | 0 | Elapsed time for this turn (ms) |
+| `inputTokens` | long | 0 | Input tokens consumed this turn |
+| `outputTokens` | long | 0 | Output tokens consumed this turn |
+| `costUsd` | double | 0.0 | Cost in USD for this turn |
+| `toolCallCount` | int | 0 | Number of tool calls this turn |
+| `linesAdded` | int | 0 | Lines of code added this turn |
+| `linesRemoved` | int | 0 | Lines of code removed this turn |
+| `model` | string | `""` | Model ID (e.g., `"claude-opus-4.6"`) |
+| `multiplier` | string | `""` | Billing multiplier (e.g., `"1x"`, `"5x"`) |
+| `totalDurationMs` | long | 0 | Running aggregate: total elapsed time |
+| `totalInputTokens` | long | 0 | Running aggregate: total input tokens |
+| `totalOutputTokens` | long | 0 | Running aggregate: total output tokens |
+| `totalCostUsd` | double | 0.0 | Running aggregate: total cost |
+| `totalToolCalls` | int | 0 | Running aggregate: total tool calls |
+| `totalLinesAdded` | int | 0 | Running aggregate: total lines added |
+| `totalLinesRemoved` | int | 0 | Running aggregate: total lines removed |
+| `entryId` | string | UUID | Unique entry identifier |
+
+Example:
+```json
+{"type":"turnStats","turnId":"t0","durationMs":45230,"inputTokens":1200,"outputTokens":3500,"costUsd":0.015,"toolCallCount":8,"linesAdded":42,"linesRemoved":7,"model":"claude-opus-4.6","multiplier":"5x","totalDurationMs":45230,"totalInputTokens":1200,"totalOutputTokens":3500,"totalCostUsd":0.015,"totalToolCalls":8,"totalLinesAdded":42,"totalLinesRemoved":7,"entryId":"abc-123"}
+```
+
+Zero/default fields are omitted in the compact serialization.
+
 ---
 
 ## Persistence Formats
@@ -125,6 +159,17 @@ A flat JSON array where each element is one `EntryData`. Type discriminator: `"t
 - `sessions-index.json` — array of session metadata
 - `<uuid>.jsonl` — one `EntryData` per line (1:1 mapping)
 
+#### `sessions-index.json` fields
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `id` | string | UUID | Unique session identifier |
+| `createdAt` | long | — | Session creation timestamp (epoch ms) |
+| `turns` | int | 0 | Number of prompt turns in the session |
+| `name` | string | `""` | Auto-generated session name (first prompt text, max 60 chars) |
+
+Session dropdown display format: `"2026-04-05 — Fix the auth bug (12 turns)"`
+
 Each line is a single `EntryData` entry serialized directly via `EntryDataJsonAdapter`.
 The `"type"` discriminator determines the entry subtype. Field names match Kotlin property names.
 Null/empty/false/zero-default fields are omitted to keep JSON compact.
@@ -138,9 +183,10 @@ Null/empty/false/zero-default fields are omitted to keep JSON compact.
 {"type":"context","files":[{"name":"A.java","path":"/src/A.java"}],"entryId":"eid-6"}
 {"type":"status","icon":"ℹ","message":"Processing...","entryId":"eid-7"}
 {"type":"separator","timestamp":"2026-04-01T11:00:00Z","agent":"copilot","entryId":"eid-8"}
+{"type":"turnStats","turnId":"t0","durationMs":45230,"inputTokens":1200,"outputTokens":3500,"costUsd":0.015,"toolCallCount":3,"linesAdded":42,"linesRemoved":7,"model":"claude-sonnet-4-6","totalDurationMs":45230,"totalInputTokens":1200,"totalOutputTokens":3500,"totalCostUsd":0.015,"totalToolCalls":3,"totalLinesAdded":42,"totalLinesRemoved":7,"entryId":"eid-9"}
 ```
 
-**Type values:** `prompt`, `text`, `thinking`, `tool`, `subagent`, `context`, `status`, `separator`
+**Type values:** `prompt`, `text`, `thinking`, `tool`, `subagent`, `context`, `status`, `separator`, `turnStats`
 
 #### Backward Compatibility (Legacy SessionMessage JSONL)
 
@@ -215,6 +261,14 @@ Persisted in `chatHistory.xml` per project via `ChatHistorySettings`.
 The event log size and DOM message limit are also sent to web/PWA clients:
 - Event log size: controls server-side FIFO cap in `ChatWebServer.pushJsEvent()`
 - DOM message limit: sent via `/state` response (`domMessageLimit` field) and via `ChatController.setDomMessageLimit()` JS call
+
+---
+
+## Session Restore
+
+When a session is restored, the last `TurnStats` entry's aggregate fields are used to
+initialize `ProcessingTimerPanel`'s session-level counters (elapsed time, tokens, cost,
+tool calls, lines changed, turn count). This means session statistics survive IDE restarts.
 
 ---
 

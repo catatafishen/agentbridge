@@ -8,7 +8,12 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EntryDataJsonAdapterTest {
 
@@ -17,7 +22,7 @@ class EntryDataJsonAdapterTest {
     @Test
     void promptRoundTrip() {
         var contextFiles = List.of(
-                new Triple<>("Main.java", "/src/Main.java", 42)
+            new Triple<>("Main.java", "/src/Main.java", 42)
         );
         var original = new EntryData.Prompt("Hello", "2026-01-01T00:00:00Z", contextFiles, "p1", "eid-1");
 
@@ -93,20 +98,20 @@ class EntryDataJsonAdapterTest {
     @Test
     void toolCallRoundTrip() {
         var original = new EntryData.ToolCall(
-                "read_file",        // title
-                "{\"path\":\"/src\"}", // arguments
-                "read",             // kind
-                "content",          // result
-                "completed",        // status
-                "Read a file",      // description
-                "/src/Main.java",   // filePath
-                false,              // autoDenied
-                null,               // denialReason
-                true,               // mcpHandled
-                "2026-01-01T00:00:03Z", // timestamp
-                "copilot",          // agent
-                "claude-sonnet-4-6",    // model
-                "eid-4"             // entryId
+            "read_file",        // title
+            "{\"path\":\"/src\"}", // arguments
+            "read",             // kind
+            "content",          // result
+            "completed",        // status
+            "Read a file",      // description
+            "/src/Main.java",   // filePath
+            false,              // autoDenied
+            null,               // denialReason
+            true,               // mcpHandled
+            "2026-01-01T00:00:03Z", // timestamp
+            "copilot",          // agent
+            "claude-sonnet-4-6",    // model
+            "eid-4"             // entryId
         );
 
         JsonObject json = EntryDataJsonAdapter.serialize(original);
@@ -149,19 +154,19 @@ class EntryDataJsonAdapterTest {
     @Test
     void subAgentRoundTrip() {
         var original = new EntryData.SubAgent(
-                "explore",          // agentType
-                "Find code",        // description
-                "search for X",     // prompt
-                "found Y",          // result
-                "completed",        // status
-                2,                  // colorIndex
-                "call-1",           // callId
-                false,              // autoDenied
-                null,               // denialReason
-                "2026-01-01T00:00:04Z", // timestamp
-                "copilot",          // agent
-                "gpt-4o",           // model
-                "eid-5"             // entryId
+            "explore",          // agentType
+            "Find code",        // description
+            "search for X",     // prompt
+            "found Y",          // result
+            "completed",        // status
+            2,                  // colorIndex
+            "call-1",           // callId
+            false,              // autoDenied
+            null,               // denialReason
+            "2026-01-01T00:00:04Z", // timestamp
+            "copilot",          // agent
+            "gpt-4o",           // model
+            "eid-5"             // entryId
         );
 
         JsonObject json = EntryDataJsonAdapter.serialize(original);
@@ -202,8 +207,8 @@ class EntryDataJsonAdapterTest {
     @Test
     void contextFilesRoundTrip() {
         var files = List.of(
-                new Pair<>("A.java", "/src/A.java"),
-                new Pair<>("B.java", "/src/B.java")
+            new Pair<>("A.java", "/src/A.java"),
+            new Pair<>("B.java", "/src/B.java")
         );
         var original = new EntryData.ContextFiles(files, "eid-6");
 
@@ -271,20 +276,20 @@ class EntryDataJsonAdapterTest {
     @Test
     void compactSerializationOmitsDefaults() {
         var original = new EntryData.ToolCall(
-                "tool",   // title
-                null,     // arguments
-                "other",  // kind
-                null,     // result
-                null,     // status
-                null,     // description
-                null,     // filePath
-                false,    // autoDenied
-                null,     // denialReason
-                false,    // mcpHandled
-                "",       // timestamp
-                "",       // agent
-                "",       // model
-                "eid-9"   // entryId
+            "tool",   // title
+            null,     // arguments
+            "other",  // kind
+            null,     // result
+            null,     // status
+            null,     // description
+            null,     // filePath
+            false,    // autoDenied
+            null,     // denialReason
+            false,    // mcpHandled
+            "",       // timestamp
+            "",       // agent
+            "",       // model
+            "eid-9"   // entryId
         );
 
         JsonObject json = EntryDataJsonAdapter.serialize(original);
@@ -370,7 +375,7 @@ class EntryDataJsonAdapterTest {
     @Test
     void contextFileLineZeroOmitted() {
         var contextFiles = List.of(
-                new Triple<>("X.java", "/x", 0)
+            new Triple<>("X.java", "/x", 0)
         );
         var original = new EntryData.Prompt("test", "", contextFiles, "", "eid-line0");
 
@@ -380,5 +385,79 @@ class EntryDataJsonAdapterTest {
         assertEquals("X.java", fileObj.get("name").getAsString());
         assertEquals("/x", fileObj.get("path").getAsString());
         assertFalse(fileObj.has("line"), "line should not be present when value is 0");
+    }
+
+    // ── 16. TurnStats round-trip ──────────────────────────────────────────────
+
+    @Test
+    void turnStatsRoundTrip() {
+        EntryData.TurnStats stats = new EntryData.TurnStats(
+            "t3", 45230, 1200, 3500, 0.015, 8, 42, 7,
+            "claude-opus-4.6", "5x",
+            120000, 5000, 15000, 0.065, 25, 150, 30,
+            "eid-stats-1"
+        );
+        JsonObject json = EntryDataJsonAdapter.serialize(stats);
+        assertEquals("turnStats", json.get("type").getAsString());
+        assertEquals("t3", json.get("turnId").getAsString());
+        assertEquals(45230, json.get("durationMs").getAsLong());
+        assertEquals(1200, json.get("inputTokens").getAsLong());
+        assertEquals(3500, json.get("outputTokens").getAsLong());
+        assertEquals(0.015, json.get("costUsd").getAsDouble(), 0.0001);
+        assertEquals(8, json.get("toolCallCount").getAsInt());
+        assertEquals(42, json.get("linesAdded").getAsInt());
+        assertEquals(7, json.get("linesRemoved").getAsInt());
+        assertEquals("claude-opus-4.6", json.get("model").getAsString());
+        assertEquals("5x", json.get("multiplier").getAsString());
+        assertEquals(120000, json.get("totalDurationMs").getAsLong());
+        assertEquals(5000, json.get("totalInputTokens").getAsLong());
+        assertEquals(15000, json.get("totalOutputTokens").getAsLong());
+        assertEquals(0.065, json.get("totalCostUsd").getAsDouble(), 0.0001);
+        assertEquals(25, json.get("totalToolCalls").getAsInt());
+        assertEquals(150, json.get("totalLinesAdded").getAsInt());
+        assertEquals(30, json.get("totalLinesRemoved").getAsInt());
+        assertEquals("eid-stats-1", json.get("entryId").getAsString());
+
+        EntryData deserialized = EntryDataJsonAdapter.deserialize(json);
+        assertInstanceOf(EntryData.TurnStats.class, deserialized);
+        EntryData.TurnStats rt = (EntryData.TurnStats) deserialized;
+        assertEquals("t3", rt.getTurnId());
+        assertEquals(45230, rt.getDurationMs());
+        assertEquals(1200, rt.getInputTokens());
+        assertEquals(3500, rt.getOutputTokens());
+        assertEquals(0.015, rt.getCostUsd(), 0.0001);
+        assertEquals(8, rt.getToolCallCount());
+        assertEquals(42, rt.getLinesAdded());
+        assertEquals(7, rt.getLinesRemoved());
+        assertEquals("claude-opus-4.6", rt.getModel());
+        assertEquals("5x", rt.getMultiplier());
+        assertEquals(120000, rt.getTotalDurationMs());
+        assertEquals(5000, rt.getTotalInputTokens());
+        assertEquals(15000, rt.getTotalOutputTokens());
+        assertEquals(0.065, rt.getTotalCostUsd(), 0.0001);
+        assertEquals(25, rt.getTotalToolCalls());
+        assertEquals(150, rt.getTotalLinesAdded());
+        assertEquals(30, rt.getTotalLinesRemoved());
+        assertEquals("eid-stats-1", rt.getEntryId());
+    }
+
+    // ── 17. TurnStats defaults omitted (compaction) ──────────────────────────
+
+    @Test
+    void turnStatsDefaultsOmitted() {
+        EntryData.TurnStats stats = new EntryData.TurnStats("t0");
+        JsonObject json = EntryDataJsonAdapter.serialize(stats);
+        assertEquals("turnStats", json.get("type").getAsString());
+        assertEquals("t0", json.get("turnId").getAsString());
+        assertFalse(json.has("durationMs"), "zero durationMs should be omitted");
+        assertFalse(json.has("inputTokens"), "zero inputTokens should be omitted");
+        assertFalse(json.has("outputTokens"), "zero outputTokens should be omitted");
+        assertFalse(json.has("costUsd"), "zero costUsd should be omitted");
+        assertFalse(json.has("toolCallCount"), "zero toolCallCount should be omitted");
+        assertFalse(json.has("linesAdded"), "zero linesAdded should be omitted");
+        assertFalse(json.has("linesRemoved"), "zero linesRemoved should be omitted");
+        assertFalse(json.has("model"), "empty model should be omitted");
+        assertFalse(json.has("multiplier"), "empty multiplier should be omitted");
+        assertTrue(json.has("entryId"), "entryId should always be present");
     }
 }

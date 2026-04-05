@@ -93,6 +93,27 @@ sealed class EntryData {
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
+    class TurnStats @JvmOverloads constructor(
+        val turnId: String,
+        val durationMs: Long = 0,
+        val inputTokens: Long = 0,
+        val outputTokens: Long = 0,
+        val costUsd: Double = 0.0,
+        val toolCallCount: Int = 0,
+        val linesAdded: Int = 0,
+        val linesRemoved: Int = 0,
+        val model: String = "",
+        val multiplier: String = "",
+        val totalDurationMs: Long = 0,
+        val totalInputTokens: Long = 0,
+        val totalOutputTokens: Long = 0,
+        val totalCostUsd: Double = 0.0,
+        val totalToolCalls: Int = 0,
+        val totalLinesAdded: Int = 0,
+        val totalLinesRemoved: Int = 0,
+        override val entryId: String = java.util.UUID.randomUUID().toString()
+    ) : EntryData()
+
     class ContextFiles @JvmOverloads constructor(
         val files: List<Pair<String, String>>,
         override val entryId: String = java.util.UUID.randomUUID().toString()

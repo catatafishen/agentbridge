@@ -44,6 +44,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
 
             is EntryData.Status -> sb.appendLine("${e.icon} ${e.message}")
             is EntryData.SessionSeparator -> sb.appendLine("--- Previous session \uD83D\uDCC5 ${formatTimestamp(e.timestamp)} ---")
+            is EntryData.TurnStats -> {}
         }
         return sb.toString()
     }
@@ -133,7 +134,8 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
                 is EntryData.SubAgent -> subAgentCount++
                 is EntryData.ContextFiles,
                 is EntryData.SessionSeparator,
-                is EntryData.Status -> { /* not relevant for turn grouping */
+                is EntryData.Status,
+                is EntryData.TurnStats -> { /* not relevant for turn grouping */
                 }
             }
         }
@@ -245,6 +247,8 @@ ul,ol{margin:4px 0;padding-left:22px}
                 formatTimestamp(e.timestamp)
             )
         }</div>\n"
+
+        is EntryData.TurnStats -> ""
     }
 
     private fun renderExportToolCall(e: EntryData.ToolCall): String {

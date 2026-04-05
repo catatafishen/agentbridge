@@ -167,6 +167,22 @@ internal class ProcessingTimerPanel(
         displayMode = modeTurn
     }
 
+    fun restoreSessionStats(
+        totalTimeMs: Long, totalInputTokens: Long, totalOutputTokens: Long,
+        totalCostUsd: Double, totalToolCalls: Int,
+        totalLinesAdded: Int, totalLinesRemoved: Int, turnCount: Int
+    ) {
+        sessionTotalTimeMs = totalTimeMs
+        sessionTotalInputTokens = totalInputTokens
+        sessionTotalOutputTokens = totalOutputTokens
+        sessionTotalCostUsd = totalCostUsd
+        sessionTotalToolCalls = totalToolCalls
+        sessionTotalAddedLines = totalLinesAdded
+        sessionTotalRemovedLines = totalLinesRemoved
+        sessionTurnCount = turnCount
+        refreshDisplay()
+    }
+
     override fun dispose() {
         ticker.stop()
         com.intellij.openapi.util.Disposer.dispose(spinner)

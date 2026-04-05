@@ -128,6 +128,55 @@ public final class EntryDataJsonAdapter {
             json.addProperty("message", st.getMessage());
             json.addProperty("entryId", st.getEntryId());
 
+        } else if (entry instanceof EntryData.TurnStats ts) {
+            json.addProperty("type", "turnStats");
+            json.addProperty("turnId", ts.getTurnId());
+            if (ts.getDurationMs() != 0) {
+                json.addProperty("durationMs", ts.getDurationMs());
+            }
+            if (ts.getInputTokens() != 0) {
+                json.addProperty("inputTokens", ts.getInputTokens());
+            }
+            if (ts.getOutputTokens() != 0) {
+                json.addProperty("outputTokens", ts.getOutputTokens());
+            }
+            if (ts.getCostUsd() != 0.0) {
+                json.addProperty("costUsd", ts.getCostUsd());
+            }
+            if (ts.getToolCallCount() != 0) {
+                json.addProperty("toolCallCount", ts.getToolCallCount());
+            }
+            if (ts.getLinesAdded() != 0) {
+                json.addProperty("linesAdded", ts.getLinesAdded());
+            }
+            if (ts.getLinesRemoved() != 0) {
+                json.addProperty("linesRemoved", ts.getLinesRemoved());
+            }
+            addNonEmpty(json, "model", ts.getModel());
+            addNonEmpty(json, "multiplier", ts.getMultiplier());
+            if (ts.getTotalDurationMs() != 0) {
+                json.addProperty("totalDurationMs", ts.getTotalDurationMs());
+            }
+            if (ts.getTotalInputTokens() != 0) {
+                json.addProperty("totalInputTokens", ts.getTotalInputTokens());
+            }
+            if (ts.getTotalOutputTokens() != 0) {
+                json.addProperty("totalOutputTokens", ts.getTotalOutputTokens());
+            }
+            if (ts.getTotalCostUsd() != 0.0) {
+                json.addProperty("totalCostUsd", ts.getTotalCostUsd());
+            }
+            if (ts.getTotalToolCalls() != 0) {
+                json.addProperty("totalToolCalls", ts.getTotalToolCalls());
+            }
+            if (ts.getTotalLinesAdded() != 0) {
+                json.addProperty("totalLinesAdded", ts.getTotalLinesAdded());
+            }
+            if (ts.getTotalLinesRemoved() != 0) {
+                json.addProperty("totalLinesRemoved", ts.getTotalLinesRemoved());
+            }
+            json.addProperty("entryId", ts.getEntryId());
+
         } else if (entry instanceof EntryData.SessionSeparator sep) {
             json.addProperty("type", "separator");
             addNonEmpty(json, "timestamp", sep.getTimestamp());
@@ -160,79 +209,98 @@ public final class EntryDataJsonAdapter {
                     for (var element : json.getAsJsonArray("contextFiles")) {
                         JsonObject obj = element.getAsJsonObject();
                         contextFiles.add(new kotlin.Triple<>(
-                                str(obj, "name"),
-                                str(obj, "path"),
-                                intVal(obj, "line")));
+                            str(obj, "name"),
+                            str(obj, "path"),
+                            intVal(obj, "line")));
                     }
                 }
                 yield new EntryData.Prompt(
-                        str(json, "text"),
-                        str(json, "timestamp"),
-                        contextFiles,
-                        str(json, "id"),
-                        entryId);
+                    str(json, "text"),
+                    str(json, "timestamp"),
+                    contextFiles,
+                    str(json, "id"),
+                    entryId);
             }
             case "text" -> new EntryData.Text(
-                    new StringBuilder(str(json, "raw")),
-                    str(json, "timestamp"),
-                    str(json, "agent"),
-                    str(json, "model"),
-                    entryId);
+                new StringBuilder(str(json, "raw")),
+                str(json, "timestamp"),
+                str(json, "agent"),
+                str(json, "model"),
+                entryId);
             case "thinking" -> new EntryData.Thinking(
-                    new StringBuilder(str(json, "raw")),
-                    str(json, "timestamp"),
-                    str(json, "agent"),
-                    str(json, "model"),
-                    entryId);
+                new StringBuilder(str(json, "raw")),
+                str(json, "timestamp"),
+                str(json, "agent"),
+                str(json, "model"),
+                entryId);
             case "tool" -> new EntryData.ToolCall(
-                    str(json, "title"),
-                    strOrNull(json, "arguments"),
-                    str(json, "kind"),
-                    strOrNull(json, "result"),
-                    strOrNull(json, "status"),
-                    strOrNull(json, "description"),
-                    strOrNull(json, "filePath"),
-                    bool(json, "autoDenied"),
-                    strOrNull(json, "denialReason"),
-                    bool(json, "mcpHandled"),
-                    str(json, "timestamp"),
-                    str(json, "agent"),
-                    str(json, "model"),
-                    entryId);
+                str(json, "title"),
+                strOrNull(json, "arguments"),
+                str(json, "kind"),
+                strOrNull(json, "result"),
+                strOrNull(json, "status"),
+                strOrNull(json, "description"),
+                strOrNull(json, "filePath"),
+                bool(json, "autoDenied"),
+                strOrNull(json, "denialReason"),
+                bool(json, "mcpHandled"),
+                str(json, "timestamp"),
+                str(json, "agent"),
+                str(json, "model"),
+                entryId);
             case "subagent" -> new EntryData.SubAgent(
-                    str(json, "agentType"),
-                    str(json, "description"),
-                    strOrNull(json, "prompt"),
-                    strOrNull(json, "result"),
-                    strOrNull(json, "status"),
-                    intVal(json, "colorIndex"),
-                    strOrNull(json, "callId"),
-                    bool(json, "autoDenied"),
-                    strOrNull(json, "denialReason"),
-                    str(json, "timestamp"),
-                    str(json, "agent"),
-                    str(json, "model"),
-                    entryId);
+                str(json, "agentType"),
+                str(json, "description"),
+                strOrNull(json, "prompt"),
+                strOrNull(json, "result"),
+                strOrNull(json, "status"),
+                intVal(json, "colorIndex"),
+                strOrNull(json, "callId"),
+                bool(json, "autoDenied"),
+                strOrNull(json, "denialReason"),
+                str(json, "timestamp"),
+                str(json, "agent"),
+                str(json, "model"),
+                entryId);
             case "context" -> {
                 List<kotlin.Pair<String, String>> files = new ArrayList<>();
                 if (json.has("files") && json.get("files").isJsonArray()) {
                     for (var element : json.getAsJsonArray("files")) {
                         JsonObject obj = element.getAsJsonObject();
                         files.add(new kotlin.Pair<>(
-                                str(obj, "name"),
-                                str(obj, "path")));
+                            str(obj, "name"),
+                            str(obj, "path")));
                     }
                 }
                 yield new EntryData.ContextFiles(files, entryId);
             }
             case "status" -> new EntryData.Status(
-                    str(json, "icon"),
-                    str(json, "message"),
-                    entryId);
+                str(json, "icon"),
+                str(json, "message"),
+                entryId);
             case "separator" -> new EntryData.SessionSeparator(
-                    str(json, "timestamp"),
-                    str(json, "agent"),
-                    entryId);
+                str(json, "timestamp"),
+                str(json, "agent"),
+                entryId);
+            case "turnStats" -> new EntryData.TurnStats(
+                str(json, "turnId"),
+                longVal(json, "durationMs"),
+                longVal(json, "inputTokens"),
+                longVal(json, "outputTokens"),
+                doubleVal(json, "costUsd"),
+                intVal(json, "toolCallCount"),
+                intVal(json, "linesAdded"),
+                intVal(json, "linesRemoved"),
+                str(json, "model"),
+                str(json, "multiplier"),
+                longVal(json, "totalDurationMs"),
+                longVal(json, "totalInputTokens"),
+                longVal(json, "totalOutputTokens"),
+                doubleVal(json, "totalCostUsd"),
+                intVal(json, "totalToolCalls"),
+                intVal(json, "totalLinesAdded"),
+                intVal(json, "totalLinesRemoved"),
+                entryId);
             default -> null;
         };
     }
@@ -278,6 +346,14 @@ public final class EntryDataJsonAdapter {
             return o.get(key).getAsInt();
         }
         return 0;
+    }
+
+    private static long longVal(@NotNull JsonObject o, @NotNull String key) {
+        return o.has(key) ? o.get(key).getAsLong() : 0;
+    }
+
+    private static double doubleVal(@NotNull JsonObject o, @NotNull String key) {
+        return o.has(key) ? o.get(key).getAsDouble() : 0.0;
     }
 
     private static void addNonEmpty(@NotNull JsonObject json, @NotNull String key,

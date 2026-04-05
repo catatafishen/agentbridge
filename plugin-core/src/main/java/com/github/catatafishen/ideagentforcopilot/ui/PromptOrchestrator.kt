@@ -71,6 +71,7 @@ class PromptOrchestrator(
     @Volatile
     private var stopped = false
 
+    private var turnStartedAt: Long = 0
     private var turnToolCallCount = 0
     private var turnInputTokens = 0
     private var turnOutputTokens = 0
@@ -87,8 +88,10 @@ class PromptOrchestrator(
     private var pendingPromptEntryId = ""
 
     /** Executes a prompt on the calling thread (must be called from a background thread). */
-    fun execute(prompt: String, contextItems: List<ContextItemData>, selectedModelId: String,
-                rawText: String, promptEntryId: String) {
+    fun execute(
+        prompt: String, contextItems: List<ContextItemData>, selectedModelId: String,
+        rawText: String, promptEntryId: String
+    ) {
         pendingRawText = rawText
         pendingPromptEntryId = promptEntryId
         stopped = false
@@ -232,6 +235,7 @@ class PromptOrchestrator(
 
     private fun prepareModelAndTurnState(selectedModelId: String): String {
         turnToolCallCount = 0
+        turnStartedAt = System.currentTimeMillis()
         turnInputTokens = 0
         turnOutputTokens = 0
         turnCostUsd = null
@@ -417,6 +421,14 @@ class PromptOrchestrator(
         }
 
         callbacks.notifyIfUnfocused(turnToolCallCount)
+
+        val turnDuration = System.currentTimeMillis() - turnStartedAt
+        val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
+        consolePanel().emitTurnStats(
+            turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
+            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier
+        )
+
         callbacks.saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
         callbacks.saveConversation()
 

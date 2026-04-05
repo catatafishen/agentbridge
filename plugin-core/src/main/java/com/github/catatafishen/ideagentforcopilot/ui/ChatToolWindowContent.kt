@@ -1860,6 +1860,16 @@ class ChatToolWindowContent(
                     )
                     val deferred = conversationReplayer.remainingPromptCount()
                     if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
+                    val lastStats = entries.filterIsInstance<EntryData.TurnStats>().lastOrNull()
+                    if (lastStats != null && ::processingTimerPanel.isInitialized) {
+                        val turnCount = entries.count { it is EntryData.TurnStats }
+                        processingTimerPanel.restoreSessionStats(
+                            lastStats.totalDurationMs, lastStats.totalInputTokens,
+                            lastStats.totalOutputTokens, lastStats.totalCostUsd,
+                            lastStats.totalToolCalls, lastStats.totalLinesAdded,
+                            lastStats.totalLinesRemoved, turnCount
+                        )
+                    }
                 }
                 onComplete()
             }

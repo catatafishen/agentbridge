@@ -60,8 +60,9 @@ class AcpConnectPanel(
         companion object {
             private fun formatSession(record: SessionStoreV2.SessionRecord): String {
                 val date = SESSION_DATE_FORMAT.format(Date(record.updatedAt))
-                val base = "$date (${record.agent})"
-                return if (record.turnCount > 0) "$base — ${record.turnCount} turns" else base
+                val label = record.name.ifEmpty { record.agent }
+                val base = "$date — $label"
+                return if (record.turnCount > 0) "$base (${record.turnCount} turns)" else base
             }
         }
     }
