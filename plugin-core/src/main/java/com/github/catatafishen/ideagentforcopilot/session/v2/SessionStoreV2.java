@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.session.v2;
 import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.ui.ConversationSerializer;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -257,19 +258,61 @@ public final class SessionStoreV2 implements Disposable {
     }
 
     /**
-     * Saves the conversation synchronously.
-     * Writes v1 JSON via {@link ConversationStore} and also rewrites the v2 JSONL.
+     * @deprecated Use {@link #saveEntries} instead. Kept for V1ToV2Migrator compatibility.
      */
+    @Deprecated
     public void save(@Nullable String basePath, @NotNull String json) {
-        v1Store.save(basePath, json);
-        saveV2(basePath, json);
+        var entries = ConversationSerializer.INSTANCE.deserialize(json);
+        saveEntries(basePath, entries);
     }
 
     /**
-     * Saves the conversation on a pooled thread (non-blocking).
+     * Saves the conversation directly from EntryData entries to V2 JSONL,
+     * bypassing the V1 JSON intermediary. This is the preferred save path.
+     */
+    public void saveEntries(@Nullable String basePath, @NotNull List<EntryData> entries) {
+        try {
+            String agent = currentAgent;
+            List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
+
+            String sessionId = getCurrentSessionId(basePath);
+            File dir = sessionsDir(basePath);
+            //noinspection ResultOfMethodCallIgnored  — best-effort
+            dir.mkdirs();
+
+            File jsonlFile = new File(dir, sessionId + JSONL_EXT);
+            StringBuilder sb = new StringBuilder();
+            int turnCount = 0;
+            for (SessionMessage msg : messages) {
+                sb.append(GSON.toJson(msg)).append('\n');
+                if ("user".equals(msg.role)) turnCount++;
+            }
+            Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+            updateSessionsIndex(basePath, sessionId, dir, jsonlFile.getName(), agent, turnCount);
+        } catch (Exception e) {
+            LOG.warn("Failed to write v2 session JSONL", e);
+        }
+    }
+
+    /**
+     * Saves the conversation on a pooled thread (non-blocking), directly from EntryData.
      * The resulting future is tracked so that {@link #awaitPendingSave(long)} can wait
      * for the write to complete before reading the v2 JSONL from disk.
      */
+    public void saveEntriesAsync(@Nullable String basePath, @NotNull List<EntryData> entries) {
+        // Snapshot the list to avoid concurrent modification
+        List<EntryData> snapshot = List.copyOf(entries);
+        pendingSave = CompletableFuture.runAsync(
+            () -> saveEntries(basePath, snapshot),
+            AppExecutorUtil.getAppExecutorService());
+    }
+
+    /**
+     * @deprecated Use {@link #saveEntriesAsync} instead. Kept for backward compatibility.
+     */
+    @Deprecated
     public void saveAsync(@Nullable String basePath, @NotNull String json) {
         pendingSave = CompletableFuture.runAsync(
             () -> save(basePath, json),
@@ -301,10 +344,9 @@ public final class SessionStoreV2 implements Disposable {
     }
 
     /**
-     * Loads the conversation JSON.
-     * Tries to reconstruct v1-compatible JSON from the v2 JSONL first; falls back to
-     * {@link ConversationStore#loadJson(String)} if v2 is absent or unreadable.
+     * @deprecated Use {@link #loadEntries} instead. Kept for V1ToV2Migrator compatibility.
      */
+    @Deprecated
     @Nullable
     public String loadJson(@Nullable String basePath) {
         try {
@@ -314,6 +356,56 @@ public final class SessionStoreV2 implements Disposable {
             LOG.warn("Failed to load conversation from v2 format, falling back to v1", e);
         }
         return v1Store.loadJson(basePath);
+    }
+
+    /**
+     * Loads conversation directly as EntryData entries from V2 JSONL,
+     * bypassing the V1 JSON intermediary. This is the preferred load path.
+     * Falls back to V1 if V2 is absent.
+     */
+    @Nullable
+    public List<EntryData> loadEntries(@Nullable String basePath) {
+        try {
+            List<EntryData> v2Entries = loadEntriesFromV2(basePath);
+            if (v2Entries != null) return v2Entries;
+        } catch (Exception e) {
+            LOG.warn("Failed to load entries from v2 format, falling back to v1", e);
+        }
+        String v1Json = v1Store.loadJson(basePath);
+        if (v1Json == null) return null;
+        return ConversationSerializer.INSTANCE.deserialize(v1Json);
+    }
+
+    /**
+     * Loads entries directly from V2 JSONL file without going through V1 JSON.
+     */
+    @Nullable
+    private List<EntryData> loadEntriesFromV2(@Nullable String basePath) {
+        File dir = sessionsDir(basePath);
+        File idFile = currentSessionIdFile(basePath);
+        if (!idFile.exists()) return null;
+
+        String sessionId;
+        try {
+            sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
+        } catch (IOException e) {
+            LOG.warn("Could not read current-session-id", e);
+            return null;
+        }
+        if (sessionId.isEmpty()) return null;
+
+        File jsonlFile = new File(dir, sessionId + JSONL_EXT);
+        if (!jsonlFile.exists() || jsonlFile.length() < 2) return null;
+
+        try {
+            String content = Files.readString(jsonlFile.toPath(), StandardCharsets.UTF_8);
+            List<SessionMessage> messages = parseJsonl(content);
+            if (messages.isEmpty()) return null;
+            return EntryDataConverter.fromMessages(messages);
+        } catch (Exception e) {
+            LOG.warn("Failed to parse v2 JSONL for session " + sessionId, e);
+            return null;
+        }
     }
 
     /**
@@ -340,36 +432,6 @@ public final class SessionStoreV2 implements Disposable {
     }
 
     // ── v2 write ──────────────────────────────────────────────────────────────
-
-    private void saveV2(@Nullable String basePath, @NotNull String v1Json) {
-        try {
-            // Capture agent name once at the start to avoid races with setCurrentAgent()
-            String agent = currentAgent;
-
-            var entries = ConversationSerializer.INSTANCE.deserialize(v1Json);
-            List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
-
-            String sessionId = getCurrentSessionId(basePath);
-            File sessionsDir = sessionsDir(basePath);
-            //noinspection ResultOfMethodCallIgnored  — best-effort
-            sessionsDir.mkdirs();
-
-            File jsonlFile = new File(sessionsDir, sessionId + JSONL_EXT);
-            StringBuilder sb = new StringBuilder();
-            int turnCount = 0;
-            for (SessionMessage msg : messages) {
-                sb.append(GSON.toJson(msg)).append('\n');
-                if ("user".equals(msg.role)) turnCount++;
-            }
-            Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-
-            updateSessionsIndex(basePath, sessionId, sessionsDir, jsonlFile.getName(), agent, turnCount);
-
-        } catch (Exception e) {
-            LOG.warn("Failed to write v2 session JSONL", e);
-        }
-    }
 
     private void updateSessionsIndex(
         @Nullable String basePath,

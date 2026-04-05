@@ -1830,7 +1830,7 @@ class ChatToolWindowContent(
 
     private fun saveConversation() {
         lastIncrementalSaveMs = System.currentTimeMillis()
-        conversationStore.saveAsync(project.basePath, ConversationSerializer.serialize(chatConsolePanel.getEntries()))
+        conversationStore.saveEntriesAsync(project.basePath, chatConsolePanel.getEntries())
     }
 
     /**
@@ -1848,12 +1848,12 @@ class ChatToolWindowContent(
     private fun restoreConversation(onComplete: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
             V1ToV2Migrator.migrateIfNeeded(project.basePath)
-            val json = conversationStore.loadJson(project.basePath)
+            val entries = conversationStore.loadEntries(project.basePath)
             ApplicationManager.getApplication().invokeLater {
-                if (json != null) {
+                if (entries != null) {
                     val histSettings = ChatHistorySettings.getInstance(project)
                     chatConsolePanel.setDomMessageLimit(histSettings.domMessageLimit)
-                    conversationReplayer.loadAndSplit(json, histSettings.recentTurnsOnRestore)
+                    conversationReplayer.loadAndSplit(entries, histSettings.recentTurnsOnRestore)
                     chatConsolePanel.appendEntries(
                         conversationReplayer.recentEntries(),
                         conversationReplayer.totalPromptCount()
