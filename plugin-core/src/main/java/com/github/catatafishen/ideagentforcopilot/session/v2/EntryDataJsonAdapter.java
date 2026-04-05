@@ -18,6 +18,16 @@ import java.util.UUID;
  */
 public final class EntryDataJsonAdapter {
 
+    public static final String TYPE_PROMPT = "prompt";
+    public static final String TYPE_TEXT = "text";
+    public static final String TYPE_THINKING = "thinking";
+    public static final String TYPE_TOOL = "tool";
+    public static final String TYPE_SUBAGENT = "subagent";
+    public static final String TYPE_CONTEXT = "context";
+    public static final String TYPE_STATUS = "status";
+    public static final String TYPE_SEPARATOR = "separator";
+    public static final String TYPE_TURN_STATS = "turnStats";
+
     private EntryDataJsonAdapter() {
         throw new IllegalStateException("Utility class");
     }
@@ -32,7 +42,7 @@ public final class EntryDataJsonAdapter {
         JsonObject json = new JsonObject();
 
         if (entry instanceof EntryData.Prompt p) {
-            json.addProperty("type", "prompt");
+            json.addProperty("type", TYPE_PROMPT);
             json.addProperty("text", p.getText());
             addNonEmpty(json, "timestamp", p.getTimestamp());
             if (p.getContextFiles() != null && !p.getContextFiles().isEmpty()) {
@@ -52,7 +62,7 @@ public final class EntryDataJsonAdapter {
             json.addProperty("entryId", p.getEntryId());
 
         } else if (entry instanceof EntryData.Text t) {
-            json.addProperty("type", "text");
+            json.addProperty("type", TYPE_TEXT);
             json.addProperty("raw", t.getRaw().toString());
             addNonEmpty(json, "timestamp", t.getTimestamp());
             addNonEmpty(json, "agent", t.getAgent());
@@ -60,7 +70,7 @@ public final class EntryDataJsonAdapter {
             json.addProperty("entryId", t.getEntryId());
 
         } else if (entry instanceof EntryData.Thinking th) {
-            json.addProperty("type", "thinking");
+            json.addProperty("type", TYPE_THINKING);
             json.addProperty("raw", th.getRaw().toString());
             addNonEmpty(json, "timestamp", th.getTimestamp());
             addNonEmpty(json, "agent", th.getAgent());
@@ -68,7 +78,7 @@ public final class EntryDataJsonAdapter {
             json.addProperty("entryId", th.getEntryId());
 
         } else if (entry instanceof EntryData.ToolCall tc) {
-            json.addProperty("type", "tool");
+            json.addProperty("type", TYPE_TOOL);
             json.addProperty("title", tc.getTitle());
             addNonEmpty(json, "arguments", tc.getArguments());
             addNonEmpty(json, "kind", tc.getKind());
@@ -89,7 +99,7 @@ public final class EntryDataJsonAdapter {
             json.addProperty("entryId", tc.getEntryId());
 
         } else if (entry instanceof EntryData.SubAgent sa) {
-            json.addProperty("type", "subagent");
+            json.addProperty("type", TYPE_SUBAGENT);
             json.addProperty("agentType", sa.getAgentType());
             json.addProperty("description", sa.getDescription());
             addNonEmpty(json, "prompt", sa.getPrompt());
@@ -109,7 +119,7 @@ public final class EntryDataJsonAdapter {
             json.addProperty("entryId", sa.getEntryId());
 
         } else if (entry instanceof EntryData.ContextFiles cf) {
-            json.addProperty("type", "context");
+            json.addProperty("type", TYPE_CONTEXT);
             if (!cf.getFiles().isEmpty()) {
                 JsonArray arr = new JsonArray();
                 for (var pair : cf.getFiles()) {
@@ -123,13 +133,13 @@ public final class EntryDataJsonAdapter {
             json.addProperty("entryId", cf.getEntryId());
 
         } else if (entry instanceof EntryData.Status st) {
-            json.addProperty("type", "status");
+            json.addProperty("type", TYPE_STATUS);
             json.addProperty("icon", st.getIcon());
             json.addProperty("message", st.getMessage());
             json.addProperty("entryId", st.getEntryId());
 
         } else if (entry instanceof EntryData.TurnStats ts) {
-            json.addProperty("type", "turnStats");
+            json.addProperty("type", TYPE_TURN_STATS);
             json.addProperty("turnId", ts.getTurnId());
             if (ts.getDurationMs() != 0) {
                 json.addProperty("durationMs", ts.getDurationMs());
@@ -178,7 +188,7 @@ public final class EntryDataJsonAdapter {
             json.addProperty("entryId", ts.getEntryId());
 
         } else if (entry instanceof EntryData.SessionSeparator sep) {
-            json.addProperty("type", "separator");
+            json.addProperty("type", TYPE_SEPARATOR);
             addNonEmpty(json, "timestamp", sep.getTimestamp());
             addNonEmpty(json, "agent", sep.getAgent());
             json.addProperty("entryId", sep.getEntryId());
@@ -202,7 +212,7 @@ public final class EntryDataJsonAdapter {
         }
 
         return switch (type) {
-            case "prompt" -> {
+            case TYPE_PROMPT -> {
                 List<kotlin.Triple<String, String, Integer>> contextFiles = null;
                 if (json.has("contextFiles") && json.get("contextFiles").isJsonArray()) {
                     contextFiles = new ArrayList<>();
@@ -221,19 +231,19 @@ public final class EntryDataJsonAdapter {
                     str(json, "id"),
                     entryId);
             }
-            case "text" -> new EntryData.Text(
+            case TYPE_TEXT -> new EntryData.Text(
                 new StringBuilder(str(json, "raw")),
                 str(json, "timestamp"),
                 str(json, "agent"),
                 str(json, "model"),
                 entryId);
-            case "thinking" -> new EntryData.Thinking(
+            case TYPE_THINKING -> new EntryData.Thinking(
                 new StringBuilder(str(json, "raw")),
                 str(json, "timestamp"),
                 str(json, "agent"),
                 str(json, "model"),
                 entryId);
-            case "tool" -> new EntryData.ToolCall(
+            case TYPE_TOOL -> new EntryData.ToolCall(
                 str(json, "title"),
                 strOrNull(json, "arguments"),
                 str(json, "kind"),
@@ -248,7 +258,7 @@ public final class EntryDataJsonAdapter {
                 str(json, "agent"),
                 str(json, "model"),
                 entryId);
-            case "subagent" -> new EntryData.SubAgent(
+            case TYPE_SUBAGENT -> new EntryData.SubAgent(
                 str(json, "agentType"),
                 str(json, "description"),
                 strOrNull(json, "prompt"),
@@ -262,7 +272,7 @@ public final class EntryDataJsonAdapter {
                 str(json, "agent"),
                 str(json, "model"),
                 entryId);
-            case "context" -> {
+            case TYPE_CONTEXT -> {
                 List<kotlin.Pair<String, String>> files = new ArrayList<>();
                 if (json.has("files") && json.get("files").isJsonArray()) {
                     for (var element : json.getAsJsonArray("files")) {
@@ -274,15 +284,15 @@ public final class EntryDataJsonAdapter {
                 }
                 yield new EntryData.ContextFiles(files, entryId);
             }
-            case "status" -> new EntryData.Status(
+            case TYPE_STATUS -> new EntryData.Status(
                 str(json, "icon"),
                 str(json, "message"),
                 entryId);
-            case "separator" -> new EntryData.SessionSeparator(
+            case TYPE_SEPARATOR -> new EntryData.SessionSeparator(
                 str(json, "timestamp"),
                 str(json, "agent"),
                 entryId);
-            case "turnStats" -> new EntryData.TurnStats(
+            case TYPE_TURN_STATS -> new EntryData.TurnStats(
                 str(json, "turnId"),
                 longVal(json, "durationMs"),
                 longVal(json, "inputTokens"),

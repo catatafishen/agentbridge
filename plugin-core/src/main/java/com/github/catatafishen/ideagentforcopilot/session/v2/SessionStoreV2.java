@@ -261,15 +261,6 @@ public final class SessionStoreV2 implements Disposable {
         }
     }
 
-    /**
-     * @deprecated Use {@link #saveEntries} instead. Kept for V1ToV2Migrator compatibility.
-     */
-    @Deprecated
-    public void save(@Nullable String basePath, @NotNull String json) {
-        var entries = ConversationSerializer.INSTANCE.deserialize(json);
-        saveEntries(basePath, entries);
-    }
-
     public void saveEntries(@Nullable String basePath, @NotNull List<EntryData> entries) {
         try {
             String agent = currentAgent;
@@ -323,17 +314,7 @@ public final class SessionStoreV2 implements Disposable {
     }
 
     /**
-     * @deprecated Use {@link #saveEntriesAsync} instead. Kept for backward compatibility.
-     */
-    @Deprecated
-    public void saveAsync(@Nullable String basePath, @NotNull String json) {
-        pendingSave = CompletableFuture.runAsync(
-            () -> save(basePath, json),
-            AppExecutorUtil.getAppExecutorService());
-    }
-
-    /**
-     * Blocks until the most recent {@link #saveAsync} call completes, or until
+     * Blocks until the most recent {@link #saveEntriesAsync} call completes, or until
      * {@code timeoutMs} elapses. Safe to call when no save is pending — returns immediately.
      *
      * <p>Call this before reading the v2 JSONL from disk to ensure the latest conversation
@@ -354,21 +335,6 @@ public final class SessionStoreV2 implements Disposable {
         } catch (Exception e) {
             LOG.warn("Error waiting for pending save", e);
         }
-    }
-
-    /**
-     * @deprecated Use {@link #loadEntries} instead. Kept for V1ToV2Migrator compatibility.
-     */
-    @Deprecated
-    @Nullable
-    public String loadJson(@Nullable String basePath) {
-        try {
-            String v2Json = loadFromV2(basePath);
-            if (v2Json != null) return v2Json;
-        } catch (Exception e) {
-            LOG.warn("Failed to load conversation from v2 format, falling back to v1", e);
-        }
-        return v1Store.loadJson(basePath);
     }
 
     /**
@@ -538,13 +504,6 @@ public final class SessionStoreV2 implements Disposable {
     }
 
     // ── v2 read ───────────────────────────────────────────────────────────────
-
-    @Nullable
-    private String loadFromV2(@Nullable String basePath) {
-        List<EntryData> entries = loadEntriesFromV2(basePath);
-        if (entries == null || entries.isEmpty()) return null;
-        return ConversationSerializer.INSTANCE.serialize(entries);
-    }
 
     /**
      * Parses a JSONL string with auto-detection: lines with {@code "type":} are the new

@@ -6,17 +6,6 @@ internal class ConversationReplayer {
     private var recentSnapshot: List<EntryData> = emptyList()
 
     /**
-     * Deserialises [json], splits into recent/deferred, and resets internal state.
-     *
-     * @deprecated Use [loadAndSplit] with a pre-parsed `List<EntryData>` instead.
-     *             Kept only for V1ToV2Migrator compatibility.
-     */
-    @Deprecated("Use loadAndSplit(List<EntryData>, Int) instead")
-    fun loadAndSplit(json: String, recentTurns: Int = 5) {
-        loadAndSplit(ConversationSerializer.deserialize(json), recentTurns)
-    }
-
-    /**
      * Splits [entries] into recent/deferred and resets internal state.
      * Call [recentEntries] to get what should be rendered immediately, and
      * [loadNextBatch] each time the user scrolls up for more.

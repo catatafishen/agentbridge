@@ -1,6 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.bridge;
 
-import com.intellij.openapi.application.ApplicationManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -63,23 +62,6 @@ public final class ConversationStore {
                 Files.delete(src.toPath());
             }
         } catch (Exception ignored) { /* best-effort */ }
-    }
-
-    /**
-     * Writes {@code json} to the current conversation file synchronously.
-     */
-    public void save(@Nullable String basePath, @NotNull String json) {
-        try {
-            File file = conversationFile(basePath);
-            Files.writeString(file.toPath(), json, StandardCharsets.UTF_8);
-        } catch (IOException ignored) { /* best-effort */ }
-    }
-
-    /**
-     * Writes {@code json} to the current conversation file on a pooled thread.
-     */
-    public void saveAsync(@Nullable String basePath, @NotNull String json) {
-        ApplicationManager.getApplication().executeOnPooledThread(() -> save(basePath, json));
     }
 
     /**

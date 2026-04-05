@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.ui
 
-import com.google.gson.JsonArray
+import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataJsonAdapter
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 
@@ -10,131 +10,10 @@ import com.google.gson.JsonParser
  *
  * New code should use V2 ([EntryDataConverter]) as the canonical persistence format.
  *
- * Serialises [EntryData] lists to the V1 on-disk JSON array schema and deserialises them back.
+ * Deserialises [EntryData] lists from the V1 on-disk JSON array schema.
  * Neither file I/O nor rendering is performed here.
  */
 internal object ConversationSerializer {
-
-    // ── Serialise ─────────────────────────────────────────────────────────────
-
-    fun serialize(entries: List<EntryData>): String {
-        val arr = JsonArray()
-        for (e in entries) arr.add(toJson(e))
-        return arr.toString()
-    }
-
-    private fun toJson(e: EntryData): JsonObject {
-        val obj = JsonObject()
-        when (e) {
-            is EntryData.Prompt -> {
-                obj.addProperty("type", "prompt")
-                obj.addProperty("text", e.text)
-                if (e.id.isNotEmpty()) obj.addProperty("id", e.id)
-                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
-                if (!e.contextFiles.isNullOrEmpty()) {
-                    val fa = JsonArray()
-                    e.contextFiles.forEach { (name, path, line) ->
-                        val fo = JsonObject()
-                        fo.addProperty("name", name)
-                        fo.addProperty("path", path)
-                        fo.addProperty("line", line)
-                        fa.add(fo)
-                    }
-                    obj.add("ctxFiles", fa)
-                }
-            }
-
-            is EntryData.Text -> {
-                obj.addProperty("type", "text")
-                obj.addProperty("raw", e.raw.toString())
-                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
-                if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
-            }
-
-            is EntryData.Thinking -> {
-                obj.addProperty("type", "thinking")
-                obj.addProperty("raw", e.raw.toString())
-                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
-                if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
-            }
-
-            is EntryData.ToolCall -> {
-                obj.addProperty("type", "tool")
-                obj.addProperty("title", e.title)
-                obj.addProperty("args", e.arguments ?: "")
-                obj.addProperty("kind", e.kind)
-                if (!e.result.isNullOrEmpty()) obj.addProperty("result", e.result)
-                if (!e.status.isNullOrEmpty()) obj.addProperty("status", e.status)
-                if (e.autoDenied) obj.addProperty("autoDenied", true)
-                if (!e.denialReason.isNullOrEmpty()) obj.addProperty("denialReason", e.denialReason)
-                if (e.mcpHandled) obj.addProperty("mcpHandled", true)
-                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
-                if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
-            }
-
-            is EntryData.SubAgent -> {
-                obj.addProperty("type", "subagent")
-                obj.addProperty("agentType", e.agentType)
-                obj.addProperty("description", e.description)
-                obj.addProperty("prompt", e.prompt ?: "")
-                obj.addProperty("result", e.result ?: "")
-                obj.addProperty("status", e.status ?: "")
-                obj.addProperty("colorIndex", e.colorIndex)
-                if (!e.callId.isNullOrEmpty()) obj.addProperty("callId", e.callId)
-                if (e.autoDenied) obj.addProperty("autoDenied", true)
-                if (!e.denialReason.isNullOrEmpty()) obj.addProperty("denialReason", e.denialReason)
-                if (e.timestamp.isNotEmpty()) obj.addProperty("ts", e.timestamp)
-                if (e.agent.isNotEmpty()) obj.addProperty("agent", e.agent)
-            }
-
-            is EntryData.ContextFiles -> {
-                obj.addProperty("type", "context")
-                val fa = JsonArray()
-                e.files.forEach { (name, path) ->
-                    val fo = JsonObject()
-                    fo.addProperty("name", name)
-                    fo.addProperty("path", path)
-                    fa.add(fo)
-                }
-                obj.add("files", fa)
-            }
-
-            is EntryData.Status -> {
-                obj.addProperty("type", "status")
-                obj.addProperty("icon", e.icon)
-                obj.addProperty("message", e.message)
-            }
-
-            is EntryData.SessionSeparator -> {
-                obj.addProperty("type", "separator")
-                obj.addProperty("timestamp", e.timestamp)
-                obj.addProperty("agent", e.agent)
-            }
-
-            is EntryData.TurnStats -> {
-                obj.addProperty("type", "turnStats")
-                obj.addProperty("turnId", e.turnId)
-                obj.addProperty("durationMs", e.durationMs)
-                obj.addProperty("inputTokens", e.inputTokens)
-                obj.addProperty("outputTokens", e.outputTokens)
-                obj.addProperty("costUsd", e.costUsd)
-                obj.addProperty("toolCallCount", e.toolCallCount)
-                obj.addProperty("linesAdded", e.linesAdded)
-                obj.addProperty("linesRemoved", e.linesRemoved)
-                obj.addProperty("model", e.model)
-                obj.addProperty("multiplier", e.multiplier)
-                obj.addProperty("totalDurationMs", e.totalDurationMs)
-                obj.addProperty("totalInputTokens", e.totalInputTokens)
-                obj.addProperty("totalOutputTokens", e.totalOutputTokens)
-                obj.addProperty("totalCostUsd", e.totalCostUsd)
-                obj.addProperty("totalToolCalls", e.totalToolCalls)
-                obj.addProperty("totalLinesAdded", e.totalLinesAdded)
-                obj.addProperty("totalLinesRemoved", e.totalLinesRemoved)
-            }
-        }
-        obj.addProperty("eid", e.entryId)
-        return obj
-    }
 
     // ── Deserialise ───────────────────────────────────────────────────────────
 
@@ -155,7 +34,7 @@ internal object ConversationSerializer {
     fun fromJson(obj: JsonObject): EntryData? {
         val eid = obj["eid"]?.asString ?: ""
         return when (obj["type"]?.asString) {
-            "prompt" -> {
+            EntryDataJsonAdapter.TYPE_PROMPT -> {
                 val ctxFiles = obj["ctxFiles"]?.asJsonArray?.map { f ->
                     val fo = f.asJsonObject
                     Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
@@ -170,21 +49,21 @@ internal object ConversationSerializer {
                 )
             }
 
-            "text" -> EntryData.Text(
+            EntryDataJsonAdapter.TYPE_TEXT -> EntryData.Text(
                 StringBuilder(obj["raw"]?.asString ?: ""),
                 obj["ts"]?.asString ?: "",
                 obj["agent"]?.asString ?: "",
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 
-            "thinking" -> EntryData.Thinking(
+            EntryDataJsonAdapter.TYPE_THINKING -> EntryData.Thinking(
                 StringBuilder(obj["raw"]?.asString ?: ""),
                 obj["ts"]?.asString ?: "",
                 obj["agent"]?.asString ?: "",
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 
-            "tool" -> EntryData.ToolCall(
+            EntryDataJsonAdapter.TYPE_TOOL -> EntryData.ToolCall(
                 obj["title"]?.asString ?: "",
                 obj["args"]?.asString,
                 obj["kind"]?.asString ?: "other",
@@ -200,7 +79,7 @@ internal object ConversationSerializer {
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 
-            "subagent" -> {
+            EntryDataJsonAdapter.TYPE_SUBAGENT -> {
                 val ci = obj["colorIndex"]?.asInt ?: 0
                 EntryData.SubAgent(
                     obj["agentType"]?.asString ?: AGENT_TYPE_GENERAL,
@@ -218,7 +97,7 @@ internal object ConversationSerializer {
                 )
             }
 
-            "context" -> {
+            EntryDataJsonAdapter.TYPE_CONTEXT -> {
                 val files = mutableListOf<Pair<String, String>>()
                 obj["files"]?.asJsonArray?.forEach { f ->
                     val fo = f.asJsonObject
@@ -227,19 +106,19 @@ internal object ConversationSerializer {
                 EntryData.ContextFiles(files, entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() })
             }
 
-            "status" -> EntryData.Status(
+            EntryDataJsonAdapter.TYPE_STATUS -> EntryData.Status(
                 obj["icon"]?.asString ?: "ℹ",
                 obj["message"]?.asString ?: "",
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 
-            "separator" -> EntryData.SessionSeparator(
+            EntryDataJsonAdapter.TYPE_SEPARATOR -> EntryData.SessionSeparator(
                 obj["timestamp"]?.asString ?: "",
                 obj["agent"]?.asString ?: "",
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 
-            "turnStats" -> EntryData.TurnStats(
+            EntryDataJsonAdapter.TYPE_TURN_STATS -> EntryData.TurnStats(
                 turnId = obj["turnId"]?.asString ?: "",
                 durationMs = obj["durationMs"]?.asLong ?: 0,
                 inputTokens = obj["inputTokens"]?.asLong ?: 0,

@@ -1,7 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.session.migration;
 
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataJsonAdapter;
 import com.github.catatafishen.ideagentforcopilot.ui.ConversationSerializer;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
@@ -86,13 +85,11 @@ public final class V1ToV2Migrator {
                 if (session.isEmpty()) continue;
 
                 String sessionId = UUID.randomUUID().toString();
-                List<SessionMessage> messages = EntryDataConverter.toMessages(session);
-
                 // Write JSONL
                 File jsonlFile = new File(sessionsDir, sessionId + ".jsonl");
                 StringBuilder sb = new StringBuilder();
-                for (SessionMessage msg : messages) {
-                    sb.append(GSON.toJson(msg)).append('\n');
+                for (EntryData entry : session) {
+                    sb.append(GSON.toJson(EntryDataJsonAdapter.serialize(entry))).append('\n');
                 }
                 try {
                     Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,

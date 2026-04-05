@@ -15,8 +15,10 @@ import com.github.catatafishen.ideagentforcopilot.session.importers.AnthropicCli
 import com.github.catatafishen.ideagentforcopilot.session.importers.CodexClientImporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.CopilotClientImporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.OpenCodeClientImporter;
+import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -805,41 +807,11 @@ public final class SessionSwitchService implements Disposable {
 
     // ── v2 session reading ────────────────────────────────────────────────────
 
-    /**
-     * Loads the current v2 JSONL session messages from disk.
-     * Returns {@code null} if no session exists or it cannot be read.
-     */
     @Nullable
     private List<SessionMessage> loadCurrentV2Session(@Nullable String basePath) {
-        try {
-            String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
-
-            File sessionsDir = sessionsDir(basePath);
-            File jsonlFile = new File(sessionsDir, sessionId + JSONL_EXT);
-            if (!jsonlFile.exists() || jsonlFile.length() < 2) return null;
-
-            String content = Files.readString(jsonlFile.toPath(), StandardCharsets.UTF_8);
-            return parseJsonlMessages(content);
-        } catch (IOException e) {
-            LOG.warn("Could not read current v2 session", e);
-            return null;
-        }
-    }
-
-    @NotNull
-    private List<SessionMessage> parseJsonlMessages(@NotNull String content) {
-        List<SessionMessage> messages = new ArrayList<>();
-        for (String line : content.split("\n")) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
-            try {
-                SessionMessage msg = GSON.fromJson(line, SessionMessage.class);
-                if (msg != null) messages.add(msg);
-            } catch (Exception e) {
-                LOG.warn("Skipping malformed JSONL line in v2 session: " + line, e);
-            }
-        }
-        return messages;
+        List<EntryData> entries = SessionStoreV2.getInstance(project).loadEntries(basePath);
+        if (entries == null || entries.isEmpty()) return null;
+        return EntryDataConverter.toMessages(entries);
     }
 
     // ── Path helpers ──────────────────────────────────────────────────────────

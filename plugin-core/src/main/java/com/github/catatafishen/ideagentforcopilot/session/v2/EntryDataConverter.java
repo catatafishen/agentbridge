@@ -56,7 +56,7 @@ public final class EntryDataConverter {
                 }
                 result.add(new SessionMessage(
                     UUID.randomUUID().toString(),
-                    "separator",
+                    EntryDataJsonAdapter.TYPE_SEPARATOR,
                     List.of(),
                     sepTs,
                     sep.getAgent().isEmpty() ? null : sep.getAgent(),
@@ -72,7 +72,7 @@ public final class EntryDataConverter {
                 MutableMessage userMsg = new MutableMessage("user", null);
                 userMsg.setTimestampFromIso(prompt.getTimestamp());
                 JsonObject part = new JsonObject();
-                part.addProperty("type", "text");
+                part.addProperty("type", EntryDataJsonAdapter.TYPE_TEXT);
                 part.addProperty("text", prompt.getText());
                 addEntryId(part, prompt.getEntryId());
                 userMsg.parts.add(part);
@@ -139,7 +139,7 @@ public final class EntryDataConverter {
 
                 if (entry instanceof EntryData.Text text) {
                     JsonObject part = new JsonObject();
-                    part.addProperty("type", "text");
+                    part.addProperty("type", EntryDataJsonAdapter.TYPE_TEXT);
                     part.addProperty("text", text.getRaw().toString());
                     addTimestamp(part, text.getTimestamp());
                     addEntryId(part, text.getEntryId());
@@ -190,7 +190,7 @@ public final class EntryDataConverter {
 
                 } else if (entry instanceof EntryData.SubAgent subAgent) {
                     JsonObject part = new JsonObject();
-                    part.addProperty("type", "subagent");
+                    part.addProperty("type", EntryDataJsonAdapter.TYPE_SUBAGENT);
                     part.addProperty("agentType", subAgent.getAgentType());
                     part.addProperty("description", subAgent.getDescription());
                     part.addProperty("prompt", subAgent.getPrompt() != null ? subAgent.getPrompt() : "");
@@ -212,7 +212,7 @@ public final class EntryDataConverter {
 
                 } else if (entry instanceof EntryData.Status status) {
                     JsonObject part = new JsonObject();
-                    part.addProperty("type", "status");
+                    part.addProperty("type", EntryDataJsonAdapter.TYPE_STATUS);
                     part.addProperty("icon", status.getIcon());
                     part.addProperty("message", status.getMessage());
                     addEntryId(part, status.getEntryId());
@@ -237,7 +237,7 @@ public final class EntryDataConverter {
                 ? java.time.Instant.ofEpochMilli(msg.createdAt).toString()
                 : "";
 
-            if ("separator".equals(msg.role)) {
+            if (EntryDataJsonAdapter.TYPE_SEPARATOR.equals(msg.role)) {
                 result.add(new EntryData.SessionSeparator(
                     ts,
                     msg.agent != null ? msg.agent : ""));
@@ -254,7 +254,7 @@ public final class EntryDataConverter {
                 String type = part.has("type") ? part.get("type").getAsString() : "";
 
                 switch (type) {
-                    case "text" -> {
+                    case EntryDataJsonAdapter.TYPE_TEXT -> {
                         String text = part.has("text") ? part.get("text").getAsString() : "";
                         String partTs = readTimestamp(part, ts);
                         String partEid = readEntryId(part);
@@ -306,7 +306,7 @@ public final class EntryDataConverter {
                             partTs, msg.agent != null ? msg.agent : "",
                             msg.model != null ? msg.model : "", partEid));
                     }
-                    case "subagent" -> {
+                    case EntryDataJsonAdapter.TYPE_SUBAGENT -> {
                         String agentType = part.has("agentType") ? part.get("agentType").getAsString() : "general-purpose";
                         String description = part.has("description") ? part.get("description").getAsString() : "";
                         String prompt = part.has("prompt") ? part.get("prompt").getAsString() : null;
@@ -327,7 +327,7 @@ public final class EntryDataConverter {
                             partTs, msg.agent != null ? msg.agent : "",
                             msg.model != null ? msg.model : "", partEid));
                     }
-                    case "status" -> {
+                    case EntryDataJsonAdapter.TYPE_STATUS -> {
                         String icon = part.has("icon") ? part.get("icon").getAsString() : "ℹ";
                         String message = part.has("message") ? part.get("message").getAsString() : "";
                         String partEid = readEntryId(part);

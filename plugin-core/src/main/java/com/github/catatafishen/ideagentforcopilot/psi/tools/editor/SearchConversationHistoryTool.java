@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.editor;
 
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
+import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataJsonAdapter;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -287,7 +288,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
     private static List<JsonObject> filterByTurns(List<JsonObject> entries, FilterOptions options) {
         List<Integer> promptIndices = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
-            if ("prompt".equals(entries.get(i).get("type").getAsString())) {
+            if (EntryDataJsonAdapter.TYPE_PROMPT.equals(entries.get(i).get("type").getAsString())) {
                 promptIndices.add(i);
             }
         }
@@ -371,35 +372,35 @@ public final class SearchConversationHistoryTool extends EditorTool {
 
     private static String formatConversationEntry(JsonObject obj, String type) {
         return switch (type) {
-            case "prompt" -> {
+            case EntryDataJsonAdapter.TYPE_PROMPT -> {
                 String text = obj.has("text") ? obj.get("text").getAsString() : "";
                 String ts = obj.has("ts") ? " [" + formatTimestamp(obj.get("ts").getAsString()) + "]" : "";
                 yield ">>> " + text + ts;
             }
-            case "text" -> {
+            case EntryDataJsonAdapter.TYPE_TEXT -> {
                 String raw = obj.has("raw") ? obj.get("raw").getAsString() : "";
                 yield raw.isEmpty() ? null : raw.trim();
             }
-            case "thinking" -> {
+            case EntryDataJsonAdapter.TYPE_THINKING -> {
                 String raw = obj.has("raw") ? obj.get("raw").getAsString() : "";
                 yield raw.isEmpty() ? null : "[thinking] " + raw.trim();
             }
-            case "tool" -> {
+            case EntryDataJsonAdapter.TYPE_TOOL -> {
                 String title = obj.has(JSON_TITLE) ? obj.get(JSON_TITLE).getAsString() : "tool";
                 String toolArgs = obj.has("args") ? obj.get("args").getAsString() : "";
                 yield title + (toolArgs.isEmpty() ? "" : " " + toolArgs);
             }
-            case "subagent" -> {
+            case EntryDataJsonAdapter.TYPE_SUBAGENT -> {
                 String agentType = obj.has("agentType") ? obj.get("agentType").getAsString() : "";
                 String desc = obj.has("description") ? obj.get("description").getAsString() : "";
                 yield "SubAgent: " + agentType + " — " + desc;
             }
-            case "context" -> "Context files attached";
-            case "status" -> {
+            case EntryDataJsonAdapter.TYPE_CONTEXT -> "Context files attached";
+            case EntryDataJsonAdapter.TYPE_STATUS -> {
                 String msg = obj.has("message") ? obj.get("message").getAsString() : "";
                 yield msg.isEmpty() ? null : "Status: " + msg;
             }
-            case "separator" -> {
+            case EntryDataJsonAdapter.TYPE_SEPARATOR -> {
                 String ts = obj.has(JSON_TIMESTAMP) ? obj.get(JSON_TIMESTAMP).getAsString() : "";
                 yield "--- Session " + formatTimestamp(ts) + " ---";
             }
