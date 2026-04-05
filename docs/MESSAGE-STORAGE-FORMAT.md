@@ -13,8 +13,9 @@ The in-memory model uses `EntryData` (defined in `ChatDataModel.kt`) with 8 subt
 |-------|------|---------|---------|:------------:|:------------:|
 | `text` | `String` | *(required)* | No | ✅ | ✅ |
 | `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
-| `contextFiles` | `List<Triple<name,path,line>>?` | `null` | No | ✅ (`ctxFiles`) | ✅ (`file` parts) |
+| `contextFiles` | `List<Triple<name,path,line>>?` | `null` | No | ✅ (`ctxFiles`) | ✅ (`file` parts with `line`) |
 | `id` | `String` | `""` | No | ✅ (`id`) | ❌ |
+| `entryId` | `String` | UUID or `id` | No | ✅ (`eid`) | ✅ (part `eid`) |
 
 ### `Text` — assistant text response
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
@@ -22,6 +23,7 @@ The in-memory model uses `EntryData` (defined in `ChatDataModel.kt`) with 8 subt
 | `raw` | `StringBuilder` | `StringBuilder()` | Content appended during streaming | ✅ (`raw`) | ✅ (`text`) |
 | `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
 | `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (message `agent`) |
+| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (part `eid`) |
 
 ### `Thinking` — reasoning/thinking block
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
@@ -29,6 +31,7 @@ The in-memory model uses `EntryData` (defined in `ChatDataModel.kt`) with 8 subt
 | `raw` | `StringBuilder` | `StringBuilder()` | Content appended during streaming | ✅ (`raw`) | ✅ (`text`) |
 | `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
 | `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (message `agent`) |
+| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (part `eid`) |
 
 ### `ToolCall` — tool invocation and result
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
@@ -45,6 +48,7 @@ The in-memory model uses `EntryData` (defined in `ChatDataModel.kt`) with 8 subt
 | `mcpHandled` | `Boolean` | `false` | Yes | ✅ (`mcpHandled`) | ✅ (`mcpHandled`) |
 | `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
 | `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (message `agent`) |
+| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (part `eid`) |
 
 ### `SubAgent` — sub-agent invocation
 | Field | Type | Default | Mutable | Persisted V1 | Persisted V2 |
@@ -60,31 +64,39 @@ The in-memory model uses `EntryData` (defined in `ChatDataModel.kt`) with 8 subt
 | `denialReason` | `String?` | `null` | Yes | ✅ | ✅ (`denialReason`) |
 | `timestamp` | `String` | `""` | No | ✅ (`ts`) | ✅ (part `ts`) |
 | `agent` | `String` | `""` | No | ✅ (`agent`) | ✅ (message `agent`) |
+| `entryId` | `String` | UUID | No | ✅ (`eid`) | ✅ (part `eid`) |
 
 ### `ContextFiles` — attached file references (transient)
 | Field | Type | Persisted V1 | Persisted V2 |
 |-------|------|:------------:|:------------:|
 | `files` | `List<Pair<name, path>>` | ✅ (`context`) | ✅ (`file` parts on user message) |
+| `entryId` | `String` | ✅ (`eid`) | ❌ (consumed into Prompt's `file` parts) |
 
 ### `Status` — status indicator (transient)
 | Field | Type | Persisted V1 | Persisted V2 |
 |-------|------|:------------:|:------------:|
 | `icon` | `String` | ✅ | ✅ |
 | `message` | `String` | ✅ | ✅ |
+| `entryId` | `String` | ✅ (`eid`) | ✅ (part `eid`) |
 
 ### `SessionSeparator` — session boundary marker
 | Field | Type | Persisted V1 | Persisted V2 |
 |-------|------|:------------:|:------------:|
 | `timestamp` | `String` | ✅ | ✅ (message `createdAt`) |
 | `agent` | `String` | ✅ | ✅ (message `agent`) |
+| `entryId` | `String` | ✅ (`eid`) | ❌ (not part-level) |
 
 ---
 
 ## Persistence Formats
 
-### V1 — JSON Array (`ConversationSerializer`)
+### V1 — JSON Array (`ConversationSerializer`) ⚠️ Deprecated
 
 **File:** `<projectBase>/.agent-work/conversation.json`
+
+> **Deprecated.** V1 is no longer written during normal save operations.
+> The save path now goes directly from `EntryData → V2 JSONL` via `SessionStoreV2.saveEntries()`.
+> V1 format is kept only for `V1ToV2Migrator` backward compatibility.
 
 A flat JSON array where each element is one `EntryData`. Type discriminator: `"type"` field.
 
@@ -190,3 +202,41 @@ Persisted in `chatHistory.xml` per project via `ChatHistorySettings`.
 The event log size and DOM message limit are also sent to web/PWA clients:
 - Event log size: controls server-side FIFO cap in `ChatWebServer.pushJsEvent()`
 - DOM message limit: sent via `/state` response (`domMessageLimit` field) and via `ChatController.setDomMessageLimit()` JS call
+
+---
+
+## Data Flow
+
+### Save Path (current)
+
+```
+EntryData (in memory)
+  → EntryDataConverter.toMessages()
+  → List<SessionMessage>
+  → GSON.toJson() per message
+  → UUID.jsonl (V2 JSONL on disk)
+```
+
+`ChatToolWindowContent.saveConversation()` → `SessionStoreV2.saveEntriesAsync()`.
+No V1 intermediary. The `ConversationSerializer` is not invoked on save.
+
+### Load Path (current)
+
+```
+UUID.jsonl (V2 JSONL on disk)
+  → GSON.fromJson() per line
+  → List<SessionMessage>
+  → EntryDataConverter.fromMessages()
+  → List<EntryData> (in memory)
+  → ConversationReplayer.loadAndSplit()
+  → recent / deferred split
+```
+
+`ChatToolWindowContent.restoreConversation()` → `SessionStoreV2.loadEntries()`.
+Falls back to V1 `conversation.json` if V2 JSONL is absent (legacy installs).
+
+### V1→V2 Migration (one-shot)
+
+On first load after upgrade, `V1ToV2Migrator.migrateIfNeeded()` reads V1 JSON and
+archives, converts them to V2 JSONL via `ConversationSerializer` + `EntryDataConverter`,
+writes V2 files, and creates `sessions-index.json`. Subsequent loads use V2 directly.

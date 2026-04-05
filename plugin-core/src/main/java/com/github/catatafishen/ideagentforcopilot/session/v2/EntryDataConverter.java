@@ -84,6 +84,7 @@ public final class EntryDataConverter {
                         filePart.addProperty("type", "file");
                         filePart.addProperty("filename", triple.getFirst());
                         filePart.addProperty("path", triple.getSecond());
+                        if (triple.getThird() > 0) filePart.addProperty("line", triple.getThird());
                         userMsg.parts.add(filePart);
                     }
                 }
@@ -241,31 +242,42 @@ public final class EntryDataConverter {
 
             int entriesBefore = result.size();
             boolean hasTextOrThinking = false;
+            // Track file part indices consumed by collectFileParts (attached to Prompt.contextFiles)
+            java.util.Set<Integer> consumedFileIndices = new java.util.HashSet<>();
 
-            for (JsonObject part : msg.parts) {
+            for (int idx = 0; idx < msg.parts.size(); idx++) {
+                JsonObject part = msg.parts.get(idx);
                 String type = part.has("type") ? part.get("type").getAsString() : "";
 
                 switch (type) {
                     case "text" -> {
                         String text = part.has("text") ? part.get("text").getAsString() : "";
                         String partTs = readTimestamp(part, ts);
+                        String partEid = readEntryId(part);
                         if ("user".equals(msg.role)) {
-                            result.add(new EntryData.Prompt(text, partTs, null, ""));
+                            // Collect file parts that follow this text part in the same message
+                            List<kotlin.Triple<String, String, Integer>> ctxFiles = collectFileParts(msg.parts, idx + 1, consumedFileIndices);
+                            result.add(new EntryData.Prompt(text, partTs,
+                                ctxFiles.isEmpty() ? null : ctxFiles, "",
+                                partEid));
                         } else {
                             result.add(new EntryData.Text(
                                 new StringBuilder(text),
                                 partTs,
-                                msg.agent != null ? msg.agent : ""));
+                                msg.agent != null ? msg.agent : "",
+                                partEid));
                             hasTextOrThinking = true;
                         }
                     }
                     case "reasoning" -> {
                         String text = part.has("text") ? part.get("text").getAsString() : "";
                         String partTs = readTimestamp(part, ts);
+                        String partEid = readEntryId(part);
                         result.add(new EntryData.Thinking(
                             new StringBuilder(text),
                             partTs,
-                            msg.agent != null ? msg.agent : ""));
+                            msg.agent != null ? msg.agent : "",
+                            partEid));
                         hasTextOrThinking = true;
                     }
                     case "tool-invocation" -> {
@@ -281,10 +293,11 @@ public final class EntryDataConverter {
                         String filePath = inv.has("filePath") ? inv.get("filePath").getAsString() : null;
                         boolean mcpHandled = inv.has("mcpHandled") && inv.get("mcpHandled").getAsBoolean();
                         String partTs = readTimestamp(part, ts);
+                        String partEid = readEntryId(part);
                         result.add(new EntryData.ToolCall(
                             toolName, args, kind, toolResult, toolStatus, toolDescription, filePath,
                             autoDenied, denialReason, mcpHandled,
-                            partTs, msg.agent != null ? msg.agent : ""));
+                            partTs, msg.agent != null ? msg.agent : "", partEid));
                     }
                     case "subagent" -> {
                         String agentType = part.has("agentType") ? part.get("agentType").getAsString() : "general-purpose";
@@ -297,21 +310,25 @@ public final class EntryDataConverter {
                         boolean autoDenied = part.has("autoDenied") && part.get("autoDenied").getAsBoolean();
                         String denialReason = part.has("denialReason") ? part.get("denialReason").getAsString() : null;
                         String partTs = readTimestamp(part, ts);
+                        String partEid = readEntryId(part);
                         result.add(new EntryData.SubAgent(
                             agentType, description,
                             (prompt == null || prompt.isEmpty()) ? null : prompt,
                             (subResult == null || subResult.isEmpty()) ? null : subResult,
                             (status == null || status.isEmpty()) ? "completed" : status,
                             colorIndex, callId, autoDenied, denialReason,
-                            partTs, msg.agent != null ? msg.agent : ""));
+                            partTs, msg.agent != null ? msg.agent : "", partEid));
                     }
                     case "status" -> {
                         String icon = part.has("icon") ? part.get("icon").getAsString() : "ℹ";
                         String message = part.has("message") ? part.get("message").getAsString() : "";
-                        result.add(new EntryData.Status(icon, message));
+                        String partEid = readEntryId(part);
+                        result.add(new EntryData.Status(icon, message, partEid));
                     }
                     case "file" -> {
-                        // file parts inside user message → ContextFiles
+                        // file parts in user messages are consumed by collectFileParts() above
+                        if (consumedFileIndices.contains(idx)) break;
+                        // Standalone file part (e.g., ContextFiles-only message with no text)
                         String filename = part.has("filename") ? part.get("filename").getAsString() : "";
                         String path = part.has("path") ? part.get("path").getAsString() : "";
                         result.add(new EntryData.ContextFiles(List.of(new kotlin.Pair<>(filename, path))));
@@ -352,6 +369,34 @@ public final class EntryDataConverter {
         if (!entryId.isEmpty()) {
             part.addProperty("eid", entryId);
         }
+    }
+
+    /**
+     * Read entry ID from a part's "eid" field, falling back to a new UUID if absent.
+     */
+    static String readEntryId(JsonObject part) {
+        return part.has("eid") ? part.get("eid").getAsString() : java.util.UUID.randomUUID().toString();
+    }
+
+    /**
+     * Collect consecutive "file" parts starting at {@code startIdx} from a parts list,
+     * returning them as context file triples (name, path, line). Skips non-file parts.
+     * Records consumed indices in {@code consumed} so the caller can skip them.
+     */
+    static List<kotlin.Triple<String, String, Integer>> collectFileParts(
+        List<JsonObject> parts, int startIdx, java.util.Set<Integer> consumed) {
+        List<kotlin.Triple<String, String, Integer>> files = new ArrayList<>();
+        for (int i = startIdx; i < parts.size(); i++) {
+            JsonObject p = parts.get(i);
+            String t = p.has("type") ? p.get("type").getAsString() : "";
+            if (!"file".equals(t)) continue;
+            String fn = p.has("filename") ? p.get("filename").getAsString() : "";
+            String path = p.has("path") ? p.get("path").getAsString() : "";
+            int line = p.has("line") ? p.get("line").getAsInt() : 0;
+            files.add(new kotlin.Triple<>(fn, path, line));
+            consumed.add(i);
+        }
+        return files;
     }
 
     /**

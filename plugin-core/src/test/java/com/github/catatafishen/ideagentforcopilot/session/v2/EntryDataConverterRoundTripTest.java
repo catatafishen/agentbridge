@@ -279,4 +279,122 @@ class EntryDataConverterRoundTripTest {
         assertNotNull(sep.getTimestamp());
         assertFalse(sep.getTimestamp().isEmpty());
     }
+
+    @Test
+    void contextFileLineNumbersPreservedAcrossRoundTrip() {
+        List<kotlin.Triple<String, String, Integer>> files = List.of(
+            new kotlin.Triple<>("Main.java", "/src/Main.java", 42),
+            new kotlin.Triple<>("Utils.java", "/src/Utils.java", 0),
+            new kotlin.Triple<>("Config.kt", "/src/Config.kt", 100)
+        );
+
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Look at these files", "2026-04-01T10:00:00Z", files, "p1")
+        );
+
+        List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
+        List<EntryData> restored = EntryDataConverter.fromMessages(messages);
+
+        assertEquals(1, restored.size());
+        var prompt = assertInstanceOf(EntryData.Prompt.class, restored.getFirst());
+        assertNotNull(prompt.getContextFiles());
+        assertEquals(3, prompt.getContextFiles().size());
+
+        var f1 = prompt.getContextFiles().get(0);
+        assertEquals("Main.java", f1.getFirst());
+        assertEquals("/src/Main.java", f1.getSecond());
+        assertEquals(42, f1.getThird());
+
+        var f2 = prompt.getContextFiles().get(1);
+        assertEquals("Utils.java", f2.getFirst());
+        assertEquals(0, f2.getThird()); // line 0 = no line specified
+
+        var f3 = prompt.getContextFiles().get(2);
+        assertEquals("Config.kt", f3.getFirst());
+        assertEquals(100, f3.getThird());
+    }
+
+    @Test
+    void entryIdsPreservedAcrossRoundTrip() {
+        String eid1 = "eid-prompt-123";
+        String eid2 = "eid-text-456";
+        String eid3 = "eid-tool-789";
+
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Hello", "2026-04-01T10:00:00Z", null, "p1", eid1),
+            new EntryData.Text(new StringBuilder("Reply"), "2026-04-01T10:00:05Z", "copilot", eid2),
+            new EntryData.ToolCall("read_file", "{}", "read", "result", "completed",
+                "Read a file", "/src/Main.java", false, null, true,
+                "2026-04-01T10:00:10Z", "copilot", eid3)
+        );
+
+        List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
+        List<EntryData> restored = EntryDataConverter.fromMessages(messages);
+
+        assertEquals(3, restored.size());
+        assertEquals(eid1, restored.get(0).getEntryId());
+        assertEquals(eid2, restored.get(1).getEntryId());
+        assertEquals(eid3, restored.get(2).getEntryId());
+    }
+
+    @Test
+    void filePartsWithoutLineFieldDefaultToZero() {
+        // Simulate a V2 file part written before line field was added
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("type", "text");
+        textPart.addProperty("text", "Hello");
+
+        JsonObject filePart = new JsonObject();
+        filePart.addProperty("type", "file");
+        filePart.addProperty("filename", "Old.java");
+        filePart.addProperty("path", "/src/Old.java");
+        // Note: no "line" field
+
+        SessionMessage userMsg = new SessionMessage(
+            "u1", "user", List.of(textPart, filePart),
+            System.currentTimeMillis(), null, null);
+
+        List<EntryData> restored = EntryDataConverter.fromMessages(List.of(userMsg));
+        assertEquals(1, restored.size());
+        var prompt = assertInstanceOf(EntryData.Prompt.class, restored.getFirst());
+        assertNotNull(prompt.getContextFiles());
+        assertEquals(1, prompt.getContextFiles().size());
+        assertEquals(0, prompt.getContextFiles().getFirst().getThird()); // defaults to 0
+    }
+
+    @Test
+    void collectFilePartsOnlyCollectsFileTypes() {
+        JsonObject textPart = new JsonObject();
+        textPart.addProperty("type", "text");
+        textPart.addProperty("text", "ignored");
+
+        JsonObject filePart1 = new JsonObject();
+        filePart1.addProperty("type", "file");
+        filePart1.addProperty("filename", "A.java");
+        filePart1.addProperty("path", "/A.java");
+        filePart1.addProperty("line", 10);
+
+        JsonObject reasoningPart = new JsonObject();
+        reasoningPart.addProperty("type", "reasoning");
+        reasoningPart.addProperty("text", "thinking");
+
+        JsonObject filePart2 = new JsonObject();
+        filePart2.addProperty("type", "file");
+        filePart2.addProperty("filename", "B.java");
+        filePart2.addProperty("path", "/B.java");
+        filePart2.addProperty("line", 20);
+
+        java.util.Set<Integer> consumed = new java.util.HashSet<>();
+        var files = EntryDataConverter.collectFileParts(
+            List.of(textPart, filePart1, reasoningPart, filePart2), 1, consumed);
+
+        assertEquals(2, files.size());
+        assertEquals("A.java", files.get(0).getFirst());
+        assertEquals(10, files.get(0).getThird());
+        assertEquals("B.java", files.get(1).getFirst());
+        assertEquals(20, files.get(1).getThird());
+        assertTrue(consumed.contains(1));
+        assertFalse(consumed.contains(2)); // reasoning not consumed
+        assertTrue(consumed.contains(3));
+    }
 }
