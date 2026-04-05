@@ -87,7 +87,6 @@ public final class SessionSwitchService implements Disposable {
     private static final String JSONL_EXT = ".jsonl";
     private static final String WORKSPACE_PATHS_KEY = "workspacePaths";
     private static final String COPILOT_ID_PREFIX = "copilot";
-    private static final String LOG_PRE_IMPORTED = "Pre-imported ";
     private static final String AGENT_WORK_DIR = ".agent-work";
     private static final String SESSION_STATE_DIR = "session-state";
     private static final String CLAUDE_RESUME_ID_FILE = "claude-resume-id.txt";

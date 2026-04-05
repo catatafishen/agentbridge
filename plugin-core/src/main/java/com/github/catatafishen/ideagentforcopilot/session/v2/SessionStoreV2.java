@@ -32,16 +32,17 @@ import java.util.concurrent.TimeoutException;
 /**
  * Project-level singleton that manages v2 JSONL session persistence.
  *
- * <p>Also writes v1 JSON via {@link ConversationStore} for backward compatibility.
+ * <p>Reads v1 {@code conversation.json} as a fallback via {@link ConversationStore},
+ * but all new writes go to v2 JSONL only.
  *
  * <p>Directory layout:
  * <pre>
  * &lt;projectBase&gt;/.agent-work/
- *   conversation.json          ← v1 (still written for backward compat)
+ *   conversation.json          ← v1 (read-only fallback, no longer written)
  *   conversations/             ← v1 archives
  *   sessions/
  *     sessions-index.json      ← JSON array of session metadata objects
- *     &lt;uuid&gt;.jsonl             ← one file per session
+ *     &lt;uuid&gt;.jsonl             ← one file per session (v2, canonical format)
  * </pre>
  */
 public final class SessionStoreV2 implements Disposable {
@@ -132,25 +133,6 @@ public final class SessionStoreV2 implements Disposable {
         result.sort(Comparator.comparingLong(SessionRecord::updatedAt).reversed());
         return result;
     }
-
-    // ── v1 delegation ─────────────────────────────────────────────────────────
-
-    /**
-     * Returns the v1 conversation file (delegates to {@link ConversationStore}).
-     */
-    @NotNull
-    public File conversationFile(@Nullable String basePath) {
-        return v1Store.conversationFile(basePath);
-    }
-
-    /**
-     * Returns the v1 archives directory (delegates to {@link ConversationStore}).
-     */
-    @NotNull
-    public File archivesDir(@Nullable String basePath) {
-        return v1Store.archivesDir(basePath);
-    }
-
     // ── Main operations ───────────────────────────────────────────────────────
 
     /**
