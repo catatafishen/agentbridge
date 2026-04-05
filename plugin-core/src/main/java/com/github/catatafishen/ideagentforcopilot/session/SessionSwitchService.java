@@ -11,20 +11,12 @@ import com.github.catatafishen.ideagentforcopilot.session.exporters.CodexClientE
 import com.github.catatafishen.ideagentforcopilot.session.exporters.CopilotClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.KiroClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
-import com.github.catatafishen.ideagentforcopilot.session.importers.AnthropicClientImporter;
-import com.github.catatafishen.ideagentforcopilot.session.importers.CodexClientImporter;
-import com.github.catatafishen.ideagentforcopilot.session.importers.CopilotClientImporter;
-import com.github.catatafishen.ideagentforcopilot.session.importers.OpenCodeClientImporter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataJsonAdapter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
@@ -223,232 +215,12 @@ public final class SessionSwitchService implements Disposable {
 
     // ── Import from previous client ───────────────────────────────────────────
 
-    /**
-     * Attempts to import the previous client's latest native session into v2 storage.
-     * This handles the case where the user ran the client directly outside the plugin.
-     * All failures are best-effort: warned and ignored.
-     *
-     * @param fromProfileId profile ID of the previously active agent
-     * @param basePath      project base path (may be null)
-     */
-    private void importFromPreviousClient(@NotNull String fromProfileId, @Nullable String basePath) {
-        try {
-            if (fromProfileId.equals(ClaudeCliClient.PROFILE_ID)) {
-                importFromClaudeCli(basePath);
-            } else if (fromProfileId.equals(CodexAppServerClient.PROFILE_ID)) {
-                importFromCodex(basePath);
-            } else if (fromProfileId.equals(AgentProfileManager.KIRO_PROFILE_ID)) {
-                importFromKiro(basePath);
-            } else if (fromProfileId.equals(AgentProfileManager.JUNIE_PROFILE_ID)) {
-                importFromJunie(basePath);
-            } else if (fromProfileId.equals(AgentProfileManager.COPILOT_PROFILE_ID)) {
-                importFromCopilotCli(basePath);
-            } else if (fromProfileId.equals(AgentProfileManager.OPENCODE_PROFILE_ID)) {
-                importFromOpenCode(basePath);
-            } else {
-                LOG.info("No native import path for profile '" + fromProfileId + "'; skipping pre-import");
-            }
-        } catch (Exception e) {
-            LOG.warn("Unexpected error during pre-import from '" + fromProfileId + "'", e);
-        }
-    }
 
-    /**
-     * Imports the most-recent Claude CLI {@code .jsonl} file if it has more messages than v2.
-     */
-    private void importFromClaudeCli(@Nullable String basePath) {
-        try {
-            Path claudeDir = claudeProjectDir(basePath);
-            if (!claudeDir.toFile().isDirectory()) return;
 
-            List<EntryData> currentV2 = loadCurrentV2Session(basePath);
-            int currentCount = currentV2 != null ? currentV2.size() : 0;
 
-            try (var stream = Files.list(claudeDir)) {
-                stream.filter(p -> p.toString().endsWith(JSONL_EXT))
-                    .max(Comparator.comparingLong(p -> p.toFile().lastModified()))
-                    .ifPresent(mostRecent -> {
-                        try {
-                            List<SessionMessage> imported = AnthropicClientImporter.importFile(mostRecent);
-                            if (imported.size() > currentCount) {
-                                String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
-                                writeV2Session(basePath, sessionId, EntryDataConverter.fromMessages(imported), "Claude Code CLI");
-                                LOG.info(LOG_PRE_IMPORTED + imported.size()
-                                    + " messages from Claude CLI: " + mostRecent.getFileName());
-                            }
-                        } catch (IOException e) {
-                            LOG.warn("Failed to import Claude CLI session from " + mostRecent, e);
-                        }
-                    });
-            }
-        } catch (IOException e) {
-            LOG.warn("Failed to list Claude CLI project dir for import", e);
-        }
-    }
 
-    /**
-     * Imports from Kiro's local session storage ({@code ~/.kiro/sessions/}).
-     * Delegates to {@link #importFromAcpLocalSessions(String, Path, String)}.
-     */
-    private void importFromKiro(@Nullable String basePath) {
-        Path dir = Path.of(System.getProperty(USER_HOME_PROPERTY), KIRO_HOME, KIRO_SESSIONS_DIR);
-        importFromAcpLocalSessions(basePath, dir, "Kiro");
-    }
 
-    /**
-     * Imports from Junie's local session storage ({@code ~/.junie/sessions/}).
-     * Delegates to {@link #importFromAcpLocalSessions(String, Path, String)}.
-     */
-    private void importFromJunie(@Nullable String basePath) {
-        Path dir = Path.of(System.getProperty(USER_HOME_PROPERTY), JUNIE_HOME, JUNIE_SESSIONS_DIR);
-        importFromAcpLocalSessions(basePath, dir, "Junie");
-    }
 
-    /**
-     * Imports from an ACP client's local session storage (session.json + messages.jsonl).
-     * Used for both Kiro ({@code ~/.kiro/sessions/}) and Junie ({@code ~/.junie/sessions/}).
-     */
-    private void importFromAcpLocalSessions(@Nullable String basePath, @NotNull Path sessionsBaseDir, @NotNull String clientName) {
-        try {
-            if (!sessionsBaseDir.toFile().isDirectory()) return;
-
-            String projectPath = basePath != null ? basePath : "";
-            List<EntryData> currentV2 = loadCurrentV2Session(basePath);
-            int currentCount = currentV2 != null ? currentV2.size() : 0;
-
-            try (var stream = Files.list(sessionsBaseDir)) {
-                stream.filter(Files::isDirectory)
-                    .forEach(sessionDir -> processAcpSessionDir(sessionDir, basePath, projectPath, currentCount, clientName));
-            }
-        } catch (IOException e) {
-            LOG.warn("Failed to list " + clientName + " sessions dir for import", e);
-        }
-    }
-
-    /**
-     * Processes a single ACP session directory: checks if it belongs to the current project
-     * and, if so, imports its messages if they outnumber the current v2 session.
-     */
-    private void processAcpSessionDir(
-        @NotNull Path sessionDir,
-        @Nullable String basePath,
-        @NotNull String projectPath,
-        int currentCount,
-        @NotNull String clientName) {
-        try {
-            Path sessionJsonPath = sessionDir.resolve("session.json");
-            if (!sessionJsonPath.toFile().exists()) return;
-
-            String sessionJsonContent = Files.readString(sessionJsonPath, StandardCharsets.UTF_8);
-            JsonObject sessionJson = JsonParser.parseString(sessionJsonContent).getAsJsonObject();
-
-            if (!sessionJson.has(WORKSPACE_PATHS_KEY)) return;
-            JsonArray workspacePaths = sessionJson.getAsJsonArray(WORKSPACE_PATHS_KEY);
-            if (!containsPath(workspacePaths, projectPath)) return;
-
-            Path messagesPath = sessionDir.resolve("messages.jsonl");
-            if (!messagesPath.toFile().exists()) return;
-
-            List<SessionMessage> imported = AnthropicClientImporter.importFile(messagesPath);
-            if (imported.size() > currentCount) {
-                String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
-                writeV2Session(basePath, sessionId, EntryDataConverter.fromMessages(imported), clientName);
-                LOG.info(LOG_PRE_IMPORTED + imported.size()
-                    + " messages from " + clientName + " session: " + sessionDir.getFileName());
-            }
-        } catch (Exception e) {
-            LOG.warn("Failed to read " + clientName + " session in " + sessionDir, e);
-        }
-    }
-
-    /**
-     * Returns true if {@code paths} JSON array contains the given path string.
-     */
-    private static boolean containsPath(@NotNull JsonArray paths, @NotNull String path) {
-        for (var el : paths) {
-            if (path.equals(el.getAsString())) return true;
-        }
-        return false;
-    }
-
-    /**
-     * Imports the most recent Codex thread from {@code ~/.codex/codex.db} and its rollout JSONL
-     * if it has more messages than the current v2 session.
-     */
-    private void importFromCodex(@Nullable String basePath) {
-        Path dbPath = CodexClientImporter.defaultDbPath();
-        List<SessionMessage> imported = CodexClientImporter.importLatestThread(dbPath);
-        if (imported.isEmpty()) {
-            LOG.info("No Codex session to import");
-            return;
-        }
-
-        String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
-        if (sessionId == null) return;
-
-        List<EntryData> current = loadCurrentV2Session(basePath);
-        if (imported.size() > (current != null ? current.size() : 0)) {
-            writeV2Session(basePath, sessionId, EntryDataConverter.fromMessages(imported), "Codex");
-            LOG.info(LOG_PRE_IMPORTED + imported.size() + " messages from Codex");
-        }
-    }
-
-    /**
-     * Imports the most recent OpenCode session from {@code ~/.local/share/opencode/opencode.db}
-     * matching the current project directory, if it has more messages than the current v2 session.
-     */
-    private void importFromOpenCode(@Nullable String basePath) {
-        Path dbPath = OpenCodeClientImporter.defaultDbPath();
-        List<SessionMessage> imported = OpenCodeClientImporter.importLatestSession(dbPath, basePath != null ? basePath : "");
-        if (imported.isEmpty()) {
-            LOG.info("No OpenCode session to import");
-            return;
-        }
-
-        String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
-        if (sessionId == null) return;
-
-        List<EntryData> current = loadCurrentV2Session(basePath);
-        if (imported.size() > (current != null ? current.size() : 0)) {
-            writeV2Session(basePath, sessionId, EntryDataConverter.fromMessages(imported), "OpenCode");
-            LOG.info(LOG_PRE_IMPORTED + imported.size() + " messages from OpenCode");
-        }
-    }
-
-    /**
-     * Imports from Copilot CLI session state ({@code ~/.copilot/session-state/}).
-     * Finds the most-recent {@code events.jsonl} and imports it if it has more messages than v2.
-     */
-    private void importFromCopilotCli(@Nullable String basePath) {
-        try {
-            Path copilotSessionsDir = Path.of(System.getProperty(USER_HOME_PROPERTY), ".copilot", SESSION_STATE_DIR);
-            if (!copilotSessionsDir.toFile().isDirectory()) return;
-
-            List<EntryData> currentV2 = loadCurrentV2Session(basePath);
-            int currentCount = currentV2 != null ? currentV2.size() : 0;
-
-            // Find the most recently modified events.jsonl across session subdirs.
-            try (var stream = Files.walk(copilotSessionsDir, 2)) {
-                stream.filter(p -> p.getFileName() != null && p.getFileName().toString().equals("events.jsonl"))
-                    .max(Comparator.comparingLong(p -> p.toFile().lastModified()))
-                    .ifPresent(eventsFile -> {
-                        try {
-                            List<SessionMessage> imported = CopilotClientImporter.importFile(eventsFile);
-                            if (imported.size() > currentCount) {
-                                String sessionId = SessionStoreV2.getInstance(project).getCurrentSessionId(basePath);
-                                writeV2Session(basePath, sessionId, EntryDataConverter.fromMessages(imported), "GitHub Copilot");
-                                LOG.info(LOG_PRE_IMPORTED + imported.size()
-                                    + " messages from Copilot CLI: " + eventsFile);
-                            }
-                        } catch (IOException e) {
-                            LOG.warn("Failed to import Copilot CLI session from " + eventsFile, e);
-                        }
-                    });
-            }
-        } catch (IOException e) {
-            LOG.warn("Failed to search Copilot CLI session-state dir for import", e);
-        }
-    }
 
     // ── Claude CLI export ─────────────────────────────────────────────────────
 
@@ -781,31 +553,6 @@ public final class SessionSwitchService implements Disposable {
         }
     }
 
-    // ── v2 session write helper ───────────────────────────────────────────────
-
-    private void writeV2Session(
-        @Nullable String basePath,
-        @NotNull String sessionId,
-        @NotNull List<EntryData> entries,
-        @NotNull String agentName) {
-        try {
-            File dir = sessionsDir(basePath);
-            //noinspection ResultOfMethodCallIgnored — best-effort
-            dir.mkdirs();
-            File jsonlFile = new File(dir, sessionId + JSONL_EXT);
-
-            StringBuilder sb = new StringBuilder();
-            for (EntryData entry : entries) {
-                sb.append(GSON.toJson(EntryDataJsonAdapter.serialize(entry))).append('\n');
-            }
-            Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-
-            SessionStoreV2.getInstance(project).updateSessionAgent(basePath, sessionId, agentName);
-        } catch (IOException e) {
-            LOG.warn("Failed to write v2 session for sessionId=" + sessionId, e);
-        }
-    }
 
     // ── v2 session reading ────────────────────────────────────────────────────
 
