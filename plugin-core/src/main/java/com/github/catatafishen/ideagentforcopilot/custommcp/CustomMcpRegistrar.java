@@ -27,7 +27,9 @@ public final class CustomMcpRegistrar {
     private static final Logger LOG = Logger.getInstance(CustomMcpRegistrar.class);
 
     private final Project project;
-    /** Maps server ID → set of proxy tool IDs currently registered for that server. */
+    /**
+     * Maps server ID → set of proxy tool IDs currently registered for that server.
+     */
     private final Map<String, Set<String>> registeredByServer = new HashMap<>();
 
     public CustomMcpRegistrar(@NotNull Project project) {
@@ -43,9 +45,12 @@ public final class CustomMcpRegistrar {
      * Reads current settings and synchronises proxy tool registrations.
      * Unregisters tools for removed/disabled servers, then connects to
      * newly enabled servers and registers their tools.
+     * <p>
      * Safe to call on any thread (uses pooled HTTP connections, no EDT usage).
+     * Synchronized to prevent concurrent modification of {@link #registeredByServer}
+     * when called from both startup and settings-apply threads.
      */
-    public void syncRegistrations() {
+    public synchronized void syncRegistrations() {
         PsiBridgeService bridge = PsiBridgeService.getInstance(project);
         CustomMcpSettings settings = CustomMcpSettings.getInstance(project);
         List<CustomMcpServerConfig> servers = settings.getServers();
