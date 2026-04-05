@@ -133,7 +133,9 @@ public final class CustomMcpClient {
         }
     }
 
-    /** Extracts concatenated text from an MCP {@code content} array. */
+    /**
+     * Extracts concatenated text from an MCP {@code content} array.
+     */
     @NotNull
     private static String extractTextContent(@NotNull JsonObject result) {
         if (!result.has("content")) return "";
@@ -149,7 +151,9 @@ public final class CustomMcpClient {
         return sb.toString();
     }
 
-    /** Extracts the error message from a JSON-RPC error response. */
+    /**
+     * Extracts the error message from a JSON-RPC error response.
+     */
     @NotNull
     private static String errorMessage(@NotNull JsonObject response) {
         if (response.has("error") && response.get("error").isJsonObject()) {
@@ -171,8 +175,15 @@ public final class CustomMcpClient {
         request.addProperty("method", method);
         request.add("params", params);
 
+        URI uri = URI.create(url);
+        String scheme = uri.getScheme();
+        if (scheme == null || (!scheme.equalsIgnoreCase("http") && !scheme.equalsIgnoreCase("https"))) {
+            throw new IOException("Unsupported URL scheme: " + scheme
+                + " (only http and https are supported). URL: " + url);
+        }
+
         byte[] bodyBytes = GSON.toJson(request).getBytes(StandardCharsets.UTF_8);
-        HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
+        HttpURLConnection conn = (HttpURLConnection) uri.toURL().openConnection();
         try {
             conn.setRequestMethod("POST");
             conn.setDoOutput(true);
