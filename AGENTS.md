@@ -64,6 +64,23 @@ Each feature or bug fix must be done in its own branch and a PR created when the
 - Create a PR as soon as the branch is ready for review
 - Do not commit directly to `master`
 
+# Bug Fixing: Root Cause vs Symptom
+
+When fixing a bug, **always fix the root cause, not just the symptom**.
+
+- **Investigate before patching.** Trace the problem to its origin. A quick fix that masks the real
+  issue creates technical debt and hides future failures.
+- **Never add silent fallbacks that hide errors.** If a value is unexpectedly missing or wrong,
+  surface the problem visibly — throw an exception, show `<unknown>`, log a warning. Never silently
+  substitute a plausible-looking default (e.g., using `new Date()` when a timestamp is missing).
+  Silent fallbacks make bugs invisible and lie to the user.
+- **If you must fix a symptom**, document it thoroughly. Add a code comment explaining:
+  1. What the symptom is
+  2. Why the root cause cannot be fixed right now
+  3. What the root cause is (so the next person can find it)
+- **Prefer visible errors over invisible wrong behavior.** A crash or error message that leads to
+  a fix is always better than silently wrong output that nobody notices.
+
 # Agent Definition Formats
 
 Different ACP agents support custom agent definitions with tool filtering, but use different formats.
