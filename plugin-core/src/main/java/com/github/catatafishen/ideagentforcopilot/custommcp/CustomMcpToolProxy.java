@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.custommcp;
 import com.github.catatafishen.ideagentforcopilot.services.ToolDefinition;
 import com.github.catatafishen.ideagentforcopilot.services.ToolRegistry;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.util.text.StringUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -34,8 +35,9 @@ public final class CustomMcpToolProxy implements ToolDefinition {
         this.client = client;
 
         String base = toolInfo.description();
-        if (!serverInstructions.isBlank()) {
-            this.description = base.isBlank() ? serverInstructions : base + "\n\n" + serverInstructions;
+        String safeInstructions = StringUtil.escapeXmlEntities(serverInstructions);
+        if (!safeInstructions.isBlank()) {
+            this.description = base.isBlank() ? safeInstructions : base + "\n\n" + safeInstructions;
         } else {
             this.description = base;
         }
