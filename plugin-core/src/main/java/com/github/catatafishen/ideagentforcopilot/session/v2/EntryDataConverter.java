@@ -130,6 +130,7 @@ public final class EntryDataConverter {
                 if (needsNewMsg) {
                     if (currentMsg != null) result.add(currentMsg.build());
                     currentMsg = new MutableMessage("assistant", agent);
+                    currentMsg.model = modelOf(entry);
                     currentMsg.setTimestampFromIso(timestampOf(entry));
                 }
 
@@ -265,6 +266,7 @@ public final class EntryDataConverter {
                                 new StringBuilder(text),
                                 partTs,
                                 msg.agent != null ? msg.agent : "",
+                                msg.model != null ? msg.model : "",
                                 partEid));
                             hasTextOrThinking = true;
                         }
@@ -277,6 +279,7 @@ public final class EntryDataConverter {
                             new StringBuilder(text),
                             partTs,
                             msg.agent != null ? msg.agent : "",
+                            msg.model != null ? msg.model : "",
                             partEid));
                         hasTextOrThinking = true;
                     }
@@ -297,7 +300,8 @@ public final class EntryDataConverter {
                         result.add(new EntryData.ToolCall(
                             toolName, args, kind, toolResult, toolStatus, toolDescription, filePath,
                             autoDenied, denialReason, mcpHandled,
-                            partTs, msg.agent != null ? msg.agent : "", partEid));
+                            partTs, msg.agent != null ? msg.agent : "",
+                            msg.model != null ? msg.model : "", partEid));
                     }
                     case "subagent" -> {
                         String agentType = part.has("agentType") ? part.get("agentType").getAsString() : "general-purpose";
@@ -317,7 +321,8 @@ public final class EntryDataConverter {
                             (subResult == null || subResult.isEmpty()) ? null : subResult,
                             (status == null || status.isEmpty()) ? "completed" : status,
                             colorIndex, callId, autoDenied, denialReason,
-                            partTs, msg.agent != null ? msg.agent : "", partEid));
+                            partTs, msg.agent != null ? msg.agent : "",
+                            msg.model != null ? msg.model : "", partEid));
                     }
                     case "status" -> {
                         String icon = part.has("icon") ? part.get("icon").getAsString() : "ℹ";
@@ -422,6 +427,15 @@ public final class EntryDataConverter {
         return null;
     }
 
+    @org.jetbrains.annotations.Nullable
+    private static String modelOf(@NotNull EntryData entry) {
+        if (entry instanceof EntryData.Text e) return e.getModel().isEmpty() ? null : e.getModel();
+        if (entry instanceof EntryData.Thinking e) return e.getModel().isEmpty() ? null : e.getModel();
+        if (entry instanceof EntryData.ToolCall e) return e.getModel().isEmpty() ? null : e.getModel();
+        if (entry instanceof EntryData.SubAgent e) return e.getModel().isEmpty() ? null : e.getModel();
+        return null;
+    }
+
     /**
      * Extracts the ISO timestamp string from an entry, or empty string if none.
      */
@@ -447,6 +461,7 @@ public final class EntryDataConverter {
     private static final class MutableMessage {
         final String role;
         final String agent;
+        String model;
         final List<JsonObject> parts = new ArrayList<>();
         long createdAt;
 
@@ -476,7 +491,7 @@ public final class EntryDataConverter {
                 new ArrayList<>(parts),
                 createdAt,
                 agent,
-                null);
+                model);
         }
     }
 }
