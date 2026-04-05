@@ -39,7 +39,7 @@ public final class CustomMcpSettings implements PersistentStateComponent<CustomM
 
     @NotNull
     public List<CustomMcpServerConfig> getServers() {
-        return myState.servers;
+        return List.copyOf(myState.servers);
     }
 
     public void setServers(@NotNull List<CustomMcpServerConfig> servers) {
