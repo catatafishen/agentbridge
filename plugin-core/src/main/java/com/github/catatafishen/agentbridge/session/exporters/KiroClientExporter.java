@@ -238,13 +238,12 @@ public final class KiroClientExporter {
                     toolUseBlock, toolResultBlock, resultContent));
                 seenToolUse = true;
 
-            } else if (entry instanceof EntryData.Thinking thinking) {
-                String content = thinking.getRaw();
-                if (!content.isEmpty()) {
-                    assistantBlocks.add(thinkingBlock(content));
-                }
             }
-            // Skip SubAgent, Status, TurnStats, ContextFiles, SessionSeparator
+            // Skip Thinking, SubAgent, Status, TurnStats, ContextFiles, SessionSeparator.
+            // Note: Thinking is intentionally excluded — Anthropic rejects conversation history
+            // containing thinking blocks unless extended thinking is explicitly enabled in the
+            // session. Kiro does not enable extended thinking when resuming from exported history,
+            // so including thinking blocks causes an immediate panic on session/prompt.
         }
 
         // Flush remaining
@@ -411,14 +410,6 @@ public final class KiroClientExporter {
     private static JsonObject textContentBlock(@NotNull String text) {
         JsonObject block = new JsonObject();
         block.addProperty("kind", CONTENT_KIND_TEXT);
-        block.addProperty("data", text);
-        return block;
-    }
-
-    @NotNull
-    private static JsonObject thinkingBlock(@NotNull String text) {
-        JsonObject block = new JsonObject();
-        block.addProperty("kind", "thinking");
         block.addProperty("data", text);
         return block;
     }

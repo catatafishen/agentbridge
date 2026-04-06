@@ -72,6 +72,11 @@ public final class PsiBridgeService implements Disposable {
         java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.atomic.AtomicReference<String> pendingNudge =
         new java.util.concurrent.atomic.AtomicReference<>();
+    /**
+     * When true, {@link #consumePendingNudge()} is suppressed and returns {@code null}.
+     * Set while a sub-agent is active so nudges are held until the main agent resumes.
+     */
+    private volatile boolean nudgesHeld = false;
     private final java.util.Queue<String> messageQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private volatile Runnable onNudgeConsumed;
 
@@ -126,6 +131,15 @@ public final class PsiBridgeService implements Disposable {
         onNudgeConsumed = callback;
     }
 
+    /**
+     * Holds or releases nudge delivery. While held, {@link #consumePendingNudge()} returns
+     * {@code null} so nudges are not injected into sub-agent tool results — they wait until the
+     * main agent resumes and makes the next tool call.
+     */
+    public void setNudgesHeld(boolean held) {
+        nudgesHeld = held;
+    }
+
     public void addOnNudgeConsumed(@NotNull Runnable callback) {
         Runnable current = onNudgeConsumed;
         onNudgeConsumed = current == null ? callback : () -> {
@@ -155,6 +169,7 @@ public final class PsiBridgeService implements Disposable {
 
     @Nullable
     private String consumePendingNudge() {
+        if (nudgesHeld) return null;
         String nudge = pendingNudge.getAndSet(null);
         if (nudge != null) {
             Runnable cb = onNudgeConsumed;

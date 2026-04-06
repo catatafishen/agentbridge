@@ -563,6 +563,7 @@ class PromptOrchestrator(
             toolCallTitles[toolCallId] = "task"
             activeSubAgentId = toolCallId
             agentManager.client.setSubAgentActive(true)
+            PsiBridgeService.getInstance(project).setNudgesHeld(true)
             agentManager.settings.setActiveAgentLabel(agentType)
             consolePanel().setCurrentAgent(
                 agentType,
@@ -655,6 +656,7 @@ class PromptOrchestrator(
             }
             activeSubAgentId = null
             agentManager.client.setSubAgentActive(false)
+            PsiBridgeService.getInstance(project).setNudgesHeld(false)
             agentManager.settings.setActiveAgentLabel(null)
             consolePanel().setCurrentAgent(
                 agentManager.activeProfile.displayName,
@@ -730,6 +732,10 @@ class PromptOrchestrator(
 
         val isRecoverable = isCancelled || (e is AgentException && e.isRecoverable)
         if (!isRecoverable) {
+            // Drop the ACP client's cached session ID too, so the next createSession()
+            // goes through the full load/new flow instead of hitting the early-return
+            // "reuse" path with the still-invalid session (mirrors handleSessionCorrupted).
+            agentManager.client.dropCurrentSession()
             currentSessionId = null
             callbacks.updateSessionInfo()
         }

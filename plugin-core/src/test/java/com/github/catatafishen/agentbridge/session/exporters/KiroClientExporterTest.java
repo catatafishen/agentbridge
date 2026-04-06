@@ -392,7 +392,11 @@ class KiroClientExporterTest {
     }
 
     @Test
-    void thinkingEntryProducesThinkingBlock() {
+    void thinkingEntryIsSkippedInExport() {
+        // Thinking blocks must NOT be included in Kiro exported sessions.
+        // Anthropic's API rejects conversation history with thinking blocks unless extended
+        // thinking is explicitly enabled in the session. Kiro doesn't enable extended thinking
+        // when resuming from exported history, causing an immediate crash on session/prompt.
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
             List.of(
                 userPrompt("Think about this"),
@@ -404,10 +408,8 @@ class KiroClientExporterTest {
         assertEquals("AssistantMessage", kiroMessages.get(1).get("kind").getAsString());
 
         var assistantContent = kiroMessages.get(1).getAsJsonObject("data").getAsJsonArray("content");
-        assertEquals(2, assistantContent.size(), "thinking + text blocks");
-        assertEquals("thinking", assistantContent.get(0).getAsJsonObject().get("kind").getAsString());
-        assertEquals("Let me consider...", assistantContent.get(0).getAsJsonObject().get("data").getAsString());
-        assertEquals("text", assistantContent.get(1).getAsJsonObject().get("kind").getAsString());
+        assertEquals(1, assistantContent.size(), "Only text block — thinking block must be excluded");
+        assertEquals("text", assistantContent.get(0).getAsJsonObject().get("kind").getAsString());
     }
 
     // ── Helper methods ──────────────────────────────────────────────
