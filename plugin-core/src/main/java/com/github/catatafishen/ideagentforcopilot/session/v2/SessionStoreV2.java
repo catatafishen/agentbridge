@@ -358,7 +358,7 @@ public final class SessionStoreV2 implements Disposable {
     /**
      * Loads entries directly from V2 JSONL file.
      * Auto-detects format per line: {@code "type":} → new EntryData format,
-     * {@code "role":} → old SessionMessage format (converted via fromMessages).
+     * {@code "role":} → old legacy message format (converted via {@link #convertLegacyMessages}).
      */
     @Nullable
     private List<EntryData> loadEntriesFromV2(@Nullable String basePath) {
@@ -508,24 +508,23 @@ public final class SessionStoreV2 implements Disposable {
     /**
      * Parses a JSONL string with auto-detection: lines with {@code "type":} are the new
      * EntryData format (deserialized directly), lines with {@code "role":} are the old
-     * SessionMessage format (batch-converted via {@link EntryDataConverter#fromMessages}).
+     * legacy message format (batch-converted via {@link #convertLegacyMessages}).
      */
     @Nullable
     private List<EntryData> parseJsonlAutoDetect(@NotNull String content) {
         List<EntryData> directEntries = new ArrayList<>();
-        List<SessionMessage> legacyMessages = new ArrayList<>();
+        List<JsonObject> legacyMessages = new ArrayList<>();
 
         for (String line : content.split("\n")) {
             line = line.trim();
             if (line.isEmpty()) continue;
             try {
+                JsonObject obj = GSON.fromJson(line, JsonObject.class);
                 if (EntryDataJsonAdapter.isEntryFormat(line)) {
-                    JsonObject obj = GSON.fromJson(line, JsonObject.class);
                     EntryData entry = EntryDataJsonAdapter.deserialize(obj);
                     if (entry != null) directEntries.add(entry);
                 } else {
-                    SessionMessage msg = GSON.fromJson(line, SessionMessage.class);
-                    if (msg != null) legacyMessages.add(msg);
+                    if (obj != null) legacyMessages.add(obj);
                 }
             } catch (Exception e) {
                 LOG.warn("Skipping malformed JSONL line: " + line, e);
@@ -533,8 +532,194 @@ public final class SessionStoreV2 implements Disposable {
         }
 
         if (!directEntries.isEmpty()) return directEntries;
-        if (!legacyMessages.isEmpty()) return EntryDataConverter.fromMessages(legacyMessages);
+        if (!legacyMessages.isEmpty()) return convertLegacyMessages(legacyMessages);
         return null;
+    }
+
+    /**
+     * Converts a list of legacy JSONL message objects (with {@code role}, {@code parts},
+     * {@code createdAt}, {@code agent}, {@code model} fields) into the current
+     * {@link EntryData} model.
+     */
+    @NotNull
+    private static List<EntryData> convertLegacyMessages(@NotNull List<JsonObject> messages) {
+        List<EntryData> result = new ArrayList<>();
+
+        for (JsonObject msg : messages) {
+            String role = msg.has("role") ? msg.get("role").getAsString() : "";
+            long createdAt = msg.has("createdAt") ? msg.get("createdAt").getAsLong() : 0;
+            String agent = msg.has("agent") && !msg.get("agent").isJsonNull() ? msg.get("agent").getAsString() : null;
+            String model = msg.has("model") && !msg.get("model").isJsonNull() ? msg.get("model").getAsString() : null;
+
+            String ts = createdAt > 0
+                ? java.time.Instant.ofEpochMilli(createdAt).toString()
+                : "";
+
+            if (EntryDataJsonAdapter.TYPE_SEPARATOR.equals(role)) {
+                result.add(new EntryData.SessionSeparator(
+                    ts,
+                    agent != null ? agent : ""));
+                continue;
+            }
+
+            JsonArray partsArray = msg.has("parts") ? msg.getAsJsonArray("parts") : new JsonArray();
+            List<JsonObject> parts = new ArrayList<>();
+            for (int i = 0; i < partsArray.size(); i++) {
+                parts.add(partsArray.get(i).getAsJsonObject());
+            }
+
+            int entriesBefore = result.size();
+            boolean hasTextOrThinking = false;
+            java.util.Set<Integer> consumedFileIndices = new java.util.HashSet<>();
+
+            for (int idx = 0; idx < parts.size(); idx++) {
+                JsonObject part = parts.get(idx);
+                String type = part.has("type") ? part.get("type").getAsString() : "";
+
+                switch (type) {
+                    case EntryDataJsonAdapter.TYPE_TEXT -> {
+                        String text = part.has("text") ? part.get("text").getAsString() : "";
+                        String partTs = readLegacyTimestamp(part, ts);
+                        String partEid = readLegacyEntryId(part);
+                        if ("user".equals(role)) {
+                            List<kotlin.Triple<String, String, Integer>> ctxFiles = collectLegacyFileParts(parts, idx + 1, consumedFileIndices);
+                            result.add(new EntryData.Prompt(text, partTs,
+                                ctxFiles.isEmpty() ? null : ctxFiles, "",
+                                partEid));
+                        } else {
+                            result.add(new EntryData.Text(
+                                new StringBuilder(text),
+                                partTs,
+                                agent != null ? agent : "",
+                                model != null ? model : "",
+                                partEid));
+                            hasTextOrThinking = true;
+                        }
+                    }
+                    case "reasoning" -> {
+                        String text = part.has("text") ? part.get("text").getAsString() : "";
+                        String partTs = readLegacyTimestamp(part, ts);
+                        String partEid = readLegacyEntryId(part);
+                        result.add(new EntryData.Thinking(
+                            new StringBuilder(text),
+                            partTs,
+                            agent != null ? agent : "",
+                            model != null ? model : "",
+                            partEid));
+                        hasTextOrThinking = true;
+                    }
+                    case "tool-invocation" -> {
+                        JsonObject inv = part.has("toolInvocation") ? part.getAsJsonObject("toolInvocation") : new JsonObject();
+                        String toolName = inv.has("toolName") ? inv.get("toolName").getAsString() : "";
+                        String args = inv.has("args") && !inv.get("args").isJsonNull() ? inv.get("args").getAsString() : null;
+                        String toolResult = inv.has("result") && !inv.get("result").isJsonNull() ? inv.get("result").getAsString() : null;
+                        boolean autoDenied = inv.has("denialReason");
+                        String denialReason = autoDenied ? inv.get("denialReason").getAsString() : null;
+                        String kind = inv.has("kind") ? inv.get("kind").getAsString() : "other";
+                        String toolStatus = inv.has("status") ? inv.get("status").getAsString() : null;
+                        String toolDescription = inv.has("description") ? inv.get("description").getAsString() : null;
+                        String filePath = inv.has("filePath") ? inv.get("filePath").getAsString() : null;
+                        boolean mcpHandled = inv.has("mcpHandled") && inv.get("mcpHandled").getAsBoolean();
+                        String partTs = readLegacyTimestamp(part, ts);
+                        String partEid = readLegacyEntryId(part);
+                        result.add(new EntryData.ToolCall(
+                            toolName, args, kind, toolResult, toolStatus, toolDescription, filePath,
+                            autoDenied, denialReason, mcpHandled,
+                            partTs, agent != null ? agent : "",
+                            model != null ? model : "", partEid));
+                    }
+                    case EntryDataJsonAdapter.TYPE_SUBAGENT -> {
+                        String agentType = part.has("agentType") ? part.get("agentType").getAsString() : "general-purpose";
+                        String description = part.has("description") ? part.get("description").getAsString() : "";
+                        String prompt = part.has("prompt") ? part.get("prompt").getAsString() : null;
+                        String subResult = part.has("result") ? part.get("result").getAsString() : null;
+                        String status = part.has("status") ? part.get("status").getAsString() : "completed";
+                        int colorIndex = part.has("colorIndex") ? part.get("colorIndex").getAsInt() : 0;
+                        String callId = part.has("callId") ? part.get("callId").getAsString() : null;
+                        boolean autoDenied = part.has("autoDenied") && part.get("autoDenied").getAsBoolean();
+                        String denialReason = part.has("denialReason") ? part.get("denialReason").getAsString() : null;
+                        String partTs = readLegacyTimestamp(part, ts);
+                        String partEid = readLegacyEntryId(part);
+                        result.add(new EntryData.SubAgent(
+                            agentType, description,
+                            (prompt == null || prompt.isEmpty()) ? null : prompt,
+                            (subResult == null || subResult.isEmpty()) ? null : subResult,
+                            (status == null || status.isEmpty()) ? "completed" : status,
+                            colorIndex, callId, autoDenied, denialReason,
+                            partTs, agent != null ? agent : "",
+                            model != null ? model : "", partEid));
+                    }
+                    case EntryDataJsonAdapter.TYPE_STATUS -> {
+                        String icon = part.has("icon") ? part.get("icon").getAsString() : "ℹ";
+                        String message = part.has("message") ? part.get("message").getAsString() : "";
+                        String partEid = readLegacyEntryId(part);
+                        result.add(new EntryData.Status(icon, message, partEid));
+                    }
+                    case "file" -> {
+                        if (consumedFileIndices.contains(idx)) break;
+                        String filename = part.has("filename") ? part.get("filename").getAsString() : "";
+                        String path = part.has("path") ? part.get("path").getAsString() : "";
+                        result.add(new EntryData.ContextFiles(List.of(new kotlin.Pair<>(filename, path))));
+                    }
+                    default -> {
+                        // Unknown part type — skip for forward-compat
+                    }
+                }
+            }
+
+            // When an assistant message has tool/subagent entries but no text or thinking,
+            // insert a trailing empty Text so appendAgentTurn() produces a proper message block.
+            if ("assistant".equals(role) && !hasTextOrThinking && result.size() > entriesBefore) {
+                result.add(new EntryData.Text(
+                    new StringBuilder(),
+                    ts,
+                    agent != null ? agent : ""));
+            }
+        }
+
+        return result;
+    }
+
+    // ── Legacy conversion helpers ─────────────────────────────────────────────
+
+    /**
+     * Reads a per-entry timestamp from a legacy V2 part, falling back to the message-level timestamp.
+     */
+    @NotNull
+    private static String readLegacyTimestamp(@NotNull JsonObject part, @NotNull String messageLevelTs) {
+        if (part.has("ts")) {
+            String partTs = part.get("ts").getAsString();
+            if (!partTs.isEmpty()) return partTs;
+        }
+        return messageLevelTs;
+    }
+
+    /**
+     * Read entry ID from a part's "eid" field, falling back to a new UUID if absent.
+     */
+    private static String readLegacyEntryId(JsonObject part) {
+        return part.has("eid") ? part.get("eid").getAsString() : UUID.randomUUID().toString();
+    }
+
+    /**
+     * Collect consecutive "file" parts starting at {@code startIdx} from a parts list,
+     * returning them as context file triples (name, path, line). Skips non-file parts.
+     * Records consumed indices in {@code consumed} so the caller can skip them.
+     */
+    private static List<kotlin.Triple<String, String, Integer>> collectLegacyFileParts(
+        List<JsonObject> parts, int startIdx, java.util.Set<Integer> consumed) {
+        List<kotlin.Triple<String, String, Integer>> files = new ArrayList<>();
+        for (int i = startIdx; i < parts.size(); i++) {
+            JsonObject p = parts.get(i);
+            String t = p.has("type") ? p.get("type").getAsString() : "";
+            if (!"file".equals(t)) continue;
+            String fn = p.has("filename") ? p.get("filename").getAsString() : "";
+            String path = p.has("path") ? p.get("path").getAsString() : "";
+            int line = p.has("line") ? p.get("line").getAsInt() : 0;
+            files.add(new kotlin.Triple<>(fn, path, line));
+            consumed.add(i);
+        }
+        return files;
     }
 
     // ── session finalisation ──────────────────────────────────────────────────
