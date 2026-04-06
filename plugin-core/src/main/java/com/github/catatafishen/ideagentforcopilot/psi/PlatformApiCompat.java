@@ -85,6 +85,36 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Performs an undo or redo operation while suppressing the confirmation dialog
+     * that {@link com.intellij.openapi.command.impl.UndoManagerImpl} shows for
+     * global (multi-file) operations.
+     *
+     * <p><b>Why extracted:</b> {@code UndoManagerImpl.ourNeverAskUser} is an internal
+     * static field ({@code com.intellij.openapi.command.impl} package). Accessing it
+     * directly from tool classes would spread internal API usage. This method keeps the
+     * dependency in one place.</p>
+     *
+     * @param undoManager the project's UndoManager
+     * @param fileEditor  the editor to undo/redo in
+     * @param isUndo      true for undo, false for redo
+     */
+    public static void undoOrRedoSilently(
+        @NotNull com.intellij.openapi.command.undo.UndoManager undoManager,
+        @Nullable com.intellij.openapi.fileEditor.FileEditor fileEditor,
+        boolean isUndo) {
+        com.intellij.openapi.command.impl.UndoManagerImpl.ourNeverAskUser = true;
+        try {
+            if (isUndo) {
+                undoManager.undo(fileEditor);
+            } else {
+                undoManager.redo(fileEditor);
+            }
+        } finally {
+            com.intellij.openapi.command.impl.UndoManagerImpl.ourNeverAskUser = false;
+        }
+    }
+
+    /**
      * Collects text from editor notification banners (e.g., "Some directories are not excluded").
      *
      * <p><b>Why extracted:</b> Three API calls on this path produce false-positive errors in the IDE:</p>

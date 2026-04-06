@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.psi.tools.file.FileTool;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.GitDiffRenderer;
@@ -64,13 +65,12 @@ public final class ApplyActionTool extends QualityTool {
             + "Tip: use optimize_imports to fix all missing imports at once.";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file"},
@@ -251,7 +251,7 @@ public final class ApplyActionTool extends QualityTool {
                 if (fe instanceof TextEditor) {
                     var undoMgr = UndoManager.getInstance(project);
                     if (undoMgr.isUndoAvailable(fe)) {
-                        undoMgr.undo(fe);
+                        PlatformApiCompat.undoOrRedoSilently(undoMgr, fe, true);
                         FileDocumentManager.getInstance().saveAllDocuments();
                     }
                     return;
