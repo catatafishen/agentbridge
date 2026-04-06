@@ -37,6 +37,9 @@ internal class ConversationReplayer {
     fun totalPromptCount(): Int =
         deferredEntries.count { it is EntryData.Prompt } + recentSnapshot.count { it is EntryData.Prompt }
 
+    /** Total count of all entries across deferred and recent (i.e., what was loaded from disk). */
+    fun totalLoadedCount(): Int = deferredEntries.size + recentSnapshot.size
+
     /**
      * Pops the next [turnsToLoad] prompt-turns (plus all entries between them) from
      * the deferred queue. Returns entries in chronological order (oldest first).

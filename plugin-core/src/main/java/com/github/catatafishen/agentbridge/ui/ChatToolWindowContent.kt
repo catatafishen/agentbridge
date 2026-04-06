@@ -101,6 +101,10 @@ class ChatToolWindowContent(
     @Volatile
     private var lastIncrementalSaveMs = 0L
 
+    /** Number of entries already persisted to disk for the current session (deferred + panel). */
+    @Volatile
+    private var persistedEntryCount = 0
+
     private lateinit var contextManager: PromptContextManager
 
     init {
@@ -195,6 +199,7 @@ class ChatToolWindowContent(
                 agentManager.activeProfile.clientCssClass
             )
             consolePanel.addSessionSeparator(ts, agentManager.activeProfile.displayName)
+            appendNewEntries()
         }
         if (chatPanel == null) {
             val panel = createPromptTab()
@@ -670,8 +675,8 @@ class ChatToolWindowContent(
             { consolePanel }, { copilotBanner }, { statusBanner },
             PromptOrchestratorCallbacks(
                 onSendingStateChanged = ::setSendingState,
-                saveConversation = ::saveConversation,
-                saveConversationThrottled = ::saveConversationThrottled,
+                appendNewEntries = ::appendNewEntries,
+                appendNewEntriesThrottled = ::appendNewEntriesThrottled,
                 notifyIfUnfocused = ::notifyIfUnfocused,
                 saveTurnStatistics = ::saveTurnStatistics,
                 updateSessionInfo = ::updateSessionInfo,
@@ -768,6 +773,7 @@ class ChatToolWindowContent(
         } else null
         val bubbleHtml = buildBubbleHtml(rawText, contextItems)
         val entryId = consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
+        appendNewEntries()
         promptTextArea.text = ""
 
         val selectedModelId = resolveSelectedModelId()
@@ -1827,24 +1833,28 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun saveConversation() {
+    /**
+     * Appends any entries written since the last persist to disk (append-only, no overwrite).
+     * Tracks [persistedEntryCount] so only genuinely new entries are flushed each call.
+     */
+    private fun appendNewEntries() {
         lastIncrementalSaveMs = System.currentTimeMillis()
-        // Include deferred entries (older history not yet rendered) so that a save triggered after
-        // the first new turn does not overwrite and lose the older history that was split off during
-        // restore. deferredEntries() is chronologically before chatConsolePanel.getEntries().
-        val fullEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
-        conversationStore.saveEntriesAsync(project.basePath, fullEntries)
+        val allEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
+        val newEntries = allEntries.drop(persistedEntryCount)
+        if (newEntries.isEmpty()) return
+        conversationStore.appendEntriesAsync(project.basePath, newEntries)
+        persistedEntryCount = allEntries.size
     }
 
     /**
-     * Saves conversation if at least [saveIntervalMs] elapsed since the last save.
+     * Appends new entries if at least [saveIntervalMs] elapsed since the last append.
      * Called after each tool-call completion during streaming so that long-running turns
      * are periodically persisted and survive IDE crashes.
      */
-    private fun saveConversationThrottled() {
+    private fun appendNewEntriesThrottled() {
         val now = System.currentTimeMillis()
         if (now - lastIncrementalSaveMs >= saveIntervalMs) {
-            saveConversation()
+            appendNewEntries()
         }
     }
 
@@ -1873,6 +1883,7 @@ class ChatToolWindowContent(
                             lastStats.totalLinesRemoved, turnCount
                         )
                     }
+                    persistedEntryCount = conversationReplayer.totalLoadedCount()
                 }
                 onComplete()
             }
@@ -1897,6 +1908,7 @@ class ChatToolWindowContent(
             statusBanner?.dismissCurrent()
             setSendingState(true)
             consolePanel.addPromptEntry(trimmed, null)
+            appendNewEntries()
             ApplicationManager.getApplication().executeOnPooledThread {
                 client.executeSlashCommand(trimmed) { _ ->
                     ApplicationManager.getApplication().invokeLater {
@@ -1910,6 +1922,7 @@ class ChatToolWindowContent(
         statusBanner?.dismissCurrent()
         setSendingState(true)
         val entryId = consolePanel.addPromptEntry(trimmed, null)
+        appendNewEntries()
         val selectedModelId = resolveSelectedModelId()
         ApplicationManager.getApplication().executeOnPooledThread {
             promptOrchestrator.execute(trimmed, emptyList(), selectedModelId, trimmed, entryId)
@@ -2057,6 +2070,7 @@ class ChatToolWindowContent(
 
     private fun archiveConversation() {
         conversationStore.archive(project.basePath)
+        persistedEntryCount = 0
     }
 
     private fun getModelMultiplier(modelId: String): String? {

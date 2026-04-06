@@ -22,8 +22,8 @@ import com.intellij.openapi.project.Project
  */
 data class PromptOrchestratorCallbacks(
     val onSendingStateChanged: (Boolean) -> Unit,
-    val saveConversation: () -> Unit,
-    val saveConversationThrottled: () -> Unit,
+    val appendNewEntries: () -> Unit,
+    val appendNewEntriesThrottled: () -> Unit,
     val notifyIfUnfocused: (toolCallCount: Int) -> Unit,
     val saveTurnStatistics: (prompt: String, toolCallCount: Int, modelId: String) -> Unit,
     val updateSessionInfo: () -> Unit,
@@ -430,8 +430,7 @@ class PromptOrchestrator(
         )
 
         callbacks.saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
-        callbacks.saveConversation()
-
+        callbacks.appendNewEntries()
         val lastResponse = consolePanel().getLastResponseText()
         val quickReplies = detectQuickReplies(lastResponse)
         if (quickReplies.isNotEmpty()) {
@@ -481,7 +480,7 @@ class PromptOrchestrator(
 
         consolePanel().cancelAllRunning()
         consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
-        callbacks.saveConversation()
+        callbacks.appendNewEntries()
 
         consolePanel().addErrorEntry(
             "Session not resumed — $agentName returned an empty response. " +
@@ -632,7 +631,7 @@ class PromptOrchestrator(
         )
 
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
-            callbacks.saveConversationThrottled()
+            callbacks.appendNewEntriesThrottled()
         }
     }
 
@@ -712,7 +711,7 @@ class PromptOrchestrator(
 
         consolePanel().cancelAllRunning()
         consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
-        callbacks.saveConversation()
+        callbacks.appendNewEntries()
 
         if (shouldRestore) {
             callbacks.restorePromptText(pendingRawText)

@@ -52,7 +52,6 @@ public final class SessionStoreV2 implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(SessionStoreV2.class);
 
-    private static final String SESSIONS_DIR = "sessions";
     private static final String SESSIONS_INDEX = "sessions-index.json";
     private static final String CURRENT_SESSION_FILE = ".current-session-id";
     private static final String JSONL_EXT = ".jsonl";
@@ -253,7 +252,22 @@ public final class SessionStoreV2 implements Disposable {
         }
     }
 
-    public void saveEntries(@Nullable String basePath, @NotNull List<EntryData> entries) {
+    private static final int MAX_SESSION_NAME_LENGTH = 60;
+
+    static String truncateSessionName(@NotNull String promptText) {
+        String name = promptText.replaceAll("\\s+", " ").trim();
+        if (name.length() <= MAX_SESSION_NAME_LENGTH) return name;
+        return name.substring(0, MAX_SESSION_NAME_LENGTH - 1) + "…";
+    }
+
+    /**
+     * Appends {@code entries} to the current session JSONL without overwriting existing content.
+     * Creates the file if it does not yet exist. The sessions index is updated incrementally:
+     * {@code turnCount} is incremented by the number of {@link EntryData.Prompt} entries in
+     * the batch, and the session name is set from the first prompt only if not already stored.
+     */
+    public void appendEntries(@Nullable String basePath, @NotNull List<EntryData> entries) {
+        if (entries.isEmpty()) return;
         try {
             String agent = currentAgent;
 
@@ -264,49 +278,41 @@ public final class SessionStoreV2 implements Disposable {
 
             File jsonlFile = new File(dir, sessionId + JSONL_EXT);
             StringBuilder sb = new StringBuilder();
-            int turnCount = 0;
-            String sessionName = "";
+            int additionalTurns = 0;
+            String firstPromptText = "";
             for (EntryData entry : entries) {
                 sb.append(GSON.toJson(EntryDataJsonAdapter.serialize(entry))).append('\n');
                 if (entry instanceof EntryData.Prompt p) {
-                    turnCount++;
-                    if (sessionName.isEmpty() && !p.getText().isBlank()) {
-                        sessionName = truncateSessionName(p.getText());
+                    additionalTurns++;
+                    if (firstPromptText.isEmpty() && !p.getText().isBlank()) {
+                        firstPromptText = truncateSessionName(p.getText());
                     }
                 }
             }
             Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
 
-            updateSessionsIndex(basePath, sessionId, dir, jsonlFile.getName(), agent, sessionName, turnCount);
+            appendSessionsIndex(basePath, sessionId, dir, jsonlFile.getName(), agent,
+                firstPromptText, additionalTurns);
         } catch (Exception e) {
-            LOG.warn("Failed to write v2 session JSONL", e);
+            LOG.warn("Failed to append entries to v2 session JSONL", e);
         }
     }
 
-    private static final int MAX_SESSION_NAME_LENGTH = 60;
-
-    static String truncateSessionName(@NotNull String promptText) {
-        String name = promptText.replaceAll("\\s+", " ").trim();
-        if (name.length() <= MAX_SESSION_NAME_LENGTH) return name;
-        return name.substring(0, MAX_SESSION_NAME_LENGTH - 1) + "…";
-    }
-
     /**
-     * Saves the conversation on a pooled thread (non-blocking), directly from EntryData.
+     * Appends entries on a pooled thread (non-blocking).
      * The resulting future is tracked so that {@link #awaitPendingSave(long)} can wait
      * for the write to complete before reading the v2 JSONL from disk.
      */
-    public void saveEntriesAsync(@Nullable String basePath, @NotNull List<EntryData> entries) {
-        // Snapshot the list to avoid concurrent modification
+    public void appendEntriesAsync(@Nullable String basePath, @NotNull List<EntryData> entries) {
         List<EntryData> snapshot = List.copyOf(entries);
         pendingSave = CompletableFuture.runAsync(
-            () -> saveEntries(basePath, snapshot),
+            () -> appendEntries(basePath, snapshot),
             AppExecutorUtil.getAppExecutorService());
     }
 
     /**
-     * Blocks until the most recent {@link #saveEntriesAsync} call completes, or until
+     * Blocks until the most recent async append/save completes, or until
      * {@code timeoutMs} elapses. Safe to call when no save is pending — returns immediately.
      *
      * <p>Call this before reading the v2 JSONL from disk to ensure the latest conversation
@@ -425,14 +431,19 @@ public final class SessionStoreV2 implements Disposable {
 
     // ── v2 write ──────────────────────────────────────────────────────────────
 
-    private void updateSessionsIndex(
+    /**
+     * Updates the sessions index when appending entries. Increments {@code turnCount} by
+     * {@code additionalTurns} and sets the session name from the first prompt if not yet stored.
+     * Creates a new index entry if one doesn't exist for this session.
+     */
+    private void appendSessionsIndex(
         @Nullable String basePath,
         @NotNull String sessionId,
         @NotNull File sessionsDir,
         @NotNull String jsonlFileName,
         @NotNull String agentName,
-        @NotNull String sessionName,
-        int turnCount) throws IOException {
+        @NotNull String firstPromptText,
+        int additionalTurns) throws IOException {
 
         File indexFile = new File(sessionsDir, SESSIONS_INDEX);
         List<JsonObject> records = readIndexRecords(indexFile);
@@ -445,8 +456,14 @@ public final class SessionStoreV2 implements Disposable {
             if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
                 rec.addProperty(KEY_UPDATED_AT, now);
                 rec.addProperty(KEY_AGENT, agentName);
-                rec.addProperty(KEY_TURN_COUNT, turnCount);
-                if (!sessionName.isEmpty()) rec.addProperty(KEY_NAME, sessionName);
+                if (additionalTurns > 0) {
+                    int current = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
+                    rec.addProperty(KEY_TURN_COUNT, current + additionalTurns);
+                }
+                // Only set session name from the first prompt; never overwrite an existing name.
+                if (!firstPromptText.isEmpty() && !rec.has(KEY_NAME)) {
+                    rec.addProperty(KEY_NAME, firstPromptText);
+                }
                 found = true;
                 break;
             }
@@ -459,8 +476,8 @@ public final class SessionStoreV2 implements Disposable {
             newRec.addProperty(KEY_CREATED_AT, now);
             newRec.addProperty(KEY_UPDATED_AT, now);
             newRec.addProperty(KEY_JSONL_PATH, jsonlFileName);
-            newRec.addProperty(KEY_TURN_COUNT, turnCount);
-            if (!sessionName.isEmpty()) newRec.addProperty(KEY_NAME, sessionName);
+            newRec.addProperty(KEY_TURN_COUNT, additionalTurns);
+            if (!firstPromptText.isEmpty()) newRec.addProperty(KEY_NAME, firstPromptText);
             records.add(newRec);
         }
 
@@ -468,52 +485,6 @@ public final class SessionStoreV2 implements Disposable {
         records.forEach(arr::add);
         Files.writeString(indexFile.toPath(), GSON.toJson(arr), StandardCharsets.UTF_8,
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-    }
-
-    /**
-     * Updates the sessions index for a given session ID with the specified agent name
-     * and current timestamp. Creates a new index entry if one doesn't exist.
-     * Called by {@link com.github.catatafishen.agentbridge.session.SessionSwitchService}
-     * when importing sessions from other agents to keep the index agent label accurate.
-     *
-     * @param basePath  project base path (may be null)
-     * @param sessionId the session UUID to update
-     * @param agentName display name of the agent (e.g. "Claude Code CLI")
-     */
-    public void updateSessionAgent(@Nullable String basePath, @NotNull String sessionId, @NotNull String agentName) {
-        try {
-            File sessionsDir = sessionsDir(basePath);
-            File indexFile = new File(sessionsDir, SESSIONS_INDEX);
-            List<JsonObject> records = readIndexRecords(indexFile);
-            long now = System.currentTimeMillis();
-
-            boolean found = false;
-            for (JsonObject rec : records) {
-                if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
-                    rec.addProperty(KEY_UPDATED_AT, now);
-                    rec.addProperty(KEY_AGENT, agentName);
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                JsonObject newRec = new JsonObject();
-                newRec.addProperty(KEY_ID, sessionId);
-                newRec.addProperty(KEY_AGENT, agentName);
-                newRec.addProperty(KEY_DIRECTORY, basePath != null ? basePath : "");
-                newRec.addProperty(KEY_CREATED_AT, now);
-                newRec.addProperty(KEY_UPDATED_AT, now);
-                newRec.addProperty(KEY_JSONL_PATH, sessionId + JSONL_EXT);
-                records.add(newRec);
-            }
-
-            JsonArray arr = new JsonArray();
-            records.forEach(arr::add);
-            Files.writeString(indexFile.toPath(), GSON.toJson(arr), StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        } catch (IOException e) {
-            LOG.warn("Failed to update session index for sessionId=" + sessionId, e);
-        }
     }
 
     // ── v2 read ───────────────────────────────────────────────────────────────
