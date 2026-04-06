@@ -31,6 +31,7 @@ object MessageFormatter {
     enum class TimestampStyle {
         /** HH:mm — for message bubbles and chips */
         COMPACT,
+
         /** MMM d, yyyy HH:mm — for session separators */
         FULL
     }
@@ -56,11 +57,12 @@ object MessageFormatter {
     /** Current time as ISO 8601 string. */
     fun timestamp(): String = Instant.now().toString()
 
-    /** HTML-encode for safe embedding in HTML content and single-quoted attributes. */
+    /** HTML-encode for safe embedding in HTML content and attributes. */
     fun escapeHtml(s: String): String =
         s.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
+            .replace("\"", "&quot;")
             .replace("'", "&#39;")
             .replace("`", "&#96;")
 
@@ -83,7 +85,7 @@ object MessageFormatter {
      */
     fun formatToolSubtitle(baseName: String, arguments: String?): String? {
         if (arguments.isNullOrBlank()) return null
-        val key = TOOL_SUBTITLE_KEY[baseName] ?: return null
+        val key = toolSubtitleKey(baseName) ?: return null
         return try {
             val json = JsonParser.parseString(arguments).asJsonObject
             val value = json[key]?.asString ?: return null

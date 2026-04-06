@@ -308,10 +308,6 @@ const ChatController = {
         }
     },
 
-    addOrphanMcpCall(_turnId: string, _agentId: string, _toolName: string): void {
-        // No-op: orphan handling removed; replaced by ToolChipRegistry correlation
-    },
-
     addSubAgent(turnId: string, agentId: string, sectionId: string, displayName: string, colorIndex: number, promptHtml?: string, timestamp?: string): void {
         this._resetWorkingTimer();
         const ctx = this._ensureMsg(turnId, agentId);

@@ -23,7 +23,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
 
             is EntryData.Thinking -> sb.appendLine("[thinking] ${e.raw}")
             is EntryData.ToolCall -> {
-                val info = TOOL_DISPLAY_INFO[e.title]
+                val info = toolDisplayInfo(e.title)
                 val name = info?.displayName ?: e.title
                 sb.appendLine("\uD83D\uDD27 $name")
                 if (e.arguments != null) sb.appendLine("  params: ${e.arguments}")
@@ -252,7 +252,7 @@ ul,ol{margin:4px 0;padding-left:22px}
     }
 
     private fun renderExportToolCall(e: EntryData.ToolCall): String {
-        val info = TOOL_DISPLAY_INFO[e.title]
+        val info = toolDisplayInfo(e.title)
         val displayName = info?.displayName ?: e.title
         val sb = StringBuilder("<details class='tool'><summary>\u2692 ${escapeHtml(displayName)}</summary>")
         if (info?.description != null) sb.append("<div style='font-style:italic;margin:4px 0'>${escapeHtml(info.description)}</div>")
@@ -280,9 +280,7 @@ ul,ol{margin:4px 0;padding-left:22px}
     }
 
     companion object {
-        private fun escapeHtml(text: String): String = text
-            .replace("&", "&amp;").replace("<", "&lt;")
-            .replace(">", "&gt;").replace("\"", "&quot;")
+        private fun escapeHtml(text: String): String = MessageFormatter.escapeHtml(text)
 
         private fun rgb(c: Color) = "rgb(${c.red},${c.green},${c.blue})"
         private fun rgba(c: Color, a: Double) = "rgba(${c.red},${c.green},${c.blue},$a)"
@@ -290,13 +288,7 @@ ul,ol{margin:4px 0;padding-left:22px}
         private fun markdownToHtml(text: String): String =
             MarkdownRenderer.markdownToHtml(text)
 
-        private fun formatTimestamp(isoOrLegacy: String): String {
-            return try {
-                val zdt = java.time.Instant.parse(isoOrLegacy).atZone(java.time.ZoneId.systemDefault())
-                java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").format(zdt)
-            } catch (_: Exception) {
-                isoOrLegacy
-            }
-        }
+        private fun formatTimestamp(isoOrLegacy: String): String =
+            MessageFormatter.formatTimestamp(isoOrLegacy, MessageFormatter.TimestampStyle.FULL)
     }
 }
