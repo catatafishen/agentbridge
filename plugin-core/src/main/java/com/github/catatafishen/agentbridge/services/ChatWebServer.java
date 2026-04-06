@@ -6,7 +6,6 @@ import com.github.catatafishen.agentbridge.settings.ChatHistorySettings;
 import com.github.catatafishen.agentbridge.settings.ChatWebServerSettings;
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
 import com.google.gson.Gson;
-import com.intellij.ide.ui.LafManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -559,6 +558,19 @@ public final class ChatWebServer implements Disposable {
         return java.nio.file.Path.of(configPath, "plugins", "intellij-copilot-plugin");
     }
 
+    /**
+     * Builds an SSLContext backed by a proper CA + server certificate chain.
+     *
+     * <ul>
+     *   <li>{@code ca.p12} — CA key pair + self-signed CA cert (CA:TRUE, long-lived).
+     *       The device installs this via {@code /cert.crt}.</li>
+     *   <li>{@code server.p12} — Server key pair + CA-signed server cert (CA:FALSE, serverAuth EKU,
+     *       SANs, short-lived). Presented during the HTTPS handshake.</li>
+     * </ul>
+     * <p>
+     * Certificates are regenerated when the server cert's SANs don't match the current LAN IPs
+     * or when the expected subject/SAN is missing (e.g. first run or upgrade from old format).
+     */
     private SSLContext buildSslContext() throws Exception {
         java.nio.file.Path pluginDir = getPluginDir();
         java.io.File caKsFile = pluginDir.resolve("ca.p12").toFile();

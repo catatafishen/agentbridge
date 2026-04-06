@@ -197,9 +197,14 @@ public final class PsiBridgeService implements Disposable {
 
         String argumentsHash = ToolChipRegistry.computeBaseHash(arguments);
 
-        // Track if chat tool window is active before the tool call
-        // Only restore focus afterward if it was active before (don't steal focus if user switched away)
-        boolean chatWasActive = isChatToolWindowActive(project);
+        // Track if chat tool window is active before the tool call.
+        // Only restore focus afterward if it was active before (don't steal focus if user switched away).
+        // Must query on the EDT — invokeAndWait is safe here because we are on a pooled/MCP thread.
+        final boolean[] chatActiveHolder = {false};
+        ApplicationManager.getApplication().invokeAndWait(() ->
+            chatActiveHolder[0] = isChatToolWindowActive(project)
+        );
+        boolean chatWasActive = chatActiveHolder[0];
 
         // Determine if this tool requires synchronous execution (file/git/editing tools).
         boolean requiresSync = def.category() != null && SYNC_TOOL_CATEGORIES.contains(def.category().name());
