@@ -2,11 +2,13 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.services.ToolChipRegistry
+import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.settings.ScratchTypeSettings
 import com.github.catatafishen.agentbridge.ui.MessageFormatter.ChipStatus
 import com.github.catatafishen.agentbridge.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
+import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -18,6 +20,7 @@ import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefJSQuery
+import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import javax.swing.JComponent
 
@@ -45,7 +48,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var currentClientType = ""
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
     private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
-    private val toolRegistry = com.github.catatafishen.agentbridge.services.ToolRegistry.getInstance(project)
+    private val toolRegistry = ToolRegistry.getInstance(project)
     private val registry: ToolChipRegistry by lazy { ToolChipRegistry.getInstance(project) }
 
     private val fileNavigator = FileNavigator(project)
@@ -132,7 +135,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     init {
         if (JBCefApp.isSupported()) {
             browser = JBCefBrowser()
-            val panelBg = com.intellij.util.ui.JBUI.CurrentTheme.ToolWindow.background()
+            val panelBg = JBUI.CurrentTheme.ToolWindow.background()
             browser.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")
             openFileQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
             openFileQuery.addHandler { handleFileLink(it); null }
@@ -229,7 +232,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         browserReady = true
                         pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
                         pendingJs.clear()
-                        if (com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isSmoothScrollEnabled) {
+                        if (McpServerSettings.getInstance(project).isSmoothScrollEnabled) {
                             setSmoothScroll(true)
                         }
                     }
@@ -1085,16 +1088,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         if (autoDenied) {
             container.add(JBLabel("<html><body style='width: 450px'><span style='color: #FF0000; font-weight: bold;'>Tool call was automatically denied.</span><br/>Reason: ${denialReason ?: "Security policy"}</body></html>").apply {
-                border = com.intellij.util.ui.JBUI.Borders.empty(0, 0, 8, 0)
-                alignmentX = JComponent.LEFT_ALIGNMENT
+                border = JBUI.Borders.empty(0, 0, 8, 0)
+                alignmentX = LEFT_ALIGNMENT
             })
         }
 
         // 1. Show natural language description/explanation if available
         if (!description.isNullOrBlank()) {
             container.add(JBLabel("<html><body style='width: 450px'>${markdownToHtml(description)}</body></html>").apply {
-                border = com.intellij.util.ui.JBUI.Borders.empty(0, 0, 8, 0)
-                alignmentX = JComponent.LEFT_ALIGNMENT
+                border = JBUI.Borders.empty(0, 0, 8, 0)
+                alignmentX = LEFT_ALIGNMENT
             })
         }
 
@@ -1114,8 +1117,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             }
             container.add(JBLabel(label).apply {
                 foreground = if (status == "failed") ToolRenderers.FAIL_COLOR else ToolRenderers.MUTED_COLOR
-                border = com.intellij.util.ui.JBUI.Borders.empty(4, 0)
-                alignmentX = JComponent.LEFT_ALIGNMENT
+                border = JBUI.Borders.empty(4, 0)
+                alignmentX = LEFT_ALIGNMENT
             })
             return container
         }
@@ -1169,7 +1172,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun updateThemeColors() {
         val vars = buildCssVars().replace("'", "\\'")
         executeJs("document.documentElement.style.cssText='$vars'")
-        val panelBg = com.intellij.util.ui.JBUI.CurrentTheme.ToolWindow.background()
+        val panelBg = JBUI.CurrentTheme.ToolWindow.background()
         browser?.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")
     }
 
@@ -1326,7 +1329,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val chipTitle = toolChipTitle(baseName, entry?.arguments)
         val kind = entry?.kind ?: "other"
         val toolDef = baseName?.let { toolRegistry?.findById(it) }
-        val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn()) toolDef.description() else null
+        val mcpDescription = if (toolDef != null && !toolDef.isBuiltIn) toolDef.description() else null
         val autoDenied = entry?.autoDenied ?: false
         val denialReason = entry?.denialReason
 
@@ -1505,8 +1508,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     private fun prettyJson(json: String): String {
         return try {
-            val el = com.google.gson.JsonParser.parseString(json)
-            com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(el)
+            val el = JsonParser.parseString(json)
+            GsonBuilder().setPrettyPrinting().create().toJson(el)
         } catch (_: Exception) {
             json
         }
