@@ -2,7 +2,6 @@ package com.github.catatafishen.ideagentforcopilot.session;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.OpenCodeClientImporter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -59,13 +58,13 @@ class OpenCodeClientRoundTripTest {
         insertMessageWithParts(dbPath, "m2", sessionId, "assistant", 1001,
             textPartJson("Hi there!"));
 
-        List<SessionMessage> messages = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        List<EntryData> entries = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
 
-        assertEquals(2, messages.size());
-        assertEquals("user", messages.get(0).role);
-        assertEquals("Hello world", extractText(messages.get(0)));
-        assertEquals("assistant", messages.get(1).role);
-        assertEquals("Hi there!", extractText(messages.get(1)));
+        assertEquals(2, entries.size());
+        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertEquals("Hello world", ((EntryData.Prompt) entries.get(0)).getText());
+        assertTrue(entries.get(1) instanceof EntryData.Text);
+        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw().toString());
     }
 
     @Test
@@ -88,20 +87,15 @@ class OpenCodeClientRoundTripTest {
         insertMessageWithParts(dbPath, "m2", sessionId, "assistant", 1001,
             textPartJson("I'll read it"), GSON.toJson(toolInvPart));
 
-        List<SessionMessage> messages = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
-        assertEquals(2, messages.size());
+        List<EntryData> entries = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        assertEquals(3, entries.size());
 
-        SessionMessage assistant = messages.get(1);
-        boolean hasTool = false;
-        for (JsonObject part : assistant.parts) {
-            if ("tool-invocation".equals(part.get("type").getAsString())) {
-                hasTool = true;
-                JsonObject toolInv = part.getAsJsonObject("toolInvocation");
-                assertEquals("tc1", toolInv.get("toolCallId").getAsString());
-                assertEquals("read_file", toolInv.get("toolName").getAsString());
-            }
-        }
-        assertTrue(hasTool, "Should have tool invocation part");
+        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertTrue(entries.get(1) instanceof EntryData.Text);
+        assertTrue(entries.get(2) instanceof EntryData.ToolCall);
+
+        EntryData.ToolCall toolCall = (EntryData.ToolCall) entries.get(2);
+        assertEquals("read_file", toolCall.getTitle());
     }
 
     @Test
@@ -120,9 +114,10 @@ class OpenCodeClientRoundTripTest {
 
         insertMessageRaw(dbPath, "m1", sessionId, GSON.toJson(msgData), 1000);
 
-        List<SessionMessage> messages = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
-        assertEquals(1, messages.size());
-        assertEquals("Embedded text", extractText(messages.get(0)));
+        List<EntryData> entries = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        assertEquals(1, entries.size());
+        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertEquals("Embedded text", ((EntryData.Prompt) entries.get(0)).getText());
     }
 
     @Test
@@ -140,9 +135,10 @@ class OpenCodeClientRoundTripTest {
         insertMessageRaw(dbPath, "m1", sessionId, GSON.toJson(msgData), 1000);
         insertPart(dbPath, "p1", "m1", textPartJson("Answer"), 1000);
 
-        List<SessionMessage> messages = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
-        assertEquals(1, messages.size());
-        assertEquals("claude-sonnet-4", messages.get(0).model);
+        List<EntryData> entries = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        assertEquals(1, entries.size());
+        assertTrue(entries.get(0) instanceof EntryData.Text);
+        assertEquals("claude-sonnet-4", ((EntryData.Text) entries.get(0)).getModel());
     }
 
     @Test
@@ -155,9 +151,10 @@ class OpenCodeClientRoundTripTest {
         insertMessageWithParts(dbPath, "m-new", "new-session", "user", 200,
             textPartJson("New message"));
 
-        List<SessionMessage> messages = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
-        assertEquals(1, messages.size());
-        assertEquals("New message", extractText(messages.get(0)));
+        List<EntryData> entries = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        assertEquals(1, entries.size());
+        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertEquals("New message", ((EntryData.Prompt) entries.get(0)).getText());
     }
 
     @Test
@@ -166,8 +163,8 @@ class OpenCodeClientRoundTripTest {
         insertMessageWithParts(dbPath, "m-other", "other-session", "user", 1000,
             textPartJson("Other project"));
 
-        List<SessionMessage> messages = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
-        assertTrue(messages.isEmpty(), "Should not import sessions from different projects");
+        List<EntryData> entries = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        assertTrue(entries.isEmpty(), "Should not import sessions from different projects");
     }
 
     @Test
@@ -390,10 +387,12 @@ class OpenCodeClientRoundTripTest {
         String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
-        List<SessionMessage> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        List<EntryData> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
         assertEquals(2, imported.size());
-        assertEquals("What is Rust?", extractText(imported.get(0)));
-        assertEquals("A systems language.", extractText(imported.get(1)));
+        assertTrue(imported.get(0) instanceof EntryData.Prompt);
+        assertEquals("What is Rust?", ((EntryData.Prompt) imported.get(0)).getText());
+        assertTrue(imported.get(1) instanceof EntryData.Text);
+        assertEquals("A systems language.", ((EntryData.Text) imported.get(1)).getRaw().toString());
     }
 
     @Test
@@ -407,20 +406,15 @@ class OpenCodeClientRoundTripTest {
         String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
-        List<SessionMessage> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
-        assertEquals(2, imported.size());
+        List<EntryData> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        assertEquals(3, imported.size());
 
-        SessionMessage importedAssistant = imported.get(1);
-        boolean foundTool = false;
-        for (JsonObject part : importedAssistant.parts) {
-            if ("tool-invocation".equals(part.get("type").getAsString())) {
-                foundTool = true;
-                JsonObject toolInv = part.getAsJsonObject("toolInvocation");
-                assertFalse(toolInv.get("toolCallId").getAsString().isEmpty());
-                assertEquals("read_file", toolInv.get("toolName").getAsString());
-            }
-        }
-        assertTrue(foundTool, "Tool invocation should survive round-trip");
+        assertTrue(imported.get(0) instanceof EntryData.Prompt);
+        assertTrue(imported.get(1) instanceof EntryData.Text);
+        assertTrue(imported.get(2) instanceof EntryData.ToolCall);
+
+        EntryData.ToolCall toolCall = (EntryData.ToolCall) imported.get(2);
+        assertEquals("read_file", toolCall.getTitle());
     }
 
     @Test
@@ -434,12 +428,12 @@ class OpenCodeClientRoundTripTest {
 
         OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
 
-        List<SessionMessage> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
+        List<EntryData> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
         assertEquals(4, imported.size());
-        assertEquals("Question 1", extractText(imported.get(0)));
-        assertEquals("Answer 1", extractText(imported.get(1)));
-        assertEquals("Question 2", extractText(imported.get(2)));
-        assertEquals("Answer 2", extractText(imported.get(3)));
+        assertEquals("Question 1", ((EntryData.Prompt) imported.get(0)).getText());
+        assertEquals("Answer 1", ((EntryData.Text) imported.get(1)).getRaw().toString());
+        assertEquals("Question 2", ((EntryData.Prompt) imported.get(2)).getText());
+        assertEquals("Answer 2", ((EntryData.Text) imported.get(3)).getRaw().toString());
     }
 
     // ── Helper methods ──────────────────────────────────────────────
@@ -590,18 +584,6 @@ class OpenCodeClientRoundTripTest {
         tc.setResult(result);
         tc.setStatus("completed");
         return tc;
-    }
-
-    // ── SessionMessage helpers (for import-side assertions) ─────────
-
-    private static String extractText(SessionMessage msg) {
-        StringBuilder sb = new StringBuilder();
-        for (JsonObject part : msg.parts) {
-            if ("text".equals(part.get("type").getAsString())) {
-                sb.append(part.get("text").getAsString());
-            }
-        }
-        return sb.toString();
     }
 
     // ── DB helpers ──────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.session.importers;
 
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -13,8 +13,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.sql.*;
-import java.util.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 public final class CodexClientImporter {
 
@@ -30,7 +37,7 @@ public final class CodexClientImporter {
     }
 
     @NotNull
-    public static List<SessionMessage> importLatestThread(@NotNull Path dbPath) {
+    public static List<EntryData> importLatestThread(@NotNull Path dbPath) {
         if (!Files.exists(dbPath)) {
             LOG.info("Codex database not found at " + dbPath);
             return List.of();
@@ -58,7 +65,7 @@ public final class CodexClientImporter {
              Statement stmt = conn.createStatement()) {
             stmt.execute("PRAGMA journal_mode=WAL");
             try (ResultSet rs = stmt.executeQuery(
-                    "SELECT rollout_path FROM threads WHERE archived = 0 ORDER BY updated_at DESC LIMIT 1")) {
+                "SELECT rollout_path FROM threads WHERE archived = 0 ORDER BY updated_at DESC LIMIT 1")) {
                 if (rs.next()) {
                     return rs.getString("rollout_path");
                 }
@@ -70,7 +77,7 @@ public final class CodexClientImporter {
     }
 
     @NotNull
-    public static List<SessionMessage> importRolloutFile(@NotNull Path rolloutFile) {
+    public static List<EntryData> importRolloutFile(@NotNull Path rolloutFile) {
         List<String> lines;
         try {
             lines = Files.readAllLines(rolloutFile, StandardCharsets.UTF_8);
@@ -83,11 +90,10 @@ public final class CodexClientImporter {
     }
 
     @NotNull
-    static List<SessionMessage> convertRolloutLines(@NotNull List<String> lines) {
-        List<SessionMessage> messages = new ArrayList<>();
-        List<JsonObject> pendingAssistantParts = new ArrayList<>();
-        Map<String, JsonObject> pendingCalls = new LinkedHashMap<>();
-        long now = System.currentTimeMillis();
+    static List<EntryData> convertRolloutLines(@NotNull List<String> lines) {
+        List<EntryData> entries = new ArrayList<>();
+        List<EntryData> pendingAssistantParts = new ArrayList<>();
+        Map<String, EntryData.ToolCall> pendingCalls = new LinkedHashMap<>();
 
         for (String line : lines) {
             String trimmed = line.trim();
@@ -105,7 +111,7 @@ public final class CodexClientImporter {
             if (type == null) continue;
 
             switch (type) {
-                case "message" -> handleMessage(item, messages, pendingAssistantParts, now);
+                case "message" -> handleMessage(item, entries, pendingAssistantParts);
                 case "function_call" -> handleFunctionCall(item, pendingAssistantParts, pendingCalls);
                 case "function_call_output" -> handleFunctionCallOutput(item, pendingAssistantParts, pendingCalls);
                 case "reasoning" -> handleReasoning(item, pendingAssistantParts);
@@ -113,103 +119,73 @@ public final class CodexClientImporter {
             }
         }
 
-        flushAssistantParts(pendingAssistantParts, messages, now);
-        return messages;
+        flushAssistantParts(pendingAssistantParts, entries);
+        return entries;
     }
 
     private static void handleMessage(
-            @NotNull JsonObject item,
-            @NotNull List<SessionMessage> messages,
-            @NotNull List<JsonObject> pendingAssistantParts,
-            long now
+        @NotNull JsonObject item,
+        @NotNull List<EntryData> entries,
+        @NotNull List<EntryData> pendingAssistantParts
     ) {
         String role = JsonlUtil.getStr(item, "role");
         if ("user".equals(role)) {
-            flushAssistantParts(pendingAssistantParts, messages, now);
+            flushAssistantParts(pendingAssistantParts, entries);
 
             String text = extractContentText(item);
-            JsonObject textPart = new JsonObject();
-            textPart.addProperty("type", "text");
-            textPart.addProperty("text", text != null ? text : "");
-            messages.add(new SessionMessage(
-                    UUID.randomUUID().toString(), "user", List.of(textPart), now, null, null));
+            entries.add(new EntryData.Prompt(text != null ? text : "", "", null, ""));
         } else if ("assistant".equals(role)) {
             String text = extractContentText(item);
             if (text != null && !text.isEmpty()) {
-                JsonObject textPart = new JsonObject();
-                textPart.addProperty("type", "text");
-                textPart.addProperty("text", text);
-                pendingAssistantParts.add(textPart);
+                pendingAssistantParts.add(new EntryData.Text(new StringBuilder(text), "", "", ""));
             }
         }
     }
 
     private static void handleFunctionCall(
-            @NotNull JsonObject item,
-            @NotNull List<JsonObject> pendingAssistantParts,
-            @NotNull Map<String, JsonObject> pendingCalls
+        @NotNull JsonObject item,
+        @NotNull List<EntryData> pendingAssistantParts,
+        @NotNull Map<String, EntryData.ToolCall> pendingCalls
     ) {
         String callId = JsonlUtil.getStr(item, "call_id");
         String name = JsonlUtil.getStr(item, "name");
         String arguments = JsonlUtil.getStr(item, "arguments");
 
-        JsonObject toolPart = new JsonObject();
-        toolPart.addProperty("type", "tool-invocation");
+        EntryData.ToolCall toolCall = new EntryData.ToolCall(
+            name != null ? name : "unknown",
+            arguments);
 
-        JsonObject invocation = new JsonObject();
-        invocation.addProperty("state", "call");
-        invocation.addProperty("toolCallId", callId != null ? callId : UUID.randomUUID().toString());
-        invocation.addProperty("toolName", name != null ? name : "unknown");
-        if (arguments != null) {
-            try {
-                invocation.add("args", GSON.fromJson(arguments, JsonObject.class));
-            } catch (Exception e) {
-                JsonObject argsObj = new JsonObject();
-                argsObj.addProperty("raw", arguments);
-                invocation.add("args", argsObj);
-            }
-        }
-        toolPart.add("toolInvocation", invocation);
-        pendingAssistantParts.add(toolPart);
+        pendingAssistantParts.add(toolCall);
 
         if (callId != null) {
-            pendingCalls.put(callId, toolPart);
+            pendingCalls.put(callId, toolCall);
         }
     }
 
     private static void handleFunctionCallOutput(
-            @NotNull JsonObject item,
-            @NotNull List<JsonObject> pendingAssistantParts,
-            @NotNull Map<String, JsonObject> pendingCalls
+        @NotNull JsonObject item,
+        @NotNull List<EntryData> pendingAssistantParts,
+        @NotNull Map<String, EntryData.ToolCall> pendingCalls
     ) {
         String callId = JsonlUtil.getStr(item, "call_id");
         String output = JsonlUtil.getStr(item, "output");
 
         if (callId != null && pendingCalls.containsKey(callId)) {
-            JsonObject callPart = pendingCalls.remove(callId);
-            JsonObject invocation = callPart.getAsJsonObject("toolInvocation");
-            if (invocation != null) {
-                invocation.addProperty("state", "result");
-                invocation.addProperty("result", output != null ? output : "");
-                return;
-            }
+            EntryData.ToolCall existing = pendingCalls.remove(callId);
+            existing.setResult(output != null ? output : "");
+            return;
         }
 
-        JsonObject toolPart = new JsonObject();
-        toolPart.addProperty("type", "tool-invocation");
-
-        JsonObject invocation = new JsonObject();
-        invocation.addProperty("state", "result");
-        invocation.addProperty("toolCallId", callId != null ? callId : UUID.randomUUID().toString());
-        invocation.addProperty("toolName", "unknown");
-        invocation.addProperty("result", output != null ? output : "");
-        toolPart.add("toolInvocation", invocation);
-        pendingAssistantParts.add(toolPart);
+        EntryData.ToolCall orphan = new EntryData.ToolCall(
+            "unknown",
+            null);
+        orphan.setResult(output != null ? output : "");
+        pendingAssistantParts.add(orphan);
     }
 
     private static void handleReasoning(
-            @NotNull JsonObject item,
-            @NotNull List<JsonObject> pendingAssistantParts
+        @NotNull JsonObject item,
+        @NotNull List<EntryData> pendingAssistantParts
     ) {
         JsonArray content = item.getAsJsonArray("content");
         if (content == null) return;
@@ -225,21 +201,16 @@ public final class CodexClientImporter {
         }
 
         if (!sb.isEmpty()) {
-            JsonObject part = new JsonObject();
-            part.addProperty("type", "reasoning");
-            part.addProperty("text", sb.toString());
-            pendingAssistantParts.add(part);
+            pendingAssistantParts.add(new EntryData.Thinking(sb, "", "", ""));
         }
     }
 
     private static void flushAssistantParts(
-            @NotNull List<JsonObject> parts,
-            @NotNull List<SessionMessage> messages,
-            long now
+        @NotNull List<EntryData> parts,
+        @NotNull List<EntryData> entries
     ) {
         if (parts.isEmpty()) return;
-        messages.add(new SessionMessage(
-                UUID.randomUUID().toString(), "assistant", List.copyOf(parts), now, "Codex", null));
+        entries.addAll(parts);
         parts.clear();
     }
 

@@ -1,7 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.session.importers;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
@@ -37,7 +37,7 @@ public final class OpenCodeClientImporter {
     }
 
     @NotNull
-    public static List<SessionMessage> importLatestSession(@NotNull Path dbPath, @NotNull String projectDir) {
+    public static List<EntryData> importLatestSession(@NotNull Path dbPath, @NotNull String projectDir) {
         if (!Files.exists(dbPath)) {
             LOG.info("OpenCode database not found at " + dbPath);
             return List.of();
@@ -71,8 +71,8 @@ public final class OpenCodeClientImporter {
     }
 
     @NotNull
-    private static List<SessionMessage> importSession(@NotNull Path dbPath, @NotNull String sessionId) {
-        List<SessionMessage> result = new ArrayList<>();
+    private static List<EntryData> importSession(@NotNull Path dbPath, @NotNull String sessionId) {
+        List<EntryData> result = new ArrayList<>();
 
         try (Connection conn = OpenCodeClientExporter.openSqlite(dbPath)) {
             List<MessageRow> messageRows = loadMessages(conn, sessionId);
@@ -90,18 +90,31 @@ public final class OpenCodeClientImporter {
                 }
 
                 if (!parts.isEmpty()) {
-                    result.add(new SessionMessage(
-                        msgRow.id,
-                        msgRow.role != null ? msgRow.role : "assistant",
-                        parts,
-                        msgRow.timeCreated,
-                        "OpenCode",
-                        extractModel(msgRow.data)
-                    ));
+                    String model = extractModel(msgRow.data);
+                    if ("user".equals(msgRow.role)) {
+                        // Concatenate all text parts into a single Prompt
+                        StringBuilder sb = new StringBuilder();
+                        for (JsonObject part : parts) {
+                            String type = JsonlUtil.getStr(part, "type");
+                            if ("text".equals(type)) {
+                                String t = JsonlUtil.getStr(part, "text");
+                                if (t != null) sb.append(t);
+                            }
+                        }
+                        result.add(new EntryData.Prompt(sb.toString()));
+                    } else {
+                        // Assistant message: each part becomes its own EntryData
+                        for (JsonObject part : parts) {
+                            EntryData entry = convertPartToEntryData(part, model);
+                            if (entry != null) {
+                                result.add(entry);
+                            }
+                        }
+                    }
                 }
             }
 
-            LOG.info("Imported OpenCode session " + sessionId + ": " + result.size() + " messages");
+            LOG.info("Imported OpenCode session " + sessionId + ": " + result.size() + " entries");
         } catch (SQLException e) {
             LOG.warn("Failed to import OpenCode session: " + sessionId, e);
         }
@@ -170,6 +183,43 @@ public final class OpenCodeClientImporter {
             case "step-start", "step-finish" -> null;
             case "tool" -> convertToolPartToV2(part);
             default -> part;
+        };
+    }
+
+    /**
+     * Converts a v2-format part JSON object directly to an {@link EntryData} instance.
+     */
+    @Nullable
+    private static EntryData convertPartToEntryData(@NotNull JsonObject part, @Nullable String model) {
+        String type = JsonlUtil.getStr(part, "type");
+        if (type == null) return null;
+
+        return switch (type) {
+            case "text" -> {
+                String text = JsonlUtil.getStr(part, "text");
+                yield text != null ? new EntryData.Text(new StringBuilder(text), "", "", model != null ? model : "") : null;
+            }
+            case "reasoning" -> {
+                String text = JsonlUtil.getStr(part, "text");
+                yield text != null ? new EntryData.Thinking(new StringBuilder(text), "", "", model != null ? model : "") : null;
+            }
+            case "tool-invocation" -> {
+                JsonObject inv = JsonlUtil.getObject(part, "toolInvocation");
+                if (inv == null) yield null;
+                String toolName = JsonlUtil.getStr(inv, "toolName");
+                String args = JsonlUtil.getStr(inv, "args");
+                String result = JsonlUtil.getStr(inv, "result");
+                String state = JsonlUtil.getStr(inv, "state");
+                EntryData.ToolCall tc = new EntryData.ToolCall(
+                    toolName != null ? toolName : "unknown",
+                    args,
+                    "other",
+                    result,
+                    "result".equals(state) ? "completed" : state
+                );
+                yield tc;
+            }
+            default -> null;
         };
     }
 
