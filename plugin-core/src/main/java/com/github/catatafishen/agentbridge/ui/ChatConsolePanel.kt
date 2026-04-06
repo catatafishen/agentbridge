@@ -328,12 +328,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun appendThinkingText(text: String) {
         maybeStartNewSegment()
-        if (currentThinkingData == null) {
-            currentThinkingData =
-                EntryData.Thinking("", timestamp(), currentAgent).also { entries.add(it) }
+        val thinkingTs = if (currentThinkingData == null) {
+            val ts = timestamp()
+            currentThinkingData = EntryData.Thinking("", ts, currentAgent).also { entries.add(it) }
+            displayTs(ts)
+        } else {
+            displayTs(currentThinkingData!!.timestamp)
         }
         currentThinkingData!!.raw += text
-        executeJs("ChatController.addThinkingText('$currentTurnId','main','${escJs(text)}')")
+        executeJs("ChatController.addThinkingText('$currentTurnId','main','${escJs(text)}','$thinkingTs')")
     }
 
     override fun collapseThinking() {
@@ -396,7 +399,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (reg.isMcpHandled) entry.pluginTool = cleanTitle
 
         val initialStatus = if (reg.isMcpHandled) ChipStatus.RUNNING else ChipStatus.PENDING
-        executeJs("ChatController.upsertToolChip('$currentTurnId','main','${reg.domId}','${escJs(reg.label)}','${reg.paramsJson}','${reg.safeKind}','$initialStatus')")
+        val entryTs = displayTs(entry.timestamp)
+        executeJs("ChatController.upsertToolChip('$currentTurnId','main','${reg.domId}','${escJs(reg.label)}','${reg.paramsJson}','${reg.safeKind}','$initialStatus','$entryTs')")
         if (reg.isMcpHandled) {
             executeJs("ChatController.markMcpHandled('${reg.domId}')")
         }

@@ -208,9 +208,9 @@ const ChatController = {
         }
     },
 
-    addThinkingText(turnId: string, agentId: string, text: string): void {
+    addThinkingText(turnId: string, agentId: string, text: string, timestamp?: string): void {
         this._resetWorkingTimer();
-        const ctx = this._ensureMsg(turnId, agentId);
+        const ctx = this._ensureMsg(turnId, agentId, timestamp);
         if (!ctx.thinkingBlock) {
             this._thinkingCounter++;
             const el = document.createElement('thinking-block');
@@ -244,11 +244,11 @@ const ChatController = {
         this.upsertToolChip(turnId, agentId, id, title, paramsJson, kind, initialStatus || 'pending');
     },
 
-    upsertToolChip(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string, initialStatus?: string): void {
+    upsertToolChip(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string, initialStatus?: string, timestamp?: string): void {
         this._resetWorkingTimer();
         let chip = document.querySelector('[data-chip-for="' + id + '"]') as HTMLElement | null;
         if (!chip) {
-            const ctx = this._ensureMsg(turnId, agentId);
+            const ctx = this._ensureMsg(turnId, agentId, timestamp);
             this._collapseThinkingFor(ctx);
             chip = document.createElement('tool-chip');
             chip.dataset.chipFor = id;
