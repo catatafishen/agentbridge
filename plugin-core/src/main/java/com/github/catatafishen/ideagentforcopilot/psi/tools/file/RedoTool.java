@@ -11,7 +11,6 @@ import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -43,13 +42,12 @@ public final class RedoTool extends FileTool {
         return "Redo the last N undone actions on a file using IntelliJ's UndoManager";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Path to the file to redo changes on"},
@@ -100,7 +98,7 @@ public final class RedoTool extends FileTool {
         for (int i = 0; i < count; i++) {
             if (!undoManager.isRedoAvailable(fileEditor)) break;
             String actionName = PlatformApiCompat.getRedoActionName(undoManager, fileEditor);
-            undoManager.redo(fileEditor);
+            PlatformApiCompat.undoOrRedoSilently(undoManager, fileEditor, false);
             redone++;
             if (!actions.isEmpty()) actions.append(", ");
             actions.append(actionName != null && !actionName.isEmpty() ? actionName : "unknown");

@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.psi.tools.quality;
 
 import com.github.catatafishen.ideagentforcopilot.psi.EdtUtil;
+import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
 import com.github.catatafishen.ideagentforcopilot.psi.ToolUtils;
 import com.github.catatafishen.ideagentforcopilot.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
@@ -67,13 +68,12 @@ public final class GetActionOptionsTool extends QualityTool {
             + "Use 'symbol' (preferred) or 'column' to position the caret at the correct symbol.";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file"},
@@ -212,7 +212,7 @@ public final class GetActionOptionsTool extends QualityTool {
                 if (fe instanceof TextEditor) {
                     var undoMgr = com.intellij.openapi.command.undo.UndoManager.getInstance(project);
                     if (undoMgr.isUndoAvailable(fe)) {
-                        undoMgr.undo(fe);
+                        PlatformApiCompat.undoOrRedoSilently(undoMgr, fe, true);
                         FileDocumentManager.getInstance().saveAllDocuments();
                     }
                     return;
