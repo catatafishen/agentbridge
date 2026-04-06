@@ -141,50 +141,22 @@ public final class EntryDataJsonAdapter {
         } else if (entry instanceof EntryData.TurnStats ts) {
             json.addProperty("type", TYPE_TURN_STATS);
             json.addProperty("turnId", ts.getTurnId());
-            if (ts.getDurationMs() != 0) {
-                json.addProperty("durationMs", ts.getDurationMs());
-            }
-            if (ts.getInputTokens() != 0) {
-                json.addProperty("inputTokens", ts.getInputTokens());
-            }
-            if (ts.getOutputTokens() != 0) {
-                json.addProperty("outputTokens", ts.getOutputTokens());
-            }
-            if (ts.getCostUsd() != 0.0) {
-                json.addProperty("costUsd", ts.getCostUsd());
-            }
-            if (ts.getToolCallCount() != 0) {
-                json.addProperty("toolCallCount", ts.getToolCallCount());
-            }
-            if (ts.getLinesAdded() != 0) {
-                json.addProperty("linesAdded", ts.getLinesAdded());
-            }
-            if (ts.getLinesRemoved() != 0) {
-                json.addProperty("linesRemoved", ts.getLinesRemoved());
-            }
+            addIfNonZero(json, "durationMs", ts.getDurationMs());
+            addIfNonZero(json, "inputTokens", ts.getInputTokens());
+            addIfNonZero(json, "outputTokens", ts.getOutputTokens());
+            addIfNonZero(json, "costUsd", ts.getCostUsd());
+            addIfNonZero(json, "toolCallCount", ts.getToolCallCount());
+            addIfNonZero(json, "linesAdded", ts.getLinesAdded());
+            addIfNonZero(json, "linesRemoved", ts.getLinesRemoved());
             addNonEmpty(json, "model", ts.getModel());
             addNonEmpty(json, "multiplier", ts.getMultiplier());
-            if (ts.getTotalDurationMs() != 0) {
-                json.addProperty("totalDurationMs", ts.getTotalDurationMs());
-            }
-            if (ts.getTotalInputTokens() != 0) {
-                json.addProperty("totalInputTokens", ts.getTotalInputTokens());
-            }
-            if (ts.getTotalOutputTokens() != 0) {
-                json.addProperty("totalOutputTokens", ts.getTotalOutputTokens());
-            }
-            if (ts.getTotalCostUsd() != 0.0) {
-                json.addProperty("totalCostUsd", ts.getTotalCostUsd());
-            }
-            if (ts.getTotalToolCalls() != 0) {
-                json.addProperty("totalToolCalls", ts.getTotalToolCalls());
-            }
-            if (ts.getTotalLinesAdded() != 0) {
-                json.addProperty("totalLinesAdded", ts.getTotalLinesAdded());
-            }
-            if (ts.getTotalLinesRemoved() != 0) {
-                json.addProperty("totalLinesRemoved", ts.getTotalLinesRemoved());
-            }
+            addIfNonZero(json, "totalDurationMs", ts.getTotalDurationMs());
+            addIfNonZero(json, "totalInputTokens", ts.getTotalInputTokens());
+            addIfNonZero(json, "totalOutputTokens", ts.getTotalOutputTokens());
+            addIfNonZero(json, "totalCostUsd", ts.getTotalCostUsd());
+            addIfNonZero(json, "totalToolCalls", ts.getTotalToolCalls());
+            addIfNonZero(json, "totalLinesAdded", ts.getTotalLinesAdded());
+            addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
             json.addProperty("entryId", ts.getEntryId());
 
         } else if (entry instanceof EntryData.SessionSeparator sep) {
@@ -319,7 +291,7 @@ public final class EntryDataJsonAdapter {
 
     /**
      * Returns {@code true} if the JSON line uses the entry-per-line format
-     * (has a {@code "type"} field) as opposed to the old {@code SessionMessage}
+     * (has a {@code "type"} field) as opposed to the old legacy role-based
      * format (which uses a {@code "role"} field).
      */
     public static boolean isEntryFormat(@NotNull String line) {
@@ -364,6 +336,18 @@ public final class EntryDataJsonAdapter {
 
     private static double doubleVal(@NotNull JsonObject o, @NotNull String key) {
         return o.has(key) ? o.get(key).getAsDouble() : 0.0;
+    }
+
+    private static void addIfNonZero(@NotNull JsonObject json, @NotNull String key, long value) {
+        if (value != 0) json.addProperty(key, value);
+    }
+
+    private static void addIfNonZero(@NotNull JsonObject json, @NotNull String key, int value) {
+        if (value != 0) json.addProperty(key, value);
+    }
+
+    private static void addIfNonZero(@NotNull JsonObject json, @NotNull String key, double value) {
+        if (value != 0.0) json.addProperty(key, value);
     }
 
     private static void addNonEmpty(@NotNull JsonObject json, @NotNull String key,

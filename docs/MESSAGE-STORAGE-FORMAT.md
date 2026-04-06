@@ -193,7 +193,7 @@ Null/empty/false/zero-default fields are omitted to keep JSON compact.
 Files written before Phase 4 use the older `SessionMessage` format where each line has
 `"role"` instead of `"type"`. On load, format is auto-detected per line:
 - Line contains `"type":` → new EntryData format → `EntryDataJsonAdapter.deserialize()`
-- Line contains `"role":` → legacy SessionMessage format → `EntryDataConverter.fromMessages()`
+- Line contains `"role":` → legacy SessionMessage format → `SessionStoreV2.convertLegacyMessages()`
 
 Legacy format (for reference — no longer written):
 ```json
@@ -292,7 +292,7 @@ No `SessionMessage` intermediary. No V1 intermediary. Direct 1:1 serialization.
 UUID.jsonl (V2 JSONL on disk)
   → auto-detect per line ("type:" = new, "role:" = legacy)
   → EntryDataJsonAdapter.deserialize() per line (new format)
-    OR EntryDataConverter.fromMessages() (legacy format)
+    OR SessionStoreV2.convertLegacyMessages() (legacy format)
   → List<EntryData> (in memory)
   → ConversationReplayer.loadAndSplit()
   → recent / deferred split
@@ -305,17 +305,14 @@ Falls back to V1 `conversation.json` if V2 JSONL is absent (legacy installs).
 
 ```
 EntryData (in memory)
-  → EntryDataConverter.toMessages()
-  → List<SessionMessage> (role-grouped)
   → CopilotClientExporter / OpenCodeClientExporter / etc.
-  → client-specific JSONL
+  → client-specific JSONL / SQLite
 ```
 
-`SessionMessage` is only used for external export/import where the target format
-requires role-based grouping. It is no longer used for persistence.
+Each exporter works directly with `List<EntryData>` — no intermediate format.
 
 ### V1→V2 Migration (one-shot)
 
 On first load after upgrade, `V1ToV2Migrator.migrateIfNeeded()` reads V1 JSON and
-archives, converts them to V2 JSONL via `ConversationSerializer` + `EntryDataConverter`,
-writes V2 files, and creates `sessions-index.json`. Subsequent loads use V2 directly.
+archives, converts them to V2 JSONL, writes V2 files, and creates `sessions-index.json`.
+Subsequent loads use V2 directly.
