@@ -1,4 +1,4 @@
-import {b64, escHtml} from './helpers';
+import {decodeBase64, escHtml} from './helpers';
 import type {TurnContext} from './types';
 
 function _showNotification(title: string, body: string, actions?: { action: string; title: string }[]): void {
@@ -146,7 +146,7 @@ const ChatController = {
         const bubble = document.createElement('message-bubble');
         bubble.setAttribute('type', 'user');
         if (encodedBubbleHtml) {
-            bubble.innerHTML = b64(encodedBubbleHtml);
+            bubble.innerHTML = decodeBase64(encodedBubbleHtml);
         } else {
             bubble.textContent = text;
         }
@@ -185,12 +185,12 @@ const ChatController = {
             if (!ctx.textBubble && !encodedHtml) return;
             if (encodedHtml) {
                 if (ctx.textBubble) {
-                    (ctx.textBubble as any).finalize(b64(encodedHtml));
+                    (ctx.textBubble as any).finalize(decodeBase64(encodedHtml));
                 } else {
                     const c = this._ensureMsg(turnId, agentId);
                     const bubble = document.createElement('message-bubble');
                     c.msg!.appendChild(bubble);
-                    (bubble as any).finalize(b64(encodedHtml));
+                    (bubble as any).finalize(decodeBase64(encodedHtml));
                 }
             } else if (ctx.textBubble) {
                 ctx.textBubble.remove();
@@ -234,7 +234,7 @@ const ChatController = {
         const ctx = this._getCtx(turnId, agentId);
         if (encodedHtml && ctx.thinkingBlock) {
             const content = (ctx.thinkingBlock as any).contentEl as Element | null;
-            if (content) content.innerHTML = b64(encodedHtml);
+            if (content) content.innerHTML = decodeBase64(encodedHtml);
         }
         this._collapseThinkingFor(ctx);
     },
@@ -551,7 +551,7 @@ const ChatController = {
     },
 
     restoreBatch(encodedHtml: string): void {
-        const html = b64(encodedHtml);
+        const html = decodeBase64(encodedHtml);
         const temp = document.createElement('div');
         temp.innerHTML = html;
         const msgs = this._msgs();
@@ -600,7 +600,7 @@ const ChatController = {
     },
 
     prependBatch(encodedHtml: string): void {
-        const html = b64(encodedHtml);
+        const html = decodeBase64(encodedHtml);
         const temp = document.createElement('div');
         temp.innerHTML = html;
         const msgs = this._msgs();

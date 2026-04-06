@@ -1,10 +1,13 @@
-/** Decode a base64-encoded UTF-8 string. */
-export function b64(s: string): string {
+/** Decode a base64-encoded UTF-8 string. Pair with MessageFormatter.encodeBase64() on the Kotlin side. */
+export function decodeBase64(s: string): string {
     const r = atob(s);
     const b = new Uint8Array(r.length);
     for (let i = 0; i < r.length; i++) b[i] = r.codePointAt(i)!;
     return new TextDecoder().decode(b);
 }
+
+/** @deprecated Use decodeBase64() instead. Kept for backward compatibility. */
+export const b64 = decodeBase64;
 
 /** Collapse all expanded chip sections in a container, optionally except one. */
 export function collapseAllChips(container: Element | null, except?: Element): void {

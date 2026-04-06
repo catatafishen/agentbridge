@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.services.ToolChipRegistry
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.settings.ScratchTypeSettings
+import com.github.catatafishen.agentbridge.ui.MessageFormatter.ChipStatus
 import com.github.catatafishen.agentbridge.ui.renderers.ArgumentAwareRenderer
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.google.gson.JsonParser
@@ -18,7 +19,6 @@ import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefJSQuery
 import java.awt.BorderLayout
-import java.util.*
 import javax.swing.JComponent
 
 /**
@@ -280,7 +280,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         currentTurnId = "t${turnCounter++}"
         val ts = timestamp()
         entries.add(EntryData.Prompt(text, ts, contextFiles, id = currentTurnId))
-        val encodedBubble = if (bubbleHtml != null) b64(bubbleHtml) else ""
+        val encodedBubble = if (bubbleHtml != null) encodeBase64(bubbleHtml) else ""
         executeJs("ChatController.addUserMessage('${escJs(text)}','${displayTs(ts)}','$encodedBubble','$currentTurnId');ChatController.showWorkingIndicator()")
         return currentTurnId
     }
@@ -343,7 +343,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (currentThinkingData == null) return
         val raw = currentThinkingData!!.raw
         currentThinkingData = null
-        val encoded = b64(markdownToHtml(raw))
+        val encoded = encodeBase64(markdownToHtml(raw))
         executeJs("ChatController.collapseThinking('$currentTurnId','main','$encoded')")
     }
 
@@ -599,10 +599,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             it.denialReason = denialReason
             if (description != null) it.description = description
         }
-        val jsStatus = if (autoDenied) "denied" else when (status) {
-            "failed" -> "failed"
-            "running" -> "running"
-            else -> "completed"
+        val jsStatus = if (autoDenied) ChipStatus.DENIED else when (status) {
+            "failed" -> ChipStatus.FAILED
+            "running" -> ChipStatus.RUNNING
+            else -> ChipStatus.COMPLETE
         }
         executeJs("ChatController.updateToolCall('$did','$jsStatus','$jsStatus')")
     }
@@ -630,10 +630,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val info = SUB_AGENT_INFO[agentType]
         val displayName = info?.displayName ?: agentType.replaceFirstChar { it.uppercaseChar() }
         val promptText = prompt ?: description
-        val promptHtml = b64(markdownToHtml(promptText))
+        val promptHtml = encodeBase64(markdownToHtml(promptText))
         val ts = displayTs(entry.timestamp)
         executeJs(
-            "ChatController.addSubAgent('$currentTurnId','main','$did','${escJs(displayName)}',$colorIndex,b64('$promptHtml'),'${
+            "ChatController.addSubAgent('$currentTurnId','main','$did','${escJs(displayName)}',$colorIndex,encodeBase64('$promptHtml'),'${
                 escJs(
                     ts
                 )
@@ -643,8 +643,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             val status = if (autoDenied) "denied" else (initialStatus ?: "completed")
             val resultHtml =
                 if (autoDenied) FAILED_SPAN else if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else FAILED_SPAN
-            val encoded = b64(resultHtml)
-            executeJs("ChatController.updateSubAgent('$did','$status',b64('$encoded'))")
+            val encoded = encodeBase64(resultHtml)
+            executeJs("ChatController.updateSubAgent('$did','$status',encodeBase64('$encoded'))")
         }
     }
 
@@ -669,8 +669,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val jsStatus = if (autoDenied) "denied" else status
         val resultHtml =
             if (autoDenied) FAILED_SPAN else if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
-        val encoded = b64(resultHtml)
-        executeJs("ChatController.updateSubAgent('$did','$jsStatus',b64('$encoded'))")
+        val encoded = encodeBase64(resultHtml)
+        executeJs("ChatController.updateSubAgent('$did','$jsStatus',encodeBase64('$encoded'))")
         toolJustCompleted = true
     }
 
@@ -809,7 +809,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (count > 0) turnCounter += count
         val html = renderBatchGroupedHtml(entries)
         if (html.isNotEmpty()) {
-            val encoded = b64(html)
+            val encoded = encodeBase64(html)
             executeJs("ChatController.restoreBatch('$encoded')")
         }
     }
@@ -819,7 +819,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         for ((idx, e) in entries.withIndex()) this.entries.add(idx, e)
         val html = renderBatchGroupedHtml(entries)
         if (html.isNotEmpty()) {
-            val encoded = b64(html)
+            val encoded = encodeBase64(html)
             executeJs("ChatController.prependBatch('$encoded')")
         }
     }
@@ -1014,7 +1014,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val label = if (short != null) "$displayName — $short" else displayName
         val id = "batch-tool-${batchIdCounter++}"
         val result = e.result
-        val status = e.status ?: "completed"
+        val status = e.status ?: ChipStatus.COMPLETE
         toolCallNames[id] = title
         toolCallEntries[id] = EntryData.ToolCall(
             title, e.arguments, e.kind,
@@ -1077,7 +1077,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
         val cleanText = rawText.replace(QUICK_REPLY_TAG_REGEX, "").trimEnd()
         val html = markdownToHtml(cleanText)
-        val encoded = b64(html)
+        val encoded = encodeBase64(html)
         executeJs("ChatController.finalizeAgentText('$turnId','main','$encoded')")
     }
 
@@ -1097,18 +1097,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
         if (!js.startsWith("document.")) {
             ChatWebServer.getInstance(project)?.pushJsEvent(js)
-        }
-    }
-
-    private fun formatToolSubtitle(baseName: String, arguments: String?): String? {
-        if (arguments.isNullOrBlank()) return null
-        val key = TOOL_SUBTITLE_KEY[baseName] ?: return null
-        return try {
-            val json = com.google.gson.JsonParser.parseString(arguments).asJsonObject
-            val value = json[key]?.asString ?: return null
-            if (value.length > 40) "…" + value.takeLast(37) else value
-        } catch (_: Exception) {
-            null
         }
     }
 
@@ -1201,34 +1189,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         return container
     }
 
-    // ── Helpers ────────────────────────────────────────────────────
+    // ── Helpers (delegated to MessageFormatter) ─────────────────────
 
-    private fun escJs(s: String) =
-        s.replace("\\", "\\\\").replace("'", "\\'").replace("`", "\\`").replace("\n", "\\n").replace("\r", "\\r")
-
-    private fun esc(s: String) =
-        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;").replace("`", "&#96;")
-
-    private fun b64(s: String): String = Base64.getEncoder().encodeToString(s.toByteArray(Charsets.UTF_8))
-    private fun timestamp(): String = java.time.Instant.now().toString()
-
-    private fun displayTs(isoOrLegacy: String): String {
-        return try {
-            val zdt = java.time.Instant.parse(isoOrLegacy).atZone(java.time.ZoneId.systemDefault())
-            "%02d:%02d".format(zdt.hour, zdt.minute)
-        } catch (_: Exception) {
-            isoOrLegacy
-        }
-    }
-
-    private fun displayTsSeparator(isoOrLegacy: String): String {
-        return try {
-            val zdt = java.time.Instant.parse(isoOrLegacy).atZone(java.time.ZoneId.systemDefault())
-            java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy HH:mm").format(zdt)
-        } catch (_: Exception) {
-            isoOrLegacy
-        }
-    }
+    private fun escJs(s: String) = MessageFormatter.escapeJs(s)
+    private fun esc(s: String) = MessageFormatter.escapeHtml(s)
+    private fun encodeBase64(s: String) = MessageFormatter.encodeBase64(s)
+    private fun timestamp() = MessageFormatter.timestamp()
+    private fun displayTs(iso: String) = MessageFormatter.formatTimestamp(iso)
+    private fun displayTsSeparator(iso: String) = MessageFormatter.formatTimestamp(iso, MessageFormatter.TimestampStyle.FULL)
+    private fun formatToolSubtitle(baseName: String, arguments: String?) = MessageFormatter.formatToolSubtitle(baseName, arguments)
 
     private fun domId(id: String) = id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
 
