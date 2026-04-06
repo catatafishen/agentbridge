@@ -23,7 +23,8 @@ public final class InfrastructureToolFactory {
             new GetNotificationsTool(project),
             new ListRunTabsTool(project),
             new ReadRunOutputTool(project),
-            new ReadBuildOutputTool(project)
+            new ReadBuildOutputTool(project),
+            new InteractWithModalTool(project)
         );
     }
 }

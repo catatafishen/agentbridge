@@ -22,6 +22,14 @@ import java.util.concurrent.TimeoutException;
 public final class EdtUtil {
 
     private static final int DEFAULT_INVOKE_AND_WAIT_TIMEOUT_SECONDS = 30;
+    /**
+     * How often to check for blocking modal dialogs during invokeAndWait polling.
+     */
+    private static final long MODAL_POLL_INTERVAL_MS = 500;
+    /**
+     * How long a modal must be continuously visible before we abort the wait.
+     */
+    private static final long MODAL_FAIL_AFTER_MS = 1500;
 
     private EdtUtil() {
     }
@@ -36,11 +44,14 @@ public final class EdtUtil {
     /**
      * Run a runnable on the EDT and block until it completes, with a timeout.
      * <p>
-     * If the operation does not complete within {@value #DEFAULT_INVOKE_AND_WAIT_TIMEOUT_SECONDS}
-     * seconds (e.g. because a modal dialog is open), throws a {@link RuntimeException}
-     * describing the blocking modal dialog(s).
+     * Polls every {@value #MODAL_POLL_INTERVAL_MS}ms. If a modal dialog is detected
+     * and remains open for {@value #MODAL_FAIL_AFTER_MS}ms, the wait is aborted
+     * immediately with a descriptive error — far sooner than the overall
+     * {@value #DEFAULT_INVOKE_AND_WAIT_TIMEOUT_SECONDS}-second backstop.
+     * This surfaces the blocking dialog to the agent quickly so it can use
+     * {@code interact_with_modal} to respond.
      *
-     * @throws RuntimeException if the operation times out or fails
+     * @throws RuntimeException if the operation times out, is blocked by a modal, or fails
      */
     public static void invokeAndWait(Runnable runnable) {
         if (ApplicationManager.getApplication().isDispatchThread()) {
@@ -58,21 +69,58 @@ public final class EdtUtil {
             }
         }, ModalityState.defaultModalityState());
 
-        try {
-            future.get(DEFAULT_INVOKE_AND_WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            String detail = describeModalBlocker();
-            throw new IllegalStateException(
-                "EDT operation timed out after " + DEFAULT_INVOKE_AND_WAIT_TIMEOUT_SECONDS + "s." + detail, e);
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof RuntimeException re) throw re;
-            if (cause instanceof Error err) throw err;
-            throw new IllegalStateException(cause);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("EDT operation interrupted", e);
+        pollUntilDone(future);
+    }
+
+    /**
+     * Polls {@code future} in short intervals, aborting early if a blocking modal dialog
+     * is detected. Throws {@link IllegalStateException} on timeout, modal block, or failure.
+     */
+    private static void pollUntilDone(CompletableFuture<Void> future) {
+        long modalFirstSeenMs = 0;
+        long deadlineMs = System.currentTimeMillis() + (long) DEFAULT_INVOKE_AND_WAIT_TIMEOUT_SECONDS * 1000;
+
+        while (System.currentTimeMillis() < deadlineMs) {
+            try {
+                future.get(MODAL_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
+                return; // completed successfully
+            } catch (TimeoutException ignored) {
+                modalFirstSeenMs = checkModalTimeout(modalFirstSeenMs);
+            } catch (ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof RuntimeException re) throw re;
+                if (cause instanceof Error err) throw err;
+                throw new IllegalStateException(cause);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("EDT operation interrupted", e);
+            }
         }
+
+        String detail = describeModalBlocker();
+        throw new IllegalStateException(
+            "EDT operation timed out after " + DEFAULT_INVOKE_AND_WAIT_TIMEOUT_SECONDS + "s." + detail);
+    }
+
+    /**
+     * Updates and checks the modal-first-seen timestamp.
+     * Returns 0 if no modal is present (reset), or throws if the modal has been
+     * blocking long enough to give up.
+     */
+    private static long checkModalTimeout(long modalFirstSeenMs) {
+        String modalDetail = describeModalBlocker();
+        if (modalDetail.isEmpty()) {
+            return 0; // no modal — reset the timer
+        }
+        if (modalFirstSeenMs == 0) {
+            return System.currentTimeMillis(); // modal just appeared — start timer
+        }
+        if (System.currentTimeMillis() - modalFirstSeenMs >= MODAL_FAIL_AFTER_MS) {
+            throw new IllegalStateException(
+                "EDT blocked by modal dialog." + modalDetail
+                    + " Use the interact_with_modal tool to respond to the dialog.", null);
+        }
+        return modalFirstSeenMs; // modal present but grace period not expired yet
     }
 
     /**

@@ -269,7 +269,13 @@ public final class PsiBridgeService implements Disposable {
         } catch (Exception e) {
             LOG.warn("Tool call error: " + toolName, e);
             success = false;
-            return "Error: " + e.getMessage();
+            String modalDetail = EdtUtil.describeModalBlocker();
+            String base = "Error: " + e.getMessage();
+            if (!modalDetail.isEmpty()) {
+                return base + "\n" + modalDetail.trim()
+                    + "\nUse the interact_with_modal tool to respond to the dialog.";
+            }
+            return base;
         } finally {
             if (needsGlobalLock) writeToolSemaphore.release();
             fireToolCallEvent(toolName, startMs, success);
