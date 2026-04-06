@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.renderers
 
+import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.DiffManager
 import com.intellij.diff.requests.SimpleDiffRequest
@@ -99,7 +100,7 @@ object ToolRenderers {
      */
     fun get(
         toolName: String,
-        registry: com.github.catatafishen.agentbridge.services.ToolRegistry?
+        registry: ToolRegistry?
     ): ToolResultRenderer? {
         val def = registry?.findById(toolName)
         if (def != null) return def.resultRenderer() as? ToolResultRenderer
@@ -112,7 +113,7 @@ object ToolRenderers {
      */
     fun hasRenderer(
         toolName: String,
-        registry: com.github.catatafishen.agentbridge.services.ToolRegistry?
+        registry: ToolRegistry?
     ): Boolean {
         val def = registry?.findById(toolName)
         if (def != null) return def.resultRenderer() != null

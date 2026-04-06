@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.intellij.openapi.Disposable
 import javax.swing.JComponent
 
@@ -137,7 +138,7 @@ interface ChatPanelApi : Disposable {
         reqId: String,
         toolDisplayName: String,
         description: String,
-        onRespond: (com.github.catatafishen.agentbridge.bridge.PermissionResponse) -> Unit
+        onRespond: (PermissionResponse) -> Unit
     )
 
     /**

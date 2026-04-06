@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
 import com.github.catatafishen.agentbridge.acp.model.ContentBlock;
+import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -251,7 +252,7 @@ public final class KiroClient extends AcpClient {
      * inspects the buffered stderr lines and surfaces the actual panic reason to the UI.
      */
     @Override
-    protected @org.jetbrains.annotations.Nullable com.github.catatafishen.agentbridge.acp.model.PromptResponse
+    protected @org.jetbrains.annotations.Nullable PromptResponse
     tryRecoverPromptException(Exception cause) {
         String panicLine;
         synchronized (recentStderr) {

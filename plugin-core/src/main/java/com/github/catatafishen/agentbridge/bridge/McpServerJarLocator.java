@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.bridge;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.Nullable;
 
@@ -25,7 +26,7 @@ public final class McpServerJarLocator {
     public static String findMcpServerJar() {
         // Strategy 1: Use PlatformApiCompat to find plugin directory
         try {
-            java.nio.file.Path pluginPath = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+            java.nio.file.Path pluginPath = PlatformApiCompat
                 .getPluginPath("com.github.catatafishen.agentbridge");
             if (pluginPath != null) {
                 File libDir = pluginPath.resolve("lib").toFile();

@@ -102,7 +102,7 @@ final class CommandOverrideAgentConfig implements AgentConfig {
     }
 
     @Override
-    public @NotNull com.github.catatafishen.agentbridge.services.PermissionInjectionMethod getPermissionInjectionMethod() {
+    public @NotNull PermissionInjectionMethod getPermissionInjectionMethod() {
         return delegate.getPermissionInjectionMethod();
     }
 

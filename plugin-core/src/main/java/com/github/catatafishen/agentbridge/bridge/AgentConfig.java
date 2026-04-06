@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.bridge;
 
 import com.github.catatafishen.agentbridge.agent.AgentException;
+import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.google.gson.JsonObject;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -113,8 +114,8 @@ public interface AgentConfig {
      * Controls how per-tool ALLOW/ASK/DENY settings are communicated to the agent process.
      */
     @NotNull
-    default com.github.catatafishen.agentbridge.services.PermissionInjectionMethod getPermissionInjectionMethod() {
-        return com.github.catatafishen.agentbridge.services.PermissionInjectionMethod.NONE;
+    default PermissionInjectionMethod getPermissionInjectionMethod() {
+        return PermissionInjectionMethod.NONE;
     }
 
     /**

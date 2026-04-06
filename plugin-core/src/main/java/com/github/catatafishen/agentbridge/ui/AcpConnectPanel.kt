@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
@@ -144,7 +145,7 @@ class AcpConnectPanel(
         add(scrollPane, BorderLayout.CENTER)
 
         val versionLabel = JBLabel(
-            "AgentBridge ${com.github.catatafishen.agentbridge.BuildInfo.getVersion()}"
+            "AgentBridge ${BuildInfo.getVersion()}"
         ).apply {
             foreground = JBUI.CurrentTheme.Label.disabledForeground()
             font = JBUI.Fonts.smallFont()
