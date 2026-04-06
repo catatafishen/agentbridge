@@ -19,7 +19,7 @@
 .\gradlew.bat :plugin-core:clean :plugin-core:buildPlugin
 ```
 
-Output: `plugin-core/build/distributions/ide-agent-for-copilot-<version>.zip`
+Output: `plugin-core/build/distributions/agentbridge-<version>.zip`
 
 > **Note**: If `clean` fails due to locked sandbox files (Windows), omit `:plugin-core:clean`.
 
@@ -38,11 +38,11 @@ The project produces two independent plugin ZIPs, each installable via **Setting
 
 #### 1. IDE Agent for Copilot (Main Plugin)
 
-|               |                                                                       |
-|---------------|-----------------------------------------------------------------------|
-| **Module**    | `plugin-core`                                                         |
-| **Plugin ID** | `com.github.catatafishen.ideagentforcopilot`                          |
-| **Output**    | `plugin-core/build/distributions/ide-agent-for-copilot-<version>.zip` |
+|               |                                                             |
+|---------------|-------------------------------------------------------------|
+| **Module**    | `plugin-core`                                               |
+| **Plugin ID** | `com.github.catatafishen.ideagentforcopilot`                |
+| **Output**    | `plugin-core/build/distributions/agentbridge-<version>.zip` |
 
 The primary plugin. Provides the Copilot chat interface, ACP protocol integration, MCP tool bridge,
 PSI bridge, settings UI, and all IDE tools. Bundles `mcp-server.jar` (stdio MCP server) in its `lib/`
@@ -52,11 +52,11 @@ directory. This is the plugin published to the JetBrains Marketplace.
 
 #### 2. IDE Agent for Copilot (Experimental)
 
-|               |                                                                                            |
-|---------------|--------------------------------------------------------------------------------------------|
-| **Module**    | `plugin-experimental`                                                                      |
-| **Plugin ID** | `com.github.catatafishen.ideagentforcopilot`                                               |
-| **Output**    | `plugin-experimental/build/distributions/ide-agent-for-copilot-experimental-<version>.zip` |
+|               |                                                                                  |
+|---------------|----------------------------------------------------------------------------------|
+| **Module**    | `plugin-experimental`                                                            |
+| **Plugin ID** | `com.github.catatafishen.ideagentforcopilot`                                     |
+| **Output**    | `plugin-experimental/build/distributions/agentbridge-experimental-<version>.zip` |
 
 A superset of the main plugin with experimental features (currently: macro tool integration).
 Shares the same plugin ID as the main plugin — **install one or the other, not both**.
@@ -72,11 +72,11 @@ Its `plugin.xml` is generated at build time by merging plugin-core's descriptor 
 
 ZIP filenames include the version, which varies by build context:
 
-| Context                   | Version             | Example                                   |
-|---------------------------|---------------------|-------------------------------------------|
-| Local dev                 | `<base>-<git-hash>` | `ide-agent-for-copilot-1.5.0-a3b2c1d.zip` |
-| Release (`-Prelease`)     | `<base>`            | `ide-agent-for-copilot-1.5.0.zip`         |
-| CI (`PLUGIN_VERSION` env) | `<ci-version>`      | `ide-agent-for-copilot-1.5.0-rc1.zip`     |
+| Context                   | Version             | Example                         |
+|---------------------------|---------------------|---------------------------------|
+| Local dev                 | `<base>-<git-hash>` | `agentbridge-1.5.0-a3b2c1d.zip` |
+| Release (`-Prelease`)     | `<base>`            | `agentbridge-1.5.0.zip`         |
+| CI (`PLUGIN_VERSION` env) | `<ci-version>`      | `agentbridge-1.5.0-rc1.zip`     |
 
 ### Deploy to IntelliJ
 
@@ -94,7 +94,7 @@ PLUGIN_DIR=~/.local/share/JetBrains/IntelliJIdea2025.3
 
 # Stop IntelliJ if running, then install
 rm -rf "$PLUGIN_DIR/plugin-core"
-unzip -q plugin-core/build/distributions/ide-agent-for-copilot-*.zip -d "$PLUGIN_DIR"
+unzip -q plugin-core/build/distributions/agentbridge-*.zip -d "$PLUGIN_DIR"
 
 # Launch IntelliJ
 idea &  # or full path to idea.sh
@@ -119,7 +119,7 @@ The sandbox IDE (`runIde`) picks up changes automatically, but the **main IDE do
 After every code change, run these 3 commands to rebuild and deploy:
 
 ```bash
-cd /path/to/ide-agent-for-copilot
+cd /path/to/agentbridge
 
 # 1. Build the plugin zip (-x buildSearchableOptions avoids launching a conflicting IDE instance)
 ./gradlew :plugin-core:buildPlugin -x buildSearchableOptions --quiet
@@ -540,7 +540,7 @@ git show 49e40b8^ -- \
 ```
 
 **Unofficial builds:** The macro feature is available in the `plugin-experimental` module.
-This module produces a separate ZIP (`ide-agent-for-copilot-experimental-*.zip`) that includes
+This module produces a separate ZIP (`agentbridge-experimental-*.zip`) that includes
 all standard plugin-core functionality plus the macro tools. It is:
 
 - **Built on master merge** via `release.yml` and attached to GitHub releases
