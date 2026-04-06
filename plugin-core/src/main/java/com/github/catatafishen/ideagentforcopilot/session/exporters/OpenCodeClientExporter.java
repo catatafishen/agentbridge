@@ -171,7 +171,7 @@ public final class OpenCodeClientExporter {
                 } else if (entry instanceof EntryData.Text text) {
                     JsonObject part = new JsonObject();
                     part.addProperty("type", "text");
-                    part.addProperty("text", text.getRaw().toString());
+                    part.addProperty("text", text.getRaw());
                     if (pendingParts == null) {
                         pendingParts = new ArrayList<>();
                         pendingAgent = text.getAgent();
@@ -182,7 +182,7 @@ public final class OpenCodeClientExporter {
                 } else if (entry instanceof EntryData.Thinking thinking) {
                     JsonObject part = new JsonObject();
                     part.addProperty("type", "reasoning");
-                    part.addProperty("text", thinking.getRaw().toString());
+                    part.addProperty("text", thinking.getRaw());
                     JsonObject time = new JsonObject();
                     time.addProperty("start", prevTime);
                     time.addProperty("end", prevTime);

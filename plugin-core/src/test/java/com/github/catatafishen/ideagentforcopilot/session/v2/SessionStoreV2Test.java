@@ -1,12 +1,12 @@
 package com.github.catatafishen.ideagentforcopilot.session.v2;
 
+import com.github.catatafishen.ideagentforcopilot.ui.ContextFileRef;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
+import com.github.catatafishen.ideagentforcopilot.ui.FileRef;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import kotlin.Pair;
-import kotlin.Triple;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -67,7 +67,7 @@ class SessionStoreV2Test {
         assertEquals("e1", prompt.getEntryId());
 
         EntryData.Text text = (EntryData.Text) entries.get(1);
-        assertEquals("Hi there", text.getRaw().toString());
+        assertEquals("Hi there", text.getRaw());
         assertEquals("copilot", text.getAgent());
         assertEquals("gpt-4", text.getModel());
         assertEquals("e2", text.getEntryId());
@@ -216,7 +216,7 @@ class SessionStoreV2Test {
         assertEquals(1, result.size());
         assertInstanceOf(EntryData.Text.class, result.get(0));
         EntryData.Text text = (EntryData.Text) result.get(0);
-        assertEquals("Hi there", text.getRaw().toString());
+        assertEquals("Hi there", text.getRaw());
         assertEquals("copilot", text.getAgent());
         assertEquals("gpt-4", text.getModel());
     }
@@ -306,7 +306,7 @@ class SessionStoreV2Test {
         assertEquals(1, result.size());
         assertInstanceOf(EntryData.Thinking.class, result.get(0));
         EntryData.Thinking thinking = (EntryData.Thinking) result.get(0);
-        assertEquals("Let me think about this...", thinking.getRaw().toString());
+        assertEquals("Let me think about this...", thinking.getRaw());
         assertEquals("copilot", thinking.getAgent());
         assertEquals("gpt-4", thinking.getModel());
     }
@@ -437,12 +437,12 @@ class SessionStoreV2Test {
         assertEquals("Fix this file", prompt.getText());
         assertNotNull(prompt.getContextFiles());
         assertEquals(2, prompt.getContextFiles().size());
-        assertEquals("Main.java", prompt.getContextFiles().get(0).getFirst());
-        assertEquals("/src/Main.java", prompt.getContextFiles().get(0).getSecond());
-        assertEquals(42, (int) prompt.getContextFiles().get(0).getThird());
-        assertEquals("Test.java", prompt.getContextFiles().get(1).getFirst());
-        assertEquals("/test/Test.java", prompt.getContextFiles().get(1).getSecond());
-        assertEquals(0, (int) prompt.getContextFiles().get(1).getThird());
+        assertEquals("Main.java", prompt.getContextFiles().get(0).getName());
+        assertEquals("/src/Main.java", prompt.getContextFiles().get(0).getPath());
+        assertEquals(42, (int) prompt.getContextFiles().get(0).getLine());
+        assertEquals("Test.java", prompt.getContextFiles().get(1).getName());
+        assertEquals("/test/Test.java", prompt.getContextFiles().get(1).getPath());
+        assertEquals(0, (int) prompt.getContextFiles().get(1).getLine());
     }
 
     @Test
@@ -494,7 +494,7 @@ class SessionStoreV2Test {
         assertEquals(2, result.size());
         assertInstanceOf(EntryData.ToolCall.class, result.get(0));
         assertInstanceOf(EntryData.Text.class, result.get(1));
-        assertEquals("I read the file", ((EntryData.Text) result.get(1)).getRaw().toString());
+        assertEquals("I read the file", ((EntryData.Text) result.get(1)).getRaw());
     }
 
     @Test
@@ -695,8 +695,8 @@ class SessionStoreV2Test {
         assertInstanceOf(EntryData.ContextFiles.class, result.get(0));
         EntryData.ContextFiles cf = (EntryData.ContextFiles) result.get(0);
         assertEquals(1, cf.getFiles().size());
-        assertEquals("Readme.md", cf.getFiles().get(0).getFirst());
-        assertEquals("/Readme.md", cf.getFiles().get(0).getSecond());
+        assertEquals("Readme.md", cf.getFiles().get(0).getName());
+        assertEquals("/Readme.md", cf.getFiles().get(0).getPath());
     }
 
     @Test
@@ -716,9 +716,9 @@ class SessionStoreV2Test {
         assertInstanceOf(EntryData.Prompt.class, result.get(2));
         assertInstanceOf(EntryData.Text.class, result.get(3));
         assertEquals("First question", ((EntryData.Prompt) result.get(0)).getText());
-        assertEquals("First answer", ((EntryData.Text) result.get(1)).getRaw().toString());
+        assertEquals("First answer", ((EntryData.Text) result.get(1)).getRaw());
         assertEquals("Second question", ((EntryData.Prompt) result.get(2)).getText());
-        assertEquals("Second answer", ((EntryData.Text) result.get(3)).getRaw().toString());
+        assertEquals("Second answer", ((EntryData.Text) result.get(3)).getRaw());
     }
 
     @Test
@@ -743,7 +743,7 @@ class SessionStoreV2Test {
 
         assertEquals(1, result.size());
         assertInstanceOf(EntryData.Text.class, result.get(0));
-        assertEquals("Known part", ((EntryData.Text) result.get(0)).getRaw().toString());
+        assertEquals("Known part", ((EntryData.Text) result.get(0)).getRaw());
     }
 
     @Test
@@ -777,8 +777,8 @@ class SessionStoreV2Test {
     void roundTrip_allEntryTypes() {
         List<EntryData> originals = List.of(
             new EntryData.Prompt("Test prompt", "2024-01-01T00:00:00Z", null, "", "p1"),
-            new EntryData.Text(new StringBuilder("Response"), "2024-01-01T00:00:01Z", "copilot", "gpt-4", "t1"),
-            new EntryData.Thinking(new StringBuilder("Reasoning"), "2024-01-01T00:00:02Z", "copilot", "gpt-4", "th1"),
+            new EntryData.Text("Response", "2024-01-01T00:00:01Z", "copilot", "gpt-4", "t1"),
+            new EntryData.Thinking("Reasoning", "2024-01-01T00:00:02Z", "copilot", "gpt-4", "th1"),
             new EntryData.ToolCall("readFile", "{\"path\":\"a.txt\"}", "filesystem",
                 "content", "completed", "Read file", "/a.txt",
                 false, null, false,
@@ -786,7 +786,7 @@ class SessionStoreV2Test {
             new EntryData.SubAgent("explore", "Exploring", "Find files", "Found 3",
                 "completed", 1, "call-1", false, null,
                 "2024-01-01T00:00:04Z", "copilot", "gpt-4", "sa1"),
-            new EntryData.ContextFiles(List.of(new Pair<>("A.java", "/src/A.java")), "cf1"),
+            new EntryData.ContextFiles(List.of(new FileRef("A.java", "/src/A.java")), "cf1"),
             new EntryData.Status("✓", "Done", "st1"),
             new EntryData.SessionSeparator("2024-01-01T00:00:05Z", "copilot", "sep1"),
             new EntryData.TurnStats("turn-1", 5000L, 1000L, 500L, 0.05, 3, 10, 2,
@@ -823,9 +823,9 @@ class SessionStoreV2Test {
 
     @Test
     void roundTrip_promptPreservesContextFiles() {
-        List<Triple<String, String, Integer>> ctxFiles = List.of(
-            new Triple<>("Main.java", "/src/Main.java", 42),
-            new Triple<>("Test.java", "/test/Test.java", 0)
+        List<ContextFileRef> ctxFiles = List.of(
+            new ContextFileRef("Main.java", "/src/Main.java", 42),
+            new ContextFileRef("Test.java", "/test/Test.java", 0)
         );
         EntryData.Prompt original = new EntryData.Prompt(
             "Fix bugs", "2024-01-01T00:00:00Z", ctxFiles, "id1", "eid1");
@@ -842,12 +842,12 @@ class SessionStoreV2Test {
         assertEquals("eid1", p.getEntryId());
         assertNotNull(p.getContextFiles());
         assertEquals(2, p.getContextFiles().size());
-        assertEquals("Main.java", p.getContextFiles().get(0).getFirst());
-        assertEquals("/src/Main.java", p.getContextFiles().get(0).getSecond());
-        assertEquals(42, (int) p.getContextFiles().get(0).getThird());
-        assertEquals("Test.java", p.getContextFiles().get(1).getFirst());
-        assertEquals("/test/Test.java", p.getContextFiles().get(1).getSecond());
-        assertEquals(0, (int) p.getContextFiles().get(1).getThird());
+        assertEquals("Main.java", p.getContextFiles().get(0).getName());
+        assertEquals("/src/Main.java", p.getContextFiles().get(0).getPath());
+        assertEquals(42, (int) p.getContextFiles().get(0).getLine());
+        assertEquals("Test.java", p.getContextFiles().get(1).getName());
+        assertEquals("/test/Test.java", p.getContextFiles().get(1).getPath());
+        assertEquals(0, (int) p.getContextFiles().get(1).getLine());
     }
 
     @Test
@@ -1014,7 +1014,7 @@ class SessionStoreV2Test {
         String specialContent = "Line 1\nLine 2\tTabbed\nUnicode: 日本語 émojis 🎉\n"
             + "JSON: {\"key\": \"value\"}\nBackslash: C:\\path\\to\\file";
         EntryData.Text original = new EntryData.Text(
-            new StringBuilder(specialContent),
+            specialContent,
             "2024-01-01T00:00:00Z", "copilot", "gpt-4", "special-1");
 
         String jsonl = toJsonl(List.of(original));
@@ -1023,13 +1023,13 @@ class SessionStoreV2Test {
         assertNotNull(loaded);
         assertEquals(1, loaded.size());
         EntryData.Text text = (EntryData.Text) loaded.get(0);
-        assertEquals(specialContent, text.getRaw().toString());
+        assertEquals(specialContent, text.getRaw());
     }
 
     @Test
     void roundTrip_textWithEmptyContent() {
         EntryData.Text original = new EntryData.Text(
-            new StringBuilder(), "2024-01-01T00:00:00Z", "copilot", "gpt-4", "empty-1");
+            "", "2024-01-01T00:00:00Z", "copilot", "gpt-4", "empty-1");
 
         String jsonl = toJsonl(List.of(original));
         List<EntryData> loaded = SessionStoreV2.parseJsonlAutoDetect(jsonl);
@@ -1037,7 +1037,7 @@ class SessionStoreV2Test {
         assertNotNull(loaded);
         assertEquals(1, loaded.size());
         EntryData.Text text = (EntryData.Text) loaded.get(0);
-        assertEquals("", text.getRaw().toString());
+        assertEquals("", text.getRaw());
     }
 
     @Test
@@ -1097,9 +1097,9 @@ class SessionStoreV2Test {
 
     @Test
     void roundTrip_contextFilesPreservesFileList() {
-        List<Pair<String, String>> files = List.of(
-            new Pair<>("Main.java", "/src/main/Main.java"),
-            new Pair<>("Utils.kt", "/src/main/Utils.kt")
+        List<FileRef> files = List.of(
+            new FileRef("Main.java", "/src/main/Main.java"),
+            new FileRef("Utils.kt", "/src/main/Utils.kt")
         );
         EntryData.ContextFiles original = new EntryData.ContextFiles(files, "cf-1");
 
@@ -1110,10 +1110,10 @@ class SessionStoreV2Test {
         assertEquals(1, loaded.size());
         EntryData.ContextFiles cf = (EntryData.ContextFiles) loaded.get(0);
         assertEquals(2, cf.getFiles().size());
-        assertEquals("Main.java", cf.getFiles().get(0).getFirst());
-        assertEquals("/src/main/Main.java", cf.getFiles().get(0).getSecond());
-        assertEquals("Utils.kt", cf.getFiles().get(1).getFirst());
-        assertEquals("/src/main/Utils.kt", cf.getFiles().get(1).getSecond());
+        assertEquals("Main.java", cf.getFiles().get(0).getName());
+        assertEquals("/src/main/Main.java", cf.getFiles().get(0).getPath());
+        assertEquals("Utils.kt", cf.getFiles().get(1).getName());
+        assertEquals("/src/main/Utils.kt", cf.getFiles().get(1).getPath());
         assertEquals("cf-1", cf.getEntryId());
     }
 
@@ -1135,7 +1135,7 @@ class SessionStoreV2Test {
     @Test
     void roundTrip_thinkingPreservesFields() {
         EntryData.Thinking original = new EntryData.Thinking(
-            new StringBuilder("Deep reasoning here"),
+            "Deep reasoning here",
             "2024-01-01T00:00:00Z", "copilot", "o1-preview", "think-1");
 
         String jsonl = toJsonl(List.of(original));
@@ -1144,7 +1144,7 @@ class SessionStoreV2Test {
         assertNotNull(loaded);
         assertEquals(1, loaded.size());
         EntryData.Thinking th = (EntryData.Thinking) loaded.get(0);
-        assertEquals("Deep reasoning here", th.getRaw().toString());
+        assertEquals("Deep reasoning here", th.getRaw());
         assertEquals("2024-01-01T00:00:00Z", th.getTimestamp());
         assertEquals("copilot", th.getAgent());
         assertEquals("o1-preview", th.getModel());
@@ -1159,7 +1159,7 @@ class SessionStoreV2Test {
             entries.add(new EntryData.Prompt("Question " + i, "", null, "", "p" + i));
             entries.add(new EntryData.ToolCall("tool" + i, null, "other", null, null, null, null,
                 false, null, false, "", "", "", "tc" + i));
-            entries.add(new EntryData.Text(new StringBuilder("Answer " + i), "", "agent", "model", "t" + i));
+            entries.add(new EntryData.Text("Answer " + i, "", "agent", "model", "t" + i));
         }
 
         String jsonl = toJsonl(entries);
@@ -1172,7 +1172,7 @@ class SessionStoreV2Test {
         assertEquals("p0", loaded.get(0).getEntryId());
         assertEquals("Question 0", ((EntryData.Prompt) loaded.get(0)).getText());
         assertEquals("t49", loaded.get(149).getEntryId());
-        assertEquals("Answer 49", ((EntryData.Text) loaded.get(149)).getRaw().toString());
+        assertEquals("Answer 49", ((EntryData.Text) loaded.get(149)).getRaw());
     }
 
     // ══════════════════════════════════════════════════════════════════════════

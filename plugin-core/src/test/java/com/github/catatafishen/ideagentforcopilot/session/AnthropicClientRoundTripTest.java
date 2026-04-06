@@ -1,6 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.session;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.AnthropicClientExporter;
+import com.github.catatafishen.ideagentforcopilot.session.exporters.ExportUtils;
 import com.github.catatafishen.ideagentforcopilot.session.importers.AnthropicClientImporter;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.JsonObject;
@@ -46,7 +47,7 @@ class AnthropicClientRoundTripTest {
         assertEquals("Hello", ((EntryData.Prompt) entries.get(0)).getText());
 
         assertTrue(entries.get(1) instanceof EntryData.Text);
-        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw().toString());
+        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw());
     }
 
     @Test
@@ -67,7 +68,7 @@ class AnthropicClientRoundTripTest {
         assertEquals("Read a file", ((EntryData.Prompt) entries.get(0)).getText());
 
         assertTrue(entries.get(1) instanceof EntryData.Text);
-        assertEquals("I will read it.", ((EntryData.Text) entries.get(1)).getRaw().toString());
+        assertEquals("I will read it.", ((EntryData.Text) entries.get(1)).getRaw());
 
         assertTrue(entries.get(2) instanceof EntryData.ToolCall);
         EntryData.ToolCall tc = (EntryData.ToolCall) entries.get(2);
@@ -75,7 +76,7 @@ class AnthropicClientRoundTripTest {
         assertEquals("file contents", tc.getResult());
 
         assertTrue(entries.get(3) instanceof EntryData.Text);
-        assertEquals("The file says: file contents", ((EntryData.Text) entries.get(3)).getRaw().toString());
+        assertEquals("The file says: file contents", ((EntryData.Text) entries.get(3)).getRaw());
     }
 
     @Test
@@ -186,7 +187,7 @@ class AnthropicClientRoundTripTest {
     void exportSkipsReasoningParts() throws IOException {
         List<EntryData> entries = List.of(
             userPrompt("Q"),
-            new EntryData.Thinking(new StringBuilder("Thinking..."), Instant.now().toString(), "", "", ""),
+            new EntryData.Thinking("Thinking...", Instant.now().toString(), "", "", ""),
             assistantText("Answer")
         );
 
@@ -213,7 +214,7 @@ class AnthropicClientRoundTripTest {
 
         assertEquals(2, imported.size());
         assertEquals("What is Rust?", ((EntryData.Prompt) imported.get(0)).getText());
-        assertEquals("A systems programming language.", ((EntryData.Text) imported.get(1)).getRaw().toString());
+        assertEquals("A systems programming language.", ((EntryData.Text) imported.get(1)).getRaw());
     }
 
     @Test
@@ -232,7 +233,7 @@ class AnthropicClientRoundTripTest {
 
         assertTrue(imported.get(0) instanceof EntryData.Prompt);
         assertTrue(imported.get(1) instanceof EntryData.Text);
-        assertEquals("Reading file", ((EntryData.Text) imported.get(1)).getRaw().toString());
+        assertEquals("Reading file", ((EntryData.Text) imported.get(1)).getRaw());
 
         assertTrue(imported.get(2) instanceof EntryData.ToolCall);
         EntryData.ToolCall tc = (EntryData.ToolCall) imported.get(2);
@@ -255,9 +256,9 @@ class AnthropicClientRoundTripTest {
 
         assertEquals(4, imported.size());
         assertEquals("Question 1", ((EntryData.Prompt) imported.get(0)).getText());
-        assertEquals("Answer 1", ((EntryData.Text) imported.get(1)).getRaw().toString());
+        assertEquals("Answer 1", ((EntryData.Text) imported.get(1)).getRaw());
         assertEquals("Question 2", ((EntryData.Prompt) imported.get(2)).getText());
-        assertEquals("Answer 2", ((EntryData.Text) imported.get(3)).getRaw().toString());
+        assertEquals("Answer 2", ((EntryData.Text) imported.get(3)).getRaw());
     }
 
     // ── Helper methods ──────────────────────────────────────────────
@@ -372,7 +373,7 @@ class AnthropicClientRoundTripTest {
         assertEquals(4, entries.size());
 
         assertTrue(entries.get(0) instanceof EntryData.Text);
-        assertEquals("I'll read both.", ((EntryData.Text) entries.get(0)).getRaw().toString());
+        assertEquals("I'll read both.", ((EntryData.Text) entries.get(0)).getRaw());
 
         assertTrue(entries.get(1) instanceof EntryData.ToolCall);
         assertEquals("content A", ((EntryData.ToolCall) entries.get(1)).getResult());
@@ -381,7 +382,7 @@ class AnthropicClientRoundTripTest {
         assertEquals("content B", ((EntryData.ToolCall) entries.get(2)).getResult());
 
         assertTrue(entries.get(3) instanceof EntryData.Text);
-        assertEquals("Both files read.", ((EntryData.Text) entries.get(3)).getRaw().toString());
+        assertEquals("Both files read.", ((EntryData.Text) entries.get(3)).getRaw());
     }
 
     /**
@@ -579,7 +580,7 @@ class AnthropicClientRoundTripTest {
     }
 
     private static EntryData.Text assistantText(String text) {
-        return new EntryData.Text(new StringBuilder(text), Instant.now().toString(), "", "", "");
+        return new EntryData.Text(text, Instant.now().toString(), "", "", "");
     }
 
     private static EntryData.ToolCall toolCall(String toolName, String args, String result) {
@@ -592,7 +593,7 @@ class AnthropicClientRoundTripTest {
     @Test
     void sanitizeToolNameTruncatesLongNames() {
         String longName = "git add " + "a/".repeat(200) + "Foo.java";
-        String sanitized = AnthropicClientExporter.sanitizeToolName(longName);
+        String sanitized = ExportUtils.sanitizeToolName(longName);
         assertTrue(sanitized.length() <= 200,
             "Sanitized name should be at most 200 chars, was " + sanitized.length());
         assertFalse(sanitized.contains(" "), "Sanitized name should not contain spaces");
@@ -600,23 +601,23 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void sanitizeToolNamePreservesValidNames() {
-        assertEquals("read_file", AnthropicClientExporter.sanitizeToolName("read_file"));
+        assertEquals("read_file", ExportUtils.sanitizeToolName("read_file"));
         assertEquals("mcp__agentbridge__read_file",
-            AnthropicClientExporter.sanitizeToolName("mcp__agentbridge__read_file"));
+            ExportUtils.sanitizeToolName("mcp__agentbridge__read_file"));
     }
 
     @Test
     void sanitizeToolNameReplacesInvalidChars() {
         assertEquals("git_add_src_Foo-java",
-            AnthropicClientExporter.sanitizeToolName("git add src/Foo-java"));
+            ExportUtils.sanitizeToolName("git add src/Foo-java"));
         assertEquals("Viewing__ChatConsolePanel_kt",
-            AnthropicClientExporter.sanitizeToolName("Viewing .../ChatConsolePanel.kt"));
+            ExportUtils.sanitizeToolName("Viewing .../ChatConsolePanel.kt"));
     }
 
     @Test
     void sanitizeToolNameHandlesEdgeCases() {
-        assertEquals("unknown_tool", AnthropicClientExporter.sanitizeToolName(""));
-        assertEquals("unknown_tool", AnthropicClientExporter.sanitizeToolName("..."));
-        assertEquals("a", AnthropicClientExporter.sanitizeToolName("a"));
+        assertEquals("unknown_tool", ExportUtils.sanitizeToolName(""));
+        assertEquals("unknown_tool", ExportUtils.sanitizeToolName("..."));
+        assertEquals("a", ExportUtils.sanitizeToolName("a"));
     }
 }

@@ -1,6 +1,8 @@
 package com.github.catatafishen.ideagentforcopilot.session.v2;
 
+import com.github.catatafishen.ideagentforcopilot.ui.ContextFileRef;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
+import com.github.catatafishen.ideagentforcopilot.ui.FileRef;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
@@ -50,12 +52,12 @@ public final class EntryDataJsonAdapter {
             addNonEmpty(json, "timestamp", p.getTimestamp());
             if (p.getContextFiles() != null && !p.getContextFiles().isEmpty()) {
                 JsonArray arr = new JsonArray();
-                for (var triple : p.getContextFiles()) {
+                for (var ref : p.getContextFiles()) {
                     JsonObject obj = new JsonObject();
-                    obj.addProperty("name", triple.getFirst());
-                    obj.addProperty("path", triple.getSecond());
-                    if (triple.getThird() != 0) {
-                        obj.addProperty("line", triple.getThird());
+                    obj.addProperty("name", ref.getName());
+                    obj.addProperty("path", ref.getPath());
+                    if (ref.getLine() != 0) {
+                        obj.addProperty("line", ref.getLine());
                     }
                     arr.add(obj);
                 }
@@ -66,7 +68,7 @@ public final class EntryDataJsonAdapter {
 
         } else if (entry instanceof EntryData.Text t) {
             json.addProperty("type", TYPE_TEXT);
-            json.addProperty("raw", t.getRaw().toString());
+            json.addProperty("raw", t.getRaw());
             addNonEmpty(json, "timestamp", t.getTimestamp());
             addNonEmpty(json, "agent", t.getAgent());
             addNonEmpty(json, "model", t.getModel());
@@ -74,7 +76,7 @@ public final class EntryDataJsonAdapter {
 
         } else if (entry instanceof EntryData.Thinking th) {
             json.addProperty("type", TYPE_THINKING);
-            json.addProperty("raw", th.getRaw().toString());
+            json.addProperty("raw", th.getRaw());
             addNonEmpty(json, "timestamp", th.getTimestamp());
             addNonEmpty(json, "agent", th.getAgent());
             addNonEmpty(json, "model", th.getModel());
@@ -125,10 +127,10 @@ public final class EntryDataJsonAdapter {
             json.addProperty("type", TYPE_CONTEXT);
             if (!cf.getFiles().isEmpty()) {
                 JsonArray arr = new JsonArray();
-                for (var pair : cf.getFiles()) {
+                for (var ref : cf.getFiles()) {
                     JsonObject obj = new JsonObject();
-                    obj.addProperty("name", pair.getFirst());
-                    obj.addProperty("path", pair.getSecond());
+                    obj.addProperty("name", ref.getName());
+                    obj.addProperty("path", ref.getPath());
                     arr.add(obj);
                 }
                 json.add("files", arr);
@@ -188,12 +190,12 @@ public final class EntryDataJsonAdapter {
 
         return switch (type) {
             case TYPE_PROMPT -> {
-                List<kotlin.Triple<String, String, Integer>> contextFiles = null;
+                List<ContextFileRef> contextFiles = null;
                 if (json.has("contextFiles") && json.get("contextFiles").isJsonArray()) {
                     contextFiles = new ArrayList<>();
                     for (var element : json.getAsJsonArray("contextFiles")) {
                         JsonObject obj = element.getAsJsonObject();
-                        contextFiles.add(new kotlin.Triple<>(
+                        contextFiles.add(new ContextFileRef(
                             str(obj, "name"),
                             str(obj, "path"),
                             intVal(obj, "line")));
@@ -207,13 +209,13 @@ public final class EntryDataJsonAdapter {
                     entryId);
             }
             case TYPE_TEXT -> new EntryData.Text(
-                new StringBuilder(str(json, "raw")),
+                str(json, "raw"),
                 str(json, "timestamp"),
                 str(json, "agent"),
                 str(json, "model"),
                 entryId);
             case TYPE_THINKING -> new EntryData.Thinking(
-                new StringBuilder(str(json, "raw")),
+                str(json, "raw"),
                 str(json, "timestamp"),
                 str(json, "agent"),
                 str(json, "model"),
@@ -248,11 +250,11 @@ public final class EntryDataJsonAdapter {
                 str(json, "model"),
                 entryId);
             case TYPE_CONTEXT -> {
-                List<kotlin.Pair<String, String>> files = new ArrayList<>();
+                List<FileRef> files = new ArrayList<>();
                 if (json.has("files") && json.get("files").isJsonArray()) {
                     for (var element : json.getAsJsonArray("files")) {
                         JsonObject obj = element.getAsJsonObject();
-                        files.add(new kotlin.Pair<>(
+                        files.add(new FileRef(
                             str(obj, "name"),
                             str(obj, "path")));
                     }

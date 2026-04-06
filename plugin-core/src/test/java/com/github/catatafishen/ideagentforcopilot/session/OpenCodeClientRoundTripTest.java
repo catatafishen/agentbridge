@@ -64,7 +64,7 @@ class OpenCodeClientRoundTripTest {
         assertTrue(entries.get(0) instanceof EntryData.Prompt);
         assertEquals("Hello world", ((EntryData.Prompt) entries.get(0)).getText());
         assertTrue(entries.get(1) instanceof EntryData.Text);
-        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw().toString());
+        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw());
     }
 
     @Test
@@ -210,7 +210,7 @@ class OpenCodeClientRoundTripTest {
     void exportCreatesPartRows() throws SQLException {
         List<EntryData> entries = List.of(
             promptEntry("Q"),
-            new EntryData.Thinking(new StringBuilder("Thinking...")),
+            new EntryData.Thinking("Thinking..."),
             textEntry("Answer text")
         );
 
@@ -392,7 +392,7 @@ class OpenCodeClientRoundTripTest {
         assertTrue(imported.get(0) instanceof EntryData.Prompt);
         assertEquals("What is Rust?", ((EntryData.Prompt) imported.get(0)).getText());
         assertTrue(imported.get(1) instanceof EntryData.Text);
-        assertEquals("A systems language.", ((EntryData.Text) imported.get(1)).getRaw().toString());
+        assertEquals("A systems language.", ((EntryData.Text) imported.get(1)).getRaw());
     }
 
     @Test
@@ -431,9 +431,9 @@ class OpenCodeClientRoundTripTest {
         List<EntryData> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
         assertEquals(4, imported.size());
         assertEquals("Question 1", ((EntryData.Prompt) imported.get(0)).getText());
-        assertEquals("Answer 1", ((EntryData.Text) imported.get(1)).getRaw().toString());
+        assertEquals("Answer 1", ((EntryData.Text) imported.get(1)).getRaw());
         assertEquals("Question 2", ((EntryData.Prompt) imported.get(2)).getText());
-        assertEquals("Answer 2", ((EntryData.Text) imported.get(3)).getRaw().toString());
+        assertEquals("Answer 2", ((EntryData.Text) imported.get(3)).getRaw());
     }
 
     // ── Helper methods ──────────────────────────────────────────────
@@ -576,7 +576,7 @@ class OpenCodeClientRoundTripTest {
     }
 
     private static EntryData.Text textEntry(String text) {
-        return new EntryData.Text(new StringBuilder(text));
+        return new EntryData.Text(text);
     }
 
     private static EntryData.ToolCall toolCallEntry(String toolName, String args, String result) {

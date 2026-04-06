@@ -37,7 +37,7 @@ internal object ConversationSerializer {
             EntryDataJsonAdapter.TYPE_PROMPT -> {
                 val ctxFiles = obj["ctxFiles"]?.asJsonArray?.map { f ->
                     val fo = f.asJsonObject
-                    Triple(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
+                    ContextFileRef(fo["name"]?.asString ?: "", fo["path"]?.asString ?: "", fo["line"]?.asInt ?: 0)
                 }
                 val id = obj["id"]?.asString ?: ""
                 EntryData.Prompt(
@@ -50,14 +50,14 @@ internal object ConversationSerializer {
             }
 
             EntryDataJsonAdapter.TYPE_TEXT -> EntryData.Text(
-                StringBuilder(obj["raw"]?.asString ?: ""),
+                obj["raw"]?.asString ?: "",
                 obj["ts"]?.asString ?: "",
                 obj["agent"]?.asString ?: "",
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 
             EntryDataJsonAdapter.TYPE_THINKING -> EntryData.Thinking(
-                StringBuilder(obj["raw"]?.asString ?: ""),
+                obj["raw"]?.asString ?: "",
                 obj["ts"]?.asString ?: "",
                 obj["agent"]?.asString ?: "",
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
@@ -98,10 +98,10 @@ internal object ConversationSerializer {
             }
 
             EntryDataJsonAdapter.TYPE_CONTEXT -> {
-                val files = mutableListOf<Pair<String, String>>()
+                val files = mutableListOf<FileRef>()
                 obj["files"]?.asJsonArray?.forEach { f ->
                     val fo = f.asJsonObject
-                    files.add(fo["name"]?.asString.orEmpty() to fo["path"]?.asString.orEmpty())
+                    files.add(FileRef(fo["name"]?.asString.orEmpty(), fo["path"]?.asString.orEmpty()))
                 }
                 EntryData.ContextFiles(files, entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() })
             }

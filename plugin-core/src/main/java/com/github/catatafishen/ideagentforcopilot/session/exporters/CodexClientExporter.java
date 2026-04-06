@@ -58,8 +58,8 @@ public final class CodexClientExporter {
 
             long createdAt = System.currentTimeMillis() / 1000;
             for (EntryData entry : entries) {
-                String ts = getEntryTimestamp(entry);
-                if (ts != null && !ts.isEmpty()) {
+                String ts = entry.getTimestamp();
+                if (!ts.isEmpty()) {
                     try {
                         createdAt = Instant.parse(ts).toEpochMilli() / 1000;
                     } catch (Exception e) {
@@ -96,7 +96,7 @@ public final class CodexClientExporter {
                 item.add("content", content);
                 sb.append(GSON.toJson(item)).append('\n');
             } else if (entry instanceof EntryData.Text text) {
-                String raw = text.getRaw().toString();
+                String raw = text.getRaw();
                 if (!raw.isEmpty()) {
                     JsonObject item = new JsonObject();
                     item.addProperty("type", "message");
@@ -110,7 +110,7 @@ public final class CodexClientExporter {
                     sb.append(GSON.toJson(item)).append('\n');
                 }
             } else if (entry instanceof EntryData.Thinking thinking) {
-                String raw = thinking.getRaw().toString();
+                String raw = thinking.getRaw();
                 if (!raw.isEmpty()) {
                     JsonObject item = new JsonObject();
                     item.addProperty("type", "reasoning");
@@ -142,17 +142,6 @@ public final class CodexClientExporter {
         }
         Files.writeString(rolloutFile, sb.toString(), StandardCharsets.UTF_8,
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-    }
-
-    @Nullable
-    private static String getEntryTimestamp(@NotNull EntryData entry) {
-        if (entry instanceof EntryData.Prompt p) return p.getTimestamp();
-        if (entry instanceof EntryData.Text t) return t.getTimestamp();
-        if (entry instanceof EntryData.Thinking t) return t.getTimestamp();
-        if (entry instanceof EntryData.ToolCall t) return t.getTimestamp();
-        if (entry instanceof EntryData.SubAgent s) return s.getTimestamp();
-        if (entry instanceof EntryData.SessionSeparator s) return s.getTimestamp();
-        return null;
     }
 
     private static void insertThread(@NotNull Path dbPath, @NotNull String threadId,

@@ -38,7 +38,7 @@ internal class ConversationExporter(private val entries: List<EntryData>) {
                 "\uD83D\uDCCE ${e.files.size} context file(s): ${
                     e.files.joinToString(
                         ", "
-                    ) { it.first }
+                    ) { it.name }
                 }"
             )
 
@@ -226,10 +226,10 @@ ul,ol{margin:4px 0;padding-left:22px}
 
     private fun renderExportEntry(e: EntryData): String = when (e) {
         is EntryData.Prompt -> "<div class='prompt'><span class='prompt-b'>${escapeHtml(e.text)}</span></div>\n"
-        is EntryData.Text -> "<div class='response'>${markdownToHtml(e.raw.toString())}</div>\n"
+        is EntryData.Text -> "<div class='response'>${markdownToHtml(e.raw)}</div>\n"
         is EntryData.Thinking -> "<details class='thinking'><summary>\uD83D\uDCAD Thought process</summary><pre>${
             escapeHtml(
-                e.raw.toString()
+                e.raw
             )
         }</pre></details>\n"
 

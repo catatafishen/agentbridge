@@ -33,28 +33,41 @@ internal val QUICK_REPLY_TAG_REGEX = Regex("""\[\s*quick-reply:\s*([^\]]+)]""", 
 
 // ── Data model ────────────────────────────────────────────────────────────────
 
+/** Named reference to a file shown in the prompt context area. */
+data class ContextFileRef @JvmOverloads constructor(
+    val name: String,
+    val path: String,
+    val line: Int = 0,
+)
+
+/** Named reference to a file (name + path). */
+data class FileRef(val name: String, val path: String)
+
 sealed class EntryData {
     abstract val entryId: String
 
-    class Prompt @JvmOverloads constructor(
+    /** ISO 8601 timestamp; empty string when not applicable (TurnStats, ContextFiles, Status). */
+    open val timestamp: String get() = ""
+
+    data class Prompt @JvmOverloads constructor(
         val text: String,
-        val timestamp: String = "",
-        val contextFiles: List<Triple<String, String, Int>>? = null,
+        override val timestamp: String = "",
+        val contextFiles: List<ContextFileRef>? = null,
         val id: String = "",
         override val entryId: String = id.ifEmpty { java.util.UUID.randomUUID().toString() },
     ) : EntryData()
 
     class Text @JvmOverloads constructor(
-        val raw: StringBuilder = StringBuilder(),
-        val timestamp: String = "",
+        var raw: String = "",
+        override val timestamp: String = "",
         val agent: String = "",
         val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
     class Thinking @JvmOverloads constructor(
-        val raw: StringBuilder = StringBuilder(),
-        val timestamp: String = "",
+        var raw: String = "",
+        override val timestamp: String = "",
         val agent: String = "",
         val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
@@ -71,7 +84,7 @@ sealed class EntryData {
         var autoDenied: Boolean = false,
         var denialReason: String? = null,
         var mcpHandled: Boolean = false,
-        val timestamp: String = "",
+        override val timestamp: String = "",
         val agent: String = "",
         val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
@@ -87,13 +100,13 @@ sealed class EntryData {
         val callId: String? = null,
         var autoDenied: Boolean = false,
         var denialReason: String? = null,
-        val timestamp: String = "",
+        override val timestamp: String = "",
         val agent: String = "",
         val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
-    class TurnStats @JvmOverloads constructor(
+    data class TurnStats @JvmOverloads constructor(
         val turnId: String,
         val durationMs: Long = 0,
         val inputTokens: Long = 0,
@@ -114,19 +127,19 @@ sealed class EntryData {
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
-    class ContextFiles @JvmOverloads constructor(
-        val files: List<Pair<String, String>>,
+    data class ContextFiles @JvmOverloads constructor(
+        val files: List<FileRef>,
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
-    class Status @JvmOverloads constructor(
+    data class Status @JvmOverloads constructor(
         val icon: String,
         val message: String,
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
-    class SessionSeparator @JvmOverloads constructor(
-        val timestamp: String,
+    data class SessionSeparator @JvmOverloads constructor(
+        override val timestamp: String,
         val agent: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()

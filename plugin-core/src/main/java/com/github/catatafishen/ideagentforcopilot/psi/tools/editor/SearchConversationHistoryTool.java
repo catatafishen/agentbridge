@@ -378,9 +378,9 @@ public final class SearchConversationHistoryTool extends EditorTool {
             String ts = p.getTimestamp().isEmpty() ? "" : " [" + formatTimestamp(p.getTimestamp()) + "]";
             return ">>> " + p.getText() + ts;
         }
-        if (e instanceof EntryData.Text t) return t.getRaw().toString().trim();
+        if (e instanceof EntryData.Text t) return t.getRaw().trim();
         if (e instanceof EntryData.Thinking t) {
-            String raw = t.getRaw().toString().trim();
+            String raw = t.getRaw().trim();
             return raw.isEmpty() ? null : "[thinking] " + raw;
         }
         if (e instanceof EntryData.ToolCall t) {
@@ -404,7 +404,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
     // ── Time helpers ──────────────────────────────────────────────────────────
 
     private static boolean isWithinTimeRange(EntryData e, Instant since, Instant until) {
-        String tsStr = getTimestamp(e);
+        String tsStr = e.getTimestamp();
         if (tsStr.isEmpty()) return true;
         try {
             Instant ts = Instant.parse(tsStr);
@@ -412,16 +412,6 @@ public final class SearchConversationHistoryTool extends EditorTool {
         } catch (Exception ex) {
             return true;
         }
-    }
-
-    private static String getTimestamp(EntryData e) {
-        if (e instanceof EntryData.Prompt p) return p.getTimestamp();
-        if (e instanceof EntryData.Text t) return t.getTimestamp();
-        if (e instanceof EntryData.Thinking t) return t.getTimestamp();
-        if (e instanceof EntryData.ToolCall t) return t.getTimestamp();
-        if (e instanceof EntryData.SubAgent s) return s.getTimestamp();
-        if (e instanceof EntryData.SessionSeparator s) return s.getTimestamp();
-        return "";
     }
 
     private static boolean isMatchingEntry(String line, String searchQuery) {

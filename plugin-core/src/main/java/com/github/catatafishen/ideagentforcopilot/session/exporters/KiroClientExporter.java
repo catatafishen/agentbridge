@@ -179,7 +179,7 @@ public final class KiroClientExporter {
                 }
 
             } else if (entry instanceof EntryData.Text text) {
-                String content = text.getRaw().toString();
+                String content = text.getRaw();
                 if (content.isEmpty()) continue;
 
                 if (seenToolUse) {
@@ -193,7 +193,7 @@ public final class KiroClientExporter {
 
             } else if (entry instanceof EntryData.ToolCall toolCall) {
                 String toolCallId = UUID.randomUUID().toString();
-                String toolName = AnthropicClientExporter.sanitizeToolName(toolCall.getTitle());
+                String toolName = ExportUtils.sanitizeToolName(toolCall.getTitle());
                 String argsStr = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
                 String resultStr = toolCall.getResult() != null ? toolCall.getResult() : "";
 
@@ -239,7 +239,7 @@ public final class KiroClientExporter {
                 seenToolUse = true;
 
             } else if (entry instanceof EntryData.Thinking thinking) {
-                String content = thinking.getRaw().toString();
+                String content = thinking.getRaw();
                 if (!content.isEmpty()) {
                     assistantBlocks.add(thinkingBlock(content));
                 }

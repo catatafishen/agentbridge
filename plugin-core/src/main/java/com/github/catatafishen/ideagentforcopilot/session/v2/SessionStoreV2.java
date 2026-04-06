@@ -2,8 +2,11 @@ package com.github.catatafishen.ideagentforcopilot.session.v2;
 
 import com.github.catatafishen.ideagentforcopilot.bridge.ConversationStore;
 import com.github.catatafishen.ideagentforcopilot.psi.PlatformApiCompat;
+import com.github.catatafishen.ideagentforcopilot.session.exporters.ExportUtils;
+import com.github.catatafishen.ideagentforcopilot.ui.ContextFileRef;
 import com.github.catatafishen.ideagentforcopilot.ui.ConversationSerializer;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
+import com.github.catatafishen.ideagentforcopilot.ui.FileRef;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -598,13 +601,13 @@ public final class SessionStoreV2 implements Disposable {
                         String partTs = readLegacyTimestamp(part, ts);
                         String partEid = readLegacyEntryId(part);
                         if ("user".equals(role)) {
-                            List<kotlin.Triple<String, String, Integer>> ctxFiles = collectLegacyFileParts(parts, idx + 1, consumedFileIndices);
+                            List<ContextFileRef> ctxFiles = collectLegacyFileParts(parts, idx + 1, consumedFileIndices);
                             result.add(new EntryData.Prompt(text, partTs,
                                 ctxFiles.isEmpty() ? null : ctxFiles, "",
                                 partEid));
                         } else {
                             result.add(new EntryData.Text(
-                                new StringBuilder(text),
+                                text,
                                 partTs,
                                 agent != null ? agent : "",
                                 model != null ? model : "",
@@ -616,7 +619,7 @@ public final class SessionStoreV2 implements Disposable {
                         String partTs = readLegacyTimestamp(part, ts);
                         String partEid = readLegacyEntryId(part);
                         result.add(new EntryData.Thinking(
-                            new StringBuilder(text),
+                            text,
                             partTs,
                             agent != null ? agent : "",
                             model != null ? model : "",
@@ -673,7 +676,7 @@ public final class SessionStoreV2 implements Disposable {
                         if (consumedFileIndices.contains(idx)) break;
                         String filename = part.has("filename") ? part.get("filename").getAsString() : "";
                         String path = part.has("path") ? part.get("path").getAsString() : "";
-                        result.add(new EntryData.ContextFiles(List.of(new kotlin.Pair<>(filename, path))));
+                        result.add(new EntryData.ContextFiles(List.of(new FileRef(filename, path))));
                     }
                     default -> {
                         // Unknown part type — skip for forward-compat
@@ -714,9 +717,9 @@ public final class SessionStoreV2 implements Disposable {
      * returning them as context file triples (name, path, line). Skips non-file parts.
      * Records consumed indices in {@code consumed} so the caller can skip them.
      */
-    private static List<kotlin.Triple<String, String, Integer>> collectLegacyFileParts(
+    private static List<ContextFileRef> collectLegacyFileParts(
         List<JsonObject> parts, int startIdx, java.util.Set<Integer> consumed) {
-        List<kotlin.Triple<String, String, Integer>> files = new ArrayList<>();
+        List<ContextFileRef> files = new ArrayList<>();
         for (int i = startIdx; i < parts.size(); i++) {
             JsonObject p = parts.get(i);
             String t = p.has("type") ? p.get("type").getAsString() : "";
@@ -724,7 +727,7 @@ public final class SessionStoreV2 implements Disposable {
             String fn = p.has("filename") ? p.get("filename").getAsString() : "";
             String path = p.has("path") ? p.get("path").getAsString() : "";
             int line = p.has("line") ? p.get("line").getAsInt() : 0;
-            files.add(new kotlin.Triple<>(fn, path, line));
+            files.add(new ContextFileRef(fn, path, line));
             consumed.add(i);
         }
         return files;
@@ -747,8 +750,7 @@ public final class SessionStoreV2 implements Disposable {
 
     @NotNull
     private static File sessionsDir(@Nullable String basePath) {
-        String base = basePath != null ? basePath : "";
-        return new File(base + "/.agent-work/" + SESSIONS_DIR);
+        return ExportUtils.sessionsDir(basePath);
     }
 
     @NotNull

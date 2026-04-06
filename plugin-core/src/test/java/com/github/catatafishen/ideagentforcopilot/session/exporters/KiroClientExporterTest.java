@@ -396,7 +396,7 @@ class KiroClientExporterTest {
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
             List.of(
                 userPrompt("Think about this"),
-                new EntryData.Thinking(new StringBuilder("Let me consider..."), ""),
+                new EntryData.Thinking("Let me consider...", ""),
                 assistantText("Here is my answer.")
             ));
 
@@ -417,7 +417,7 @@ class KiroClientExporterTest {
     }
 
     private static EntryData.Text assistantText(String text) {
-        return new EntryData.Text(new StringBuilder(text));
+        return new EntryData.Text(text);
     }
 
     private static EntryData.ToolCall toolCall(String toolName, String args, String result) {

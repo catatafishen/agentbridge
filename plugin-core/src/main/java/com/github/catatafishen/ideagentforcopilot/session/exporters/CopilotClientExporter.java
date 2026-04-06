@@ -162,13 +162,8 @@ public final class CopilotClientExporter {
     @NotNull
     private static Instant resolveStartTime(@NotNull List<EntryData> entries) {
         for (EntryData entry : entries) {
-            String ts = null;
-            if (entry instanceof EntryData.Prompt p) ts = p.getTimestamp();
-            else if (entry instanceof EntryData.Text t) ts = t.getTimestamp();
-            else if (entry instanceof EntryData.Thinking th) ts = th.getTimestamp();
-            else if (entry instanceof EntryData.ToolCall tc) ts = tc.getTimestamp();
-            else if (entry instanceof EntryData.SubAgent sa) ts = sa.getTimestamp();
-            if (ts != null && !ts.isEmpty()) {
+            String ts = entry.getTimestamp();
+            if (!ts.isEmpty()) {
                 try {
                     return Instant.parse(ts);
                 } catch (Exception ignored) {
@@ -214,7 +209,7 @@ public final class CopilotClientExporter {
         @NotNull StringBuilder sb,
         @NotNull EventChain chain) {
 
-        String text = thinking.getRaw().toString();
+        String text = thinking.getRaw();
         if (text.isEmpty()) return;
 
         JsonObject data = new JsonObject();
@@ -228,7 +223,7 @@ public final class CopilotClientExporter {
         @NotNull EventChain chain,
         @NotNull String interactionId) {
 
-        String content = text.getRaw().toString();
+        String content = text.getRaw();
         if (content.isEmpty()) return;
 
         JsonObject data = new JsonObject();

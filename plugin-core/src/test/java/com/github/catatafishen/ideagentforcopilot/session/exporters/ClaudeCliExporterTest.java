@@ -693,7 +693,7 @@ class ClaudeCliExporterTest {
     }
 
     private static EntryData.Text text(String content) {
-        return new EntryData.Text(new StringBuilder(content), Instant.now().toString(),
+        return new EntryData.Text(content, Instant.now().toString(),
             "copilot", "gpt-4", UUID.randomUUID().toString());
     }
 

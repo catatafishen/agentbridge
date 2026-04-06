@@ -46,7 +46,7 @@ class CopilotClientRoundTripTest {
         assertEquals("Hello", prompt.getText());
 
         EntryData.Text text = assertInstanceOf(EntryData.Text.class, entries.get(1));
-        assertEquals("Hi there!", text.getRaw().toString());
+        assertEquals("Hi there!", text.getRaw());
         assertEquals("gpt-4.1", text.getModel());
     }
 
@@ -66,10 +66,10 @@ class CopilotClientRoundTripTest {
         assertInstanceOf(EntryData.Prompt.class, entries.get(0));
 
         EntryData.Thinking thinking = assertInstanceOf(EntryData.Thinking.class, entries.get(1));
-        assertEquals("Let me think...", thinking.getRaw().toString());
+        assertEquals("Let me think...", thinking.getRaw());
 
         EntryData.Text text = assertInstanceOf(EntryData.Text.class, entries.get(2));
-        assertEquals("Here is my answer", text.getRaw().toString());
+        assertEquals("Here is my answer", text.getRaw());
     }
 
     @Test
@@ -95,7 +95,7 @@ class CopilotClientRoundTripTest {
         assertEquals("done", toolCall.getStatus());
 
         EntryData.Text text = assertInstanceOf(EntryData.Text.class, entries.get(2));
-        assertEquals("The file contains: file contents", text.getRaw().toString());
+        assertEquals("The file contains: file contents", text.getRaw());
     }
 
     @Test
@@ -194,7 +194,7 @@ class CopilotClientRoundTripTest {
         assertEquals("Hello world", prompt.getText());
 
         EntryData.Text text = assertInstanceOf(EntryData.Text.class, imported.get(1));
-        assertEquals("Greetings!", text.getRaw().toString());
+        assertEquals("Greetings!", text.getRaw());
     }
 
     @Test
@@ -245,9 +245,9 @@ class CopilotClientRoundTripTest {
 
         assertEquals(4, imported.size());
         assertEquals("First question", ((EntryData.Prompt) imported.get(0)).getText());
-        assertEquals("First answer", ((EntryData.Text) imported.get(1)).getRaw().toString());
+        assertEquals("First answer", ((EntryData.Text) imported.get(1)).getRaw());
         assertEquals("Second question", ((EntryData.Prompt) imported.get(2)).getText());
-        assertEquals("Second answer", ((EntryData.Text) imported.get(3)).getRaw().toString());
+        assertEquals("Second answer", ((EntryData.Text) imported.get(3)).getRaw());
     }
 
     // ── Helper methods ──────────────────────────────────────────────
@@ -263,6 +263,6 @@ class CopilotClientRoundTripTest {
     }
 
     private static EntryData.Text textEntry(String text, String model) {
-        return new EntryData.Text(new StringBuilder(text), Instant.now().toString(), "", model);
+        return new EntryData.Text(text, Instant.now().toString(), "", model);
     }
 }

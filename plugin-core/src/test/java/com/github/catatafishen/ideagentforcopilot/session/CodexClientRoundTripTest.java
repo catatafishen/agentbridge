@@ -48,7 +48,7 @@ class CodexClientRoundTripTest {
         assertTrue(entries.get(0) instanceof EntryData.Prompt);
         assertEquals("Hello", ((EntryData.Prompt) entries.get(0)).getText());
         assertTrue(entries.get(1) instanceof EntryData.Text);
-        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw().toString());
+        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw());
     }
 
     @Test
@@ -94,7 +94,7 @@ class CodexClientRoundTripTest {
         for (EntryData entry : entries) {
             if (entry instanceof EntryData.Thinking t) {
                 hasReasoning = true;
-                assertEquals("Let me consider...", t.getRaw().toString());
+                assertEquals("Let me consider...", t.getRaw());
             }
         }
         assertTrue(hasReasoning, "Should have reasoning part");
@@ -136,7 +136,7 @@ class CodexClientRoundTripTest {
     void exportSessionCreatesRolloutAndInsertThread() throws IOException, SQLException {
         List<EntryData> entries = List.of(
             new EntryData.Prompt("Hello"),
-            new EntryData.Text(new StringBuilder("World"))
+            new EntryData.Text("World")
         );
 
         Path sessionsDir = tempDir.resolve("sessions");
@@ -253,7 +253,7 @@ class CodexClientRoundTripTest {
     void roundTripPreservesTextContent() throws IOException, SQLException {
         List<EntryData> original = List.of(
             new EntryData.Prompt("What is Rust?"),
-            new EntryData.Text(new StringBuilder("A systems language."))
+            new EntryData.Text("A systems language.")
         );
 
         Path sessionsDir = tempDir.resolve("rt-sessions");
@@ -277,7 +277,7 @@ class CodexClientRoundTripTest {
 
         List<EntryData> original = List.of(
             new EntryData.Prompt("Read /a"),
-            new EntryData.Text(new StringBuilder("Reading file")),
+            new EntryData.Text("Reading file"),
             toolCall
         );
 
@@ -308,8 +308,8 @@ class CodexClientRoundTripTest {
     void roundTripPreservesReasoning() throws IOException, SQLException {
         List<EntryData> original = List.of(
             new EntryData.Prompt("Think"),
-            new EntryData.Thinking(new StringBuilder("Let me think...")),
-            new EntryData.Text(new StringBuilder("Here is my answer"))
+            new EntryData.Thinking("Let me think..."),
+            new EntryData.Text("Here is my answer")
         );
 
         Path sessionsDir = tempDir.resolve("rt-sessions-reasoning");
@@ -328,7 +328,7 @@ class CodexClientRoundTripTest {
         for (EntryData entry : imported) {
             if (entry instanceof EntryData.Thinking t) {
                 foundReasoning = true;
-                assertEquals("Let me think...", t.getRaw().toString());
+                assertEquals("Let me think...", t.getRaw());
             }
         }
         assertTrue(foundReasoning, "Reasoning should survive round-trip");
@@ -344,7 +344,7 @@ class CodexClientRoundTripTest {
 
     private static String extractText(EntryData entry) {
         if (entry instanceof EntryData.Prompt p) return p.getText();
-        if (entry instanceof EntryData.Text t) return t.getRaw().toString();
+        if (entry instanceof EntryData.Text t) return t.getRaw();
         return "";
     }
 

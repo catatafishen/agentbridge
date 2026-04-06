@@ -282,15 +282,15 @@ class OpenCodeZodValidationTest {
     }
 
     private static EntryData.Text assistantText(String text) {
-        return new EntryData.Text(new StringBuilder(text), Instant.now().toString());
+        return new EntryData.Text(text, Instant.now().toString());
     }
 
     private static EntryData.Text assistantText(String text, String agent, String model) {
-        return new EntryData.Text(new StringBuilder(text), Instant.now().toString(), agent, model);
+        return new EntryData.Text(text, Instant.now().toString(), agent, model);
     }
 
     private static EntryData.Thinking assistantThinking(String text) {
-        return new EntryData.Thinking(new StringBuilder(text), Instant.now().toString());
+        return new EntryData.Thinking(text, Instant.now().toString());
     }
 
     private static EntryData.ToolCall toolCall(String toolName, String args, String result) {

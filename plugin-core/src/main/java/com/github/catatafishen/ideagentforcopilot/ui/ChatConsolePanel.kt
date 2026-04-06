@@ -333,15 +333,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         maybeStartNewSegment()
         if (currentThinkingData == null) {
             currentThinkingData =
-                EntryData.Thinking(StringBuilder(), timestamp(), currentAgent).also { entries.add(it) }
+                EntryData.Thinking("", timestamp(), currentAgent).also { entries.add(it) }
         }
-        currentThinkingData!!.raw.append(text)
+        currentThinkingData!!.raw += text
         executeJs("ChatController.addThinkingText('$currentTurnId','main','${escJs(text)}')")
     }
 
     override fun collapseThinking() {
         if (currentThinkingData == null) return
-        val raw = currentThinkingData!!.raw.toString()
+        val raw = currentThinkingData!!.raw
         currentThinkingData = null
         val encoded = b64(markdownToHtml(raw))
         executeJs("ChatController.collapseThinking('$currentTurnId','main','$encoded')")
@@ -364,9 +364,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         if (currentTextData == null && text.isBlank()) return
         if (currentTextData == null) {
-            currentTextData = EntryData.Text(StringBuilder(), timestamp(), currentAgent).also { entries.add(it) }
+            currentTextData = EntryData.Text("", timestamp(), currentAgent).also { entries.add(it) }
         }
-        currentTextData!!.raw.append(text)
+        currentTextData!!.raw += text
         val ts = displayTs(currentTextData!!.timestamp)
         executeJs("ChatController.appendAgentText('$currentTurnId','main','${escJs(text)}','$ts')")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.append(text) } }
@@ -781,7 +781,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun getConversationHtml(): String = exporter.getConversationHtml()
 
     override fun getLastResponseText(): String =
-        entries.filterIsInstance<EntryData.Text>().lastOrNull()?.raw?.toString() ?: ""
+        entries.filterIsInstance<EntryData.Text>().lastOrNull()?.raw ?: ""
 
     // ── History / persistence API ──────────────────────────────────
 
@@ -968,7 +968,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     ) {
         when (e) {
             is EntryData.Thinking -> {
-                val raw = e.raw.toString()
+                val raw = e.raw
                 if (raw.isNotBlank()) {
                     val id = "batch-think-${batchIdCounter++}"
                     metaChips.append("<thinking-chip label='Thought' status='complete' data-chip-for='$id'></thinking-chip>")
@@ -983,7 +983,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             is EntryData.ToolCall -> appendToolEntry(e, metaChips)
 
             is EntryData.Text -> {
-                val raw = e.raw.toString()
+                val raw = e.raw
                 if (raw.isNotBlank()) {
                     val clean = raw.replace(QUICK_REPLY_TAG_REGEX, "").trimEnd()
                     if (clean.isNotBlank()) {
@@ -1070,7 +1070,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val data = currentTextData ?: return
         currentTextData = null
         val turnId = currentTurnId
-        val rawText = data.raw.toString()
+        val rawText = data.raw
         if (rawText.isBlank()) {
             executeJs("ChatController.finalizeAgentText('$turnId','main',null)")
             entries.remove(data); return

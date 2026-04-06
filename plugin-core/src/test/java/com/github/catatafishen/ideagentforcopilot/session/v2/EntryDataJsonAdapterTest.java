@@ -1,9 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.session.v2;
 
+import com.github.catatafishen.ideagentforcopilot.ui.ContextFileRef;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
+import com.github.catatafishen.ideagentforcopilot.ui.FileRef;
 import com.google.gson.JsonObject;
-import kotlin.Pair;
-import kotlin.Triple;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -22,7 +22,7 @@ class EntryDataJsonAdapterTest {
     @Test
     void promptRoundTrip() {
         var contextFiles = List.of(
-            new Triple<>("Main.java", "/src/Main.java", 42)
+            new ContextFileRef("Main.java", "/src/Main.java", 42)
         );
         var original = new EntryData.Prompt("Hello", "2026-01-01T00:00:00Z", contextFiles, "p1", "eid-1");
 
@@ -44,9 +44,9 @@ class EntryDataJsonAdapterTest {
         assertEquals("2026-01-01T00:00:00Z", result.getTimestamp());
         assertNotNull(result.getContextFiles());
         assertEquals(1, result.getContextFiles().size());
-        assertEquals("Main.java", result.getContextFiles().get(0).getFirst());
-        assertEquals("/src/Main.java", result.getContextFiles().get(0).getSecond());
-        assertEquals(42, result.getContextFiles().get(0).getThird());
+        assertEquals("Main.java", result.getContextFiles().get(0).getName());
+        assertEquals("/src/Main.java", result.getContextFiles().get(0).getPath());
+        assertEquals(42, result.getContextFiles().get(0).getLine());
         assertEquals("p1", result.getId());
         assertEquals("eid-1", result.getEntryId());
     }
@@ -55,7 +55,7 @@ class EntryDataJsonAdapterTest {
 
     @Test
     void textRoundTrip() {
-        var original = new EntryData.Text(new StringBuilder("reply"), "2026-01-01T00:00:01Z", "copilot", "claude-sonnet-4-6", "eid-2");
+        var original = new EntryData.Text("reply", "2026-01-01T00:00:01Z", "copilot", "claude-sonnet-4-6", "eid-2");
 
         JsonObject json = EntryDataJsonAdapter.serialize(original);
         assertEquals("text", json.get("type").getAsString());
@@ -65,7 +65,7 @@ class EntryDataJsonAdapterTest {
         EntryData deserialized = EntryDataJsonAdapter.deserialize(json);
         assertInstanceOf(EntryData.Text.class, deserialized);
         var result = (EntryData.Text) deserialized;
-        assertEquals("reply", result.getRaw().toString());
+        assertEquals("reply", result.getRaw());
         assertEquals("2026-01-01T00:00:01Z", result.getTimestamp());
         assertEquals("copilot", result.getAgent());
         assertEquals("claude-sonnet-4-6", result.getModel());
@@ -76,7 +76,7 @@ class EntryDataJsonAdapterTest {
 
     @Test
     void thinkingRoundTrip() {
-        var original = new EntryData.Thinking(new StringBuilder("thought"), "2026-01-01T00:00:02Z", "copilot", "gpt-4o", "eid-3");
+        var original = new EntryData.Thinking("thought", "2026-01-01T00:00:02Z", "copilot", "gpt-4o", "eid-3");
 
         JsonObject json = EntryDataJsonAdapter.serialize(original);
         assertEquals("thinking", json.get("type").getAsString());
@@ -86,7 +86,7 @@ class EntryDataJsonAdapterTest {
         EntryData deserialized = EntryDataJsonAdapter.deserialize(json);
         assertInstanceOf(EntryData.Thinking.class, deserialized);
         var result = (EntryData.Thinking) deserialized;
-        assertEquals("thought", result.getRaw().toString());
+        assertEquals("thought", result.getRaw());
         assertEquals("2026-01-01T00:00:02Z", result.getTimestamp());
         assertEquals("copilot", result.getAgent());
         assertEquals("gpt-4o", result.getModel());
@@ -207,8 +207,8 @@ class EntryDataJsonAdapterTest {
     @Test
     void contextFilesRoundTrip() {
         var files = List.of(
-            new Pair<>("A.java", "/src/A.java"),
-            new Pair<>("B.java", "/src/B.java")
+            new FileRef("A.java", "/src/A.java"),
+            new FileRef("B.java", "/src/B.java")
         );
         var original = new EntryData.ContextFiles(files, "eid-6");
 
@@ -224,10 +224,10 @@ class EntryDataJsonAdapterTest {
         assertInstanceOf(EntryData.ContextFiles.class, deserialized);
         var result = (EntryData.ContextFiles) deserialized;
         assertEquals(2, result.getFiles().size());
-        assertEquals("A.java", result.getFiles().get(0).getFirst());
-        assertEquals("/src/A.java", result.getFiles().get(0).getSecond());
-        assertEquals("B.java", result.getFiles().get(1).getFirst());
-        assertEquals("/src/B.java", result.getFiles().get(1).getSecond());
+        assertEquals("A.java", result.getFiles().get(0).getName());
+        assertEquals("/src/A.java", result.getFiles().get(0).getPath());
+        assertEquals("B.java", result.getFiles().get(1).getName());
+        assertEquals("/src/B.java", result.getFiles().get(1).getPath());
         assertEquals("eid-6", result.getEntryId());
     }
 
@@ -375,7 +375,7 @@ class EntryDataJsonAdapterTest {
     @Test
     void contextFileLineZeroOmitted() {
         var contextFiles = List.of(
-            new Triple<>("X.java", "/x", 0)
+            new ContextFileRef("X.java", "/x", 0)
         );
         var original = new EntryData.Prompt("test", "", contextFiles, "", "eid-line0");
 

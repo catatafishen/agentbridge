@@ -9,6 +9,7 @@ import com.github.catatafishen.ideagentforcopilot.session.exporters.AnthropicCli
 import com.github.catatafishen.ideagentforcopilot.session.exporters.ClaudeCliExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.CodexClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.CopilotClientExporter;
+import com.github.catatafishen.ideagentforcopilot.session.exporters.ExportUtils;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.KiroClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2;
@@ -213,13 +214,6 @@ public final class SessionSwitchService implements Disposable {
     }
 
     // ── Import from previous client ───────────────────────────────────────────
-
-
-
-
-
-
-
 
     // ── Claude CLI export ─────────────────────────────────────────────────────
 
@@ -552,7 +546,6 @@ public final class SessionSwitchService implements Disposable {
         }
     }
 
-
     // ── v2 session reading ────────────────────────────────────────────────────
 
     @Nullable
@@ -649,8 +642,7 @@ public final class SessionSwitchService implements Disposable {
 
     @NotNull
     private static File sessionsDir(@Nullable String basePath) {
-        String base = basePath != null ? basePath : "";
-        return new File(base + "/.agent-work/" + SESSIONS_DIR);
+        return ExportUtils.sessionsDir(basePath);
     }
 
     // ── Disposable ────────────────────────────────────────────────────────────
