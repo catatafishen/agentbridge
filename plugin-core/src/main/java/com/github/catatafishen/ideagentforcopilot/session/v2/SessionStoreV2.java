@@ -511,7 +511,7 @@ public final class SessionStoreV2 implements Disposable {
      * legacy message format (batch-converted via {@link #convertLegacyMessages}).
      */
     @Nullable
-    private List<EntryData> parseJsonlAutoDetect(@NotNull String content) {
+    static List<EntryData> parseJsonlAutoDetect(@NotNull String content) {
         List<EntryData> directEntries = new ArrayList<>();
         List<JsonObject> legacyMessages = new ArrayList<>();
 
@@ -542,7 +542,7 @@ public final class SessionStoreV2 implements Disposable {
      * {@link EntryData} model.
      */
     @NotNull
-    private static List<EntryData> convertLegacyMessages(@NotNull List<JsonObject> messages) {
+    static List<EntryData> convertLegacyMessages(@NotNull List<JsonObject> messages) {
         List<EntryData> result = new ArrayList<>();
 
         for (JsonObject msg : messages) {

@@ -8,7 +8,7 @@ import com.google.gson.JsonParser
  * **V1 format — deprecated.** Retained only for reading legacy conversations
  * and for the dual-write path until V1 is fully removed.
  *
- * New code should use V2 ([EntryDataConverter]) as the canonical persistence format.
+ * New code should use V2 ([EntryDataJsonAdapter]) as the canonical persistence format.
  *
  * Deserialises [EntryData] lists from the V1 on-disk JSON array schema.
  * Neither file I/O nor rendering is performed here.
