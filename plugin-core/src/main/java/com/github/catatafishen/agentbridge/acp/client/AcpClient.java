@@ -17,12 +17,17 @@ import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentPromptException;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.agent.AgentStartException;
+import com.github.catatafishen.agentbridge.bridge.AuthMethod;
 import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.McpServerControl;
 import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.settings.AcpClientBinaryDetector;
+import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -257,14 +262,14 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     @Override
-    public com.github.catatafishen.agentbridge.bridge.AuthMethod getAuthMethod() {
+    public AuthMethod getAuthMethod() {
         if (capabilities == null || capabilities.authMethods() == null || capabilities.authMethods().isEmpty()) {
             return null;
         }
         // Return the first auth method from capabilities
         var method = capabilities.authMethods().getFirst();
         LOG.info(displayName() + ": ACP authMethod = " + method + ", id=" + method.id() + ", name=" + method.name());
-        var authMethod = new com.github.catatafishen.agentbridge.bridge.AuthMethod();
+        var authMethod = new AuthMethod();
         authMethod.setId(method.id());
         authMethod.setName(method.name());
         authMethod.setDescription(method.description());
@@ -1042,7 +1047,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         File binaryFile = new File(binaryPath);
         if (!binaryPath.contains("/") && !binaryPath.contains("\\")) {
             // Relative name - check if it's in PATH
-            String foundPath = com.github.catatafishen.agentbridge.settings.BinaryDetector.findBinaryPath(binaryPath);
+            String foundPath = BinaryDetector.findBinaryPath(binaryPath);
             if (foundPath == null) {
                 throw new IOException(displayName() + " binary '" + binaryPath + "' not found in PATH. " +
                     "Please install it or configure the path in Settings → Tools → AgentBridge → " + displayName());
@@ -1057,7 +1062,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         pb.redirectErrorStream(false);
 
         // Merge shell environment (for PATH, etc.)
-        pb.environment().putAll(com.github.catatafishen.agentbridge.settings.ShellEnvironment.getEnvironment());
+        pb.environment().putAll(ShellEnvironment.getEnvironment());
 
         // Override with custom environment (these take precedence)
         Map<String, String> env = buildEnvironment(mcpPort, cwd);
@@ -1107,10 +1112,10 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (binaryName.startsWith("/") || binaryName.startsWith("./")) return command;
 
         // Check user-configured override first, then auto-detect via shell environment
-        var profile = com.github.catatafishen.agentbridge.services.AgentProfileManager.getInstance().getProfile(agentId());
+        var profile = AgentProfileManager.getInstance().getProfile(agentId());
         String[] alternates = profile != null ? profile.getAlternateNames().toArray(new String[0]) : new String[0];
 
-        String resolvedPath = new com.github.catatafishen.agentbridge.settings.AcpClientBinaryDetector(agentId()).resolve(binaryName, alternates);
+        String resolvedPath = new AcpClientBinaryDetector(agentId()).resolve(binaryName, alternates);
         if (resolvedPath != null && !resolvedPath.isEmpty()) {
             List<String> resolved = new ArrayList<>(command);
             resolved.set(0, resolvedPath);

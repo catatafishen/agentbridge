@@ -5,10 +5,12 @@ import com.github.catatafishen.agentbridge.acp.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
+import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -114,7 +116,7 @@ public final class CopilotClient extends AcpClient {
     public CopilotClient(Project project) {
         super(project);
         // Force refresh to pick up charset fix for non-ASCII usernames
-        com.github.catatafishen.agentbridge.settings.ShellEnvironment.refresh();
+        ShellEnvironment.refresh();
     }
 
     @Override
@@ -208,7 +210,7 @@ public final class CopilotClient extends AcpClient {
     protected String loadSession(String cwd, String sessionId) throws Exception {
         // Copilot CLI does not support session/load (ACP spec) nor session/resume.
         // The --resume CLI flag is the only mechanism, and it is broken in ACP mode as of v1.0.12.
-        throw new com.github.catatafishen.agentbridge.agent.AgentSessionException(
+        throw new AgentSessionException(
             "Copilot CLI does not support session loading in ACP mode (as of v1.0.12). "
                 + "The --resume CLI flag is passed at launch but is currently ignored.");
     }

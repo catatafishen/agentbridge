@@ -8,6 +8,10 @@ import com.github.catatafishen.agentbridge.services.GenericSettings;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.services.ToolPermission;
+import com.github.catatafishen.agentbridge.settings.BinaryDetector;
+import com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -156,8 +160,8 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         }
 
         // 2. Auto-detect primary binary name and alternates
-        com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector detector =
-            new com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector(profile);
+        ProfileBinaryDetector detector =
+            new ProfileBinaryDetector(profile);
         String binaryName = profile.getBinaryName();
         if (!binaryName.isEmpty()) {
             String found = detector.resolve(binaryName,
@@ -169,7 +173,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         } else {
             // No primary name - try alternates only
             for (String altName : profile.getAlternateNames()) {
-                String found = com.github.catatafishen.agentbridge.settings.BinaryDetector.findBinaryPath(altName);
+                String found = BinaryDetector.findBinaryPath(altName);
                 if (found != null) {
                     resolvedBinaryPath = found;
                     return found;
@@ -208,7 +212,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         ProcessBuilder pb = new ProcessBuilder(cmd);
 
         // Inject captured shell environment (includes nvm, sdkman, etc.)
-        pb.environment().putAll(com.github.catatafishen.agentbridge.settings.ShellEnvironment.getEnvironment());
+        pb.environment().putAll(ShellEnvironment.getEnvironment());
 
         // Set agent-specific config directory environment variables
         setAgentConfigDirEnvVars(pb, projectBasePath);
@@ -521,11 +525,11 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         for (var entry : registry.getAllTools()) {
             if (entry.isBuiltIn()) continue;
             var perm = settings.getToolPermission(entry.id());
-            if (perm == com.github.catatafishen.agentbridge.services.ToolPermission.ALLOW) {
+            if (perm == ToolPermission.ALLOW) {
                 cmd.add("--allow-tool");
                 cmd.add(entry.id());
                 allowCount++;
-            } else if (perm == com.github.catatafishen.agentbridge.services.ToolPermission.DENY) {
+            } else if (perm == ToolPermission.DENY) {
                 cmd.add("--deny-tool");
                 cmd.add(entry.id());
                 denyCount++;

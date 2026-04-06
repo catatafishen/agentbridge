@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.acp.client;
 
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
+import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.agent.junie.JunieKeyStore;
 import com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings;
 import com.google.gson.JsonArray;
@@ -181,7 +182,7 @@ public final class JunieClient extends AcpClient {
     protected String loadSession(String cwd, String sessionId) throws Exception {
         // Junie restores sessions via resumeSessionId in session/new (not via session/load RPC).
         // Throw here so createSession falls through to session/new where we add resumeSessionId.
-        throw new com.github.catatafishen.agentbridge.agent.AgentSessionException(
+        throw new AgentSessionException(
             "Junie uses resumeSessionId in session/new — skipping session/load");
     }
 

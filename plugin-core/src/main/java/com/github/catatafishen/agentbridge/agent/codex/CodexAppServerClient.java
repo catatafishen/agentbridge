@@ -20,8 +20,10 @@ import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.ProjectFilesSettings;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -475,7 +477,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             LOG.info("Starting codex app-server: " + String.join(" ", cmd));
             ProcessBuilder pb = new ProcessBuilder(cmd);
             pb.environment().putAll(
-                com.github.catatafishen.agentbridge.settings.ShellEnvironment.getEnvironment());
+                ShellEnvironment.getEnvironment());
             if (project != null && project.getBasePath() != null) {
                 pb.directory(new File(project.getBasePath()));
             }
@@ -1630,7 +1632,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         for (String name : candidateNames()) {
             // Use BinaryDetector which spawns a login shell — finds npm global installs,
             // nvm-managed Node, etc. that are not on the JVM's inherited PATH.
-            String found = com.github.catatafishen.agentbridge.settings.BinaryDetector.findBinaryPath(name);
+            String found = BinaryDetector.findBinaryPath(name);
             if (found != null) return found;
         }
         throw new AgentException(

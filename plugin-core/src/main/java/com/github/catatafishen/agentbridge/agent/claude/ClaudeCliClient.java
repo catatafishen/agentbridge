@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.agent.claude;
 
 import com.github.catatafishen.agentbridge.acp.model.ContentBlock;
+import com.github.catatafishen.agentbridge.acp.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
@@ -13,6 +14,8 @@ import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.github.catatafishen.agentbridge.session.SessionSwitchService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -33,8 +36,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -246,10 +252,10 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
      *
      * <p>See: https://docs.claude.ai/claude-for-desktop/reference#model-aliases</p>
      */
-    private static final List<com.github.catatafishen.agentbridge.acp.model.Model> KNOWN_MODELS =
+    private static final List<Model> KNOWN_MODELS =
         buildKnownModels();
 
-    private static List<com.github.catatafishen.agentbridge.acp.model.Model> buildKnownModels() {
+    private static List<Model> buildKnownModels() {
         Object[][] rows = {
             // { alias, displayName }
             {"default", "Default (recommended)"},
@@ -260,35 +266,35 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             {"opus[1m]", "Opus 1M context"},
             {"opusplan", "Opus Plan (opus→sonnet)"},
         };
-        List<com.github.catatafishen.agentbridge.acp.model.Model> list = new ArrayList<>(rows.length);
+        List<Model> list = new ArrayList<>(rows.length);
         for (Object[] row : rows) {
-            list.add(new com.github.catatafishen.agentbridge.acp.model.Model(
+            list.add(new Model(
                 (String) row[0], (String) row[1], null, null));
         }
-        return java.util.Collections.unmodifiableList(list);
+        return Collections.unmodifiableList(list);
     }
 
     @Override
-    public @NotNull List<com.github.catatafishen.agentbridge.acp.model.Model> getAvailableModels() {
+    public @NotNull List<Model> getAvailableModels() {
         List<String> custom = profile.getCustomCliModels();
         if (custom.isEmpty()) {
             return KNOWN_MODELS;
         }
 
         // Known model IDs for dedup
-        java.util.Set<String> knownIds = new java.util.HashSet<>();
+        Set<String> knownIds = new HashSet<>();
         for (var m : KNOWN_MODELS) {
             knownIds.add(m.id());
         }
 
-        List<com.github.catatafishen.agentbridge.acp.model.Model> merged = new ArrayList<>(KNOWN_MODELS);
+        List<Model> merged = new ArrayList<>(KNOWN_MODELS);
         for (String id : custom) {
             if (!id.isBlank() && !knownIds.contains(id.trim())) {
-                merged.add(new com.github.catatafishen.agentbridge.acp.model.Model(
+                merged.add(new Model(
                     id.trim(), id.trim(), null, null));
             }
         }
-        return java.util.Collections.unmodifiableList(merged);
+        return Collections.unmodifiableList(merged);
     }
 
     // ── Prompt execution ─────────────────────────────────────────────────────
@@ -424,7 +430,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             ProcessBuilder pb = new ProcessBuilder(cmd);
 
             // Inject captured shell environment (includes nvm, sdkman, etc.)
-            pb.environment().putAll(com.github.catatafishen.agentbridge.settings.ShellEnvironment.getEnvironment());
+            pb.environment().putAll(ShellEnvironment.getEnvironment());
 
             // Set working directory to project base path so the CLI detects correct git repo and cwd
             if (project != null && project.getBasePath() != null) {
@@ -857,8 +863,8 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             throw new AgentException("Claude binary not found at: " + custom, null, false);
         }
         // Auto-detect using the unified detector (shell environment + known paths)
-        com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector detector =
-            new com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector(profile);
+        ProfileBinaryDetector detector =
+            new ProfileBinaryDetector(profile);
         String found = detector.resolve("claude");
         if (found != null) return found;
         throw new AgentException(

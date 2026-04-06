@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.BuildInfo;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
@@ -42,7 +43,7 @@ public final class McpProtocolHandler {
     private static final int RESOURCE_NOT_FOUND_ERROR = -32002;
 
     private static final String SERVER_NAME = "agentbridge";
-    private static final String SERVER_VERSION = com.github.catatafishen.agentbridge.BuildInfo.getVersion();
+    private static final String SERVER_VERSION = BuildInfo.getVersion();
     private static final String PROTOCOL_VERSION = "2025-11-25";
     private static final String STARTUP_INSTRUCTIONS_URI = "resource://default-startup-instructions.md";
     private static final String RESOURCES_CURSOR_PREFIX = "resources:";

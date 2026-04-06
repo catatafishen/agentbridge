@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
@@ -78,7 +79,7 @@ final class AcpTerminalHandler {
 
         // Merge shell environment for PATH resolution
         pb.environment().putAll(
-            com.github.catatafishen.agentbridge.settings.ShellEnvironment.getEnvironment());
+            ShellEnvironment.getEnvironment());
 
         String terminalId = "term_" + UUID.randomUUID().toString().substring(0, 12);
         Process process = pb.start();

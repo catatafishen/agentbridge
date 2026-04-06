@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.ui.renderers.GitCommitRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -67,8 +69,8 @@ public final class GitCommitTool extends GitTool {
         }
 
         // Open VCS tool window in follow mode
-        if (com.github.catatafishen.agentbridge.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
-            com.github.catatafishen.agentbridge.psi.EdtUtil.invokeLater(() -> {
+        if (ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
+            EdtUtil.invokeLater(() -> {
                 var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
                     .getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
                 if (tw != null) tw.activate(null);

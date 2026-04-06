@@ -128,7 +128,7 @@ public final class ActiveAgentManager implements Disposable {
         // Kick off the session export. onAgentSwitch dispatches work to a pooled thread
         // and stores a CompletableFuture so the new agent can wait before createSession().
         try {
-            com.github.catatafishen.agentbridge.session.SessionSwitchService
+            SessionSwitchService
                 .getInstance(project)
                 .onAgentSwitch(previousId, profileId);
         } catch (Exception e) {
