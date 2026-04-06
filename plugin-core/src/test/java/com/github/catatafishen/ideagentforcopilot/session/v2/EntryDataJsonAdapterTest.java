@@ -107,7 +107,7 @@ class EntryDataJsonAdapterTest {
             "/src/Main.java",   // filePath
             false,              // autoDenied
             null,               // denialReason
-            true,               // mcpHandled
+            "read_file",        // pluginTool
             "2026-01-01T00:00:03Z", // timestamp
             "copilot",          // agent
             "claude-sonnet-4-6",    // model
@@ -124,7 +124,8 @@ class EntryDataJsonAdapterTest {
         assertEquals("Read a file", json.get("description").getAsString());
         assertEquals("/src/Main.java", json.get("filePath").getAsString());
         assertFalse(json.has("autoDenied")); // false → omitted
-        assertTrue(json.get("mcpHandled").getAsBoolean());
+        assertTrue(json.has("pluginTool"));
+        assertEquals("read_file", json.get("pluginTool").getAsString());
         assertEquals("2026-01-01T00:00:03Z", json.get("timestamp").getAsString());
         assertEquals("copilot", json.get("agent").getAsString());
         assertEquals("claude-sonnet-4-6", json.get("model").getAsString());
@@ -142,7 +143,7 @@ class EntryDataJsonAdapterTest {
         assertEquals("/src/Main.java", result.getFilePath());
         assertFalse(result.getAutoDenied());
         assertNull(result.getDenialReason());
-        assertTrue(result.getMcpHandled());
+        assertEquals("read_file", result.getPluginTool());
         assertEquals("2026-01-01T00:00:03Z", result.getTimestamp());
         assertEquals("copilot", result.getAgent());
         assertEquals("claude-sonnet-4-6", result.getModel());
@@ -285,7 +286,7 @@ class EntryDataJsonAdapterTest {
             null,     // filePath
             false,    // autoDenied
             null,     // denialReason
-            false,    // mcpHandled
+            null,     // pluginTool
             "",       // timestamp
             "",       // agent
             "",       // model
@@ -307,7 +308,7 @@ class EntryDataJsonAdapterTest {
         assertFalse(json.has("description"), "description should be omitted when null");
         assertFalse(json.has("filePath"), "filePath should be omitted when null");
         assertFalse(json.has("autoDenied"), "autoDenied should be omitted when false");
-        assertFalse(json.has("mcpHandled"), "mcpHandled should be omitted when false");
+        assertFalse(json.has("pluginTool"), "pluginTool should be omitted when null");
         assertFalse(json.has("agent"), "agent should be omitted when empty");
         assertFalse(json.has("model"), "model should be omitted when empty");
         assertFalse(json.has("timestamp"), "timestamp should be omitted when empty");

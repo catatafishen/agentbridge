@@ -95,9 +95,8 @@ public final class EntryDataJsonAdapter {
                 json.addProperty("autoDenied", true);
             }
             addNonEmpty(json, "denialReason", tc.getDenialReason());
-            if (tc.getMcpHandled()) {
-                json.addProperty("mcpHandled", true);
-            }
+            String pluginTool = tc.getPluginTool();
+            if (pluginTool != null) json.addProperty("pluginTool", pluginTool);
             addNonEmpty(json, "timestamp", tc.getTimestamp());
             addNonEmpty(json, "agent", tc.getAgent());
             addNonEmpty(json, "model", tc.getModel());
@@ -220,21 +219,28 @@ public final class EntryDataJsonAdapter {
                 str(json, "agent"),
                 str(json, "model"),
                 entryId);
-            case TYPE_TOOL -> new EntryData.ToolCall(
-                str(json, "title"),
-                strOrNull(json, "arguments"),
-                str(json, "kind"),
-                strOrNull(json, "result"),
-                strOrNull(json, "status"),
-                strOrNull(json, "description"),
-                strOrNull(json, "filePath"),
-                bool(json, "autoDenied"),
-                strOrNull(json, "denialReason"),
-                bool(json, "mcpHandled"),
-                str(json, "timestamp"),
-                str(json, "agent"),
-                str(json, "model"),
-                entryId);
+            case TYPE_TOOL -> {
+                // Read new format first, fall back to legacy boolean
+                String pluginTool = json.has("pluginTool") ? json.get("pluginTool").getAsString() : null;
+                if (pluginTool == null && bool(json, "mcpHandled")) {
+                    pluginTool = str(json, "title"); // best effort: use the title as the tool name
+                }
+                yield new EntryData.ToolCall(
+                    str(json, "title"),
+                    strOrNull(json, "arguments"),
+                    str(json, "kind"),
+                    strOrNull(json, "result"),
+                    strOrNull(json, "status"),
+                    strOrNull(json, "description"),
+                    strOrNull(json, "filePath"),
+                    bool(json, "autoDenied"),
+                    strOrNull(json, "denialReason"),
+                    pluginTool,
+                    str(json, "timestamp"),
+                    str(json, "agent"),
+                    str(json, "model"),
+                    entryId);
+            }
             case TYPE_SUBAGENT -> new EntryData.SubAgent(
                 str(json, "agentType"),
                 str(json, "description"),

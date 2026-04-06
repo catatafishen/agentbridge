@@ -83,7 +83,7 @@ sealed class EntryData {
         var filePath: String? = null,
         var autoDenied: Boolean = false,
         var denialReason: String? = null,
-        var mcpHandled: Boolean = false,
+        var pluginTool: String? = null,
         override val timestamp: String = "",
         val agent: String = "",
         val model: String = "",

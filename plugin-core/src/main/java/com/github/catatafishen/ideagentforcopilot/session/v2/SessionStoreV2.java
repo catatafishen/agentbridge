@@ -636,12 +636,15 @@ public final class SessionStoreV2 implements Disposable {
                         String toolStatus = inv.has("status") ? inv.get("status").getAsString() : null;
                         String toolDescription = inv.has("description") ? inv.get("description").getAsString() : null;
                         String filePath = inv.has("filePath") ? inv.get("filePath").getAsString() : null;
-                        boolean mcpHandled = inv.has("mcpHandled") && inv.get("mcpHandled").getAsBoolean();
+                        String pluginTool = inv.has("pluginTool") ? inv.get("pluginTool").getAsString() : null;
+                        if (pluginTool == null && inv.has("mcpHandled") && inv.get("mcpHandled").getAsBoolean()) {
+                            pluginTool = toolName; // best-effort from legacy
+                        }
                         String partTs = readLegacyTimestamp(part, ts);
                         String partEid = readLegacyEntryId(part);
                         result.add(new EntryData.ToolCall(
                             toolName, args, kind, toolResult, toolStatus, toolDescription, filePath,
-                            autoDenied, denialReason, mcpHandled,
+                            autoDenied, denialReason, pluginTool,
                             partTs, agent != null ? agent : "",
                             model != null ? model : "", partEid));
                     }

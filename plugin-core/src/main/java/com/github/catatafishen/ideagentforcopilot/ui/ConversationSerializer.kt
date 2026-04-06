@@ -73,7 +73,8 @@ internal object ConversationSerializer {
                 obj["filePath"]?.asString,
                 obj["autoDenied"]?.asBoolean ?: false,
                 obj["denialReason"]?.asString,
-                obj["mcpHandled"]?.asBoolean ?: false,
+                obj["pluginTool"]?.asString ?: if (obj["mcpHandled"]?.asBoolean == true) (obj["title"]?.asString
+                    ?: "") else null,
                 obj["ts"]?.asString ?: "",
                 obj["agent"]?.asString ?: "",
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
