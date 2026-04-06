@@ -1254,9 +1254,9 @@ class ChatToolWindowContent(
 
             // Copilot CLI
             val copilotGroup = DefaultActionGroup()
-            addGlobSection(copilotGroup, base, ".agent-work/copilot/agents", "*.md", "agents")
-            addGlobSection(copilotGroup, base, ".agent-work/copilot/skills", "*/SKILL.md", "skills")
-            addGlobSection(copilotGroup, base, ".agent-work/copilot/instructions", "*.instructions.md", "instructions")
+            addGlobSection(copilotGroup, base, ".agent-work/copilot/agents", "*.md")
+            addGlobSection(copilotGroup, base, ".agent-work/copilot/skills", "*/SKILL.md")
+            addGlobSection(copilotGroup, base, ".agent-work/copilot/instructions", "*.instructions.md")
             if (copilotGroup.childrenCount > 0) {
                 if (group.childrenCount > 0) group.addSeparator()
                 group.addSeparator("Copilot CLI")
@@ -1265,7 +1265,7 @@ class ChatToolWindowContent(
 
             // OpenCode
             val openCodeGroup = DefaultActionGroup()
-            addGlobSection(openCodeGroup, base, ".agent-work/opencode/agent", "*.md", "agent")
+            addGlobSection(openCodeGroup, base, ".agent-work/opencode/agent", "*.md")
             if (openCodeGroup.childrenCount > 0) {
                 if (group.childrenCount > 0) group.addSeparator()
                 group.addSeparator("OpenCode")
@@ -1275,7 +1275,7 @@ class ChatToolWindowContent(
             // Junie
             val junieGroup = DefaultActionGroup()
             addFileAction(junieGroup, base, ".agent-work/junie/guidelines.md", "guidelines.md")
-            addGlobSection(junieGroup, base, ".agent-work/junie/agents", "*.md", "agents")
+            addGlobSection(junieGroup, base, ".agent-work/junie/agents", "*.md")
             if (junieGroup.childrenCount > 0) {
                 if (group.childrenCount > 0) group.addSeparator()
                 group.addSeparator("Junie")
@@ -1284,8 +1284,8 @@ class ChatToolWindowContent(
 
             // Kiro
             val kiroGroup = DefaultActionGroup()
-            addGlobSection(kiroGroup, base, ".agent-work/kiro/agents", "*.json", "agents")
-            addGlobSection(kiroGroup, base, ".agent-work/kiro/skills", "*/SKILL.md", "skills")
+            addGlobSection(kiroGroup, base, ".agent-work/kiro/agents", "*.json")
+            addGlobSection(kiroGroup, base, ".agent-work/kiro/skills", "*/SKILL.md")
             if (kiroGroup.childrenCount > 0) {
                 if (group.childrenCount > 0) group.addSeparator()
                 group.addSeparator("Kiro")
@@ -1306,7 +1306,7 @@ class ChatToolWindowContent(
             val exists = file.exists()
             val extension = path.substringAfterLast('.', "")
             val icon = if (exists) {
-                fileIconFor(path, extension)
+                fileIconFor(extension)
             } else {
                 AllIcons.Actions.IntentionBulbGrey
             }
@@ -1327,7 +1327,7 @@ class ChatToolWindowContent(
             })
         }
 
-        private fun fileIconFor(path: String, extension: String): Icon {
+        private fun fileIconFor(extension: String): Icon {
             return com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
                 .getFileTypeByExtension(extension).icon ?: AllIcons.FileTypes.Text
         }
@@ -1336,8 +1336,7 @@ class ChatToolWindowContent(
             group: DefaultActionGroup,
             base: String,
             dirPath: String,
-            pattern: String,
-            label: String
+            pattern: String
         ) {
             val dir = java.io.File(base, dirPath)
             val files = findMatchingFiles(dir, pattern)
@@ -1830,7 +1829,11 @@ class ChatToolWindowContent(
 
     private fun saveConversation() {
         lastIncrementalSaveMs = System.currentTimeMillis()
-        conversationStore.saveEntriesAsync(project.basePath, chatConsolePanel.getEntries())
+        // Include deferred entries (older history not yet rendered) so that a save triggered after
+        // the first new turn does not overwrite and lose the older history that was split off during
+        // restore. deferredEntries() is chronologically before chatConsolePanel.getEntries().
+        val fullEntries = conversationReplayer.deferredEntries() + chatConsolePanel.getEntries()
+        conversationStore.saveEntriesAsync(project.basePath, fullEntries)
     }
 
     /**
@@ -1928,13 +1931,13 @@ class ChatToolWindowContent(
             return
         }
 
-        val commands = client.getAvailableCommands()
+        val commands = client.availableCommands
         if (commands.size() == 0) return
 
         val matches = mutableListOf<String>()
         for (i in 0 until commands.size()) {
             val cmdObj = commands[i].asJsonObject
-            val cmd = cmdObj.get("name")?.asString ?: continue
+            val cmd = cmdObj["name"]?.asString ?: continue
             if (cmd.startsWith(text, ignoreCase = true)) {
                 matches.add(cmd)
             }
@@ -1954,7 +1957,7 @@ class ChatToolWindowContent(
         autocompletePopup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
             .createPopupChooserBuilder(commands)
             .setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
-            .setItemChosenCallback { selected -> promptTextArea.text = selected }
+            .setItemChosenCallback { selected -> promptTextArea.text = selected.toString() }
             .createPopup()
 
         autocompletePopup?.showInBestPositionFor(promptTextArea.editor ?: return)
