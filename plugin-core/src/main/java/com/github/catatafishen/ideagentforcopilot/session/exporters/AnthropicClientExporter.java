@@ -1,7 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.session.exporters;
 
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -10,15 +8,16 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 public final class AnthropicClientExporter {
@@ -29,9 +28,6 @@ public final class AnthropicClientExporter {
     private static final String TYPE_TEXT = "text";
     private static final String TYPE_TOOL_USE = "tool_use";
     private static final String TYPE_TOOL_RESULT = "tool_result";
-    private static final String TYPE_TOOL_INVOCATION = "tool-invocation";
-    private static final String FIELD_TOOL_INVOCATION = "toolInvocation";
-    private static final String STATE_RESULT = "result";
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
 
@@ -65,8 +61,7 @@ public final class AnthropicClientExporter {
         @NotNull List<EntryData> entries,
         @NotNull Path targetPath) throws IOException {
 
-        List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
-        List<AnthropicMessage> anthropicMessages = toAnthropicMessages(messages);
+        List<AnthropicMessage> anthropicMessages = toAnthropicMessages(entries);
 
         StringBuilder sb = new StringBuilder();
         for (AnthropicMessage msg : anthropicMessages) {
@@ -82,81 +77,98 @@ public final class AnthropicClientExporter {
     }
 
     /**
-     * Converts v2 {@link SessionMessage} list into Anthropic API message format.
+     * Converts a flat list of {@link EntryData} entries into Anthropic API message format.
      *
-     * <p>A single v2 assistant message may contain interleaved tool invocations and text
-     * from multiple sequential turns (e.g., tool A → result → text → tool B → result → text).
-     * The Anthropic API requires each tool-use turn to be a separate assistant message followed
-     * by a user message with tool results.  This method splits at turn boundaries: a text block
-     * following tool_use blocks signals a new turn.</p>
+     * <p>The Anthropic API requires strict user/assistant alternation with tool_use blocks
+     * in assistant messages and tool_result blocks in the following user message.  When a
+     * text entry follows tool calls, it signals a turn boundary: the current assistant
+     * blocks are flushed as a turn pair before the new text is started.</p>
      */
-    static List<AnthropicMessage> toAnthropicMessages(@NotNull List<SessionMessage> messages) {
+    static List<AnthropicMessage> toAnthropicMessages(@NotNull List<EntryData> entries) {
         List<AnthropicMessage> raw = new ArrayList<>();
-
-        for (SessionMessage msg : messages) {
-            switch (msg.role) {
-                case ROLE_USER -> convertUserMessage(msg, raw);
-                case ROLE_ASSISTANT -> convertAssistantMessage(msg, raw);
-                default -> { /* separator and other roles: skip */ }
-            }
-        }
-
-        return mergeConsecutiveSameRole(raw);
-    }
-
-    private static void convertUserMessage(@NotNull SessionMessage msg, @NotNull List<AnthropicMessage> out) {
-        List<JsonObject> blocks = new ArrayList<>();
-        for (JsonObject part : msg.parts) {
-            if (TYPE_TEXT.equals(partType(part))) {
-                String text = partText(part);
-                if (!text.isEmpty()) {
-                    blocks.add(textBlock(text));
-                }
-            }
-        }
-        if (!blocks.isEmpty()) {
-            out.add(new AnthropicMessage(ROLE_USER, blocks, msg.createdAt));
-        }
-    }
-
-    /**
-     * Converts a v2 assistant message into one or more Anthropic turn pairs.
-     *
-     * <p>Sequential tool use within a single v2 message (tool → text → tool → text) is
-     * split into separate assistant/user turn pairs.  A text block following tool_use blocks
-     * marks a turn boundary.</p>
-     */
-    private static void convertAssistantMessage(@NotNull SessionMessage msg, @NotNull List<AnthropicMessage> out) {
         List<JsonObject> assistantBlocks = new ArrayList<>();
         List<JsonObject> toolResults = new ArrayList<>();
         boolean seenToolUse = false;
+        long currentTimestamp = 0;
 
-        for (JsonObject part : msg.parts) {
-            String type = partType(part);
-
-            if (TYPE_TEXT.equals(type)) {
-                String text = partText(part);
-                if (text.isEmpty()) continue;
-
-                if (seenToolUse) {
-                    emitTurn(assistantBlocks, toolResults, msg.createdAt, out);
+        for (EntryData entry : entries) {
+            if (entry instanceof EntryData.Prompt prompt) {
+                // Flush pending assistant blocks
+                if (!assistantBlocks.isEmpty()) {
+                    emitTurn(assistantBlocks, toolResults, currentTimestamp, raw);
                     assistantBlocks = new ArrayList<>();
                     toolResults = new ArrayList<>();
                     seenToolUse = false;
+                    currentTimestamp = 0;
                 }
-                assistantBlocks.add(textBlock(text));
+                // Add user message
+                String text = prompt.getText();
+                if (!text.isEmpty()) {
+                    raw.add(new AnthropicMessage(ROLE_USER, List.of(textBlock(text)),
+                        parseTimestamp(prompt.getTimestamp())));
+                }
 
-            } else if (TYPE_TOOL_INVOCATION.equals(type) && part.has(FIELD_TOOL_INVOCATION)) {
-                ToolBlocks blocks = buildToolBlocks(part.getAsJsonObject(FIELD_TOOL_INVOCATION));
-                if (blocks != null) {
-                    assistantBlocks.add(blocks.toolUse);
-                    toolResults.add(blocks.toolResult);
-                    seenToolUse = true;
+            } else if (entry instanceof EntryData.Text text) {
+                String content = text.getRaw().toString();
+                if (content.isEmpty()) continue;
+
+                if (currentTimestamp == 0) {
+                    currentTimestamp = parseTimestamp(text.getTimestamp());
                 }
+
+                if (seenToolUse) {
+                    // Text after tool use = turn boundary
+                    emitTurn(assistantBlocks, toolResults, currentTimestamp, raw);
+                    assistantBlocks = new ArrayList<>();
+                    toolResults = new ArrayList<>();
+                    seenToolUse = false;
+                    currentTimestamp = parseTimestamp(text.getTimestamp());
+                }
+                assistantBlocks.add(textBlock(content));
+
+            } else if (entry instanceof EntryData.ToolCall toolCall) {
+                if (currentTimestamp == 0) {
+                    currentTimestamp = parseTimestamp(toolCall.getTimestamp());
+                }
+
+                String toolCallId = UUID.randomUUID().toString();
+                String toolName = sanitizeToolName(toolCall.getTitle());
+                String argsStr = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
+                String resultStr = toolCall.getResult() != null ? toolCall.getResult() : "";
+
+                JsonObject inputObj;
+                try {
+                    inputObj = JsonParser.parseString(argsStr).getAsJsonObject();
+                } catch (Exception e) {
+                    LOG.warn("Could not parse tool args as JSON object, wrapping as string: " + argsStr);
+                    inputObj = new JsonObject();
+                    inputObj.addProperty("_raw", argsStr);
+                }
+
+                JsonObject toolUseBlock = new JsonObject();
+                toolUseBlock.addProperty("type", TYPE_TOOL_USE);
+                toolUseBlock.addProperty("id", toolCallId);
+                toolUseBlock.addProperty("name", toolName);
+                toolUseBlock.add("input", inputObj);
+
+                JsonObject toolResultBlock = new JsonObject();
+                toolResultBlock.addProperty("type", TYPE_TOOL_RESULT);
+                toolResultBlock.addProperty("tool_use_id", toolCallId);
+                toolResultBlock.addProperty("content", resultStr);
+
+                assistantBlocks.add(toolUseBlock);
+                toolResults.add(toolResultBlock);
+                seenToolUse = true;
             }
+            // Skip Thinking, SubAgent, Status, TurnStats, ContextFiles, SessionSeparator
         }
 
-        emitTurn(assistantBlocks, toolResults, msg.createdAt, out);
+        // Flush remaining
+        if (!assistantBlocks.isEmpty()) {
+            emitTurn(assistantBlocks, toolResults, currentTimestamp, raw);
+        }
+
+        return mergeConsecutiveSameRole(raw);
     }
 
     private static void emitTurn(
@@ -173,57 +185,13 @@ public final class AnthropicClientExporter {
         }
     }
 
-    /**
-     * Builds a tool_use + tool_result block pair from a tool invocation.
-     *
-     * @return the paired blocks, or {@code null} if the invocation is not in "result" state
-     */
-    @Nullable
-    private static ToolBlocks buildToolBlocks(@NotNull JsonObject inv) {
-        String state = inv.has("state") ? inv.get("state").getAsString() : "call";
-        if (!STATE_RESULT.equals(state)) return null;
-
-        String toolCallId = inv.has("toolCallId") ? inv.get("toolCallId").getAsString() : "";
-        String toolName = sanitizeToolName(
-            inv.has("toolName") ? inv.get("toolName").getAsString() : "unknown");
-        String argsStr = inv.has("args") ? inv.get("args").getAsString() : "{}";
-        String resultStr = inv.has(STATE_RESULT) ? inv.get(STATE_RESULT).getAsString() : "";
-
-        JsonObject inputObj;
+    private static long parseTimestamp(@NotNull String isoTimestamp) {
+        if (isoTimestamp.isEmpty()) return 0;
         try {
-            inputObj = JsonParser.parseString(argsStr).getAsJsonObject();
-        } catch (Exception e) {
-            LOG.warn("Could not parse tool args as JSON object, wrapping as string: " + argsStr);
-            inputObj = new JsonObject();
-            inputObj.addProperty("_raw", argsStr);
+            return Instant.parse(isoTimestamp).toEpochMilli();
+        } catch (java.time.format.DateTimeParseException e) {
+            return 0;
         }
-
-        JsonObject toolUseBlock = new JsonObject();
-        toolUseBlock.addProperty("type", TYPE_TOOL_USE);
-        toolUseBlock.addProperty("id", toolCallId);
-        toolUseBlock.addProperty("name", toolName);
-        toolUseBlock.add("input", inputObj);
-
-        JsonObject toolResultBlock = new JsonObject();
-        toolResultBlock.addProperty("type", TYPE_TOOL_RESULT);
-        toolResultBlock.addProperty("tool_use_id", toolCallId);
-        toolResultBlock.addProperty("content", resultStr);
-
-        return new ToolBlocks(toolUseBlock, toolResultBlock);
-    }
-
-    // ------------------------------------------------------------------
-    // Part accessors
-    // ------------------------------------------------------------------
-
-    @NotNull
-    private static String partType(@NotNull JsonObject part) {
-        return part.has("type") ? part.get("type").getAsString() : "";
-    }
-
-    @NotNull
-    private static String partText(@NotNull JsonObject part) {
-        return part.has(TYPE_TEXT) ? part.get(TYPE_TEXT).getAsString() : "";
     }
 
     @NotNull
@@ -260,11 +228,8 @@ public final class AnthropicClientExporter {
     // Inner types
     // ------------------------------------------------------------------
 
-    private record ToolBlocks(@NotNull JsonObject toolUse, @NotNull JsonObject toolResult) {
-    }
-
     /**
-     * @param createdAt Epoch millis when the original SessionMessage was created (0 if unknown).
+     * @param createdAt Epoch millis parsed from the entry timestamp (0 if unknown).
      */
     record AnthropicMessage(String role, List<JsonObject> contentBlocks, long createdAt) {
         AnthropicMessage(@NotNull String role, @NotNull List<JsonObject> contentBlocks, long createdAt) {

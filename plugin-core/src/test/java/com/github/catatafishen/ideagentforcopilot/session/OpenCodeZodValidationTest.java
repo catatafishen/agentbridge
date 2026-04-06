@@ -1,8 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.session;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -20,6 +19,7 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -79,26 +79,17 @@ class OpenCodeZodValidationTest {
 
     @Test
     void exportedSessionPassesZodValidation() throws Exception {
-        // Build a realistic session with user/assistant messages and tool calls
-        JsonObject toolPart = toolInvocationPart("call-1", "read_file",
-            "{\"path\":\"test.txt\"}", "file content");
-        JsonObject reasoningPart = new JsonObject();
-        reasoningPart.addProperty("type", "reasoning");
-        reasoningPart.addProperty("text", "Let me think...");
-
-        List<SessionMessage> messages = List.of(
-            userMessage("What is in test.txt?"),
-            new SessionMessage("a1", "assistant",
-                List.of(reasoningPart, toolPart, textPart("Here is the content.")),
-                System.currentTimeMillis(), "build", "claude-sonnet-4.6"),
-            userMessage("Thanks!"),
-            new SessionMessage("a2", "assistant",
-                List.of(textPart("You're welcome!")),
-                System.currentTimeMillis(), "build", "claude-sonnet-4.6")
+        List<EntryData> entries = List.of(
+            userPrompt("What is in test.txt?"),
+            assistantThinking("Let me think..."),
+            toolCall("read_file", "{\"path\":\"test.txt\"}", "file content"),
+            assistantText("Here is the content."),
+            userPrompt("Thanks!"),
+            assistantText("You're welcome!")
         );
 
         Path dbPath = tempDir.resolve("opencode.db");
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(messages), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertTrue(sessionId != null && !sessionId.isEmpty(), "Export should succeed");
 
         // Extract message and part rows from the exported DB
@@ -114,20 +105,13 @@ class OpenCodeZodValidationTest {
 
     @Test
     void exportedSubagentPartPassesZodValidation() throws Exception {
-        JsonObject subagentPart = new JsonObject();
-        subagentPart.addProperty("type", "subagent");
-        subagentPart.addProperty("agentType", "explore");
-        subagentPart.addProperty("description", "Exploring codebase");
-        subagentPart.addProperty("result", "Found 3 files");
-
-        List<SessionMessage> messages = List.of(
-            userMessage("Search"),
-            new SessionMessage("a1", "assistant", List.of(subagentPart),
-                System.currentTimeMillis(), null, null)
+        List<EntryData> entries = List.of(
+            userPrompt("Search"),
+            subAgent("explore", "Exploring codebase", "Found 3 files")
         );
 
         Path dbPath = tempDir.resolve("opencode.db");
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(messages), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertTrue(sessionId != null && !sessionId.isEmpty());
 
         JsonObject validatorInput = extractValidatorInput(dbPath, sessionId);
@@ -140,25 +124,17 @@ class OpenCodeZodValidationTest {
 
     @Test
     void exportedRunningToolPartPassesZodValidation() throws Exception {
-        // Tool invocation in "partial-call" state (still running)
-        JsonObject invocation = new JsonObject();
-        invocation.addProperty("state", "call");
-        invocation.addProperty("toolCallId", "call-running");
-        invocation.addProperty("toolName", "bash");
-        invocation.addProperty("args", "{\"command\":\"ls\"}");
+        // Tool invocation in "running" state (no result yet)
+        var tc = new EntryData.ToolCall("bash", "{\"command\":\"ls\"}");
+        tc.setStatus("running");
 
-        JsonObject toolPart = new JsonObject();
-        toolPart.addProperty("type", "tool-invocation");
-        toolPart.add("toolInvocation", invocation);
-
-        List<SessionMessage> messages = List.of(
-            userMessage("Run ls"),
-            new SessionMessage("a1", "assistant", List.of(toolPart),
-                System.currentTimeMillis(), null, null)
+        List<EntryData> entries = List.of(
+            userPrompt("Run ls"),
+            tc
         );
 
         Path dbPath = tempDir.resolve("opencode.db");
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(messages), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertTrue(sessionId != null && !sessionId.isEmpty());
 
         JsonObject validatorInput = extractValidatorInput(dbPath, sessionId);
@@ -181,15 +157,13 @@ class OpenCodeZodValidationTest {
      */
     @Test
     void exportedToolPartWithEmptyArgsPassesZodValidation() throws Exception {
-        List<SessionMessage> messages = List.of(
-            userMessage("test empty args"),
-            new SessionMessage("a1", "assistant",
-                List.of(toolInvocationPart("call-1", "read_file", "", "file content")),
-                System.currentTimeMillis(), null, null)
+        List<EntryData> entries = List.of(
+            userPrompt("test empty args"),
+            toolCall("read_file", "", "file content")
         );
 
         Path dbPath = tempDir.resolve("opencode.db");
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(messages), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         JsonObject validatorInput = extractValidatorInput(dbPath, sessionId);
@@ -205,15 +179,13 @@ class OpenCodeZodValidationTest {
      */
     @Test
     void exportedToolPartWithNullArgsPassesZodValidation() throws Exception {
-        List<SessionMessage> messages = List.of(
-            userMessage("test null args"),
-            new SessionMessage("a1", "assistant",
-                List.of(toolInvocationPart("call-1", "search_text", null, "results")),
-                System.currentTimeMillis(), null, null)
+        List<EntryData> entries = List.of(
+            userPrompt("test null args"),
+            toolCall("search_text", null, "results")
         );
 
         Path dbPath = tempDir.resolve("opencode.db");
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(messages), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         JsonObject validatorInput = extractValidatorInput(dbPath, sessionId);
@@ -225,43 +197,27 @@ class OpenCodeZodValidationTest {
     }
 
     /**
-     * Verifies that consecutive assistant messages (e.g. main response + sub-agent result
+     * Verifies that consecutive assistant entries (e.g. main response + sub-agent result
      * + continuation) are merged into a single assistant message during export, maintaining
      * the linear user→assistant chain that OpenCode expects.
      */
     @Test
     void consecutiveAssistantMessagesAreMergedDuringExport() throws Exception {
-        // Simulate a turn where Copilot responded, launched a sub-agent, then continued
-        long baseTime = System.currentTimeMillis();
-        List<SessionMessage> messages = List.of(
-            new SessionMessage("u1", "user",
-                List.of(textPart("Check permissions")),
-                baseTime, null, null),
-            new SessionMessage("a1", "assistant",
-                List.of(textPart("Let me investigate...")),
-                baseTime, "build", "claude-sonnet-4.6"),
-            // Sub-agent result as separate assistant message (same parent in v2 format)
-            new SessionMessage("a2", "assistant",
-                List.of(subagentPart("explore", "Exploring codebase", "Found the bug")),
-                baseTime, "Intellij-Explore", "claude-haiku-4.5"),
-            // Continuation after sub-agent
-            new SessionMessage("a3", "assistant",
-                List.of(textPart("Based on the exploration, here's the fix...")),
-                baseTime, "build", "claude-sonnet-4.6"),
-            new SessionMessage("u2", "user",
-                List.of(textPart("Thanks!")),
-                baseTime, null, null),
-            new SessionMessage("a4", "assistant",
-                List.of(textPart("You're welcome!")),
-                baseTime, "build", "claude-sonnet-4.6")
+        List<EntryData> entries = List.of(
+            userPrompt("Check permissions"),
+            assistantText("Let me investigate...", "build", "claude-sonnet-4.6"),
+            subAgent("explore", "Exploring codebase", "Found the bug"),
+            assistantText("Based on the exploration, here's the fix...", "build", "claude-sonnet-4.6"),
+            userPrompt("Thanks!"),
+            assistantText("You're welcome!", "build", "claude-sonnet-4.6")
         );
 
         Path dbPath = tempDir.resolve("opencode.db");
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(messages), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId, "Export should succeed");
 
         // Validate structure: should have exactly 4 messages (2 user + 2 assistant)
-        // because the 3 consecutive assistants (a1, a2, a3) are merged into 1
+        // because the 3 consecutive assistants (text, subAgent, text) are merged into 1
         try (Connection conn = DriverManager.getConnection("jdbc:sqlite:" + dbPath)) {
             Class.forName("org.sqlite.JDBC");
 
@@ -321,42 +277,28 @@ class OpenCodeZodValidationTest {
             "Merged session should pass Zod validation:\n" + result);
     }
 
-    @Test
-    void linearizeMessagesMergesConsecutiveAssistants() {
-        long now = System.currentTimeMillis();
-        List<SessionMessage> messages = List.of(
-            new SessionMessage("u1", "user", List.of(textPart("Hello")), now, null, null),
-            new SessionMessage("a1", "assistant", List.of(textPart("Response 1")), now, "build", "model"),
-            new SessionMessage("a2", "assistant", List.of(textPart("Sub-agent result")), now, "explore", "model"),
-            new SessionMessage("a3", "assistant", List.of(textPart("Continuation")), now, "build", "model"),
-            new SessionMessage("u2", "user", List.of(textPart("Next")), now, null, null),
-            new SessionMessage("a4", "assistant", List.of(textPart("Final")), now, "build", "model")
-        );
-
-        List<SessionMessage> result = OpenCodeClientExporter.linearizeMessages(messages);
-
-        // 6 messages → 4 (u1, merged-a, u2, a4)
-        assertEquals(4, result.size(), "Expected 4 messages after linearization");
-        assertEquals("user", result.get(0).role);
-        assertEquals("assistant", result.get(1).role);
-        assertEquals("user", result.get(2).role);
-        assertEquals("assistant", result.get(3).role);
-
-        // Merged assistant should have 3 parts (from a1 + a2 + a3)
-        assertEquals(3, result.get(1).parts.size(),
-            "Merged assistant should have 3 parts");
-
-        // Metadata should come from the first assistant
-        assertEquals("build", result.get(1).agent);
+    private static EntryData.Prompt userPrompt(String text) {
+        return new EntryData.Prompt(text, Instant.now().toString());
     }
 
-    private static JsonObject subagentPart(String agentType, String description, String result) {
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "subagent");
-        part.addProperty("agentType", agentType);
-        part.addProperty("description", description);
-        part.addProperty("result", result);
-        return part;
+    private static EntryData.Text assistantText(String text) {
+        return new EntryData.Text(new StringBuilder(text), Instant.now().toString());
+    }
+
+    private static EntryData.Text assistantText(String text, String agent, String model) {
+        return new EntryData.Text(new StringBuilder(text), Instant.now().toString(), agent, model);
+    }
+
+    private static EntryData.Thinking assistantThinking(String text) {
+        return new EntryData.Thinking(new StringBuilder(text), Instant.now().toString());
+    }
+
+    private static EntryData.ToolCall toolCall(String toolName, String args, String result) {
+        return new EntryData.ToolCall(toolName, args, "other", result, "completed");
+    }
+
+    private static EntryData.SubAgent subAgent(String agentType, String description, String result) {
+        return new EntryData.SubAgent(agentType, description, null, result, "completed");
     }
 
     private JsonObject extractValidatorInput(Path dbPath, String sessionId) throws SQLException {
@@ -426,33 +368,6 @@ class OpenCodeZodValidationTest {
         }
 
         return output;
-    }
-
-    private static SessionMessage userMessage(String text) {
-        return new SessionMessage("u-" + text.hashCode(), "user",
-            List.of(textPart(text)), System.currentTimeMillis(), null, null);
-    }
-
-    private static JsonObject textPart(String text) {
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "text");
-        part.addProperty("text", text);
-        return part;
-    }
-
-    private static JsonObject toolInvocationPart(String callId, String toolName,
-                                                 String args, String result) {
-        JsonObject invocation = new JsonObject();
-        invocation.addProperty("state", "result");
-        invocation.addProperty("toolCallId", callId);
-        invocation.addProperty("toolName", toolName);
-        invocation.addProperty("args", args);
-        invocation.addProperty("result", result);
-
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "tool-invocation");
-        part.add("toolInvocation", invocation);
-        return part;
     }
 
     private static String findNode() {

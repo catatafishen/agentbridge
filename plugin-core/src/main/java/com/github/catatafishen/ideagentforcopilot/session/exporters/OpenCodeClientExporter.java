@@ -1,8 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.session.exporters;
 
-import com.github.catatafishen.ideagentforcopilot.session.importers.JsonlUtil;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -29,7 +26,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Exports v2 {@link SessionMessage} list into OpenCode's native SQLite format.
+ * Exports {@link EntryData} list into OpenCode's native SQLite format.
  *
  * <p>OpenCode stores sessions in {@code opencode.db} with tables managed by drizzle
  * migrations: {@code project}, {@code session}, {@code message}, and {@code part}.
@@ -84,15 +81,13 @@ public final class OpenCodeClientExporter {
     }
 
     /**
-     * Exports a list of v2 session messages to OpenCode's native SQLite database.
+     * Exports a list of {@link EntryData} entries to OpenCode's native SQLite database.
      *
-     * <p>Messages are linearized before export: consecutive assistant messages
-     * (e.g. main response + sub-agent result + continuation) are merged into a
-     * single assistant message to maintain the linear user→assistant→user→assistant
-     * chain that OpenCode expects. Each assistant message gets a unique
-     * {@code parentID} pointing to the preceding user message.</p>
+     * <p>Entries are iterated directly: consecutive assistant-role entries
+     * (Text, Thinking, ToolCall, SubAgent) share a single message row to maintain
+     * the strict user→assistant→user→assistant chain that OpenCode expects.</p>
      *
-     * @param entries    the v2 session entries to export
+     * @param entries    the UI entries to export
      * @param dbPath     path to the OpenCode database file
      * @param projectDir the project directory (used as the session's {@code directory} field)
      * @return the new session ID (e.g. {@code ses_XXXX}), or {@code null} if export failed
@@ -103,8 +98,19 @@ public final class OpenCodeClientExporter {
         @NotNull Path dbPath,
         @NotNull String projectDir) {
 
-        List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
-        if (messages.isEmpty()) return null;
+        if (entries.isEmpty()) return null;
+
+        // Quick check: at least one exportable entry?
+        boolean hasExportable = false;
+        for (EntryData e : entries) {
+            if (e instanceof EntryData.Prompt || e instanceof EntryData.Text
+                || e instanceof EntryData.Thinking || e instanceof EntryData.ToolCall
+                || e instanceof EntryData.SubAgent) {
+                hasExportable = true;
+                break;
+            }
+        }
+        if (!hasExportable) return null;
 
         if (!Files.exists(dbPath)) {
             LOG.info("OpenCode database not found at " + dbPath + " — creating it");
@@ -118,7 +124,6 @@ public final class OpenCodeClientExporter {
         }
 
         String sessionId = generateId("ses");
-        List<SessionMessage> linearized = linearizeMessages(messages);
 
         try (Connection conn = openSqlite(dbPath)) {
             ensureTables(conn);
@@ -128,106 +133,118 @@ public final class OpenCodeClientExporter {
 
             insertSession(conn, sessionId, projectId, projectDir, now);
 
-            // Track the last user message ID so assistant messages can reference it
-            // via the required parentID field in OpenCode's Zod schema.
-            // Use real msg.createdAt when available, but enforce strict monotonicity
-            // (each timestamp > previous) so OpenCode's ORDER BY time_created is
-            // deterministic even when upstream converters stamped all messages at once.
+            // Track state for message building with linearization.
+            // Consecutive assistant entries share a single message row.
             String lastUserMessageId = null;
-            long prevTime = 0;
-            for (SessionMessage msg : linearized) {
-                if ("separator".equals(msg.role)) continue;
-                long msgTime = msg.createdAt > prevTime ? msg.createdAt : prevTime + 1;
-                prevTime = msgTime;
-                String messageId = insertMessage(conn, sessionId, msg, msgTime, projectDir, lastUserMessageId);
-                if ("user".equals(msg.role)) {
-                    lastUserMessageId = messageId;
+            long prevTime = now;
+            int messageCount = 0;
+
+            // Pending assistant message state (for merging consecutive assistant entries)
+            List<JsonObject> pendingParts = null;
+            String pendingAgent = null;
+            String pendingModel = null;
+
+            for (EntryData entry : entries) {
+                if (entry instanceof EntryData.Prompt prompt) {
+                    // Flush any pending assistant message before a new user message
+                    if (pendingParts != null && !pendingParts.isEmpty()) {
+                        prevTime++;
+                        flushMessage(conn, sessionId, "assistant",
+                            pendingAgent, pendingModel, pendingParts, prevTime,
+                            projectDir, lastUserMessageId);
+                        pendingParts = null;
+                        pendingAgent = null;
+                        pendingModel = null;
+                        messageCount++;
+                    }
+
+                    // Insert user message
+                    prevTime++;
+                    JsonObject userPart = new JsonObject();
+                    userPart.addProperty("type", "text");
+                    userPart.addProperty("text", prompt.getText());
+
+                    lastUserMessageId = flushMessage(conn, sessionId, "user",
+                        "", "", List.of(userPart), prevTime, projectDir, null);
+                    messageCount++;
+
+                } else if (entry instanceof EntryData.Text text) {
+                    JsonObject part = new JsonObject();
+                    part.addProperty("type", "text");
+                    part.addProperty("text", text.getRaw().toString());
+                    if (pendingParts == null) {
+                        pendingParts = new ArrayList<>();
+                        pendingAgent = text.getAgent();
+                        pendingModel = text.getModel();
+                    }
+                    pendingParts.add(part);
+
+                } else if (entry instanceof EntryData.Thinking thinking) {
+                    JsonObject part = new JsonObject();
+                    part.addProperty("type", "reasoning");
+                    part.addProperty("text", thinking.getRaw().toString());
+                    JsonObject time = new JsonObject();
+                    time.addProperty("start", prevTime);
+                    time.addProperty("end", prevTime);
+                    part.add("time", time);
+                    if (pendingParts == null) {
+                        pendingParts = new ArrayList<>();
+                        pendingAgent = thinking.getAgent();
+                        pendingModel = thinking.getModel();
+                    }
+                    pendingParts.add(part);
+
+                } else if (entry instanceof EntryData.ToolCall toolCall) {
+                    JsonObject part = buildToolInvocationPart(toolCall, prevTime);
+                    if (pendingParts == null) {
+                        pendingParts = new ArrayList<>();
+                        pendingAgent = toolCall.getAgent();
+                        pendingModel = toolCall.getModel();
+                    }
+                    pendingParts.add(part);
+
+                } else if (entry instanceof EntryData.SubAgent subAgent) {
+                    StringBuilder sb = new StringBuilder("[Subagent");
+                    sb.append(" (").append(subAgent.getAgentType()).append(")");
+                    String desc = subAgent.getDescription();
+                    if (desc != null && !desc.isEmpty()) sb.append(": ").append(desc);
+                    sb.append("]");
+                    String subResult = subAgent.getResult();
+                    if (subResult != null && !subResult.isBlank()) {
+                        sb.append("\n").append(subResult);
+                    }
+                    JsonObject part = new JsonObject();
+                    part.addProperty("type", "text");
+                    part.addProperty("text", sb.toString());
+                    if (pendingParts == null) {
+                        pendingParts = new ArrayList<>();
+                        pendingAgent = subAgent.getAgent();
+                        pendingModel = subAgent.getModel();
+                    }
+                    pendingParts.add(part);
                 }
+                // Skip: Status, TurnStats, ContextFiles, SessionSeparator
             }
 
-            LOG.info("Exported v2 session to OpenCode: " + sessionId
-                + " (project=" + projectId + ", messages=" + linearized.size()
-                + ", original=" + messages.size() + ")");
+            // Flush trailing assistant message
+            if (pendingParts != null && !pendingParts.isEmpty()) {
+                prevTime++;
+                flushMessage(conn, sessionId, "assistant",
+                    pendingAgent, pendingModel, pendingParts, prevTime,
+                    projectDir, lastUserMessageId);
+                messageCount++;
+            }
+
+            LOG.info("Exported session to OpenCode: " + sessionId
+                + " (project=" + projectId + ", messages=" + messageCount + ")");
             return sessionId;
         } catch (SQLException e) {
-            LOG.warn("Failed to export v2 session to OpenCode database: " + dbPath, e);
+            LOG.warn("Failed to export session to OpenCode database: " + dbPath, e);
             return null;
         }
     }
 
     // ── ID generation ─────────────────────────────────────────────────────────
-
-    /**
-     * Merges consecutive assistant messages into single messages to produce a
-     * linear user→assistant→user→assistant chain.
-     *
-     * <p>OpenCode expects each user message to have exactly one assistant response.
-     * Our v2 format may have multiple consecutive assistant messages when a turn
-     * involved sub-agents or multi-step responses. This method merges all parts
-     * from consecutive assistant messages into the first one, preserving the
-     * agent name and model from the first assistant in each group.</p>
-     *
-     * <p>Separator messages are preserved as-is (they are skipped during export).</p>
-     */
-    @NotNull
-    public static List<SessionMessage> linearizeMessages(@NotNull List<SessionMessage> messages) {
-        List<SessionMessage> result = new ArrayList<>();
-        SessionMessage pendingAssistant = null;
-        List<JsonObject> mergedParts = null;
-
-        for (SessionMessage msg : messages) {
-            if ("separator".equals(msg.role)) {
-                // Flush any pending assistant before a separator
-                if (pendingAssistant != null) {
-                    result.add(buildMergedAssistant(pendingAssistant, mergedParts));
-                    pendingAssistant = null;
-                    mergedParts = null;
-                }
-                result.add(msg);
-                continue;
-            }
-
-            if ("assistant".equals(msg.role)) {
-                if (pendingAssistant == null) {
-                    // First assistant in a potential sequence
-                    pendingAssistant = msg;
-                    mergedParts = new ArrayList<>(msg.parts);
-                } else {
-                    // Consecutive assistant — merge parts into the pending one
-                    mergedParts.addAll(msg.parts);
-                }
-            } else {
-                // User message — flush any pending assistant first
-                if (pendingAssistant != null) {
-                    result.add(buildMergedAssistant(pendingAssistant, mergedParts));
-                    pendingAssistant = null;
-                    mergedParts = null;
-                }
-                result.add(msg);
-            }
-        }
-
-        // Flush trailing assistant
-        if (pendingAssistant != null) {
-            result.add(buildMergedAssistant(pendingAssistant, mergedParts));
-        }
-
-        return result;
-    }
-
-    /**
-     * Builds a merged assistant message from the first assistant's metadata
-     * and the combined parts from all consecutive assistants.
-     */
-    @NotNull
-    private static SessionMessage buildMergedAssistant(
-        @NotNull SessionMessage first, @NotNull List<JsonObject> allParts) {
-        if (allParts.size() == first.parts.size()) {
-            return first; // no merge needed — return original
-        }
-        return new SessionMessage(
-            first.id, first.role, allParts, first.createdAt, first.agent, first.model);
-    }
 
     /**
      * Generates an OpenCode-style prefixed ID (e.g. {@code ses_abc123...}).
@@ -397,24 +414,25 @@ public final class OpenCodeClientExporter {
     // ── Message insertion ─────────────────────────────────────────────────────
 
     /**
-     * Inserts a message and its parts into the database.
+     * Inserts a message and its pre-built parts into the database.
      *
-     * @param timeCreated the timestamp for this message (caller provides monotonically
-     *                    increasing values to ensure deterministic ordering)
      * @return the generated message ID (for parentID linking)
      */
     @NotNull
-    private static String insertMessage(
+    private static String flushMessage(
         @NotNull Connection conn,
         @NotNull String sessionId,
-        @NotNull SessionMessage msg,
+        @NotNull String role,
+        @Nullable String agent,
+        @Nullable String model,
+        @NotNull List<JsonObject> parts,
         long timeCreated,
         @NotNull String projectDir,
         @Nullable String parentMessageId) throws SQLException {
 
         String messageId = generateId("msg");
 
-        JsonObject msgData = buildMessageData(msg, timeCreated, projectDir, parentMessageId);
+        JsonObject msgData = buildMessageData(role, agent, model, timeCreated, projectDir, parentMessageId);
 
         try (PreparedStatement ps = conn.prepareStatement(
             "INSERT INTO message (id, session_id, time_created, time_updated, data) "
@@ -427,7 +445,7 @@ public final class OpenCodeClientExporter {
             ps.executeUpdate();
         }
 
-        for (JsonObject part : msg.parts) {
+        for (JsonObject part : parts) {
             insertPart(conn, messageId, sessionId, part, timeCreated);
         }
 
@@ -447,29 +465,31 @@ public final class OpenCodeClientExporter {
      */
     @NotNull
     private static JsonObject buildMessageData(
-        @NotNull SessionMessage msg,
+        @NotNull String role,
+        @Nullable String agent,
+        @Nullable String model,
         long timeCreated,
         @NotNull String projectDir,
         @Nullable String parentMessageId) {
 
         JsonObject data = new JsonObject();
-        data.addProperty("role", msg.role);
+        data.addProperty("role", role);
 
-        String modelId = (msg.model != null && !msg.model.isEmpty()) ? msg.model : "imported";
+        String modelId = (model != null && !model.isEmpty()) ? model : "imported";
         String providerId = "imported";
-        String agentName = (msg.agent != null && !msg.agent.isEmpty()) ? msg.agent : "build";
+        String agentName = (agent != null && !agent.isEmpty()) ? agent : "build";
 
-        if ("user".equals(msg.role)) {
+        if ("user".equals(role)) {
             JsonObject time = new JsonObject();
             time.addProperty("created", timeCreated);
             data.add("time", time);
 
             data.addProperty("agent", agentName);
 
-            JsonObject model = new JsonObject();
-            model.addProperty("providerID", providerId);
-            model.addProperty("modelID", modelId);
-            data.add("model", model);
+            JsonObject modelObj = new JsonObject();
+            modelObj.addProperty("providerID", providerId);
+            modelObj.addProperty("modelID", modelId);
+            data.add("model", modelObj);
         } else {
             // assistant
             JsonObject time = new JsonObject();
@@ -506,15 +526,15 @@ public final class OpenCodeClientExporter {
 
     // ── Part insertion ────────────────────────────────────────────────────────
 
+    /**
+     * Inserts a single pre-built part JSON into the {@code part} table.
+     */
     private static void insertPart(
         @NotNull Connection conn,
         @NotNull String messageId,
         @NotNull String sessionId,
-        @NotNull JsonObject v2Part,
+        @NotNull JsonObject partData,
         long timeCreated) throws SQLException {
-
-        JsonObject partData = convertV2PartToOpenCodePart(v2Part, timeCreated);
-        if (partData == null) return;
 
         String partId = generateId("prt");
         try (PreparedStatement ps = conn.prepareStatement(
@@ -530,117 +550,57 @@ public final class OpenCodeClientExporter {
         }
     }
 
-    private static JsonObject convertV2PartToOpenCodePart(@NotNull JsonObject v2Part, long timeMs) {
-        String type = JsonlUtil.getStr(v2Part, "type");
-        if (type == null) return null;
-
-        JsonObject result = new JsonObject();
-        switch (type) {
-            case "text" -> {
-                result.addProperty("type", "text");
-                String text = JsonlUtil.getStr(v2Part, "text");
-                result.addProperty("text", text != null ? text : "");
-            }
-            case "reasoning" -> {
-                result.addProperty("type", "reasoning");
-                String text = JsonlUtil.getStr(v2Part, "text");
-                result.addProperty("text", text != null ? text : "");
-                JsonObject time = new JsonObject();
-                time.addProperty("start", timeMs);
-                time.addProperty("end", timeMs);
-                result.add("time", time);
-            }
-            case "tool-invocation" -> {
-                JsonObject invocation = v2Part.getAsJsonObject("toolInvocation");
-                if (invocation == null) return null;
-
-                String toolCallId = JsonlUtil.getStr(invocation, "toolCallId");
-                String toolName = JsonlUtil.getStr(invocation, "toolName");
-                String state = JsonlUtil.getStr(invocation, "state");
-                String argsStr = JsonlUtil.getStr(invocation, "args");
-                String resultStr = JsonlUtil.getStr(invocation, "result");
-
-                result.addProperty("type", "tool");
-                result.addProperty("callID", toolCallId != null ? toolCallId : "");
-                result.addProperty("tool", toolName != null ? toolName : "unknown");
-
-                JsonObject stateObj = new JsonObject();
-                stateObj.addProperty("status",
-                    "result".equals(state) ? "completed" : "running");
-
-                // OpenCode Zod schema requires input: z.record(z.string(), z.any()) — must be a JSON object.
-                // JsonParser.parseString("") returns JsonNull which GSON drops during serialization,
-                // so we must explicitly handle empty/blank args and non-object parse results.
-                if (argsStr != null && !argsStr.isBlank()) {
-                    try {
-                        JsonElement parsed = com.google.gson.JsonParser.parseString(argsStr);
-                        if (parsed.isJsonObject()) {
-                            stateObj.add("input", parsed);
-                        } else {
-                            stateObj.add("input", wrapRawInput(argsStr));
-                        }
-                    } catch (Exception e) {
-                        stateObj.add("input", wrapRawInput(argsStr));
-                    }
-                } else {
-                    stateObj.add("input", new JsonObject());
-                }
-
-                if ("result".equals(state)) {
-                    // ToolStateCompleted requires: output, title, metadata, time
-                    stateObj.addProperty("output", resultStr != null ? resultStr : "");
-                    stateObj.addProperty("title", "");
-                    stateObj.add("metadata", new JsonObject());
-                } else {
-                    // ToolStateRunning requires: input, time.start
-                    if (resultStr != null) {
-                        stateObj.addProperty("output", resultStr);
-                    }
-                }
-
-                JsonObject time = new JsonObject();
-                time.addProperty("start", timeMs);
-                if ("result".equals(state)) {
-                    time.addProperty("end", timeMs);
-                }
-                stateObj.add("time", time);
-
-                result.add("state", stateObj);
-            }
-            case "subagent" -> {
-                // OpenCode has no subagent concept — convert to a text summary so context
-                // is preserved without writing an unknown discriminant value that fails Zod validation.
-                String description = JsonlUtil.getStr(v2Part, "description");
-                String agentType = JsonlUtil.getStr(v2Part, "agentType");
-                String subResult = JsonlUtil.getStr(v2Part, "result");
-                StringBuilder sb = new StringBuilder("[Subagent");
-                if (agentType != null) sb.append(" (").append(agentType).append(")");
-                if (description != null) sb.append(": ").append(description);
-                sb.append("]");
-                if (subResult != null && !subResult.isBlank()) {
-                    sb.append("\n").append(subResult);
-                }
-                result.addProperty("type", "text");
-                result.addProperty("text", sb.toString());
-            }
-            default -> {
-                // Unknown v2 part type (e.g. "status", "file"). Writing it as-is would cause
-                // Zod schema validation failure in OpenCode because its discriminated union on
-                // "type" doesn't include these values. Skip the part entirely.
-                return null;
-            }
-        }
-        return result;
-    }
-
     /**
-     * Wraps a non-object args string into a JSON object with a {@code _raw} key,
-     * ensuring the Zod {@code z.record(z.string(), z.any())} requirement is met.
+     * Builds an OpenCode "tool" part from an {@link EntryData.ToolCall}.
+     * OpenCode Zod schema expects: type="tool", callID, tool, state{status, input, output, title, metadata, time}.
      */
     @NotNull
-    private static JsonObject wrapRawInput(@NotNull String argsStr) {
-        JsonObject inputObj = new JsonObject();
-        inputObj.addProperty("_raw", argsStr);
-        return inputObj;
+    private static JsonObject buildToolInvocationPart(@NotNull EntryData.ToolCall toolCall, long timeMs) {
+        JsonObject result = new JsonObject();
+        result.addProperty("type", "tool");
+        result.addProperty("callID", toolCall.getEntryId() != null ? toolCall.getEntryId() : "");
+        result.addProperty("tool", toolCall.getTitle() != null ? toolCall.getTitle() : "unknown");
+
+        boolean completed = toolCall.getResult() != null;
+
+        JsonObject stateObj = new JsonObject();
+        stateObj.addProperty("status", completed ? "completed" : "running");
+
+        // OpenCode Zod schema requires input: z.record(z.string(), z.any()) — must be a JSON object.
+        String argsStr = toolCall.getArguments();
+        if (argsStr != null && !argsStr.isBlank()) {
+            try {
+                JsonElement parsed = com.google.gson.JsonParser.parseString(argsStr);
+                if (parsed.isJsonObject()) {
+                    stateObj.add("input", parsed);
+                } else {
+                    JsonObject wrapper = new JsonObject();
+                    wrapper.addProperty("raw", argsStr);
+                    stateObj.add("input", wrapper);
+                }
+            } catch (Exception e) {
+                JsonObject wrapper = new JsonObject();
+                wrapper.addProperty("raw", argsStr);
+                stateObj.add("input", wrapper);
+            }
+        } else {
+            stateObj.add("input", new JsonObject());
+        }
+
+        if (completed) {
+            stateObj.addProperty("output", toolCall.getResult());
+            stateObj.addProperty("title", "");
+            stateObj.add("metadata", new JsonObject());
+        }
+
+        JsonObject time = new JsonObject();
+        time.addProperty("start", timeMs);
+        if (completed) {
+            time.addProperty("end", timeMs);
+        }
+        stateObj.add("time", time);
+
+        result.add("state", stateObj);
+        return result;
     }
 }

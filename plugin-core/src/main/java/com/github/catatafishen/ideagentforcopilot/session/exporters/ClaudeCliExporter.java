@@ -1,8 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.session.exporters;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.AnthropicClientExporter.AnthropicMessage;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -25,7 +23,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Exports v2 {@link SessionMessage} list into Claude CLI's native session JSONL format.
+ * Exports {@link EntryData} entries into Claude CLI's native session JSONL format.
  *
  * <p>Claude CLI stores sessions as event lines — NOT as bare Anthropic API messages.
  * Each line is a JSON object with {@code type}, {@code uuid}, {@code parentUuid},
@@ -56,8 +54,7 @@ public final class ClaudeCliExporter {
         @NotNull String sessionId,
         @NotNull String cwd) throws IOException {
 
-        List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
-        List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(messages);
+        List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(entries);
 
         String cliVersion = detectCliVersion(targetPath.getParent());
         String gitBranch = detectGitBranch(cwd);

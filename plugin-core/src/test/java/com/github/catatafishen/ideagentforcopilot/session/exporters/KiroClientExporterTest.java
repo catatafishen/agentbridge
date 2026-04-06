@@ -1,7 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.session.exporters;
 
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -22,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link KiroClientExporter}.
- * Validates that v2 session messages are correctly converted to Kiro's native format
+ * Validates that v2 session entries are correctly converted to Kiro's native format
  * ({@code <uuid>.json} + {@code <uuid>.jsonl} in {@code ~/.kiro/sessions/cli/}).
  */
 class KiroClientExporterTest {
@@ -32,12 +31,12 @@ class KiroClientExporterTest {
 
     @Test
     void exportCreatesSessionJsonAndJsonl() {
-        List<SessionMessage> messages = List.of(
-            userMessage("Hello"),
-            assistantMessage("Hi there!")
+        List<EntryData> entries = List.of(
+            userPrompt("Hello"),
+            assistantText("Hi there!")
         );
 
-        String sessionId = KiroClientExporter.exportSession(EntryDataConverter.fromMessages(messages), "/test/project", tempDir);
+        String sessionId = KiroClientExporter.exportSession(entries, "/test/project", tempDir);
 
         assertNotNull(sessionId);
         assertTrue(Files.exists(tempDir.resolve(sessionId + ".json")));
@@ -46,8 +45,8 @@ class KiroClientExporterTest {
 
     @Test
     void sessionJsonHasCorrectFormat() throws Exception {
-        String sessionId = KiroClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("Hi"))), "/my/project", tempDir);
+        String sessionId = KiroClientExporter.exportSession(
+            List.of(userPrompt("Hi")), "/my/project", tempDir);
 
         String json = Files.readString(tempDir.resolve(sessionId + ".json"), StandardCharsets.UTF_8);
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
@@ -84,15 +83,15 @@ class KiroClientExporterTest {
     }
 
     @Test
-    void exportEmptyMessagesReturnsNull() {
-        String result = KiroClientExporter.exportSession(EntryDataConverter.fromMessages(List.of()), "/test", tempDir);
+    void exportEmptyEntriesReturnsNull() {
+        String result = KiroClientExporter.exportSession(List.of(), "/test", tempDir);
         assertNull(result);
     }
 
     @Test
     void userMessageBecomesPrompt() {
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(userMessage("Hello world")));
+            List.of(userPrompt("Hello world")));
 
         assertEquals(1, kiroMessages.size());
         JsonObject msg = kiroMessages.getFirst();
@@ -114,7 +113,7 @@ class KiroClientExporterTest {
     @Test
     void assistantTextBecomesAssistantMessage() {
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(userMessage("Hi"), assistantMessage("I can help")));
+            List.of(userPrompt("Hi"), assistantText("I can help")));
 
         assertEquals(2, kiroMessages.size());
         JsonObject msg = kiroMessages.get(1);
@@ -128,19 +127,14 @@ class KiroClientExporterTest {
     }
 
     @Test
-    void toolInvocationProducesAssistantMessageAndToolResults() {
-        JsonObject toolPart = toolInvocationPart(
-            "tc1", "read_file",
-            "{\"path\":\"/test.txt\"}",
-            "{\"content\":[{\"type\":\"text\",\"text\":\"file data\"}]}");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant",
-            List.of(textPart("Let me read that."), toolPart),
-            System.currentTimeMillis(), null, null);
-
+    void toolCallProducesAssistantMessageAndToolResults() {
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(userMessage("read it"), assistant));
+            List.of(
+                userPrompt("read it"),
+                assistantText("Let me read that."),
+                toolCall("read_file", "{\"path\":\"/test.txt\"}",
+                    "{\"content\":[{\"type\":\"text\",\"text\":\"file data\"}]}")
+            ));
 
         assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
 
@@ -152,7 +146,7 @@ class KiroClientExporterTest {
         assertEquals("toolUse", assistantContent.get(1).getAsJsonObject().get("kind").getAsString());
 
         JsonObject toolUseData = assistantContent.get(1).getAsJsonObject().getAsJsonObject("data");
-        assertEquals("tc1", toolUseData.get("toolUseId").getAsString());
+        assertNotNull(toolUseData.get("toolUseId").getAsString());
         assertEquals("read_file", toolUseData.get("name").getAsString());
 
         JsonObject toolResultsMsg = kiroMessages.get(2);
@@ -163,22 +157,25 @@ class KiroClientExporterTest {
         assertEquals(1, trContent.size());
         assertEquals("toolResult", trContent.get(0).getAsJsonObject().get("kind").getAsString());
 
+        // Verify toolUseId matches between tool_use and tool_result
+        String toolUseId = toolUseData.get("toolUseId").getAsString();
+        String toolResultUseId = trContent.get(0).getAsJsonObject()
+            .getAsJsonObject("data").get("toolUseId").getAsString();
+        assertEquals(toolUseId, toolResultUseId, "toolUseId must match between use and result");
+
         JsonObject results = trData.getAsJsonObject("results");
-        assertTrue(results.has("tc1"));
+        assertTrue(results.size() > 0, "results map should not be empty");
     }
 
     @Test
     void multipleToolCallsStayInSameTurn() {
-        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{}", "result1");
-        JsonObject tool2 = toolInvocationPart("tc2", "search_text", "{}", "result2");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant",
-            List.of(textPart("Reading files..."), tool1, tool2),
-            System.currentTimeMillis(), null, null);
-
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(userMessage("do it"), assistant));
+            List.of(
+                userPrompt("do it"),
+                assistantText("Reading files..."),
+                toolCall("read_file", "{}", "result1"),
+                toolCall("search_text", "{}", "result2")
+            ));
 
         assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
 
@@ -191,15 +188,13 @@ class KiroClientExporterTest {
 
     @Test
     void textAfterToolsSplitsIntoNewTurn() {
-        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{}", "data");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant",
-            List.of(textPart("First."), tool1, textPart("After tool.")),
-            System.currentTimeMillis(), null, null);
-
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(userMessage("go"), assistant));
+            List.of(
+                userPrompt("go"),
+                assistantText("First."),
+                toolCall("read_file", "{}", "data"),
+                assistantText("After tool.")
+            ));
 
         assertEquals(4, kiroMessages.size(),
             "Prompt, AssistantMessage(text+toolUse), ToolResults, AssistantMessage(text)");
@@ -214,15 +209,13 @@ class KiroClientExporterTest {
 
     @Test
     void fullConversationProducesCorrectKindSequence() {
-        List<SessionMessage> conversation = List.of(
-            userMessage("Hello"),
-            assistantMessage("Hi! How can I help?"),
-            userMessage("Read a file"),
-            new SessionMessage("a2", "assistant",
-                List.of(textPart("Sure."),
-                    toolInvocationPart("tc1", "read_file", "{}", "contents")),
-                System.currentTimeMillis(), null, null),
-            userMessage("Thanks")
+        List<EntryData> conversation = List.of(
+            userPrompt("Hello"),
+            assistantText("Hi! How can I help?"),
+            userPrompt("Read a file"),
+            assistantText("Sure."),
+            toolCall("read_file", "{}", "contents"),
+            userPrompt("Thanks")
         );
 
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(conversation);
@@ -240,15 +233,13 @@ class KiroClientExporterTest {
 
     @Test
     void eachSplitTurnGetsUniqueMessageId() {
-        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{}", "data");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant",
-            List.of(textPart("First."), tool1, textPart("After tool.")),
-            System.currentTimeMillis(), null, null);
-
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(userMessage("go"), assistant));
+            List.of(
+                userPrompt("go"),
+                assistantText("First."),
+                toolCall("read_file", "{}", "data"),
+                assistantText("After tool.")
+            ));
 
         // Prompt at 0, AssistantMessages at 1 and 3
         String id1 = kiroMessages.get(1).getAsJsonObject("data").get("message_id").getAsString();
@@ -257,15 +248,14 @@ class KiroClientExporterTest {
     }
 
     @Test
-    void separatorMessagesAreSkipped() {
-        List<SessionMessage> messages = List.of(
-            userMessage("Hi"),
-            new SessionMessage("sep1", "separator", List.of(),
-                System.currentTimeMillis(), null, null),
-            assistantMessage("Hello")
+    void sessionSeparatorsAreSkipped() {
+        List<EntryData> entries = List.of(
+            userPrompt("Hi"),
+            new EntryData.SessionSeparator(""),
+            assistantText("Hello")
         );
 
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(messages);
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(entries);
         assertEquals(2, kiroMessages.size());
         assertEquals("Prompt", kiroMessages.get(0).get("kind").getAsString());
         assertEquals("AssistantMessage", kiroMessages.get(1).get("kind").getAsString());
@@ -273,12 +263,11 @@ class KiroClientExporterTest {
 
     @Test
     void prependsPlaceholderPromptWhenHistoryStartsWithAssistant() {
-        // Simulates a scenario where the v2 session has no user message at the start
-        // (e.g., budget trimming dropped it, or import from another agent was incomplete).
+        // Simulates a scenario where the v2 session has no user message at the start.
         // Kiro panics with "invalid conversation history received" if the first message
         // is not a Prompt, so the exporter must defensively prepend one.
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(assistantMessage("I can help with that.")));
+            List.of(assistantText("I can help with that.")));
 
         assertTrue(kiroMessages.size() >= 2, "Should have placeholder Prompt + AssistantMessage");
         assertEquals("Prompt", kiroMessages.getFirst().get("kind").getAsString());
@@ -296,16 +285,15 @@ class KiroClientExporterTest {
     void allMessageIdsAreUnique() {
         // Regression test: previously all split AssistantMessage turns reused the same
         // message_id from the original v2 message, causing Kiro to reject the history.
-        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{}", "data1");
-        JsonObject tool2 = toolInvocationPart("tc2", "search_text", "{}", "data2");
-
-        SessionMessage bigAssistant = new SessionMessage(
-            "a1", "assistant",
-            List.of(textPart("Part 1."), tool1, textPart("Part 2."), tool2, textPart("Part 3.")),
-            System.currentTimeMillis(), null, null);
-
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(userMessage("go"), bigAssistant));
+            List.of(
+                userPrompt("go"),
+                assistantText("Part 1."),
+                toolCall("read_file", "{}", "data1"),
+                assistantText("Part 2."),
+                toolCall("search_text", "{}", "data2"),
+                assistantText("Part 3.")
+            ));
 
         List<String> ids = kiroMessages.stream()
             .map(m -> m.getAsJsonObject("data").get("message_id").getAsString())
@@ -317,44 +305,38 @@ class KiroClientExporterTest {
 
     @Test
     void toolResultsMapContainsMcpMetadata() {
-        JsonObject toolPart = toolInvocationPart(
-            "tc1", "search_text",
-            "{\"query\":\"hello\"}",
-            "{\"content\":[{\"type\":\"text\",\"text\":\"found it\"}]}");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(toolPart),
-            System.currentTimeMillis(), null, null);
-
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(userMessage("search"), assistant));
+            List.of(
+                userPrompt("search"),
+                toolCall("search_text", "{\"query\":\"hello\"}",
+                    "{\"content\":[{\"type\":\"text\",\"text\":\"found it\"}]}")
+            ));
         assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
 
         JsonObject results = kiroMessages.get(2).getAsJsonObject("data").getAsJsonObject("results");
-        JsonObject tc1 = results.getAsJsonObject("tc1");
+        // Get the first (and only) tool result entry — toolCallId is a random UUID now
+        String toolCallId = results.keySet().iterator().next();
+        JsonObject toolEntry = results.getAsJsonObject(toolCallId);
 
-        JsonObject mcp = tc1.getAsJsonObject("tool").getAsJsonObject("Mcp");
+        JsonObject mcp = toolEntry.getAsJsonObject("tool").getAsJsonObject("Mcp");
         assertEquals("search_text", mcp.get("toolName").getAsString());
         assertEquals("agentbridge", mcp.get("serverName").getAsString());
         assertEquals("hello", mcp.getAsJsonObject("params").get("query").getAsString());
 
-        assertTrue(tc1.has("result"));
-        assertTrue(tc1.getAsJsonObject("result").has("Success"));
+        assertTrue(toolEntry.has("result"));
+        assertTrue(toolEntry.getAsJsonObject("result").has("Success"));
     }
 
     @Test
     void consecutivePromptsDeduped() {
-        // Regression test: duplicate user messages (e.g. user clicked Send twice, or
-        // a rate-limit error was followed by a retry prompt) produce consecutive Prompts
+        // Regression test: duplicate user messages produce consecutive Prompts
         // that Kiro rejects as "invalid conversation history".
-        SessionMessage user1 = userMessage("Please continue");
-        SessionMessage user2 = userMessage("Please continue");
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(textPart("Here is the continuation.")),
-            System.currentTimeMillis(), null, null);
-
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(user1, user2, assistant));
+            List.of(
+                userPrompt("Please continue"),
+                userPrompt("Please continue"),
+                assistantText("Here is the continuation.")
+            ));
 
         // The earlier of the two consecutive Prompts should be removed, keeping the later one
         List<String> kinds = kiroMessages.stream()
@@ -363,18 +345,15 @@ class KiroClientExporterTest {
         assertEquals(List.of("Prompt", "AssistantMessage"), kinds,
             "Consecutive Prompts should be deduplicated; got: " + kinds);
 
-        // The remaining Prompt should be the last one (user2)
+        // The remaining Prompt should be the last one
         JsonArray content = kiroMessages.getFirst().getAsJsonObject("data").getAsJsonArray("content");
         assertEquals(1, content.size(), "Deduplicated Prompt should have 1 content block");
     }
 
     @Test
     void threeConsecutivePromptsDeduped() {
-        SessionMessage u1 = userMessage("Msg A");
-        SessionMessage u2 = userMessage("Msg B");
-        SessionMessage u3 = userMessage("Msg C");
-
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(List.of(u1, u2, u3));
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(userPrompt("Msg A"), userPrompt("Msg B"), userPrompt("Msg C")));
 
         List<String> kinds = kiroMessages.stream()
             .map(m -> m.get("kind").getAsString())
@@ -390,26 +369,21 @@ class KiroClientExporterTest {
     }
 
     @Test
-    void consecutiveAssistantMessagesMerged() {
-        // Regression test: two v2 assistant messages in a row (no user Prompt between them)
-        // can produce consecutive AssistantMessages that Kiro rejects as "invalid conversation history".
-        // The last part of turn 1 is plain text → AssistantMessage[text].
-        // Turn 2 opens with tool use → AssistantMessage[toolUse] + ToolResults.
-        // Without the fix these would be adjacent AssistantMessages.
-        SessionMessage user = userMessage("Do something");
-        SessionMessage assistant1 = assistantMessage("Starting work...");
-        SessionMessage assistant2 = new SessionMessage(
-            "a2", "assistant",
-            List.of(toolInvocationPart("tc1", "read_file", "{}", "{\"result\":\"ok\"}")),
-            System.currentTimeMillis(), null, null);
-
+    void consecutiveAssistantEntriesDoNotProduceConsecutiveAssistantMessages() {
+        // Multiple assistant-side entries (text + tool) without an intervening Prompt
+        // should be accumulated into a single AssistantMessage, never producing
+        // consecutive AssistantMessages that Kiro would reject.
         List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
-            List.of(user, assistant1, assistant2));
+            List.of(
+                userPrompt("Do something"),
+                assistantText("Starting work..."),
+                toolCall("read_file", "{}", "{\"result\":\"ok\"}")
+            ));
 
         List<String> kinds = kiroMessages.stream()
             .map(m -> m.get("kind").getAsString())
             .toList();
-        // Consecutive AssistantMessages must be merged — no two AssistantMessages in a row
+        // No two consecutive AssistantMessages
         for (int i = 0; i < kinds.size() - 1; i++) {
             assertFalse(
                 "AssistantMessage".equals(kinds.get(i)) && "AssistantMessage".equals(kinds.get(i + 1)),
@@ -417,37 +391,36 @@ class KiroClientExporterTest {
         }
     }
 
+    @Test
+    void thinkingEntryProducesThinkingBlock() {
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(
+                userPrompt("Think about this"),
+                new EntryData.Thinking(new StringBuilder("Let me consider..."), ""),
+                assistantText("Here is my answer.")
+            ));
+
+        assertEquals(2, kiroMessages.size(), "Prompt + AssistantMessage");
+        assertEquals("AssistantMessage", kiroMessages.get(1).get("kind").getAsString());
+
+        var assistantContent = kiroMessages.get(1).getAsJsonObject("data").getAsJsonArray("content");
+        assertEquals(2, assistantContent.size(), "thinking + text blocks");
+        assertEquals("thinking", assistantContent.get(0).getAsJsonObject().get("kind").getAsString());
+        assertEquals("Let me consider...", assistantContent.get(0).getAsJsonObject().get("data").getAsString());
+        assertEquals("text", assistantContent.get(1).getAsJsonObject().get("kind").getAsString());
+    }
+
     // ── Helper methods ──────────────────────────────────────────────
 
-    private static SessionMessage userMessage(String text) {
-        return new SessionMessage("u-" + text.hashCode(), "user", List.of(textPart(text)),
-            System.currentTimeMillis(), null, null);
+    private static EntryData.Prompt userPrompt(String text) {
+        return new EntryData.Prompt(text);
     }
 
-    private static SessionMessage assistantMessage(String text) {
-        return new SessionMessage("a-" + text.hashCode(), "assistant", List.of(textPart(text)),
-            System.currentTimeMillis(), null, null);
+    private static EntryData.Text assistantText(String text) {
+        return new EntryData.Text(new StringBuilder(text));
     }
 
-    private static JsonObject textPart(String text) {
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "text");
-        part.addProperty("text", text);
-        return part;
-    }
-
-    private static JsonObject toolInvocationPart(
-        String callId, String toolName, String args, String result) {
-        JsonObject invocation = new JsonObject();
-        invocation.addProperty("state", "result");
-        invocation.addProperty("toolCallId", callId);
-        invocation.addProperty("toolName", toolName);
-        invocation.addProperty("args", args);
-        invocation.addProperty("result", result);
-
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "tool-invocation");
-        part.add("toolInvocation", invocation);
-        return part;
+    private static EntryData.ToolCall toolCall(String toolName, String args, String result) {
+        return new EntryData.ToolCall(toolName, args, "other", result);
     }
 }

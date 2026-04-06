@@ -1,8 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.session.exporters;
 
-import com.github.catatafishen.ideagentforcopilot.session.importers.JsonlUtil;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -49,7 +46,7 @@ public final class CopilotClientExporter {
     }
 
     /**
-     * Exports v2 messages to Copilot CLI {@code events.jsonl}.
+     * Exports entries to Copilot CLI {@code events.jsonl}.
      *
      * @param sessionId if provided, used in the session.start event; otherwise a new UUID is generated
      * @param basePath  project base path for CWD in the session.start event; if {@code null}, falls
@@ -61,18 +58,12 @@ public final class CopilotClientExporter {
         @Nullable String sessionId,
         @Nullable String basePath) throws IOException {
 
-        List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
         String sid = sessionId != null ? sessionId : UUID.randomUUID().toString();
         EventChain chain = new EventChain();
         StringBuilder sb = new StringBuilder();
 
-        String model = findFirstModel(messages);
-        Instant startTime;
-        if (messages.isEmpty() || messages.getFirst().createdAt <= 0) {
-            startTime = Instant.now();
-        } else {
-            startTime = Instant.ofEpochMilli(messages.getFirst().createdAt);
-        }
+        String model = findFirstModel(entries);
+        Instant startTime = resolveStartTime(entries);
 
         sb.append(chain.emit("session.start", sessionStartData(sid, model, startTime, basePath))).append('\n');
 
@@ -82,12 +73,55 @@ public final class CopilotClientExporter {
             sb.append(chain.emit("session.model_change", modelData)).append('\n');
         }
 
-        for (SessionMessage msg : messages) {
-            switch (msg.role) {
-                case "user" -> writeUserMessage(msg, sb, chain);
-                case "assistant" -> writeAssistantTurn(msg, sb, chain);
-                default -> { /* separators and unknown roles are skipped */ }
+        boolean inTurn = false;
+        String turnId = null;
+        String interactionId = null;
+
+        for (EntryData entry : entries) {
+            if (entry instanceof EntryData.Prompt prompt) {
+                if (inTurn) {
+                    sb.append(chain.emit("assistant.turn_end", turnEndData(turnId))).append('\n');
+                    inTurn = false;
+                }
+                writePromptEntry(prompt, sb, chain);
+            } else if (entry instanceof EntryData.Thinking thinking) {
+                if (!inTurn) {
+                    interactionId = UUID.randomUUID().toString();
+                    turnId = UUID.randomUUID().toString();
+                    sb.append(chain.emit("assistant.turn_start", turnStartData(turnId, interactionId))).append('\n');
+                    inTurn = true;
+                }
+                writeThinkingEntry(thinking, sb, chain);
+            } else if (entry instanceof EntryData.Text text) {
+                if (!inTurn) {
+                    interactionId = UUID.randomUUID().toString();
+                    turnId = UUID.randomUUID().toString();
+                    sb.append(chain.emit("assistant.turn_start", turnStartData(turnId, interactionId))).append('\n');
+                    inTurn = true;
+                }
+                writeTextEntry(text, sb, chain, interactionId);
+            } else if (entry instanceof EntryData.ToolCall toolCall) {
+                if (!inTurn) {
+                    interactionId = UUID.randomUUID().toString();
+                    turnId = UUID.randomUUID().toString();
+                    sb.append(chain.emit("assistant.turn_start", turnStartData(turnId, interactionId))).append('\n');
+                    inTurn = true;
+                }
+                writeToolCallEntry(toolCall, sb, chain, interactionId);
+            } else if (entry instanceof EntryData.SubAgent subAgent) {
+                if (!inTurn) {
+                    interactionId = UUID.randomUUID().toString();
+                    turnId = UUID.randomUUID().toString();
+                    sb.append(chain.emit("assistant.turn_start", turnStartData(turnId, interactionId))).append('\n');
+                    inTurn = true;
+                }
+                writeSubAgentEntry(subAgent, sb, chain);
             }
+            // Skip Status, TurnStats, ContextFiles, SessionSeparator
+        }
+
+        if (inTurn) {
+            sb.append(chain.emit("assistant.turn_end", turnEndData(turnId))).append('\n');
         }
 
         Path parent = targetPath.getParent();
@@ -96,7 +130,7 @@ public final class CopilotClientExporter {
         }
         Files.writeString(targetPath, sb.toString(), StandardCharsets.UTF_8,
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-        LOG.info("Exported v2 session to Copilot events.jsonl: " + targetPath);
+        LOG.info("Exported session to Copilot events.jsonl: " + targetPath);
     }
 
     @NotNull
@@ -124,12 +158,46 @@ public final class CopilotClientExporter {
         return data;
     }
 
-    private static void writeUserMessage(
-        @NotNull SessionMessage msg,
+    @NotNull
+    private static Instant resolveStartTime(@NotNull List<EntryData> entries) {
+        for (EntryData entry : entries) {
+            String ts = null;
+            if (entry instanceof EntryData.Prompt p) ts = p.getTimestamp();
+            else if (entry instanceof EntryData.Text t) ts = t.getTimestamp();
+            else if (entry instanceof EntryData.Thinking th) ts = th.getTimestamp();
+            else if (entry instanceof EntryData.ToolCall tc) ts = tc.getTimestamp();
+            else if (entry instanceof EntryData.SubAgent sa) ts = sa.getTimestamp();
+            if (ts != null && !ts.isEmpty()) {
+                try {
+                    return Instant.parse(ts);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return Instant.now();
+    }
+
+    @NotNull
+    private static JsonObject turnStartData(@NotNull String turnId, @NotNull String interactionId) {
+        JsonObject data = new JsonObject();
+        data.addProperty(TURN_ID_KEY, turnId);
+        data.addProperty(INTERACTION_ID_KEY, interactionId);
+        return data;
+    }
+
+    @NotNull
+    private static JsonObject turnEndData(@NotNull String turnId) {
+        JsonObject data = new JsonObject();
+        data.addProperty(TURN_ID_KEY, turnId);
+        return data;
+    }
+
+    private static void writePromptEntry(
+        @NotNull EntryData.Prompt prompt,
         @NotNull StringBuilder sb,
         @NotNull EventChain chain) {
 
-        String text = extractText(msg);
+        String text = prompt.getText();
         if (text.isEmpty()) return;
 
         String interactionId = UUID.randomUUID().toString();
@@ -140,160 +208,111 @@ public final class CopilotClientExporter {
         sb.append(chain.emit("user.message", data)).append('\n');
     }
 
-    private static void writeAssistantTurn(
-        @NotNull SessionMessage msg,
+    private static void writeThinkingEntry(
+        @NotNull EntryData.Thinking thinking,
         @NotNull StringBuilder sb,
         @NotNull EventChain chain) {
 
-        String interactionId = UUID.randomUUID().toString();
-        String turnId = UUID.randomUUID().toString();
-
-        JsonObject turnStartData = new JsonObject();
-        turnStartData.addProperty(TURN_ID_KEY, turnId);
-        turnStartData.addProperty(INTERACTION_ID_KEY, interactionId);
-        sb.append(chain.emit("assistant.turn_start", turnStartData)).append('\n');
-
-        for (JsonObject part : msg.parts) {
-            String type = JsonlUtil.getStr(part, "type");
-            if (type == null) continue;
-
-            switch (type) {
-                case "reasoning" -> writeReasoningEvent(part, sb, chain);
-                case "text" -> writeAssistantMessageEvent(part, msg, sb, chain, interactionId);
-                case "tool-invocation" -> writeToolEvents(part, sb, chain, interactionId);
-                case "subagent" -> writeSubagentEvents(part, sb, chain);
-                default -> { /* status, file, etc. — not representable in events.jsonl */ }
-            }
-        }
-
-        JsonObject turnEndData = new JsonObject();
-        turnEndData.addProperty(TURN_ID_KEY, turnId);
-        sb.append(chain.emit("assistant.turn_end", turnEndData)).append('\n');
-    }
-
-    private static void writeReasoningEvent(
-        @NotNull JsonObject part,
-        @NotNull StringBuilder sb,
-        @NotNull EventChain chain) {
-
-        String text = JsonlUtil.getStr(part, "text");
-        if (text == null || text.isEmpty()) return;
+        String text = thinking.getRaw().toString();
+        if (text.isEmpty()) return;
 
         JsonObject data = new JsonObject();
         data.addProperty(CONTENT_KEY, text);
         sb.append(chain.emit("assistant.reasoning", data)).append('\n');
     }
 
-    private static void writeAssistantMessageEvent(
-        @NotNull JsonObject part,
-        @NotNull SessionMessage msg,
+    private static void writeTextEntry(
+        @NotNull EntryData.Text text,
         @NotNull StringBuilder sb,
         @NotNull EventChain chain,
         @NotNull String interactionId) {
 
-        String text = JsonlUtil.getStr(part, "text");
-        if (text == null || text.isEmpty()) return;
+        String content = text.getRaw().toString();
+        if (content.isEmpty()) return;
 
         JsonObject data = new JsonObject();
         data.addProperty("messageId", UUID.randomUUID().toString());
-        data.addProperty(CONTENT_KEY, text);
+        data.addProperty(CONTENT_KEY, content);
         data.addProperty(INTERACTION_ID_KEY, interactionId);
-        if (msg.model != null) {
-            data.addProperty("model", msg.model);
+        String model = text.getModel();
+        if (model != null && !model.isEmpty()) {
+            data.addProperty("model", model);
         }
         sb.append(chain.emit("assistant.message", data)).append('\n');
     }
 
-    private static void writeToolEvents(
-        @NotNull JsonObject part,
+    private static void writeToolCallEntry(
+        @NotNull EntryData.ToolCall toolCall,
         @NotNull StringBuilder sb,
         @NotNull EventChain chain,
         @NotNull String interactionId) {
 
-        JsonObject invocation = part.getAsJsonObject("toolInvocation");
-        if (invocation == null) return;
+        String toolCallId = UUID.randomUUID().toString();
+        String toolName = toolCall.getTitle();
+        if (toolName == null || toolName.isEmpty()) toolName = "unknown";
+        String argsStr = toolCall.getArguments();
 
-        String state = JsonlUtil.getStr(invocation, "state");
-        String toolCallId = JsonlUtil.getStr(invocation, TOOL_CALL_ID_KEY);
-        if (toolCallId == null) toolCallId = UUID.randomUUID().toString();
-        String toolName = JsonlUtil.getStr(invocation, "toolName");
-        if (toolName == null) toolName = "unknown";
-        String argsStr = JsonlUtil.getStr(invocation, "args");
-
-        if ("call".equals(state) || RESULT_KEY.equals(state)) {
-            JsonObject toolReq = new JsonObject();
-            toolReq.addProperty(TOOL_CALL_ID_KEY, toolCallId);
-            toolReq.addProperty("name", toolName);
-            if (argsStr != null) {
-                try {
-                    toolReq.add("arguments", JsonParser.parseString(argsStr));
-                } catch (Exception e) {
-                    toolReq.addProperty("arguments", argsStr);
-                }
+        JsonObject toolReq = new JsonObject();
+        toolReq.addProperty(TOOL_CALL_ID_KEY, toolCallId);
+        toolReq.addProperty("name", toolName);
+        if (argsStr != null) {
+            try {
+                toolReq.add("arguments", JsonParser.parseString(argsStr));
+            } catch (Exception e) {
+                toolReq.addProperty("arguments", argsStr);
             }
-            JsonArray toolRequests = new JsonArray();
-            toolRequests.add(toolReq);
-
-            JsonObject data = new JsonObject();
-            data.addProperty("messageId", UUID.randomUUID().toString());
-            data.addProperty(CONTENT_KEY, "");
-            data.add("toolRequests", toolRequests);
-            data.addProperty(INTERACTION_ID_KEY, interactionId);
-            sb.append(chain.emit("assistant.message", data)).append('\n');
         }
+        JsonArray toolRequests = new JsonArray();
+        toolRequests.add(toolReq);
 
-        if (RESULT_KEY.equals(state)) {
-            String result = JsonlUtil.getStr(invocation, RESULT_KEY);
-            JsonObject resultObj = new JsonObject();
-            resultObj.addProperty(CONTENT_KEY, result != null ? result : "");
+        JsonObject msgData = new JsonObject();
+        msgData.addProperty("messageId", UUID.randomUUID().toString());
+        msgData.addProperty(CONTENT_KEY, "");
+        msgData.add("toolRequests", toolRequests);
+        msgData.addProperty(INTERACTION_ID_KEY, interactionId);
+        sb.append(chain.emit("assistant.message", msgData)).append('\n');
 
-            JsonObject data = new JsonObject();
-            data.addProperty(TOOL_CALL_ID_KEY, toolCallId);
-            data.add(RESULT_KEY, resultObj);
-            sb.append(chain.emit("tool.execution_complete", data)).append('\n');
-        }
+        String result = toolCall.getResult();
+        JsonObject resultObj = new JsonObject();
+        resultObj.addProperty(CONTENT_KEY, result != null ? result : "");
+
+        JsonObject completeData = new JsonObject();
+        completeData.addProperty(TOOL_CALL_ID_KEY, toolCallId);
+        completeData.add(RESULT_KEY, resultObj);
+        sb.append(chain.emit("tool.execution_complete", completeData)).append('\n');
     }
 
-    private static void writeSubagentEvents(
-        @NotNull JsonObject part,
+    private static void writeSubAgentEntry(
+        @NotNull EntryData.SubAgent subAgent,
         @NotNull StringBuilder sb,
         @NotNull EventChain chain) {
 
-        String agentType = JsonlUtil.getStr(part, "agentType");
-        String description = JsonlUtil.getStr(part, "description");
-        String status = JsonlUtil.getStr(part, "status");
         String toolCallId = UUID.randomUUID().toString();
 
         JsonObject startData = new JsonObject();
         startData.addProperty(TOOL_CALL_ID_KEY, toolCallId);
+        String agentType = subAgent.getAgentType();
         startData.addProperty("agentName", agentType != null ? agentType : "general-purpose");
+        String description = subAgent.getDescription();
         startData.addProperty("agentDisplayName", description != null ? description : "");
         sb.append(chain.emit("subagent.started", startData)).append('\n');
 
-        if ("done".equals(status)) {
+        if ("done".equals(subAgent.getStatus())) {
             JsonObject completeData = new JsonObject();
             completeData.addProperty(TOOL_CALL_ID_KEY, toolCallId);
             sb.append(chain.emit("subagent.completed", completeData)).append('\n');
         }
     }
 
-    @NotNull
-    private static String extractText(@NotNull SessionMessage msg) {
-        StringBuilder textBuilder = new StringBuilder();
-        for (JsonObject part : msg.parts) {
-            String type = JsonlUtil.getStr(part, "type");
-            if ("text".equals(type)) {
-                String text = JsonlUtil.getStr(part, "text");
-                if (text != null) textBuilder.append(text);
-            }
-        }
-        return textBuilder.toString();
-    }
-
     @Nullable
-    private static String findFirstModel(@NotNull List<SessionMessage> messages) {
-        for (SessionMessage msg : messages) {
-            if (msg.model != null && !msg.model.isEmpty()) return msg.model;
+    private static String findFirstModel(@NotNull List<EntryData> entries) {
+        for (EntryData entry : entries) {
+            String model = null;
+            if (entry instanceof EntryData.Text t) model = t.getModel();
+            else if (entry instanceof EntryData.Thinking th) model = th.getModel();
+            else if (entry instanceof EntryData.ToolCall tc) model = tc.getModel();
+            else if (entry instanceof EntryData.SubAgent sa) model = sa.getModel();
+            if (model != null && !model.isEmpty()) return model;
         }
         return null;
     }

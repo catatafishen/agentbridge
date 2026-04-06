@@ -1,7 +1,5 @@
 package com.github.catatafishen.ideagentforcopilot.session.exporters;
 
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -42,9 +40,6 @@ public final class KiroClientExporter {
     private static final String KEY_TOOL_USE_ID = "toolUseId";
     private static final String KEY_MESSAGE_ID = "message_id";
 
-    private static final String PART_TYPE_TEXT = "text";
-    private static final String PART_TYPE_TOOL_INVOCATION = "tool-invocation";
-    private static final String FIELD_TOOL_INVOCATION = "toolInvocation";
     private static final String STATE_RESULT = "result";
 
     private KiroClientExporter() {
@@ -58,22 +53,13 @@ public final class KiroClientExporter {
         return Path.of(System.getProperty("user.home"), ".kiro", "sessions", "cli");
     }
 
-    /**
-     * Exports v2 session messages to Kiro's native format.
-     *
-     * @param entries     v2 session entries to export
-     * @param cwd         project working directory (may be null)
-     * @param sessionsDir Kiro CLI sessions directory (e.g. {@code ~/.kiro/sessions/cli/})
-     * @return the generated session ID, or {@code null} on failure
-     */
     @Nullable
     public static String exportSession(
         @NotNull List<EntryData> entries,
         @Nullable String cwd,
         @NotNull Path sessionsDir) {
 
-        List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
-        if (messages.isEmpty()) {
+        if (entries.isEmpty()) {
             LOG.info("No messages to export to Kiro");
             return null;
         }
@@ -84,10 +70,10 @@ public final class KiroClientExporter {
             String sessionId = UUID.randomUUID().toString();
 
             writeSessionJson(sessionId, cwd, sessionsDir);
-            writeMessagesJsonl(messages, sessionId, sessionsDir);
+            writeMessagesJsonl(entries, sessionId, sessionsDir);
 
             LOG.info("Exported v2 session to Kiro CLI: " + sessionId
-                + " (" + messages.size() + " v2 messages)");
+                + " (" + entries.size() + " entries)");
             return sessionId;
         } catch (IOException e) {
             LOG.warn("Failed to export session to Kiro CLI format", e);
@@ -150,11 +136,11 @@ public final class KiroClientExporter {
     }
 
     private static void writeMessagesJsonl(
-        @NotNull List<SessionMessage> messages,
+        @NotNull List<EntryData> entries,
         @NotNull String sessionId,
         @NotNull Path sessionsDir) throws IOException {
 
-        List<JsonObject> kiroMessages = toKiroMessages(messages);
+        List<JsonObject> kiroMessages = toKiroMessages(entries);
 
         StringBuilder sb = new StringBuilder();
         for (JsonObject msg : kiroMessages) {
@@ -169,19 +155,101 @@ public final class KiroClientExporter {
     }
 
     @NotNull
-    static List<JsonObject> toKiroMessages(@NotNull List<SessionMessage> messages) {
+    static List<JsonObject> toKiroMessages(@NotNull List<EntryData> entries) {
         List<JsonObject> result = new ArrayList<>();
+        List<JsonObject> assistantBlocks = new ArrayList<>();
+        List<ToolPair> pendingTools = new ArrayList<>();
+        boolean seenToolUse = false;
 
-        for (SessionMessage msg : messages) {
-            switch (msg.role) {
-                case "separator" -> { /* skip */ }
-                case "user" -> {
-                    JsonObject prompt = convertUserMessage(msg);
-                    if (prompt != null) result.add(prompt);
+        for (EntryData entry : entries) {
+            if (entry instanceof EntryData.Prompt prompt) {
+                // Flush pending assistant blocks
+                if (!assistantBlocks.isEmpty()) {
+                    emitAssistantTurn(assistantBlocks, pendingTools, result);
+                    assistantBlocks = new ArrayList<>();
+                    pendingTools = new ArrayList<>();
+                    seenToolUse = false;
                 }
-                case "assistant" -> result.addAll(convertAssistantMessage(msg));
-                default -> LOG.debug("Skipping unknown role: " + msg.role);
+                // Add user message
+                String text = prompt.getText();
+                if (!text.isEmpty()) {
+                    JsonArray content = new JsonArray();
+                    content.add(textContentBlock(text));
+                    result.add(wrapMessage(KIND_PROMPT, UUID.randomUUID().toString(), content));
+                }
+
+            } else if (entry instanceof EntryData.Text text) {
+                String content = text.getRaw().toString();
+                if (content.isEmpty()) continue;
+
+                if (seenToolUse) {
+                    // Text after tool use = turn boundary
+                    emitAssistantTurn(assistantBlocks, pendingTools, result);
+                    assistantBlocks = new ArrayList<>();
+                    pendingTools = new ArrayList<>();
+                    seenToolUse = false;
+                }
+                assistantBlocks.add(textContentBlock(content));
+
+            } else if (entry instanceof EntryData.ToolCall toolCall) {
+                String toolCallId = UUID.randomUUID().toString();
+                String toolName = AnthropicClientExporter.sanitizeToolName(toolCall.getTitle());
+                String argsStr = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
+                String resultStr = toolCall.getResult() != null ? toolCall.getResult() : "";
+
+                JsonObject inputObj;
+                try {
+                    inputObj = JsonParser.parseString(argsStr).getAsJsonObject();
+                } catch (Exception e) {
+                    inputObj = new JsonObject();
+                    inputObj.addProperty("_raw", argsStr);
+                }
+
+                // Build tool_use block
+                JsonObject toolUseData = new JsonObject();
+                toolUseData.addProperty(KEY_TOOL_USE_ID, toolCallId);
+                toolUseData.addProperty("name", toolName);
+                toolUseData.add("input", inputObj);
+
+                JsonObject toolUseBlock = new JsonObject();
+                toolUseBlock.addProperty("kind", CONTENT_KIND_TOOL_USE);
+                toolUseBlock.add("data", toolUseData);
+
+                // Build tool_result block
+                JsonObject resultContent = parseResultContent(resultStr);
+
+                JsonObject jsonContentBlock = new JsonObject();
+                jsonContentBlock.addProperty("kind", CONTENT_KIND_JSON);
+                jsonContentBlock.add("data", resultContent);
+
+                JsonArray resultContentArray = new JsonArray();
+                resultContentArray.add(jsonContentBlock);
+
+                JsonObject toolResultData = new JsonObject();
+                toolResultData.addProperty(KEY_TOOL_USE_ID, toolCallId);
+                toolResultData.add(KEY_CONTENT, resultContentArray);
+
+                JsonObject toolResultBlock = new JsonObject();
+                toolResultBlock.addProperty("kind", CONTENT_KIND_TOOL_RESULT);
+                toolResultBlock.add("data", toolResultData);
+
+                assistantBlocks.add(toolUseBlock);
+                pendingTools.add(new ToolPair(toolCallId, toolName, inputObj,
+                    toolUseBlock, toolResultBlock, resultContent));
+                seenToolUse = true;
+
+            } else if (entry instanceof EntryData.Thinking thinking) {
+                String content = thinking.getRaw().toString();
+                if (!content.isEmpty()) {
+                    assistantBlocks.add(thinkingBlock(content));
+                }
             }
+            // Skip SubAgent, Status, TurnStats, ContextFiles, SessionSeparator
+        }
+
+        // Flush remaining
+        if (!assistantBlocks.isEmpty()) {
+            emitAssistantTurn(assistantBlocks, pendingTools, result);
         }
 
         // Kiro requires conversation history to begin with a Prompt (user message).
@@ -198,12 +266,9 @@ public final class KiroClientExporter {
         }
 
         // Kiro rejects consecutive Prompt messages ("invalid conversation history").
-        // Merge any consecutive Prompts by appending the later content into the earlier one.
         mergeConsecutivePrompts(result);
 
-        // Kiro may also reject consecutive AssistantMessages (two v2 assistant turns in a row
-        // with no user message between them produces this when the last part of turn N is text
-        // and the first part of turn N+1 opens with tool calls). Merge them by concatenating content.
+        // Kiro may also reject consecutive AssistantMessages. Merge them by concatenating content.
         mergeConsecutiveAssistantMessages(result);
 
         return result;
@@ -262,79 +327,16 @@ public final class KiroClientExporter {
         }
     }
 
-    @Nullable
-    private static JsonObject convertUserMessage(@NotNull SessionMessage msg) {
-        JsonArray content = new JsonArray();
-
-        for (JsonObject part : msg.parts) {
-            if (PART_TYPE_TEXT.equals(partType(part))) {
-                String text = partText(part);
-                if (!text.isEmpty()) {
-                    content.add(textContentBlock(text));
-                }
-            }
-        }
-
-        if (content.isEmpty()) return null;
-        return wrapMessage(KIND_PROMPT, msg.id, content);
-    }
-
-    /**
-     * Converts a v2 assistant message into one or more Kiro messages.
-     *
-     * <p>A single v2 assistant message may contain interleaved text and tool invocations.
-     * In Kiro format, tool_use blocks are part of the AssistantMessage, and the corresponding
-     * tool results are emitted as a separate ToolResults message.</p>
-     *
-     * <p>When text follows tool invocations, a new turn boundary is created
-     * (the previous AssistantMessage + ToolResults are emitted, and a new
-     * AssistantMessage begins).</p>
-     */
-    @NotNull
-    private static List<JsonObject> convertAssistantMessage(@NotNull SessionMessage msg) {
-        List<JsonObject> result = new ArrayList<>();
-
-        JsonArray assistantContent = new JsonArray();
-        List<ToolPair> pendingTools = new ArrayList<>();
-        boolean seenToolUse = false;
-
-        for (JsonObject part : msg.parts) {
-            String type = partType(part);
-
-            if (PART_TYPE_TEXT.equals(type)) {
-                String text = partText(part);
-                if (text.isEmpty()) continue;
-
-                if (seenToolUse) {
-                    emitAssistantTurn(assistantContent, pendingTools, result);
-                    assistantContent = new JsonArray();
-                    pendingTools = new ArrayList<>();
-                    seenToolUse = false;
-                }
-                assistantContent.add(textContentBlock(text));
-
-            } else if (PART_TYPE_TOOL_INVOCATION.equals(type) && part.has(FIELD_TOOL_INVOCATION)) {
-                ToolPair pair = buildToolPair(part.getAsJsonObject(FIELD_TOOL_INVOCATION));
-                if (pair != null) {
-                    assistantContent.add(pair.toolUseBlock);
-                    pendingTools.add(pair);
-                    seenToolUse = true;
-                }
-            }
-        }
-
-        emitAssistantTurn(assistantContent, pendingTools, result);
-        return result;
-    }
-
     private static void emitAssistantTurn(
-        @NotNull JsonArray assistantContent,
+        @NotNull List<JsonObject> assistantBlocks,
         @NotNull List<ToolPair> pendingTools,
         @NotNull List<JsonObject> out) {
 
-        if (assistantContent.isEmpty()) return;
+        if (assistantBlocks.isEmpty()) return;
 
-        out.add(wrapMessage(KIND_ASSISTANT_MESSAGE, UUID.randomUUID().toString(), assistantContent));
+        JsonArray content = new JsonArray();
+        assistantBlocks.forEach(content::add);
+        out.add(wrapMessage(KIND_ASSISTANT_MESSAGE, UUID.randomUUID().toString(), content));
 
         if (!pendingTools.isEmpty()) {
             out.add(buildToolResultsMessage(pendingTools));
@@ -389,54 +391,6 @@ public final class KiroClientExporter {
         return envelope;
     }
 
-    @Nullable
-    private static ToolPair buildToolPair(@NotNull JsonObject inv) {
-        String state = inv.has("state") ? inv.get("state").getAsString() : "call";
-        if (!STATE_RESULT.equals(state)) return null;
-
-        String toolCallId = inv.has("toolCallId") ? inv.get("toolCallId").getAsString() : UUID.randomUUID().toString();
-        String toolName = AnthropicClientExporter.sanitizeToolName(
-            inv.has(KEY_TOOL_NAME) ? inv.get(KEY_TOOL_NAME).getAsString() : "unknown");
-        String argsStr = inv.has("args") ? inv.get("args").getAsString() : "{}";
-        String resultStr = inv.has(STATE_RESULT) ? inv.get(STATE_RESULT).getAsString() : "";
-
-        JsonObject inputObj;
-        try {
-            inputObj = JsonParser.parseString(argsStr).getAsJsonObject();
-        } catch (Exception e) {
-            inputObj = new JsonObject();
-            inputObj.addProperty("_raw", argsStr);
-        }
-
-        JsonObject toolUseData = new JsonObject();
-        toolUseData.addProperty(KEY_TOOL_USE_ID, toolCallId);
-        toolUseData.addProperty("name", toolName);
-        toolUseData.add("input", inputObj);
-
-        JsonObject toolUseBlock = new JsonObject();
-        toolUseBlock.addProperty("kind", CONTENT_KIND_TOOL_USE);
-        toolUseBlock.add("data", toolUseData);
-
-        JsonObject resultContent = parseResultContent(resultStr);
-
-        JsonObject jsonContentBlock = new JsonObject();
-        jsonContentBlock.addProperty("kind", CONTENT_KIND_JSON);
-        jsonContentBlock.add("data", resultContent);
-
-        JsonArray resultContentArray = new JsonArray();
-        resultContentArray.add(jsonContentBlock);
-
-        JsonObject toolResultData = new JsonObject();
-        toolResultData.addProperty(KEY_TOOL_USE_ID, toolCallId);
-        toolResultData.add(KEY_CONTENT, resultContentArray);
-
-        JsonObject toolResultBlock = new JsonObject();
-        toolResultBlock.addProperty("kind", CONTENT_KIND_TOOL_RESULT);
-        toolResultBlock.add("data", toolResultData);
-
-        return new ToolPair(toolCallId, toolName, inputObj, toolUseBlock, toolResultBlock, resultContent);
-    }
-
     @NotNull
     private static JsonObject parseResultContent(@NotNull String resultStr) {
         try {
@@ -462,6 +416,14 @@ public final class KiroClientExporter {
     }
 
     @NotNull
+    private static JsonObject thinkingBlock(@NotNull String text) {
+        JsonObject block = new JsonObject();
+        block.addProperty("kind", "thinking");
+        block.addProperty("data", text);
+        return block;
+    }
+
+    @NotNull
     private static JsonObject wrapMessage(
         @NotNull String kind,
         @NotNull String messageId,
@@ -476,16 +438,6 @@ public final class KiroClientExporter {
         envelope.addProperty("kind", kind);
         envelope.add("data", data);
         return envelope;
-    }
-
-    @NotNull
-    private static String partType(@NotNull JsonObject part) {
-        return part.has("type") ? part.get("type").getAsString() : "";
-    }
-
-    @NotNull
-    private static String partText(@NotNull JsonObject part) {
-        return part.has(PART_TYPE_TEXT) ? part.get(PART_TYPE_TEXT).getAsString() : "";
     }
 
     private record ToolPair(

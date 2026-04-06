@@ -1,13 +1,9 @@
 package com.github.catatafishen.ideagentforcopilot.session.exporters;
 
-import com.github.catatafishen.ideagentforcopilot.session.importers.JsonlUtil;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -23,6 +19,7 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -49,8 +46,7 @@ public final class CodexClientExporter {
         @NotNull List<EntryData> entries,
         @NotNull Path sessionsDir,
         @NotNull Path dbPath) {
-        List<SessionMessage> messages = EntryDataConverter.toMessages(entries);
-        if (messages.isEmpty()) return null;
+        if (entries.isEmpty() || entries.stream().noneMatch(e -> e instanceof EntryData.Prompt)) return null;
 
         try {
             String threadId = UUID.randomUUID().toString();
@@ -58,10 +54,22 @@ public final class CodexClientExporter {
             Files.createDirectories(sessionDir);
 
             Path rolloutFile = sessionDir.resolve("rollout.jsonl");
-            writeRolloutFile(messages, rolloutFile);
+            writeRolloutFile(entries, rolloutFile);
+
+            long createdAt = System.currentTimeMillis() / 1000;
+            for (EntryData entry : entries) {
+                String ts = getEntryTimestamp(entry);
+                if (ts != null && !ts.isEmpty()) {
+                    try {
+                        createdAt = Instant.parse(ts).toEpochMilli() / 1000;
+                    } catch (Exception ignored) {
+                    }
+                    break;
+                }
+            }
 
             if (Files.exists(dbPath)) {
-                insertThread(dbPath, threadId, rolloutFile.toString());
+                insertThread(dbPath, threadId, rolloutFile.toString(), createdAt);
             }
 
             LOG.info("Exported v2 session to Codex: " + threadId);
@@ -72,128 +80,82 @@ public final class CodexClientExporter {
         }
     }
 
-    static void writeRolloutFile(@NotNull List<SessionMessage> messages, @NotNull Path rolloutFile) throws IOException {
+    static void writeRolloutFile(@NotNull List<EntryData> entries, @NotNull Path rolloutFile) throws IOException {
         StringBuilder sb = new StringBuilder();
-        for (SessionMessage msg : messages) {
-            if ("separator".equals(msg.role)) continue;
-            convertMessageToRolloutItems(msg, sb);
+        for (EntryData entry : entries) {
+            if (entry instanceof EntryData.Prompt prompt) {
+                JsonObject item = new JsonObject();
+                item.addProperty("type", "message");
+                item.addProperty("role", "user");
+                JsonArray content = new JsonArray();
+                JsonObject inputText = new JsonObject();
+                inputText.addProperty("type", "input_text");
+                inputText.addProperty("text", prompt.getText());
+                content.add(inputText);
+                item.add("content", content);
+                sb.append(GSON.toJson(item)).append('\n');
+            } else if (entry instanceof EntryData.Text text) {
+                String raw = text.getRaw().toString();
+                if (!raw.isEmpty()) {
+                    JsonObject item = new JsonObject();
+                    item.addProperty("type", "message");
+                    item.addProperty("role", "assistant");
+                    JsonArray content = new JsonArray();
+                    JsonObject outputText = new JsonObject();
+                    outputText.addProperty("type", "output_text");
+                    outputText.addProperty("text", raw);
+                    content.add(outputText);
+                    item.add("content", content);
+                    sb.append(GSON.toJson(item)).append('\n');
+                }
+            } else if (entry instanceof EntryData.Thinking thinking) {
+                String raw = thinking.getRaw().toString();
+                if (!raw.isEmpty()) {
+                    JsonObject item = new JsonObject();
+                    item.addProperty("type", "reasoning");
+                    JsonArray content = new JsonArray();
+                    JsonObject reasoningText = new JsonObject();
+                    reasoningText.addProperty("type", "reasoning_text");
+                    reasoningText.addProperty("text", raw);
+                    content.add(reasoningText);
+                    item.add("content", content);
+                    sb.append(GSON.toJson(item)).append('\n');
+                }
+            } else if (entry instanceof EntryData.ToolCall toolCall) {
+                String callId = UUID.randomUUID().toString();
+
+                JsonObject callItem = new JsonObject();
+                callItem.addProperty("type", "function_call");
+                callItem.addProperty("call_id", callId);
+                callItem.addProperty("name", toolCall.getTitle());
+                callItem.addProperty("arguments", toolCall.getArguments() != null ? toolCall.getArguments() : "{}");
+                sb.append(GSON.toJson(callItem)).append('\n');
+
+                JsonObject outputItem = new JsonObject();
+                outputItem.addProperty("type", "function_call_output");
+                outputItem.addProperty("call_id", callId);
+                outputItem.addProperty("output", toolCall.getResult() != null ? toolCall.getResult() : "");
+                sb.append(GSON.toJson(outputItem)).append('\n');
+            }
+            // Skip SubAgent, Status, TurnStats, ContextFiles, SessionSeparator
         }
         Files.writeString(rolloutFile, sb.toString(), StandardCharsets.UTF_8,
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
-    private static void convertMessageToRolloutItems(@NotNull SessionMessage msg, @NotNull StringBuilder sb) {
-        if ("user".equals(msg.role)) {
-            convertUserMessage(msg, sb);
-        } else if ("assistant".equals(msg.role)) {
-            convertAssistantMessage(msg, sb);
-        }
+    @Nullable
+    private static String getEntryTimestamp(@NotNull EntryData entry) {
+        if (entry instanceof EntryData.Prompt p) return p.getTimestamp();
+        if (entry instanceof EntryData.Text t) return t.getTimestamp();
+        if (entry instanceof EntryData.Thinking t) return t.getTimestamp();
+        if (entry instanceof EntryData.ToolCall t) return t.getTimestamp();
+        if (entry instanceof EntryData.SubAgent s) return s.getTimestamp();
+        if (entry instanceof EntryData.SessionSeparator s) return s.getTimestamp();
+        return null;
     }
 
-    private static void convertUserMessage(@NotNull SessionMessage msg, @NotNull StringBuilder sb) {
-        StringBuilder textBuilder = new StringBuilder();
-        for (JsonObject part : msg.parts) {
-            String type = JsonlUtil.getStr(part, "type");
-            if ("text".equals(type)) {
-                String text = JsonlUtil.getStr(part, "text");
-                if (text != null) textBuilder.append(text);
-            }
-        }
-
-        JsonObject item = new JsonObject();
-        item.addProperty("type", "message");
-        item.addProperty("role", "user");
-        JsonArray content = new JsonArray();
-        JsonObject inputText = new JsonObject();
-        inputText.addProperty("type", "input_text");
-        inputText.addProperty("text", textBuilder.toString());
-        content.add(inputText);
-        item.add("content", content);
-        sb.append(GSON.toJson(item)).append('\n');
-    }
-
-    private static void convertAssistantMessage(@NotNull SessionMessage msg, @NotNull StringBuilder sb) {
-        for (JsonObject part : msg.parts) {
-            String type = JsonlUtil.getStr(part, "type");
-            if (type == null) continue;
-
-            switch (type) {
-                case "text" -> writeAssistantTextItem(part, sb);
-                case "reasoning" -> writeReasoningItem(part, sb);
-                case "tool-invocation" -> writeToolItems(part, sb);
-                default -> {
-                }
-            }
-        }
-    }
-
-    private static void writeAssistantTextItem(@NotNull JsonObject part, @NotNull StringBuilder sb) {
-        String text = JsonlUtil.getStr(part, "text");
-        if (text == null || text.isEmpty()) return;
-
-        JsonObject item = new JsonObject();
-        item.addProperty("type", "message");
-        item.addProperty("role", "assistant");
-        item.addProperty("id", "resp_" + UUID.randomUUID().toString().substring(0, 8));
-        JsonArray content = new JsonArray();
-        JsonObject outputText = new JsonObject();
-        outputText.addProperty("type", "output_text");
-        outputText.addProperty("text", text);
-        content.add(outputText);
-        item.add("content", content);
-        sb.append(GSON.toJson(item)).append('\n');
-    }
-
-    private static void writeReasoningItem(@NotNull JsonObject part, @NotNull StringBuilder sb) {
-        String text = JsonlUtil.getStr(part, "text");
-        if (text == null || text.isEmpty()) return;
-
-        JsonObject item = new JsonObject();
-        item.addProperty("type", "reasoning");
-        item.addProperty("id", "rs_" + UUID.randomUUID().toString().substring(0, 8));
-        JsonArray content = new JsonArray();
-        JsonObject reasoningText = new JsonObject();
-        reasoningText.addProperty("type", "reasoning_text");
-        reasoningText.addProperty("text", text);
-        content.add(reasoningText);
-        item.add("content", content);
-        sb.append(GSON.toJson(item)).append('\n');
-    }
-
-    private static void writeToolItems(@NotNull JsonObject part, @NotNull StringBuilder sb) {
-        JsonObject invocation = part.getAsJsonObject("toolInvocation");
-        if (invocation == null) return;
-
-        String state = JsonlUtil.getStr(invocation, "state");
-        String callId = JsonlUtil.getStr(invocation, "toolCallId");
-        if (callId == null) callId = "call_" + UUID.randomUUID().toString().substring(0, 8);
-
-        String toolName = JsonlUtil.getStr(invocation, "toolName");
-        if (toolName == null) toolName = "unknown";
-
-        if ("call".equals(state) || "result".equals(state)) {
-            JsonObject callItem = new JsonObject();
-            callItem.addProperty("type", "function_call");
-            callItem.addProperty("call_id", callId);
-            callItem.addProperty("name", toolName);
-            callItem.addProperty("id", "fc_" + UUID.randomUUID().toString().substring(0, 8));
-
-            JsonElement args = invocation.get("args");
-            callItem.addProperty("arguments", args != null ? GSON.toJson(args) : "{}");
-            sb.append(GSON.toJson(callItem)).append('\n');
-        }
-
-        if ("result".equals(state)) {
-            String result = JsonlUtil.getStr(invocation, "result");
-            JsonObject outputItem = new JsonObject();
-            outputItem.addProperty("type", "function_call_output");
-            outputItem.addProperty("call_id", callId);
-            outputItem.addProperty("output", result != null ? result : "");
-            sb.append(GSON.toJson(outputItem)).append('\n');
-        }
-    }
-
-    private static void insertThread(@NotNull Path dbPath, @NotNull String threadId, @NotNull String rolloutPath) {
+    private static void insertThread(@NotNull Path dbPath, @NotNull String threadId,
+                                     @NotNull String rolloutPath, long createdAt) {
         String url = "jdbc:sqlite:" + dbPath;
         try (Connection conn = DriverManager.getConnection(url);
              Statement pragmaStmt = conn.createStatement()) {
@@ -214,7 +176,7 @@ public final class CodexClientExporter {
                 "INSERT OR REPLACE INTO threads (id, rollout_path, created_at, updated_at, archived) VALUES (?, ?, ?, ?, 0)")) {
                 ps.setString(1, threadId);
                 ps.setString(2, rolloutPath);
-                ps.setLong(3, now);
+                ps.setLong(3, createdAt);
                 ps.setLong(4, now);
                 ps.executeUpdate();
             }

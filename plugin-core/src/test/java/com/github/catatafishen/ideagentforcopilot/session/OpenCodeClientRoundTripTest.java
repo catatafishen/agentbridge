@@ -2,7 +2,6 @@ package com.github.catatafishen.ideagentforcopilot.session;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.OpenCodeClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.OpenCodeClientImporter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
 import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
@@ -24,7 +23,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Tests for {@link OpenCodeClientImporter} and {@link OpenCodeClientExporter}.
  * Uses temporary SQLite databases to validate import, export, and round-trip
- * conversion between OpenCode's native format and the v2 {@link SessionMessage} model.
+ * conversion between OpenCode's native format and the {@link EntryData} model.
  */
 class OpenCodeClientRoundTripTest {
 
@@ -182,12 +180,12 @@ class OpenCodeClientRoundTripTest {
 
     @Test
     void exportCreatesSessionAndMessageRows() throws SQLException {
-        List<SessionMessage> messages = List.of(
-            userMessage("Hello"),
-            assistantMessage("World")
+        List<EntryData> entries = List.of(
+            promptEntry("Hello"),
+            textEntry("World")
         );
 
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(messages), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         // Verify session row
@@ -213,20 +211,13 @@ class OpenCodeClientRoundTripTest {
 
     @Test
     void exportCreatesPartRows() throws SQLException {
-        JsonObject textPart = new JsonObject();
-        textPart.addProperty("type", "text");
-        textPart.addProperty("text", "Answer text");
+        List<EntryData> entries = List.of(
+            promptEntry("Q"),
+            new EntryData.Thinking(new StringBuilder("Thinking...")),
+            textEntry("Answer text")
+        );
 
-        JsonObject reasoningPart = new JsonObject();
-        reasoningPart.addProperty("type", "reasoning");
-        reasoningPart.addProperty("text", "Thinking...");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(reasoningPart, textPart),
-            System.currentTimeMillis(), null, null);
-
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("Q"), assistant)), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         // Count total part rows for the session
@@ -248,14 +239,14 @@ class OpenCodeClientRoundTripTest {
 
     @Test
     void exportEmptyMessagesReturnsNull() {
-        assertNull(OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(List.of()), dbPath, PROJECT_DIR));
+        assertNull(OpenCodeClientExporter.exportSession(List.of(), dbPath, PROJECT_DIR));
     }
 
     @Test
     void exportToNonExistentDbCreatesIt() {
         Path freshDb = tempDir.resolve("fresh/opencode.db");
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("hi"))), freshDb, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(
+            List.of(promptEntry("hi")), freshDb, PROJECT_DIR);
         assertNotNull(sessionId, "Exporter should create the DB and succeed");
         assertTrue(Files.exists(freshDb), "Database file should have been created");
     }
@@ -267,12 +258,12 @@ class OpenCodeClientRoundTripTest {
         // Regression test: toModelMessages in OpenCode accesses part.state.time.compacted
         // for every tool part. If state.time is absent the property access throws a TypeError
         // which causes the session to return end_turn with zero tokens and no response.
-        JsonObject toolPart = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "file data");
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            promptEntry("Q"),
+            toolCallEntry("read_file", "{\"path\":\"/a\"}", "file data")
+        );
 
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("Q"), assistant)), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         try (Connection conn = connect(dbPath);
@@ -298,8 +289,8 @@ class OpenCodeClientRoundTripTest {
     void exportedTextPartHasNoTime() throws SQLException {
         // Real OpenCode text parts do NOT carry a top-level time field (only reasoning parts do).
         // Writing time on text parts may cause Zod strict-mode validation failures in OpenCode.
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("Hello"))), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(
+            List.of(promptEntry("Hello")), dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         try (Connection conn = connect(dbPath);
@@ -321,17 +312,16 @@ class OpenCodeClientRoundTripTest {
         // Regression: writing type="subagent" to OpenCode's DB causes Zod validation failure
         // because its discriminated union on "type" doesn't include "subagent".
         // The exporter must convert subagent parts to text summaries instead.
-        JsonObject subagentPart = new JsonObject();
-        subagentPart.addProperty("type", "subagent");
-        subagentPart.addProperty("agentType", "explore");
-        subagentPart.addProperty("description", "Exploring codebase");
-        subagentPart.addProperty("result", "Found 3 files");
-        subagentPart.addProperty("status", "done");
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(subagentPart), System.currentTimeMillis(), null, null);
+        EntryData.SubAgent subAgent = new EntryData.SubAgent("explore", "Exploring codebase");
+        subAgent.setResult("Found 3 files");
+        subAgent.setStatus("done");
 
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("Search"), assistant)), dbPath, PROJECT_DIR);
+        List<EntryData> entries = List.of(
+            promptEntry("Search"),
+            subAgent
+        );
+
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         try (Connection conn = connect(dbPath);
@@ -360,18 +350,14 @@ class OpenCodeClientRoundTripTest {
 
     @Test
     void unknownPartTypeSkipped() throws SQLException {
-        // Unknown v2 part types (e.g. "status", "file") must be skipped rather than written
+        // Unknown entry types (e.g. Status) must be skipped rather than written
         // as-is, because OpenCode's Zod discriminated union would fail validation.
-        JsonObject statusPart = new JsonObject();
-        statusPart.addProperty("type", "status");
-        statusPart.addProperty("message", "Thinking...");
-        JsonObject textPart = new JsonObject();
-        textPart.addProperty("type", "text");
-        textPart.addProperty("text", "Hello");
-        SessionMessage msg = new SessionMessage(
-            "a1", "assistant", List.of(statusPart, textPart), System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            new EntryData.Status("\u23F3", "Thinking..."),
+            textEntry("Hello")
+        );
 
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(List.of(msg)), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         try (Connection conn = connect(dbPath);
@@ -396,12 +382,12 @@ class OpenCodeClientRoundTripTest {
 
     @Test
     void roundTripPreservesTextContent() throws SQLException {
-        List<SessionMessage> original = List.of(
-            userMessage("What is Rust?"),
-            assistantMessage("A systems language.")
+        List<EntryData> entries = List.of(
+            promptEntry("What is Rust?"),
+            textEntry("A systems language.")
         );
 
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(original), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         List<SessionMessage> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
@@ -412,19 +398,13 @@ class OpenCodeClientRoundTripTest {
 
     @Test
     void roundTripPreservesToolInvocations() throws SQLException {
-        JsonObject textPart = new JsonObject();
-        textPart.addProperty("type", "text");
-        textPart.addProperty("text", "Reading file");
+        List<EntryData> entries = List.of(
+            promptEntry("Read /a"),
+            textEntry("Reading file"),
+            toolCallEntry("read_file", "{\"path\":\"/a\"}", "file data")
+        );
 
-        JsonObject toolPart = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "file data");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(textPart, toolPart),
-            System.currentTimeMillis(), null, null);
-
-        List<SessionMessage> original = List.of(userMessage("Read /a"), assistant);
-
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(original), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         List<SessionMessage> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
@@ -435,9 +415,9 @@ class OpenCodeClientRoundTripTest {
         for (JsonObject part : importedAssistant.parts) {
             if ("tool-invocation".equals(part.get("type").getAsString())) {
                 foundTool = true;
-                JsonObject inv = part.getAsJsonObject("toolInvocation");
-                assertFalse(inv.get("toolCallId").getAsString().isEmpty());
-                assertEquals("read_file", inv.get("toolName").getAsString());
+                JsonObject toolInv = part.getAsJsonObject("toolInvocation");
+                assertFalse(toolInv.get("toolCallId").getAsString().isEmpty());
+                assertEquals("read_file", toolInv.get("toolName").getAsString());
             }
         }
         assertTrue(foundTool, "Tool invocation should survive round-trip");
@@ -445,14 +425,14 @@ class OpenCodeClientRoundTripTest {
 
     @Test
     void roundTripMultipleTurns() throws SQLException {
-        List<SessionMessage> original = List.of(
-            userMessage("Question 1"),
-            assistantMessage("Answer 1"),
-            userMessage("Question 2"),
-            assistantMessage("Answer 2")
+        List<EntryData> entries = List.of(
+            promptEntry("Question 1"),
+            textEntry("Answer 1"),
+            promptEntry("Question 2"),
+            textEntry("Answer 2")
         );
 
-        OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(original), dbPath, PROJECT_DIR);
+        OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
 
         List<SessionMessage> imported = OpenCodeClientImporter.importLatestSession(dbPath, PROJECT_DIR);
         assertEquals(4, imported.size());
@@ -473,12 +453,12 @@ class OpenCodeClientRoundTripTest {
      */
     @Test
     void exportIncludesRequiredZodFields() throws SQLException {
-        List<SessionMessage> messages = List.of(
-            userMessage("Hello"),
-            assistantMessage("World")
+        List<EntryData> entries = List.of(
+            promptEntry("Hello"),
+            textEntry("World")
         );
 
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(messages), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         try (Connection conn = connect(dbPath);
@@ -529,13 +509,12 @@ class OpenCodeClientRoundTripTest {
      */
     @Test
     void exportToolPartIncludesRequiredZodFields() throws SQLException {
-        JsonObject toolPart = toolInvocationPart(
-            "call-1", "read_file", "{\"path\":\"test.txt\"}", "file content");
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            promptEntry("Q"),
+            toolCallEntry("read_file", "{\"path\":\"test.txt\"}", "file content")
+        );
 
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("Q"), assistant)), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         try (Connection conn = connect(dbPath);
@@ -570,12 +549,12 @@ class OpenCodeClientRoundTripTest {
      */
     @Test
     void exportToolPartWithEmptyArgsHasStateInput() throws SQLException {
-        JsonObject toolPart = toolInvocationPart("call-1", "read_file", "", "result");
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            promptEntry("Q"),
+            toolCallEntry("read_file", "", "result")
+        );
 
-        String sessionId = OpenCodeClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("Q"), assistant)), dbPath, PROJECT_DIR);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, PROJECT_DIR);
         assertNotNull(sessionId);
 
         try (Connection conn = connect(dbPath);
@@ -596,65 +575,24 @@ class OpenCodeClientRoundTripTest {
         }
     }
 
-    /**
-     * Verifies that fromMessages() adds a synthetic empty Text entry for assistant messages
-     * that contain only tool-invocation parts. Without this, the UI renderer groups all
-     * tool call chips into a single empty message segment with no text bubble.
-     */
-    @Test
-    void fromMessagesAddsTextEntryForToolOnlyAssistantMessages() {
-        JsonObject toolPart1 = toolInvocationPart("c1", "read_file", "", "result1");
-        JsonObject toolPart2 = toolInvocationPart("c2", "search_text", "", "result2");
+    // ── EntryData factory helpers ────────────────────────────────────
 
-        List<SessionMessage> messages = List.of(
-            userMessage("Q"),
-            new SessionMessage("a1", "assistant", List.of(toolPart1, toolPart2),
-                System.currentTimeMillis(), null, null)
-        );
-
-        List<EntryData> entries = EntryDataConverter.fromMessages(messages);
-
-        // Should have: Prompt, ToolCall, ToolCall, Text (synthetic)
-        long toolCount = entries.stream().filter(e -> e instanceof EntryData.ToolCall).count();
-        long textCount = entries.stream().filter(e -> e instanceof EntryData.Text).count();
-        assertEquals(2, toolCount, "Should have 2 tool call entries");
-        assertEquals(1, textCount, "Should have 1 synthetic text entry for tool-only assistant message");
-
-        // The synthetic text should follow the tool calls
-        EntryData last = entries.getLast();
-        assertInstanceOf(EntryData.Text.class, last,
-            "Synthetic text should be the last entry in the tool-only message");
+    private static EntryData.Prompt promptEntry(String text) {
+        return new EntryData.Prompt(text);
     }
 
-    private static SessionMessage userMessage(String text) {
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "text");
-        part.addProperty("text", text);
-        return new SessionMessage("u-" + text.hashCode(), "user", List.of(part),
-            System.currentTimeMillis(), null, null);
+    private static EntryData.Text textEntry(String text) {
+        return new EntryData.Text(new StringBuilder(text));
     }
 
-    private static SessionMessage assistantMessage(String text) {
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "text");
-        part.addProperty("text", text);
-        return new SessionMessage("a-" + text.hashCode(), "assistant", List.of(part),
-            System.currentTimeMillis(), "OpenCode", null);
+    private static EntryData.ToolCall toolCallEntry(String toolName, String args, String result) {
+        EntryData.ToolCall tc = new EntryData.ToolCall(toolName, args);
+        tc.setResult(result);
+        tc.setStatus("completed");
+        return tc;
     }
 
-    private static JsonObject toolInvocationPart(String callId, String toolName, String args, String result) {
-        JsonObject invocation = new JsonObject();
-        invocation.addProperty("state", "result");
-        invocation.addProperty("toolCallId", callId);
-        invocation.addProperty("toolName", toolName);
-        invocation.addProperty("args", args);
-        invocation.addProperty("result", result);
-
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "tool-invocation");
-        part.add("toolInvocation", invocation);
-        return part;
-    }
+    // ── SessionMessage helpers (for import-side assertions) ─────────
 
     private static String extractText(SessionMessage msg) {
         StringBuilder sb = new StringBuilder();
@@ -665,6 +603,8 @@ class OpenCodeClientRoundTripTest {
         }
         return sb.toString();
     }
+
+    // ── DB helpers ──────────────────────────────────────────────────
 
     private static String textPartJson(String text) {
         JsonObject part = new JsonObject();
