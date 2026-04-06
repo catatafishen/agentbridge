@@ -137,7 +137,7 @@ public final class CodexClientImporter {
         } else if ("assistant".equals(role)) {
             String text = extractContentText(item);
             if (text != null && !text.isEmpty()) {
-                pendingAssistantParts.add(new EntryData.Text(new StringBuilder(text), "", "", ""));
+                pendingAssistantParts.add(new EntryData.Text(text, "", "", ""));
             }
         }
     }
@@ -201,7 +201,7 @@ public final class CodexClientImporter {
         }
 
         if (!sb.isEmpty()) {
-            pendingAssistantParts.add(new EntryData.Thinking(sb, "", "", ""));
+            pendingAssistantParts.add(new EntryData.Thinking(sb.toString(), "", "", ""));
         }
     }
 

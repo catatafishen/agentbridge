@@ -154,7 +154,7 @@ class CopilotClientRoundTripTest {
     void exportToolInvocationProducesCallAndResult() throws IOException {
         EntryData.ToolCall toolCall = new EntryData.ToolCall(
             "read_file", "{\"path\":\"/test\"}", "other", "file data", "done",
-            null, null, false, null, false, "", "", "gpt-4.1");
+            null, null, false, null, null, "", "", "gpt-4.1");
 
         List<EntryData> entries = List.of(promptEntry("read"), toolCall);
 
@@ -201,7 +201,7 @@ class CopilotClientRoundTripTest {
     void roundTripPreservesToolCalls() throws IOException {
         EntryData.ToolCall toolCall = new EntryData.ToolCall(
             "read_file", "{\"path\":\"/a\"}", "other", "contents of a", "done",
-            null, null, false, null, false, "", "", "gpt-4.1");
+            null, null, false, null, null, "", "", "gpt-4.1");
 
         List<EntryData> original = List.of(
             promptEntry("Read /a"),

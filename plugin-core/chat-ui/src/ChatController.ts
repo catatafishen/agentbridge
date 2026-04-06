@@ -1,4 +1,5 @@
 import {decodeBase64, escHtml} from './helpers';
+import {renderBatchFragment} from './BatchRenderer';
 import type {TurnContext} from './types';
 
 function _showNotification(title: string, body: string, actions?: { action: string; title: string }[]): void {
@@ -550,32 +551,20 @@ const ChatController = {
         // Kept for stats display compatibility
     },
 
-    restoreBatch(encodedHtml: string): void {
-        const html = decodeBase64(encodedHtml);
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
+    restoreBatch(encodedJson: string): void {
+        const fragment = renderBatchFragment(encodedJson);
         const msgs = this._msgs();
-        // Insert after the load-more banner (if present), otherwise before existing messages
         const loadMore = msgs.querySelector('load-more');
         const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
 
-        // Measure before insertion so we can restore the visual scroll position.
-        // JCEF does not implement CSS scroll anchoring, so inserting content above the
-        // viewport leaves scrollTop at 0, pinning the user to the top and preventing a
-        // second scroll-up trigger.
         const container = this._container();
         const prevScrollTop = container?.scrollTop ?? 0;
         const prevHeight = container?.scrollHeight ?? 0;
 
-        while (temp.firstChild) {
-            msgs.insertBefore(temp.firstChild, insertBefore);
-        }
+        msgs.insertBefore(fragment, insertBefore);
         this._moveQueuedToBottom();
-        // If the user was near the top when load-more fired, compensate for the added
-        // height so they are no longer pinned at scrollTop=0 and can scroll up again.
-        // We ensure a minimum scroll offset of 10px so JCEF always detects subsequent
-        // scroll-up gestures, preventing the user from getting stuck at the absolute top.
-        // Cap at 50px to keep user near top so subsequent scroll-up can trigger more loads.
+
+        // JCEF does not implement CSS scroll anchoring — compensate manually
         if (container && prevScrollTop <= 30) {
             const addedHeight = container.scrollHeight - prevHeight;
             if (addedHeight > 0) {
@@ -599,10 +588,8 @@ const ChatController = {
         document.querySelector('load-more')?.remove();
     },
 
-    prependBatch(encodedHtml: string): void {
-        const html = decodeBase64(encodedHtml);
-        const temp = document.createElement('div');
-        temp.innerHTML = html;
+    prependBatch(encodedJson: string): void {
+        const fragment = renderBatchFragment(encodedJson);
         const msgs = this._msgs();
         const loadMore = msgs.querySelector('load-more');
         const insertBefore = loadMore ? loadMore.nextSibling : msgs.firstChild;
@@ -612,15 +599,12 @@ const ChatController = {
         const prevScrollTop = container?.scrollTop ?? 0;
         const wasNearTop = prevScrollTop <= 30;
 
-        while (temp.firstChild) {
-            msgs.insertBefore(temp.firstChild, insertBefore);
-        }
+        msgs.insertBefore(fragment, insertBefore);
         this._moveQueuedToBottom();
 
         // Compensate scroll so user stays at same visual position.
-        // We ensure a minimum scroll offset of 10px so JCEF always detects subsequent
-        // scroll-up gestures, preventing the user from getting stuck at the absolute top.
-        // Also cap at 50px to keep user near top so subsequent scroll-up can trigger more loads.
+        // Ensure minimum 10px offset so JCEF detects subsequent scroll-up gestures.
+        // Cap at 50px to keep user near top for continuous load-more triggering.
         if (container) {
             const addedHeight = container.scrollHeight - prevHeight;
             if (addedHeight > 0) {
@@ -629,8 +613,7 @@ const ChatController = {
             }
         }
 
-        // Continue loading if user was near top before scroll adjustment.
-        // This allows continuous loading as user scrolls up through history.
+        // Continue loading if user was near top before scroll adjustment
         if (wasNearTop) {
             requestAnimationFrame(() => {
                 const lm = msgs.querySelector<HTMLElement>('load-more:not([loading])');

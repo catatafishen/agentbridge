@@ -197,11 +197,11 @@ public final class OpenCodeClientImporter {
         return switch (type) {
             case "text" -> {
                 String text = JsonlUtil.getStr(part, "text");
-                yield text != null ? new EntryData.Text(new StringBuilder(text), "", "", model != null ? model : "") : null;
+                yield text != null ? new EntryData.Text(text, "", "", model != null ? model : "") : null;
             }
             case "reasoning" -> {
                 String text = JsonlUtil.getStr(part, "text");
-                yield text != null ? new EntryData.Thinking(new StringBuilder(text), "", "", model != null ? model : "") : null;
+                yield text != null ? new EntryData.Thinking(text, "", "", model != null ? model : "") : null;
             }
             case "tool-invocation" -> {
                 JsonObject inv = JsonlUtil.getObject(part, "toolInvocation");

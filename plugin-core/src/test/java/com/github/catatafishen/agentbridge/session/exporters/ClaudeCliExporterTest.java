@@ -699,7 +699,7 @@ class ClaudeCliExporterTest {
 
     private static EntryData.ToolCall toolCall(String name, String args, String result) {
         return new EntryData.ToolCall(name, args, "other", result, "completed",
-            null, null, false, null, false,
+            null, null, false, null, null,
             Instant.now().toString(), "copilot", "gpt-4", UUID.randomUUID().toString());
     }
 }

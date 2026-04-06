@@ -279,7 +279,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         collapseThinking()
         currentTurnId = "t${turnCounter++}"
         val ts = timestamp()
-        entries.add(EntryData.Prompt(text, ts, contextFiles, id = currentTurnId))
+        val ctxRefs = contextFiles?.map { (name, path, line) -> ContextFileRef(name, path, line) }
+        entries.add(EntryData.Prompt(text, ts, ctxRefs, id = currentTurnId))
         val encodedBubble = if (bubbleHtml != null) encodeBase64(bubbleHtml) else ""
         executeJs("ChatController.addUserMessage('${escJs(text)}','${displayTs(ts)}','$encodedBubble','$currentTurnId');ChatController.showWorkingIndicator()")
         return currentTurnId
@@ -326,7 +327,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     }
 
     override fun addContextFilesEntry(files: List<Pair<String, String>>) {
-        entries.add(EntryData.ContextFiles(files))
+        entries.add(EntryData.ContextFiles(files.map { (name, path) -> FileRef(name, path) }))
     }
 
     override fun appendThinkingText(text: String) {
@@ -803,121 +804,104 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     fun appendEntries(entries: List<EntryData>, totalPromptCount: Int = -1) {
         if (entries.isEmpty()) return
-        for (e in entries) addEntryFromData(e)
+        this.entries.addAll(entries)
         val count = if (totalPromptCount >= 0) totalPromptCount
         else entries.count { it is EntryData.Prompt }
         if (count > 0) turnCounter += count
-        val html = renderBatchGroupedHtml(entries)
-        if (html.isNotEmpty()) {
-            val encoded = encodeBase64(html)
-            executeJs("ChatController.restoreBatch('$encoded')")
+        val json = serializeBatchTurns(entries)
+        if (json != "[]") {
+            executeJs("ChatController.restoreBatch('${encodeBase64(json)}')")
         }
     }
 
     fun prependEntries(entries: List<EntryData>) {
         if (entries.isEmpty()) return
-        for ((idx, e) in entries.withIndex()) this.entries.add(idx, e)
-        val html = renderBatchGroupedHtml(entries)
-        if (html.isNotEmpty()) {
-            val encoded = encodeBase64(html)
-            executeJs("ChatController.prependBatch('$encoded')")
+        this.entries.addAll(0, entries)
+        val json = serializeBatchTurns(entries)
+        if (json != "[]") {
+            executeJs("ChatController.prependBatch('${encodeBase64(json)}')")
         }
     }
 
-    private fun addEntryFromData(e: EntryData) {
-        this.entries.add(e)
-        if (e is EntryData.ToolCall) toolCallEntries["batch-tool-${batchIdCounter}"] = e
-    }
-
-    private fun buildRestoredBubbleHtml(text: String, ctxFiles: List<Triple<String, String, Int>>): String {
+    private fun buildRestoredBubbleHtml(text: String, ctxFiles: List<ContextFileRef>): String {
         var result = esc(text)
-        for ((name, path, line) in ctxFiles) {
-            val href = if (line > 0) "openfile://$path:$line" else "openfile://$path"
-            val title = esc(if (line > 0) "$path:$line" else path)
-            val chip = "<a class='prompt-ctx-chip' href='$href' title='$title'>${esc(name)}</a>"
-            result = result.replaceFirst("`${esc(name)}`", chip)
+        for (ref in ctxFiles) {
+            val href = if (ref.line > 0) "openfile://${ref.path}:${ref.line}" else "openfile://${ref.path}"
+            val title = esc(if (ref.line > 0) "${ref.path}:${ref.line}" else ref.path)
+            val chip = "<a class='prompt-ctx-chip' href='$href' title='$title'>${esc(ref.name)}</a>"
+            result = result.replaceFirst("`${esc(ref.name)}`", chip)
         }
         return result
     }
 
     private var batchIdCounter = 0
 
-    private fun renderBatchGroupedHtml(entries: List<EntryData>): String {
-        val sb = StringBuilder()
+    private fun serializeBatchTurns(entries: List<EntryData>): String {
+        val turns = mutableListOf<Map<String, Any?>>()
         var i = 0
         while (i < entries.size) {
             when (val e = entries[i]) {
                 is EntryData.Prompt -> {
-                    sb.append(buildPromptHtml(e)); i++
-                }
-
-                is EntryData.SessionSeparator -> {
-                    sb.append("<session-divider timestamp='${esc(displayTsSeparator(e.timestamp))}' agent='${esc(e.agent)}'></session-divider>")
+                    turns.add(serializeUserTurn(e))
                     i++
                 }
 
-                is EntryData.Status, is EntryData.ContextFiles, is EntryData.TurnStats -> i++ // transient / non-visual in restored HTML
-                else -> i = appendAgentTurn(entries, i, sb)
+                is EntryData.SessionSeparator -> {
+                    turns.add(
+                        mapOf(
+                            "type" to "separator",
+                            "timestamp" to displayTsSeparator(e.timestamp),
+                            "agent" to e.agent
+                        )
+                    )
+                    i++
+                }
+
+                is EntryData.Status, is EntryData.ContextFiles, is EntryData.TurnStats -> i++
+                else -> {
+                    val (turn, nextI) = serializeAgentTurn(entries, i)
+                    turns.add(turn)
+                    i = nextI
+                }
             }
         }
-        return sb.toString()
+        return com.google.gson.Gson().toJson(turns)
     }
 
-    private fun buildPromptHtml(e: EntryData.Prompt): String {
-        val sb = StringBuilder()
-        sb.append("<chat-message type='user'>")
-        sb.append("<message-meta><span class='ts'>${esc(displayTs(e.timestamp))}</span></message-meta>")
-        sb.append("<message-bubble type='user'>")
-        if (!e.contextFiles.isNullOrEmpty()) {
-            sb.append(buildRestoredBubbleHtml(e.text, e.contextFiles))
+    private fun serializeUserTurn(e: EntryData.Prompt): Map<String, Any?> {
+        val bubbleHtml = if (!e.contextFiles.isNullOrEmpty()) {
+            buildRestoredBubbleHtml(e.text, e.contextFiles)
         } else {
-            sb.append(esc(e.text))
+            esc(e.text)
         }
-        sb.append("</message-bubble>")
-        sb.append("</chat-message>")
-        return sb.toString()
+        return mapOf(
+            "type" to "user",
+            "html" to bubbleHtml,
+            "timestamp" to displayTs(e.timestamp)
+        )
     }
 
-    private fun appendAgentTurn(entries: List<EntryData>, startI: Int, sb: StringBuilder): Int {
+    private fun serializeAgentTurn(
+        entries: List<EntryData>, startI: Int
+    ): Pair<Map<String, Any?>, Int> {
         var i = startI
-        var segmentMetaChips = StringBuilder()
-        var segmentDetailsContent = StringBuilder()
-        var segmentAfterDetails = StringBuilder()
-        var segmentStarted = false
+        var currentSegmentEntries = mutableListOf<Map<String, Any?>>()
+        var currentTimestamp = ""
         var hadToolOrSubagent = false
-        var segmentTimestamp = ""
-        var segmentAgent = ""
+        var agent = ""
+        val segments = mutableListOf<Map<String, Any?>>()
 
         fun flushSegment() {
-            if (segmentMetaChips.isEmpty() && segmentDetailsContent.isEmpty() && segmentAfterDetails.isEmpty()) {
-                segmentStarted = false
-                return
-            }
-            sb.append("<chat-message type='agent'")
-            if (segmentAgent.isNotEmpty()) {
-                sb.append(" data-agent='${esc(segmentAgent)}'")
-            }
-            sb.append(">")
-            sb.append("<message-meta")
-            if (segmentMetaChips.isNotEmpty()) {
-                sb.append(" class='show'")
-            }
-            sb.append(">")
-            if (segmentTimestamp.isNotEmpty()) {
-                sb.append("<span class='ts'>${esc(displayTs(segmentTimestamp))}</span>")
-            }
-            sb.append(segmentMetaChips)
-            sb.append("</message-meta>")
-            sb.append("<turn-details>$segmentDetailsContent</turn-details>")
-            sb.append(segmentAfterDetails)
-            sb.append("</chat-message>")
-            segmentMetaChips = StringBuilder()
-            segmentDetailsContent = StringBuilder()
-            segmentAfterDetails = StringBuilder()
-            segmentTimestamp = ""
-            segmentAgent = ""
+            if (currentSegmentEntries.isEmpty()) return
+            segments.add(
+                mapOf(
+                    "timestamp" to displayTs(currentTimestamp),
+                    "entries" to currentSegmentEntries
+                )
+            )
+            currentSegmentEntries = mutableListOf()
+            currentTimestamp = ""
             hadToolOrSubagent = false
-            segmentStarted = false
         }
 
         while (i < entries.size) {
@@ -928,102 +912,91 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             }
             if (hadToolOrSubagent && (e is EntryData.Text || e is EntryData.Thinking)) flushSegment()
 
-            // Capture timestamp and agent from the first entry in the segment
-            if (!segmentStarted) {
-                when (e) {
-                    is EntryData.Text -> {
-                        segmentTimestamp = e.timestamp; segmentAgent = e.agent
-                    }
-
-                    is EntryData.Thinking -> {
-                        segmentTimestamp = e.timestamp; segmentAgent = e.agent
-                    }
-
-                    is EntryData.ToolCall -> {
-                        segmentTimestamp = e.timestamp; segmentAgent = e.agent
-                    }
-
-                    is EntryData.SubAgent -> {
-                        segmentTimestamp = e.timestamp; segmentAgent = e.agent
-                    }
-
-                    else -> {}
+            if (currentSegmentEntries.isEmpty()) {
+                currentTimestamp = e.timestamp
+                if (agent.isEmpty()) agent = when (e) {
+                    is EntryData.Text -> e.agent
+                    is EntryData.Thinking -> e.agent
+                    is EntryData.ToolCall -> e.agent
+                    is EntryData.SubAgent -> e.agent
+                    else -> ""
                 }
             }
 
-            appendAgentEntry(e, segmentMetaChips, segmentDetailsContent, segmentAfterDetails)
+            serializeEntry(e)?.let { currentSegmentEntries.add(it) }
             if (e is EntryData.ToolCall || e is EntryData.SubAgent) hadToolOrSubagent = true
-            segmentStarted = true
             i++
         }
-        if (segmentStarted) flushSegment()
-        return i
+        flushSegment()
+
+        val turn = mapOf(
+            "type" to "agent",
+            "agent" to agent,
+            "segments" to segments
+        )
+        return turn to i
     }
 
-    private fun appendAgentEntry(
-        e: EntryData,
-        metaChips: StringBuilder,
-        detailsContent: StringBuilder,
-        afterDetails: StringBuilder
-    ) {
-        when (e) {
+    private fun serializeEntry(e: EntryData): Map<String, Any?>? {
+        return when (e) {
             is EntryData.Thinking -> {
                 val raw = e.raw
-                if (raw.isNotBlank()) {
-                    val id = "batch-think-${batchIdCounter++}"
-                    metaChips.append("<thinking-chip label='Thought' status='complete' data-chip-for='$id'></thinking-chip>")
-                    detailsContent.append(
-                        "<thinking-block id='$id' class='thinking-section turn-hidden'><div class='thinking-content'>${
-                            markdownToHtml(raw)
-                        }</div></thinking-block>"
-                    )
-                }
+                if (raw.isBlank()) return null
+                val id = "batch-think-${batchIdCounter++}"
+                mapOf("type" to "thinking", "id" to id, "html" to markdownToHtml(raw))
             }
 
-            is EntryData.ToolCall -> appendToolEntry(e, metaChips)
+            is EntryData.ToolCall -> {
+                val title = e.title.trim('\'', '"')
+                val info = TOOL_DISPLAY_INFO[title]
+                val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
+                val short = formatToolSubtitle(title, e.arguments)
+                val label = if (short != null) "$displayName — $short" else displayName
+                val id = "batch-tool-${batchIdCounter++}"
+                val status = e.status ?: ChipStatus.COMPLETE
+                toolCallNames[id] = title
+                toolCallEntries[id] = EntryData.ToolCall(
+                    title, e.arguments, e.kind,
+                    result = e.result, status = status, description = e.description,
+                    pluginTool = e.pluginTool
+                )
+                val map = mutableMapOf<String, Any?>(
+                    "type" to "tool",
+                    "id" to id,
+                    "label" to label,
+                    "kind" to e.kind,
+                    "status" to ChipStatus.COMPLETE
+                )
+                if (e.arguments != null) map["params"] = e.arguments
+                if (e.pluginTool != null) map["pluginTool"] = e.pluginTool
+                map
+            }
 
             is EntryData.Text -> {
                 val raw = e.raw
-                if (raw.isNotBlank()) {
-                    val clean = raw.replace(QUICK_REPLY_TAG_REGEX, "").trimEnd()
-                    if (clean.isNotBlank()) {
-                        afterDetails.append("<message-bubble>${markdownToHtml(clean)}</message-bubble>")
-                    }
-                }
+                if (raw.isBlank()) return null
+                val clean = raw.replace(QUICK_REPLY_TAG_REGEX, "").trimEnd()
+                if (clean.isBlank()) return null
+                mapOf("type" to "text", "html" to markdownToHtml(clean))
             }
 
             is EntryData.SubAgent -> {
                 val saInfo = SUB_AGENT_INFO[e.agentType]
-                val dn = saInfo?.displayName ?: e.agentType.replaceFirstChar { it.uppercaseChar() }
+                val displayName = saInfo?.displayName ?: e.agentType.replaceFirstChar { it.uppercaseChar() }
                 val resultHtml = if (!e.result.isNullOrBlank()) markdownToHtml(e.result!!) else "Completed"
                 val id = "batch-sa-${batchIdCounter++}"
-                metaChips.append("<subagent-chip label='${esc(dn)}' status='complete' color-index='${e.colorIndex}' data-chip-for='$id'></subagent-chip>")
-                afterDetails.append("<div id='$id' class='subagent-indent subagent-c${e.colorIndex} turn-hidden'><message-bubble>$resultHtml</message-bubble></div>")
+                mapOf(
+                    "type" to "subagent",
+                    "id" to id,
+                    "label" to displayName,
+                    "status" to ChipStatus.COMPLETE,
+                    "colorIndex" to e.colorIndex,
+                    "resultHtml" to resultHtml
+                )
             }
 
-            else -> { /* Prompt, ContextFiles, Status, SessionSeparator are handled by the caller */
-            }
+            else -> null
         }
-    }
-
-    private fun appendToolEntry(e: EntryData.ToolCall, metaChips: StringBuilder) {
-        val title = e.title.trim('\'', '"')
-        val info = TOOL_DISPLAY_INFO[title]
-        val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(title, e.arguments)
-        val label = if (short != null) "$displayName — $short" else displayName
-        val id = "batch-tool-${batchIdCounter++}"
-        val result = e.result
-        val status = e.status ?: ChipStatus.COMPLETE
-        toolCallNames[id] = title
-        toolCallEntries[id] = EntryData.ToolCall(
-            title, e.arguments, e.kind,
-            result = result, status = status, description = e.description,
-            pluginTool = e.pluginTool
-        )
-        val paramsAttr = if (e.arguments != null) " data-params='${esc(e.arguments)}'" else ""
-        val mcpAttr = if (e.pluginTool != null) " data-mcp-handled='true'" else ""
-        metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(e.kind)}' data-chip-for='$id'$paramsAttr$mcpAttr></tool-chip>")
     }
 
     @Suppress("kotlin:S6518") // False positive: CompletableFuture.get(long, TimeUnit) is not an indexed accessor
@@ -1196,8 +1169,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun encodeBase64(s: String) = MessageFormatter.encodeBase64(s)
     private fun timestamp() = MessageFormatter.timestamp()
     private fun displayTs(iso: String) = MessageFormatter.formatTimestamp(iso)
-    private fun displayTsSeparator(iso: String) = MessageFormatter.formatTimestamp(iso, MessageFormatter.TimestampStyle.FULL)
-    private fun formatToolSubtitle(baseName: String, arguments: String?) = MessageFormatter.formatToolSubtitle(baseName, arguments)
+    private fun displayTsSeparator(iso: String) =
+        MessageFormatter.formatTimestamp(iso, MessageFormatter.TimestampStyle.FULL)
+
+    private fun formatToolSubtitle(baseName: String, arguments: String?) =
+        MessageFormatter.formatToolSubtitle(baseName, arguments)
 
     private fun domId(id: String) = id.replace(Regex("[^a-zA-Z0-9_-]"), "_")
 

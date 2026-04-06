@@ -6,9 +6,6 @@ export function decodeBase64(s: string): string {
     return new TextDecoder().decode(b);
 }
 
-/** @deprecated Use decodeBase64() instead. Kept for backward compatibility. */
-export const b64 = decodeBase64;
-
 /** Collapse all expanded chip sections in a container, optionally except one. */
 export function collapseAllChips(container: Element | null, except?: Element): void {
     if (!container) return;

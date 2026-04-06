@@ -69,7 +69,7 @@ public final class CopilotClientImporter {
                     String reasoningContent = JsonlUtil.getStr(data, "content");
                     if (reasoningContent != null && !reasoningContent.isEmpty()) {
                         assistantBuffer.addEntry(new EntryData.Thinking(
-                            new StringBuilder(reasoningContent),
+                            reasoningContent,
                             eventTs,
                             "",
                             currentModel != null ? currentModel : ""));
@@ -89,7 +89,7 @@ public final class CopilotClientImporter {
                     String textContent = JsonlUtil.getStr(data, "content");
                     if (textContent != null && !textContent.isEmpty()) {
                         assistantBuffer.addEntry(new EntryData.Text(
-                            new StringBuilder(textContent),
+                            textContent,
                             eventTs,
                             "",
                             currentModel != null ? currentModel : ""));
@@ -107,7 +107,7 @@ public final class CopilotClientImporter {
 
                             EntryData.ToolCall toolCall = new EntryData.ToolCall(
                                 toolName, argsJson, "other", null, null,
-                                null, null, false, null, false,
+                                null, null, false, null, null,
                                 eventTs, "",
                                 currentModel != null ? currentModel : "");
 

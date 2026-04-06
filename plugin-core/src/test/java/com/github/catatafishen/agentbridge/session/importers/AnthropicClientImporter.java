@@ -78,7 +78,7 @@ public final class AnthropicClientImporter {
                         String text = JsonlUtil.getStr(b, "text");
                         if (text != null && !text.isEmpty()) {
                             result.add(new EntryData.Text(
-                                new StringBuilder(text), timestamp, "", "", ""));
+                                text, timestamp, "", "", ""));
                         }
 
                     } else if ("tool_use".equals(type)) {
@@ -92,14 +92,14 @@ public final class AnthropicClientImporter {
 
                         result.add(new EntryData.ToolCall(
                             toolName, argsJson, "other", resultContent,
-                            null, null, null, false, null, false,
+                            null, null, null, false, null, null,
                             timestamp, "", "", ""));
 
                     } else if ("thinking".equals(type) || "reasoning".equals(type)) {
                         String text = JsonlUtil.getStr(b, "text");
                         if (text != null && !text.isEmpty()) {
                             result.add(new EntryData.Thinking(
-                                new StringBuilder(text), timestamp, "", "", ""));
+                                text, timestamp, "", "", ""));
                         }
                     }
                 }

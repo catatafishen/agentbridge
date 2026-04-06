@@ -7,7 +7,6 @@
 
 import './types';
 
-import {b64} from './helpers';
 import ChatContainer from './components/ChatContainer';
 import ChatMessage from './components/ChatMessage';
 import MessageBubble from './components/MessageBubble';
@@ -46,7 +45,6 @@ customElements.define('working-indicator', WorkingIndicator);
 // ── Expose controller to Kotlin bridge ────────────────
 
 globalThis.ChatController = ChatController;
-(globalThis as any).b64 = b64;
 (globalThis as any).showPermissionRequest = (turnId: string, agentId: string, reqId: string, toolDisplayName: string, argsJson: string) => {
     ChatController.showPermissionRequest(turnId, agentId, reqId, toolDisplayName, argsJson);
 };

@@ -586,7 +586,7 @@ class AnthropicClientRoundTripTest {
     private static EntryData.ToolCall toolCall(String toolName, String args, String result) {
         return new EntryData.ToolCall(
             toolName, args, "other", result,
-            null, null, null, false, null, false,
+            null, null, null, false, null, null,
             Instant.now().toString(), "", "", "");
     }
 

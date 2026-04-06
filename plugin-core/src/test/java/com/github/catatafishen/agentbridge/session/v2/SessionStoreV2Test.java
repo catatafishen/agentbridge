@@ -781,7 +781,7 @@ class SessionStoreV2Test {
             new EntryData.Thinking("Reasoning", "2024-01-01T00:00:02Z", "copilot", "gpt-4", "th1"),
             new EntryData.ToolCall("readFile", "{\"path\":\"a.txt\"}", "filesystem",
                 "content", "completed", "Read file", "/a.txt",
-                false, null, false,
+                false, null, null,
                 "2024-01-01T00:00:03Z", "copilot", "gpt-4", "tc1"),
             new EntryData.SubAgent("explore", "Exploring", "Find files", "Found 3",
                 "completed", 1, "call-1", false, null,
@@ -1158,7 +1158,7 @@ class SessionStoreV2Test {
         for (int i = 0; i < 50; i++) {
             entries.add(new EntryData.Prompt("Question " + i, "", null, "", "p" + i));
             entries.add(new EntryData.ToolCall("tool" + i, null, "other", null, null, null, null,
-                false, null, false, "", "", "", "tc" + i));
+                false, null, null, "", "", "", "tc" + i));
             entries.add(new EntryData.Text("Answer " + i, "", "agent", "model", "t" + i));
         }
 
