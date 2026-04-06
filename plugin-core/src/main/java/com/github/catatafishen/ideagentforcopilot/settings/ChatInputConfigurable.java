@@ -1,5 +1,7 @@
 package com.github.catatafishen.ideagentforcopilot.settings;
 
+import com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager;
+import com.github.catatafishen.ideagentforcopilot.ui.ChatConsolePanel;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBCheckBox;
@@ -13,29 +15,37 @@ import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 
 /**
- * Settings page at <b>Settings → Tools → AgentBridge → Chat Input</b>.
- * Consolidates shortcut-hint visibility, smart-paste behaviour, and
- * the file-search trigger character.
+ * Settings page at <b>Settings → Tools → AgentBridge → UI/UX</b>.
+ * <p>
+ * Consolidates all user-facing behavior and appearance settings:
+ * shortcut hints, smart paste, file search trigger, follow-agent mode,
+ * and smooth scrolling.
  */
 public final class ChatInputConfigurable implements Configurable {
+
+    private final Project project;
 
     private JBCheckBox showHintsCheckBox;
     private JBCheckBox smartPasteCheckBox;
     private JSpinner smartPasteMinLinesSpinner;
     private JSpinner smartPasteMinCharsSpinner;
     private JComboBox<String> triggerCharCombo;
+    private JBCheckBox followModeCheckbox;
+    private JBCheckBox smoothScrollCheckbox;
 
-    @SuppressWarnings("unused")
-    public ChatInputConfigurable(@NotNull Project ignoredProject) {
+    public ChatInputConfigurable(@NotNull Project project) {
+        this.project = project;
     }
 
     @Override
     public @Nls(capitalization = Nls.Capitalization.Title) String getDisplayName() {
-        return "Chat Input";
+        return "UI/UX";
     }
 
     @Override
     public @NotNull JComponent createComponent() {
+        McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
+
         showHintsCheckBox = new JBCheckBox("Show keyboard shortcut hints in prompt placeholder");
         smartPasteCheckBox = new JBCheckBox("Enable smart paste");
         smartPasteMinLinesSpinner = new JSpinner(new SpinnerNumberModel(
@@ -46,9 +56,22 @@ public final class ChatInputConfigurable implements Configurable {
             "# (VS Code style)", "@ (AI Assistant style)", "Disabled"
         });
 
+        followModeCheckbox = new JBCheckBox(
+            "Follow Agent — open files and highlight regions as the agent reads or edits them",
+            ActiveAgentManager.getFollowAgentFiles(project));
+        followModeCheckbox.setToolTipText(
+            "Works independently of the connected agent — any external agent accessing "
+                + "the MCP server will trigger follow-mode when this is enabled.");
+
+        smoothScrollCheckbox = new JBCheckBox(
+            "Enable smooth scrolling in chat panel",
+            mcpSettings.isSmoothScrollEnabled());
+        smoothScrollCheckbox.setToolTipText(
+            "⚠ May cause screen tearing on some systems. Disable if you see visual artifacts while scrolling.");
+
         JBLabel descLabel = new JBLabel(
-            "<html>Configure the chat input area: keyboard shortcut hints, "
-                + "smart paste behaviour, and file search trigger character.</html>");
+            "<html>Appearance and interaction settings for the chat panel, "
+                + "input area, and editor integration.</html>");
         descLabel.setForeground(UIUtil.getContextHelpForeground());
 
         JPanel panel = FormBuilder.createFormBuilder()
@@ -69,6 +92,12 @@ public final class ChatInputConfigurable implements Configurable {
             .addSeparator(8)
             .addLabeledComponent("File search trigger:", triggerCharCombo)
             .addTooltip("Character that opens the file search popup in the chat input.")
+            .addVerticalGap(4)
+            .addSeparator(8)
+            .addComponent(followModeCheckbox)
+            .addVerticalGap(4)
+            .addComponent(smoothScrollCheckbox)
+            .addTooltip("⚠ May cause screen tearing on some systems")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -93,7 +122,10 @@ public final class ChatInputConfigurable implements Configurable {
         if (smartPasteCheckBox.isSelected() != s.isSmartPasteEnabled()) return true;
         if ((int) smartPasteMinLinesSpinner.getValue() != s.getSmartPasteMinLines()) return true;
         if ((int) smartPasteMinCharsSpinner.getValue() != s.getSmartPasteMinChars()) return true;
-        return !selectedTriggerChar().equals(s.getFileSearchTrigger());
+        if (!selectedTriggerChar().equals(s.getFileSearchTrigger())) return true;
+        if (followModeCheckbox.isSelected() != ActiveAgentManager.getFollowAgentFiles(project)) return true;
+        McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
+        return smoothScrollCheckbox.isSelected() != mcpSettings.isSmoothScrollEnabled();
     }
 
     @Override
@@ -104,6 +136,15 @@ public final class ChatInputConfigurable implements Configurable {
         s.setSmartPasteMinLines((int) smartPasteMinLinesSpinner.getValue());
         s.setSmartPasteMinChars((int) smartPasteMinCharsSpinner.getValue());
         s.setFileSearchTrigger(selectedTriggerChar());
+
+        ActiveAgentManager.setFollowAgentFiles(project, followModeCheckbox.isSelected());
+
+        McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
+        mcpSettings.setSmoothScrollEnabled(smoothScrollCheckbox.isSelected());
+        var chatPanel = ChatConsolePanel.Companion.getInstance(project);
+        if (chatPanel != null) {
+            chatPanel.setSmoothScroll(smoothScrollCheckbox.isSelected());
+        }
     }
 
     @Override
@@ -115,6 +156,21 @@ public final class ChatInputConfigurable implements Configurable {
         smartPasteMinCharsSpinner.setValue(s.getSmartPasteMinChars());
         selectTriggerChar(s.getFileSearchTrigger());
         updateSmartPasteSpinnerState();
+
+        followModeCheckbox.setSelected(ActiveAgentManager.getFollowAgentFiles(project));
+        McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
+        smoothScrollCheckbox.setSelected(mcpSettings.isSmoothScrollEnabled());
+    }
+
+    @Override
+    public void disposeUIResources() {
+        showHintsCheckBox = null;
+        smartPasteCheckBox = null;
+        smartPasteMinLinesSpinner = null;
+        smartPasteMinCharsSpinner = null;
+        triggerCharCombo = null;
+        followModeCheckbox = null;
+        smoothScrollCheckbox = null;
     }
 
     private String selectedTriggerChar() {

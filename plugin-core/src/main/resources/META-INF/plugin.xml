@@ -356,56 +356,33 @@
       id="com.github.catatafishen.ideagentforcopilot.settings"
       displayName="AgentBridge"/>
 
-    <!-- ── Chat Input ── -->
+    <!-- ── UI/UX ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
       instance="com.github.catatafishen.ideagentforcopilot.settings.ChatInputConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.chatInput"
-      displayName="Chat Input"/>
+      displayName="UI/UX"/>
 
-    <!-- ── General sub-pages ── -->
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.StartupInstructionsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.agentInstructions"
-      displayName="Agent Instructions"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.projectFiles"
-      displayName="Project Files"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypesConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.scratchTypes"
-      displayName="Scratch File Types"/>
-
+    <!-- ── Chat History ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
       instance="com.github.catatafishen.ideagentforcopilot.settings.ChatHistoryConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.chatHistory"
       displayName="Chat History"/>
 
+    <!-- ── Cleanup ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
       instance="com.github.catatafishen.ideagentforcopilot.settings.CleanupConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.cleanup"
       displayName="Cleanup"/>
 
-    <!-- ── MCP section ── -->
+    <!-- ── MCP section (server config + child pages) ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
       instance="com.github.catatafishen.ideagentforcopilot.settings.McpGroupConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.mcp"
       displayName="MCP"/>
-
-    <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.McpServerConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.mcp.server"
-      displayName="Server"/>
 
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.mcp"
@@ -415,11 +392,17 @@
 
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.mcp"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
+      displayName="Tool Permissions"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
       instance="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpConfigurable"
       id="com.github.catatafishen.ideagentforcopilot.mcp.customServers"
       displayName="Custom Servers"/>
 
-    <!-- ── Agents section ── -->
+    <!-- ── Agents section (session behavior + instructions + client pages) ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
       instance="com.github.catatafishen.ideagentforcopilot.settings.ClientAgentsGroupConfigurable"
@@ -462,12 +445,19 @@
       id="com.github.catatafishen.ideagentforcopilot.clientAgents.codex"
       displayName="Codex"/>
 
-    <!-- ── Tool Permissions ── -->
+    <!-- ── Project Files ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
-      displayName="Tool Permissions"/>
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.projectFiles"
+      displayName="Project Files"/>
+
+    <!-- ── Scratch File Types ── -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.ideagentforcopilot.settings"
+      instance="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypesConfigurable"
+      id="com.github.catatafishen.ideagentforcopilot.scratchTypes"
+      displayName="Scratch File Types"/>
 
     <!-- ── Web Access ── -->
     <projectConfigurable
