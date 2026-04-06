@@ -52,27 +52,12 @@ public final class ScratchTypesConfigurable implements Configurable {
     public JComponent createComponent() {
         JBPanel<?> languagePanel = createLanguagePanel();
         JBPanel<?> aliasPanel = createAliasPanel();
-        JBPanel<?> generalPanel = createGeneralPanel();
 
-        JBSplitter leftSplitter = new JBSplitter(true, 0.5f);
-        leftSplitter.setFirstComponent(languagePanel);
-        leftSplitter.setSecondComponent(aliasPanel);
+        JBSplitter splitter = new JBSplitter(true, 0.5f);
+        splitter.setFirstComponent(languagePanel);
+        splitter.setSecondComponent(aliasPanel);
 
-        JBSplitter mainSplitter = new JBSplitter(false, 0.7f);
-        mainSplitter.setShowDividerControls(true);
-        mainSplitter.setFirstComponent(leftSplitter);
-        mainSplitter.setSecondComponent(generalPanel);
-
-        return mainSplitter;
-    }
-
-    private JBPanel<?> createGeneralPanel() {
-        JBPanel<?> panel = new JBPanel<>(new BorderLayout());
-        JBLabel hint = new JBLabel("<html><i>Smart Paste settings have moved to Chat Input.</i></html>");
-        hint.setForeground(com.intellij.util.ui.UIUtil.getContextHelpForeground());
-        hint.setBorder(JBUI.Borders.empty(8));
-        panel.add(hint, BorderLayout.NORTH);
-        return panel;
+        return splitter;
     }
 
     private JBPanel<?> createLanguagePanel() {
