@@ -334,7 +334,7 @@ sourceSets {
 
 intellijPlatform {
     pluginConfiguration {
-        id = "com.github.catatafishen.ideagentforcopilot"
+        id = "com.github.catatafishen.agentbridge"
         name = "AgentBridge"
         version = project.version.toString()
         // Description is maintained in plugin.xml as rich HTML for the marketplace.

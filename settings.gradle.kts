@@ -1,4 +1,4 @@
-rootProject.name = "ide-agent-for-copilot"
+rootProject.name = "agentbridge"
 
 include("plugin-core")
 include("mcp-server")

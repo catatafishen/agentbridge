@@ -39,7 +39,7 @@ org.gradle.java.home=C:\\Users\\YOU\\.jdks\\temurin-21.0.6
 ./gradlew :plugin-core:buildPlugin
 ```
 
-Output: `plugin-core/build/distributions/ide-agent-for-copilot-<version>.zip`
+Output: `plugin-core/build/distributions/agentbridge-<version>.zip`
 
 ### 3. Install
 
@@ -49,7 +49,7 @@ Output: `plugin-core/build/distributions/ide-agent-for-copilot-<version>.zip`
 # Linux (Toolbox-managed: no /plugins parent)
 PLUGIN_DIR=~/.local/share/JetBrains/IntelliJIdea2025.3
 rm -rf "$PLUGIN_DIR/plugin-core"
-unzip -q plugin-core/build/distributions/ide-agent-for-copilot-*.zip -d "$PLUGIN_DIR"
+unzip -q plugin-core/build/distributions/agentbridge-*.zip -d "$PLUGIN_DIR"
 ```
 
 **Option B — Sandbox IDE (recommended for development):**

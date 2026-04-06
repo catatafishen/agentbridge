@@ -29,7 +29,7 @@ val gitHash: String = try {
 }
 
 allprojects {
-    group = "com.github.catatafishen.ideagentforcopilot"
+    group = "com.github.catatafishen.agentbridge"
     version = ciVersion
         ?: if (providers.gradleProperty("release").isPresent) baseVersion else "$baseVersion-dev-$buildTimestamp-$gitHash"
 

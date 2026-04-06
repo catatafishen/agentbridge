@@ -13,7 +13,7 @@
 The plugin has been built and is located at:
 
 ```
-plugin-core/build/distributions/ide-agent-for-copilot-<version>.zip
+plugin-core/build/distributions/agentbridge-<version>.zip
 ```
 
 **Size:** ~3 MB  
@@ -156,7 +156,7 @@ If you're actively developing and want to test changes:
 rm -rf ~/.local/share/JetBrains/IntelliJIdea2025.3/plugin-core
 
 # 3. Install new version
-unzip -q plugin-core/build/distributions/ide-agent-for-copilot-*.zip \
+unzip -q plugin-core/build/distributions/agentbridge-*.zip \
     -d ~/.local/share/JetBrains/IntelliJIdea2025.3/
 
 # 4. Restart IDE

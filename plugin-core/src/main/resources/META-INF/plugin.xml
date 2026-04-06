@@ -1,5 +1,5 @@
 <idea-plugin require-restart="false">
-  <id>com.github.catatafishen.ideagentforcopilot</id>
+  <id>com.github.catatafishen.agentbridge</id>
   <name>AgentBridge</name>
   <vendor email="henrik@westergard.org" url="https://github.com/catatafishen/ide-agent-for-copilot">
     AgentBridge Contributors
@@ -287,198 +287,198 @@
                 secondary="false"
                 anchor="right"
                 icon="/icons/agentbridge.svg"
-                factoryClass="com.github.catatafishen.ideagentforcopilot.ui.ChatToolWindowFactory"/>
+                factoryClass="com.github.catatafishen.agentbridge.ui.ChatToolWindowFactory"/>
 
     <!-- Application Services -->
     <applicationService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.IdeAgentService"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.AgentBridgeService"/>
     <applicationService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypeSettings"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.settings.ScratchTypeSettings"/>
     <applicationService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesSettings"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.settings.ProjectFilesSettings"/>
     <applicationService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.StartupInstructionsSettings"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.settings.StartupInstructionsSettings"/>
     <applicationService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentProfileManager"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.AgentProfileManager"/>
 
     <!-- Project Services -->
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ActiveAgentManager"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.ActiveAgentManager"/>
     <projectService
-      serviceInterface="com.github.catatafishen.ideagentforcopilot.psi.ToolLayerSettings"
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.bridge.ActiveAgentToolLayerSettings"/>
+      serviceInterface="com.github.catatafishen.agentbridge.psi.ToolLayerSettings"
+      serviceImplementation="com.github.catatafishen.agentbridge.bridge.ActiveAgentToolLayerSettings"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ToolRegistry"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.ToolRegistry"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ToolChipRegistry"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.ToolChipRegistry"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeService"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.psi.PsiBridgeService"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.McpServerSettings"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.settings.McpServerSettings"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerSettings"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.settings.ChatWebServerSettings"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.settings.ChatHistorySettings"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.settings.ChatHistorySettings"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.ChatWebServer"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.ChatWebServer"/>
 
     <!-- MCP HTTP server (speaks MCP protocol, used by agent CLI via McpStdioProxy) -->
     <projectService
-      serviceInterface="com.github.catatafishen.ideagentforcopilot.services.McpServerControl"
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.McpHttpServer"/>
+      serviceInterface="com.github.catatafishen.agentbridge.services.McpServerControl"
+      serviceImplementation="com.github.catatafishen.agentbridge.services.McpHttpServer"/>
 
     <!-- Session migration service (exports v2 session to native format on agent switch) -->
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.session.SessionSwitchService"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.session.SessionSwitchService"/>
 
     <!-- Conversation persistence (v2 JSONL + v1 compat) — singleton to prevent race conditions -->
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.session.v2.SessionStoreV2"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.session.v2.SessionStoreV2"/>
 
     <!-- Agent resource cleanup services -->
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.CleanupSettings"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.CleanupSettings"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentTabTracker"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.AgentTabTracker"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.services.AgentScratchTracker"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.services.AgentScratchTracker"/>
 
     <!-- Custom external MCP server proxy -->
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpSettings"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpRegistrar"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar"/>
 
     <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
       parentId="tools"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.PluginSettingsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.settings"
+      instance="com.github.catatafishen.agentbridge.settings.PluginSettingsConfigurable"
+      id="com.github.catatafishen.agentbridge.settings"
       displayName="AgentBridge"/>
 
     <!-- ── UI/UX ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ChatInputConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.chatInput"
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.ChatInputConfigurable"
+      id="com.github.catatafishen.agentbridge.chatInput"
       displayName="UI/UX"/>
 
     <!-- ── Chat History ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ChatHistoryConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.chatHistory"
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.ChatHistoryConfigurable"
+      id="com.github.catatafishen.agentbridge.chatHistory"
       displayName="Chat History"/>
 
     <!-- ── Cleanup ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.CleanupConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.cleanup"
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.CleanupConfigurable"
+      id="com.github.catatafishen.agentbridge.cleanup"
       displayName="Cleanup"/>
 
     <!-- ── MCP section (server config + child pages) ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.McpGroupConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.mcp"
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.McpGroupConfigurable"
+      id="com.github.catatafishen.agentbridge.mcp"
       displayName="MCP"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.mcp.tools"
+      parentId="com.github.catatafishen.agentbridge.mcp"
+      instance="com.github.catatafishen.agentbridge.settings.ToolsConfigurable"
+      id="com.github.catatafishen.agentbridge.mcp.tools"
       displayName="Tools"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ToolPermissionsConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.toolPermissions"
+      parentId="com.github.catatafishen.agentbridge.mcp"
+      instance="com.github.catatafishen.agentbridge.settings.ToolPermissionsConfigurable"
+      id="com.github.catatafishen.agentbridge.toolPermissions"
       displayName="Tool Permissions"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.mcp"
-      instance="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.mcp.customServers"
+      parentId="com.github.catatafishen.agentbridge.mcp"
+      instance="com.github.catatafishen.agentbridge.custommcp.CustomMcpConfigurable"
+      id="com.github.catatafishen.agentbridge.mcp.customServers"
       displayName="Custom Servers"/>
 
     <!-- ── Agents section (session behavior + instructions + client pages) ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ClientAgentsGroupConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents"
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.ClientAgentsGroupConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents"
       displayName="Agents"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.CopilotClientConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.copilot"
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.CopilotClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.copilot"
       displayName="GitHub Copilot"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.OpenCodeClientConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.opencode"
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.OpenCodeClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.opencode"
       displayName="OpenCode"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ClaudeCliClientConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.claudeCli"
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.ClaudeCliClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.claudeCli"
       displayName="Claude CLI"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.JunieClientConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.junie"
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.JunieClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.junie"
       displayName="Junie"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.KiroClientConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.kiro"
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.KiroClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.kiro"
       displayName="Kiro"/>
 
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.clientAgents"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.CodexClientConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.clientAgents.codex"
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.CodexClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.codex"
       displayName="Codex"/>
 
     <!-- ── Project Files ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ProjectFilesConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.projectFiles"
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.ProjectFilesConfigurable"
+      id="com.github.catatafishen.agentbridge.projectFiles"
       displayName="Project Files"/>
 
     <!-- ── Scratch File Types ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ScratchTypesConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.scratchTypes"
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.ScratchTypesConfigurable"
+      id="com.github.catatafishen.agentbridge.scratchTypes"
       displayName="Scratch File Types"/>
 
     <!-- ── Web Access ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.ideagentforcopilot.settings"
-      instance="com.github.catatafishen.ideagentforcopilot.settings.ChatWebServerConfigurable"
-      id="com.github.catatafishen.ideagentforcopilot.webAccess"
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.ChatWebServerConfigurable"
+      id="com.github.catatafishen.agentbridge.webAccess"
       displayName="Web Access"/>
 
     <!-- Start PSI Bridge when the project opens -->
     <postStartupActivity
-      implementation="com.github.catatafishen.ideagentforcopilot.psi.PsiBridgeStartup"/>
+      implementation="com.github.catatafishen.agentbridge.psi.PsiBridgeStartup"/>
 
     <!-- Connect to custom external MCP servers when the project opens -->
     <postStartupActivity
-      implementation="com.github.catatafishen.ideagentforcopilot.custommcp.CustomMcpStartupActivity"/>
+      implementation="com.github.catatafishen.agentbridge.custommcp.CustomMcpStartupActivity"/>
 
     <!-- Notification Group for status messages -->
     <notificationGroup id="AgentBridge Notifications" displayType="STICKY_BALLOON"/>
 
     <!-- Project View decorator showing agent file access (read/edited) -->
     <projectViewNodeDecorator
-      implementation="com.github.catatafishen.ideagentforcopilot.psi.AgentFileDecorator"/>
+      implementation="com.github.catatafishen.agentbridge.psi.AgentFileDecorator"/>
   </extensions>
 </idea-plugin>
