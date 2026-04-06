@@ -3,7 +3,9 @@ package com.github.catatafishen.agentbridge.bridge;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentUiSettings;
+import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
+import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -44,8 +46,8 @@ public final class ActiveAgentToolLayerSettings implements ToolLayerSettings {
         ToolPermission top = settings.getToolPermission(toolId);
         if (top != ToolPermission.ALLOW) return top;
 
-        com.github.catatafishen.agentbridge.services.ToolDefinition entry =
-            com.github.catatafishen.agentbridge.services.ToolRegistry.getInstance(project).findById(toolId);
+        ToolDefinition entry =
+            ToolRegistry.getInstance(project).findById(toolId);
         if (entry == null || !entry.supportsPathSubPermissions()) return top;
 
         return insideProject

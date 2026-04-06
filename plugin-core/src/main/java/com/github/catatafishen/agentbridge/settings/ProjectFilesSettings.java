@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.settings;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.components.State;
@@ -20,7 +21,7 @@ public final class ProjectFilesSettings implements PersistentStateComponent<Proj
     private State myState = new State();
 
     public static ProjectFilesSettings getInstance() {
-        return com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+        return PlatformApiCompat
             .getApplicationService(ProjectFilesSettings.class);
     }
 

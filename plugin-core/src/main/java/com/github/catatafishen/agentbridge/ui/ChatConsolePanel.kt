@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.services.ToolChipRegistry
 import com.github.catatafishen.agentbridge.services.ToolRegistry
@@ -219,7 +220,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             add(browser.component, BorderLayout.CENTER)
 
             browser.jbCefClient.addLoadHandler(
-                com.github.catatafishen.agentbridge.psi.PlatformApiCompat.createMainFrameLoadEndHandler {
+                PlatformApiCompat.createMainFrameLoadEndHandler {
                     ApplicationManager.getApplication().invokeLater {
                         browserReady = true
                         pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
@@ -232,7 +233,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             )
 
             browser.jbCefClient.addDisplayHandler(
-                com.github.catatafishen.agentbridge.psi.PlatformApiCompat.createConsoleLogHandler(
+                PlatformApiCompat.createConsoleLogHandler(
                     com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
                 ), browser.cefBrowser
             )
@@ -240,7 +241,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             browser.loadHTML(buildInitialPage())
             fallbackArea = null
 
-            com.github.catatafishen.agentbridge.psi.PlatformApiCompat.subscribeLafChanges(this) { updateThemeColors() }
+            PlatformApiCompat.subscribeLafChanges(this) { updateThemeColors() }
         } else {
             browser = null; openFileQuery = null
             fallbackArea = JBTextArea().apply { isEditable = false; lineWrap = true; wrapStyleWord = true }
@@ -1432,7 +1433,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
                 if (fullHash.length == 40) {
                     ApplicationManager.getApplication().invokeLater {
-                        com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+                        PlatformApiCompat
                             .showRevisionInLog(project, fullHash)
                     }
                 }
