@@ -85,28 +85,34 @@ final class AcpFileSystemHandler {
 
         String absolutePath = resolveAbsolutePath(path);
 
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeAndWait(() ->
-            com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() -> {
-                VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(absolutePath);
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeAndWait(() -> {
+            VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(absolutePath);
 
-                if (vf == null) {
-                    createNewFile(absolutePath, content);
-                    return;
-                }
+            if (vf == null) {
+                // createNewFile does its own file I/O and VFS refresh outside any write action
+                createNewFile(absolutePath, content);
+                return;
+            }
 
-                Document doc = FileDocumentManager.getInstance().getDocument(vf);
-                if (doc != null) {
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            if (doc != null) {
+                // Write action covers only the document mutation
+                com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() ->
                     CommandProcessor.getInstance().executeCommand(project, () ->
-                        doc.setText(content), "ACP Write Text File", null);
-                    FileDocumentManager.getInstance().saveDocument(doc);
-                } else {
+                        doc.setText(content), "ACP Write Text File", null));
+                // saveDocument must be called outside the write action to avoid blocking
+                // IntelliJ's own VFS reload callbacks (HttpVirtualFileImpl etc.) that also need the write lock
+                FileDocumentManager.getInstance().saveDocument(doc);
+            } else {
+                com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() -> {
                     try {
                         vf.setBinaryContent(content.getBytes(StandardCharsets.UTF_8));
                     } catch (IOException e) {
                         throw new RuntimeException("Failed to write file: " + absolutePath, e);
                     }
-                }
-            }));
+                });
+            }
+        });
 
         LOG.info("Wrote " + content.length() + " chars to " + absolutePath);
         return null;

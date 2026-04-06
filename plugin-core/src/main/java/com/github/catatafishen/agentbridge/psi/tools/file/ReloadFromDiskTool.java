@@ -34,13 +34,12 @@ public final class ReloadFromDiskTool extends FileTool {
         return "Force IntelliJ to refresh a file or directory from disk, picking up changes made by external tools";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -65,7 +64,7 @@ public final class ReloadFromDiskTool extends FileTool {
         if (!args.has("path") || args.get("path").isJsonNull()) {
             VirtualFile root = LocalFileSystem.getInstance().findFileByPath(basePath);
             if (root == null) return "Project root not found";
-            VfsUtil.markDirtyAndRefresh(false, true, true, root);
+            VfsUtil.markDirtyAndRefresh(true, true, true, root);
             return "Reloaded project root from disk (" + basePath + ")";
         }
 
@@ -82,7 +81,7 @@ public final class ReloadFromDiskTool extends FileTool {
             return "File not found: " + pathStr;
         }
 
-        VfsUtil.markDirtyAndRefresh(false, vf.isDirectory(), true, vf);
+        VfsUtil.markDirtyAndRefresh(true, vf.isDirectory(), true, vf);
         return "Reloaded from disk: " + vf.getPath();
     }
 }

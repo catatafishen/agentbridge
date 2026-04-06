@@ -175,28 +175,33 @@ public class WriteFileTool extends FileTool {
     }
 
     private void createNewFile(String pathStr, String content, CompletableFuture<String> resultFuture) {
+        String normalized = pathStr.replace('\\', '/');
+        String basePath = project.getBasePath();
+        String fullPath;
+        if (normalized.startsWith("/")) {
+            fullPath = normalized;
+        } else if (basePath != null) {
+            fullPath = Path.of(basePath, normalized).toString();
+        } else {
+            fullPath = normalized;
+        }
+        // File I/O outside the write lock — holding the write lock during disk writes delays
+        // all other write-lock consumers (including IntelliJ's own VFS reload callbacks)
+        Path filePath = Path.of(fullPath);
+        try {
+            Files.createDirectories(filePath.getParent());
+            Files.writeString(filePath, content);
+        } catch (IOException e) {
+            resultFuture.complete("Error creating file: " + e.getMessage());
+            return;
+        }
+        // VFS refresh after file is on disk — no write lock held during I/O
+        String finalFullPath = fullPath;
         WriteAction.run(() -> {
-            try {
-                String normalized = pathStr.replace('\\', '/');
-                String basePath = project.getBasePath();
-                String fullPath;
-                if (normalized.startsWith("/")) {
-                    fullPath = normalized;
-                } else if (basePath != null) {
-                    fullPath = Path.of(basePath, normalized).toString();
-                } else {
-                    fullPath = normalized;
-                }
-                Path filePath = Path.of(fullPath);
-                Files.createDirectories(filePath.getParent());
-                Files.writeString(filePath, content);
-                LocalFileSystem.getInstance().refreshAndFindFileByPath(fullPath);
-                CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
-                resultFuture.complete("Created: " + pathStr);
-            } catch (IOException e) {
-                resultFuture.complete("Error creating file: " + e.getMessage());
-            }
+            LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
+            CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
         });
+        resultFuture.complete("Created: " + pathStr);
     }
 
     private void handlePartialEditArgs(VirtualFile vf, String pathStr, JsonObject args,
