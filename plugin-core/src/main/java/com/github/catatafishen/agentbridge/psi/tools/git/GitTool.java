@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.psi.tools.git;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
@@ -166,9 +167,14 @@ public abstract class GitTool extends Tool {
                 if (fullHash.length() != 40) return;
 
                 EdtUtil.invokeLater(() -> {
-                    var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
-                    var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
-                    if (tw != null) tw.activate(null);
+                    // Only activate the VCS tool window if the user is not currently typing in the
+                    // chat prompt. Unconditional activation races the focus-restore mechanism and
+                    // steals keyboard focus from the chat input field.
+                    if (!PsiBridgeService.isChatToolWindowActive(project)) {
+                        var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
+                        var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
+                        if (tw != null) tw.activate(null);
+                    }
 
                     PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash);
                 });
