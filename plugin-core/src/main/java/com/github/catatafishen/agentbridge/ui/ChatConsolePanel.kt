@@ -384,7 +384,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val resolvedKind = kind ?: "other"
 
         // Extract file path from arguments for edit tools
-        val filePath = extractFilePathFromArgs(cleanTitle, arguments)
+        val filePath = extractFilePathFromArgs(arguments)
 
         val entry =
             EntryData.ToolCall(
@@ -394,11 +394,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             )
         entries.add(entry)
 
-        val def = toolRegistry?.findById(cleanTitle)
-        val info = TOOL_DISPLAY_INFO[cleanTitle]
-        val displayName = def?.displayName() ?: info?.displayName ?: cleanTitle.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(cleanTitle, arguments)
-        val label = if (short != null) "$displayName — $short" else displayName
+        val label = toolChipTitle(cleanTitle, arguments)
         val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
@@ -424,7 +420,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             entry.pluginTool = cleanTitle
         }
 
-        val initialStatus = if (isMcpHandled) "running" else "pending"
+        val initialStatus = if (isMcpHandled) ChipStatus.RUNNING else ChipStatus.PENDING
         executeJs("ChatController.upsertToolChip('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind','$initialStatus')")
         if (isMcpHandled) {
             executeJs("ChatController.markMcpHandled('$did')")
@@ -469,12 +465,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     // Create new chip with correct hash-based ID
                     val cleanTitle = (title ?: name ?: "Tool").trim('\'', '"')
                     val resolvedKind = kind ?: entry?.kind ?: "other"
-                    val def = toolRegistry?.findById(cleanTitle)
-                    val info = TOOL_DISPLAY_INFO[cleanTitle]
-                    val displayName =
-                        def?.displayName() ?: info?.displayName ?: cleanTitle.replaceFirstChar { it.uppercaseChar() }
-                    val short = formatToolSubtitle(cleanTitle, arguments)
-                    val label = if (short != null) "$displayName — $short" else displayName
+                    val label = toolChipTitle(cleanTitle, arguments)
                     val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
                     val paramsJson = if (!hasCustomRenderer) escJs(arguments) else ""
 
@@ -542,11 +533,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val resolvedKind = kind ?: "other"
         val cleanTitle = title.trim('\'', '"')
 
-        val def = toolRegistry?.findById(cleanTitle)
-        val info = TOOL_DISPLAY_INFO[cleanTitle]
-        val displayName = def?.displayName() ?: info?.displayName ?: cleanTitle.replaceFirstChar { it.uppercaseChar() }
-        val short = formatToolSubtitle(cleanTitle, arguments)
-        val label = if (short != null) "$displayName — $short" else displayName
+        val label = toolChipTitle(cleanTitle, arguments)
         val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
         val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
         val safeKind = escJs(resolvedKind)
@@ -948,10 +935,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
             is EntryData.ToolCall -> {
                 val title = e.title.trim('\'', '"')
-                val info = TOOL_DISPLAY_INFO[title]
-                val displayName = info?.displayName ?: title.replaceFirstChar { it.uppercaseChar() }
-                val short = formatToolSubtitle(title, e.arguments)
-                val label = if (short != null) "$displayName — $short" else displayName
+                val label = toolChipTitle(title, e.arguments)
                 val id = "batch-tool-${batchIdCounter++}"
                 val status = e.status ?: ChipStatus.COMPLETE
                 toolCallNames[id] = title
@@ -1508,13 +1492,14 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private fun isJson(text: String): Boolean =
         (text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))
 
-    /** Produces a chip-style title matching the JS toolDisplayName() logic. */
+    /** Resolves the display label for a tool chip: "DisplayName — subtitle" or just "DisplayName". */
     private fun toolChipTitle(baseName: String?, arguments: String?): String {
         if (baseName == null) return "Tool Call"
         val clean = baseName.trim('\'', '"')
-        val subtitle = formatToolSubtitle(clean, arguments)
         val toolDef = toolRegistry?.findById(clean)
-        val display = toolDef?.displayName() ?: TOOL_DISPLAY_INFO[clean]?.displayName ?: clean
+        val display = toolDef?.displayName() ?: toolDisplayInfo(clean)?.displayName
+        ?: clean.replaceFirstChar { it.uppercaseChar() }
+        val subtitle = formatToolSubtitle(clean, arguments)
         return if (subtitle != null) "$display — $subtitle" else display
     }
 
@@ -1527,7 +1512,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         }
     }
 
-    private fun extractFilePathFromArgs(toolName: String, arguments: String?): String? {
+    private fun extractFilePathFromArgs(arguments: String?): String? {
         if (arguments.isNullOrBlank()) return null
         try {
             val json = JsonParser.parseString(arguments)

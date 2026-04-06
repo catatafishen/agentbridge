@@ -220,25 +220,11 @@ internal val TOOL_SUBTITLE_KEY = mapOf(
     "bash" to "description",
     "web_search" to "query",
     "web_fetch" to "url",
-    // Built-in CLI tools - PascalCase variants
-    "View" to "path",
-    "Read" to "path",
-    "Write" to "path",
-    "Edit" to "path",
-    "Create" to "path",
-    "Grep" to "pattern",
-    "Glob" to "pattern",
-    "Bash" to "description",
     // OpenCode / Claude agent tools
     "todowrite" to "todos",
-    "TodoWrite" to "todos",
     "codesearch" to "query",
-    "CodeSearch" to "query",
     "websearch" to "query",
-    "WebSearch" to "query",
     "webfetch" to "url",
-    "WebFetch" to "url",
-    "Task" to "description",
 )
 
 /**
@@ -263,28 +249,13 @@ internal val TOOL_DISPLAY_INFO = mapOf(
     "update_todo" to ToolInfo("Update TODO", "Update the agent's task checklist"),
     "report_intent" to ToolInfo("Intent", "Report current task intent"),
     "task" to ToolInfo("Sub-Agent Task", "Launch a sub-agent"),
-    // PascalCase variants (some agents use these)
-    "View" to ToolInfo("View", "View file or directory contents"),
-    "Read" to ToolInfo("Read", "Read file contents"),
-    "Write" to ToolInfo("Write", "Write file contents"),
-    "Edit" to ToolInfo("Edit", "Make string replacements in a file"),
-    "Create" to ToolInfo("Create", "Create a new file"),
-    "Grep" to ToolInfo("Grep", "Search file contents"),
-    "Glob" to ToolInfo("Glob", "Find files by pattern"),
-    "Bash" to ToolInfo("Bash", "Run a shell command"),
-    "Task" to ToolInfo("Sub-Agent Task", "Launch a sub-agent"),
 
     // ── OpenCode / Claude built-in tools ──
     "todowrite" to ToolInfo("Update TODO", "Update the agent's task list"),
-    "TodoWrite" to ToolInfo("Update TODO", "Update the agent's task list"),
     "codesearch" to ToolInfo("Code Search", "Search external code libraries"),
-    "CodeSearch" to ToolInfo("Code Search", "Search external code libraries"),
     "webfetch" to ToolInfo("Fetch URL", "Fetch a web page"),
-    "WebFetch" to ToolInfo("Fetch URL", "Fetch a web page"),
     "websearch" to ToolInfo("Web Search", "Search the web"),
-    "WebSearch" to ToolInfo("Web Search", "Search the web"),
     "skill" to ToolInfo("Skill", "Use an agent skill"),
-    "Skill" to ToolInfo("Skill", "Use an agent skill"),
 
     // ── GitHub MCP tools (external server) ──
     "actions_get" to ToolInfo("GitHub Actions", "Get GitHub Actions resource"),
@@ -304,3 +275,7 @@ internal val TOOL_DISPLAY_INFO = mapOf(
     "search_repositories" to ToolInfo("Search Repos", "Search GitHub repos"),
     "search_users" to ToolInfo("Search Users", "Search GitHub users"),
 )
+
+internal fun toolDisplayInfo(name: String): ToolInfo? = TOOL_DISPLAY_INFO[name.lowercase()]
+
+internal fun toolSubtitleKey(name: String): String? = TOOL_SUBTITLE_KEY[name.lowercase()]
