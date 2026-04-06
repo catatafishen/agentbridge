@@ -41,7 +41,6 @@ dependencies {
         bundledPlugin("com.intellij.java")
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
-        bundledPlugin("com.intellij.spellchecker")
     }
 
     // Kotlin stdlib for UI layer
