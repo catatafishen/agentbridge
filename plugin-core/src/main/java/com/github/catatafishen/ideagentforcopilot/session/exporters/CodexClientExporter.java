@@ -62,7 +62,8 @@ public final class CodexClientExporter {
                 if (ts != null && !ts.isEmpty()) {
                     try {
                         createdAt = Instant.parse(ts).toEpochMilli() / 1000;
-                    } catch (Exception ignored) {
+                    } catch (Exception e) {
+                        LOG.debug("Could not parse timestamp for Codex export: " + ts, e);
                     }
                     break;
                 }

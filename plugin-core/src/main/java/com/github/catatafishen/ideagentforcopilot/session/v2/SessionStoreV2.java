@@ -74,6 +74,13 @@ public final class SessionStoreV2 implements Disposable {
     private volatile CompletableFuture<Void> pendingSave = CompletableFuture.completedFuture(null);
 
     /**
+     * Cached transient session ID used when the session-id file is unreadable (I/O error).
+     * Ensures repeated calls during the same IDE session return a consistent ID rather
+     * than generating a different UUID each time (which would fragment sessions).
+     */
+    private volatile String transientSessionId;
+
+    /**
      * Display name of the agent currently writing sessions (e.g. "GitHub Copilot").
      */
     private volatile String currentAgent = "Unknown";
@@ -405,8 +412,11 @@ public final class SessionStoreV2 implements Disposable {
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
             return newId;
         } catch (IOException e) {
-            LOG.warn("Could not read/write current-session-id, using transient UUID", e);
-            return UUID.randomUUID().toString();
+            LOG.warn("Could not read/write current-session-id, using cached transient UUID", e);
+            if (transientSessionId == null) {
+                transientSessionId = UUID.randomUUID().toString();
+            }
+            return transientSessionId;
         }
     }
 
@@ -514,6 +524,7 @@ public final class SessionStoreV2 implements Disposable {
     static List<EntryData> parseJsonlAutoDetect(@NotNull String content) {
         List<EntryData> directEntries = new ArrayList<>();
         List<JsonObject> legacyMessages = new ArrayList<>();
+        int skippedLines = 0;
 
         for (String line : content.split("\n")) {
             line = line.trim();
@@ -527,8 +538,15 @@ public final class SessionStoreV2 implements Disposable {
                     if (obj != null) legacyMessages.add(obj);
                 }
             } catch (Exception e) {
+                skippedLines++;
                 LOG.warn("Skipping malformed JSONL line: " + line, e);
             }
+        }
+
+        if (skippedLines > 0) {
+            int totalParsed = directEntries.size() + legacyMessages.size();
+            LOG.warn("JSONL parse: loaded " + totalParsed + " entries, skipped "
+                + skippedLines + " malformed lines");
         }
 
         if (!directEntries.isEmpty()) return directEntries;
@@ -568,8 +586,6 @@ public final class SessionStoreV2 implements Disposable {
                 parts.add(partsArray.get(i).getAsJsonObject());
             }
 
-            int entriesBefore = result.size();
-            boolean hasTextOrThinking = false;
             java.util.Set<Integer> consumedFileIndices = new java.util.HashSet<>();
 
             for (int idx = 0; idx < parts.size(); idx++) {
@@ -593,7 +609,6 @@ public final class SessionStoreV2 implements Disposable {
                                 agent != null ? agent : "",
                                 model != null ? model : "",
                                 partEid));
-                            hasTextOrThinking = true;
                         }
                     }
                     case "reasoning" -> {
@@ -606,7 +621,6 @@ public final class SessionStoreV2 implements Disposable {
                             agent != null ? agent : "",
                             model != null ? model : "",
                             partEid));
-                        hasTextOrThinking = true;
                     }
                     case "tool-invocation" -> {
                         JsonObject inv = part.has("toolInvocation") ? part.getAsJsonObject("toolInvocation") : new JsonObject();
@@ -667,14 +681,8 @@ public final class SessionStoreV2 implements Disposable {
                 }
             }
 
-            // When an assistant message has tool/subagent entries but no text or thinking,
-            // insert a trailing empty Text so appendAgentTurn() produces a proper message block.
-            if ("assistant".equals(role) && !hasTextOrThinking && result.size() > entriesBefore) {
-                result.add(new EntryData.Text(
-                    new StringBuilder(),
-                    ts,
-                    agent != null ? agent : ""));
-            }
+            // No trailing empty Text needed — appendAgentTurn().flushSegment() at loop end
+            // handles tool-only assistant turns correctly.
         }
 
         return result;
@@ -760,6 +768,14 @@ public final class SessionStoreV2 implements Disposable {
             }
         } catch (Exception e) {
             LOG.warn("Could not read sessions-index.json, starting fresh", e);
+            try {
+                File backup = new File(indexFile.getParentFile(),
+                    indexFile.getName() + ".corrupt-" + System.currentTimeMillis());
+                Files.copy(indexFile.toPath(), backup.toPath());
+                LOG.info("Backed up corrupt index to: " + backup.getAbsolutePath());
+            } catch (Exception backupErr) {
+                LOG.debug("Could not back up corrupt index file", backupErr);
+            }
         }
         return records;
     }

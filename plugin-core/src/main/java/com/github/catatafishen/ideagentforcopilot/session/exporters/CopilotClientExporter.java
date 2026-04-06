@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.UUID;
 
@@ -205,7 +206,7 @@ public final class CopilotClientExporter {
         data.addProperty(CONTENT_KEY, text);
         data.add("attachments", new JsonArray());
         data.addProperty(INTERACTION_ID_KEY, interactionId);
-        sb.append(chain.emit("user.message", data)).append('\n');
+        sb.append(chain.emit("user.message", data, prompt.getTimestamp())).append('\n');
     }
 
     private static void writeThinkingEntry(
@@ -218,7 +219,7 @@ public final class CopilotClientExporter {
 
         JsonObject data = new JsonObject();
         data.addProperty(CONTENT_KEY, text);
-        sb.append(chain.emit("assistant.reasoning", data)).append('\n');
+        sb.append(chain.emit("assistant.reasoning", data, thinking.getTimestamp())).append('\n');
     }
 
     private static void writeTextEntry(
@@ -238,7 +239,7 @@ public final class CopilotClientExporter {
         if (model != null && !model.isEmpty()) {
             data.addProperty("model", model);
         }
-        sb.append(chain.emit("assistant.message", data)).append('\n');
+        sb.append(chain.emit("assistant.message", data, text.getTimestamp())).append('\n');
     }
 
     private static void writeToolCallEntry(
@@ -270,7 +271,7 @@ public final class CopilotClientExporter {
         msgData.addProperty(CONTENT_KEY, "");
         msgData.add("toolRequests", toolRequests);
         msgData.addProperty(INTERACTION_ID_KEY, interactionId);
-        sb.append(chain.emit("assistant.message", msgData)).append('\n');
+        sb.append(chain.emit("assistant.message", msgData, toolCall.getTimestamp())).append('\n');
 
         String result = toolCall.getResult();
         JsonObject resultObj = new JsonObject();
@@ -279,7 +280,7 @@ public final class CopilotClientExporter {
         JsonObject completeData = new JsonObject();
         completeData.addProperty(TOOL_CALL_ID_KEY, toolCallId);
         completeData.add(RESULT_KEY, resultObj);
-        sb.append(chain.emit("tool.execution_complete", completeData)).append('\n');
+        sb.append(chain.emit("tool.execution_complete", completeData, toolCall.getTimestamp())).append('\n');
     }
 
     private static void writeSubAgentEntry(
@@ -295,12 +296,12 @@ public final class CopilotClientExporter {
         startData.addProperty("agentName", agentType != null ? agentType : "general-purpose");
         String description = subAgent.getDescription();
         startData.addProperty("agentDisplayName", description != null ? description : "");
-        sb.append(chain.emit("subagent.started", startData)).append('\n');
+        sb.append(chain.emit("subagent.started", startData, subAgent.getTimestamp())).append('\n');
 
         if ("done".equals(subAgent.getStatus())) {
             JsonObject completeData = new JsonObject();
             completeData.addProperty(TOOL_CALL_ID_KEY, toolCallId);
-            sb.append(chain.emit("subagent.completed", completeData)).append('\n');
+            sb.append(chain.emit("subagent.completed", completeData, subAgent.getTimestamp())).append('\n');
         }
     }
 
@@ -327,9 +328,25 @@ public final class CopilotClientExporter {
 
         @NotNull
         String emit(@NotNull String type, @NotNull JsonObject data) {
+            return emit(type, data, "");
+        }
+
+        @NotNull
+        String emit(@NotNull String type, @NotNull JsonObject data, @NotNull String isoTimestamp) {
             String id = UUID.randomUUID().toString();
-            Instant ts = Instant.ofEpochMilli(timestampMs);
-            timestampMs += 100; // advance slightly to maintain ordering
+            Instant ts;
+            if (!isoTimestamp.isEmpty()) {
+                try {
+                    ts = Instant.parse(isoTimestamp);
+                    timestampMs = ts.toEpochMilli() + 1; // anchor for future fallback
+                } catch (DateTimeParseException e) {
+                    ts = Instant.ofEpochMilli(timestampMs);
+                    timestampMs += 100;
+                }
+            } else {
+                ts = Instant.ofEpochMilli(timestampMs);
+                timestampMs += 100;
+            }
 
             JsonObject event = new JsonObject();
             event.addProperty("type", type);

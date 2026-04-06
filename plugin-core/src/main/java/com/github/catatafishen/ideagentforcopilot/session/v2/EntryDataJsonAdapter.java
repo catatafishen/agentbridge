@@ -3,6 +3,7 @@ package com.github.catatafishen.ideagentforcopilot.session.v2;
 import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -17,6 +18,8 @@ import java.util.UUID;
  * field. Field names match the Kotlin property names exactly.
  */
 public final class EntryDataJsonAdapter {
+
+    private static final Logger LOG = Logger.getInstance(EntryDataJsonAdapter.class);
 
     public static final String TYPE_PROMPT = "prompt";
     public static final String TYPE_TEXT = "text";
@@ -283,7 +286,10 @@ public final class EntryDataJsonAdapter {
                 intVal(json, "totalLinesAdded"),
                 intVal(json, "totalLinesRemoved"),
                 entryId);
-            default -> null;
+            default -> {
+                LOG.debug("Skipping unknown entry type during deserialization: " + type);
+                yield null;
+            }
         };
     }
 

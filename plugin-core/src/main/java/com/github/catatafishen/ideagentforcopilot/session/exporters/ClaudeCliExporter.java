@@ -288,7 +288,8 @@ public final class ClaudeCliExporter {
         if ("assistant".equals(msg.role())) {
             messagePayload.addProperty("id", "msg_" + uuid.replace("-", "").substring(0, 24));
             messagePayload.addProperty("type", "message");
-            messagePayload.addProperty("model", "claude-sonnet-4-6");
+            String model = msg.model();
+            messagePayload.addProperty("model", (model != null && !model.isEmpty()) ? model : "claude-sonnet-4-6");
 
             // stop_reason must be "tool_use" when the message contains tool_use blocks,
             // "end_turn" otherwise.  Claude CLI uses this to determine conversation flow

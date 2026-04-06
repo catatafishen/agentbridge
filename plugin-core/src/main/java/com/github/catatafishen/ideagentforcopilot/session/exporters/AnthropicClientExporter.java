@@ -90,22 +90,24 @@ public final class AnthropicClientExporter {
         List<JsonObject> toolResults = new ArrayList<>();
         boolean seenToolUse = false;
         long currentTimestamp = 0;
+        String currentModel = "";
 
         for (EntryData entry : entries) {
             if (entry instanceof EntryData.Prompt prompt) {
                 // Flush pending assistant blocks
                 if (!assistantBlocks.isEmpty()) {
-                    emitTurn(assistantBlocks, toolResults, currentTimestamp, raw);
+                    emitTurn(assistantBlocks, toolResults, currentTimestamp, currentModel, raw);
                     assistantBlocks = new ArrayList<>();
                     toolResults = new ArrayList<>();
                     seenToolUse = false;
                     currentTimestamp = 0;
+                    currentModel = "";
                 }
                 // Add user message
                 String text = prompt.getText();
                 if (!text.isEmpty()) {
                     raw.add(new AnthropicMessage(ROLE_USER, List.of(textBlock(text)),
-                        parseTimestamp(prompt.getTimestamp())));
+                        parseTimestamp(prompt.getTimestamp()), ""));
                 }
 
             } else if (entry instanceof EntryData.Text text) {
@@ -115,20 +117,29 @@ public final class AnthropicClientExporter {
                 if (currentTimestamp == 0) {
                     currentTimestamp = parseTimestamp(text.getTimestamp());
                 }
+                String entryModel = text.getModel();
+                if (entryModel != null && !entryModel.isEmpty()) {
+                    currentModel = entryModel;
+                }
 
                 if (seenToolUse) {
                     // Text after tool use = turn boundary
-                    emitTurn(assistantBlocks, toolResults, currentTimestamp, raw);
+                    emitTurn(assistantBlocks, toolResults, currentTimestamp, currentModel, raw);
                     assistantBlocks = new ArrayList<>();
                     toolResults = new ArrayList<>();
                     seenToolUse = false;
                     currentTimestamp = parseTimestamp(text.getTimestamp());
+                    currentModel = entryModel != null && !entryModel.isEmpty() ? entryModel : "";
                 }
                 assistantBlocks.add(textBlock(content));
 
             } else if (entry instanceof EntryData.ToolCall toolCall) {
                 if (currentTimestamp == 0) {
                     currentTimestamp = parseTimestamp(toolCall.getTimestamp());
+                }
+                String entryModel = toolCall.getModel();
+                if (entryModel != null && !entryModel.isEmpty()) {
+                    currentModel = entryModel;
                 }
 
                 String toolCallId = UUID.randomUUID().toString();
@@ -159,13 +170,24 @@ public final class AnthropicClientExporter {
                 assistantBlocks.add(toolUseBlock);
                 toolResults.add(toolResultBlock);
                 seenToolUse = true;
+
+            } else if (entry instanceof EntryData.Thinking thinking) {
+                String entryModel = thinking.getModel();
+                if (entryModel != null && !entryModel.isEmpty()) {
+                    currentModel = entryModel;
+                }
+            } else if (entry instanceof EntryData.SubAgent subAgent) {
+                String entryModel = subAgent.getModel();
+                if (entryModel != null && !entryModel.isEmpty()) {
+                    currentModel = entryModel;
+                }
             }
-            // Skip Thinking, SubAgent, Status, TurnStats, ContextFiles, SessionSeparator
+            // Skip Status, TurnStats, ContextFiles, SessionSeparator
         }
 
         // Flush remaining
         if (!assistantBlocks.isEmpty()) {
-            emitTurn(assistantBlocks, toolResults, currentTimestamp, raw);
+            emitTurn(assistantBlocks, toolResults, currentTimestamp, currentModel, raw);
         }
 
         return mergeConsecutiveSameRole(raw);
@@ -175,13 +197,14 @@ public final class AnthropicClientExporter {
         @NotNull List<JsonObject> assistantBlocks,
         @NotNull List<JsonObject> toolResults,
         long createdAt,
+        @NotNull String model,
         @NotNull List<AnthropicMessage> out) {
 
         if (assistantBlocks.isEmpty()) return;
 
-        out.add(new AnthropicMessage(ROLE_ASSISTANT, assistantBlocks, createdAt));
+        out.add(new AnthropicMessage(ROLE_ASSISTANT, assistantBlocks, createdAt, model));
         if (!toolResults.isEmpty()) {
-            out.add(new AnthropicMessage(ROLE_USER, toolResults, createdAt));
+            out.add(new AnthropicMessage(ROLE_USER, toolResults, createdAt, ""));
         }
     }
 
@@ -216,7 +239,7 @@ public final class AnthropicClientExporter {
                 AnthropicMessage prev = merged.removeLast();
                 List<JsonObject> combinedBlocks = new ArrayList<>(prev.contentBlocks);
                 combinedBlocks.addAll(msg.contentBlocks);
-                merged.add(new AnthropicMessage(prev.role, combinedBlocks, prev.createdAt));
+                merged.add(new AnthropicMessage(prev.role, combinedBlocks, prev.createdAt, prev.model));
             } else {
                 merged.add(msg);
             }
@@ -230,12 +253,14 @@ public final class AnthropicClientExporter {
 
     /**
      * @param createdAt Epoch millis parsed from the entry timestamp (0 if unknown).
+     * @param model     The model name from the originating {@link EntryData} (empty if unknown).
      */
-    record AnthropicMessage(String role, List<JsonObject> contentBlocks, long createdAt) {
-        AnthropicMessage(@NotNull String role, @NotNull List<JsonObject> contentBlocks, long createdAt) {
+    record AnthropicMessage(String role, List<JsonObject> contentBlocks, long createdAt, String model) {
+        AnthropicMessage(@NotNull String role, @NotNull List<JsonObject> contentBlocks, long createdAt, @NotNull String model) {
             this.role = role;
             this.contentBlocks = List.copyOf(contentBlocks);
             this.createdAt = createdAt;
+            this.model = model;
         }
 
         @NotNull

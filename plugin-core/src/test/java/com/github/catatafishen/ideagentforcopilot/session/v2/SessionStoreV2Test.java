@@ -245,8 +245,8 @@ class SessionStoreV2Test {
 
         List<EntryData> result = SessionStoreV2.convertLegacyMessages(List.of(msg));
 
-        // Tool call + trailing empty text (assistant has no text/thinking)
-        assertEquals(2, result.size());
+        // Tool call only — no trailing empty text appended
+        assertEquals(1, result.size());
         assertInstanceOf(EntryData.ToolCall.class, result.get(0));
         EntryData.ToolCall tc = (EntryData.ToolCall) result.get(0);
         assertEquals("readFile", tc.getTitle());
@@ -279,7 +279,7 @@ class SessionStoreV2Test {
 
         List<EntryData> result = SessionStoreV2.convertLegacyMessages(List.of(msg));
 
-        assertEquals(2, result.size()); // tool + trailing empty text
+        assertEquals(1, result.size()); // tool only, no trailing empty text
         EntryData.ToolCall tc = (EntryData.ToolCall) result.get(0);
         assertTrue(tc.getAutoDenied());
         assertEquals("Operation not allowed", tc.getDenialReason());
@@ -333,8 +333,8 @@ class SessionStoreV2Test {
 
         List<EntryData> result = SessionStoreV2.convertLegacyMessages(List.of(msg));
 
-        // SubAgent + trailing empty text (no text/thinking part)
-        assertEquals(2, result.size());
+        // SubAgent only, no trailing empty text
+        assertEquals(1, result.size());
         assertInstanceOf(EntryData.SubAgent.class, result.get(0));
         EntryData.SubAgent sa = (EntryData.SubAgent) result.get(0);
         assertEquals("explore", sa.getAgentType());
@@ -365,7 +365,7 @@ class SessionStoreV2Test {
 
         List<EntryData> result = SessionStoreV2.convertLegacyMessages(List.of(msg));
 
-        assertEquals(2, result.size()); // subagent + trailing empty text
+        assertEquals(1, result.size()); // subagent only, no trailing empty text
         EntryData.SubAgent sa = (EntryData.SubAgent) result.get(0);
         assertTrue(sa.getAutoDenied());
         assertEquals("Not allowed", sa.getDenialReason());
@@ -446,7 +446,7 @@ class SessionStoreV2Test {
     }
 
     @Test
-    void convertLegacy_assistantToolsOnlyAppendEmptyText() {
+    void convertLegacy_assistantToolsOnly_noTrailingEmptyText() {
         JsonObject msg = new JsonObject();
         msg.addProperty("role", "assistant");
         msg.addProperty("agent", "copilot");
@@ -462,13 +462,8 @@ class SessionStoreV2Test {
 
         List<EntryData> result = SessionStoreV2.convertLegacyMessages(List.of(msg));
 
-        assertEquals(2, result.size());
+        assertEquals(1, result.size());
         assertInstanceOf(EntryData.ToolCall.class, result.get(0));
-        assertInstanceOf(EntryData.Text.class, result.get(1));
-        // Trailing text should be empty
-        assertEquals("", ((EntryData.Text) result.get(1)).getRaw().toString());
-        // Trailing text should inherit agent
-        assertEquals("copilot", ((EntryData.Text) result.get(1)).getAgent());
     }
 
     @Test
@@ -672,13 +667,12 @@ class SessionStoreV2Test {
 
         List<EntryData> result = SessionStoreV2.convertLegacyMessages(List.of(msg));
 
-        // status + trailing empty text (no text/thinking part in this message)
-        assertEquals(2, result.size());
+        // status only, no trailing empty text
+        assertEquals(1, result.size());
         assertInstanceOf(EntryData.Status.class, result.get(0));
         EntryData.Status st = (EntryData.Status) result.get(0);
         assertEquals("⚠", st.getIcon());
         assertEquals("Rate limited", st.getMessage());
-        assertInstanceOf(EntryData.Text.class, result.get(1));
     }
 
     @Test
