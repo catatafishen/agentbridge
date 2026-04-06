@@ -172,7 +172,11 @@ public final class KiroClient extends AcpClient {
 
     @Override
     protected List<String> buildCommand(String cwd, int mcpPort) {
-        return List.of("kiro-cli", "--agent", "intellij-task", "acp");
+        // --trust-all-tools bypasses Kiro's per-tool permission prompts.
+        // Without it, Kiro blocks on TTY permission dialogs that never appear because
+        // stdin/stdout are wired to JSON-RPC. Tool-level permissions are still enforced
+        // by the MCP server (PermissionResolver).
+        return List.of("kiro-cli", "--agent", "intellij-task", "acp", "--trust-all-tools");
     }
 
     @Override

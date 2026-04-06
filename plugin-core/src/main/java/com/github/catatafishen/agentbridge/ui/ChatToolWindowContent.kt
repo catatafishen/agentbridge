@@ -709,6 +709,14 @@ class ChatToolWindowContent(
             // Auto-scroll the outer JBScrollPane to keep the caret visible while typing.
             // EditorTextField's internal JViewport swallows scrollRectToVisible — convert to
             // promptTextArea coords so the outer JViewport handles it.
+            //
+            // The editor has two viewports: the outer JBScrollPane around EditorTextField and
+            // IntelliJ's own inner JScrollPane inside the editor. Selection highlights are
+            // clipped to the inner viewport's visible region. IntelliJ defers its auto-scroll-
+            // to-caret via its own invokeLater, which runs AFTER our first invokeLater and
+            // re-scrolls the inner viewport to the caret — undoing any prior sync. The fix:
+            // scroll the outer viewport in the first invokeLater, then sync the inner viewport
+            // to the outer in a SECOND (nested) invokeLater that runs after IntelliJ's scroll.
             editor.caretModel.addCaretListener(object : com.intellij.openapi.editor.event.CaretListener {
                 override fun caretPositionChanged(event: com.intellij.openapi.editor.event.CaretEvent) {
                     ApplicationManager.getApplication().invokeLater {
@@ -721,18 +729,16 @@ class ChatToolWindowContent(
                         promptTextArea.scrollRectToVisible(
                             Rectangle(converted.x, converted.y, 1, lineHeight)
                         )
-                        // IntelliJ independently scrolls the editor's inner JViewport to the
-                        // caret via its own scroll-to-caret mechanism. Selection highlights are
-                        // clipped to whichever of the two viewports (inner/outer) covers less
-                        // content. By syncing the inner viewport's Y position to the outer
-                        // viewport's Y position after the outer scroll, both viewports show the
-                        // same region and all visually-exposed lines receive selection highlights.
-                        val outerViewport = promptTextArea.parent as? JViewport
-                        if (outerViewport != null) {
-                            editor.scrollPane.viewport.viewPosition =
-                                Point(0, outerViewport.viewPosition.y)
+                        // Sync inner viewport in a second invokeLater so it runs after
+                        // IntelliJ's own deferred auto-scroll-to-caret has settled.
+                        ApplicationManager.getApplication().invokeLater {
+                            val outerViewport = promptTextArea.parent as? JViewport
+                            if (outerViewport != null) {
+                                editor.scrollPane.viewport.viewPosition =
+                                    Point(0, outerViewport.viewPosition.y)
+                            }
+                            editor.contentComponent.repaint()
                         }
-                        editor.contentComponent.repaint()
                     }
                 }
             })
