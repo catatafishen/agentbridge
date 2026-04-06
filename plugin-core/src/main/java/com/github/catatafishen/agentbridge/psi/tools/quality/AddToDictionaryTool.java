@@ -37,13 +37,12 @@ public final class AddToDictionaryTool extends QualityTool {
         return "Add a word to the project spell-check dictionary";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"word", TYPE_STRING, "The word to add to the project dictionary"}
@@ -60,8 +59,12 @@ public final class AddToDictionaryTool extends QualityTool {
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                var spellChecker = com.intellij.spellchecker.SpellCheckerManager.getInstance(project);
-                spellChecker.acceptWordAsCorrect(word, project);
+                // SpellCheckerManager is a bundled plugin class not available at Gradle compile time,
+                // so we use reflection to avoid a hard compile-time dependency.
+                Class<?> managerClass = Class.forName("com.intellij.spellchecker.SpellCheckerManager");
+                Object spellChecker = managerClass.getMethod("getInstance", Project.class).invoke(null, project);
+                managerClass.getMethod("acceptWordAsCorrect", String.class, Project.class)
+                    .invoke(spellChecker, word, project);
                 resultFuture.complete("Added '" + word + "' to project dictionary. " +
                     "It will no longer be flagged as a typo in future inspections.");
             } catch (Exception e) {
