@@ -2,8 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.session;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.AnthropicClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.AnthropicClientImporter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
@@ -13,6 +12,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Tests for {@link AnthropicClientImporter} and {@link AnthropicClientExporter}.
  * Validates import, export, and round-trip conversion between the Anthropic Messages
- * API JSONL format (used by Claude CLI, Kiro, and Junie) and the v2 {@link SessionMessage} model.
+ * API JSONL format (used by Claude CLI, Kiro, and Junie) and the {@link EntryData} model.
  */
 class AnthropicClientRoundTripTest {
 
@@ -39,14 +39,14 @@ class AnthropicClientRoundTripTest {
             {"role":"assistant","content":[{"type":"text","text":"Hi there!"}]}
             """;
 
-        List<SessionMessage> messages = importJsonl(jsonl);
-        assertEquals(2, messages.size());
+        List<EntryData> entries = importJsonl(jsonl);
+        assertEquals(2, entries.size());
 
-        assertEquals("user", messages.get(0).role);
-        assertEquals("Hello", extractText(messages.get(0)));
+        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertEquals("Hello", ((EntryData.Prompt) entries.get(0)).getText());
 
-        assertEquals("assistant", messages.get(1).role);
-        assertEquals("Hi there!", extractText(messages.get(1)));
+        assertTrue(entries.get(1) instanceof EntryData.Text);
+        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw().toString());
     }
 
     @Test
@@ -58,29 +58,24 @@ class AnthropicClientRoundTripTest {
             {"role":"assistant","content":[{"type":"text","text":"The file says: file contents"}]}
             """;
 
-        List<SessionMessage> messages = importJsonl(jsonl);
-        // The tool_result-only user message should be skipped
-        assertEquals(3, messages.size());
+        List<EntryData> entries = importJsonl(jsonl);
+        // user text → Prompt, assistant text → Text, tool_use → ToolCall, assistant text → Text
+        // The tool_result-only user message is skipped
+        assertEquals(4, entries.size());
 
-        assertEquals("user", messages.get(0).role);
-        assertEquals("Read a file", extractText(messages.get(0)));
+        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertEquals("Read a file", ((EntryData.Prompt) entries.get(0)).getText());
 
-        SessionMessage assistant1 = messages.get(1);
-        assertEquals("assistant", assistant1.role);
-        assertTrue(assistant1.parts.size() >= 2, "Should have text + tool parts");
+        assertTrue(entries.get(1) instanceof EntryData.Text);
+        assertEquals("I will read it.", ((EntryData.Text) entries.get(1)).getRaw().toString());
 
-        boolean foundToolResult = false;
-        for (JsonObject part : assistant1.parts) {
-            if ("tool-invocation".equals(part.get("type").getAsString())) {
-                JsonObject inv = part.getAsJsonObject("toolInvocation");
-                assertEquals("result", inv.get("state").getAsString());
-                assertEquals("tu1", inv.get("toolCallId").getAsString());
-                assertEquals("read_file", inv.get("toolName").getAsString());
-                assertEquals("file contents", inv.get("result").getAsString());
-                foundToolResult = true;
-            }
-        }
-        assertTrue(foundToolResult, "First assistant message should have resolved tool result");
+        assertTrue(entries.get(2) instanceof EntryData.ToolCall);
+        EntryData.ToolCall tc = (EntryData.ToolCall) entries.get(2);
+        assertEquals("read_file", tc.getTitle());
+        assertEquals("file contents", tc.getResult());
+
+        assertTrue(entries.get(3) instanceof EntryData.Text);
+        assertEquals("The file says: file contents", ((EntryData.Text) entries.get(3)).getRaw().toString());
     }
 
     @Test
@@ -92,12 +87,12 @@ class AnthropicClientRoundTripTest {
             {"role":"assistant","content":[{"type":"text","text":"Done."}]}
             """;
 
-        List<SessionMessage> messages = importJsonl(jsonl);
-        // user("Hi"), assistant(tool_use), assistant("Done.") — tool_result user message skipped
-        assertEquals(3, messages.size());
-        assertEquals("user", messages.get(0).role);
-        assertEquals("assistant", messages.get(1).role);
-        assertEquals("assistant", messages.get(2).role);
+        List<EntryData> entries = importJsonl(jsonl);
+        // Prompt("Hi"), ToolCall(ls), Text("Done.") — tool_result user message skipped
+        assertEquals(3, entries.size());
+        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertTrue(entries.get(1) instanceof EntryData.ToolCall);
+        assertTrue(entries.get(2) instanceof EntryData.Text);
     }
 
     @Test
@@ -108,16 +103,11 @@ class AnthropicClientRoundTripTest {
             {"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":[{"text":"line1"},{"text":"line2"}]}]}
             """;
 
-        List<SessionMessage> messages = importJsonl(jsonl);
-        assertEquals(2, messages.size());
+        List<EntryData> entries = importJsonl(jsonl);
+        assertEquals(2, entries.size());
 
-        SessionMessage assistant = messages.get(1);
-        for (JsonObject part : assistant.parts) {
-            if ("tool-invocation".equals(part.get("type").getAsString())) {
-                JsonObject inv = part.getAsJsonObject("toolInvocation");
-                assertEquals("line1\nline2", inv.get("result").getAsString());
-            }
-        }
+        assertTrue(entries.get(1) instanceof EntryData.ToolCall);
+        assertEquals("line1\nline2", ((EntryData.ToolCall) entries.get(1)).getResult());
     }
 
     @Test
@@ -129,13 +119,13 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void exportProducesAnthropicMessagesFormat() throws IOException {
-        List<SessionMessage> messages = List.of(
-            userMessage("Hello"),
-            assistantMessage("Hi!")
+        List<EntryData> entries = List.of(
+            userPrompt("Hello"),
+            assistantText("Hi!")
         );
 
         Path target = tempDir.resolve("exported.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(messages), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         String content = Files.readString(target, StandardCharsets.UTF_8);
         assertTrue(content.contains("\"role\":\"user\""));
@@ -146,12 +136,13 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void exportToolInvocationsProduceToolUseAndToolResult() throws IOException {
-        JsonObject toolPart = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "data");
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            userPrompt("read"),
+            toolCall("read_file", "{\"path\":\"/a\"}", "data")
+        );
 
         Path target = tempDir.resolve("exported-tools.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(userMessage("read"), assistant)), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         String content = Files.readString(target, StandardCharsets.UTF_8);
         assertTrue(content.contains("\"type\":\"tool_use\""));
@@ -164,12 +155,13 @@ class AnthropicClientRoundTripTest {
         String longName = "git add " + "plugin-core/src/main/java/com/example/".repeat(10) + "Foo.java";
         assertTrue(longName.length() > 200, "Test precondition: raw name should exceed 200 chars");
 
-        JsonObject toolPart = toolInvocationPart("tc1", longName, "{}", "ok");
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            userPrompt("commit"),
+            toolCall(longName, "{}", "ok")
+        );
 
         Path target = tempDir.resolve("exported-long-tool-name.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(userMessage("commit"), assistant)), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         String content = Files.readString(target, StandardCharsets.UTF_8);
         // Parse the assistant message line (first non-user line) and check tool_use name length
@@ -192,18 +184,14 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void exportSkipsReasoningParts() throws IOException {
-        JsonObject reasoningPart = new JsonObject();
-        reasoningPart.addProperty("type", "reasoning");
-        reasoningPart.addProperty("text", "Thinking...");
-
-        JsonObject textPart = textPart("Answer");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(reasoningPart, textPart),
-            System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            userPrompt("Q"),
+            new EntryData.Thinking(new StringBuilder("Thinking..."), Instant.now().toString(), "", "", ""),
+            assistantText("Answer")
+        );
 
         Path target = tempDir.resolve("exported-reasoning.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(userMessage("Q"), assistant)), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         String content = Files.readString(target, StandardCharsets.UTF_8);
         assertFalse(content.contains("Thinking..."), "Reasoning should not appear in Anthropic export");
@@ -214,69 +202,62 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void roundTripPreservesTextConversation() throws IOException {
-        List<SessionMessage> original = List.of(
-            userMessage("What is Rust?"),
-            assistantMessage("A systems programming language.")
+        List<EntryData> original = List.of(
+            userPrompt("What is Rust?"),
+            assistantText("A systems programming language.")
         );
 
         Path file = tempDir.resolve("roundtrip.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(original), file);
-        List<SessionMessage> imported = AnthropicClientImporter.importFile(file);
+        AnthropicClientExporter.exportToFile(original, file);
+        List<EntryData> imported = AnthropicClientImporter.importFile(file);
 
         assertEquals(2, imported.size());
-        assertEquals("What is Rust?", extractText(imported.get(0)));
-        assertEquals("A systems programming language.", extractText(imported.get(1)));
+        assertEquals("What is Rust?", ((EntryData.Prompt) imported.get(0)).getText());
+        assertEquals("A systems programming language.", ((EntryData.Text) imported.get(1)).getRaw().toString());
     }
 
     @Test
     void roundTripPreservesToolInvocations() throws IOException {
-        JsonObject textPart = textPart("Reading file");
-        JsonObject toolPart = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a.txt\"}", "hello world");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(textPart, toolPart),
-            System.currentTimeMillis(), null, null);
-
-        List<SessionMessage> original = List.of(userMessage("Read /a.txt"), assistant);
+        List<EntryData> original = List.of(
+            userPrompt("Read /a.txt"),
+            assistantText("Reading file"),
+            toolCall("read_file", "{\"path\":\"/a.txt\"}", "hello world")
+        );
 
         Path file = tempDir.resolve("roundtrip-tools.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(original), file);
-        List<SessionMessage> imported = AnthropicClientImporter.importFile(file);
+        AnthropicClientExporter.exportToFile(original, file);
+        List<EntryData> imported = AnthropicClientImporter.importFile(file);
 
-        assertEquals(2, imported.size());
-        SessionMessage importedAssistant = imported.get(1);
+        assertEquals(3, imported.size());
 
-        boolean foundTool = false;
-        for (JsonObject part : importedAssistant.parts) {
-            if ("tool-invocation".equals(part.get("type").getAsString())) {
-                foundTool = true;
-                JsonObject inv = part.getAsJsonObject("toolInvocation");
-                assertEquals("result", inv.get("state").getAsString());
-                assertEquals("read_file", inv.get("toolName").getAsString());
-                assertEquals("hello world", inv.get("result").getAsString());
-            }
-        }
-        assertTrue(foundTool);
+        assertTrue(imported.get(0) instanceof EntryData.Prompt);
+        assertTrue(imported.get(1) instanceof EntryData.Text);
+        assertEquals("Reading file", ((EntryData.Text) imported.get(1)).getRaw().toString());
+
+        assertTrue(imported.get(2) instanceof EntryData.ToolCall);
+        EntryData.ToolCall tc = (EntryData.ToolCall) imported.get(2);
+        assertEquals("read_file", tc.getTitle());
+        assertEquals("hello world", tc.getResult());
     }
 
     @Test
     void roundTripMultipleTurns() throws IOException {
-        List<SessionMessage> original = List.of(
-            userMessage("Question 1"),
-            assistantMessage("Answer 1"),
-            userMessage("Question 2"),
-            assistantMessage("Answer 2")
+        List<EntryData> original = List.of(
+            userPrompt("Question 1"),
+            assistantText("Answer 1"),
+            userPrompt("Question 2"),
+            assistantText("Answer 2")
         );
 
         Path file = tempDir.resolve("roundtrip-multi.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(original), file);
-        List<SessionMessage> imported = AnthropicClientImporter.importFile(file);
+        AnthropicClientExporter.exportToFile(original, file);
+        List<EntryData> imported = AnthropicClientImporter.importFile(file);
 
         assertEquals(4, imported.size());
-        assertEquals("Question 1", extractText(imported.get(0)));
-        assertEquals("Answer 1", extractText(imported.get(1)));
-        assertEquals("Question 2", extractText(imported.get(2)));
-        assertEquals("Answer 2", extractText(imported.get(3)));
+        assertEquals("Question 1", ((EntryData.Prompt) imported.get(0)).getText());
+        assertEquals("Answer 1", ((EntryData.Text) imported.get(1)).getRaw().toString());
+        assertEquals("Question 2", ((EntryData.Prompt) imported.get(2)).getText());
+        assertEquals("Answer 2", ((EntryData.Text) imported.get(3)).getRaw().toString());
     }
 
     // ── Helper methods ──────────────────────────────────────────────
@@ -289,16 +270,15 @@ class AnthropicClientRoundTripTest {
      */
     @Test
     void exportConsolidatesToolResultsIntoSingleUserMessage() throws IOException {
-        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "contents A");
-        JsonObject tool2 = toolInvocationPart("tc2", "search", "{\"q\":\"test\"}", "found it");
-        JsonObject textPart = textPart("I'll read the file and search.");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(textPart, tool1, tool2),
-            System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            userPrompt("Do both"),
+            assistantText("I'll read the file and search."),
+            toolCall("read_file", "{\"path\":\"/a\"}", "contents A"),
+            toolCall("search", "{\"q\":\"test\"}", "found it")
+        );
 
         Path target = tempDir.resolve("consolidated.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(userMessage("Do both"), assistant)), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         List<String> lines = Files.readAllLines(target, StandardCharsets.UTF_8).stream()
             .filter(l -> !l.isBlank()).toList();
@@ -322,21 +302,17 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void exportMatchesClaudeCliNativeStructure() throws IOException {
-        // Build a multi-turn conversation with tool calls (matching native Claude pattern)
-        JsonObject tool1 = toolInvocationPart("tu1", "read_file", "{\"path\":\"/a.txt\"}", "file data");
-        JsonObject tool2 = toolInvocationPart("tu2", "search_text", "{\"query\":\"foo\"}", "3 matches");
-
-        List<SessionMessage> messages = List.of(
-            userMessage("Read a.txt and search for foo"),
-            new SessionMessage("a1", "assistant",
-                List.of(textPart("I'll do both."), tool1, tool2),
-                System.currentTimeMillis(), null, null),
-            userMessage("Now commit"),
-            assistantMessage("Done.")
+        List<EntryData> entries = List.of(
+            userPrompt("Read a.txt and search for foo"),
+            assistantText("I'll do both."),
+            toolCall("read_file", "{\"path\":\"/a.txt\"}", "file data"),
+            toolCall("search_text", "{\"query\":\"foo\"}", "3 matches"),
+            userPrompt("Now commit"),
+            assistantText("Done.")
         );
 
         Path target = tempDir.resolve("native-check.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(messages), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         List<JsonObject> exported = new ArrayList<>();
         for (String line : Files.readAllLines(target, StandardCharsets.UTF_8)) {
@@ -379,7 +355,7 @@ class AnthropicClientRoundTripTest {
 
     /**
      * Verifies that importing a native Claude CLI session with split tool_result
-     * user messages (one per tool) correctly merges them into the assistant message.
+     * user messages (one per tool) correctly merges them into the assistant entries.
      */
     @Test
     void importNativeClaudeSessionWithSplitToolResults() throws IOException {
@@ -391,23 +367,21 @@ class AnthropicClientRoundTripTest {
             {"role":"assistant","content":[{"type":"text","text":"Both files read."}]}
             """;
 
-        List<SessionMessage> messages = importJsonl(jsonl);
-        // Native sessions start with assistant (no initial user message in file)
-        assertEquals(2, messages.size());
+        List<EntryData> entries = importJsonl(jsonl);
+        // Text("I'll read both."), ToolCall(tu1), ToolCall(tu2), Text("Both files read.")
+        assertEquals(4, entries.size());
 
-        SessionMessage first = messages.getFirst();
-        assertEquals("assistant", first.role);
+        assertTrue(entries.get(0) instanceof EntryData.Text);
+        assertEquals("I'll read both.", ((EntryData.Text) entries.get(0)).getRaw().toString());
 
-        // Should have text + 2 tool invocations with results merged
-        int toolCount = 0;
-        for (JsonObject part : first.parts) {
-            if ("tool-invocation".equals(part.get("type").getAsString())) {
-                toolCount++;
-                JsonObject inv = part.getAsJsonObject("toolInvocation");
-                assertEquals("result", inv.get("state").getAsString());
-            }
-        }
-        assertEquals(2, toolCount, "Both tool results should be merged into assistant message");
+        assertTrue(entries.get(1) instanceof EntryData.ToolCall);
+        assertEquals("content A", ((EntryData.ToolCall) entries.get(1)).getResult());
+
+        assertTrue(entries.get(2) instanceof EntryData.ToolCall);
+        assertEquals("content B", ((EntryData.ToolCall) entries.get(2)).getResult());
+
+        assertTrue(entries.get(3) instanceof EntryData.Text);
+        assertEquals("Both files read.", ((EntryData.Text) entries.get(3)).getRaw().toString());
     }
 
     /**
@@ -415,33 +389,30 @@ class AnthropicClientRoundTripTest {
      */
     @Test
     void roundTripMultipleToolCalls() throws IOException {
-        JsonObject tool1 = toolInvocationPart("tc1", "read", "{}", "data1");
-        JsonObject tool2 = toolInvocationPart("tc2", "write", "{}", "ok");
-        JsonObject tool3 = toolInvocationPart("tc3", "run", "{}", "output");
-
-        List<SessionMessage> original = List.of(
-            userMessage("Do 3 things"),
-            new SessionMessage("a1", "assistant",
-                List.of(textPart("Doing all three."), tool1, tool2, tool3),
-                System.currentTimeMillis(), null, null),
-            userMessage("Thanks"),
-            assistantMessage("You're welcome.")
+        List<EntryData> original = List.of(
+            userPrompt("Do 3 things"),
+            assistantText("Doing all three."),
+            toolCall("read", "{}", "data1"),
+            toolCall("write", "{}", "ok"),
+            toolCall("run", "{}", "output"),
+            userPrompt("Thanks"),
+            assistantText("You're welcome.")
         );
 
         Path file = tempDir.resolve("roundtrip-multi-tools.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(original), file);
-        List<SessionMessage> imported = AnthropicClientImporter.importFile(file);
+        AnthropicClientExporter.exportToFile(original, file);
+        List<EntryData> imported = AnthropicClientImporter.importFile(file);
 
-        assertEquals(4, imported.size());
+        // Prompt, Text, ToolCall, ToolCall, ToolCall, Prompt, Text
+        assertEquals(7, imported.size());
 
-        // Verify assistant message has all 3 tool invocations with results
-        SessionMessage assistant = imported.get(1);
+        // Verify all 3 tool invocations with results round-tripped
         int toolCount = 0;
-        for (JsonObject part : assistant.parts) {
-            if ("tool-invocation".equals(part.get("type").getAsString())) {
+        for (EntryData entry : imported) {
+            if (entry instanceof EntryData.ToolCall) {
                 toolCount++;
-                JsonObject inv = part.getAsJsonObject("toolInvocation");
-                assertEquals("result", inv.get("state").getAsString());
+                assertTrue(((EntryData.ToolCall) entry).getResult() != null,
+                    "Each tool call should have a result after round-trip");
             }
         }
         assertEquals(3, toolCount, "All 3 tool results should round-trip");
@@ -456,16 +427,16 @@ class AnthropicClientRoundTripTest {
     @Test
     void exportSplitsSequentialToolUseTurns() throws IOException {
         // Simulates sequential tool calls: tool A → text → tool B → text
-        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "data A");
-        JsonObject tool2 = toolInvocationPart("tc2", "search", "{\"q\":\"test\"}", "found it");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant",
-            List.of(tool1, textPart("Found the file."), tool2, textPart("All done.")),
-            System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            userPrompt("Do both"),
+            toolCall("read_file", "{\"path\":\"/a\"}", "data A"),
+            assistantText("Found the file."),
+            toolCall("search", "{\"q\":\"test\"}", "found it"),
+            assistantText("All done.")
+        );
 
         Path target = tempDir.resolve("sequential-tools.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(userMessage("Do both"), assistant)), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         List<JsonObject> exported = new ArrayList<>();
         for (String line : Files.readAllLines(target, StandardCharsets.UTF_8)) {
@@ -512,17 +483,16 @@ class AnthropicClientRoundTripTest {
      */
     @Test
     void exportKeepsParallelToolCallsTogether() throws IOException {
-        JsonObject tool1 = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "data A");
-        JsonObject tool2 = toolInvocationPart("tc2", "read_file", "{\"path\":\"/b\"}", "data B");
-        JsonObject tool3 = toolInvocationPart("tc3", "search", "{\"q\":\"test\"}", "found");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant",
-            List.of(textPart("Reading files."), tool1, tool2, tool3),
-            System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            userPrompt("Read both"),
+            assistantText("Reading files."),
+            toolCall("read_file", "{\"path\":\"/a\"}", "data A"),
+            toolCall("read_file", "{\"path\":\"/b\"}", "data B"),
+            toolCall("search", "{\"q\":\"test\"}", "found")
+        );
 
         Path target = tempDir.resolve("parallel-tools.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(userMessage("Read both"), assistant)), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         List<JsonObject> exported = new ArrayList<>();
         for (String line : Files.readAllLines(target, StandardCharsets.UTF_8)) {
@@ -545,19 +515,15 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void exportFiltersEmptyTextBlocksFromAssistantMessages() throws IOException {
-        JsonObject emptyTextPart = new JsonObject();
-        emptyTextPart.addProperty("type", "text");
-        emptyTextPart.addProperty("text", "");
-
-        JsonObject realTextPart = textPart("Real content");
-        JsonObject toolPart = toolInvocationPart("tc1", "read_file", "{\"path\":\"/a\"}", "data");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(emptyTextPart, realTextPart, toolPart),
-            System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            userPrompt("Q"),
+            assistantText(""),          // empty — exporter skips this
+            assistantText("Real content"),
+            toolCall("read_file", "{\"path\":\"/a\"}", "data")
+        );
 
         Path target = tempDir.resolve("empty-text.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(userMessage("Q"), assistant)), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         String content = Files.readString(target, StandardCharsets.UTF_8);
         // The empty text block must NOT appear — Anthropic API rejects it
@@ -569,18 +535,14 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void exportFiltersEmptyTextBlocksFromUserMessages() throws IOException {
-        JsonObject emptyTextPart = new JsonObject();
-        emptyTextPart.addProperty("type", "text");
-        emptyTextPart.addProperty("text", "");
-
-        JsonObject realTextPart = textPart("User question");
-
-        SessionMessage user = new SessionMessage(
-            "u1", "user", List.of(emptyTextPart, realTextPart),
-            System.currentTimeMillis(), null, null);
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("", Instant.now().toString(), null, "", ""),
+            userPrompt("User question"),
+            assistantText("Answer")
+        );
 
         Path target = tempDir.resolve("empty-user-text.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(user, assistantMessage("Answer"))), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         String content = Files.readString(target, StandardCharsets.UTF_8);
         assertFalse(content.contains("\"text\":\"\""),
@@ -590,20 +552,15 @@ class AnthropicClientRoundTripTest {
 
     @Test
     void exportToolOnlyAssistantMessageOmitsEmptyText() throws IOException {
-        // Simulates the EntryDataConverter bug: tool-only assistant messages get an empty
-        // EntryData.Text appended for UI rendering, which serializes as {"type":"text","text":""}
-        JsonObject emptyTextPart = new JsonObject();
-        emptyTextPart.addProperty("type", "text");
-        emptyTextPart.addProperty("text", "");
-
-        JsonObject toolPart = toolInvocationPart("tc1", "search_text", "{\"query\":\"foo\"}", "found");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(emptyTextPart, toolPart),
-            System.currentTimeMillis(), null, null);
+        // Simulates a tool-only assistant turn preceded by an empty text entry
+        List<EntryData> entries = List.of(
+            userPrompt("search"),
+            assistantText(""),  // empty — exporter skips
+            toolCall("search_text", "{\"query\":\"foo\"}", "found")
+        );
 
         Path target = tempDir.resolve("tool-only.jsonl");
-        AnthropicClientExporter.exportToFile(EntryDataConverter.fromMessages(List.of(userMessage("search"), assistant)), target);
+        AnthropicClientExporter.exportToFile(entries, target);
 
         String content = Files.readString(target, StandardCharsets.UTF_8);
         assertFalse(content.contains("\"text\":\"\""),
@@ -611,41 +568,25 @@ class AnthropicClientRoundTripTest {
         assertTrue(content.contains("\"type\":\"tool_use\""));
     }
 
-    private List<SessionMessage> importJsonl(String jsonl) throws IOException {
+    private List<EntryData> importJsonl(String jsonl) throws IOException {
         Path file = tempDir.resolve("test.jsonl");
         Files.writeString(file, jsonl, StandardCharsets.UTF_8);
         return AnthropicClientImporter.importFile(file);
     }
 
-    private static SessionMessage userMessage(String text) {
-        return new SessionMessage("u-" + text.hashCode(), "user", List.of(textPart(text)),
-            System.currentTimeMillis(), null, null);
+    private static EntryData.Prompt userPrompt(String text) {
+        return new EntryData.Prompt(text, Instant.now().toString(), null, "", "");
     }
 
-    private static SessionMessage assistantMessage(String text) {
-        return new SessionMessage("a-" + text.hashCode(), "assistant", List.of(textPart(text)),
-            System.currentTimeMillis(), null, null);
+    private static EntryData.Text assistantText(String text) {
+        return new EntryData.Text(new StringBuilder(text), Instant.now().toString(), "", "", "");
     }
 
-    private static JsonObject textPart(String text) {
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "text");
-        part.addProperty("text", text);
-        return part;
-    }
-
-    private static JsonObject toolInvocationPart(String callId, String toolName, String args, String result) {
-        JsonObject invocation = new JsonObject();
-        invocation.addProperty("state", "result");
-        invocation.addProperty("toolCallId", callId);
-        invocation.addProperty("toolName", toolName);
-        invocation.addProperty("args", args);
-        invocation.addProperty("result", result);
-
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "tool-invocation");
-        part.add("toolInvocation", invocation);
-        return part;
+    private static EntryData.ToolCall toolCall(String toolName, String args, String result) {
+        return new EntryData.ToolCall(
+            toolName, args, "other", result,
+            null, null, null, false, null, false,
+            Instant.now().toString(), "", "", "");
     }
 
     @Test
@@ -677,15 +618,5 @@ class AnthropicClientRoundTripTest {
         assertEquals("unknown_tool", AnthropicClientExporter.sanitizeToolName(""));
         assertEquals("unknown_tool", AnthropicClientExporter.sanitizeToolName("..."));
         assertEquals("a", AnthropicClientExporter.sanitizeToolName("a"));
-    }
-
-    private static String extractText(SessionMessage msg) {
-        StringBuilder sb = new StringBuilder();
-        for (JsonObject part : msg.parts) {
-            if ("text".equals(part.get("type").getAsString())) {
-                sb.append(part.get("text").getAsString());
-            }
-        }
-        return sb.toString();
     }
 }

@@ -1,6 +1,6 @@
 package com.github.catatafishen.ideagentforcopilot.session.importers;
 
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -25,15 +26,16 @@ public final class AnthropicClientImporter {
     }
 
     @NotNull
-    public static List<SessionMessage> importFile(@NotNull Path path) throws IOException {
+    public static List<EntryData> importFile(@NotNull Path path) throws IOException {
         String content = Files.readString(path, StandardCharsets.UTF_8);
         List<JsonObject> rawMessages = JsonlUtil.parseJsonl(content);
         return convertMessages(rawMessages);
     }
 
     @NotNull
-    private static List<SessionMessage> convertMessages(@NotNull List<JsonObject> rawMessages) {
-        List<SessionMessage> result = new ArrayList<>();
+    private static List<EntryData> convertMessages(@NotNull List<JsonObject> rawMessages) {
+        List<EntryData> result = new ArrayList<>();
+        String timestamp = Instant.now().toString();
 
         for (int i = 0; i < rawMessages.size(); i++) {
             JsonObject raw = rawMessages.get(i);
@@ -46,43 +48,38 @@ public final class AnthropicClientImporter {
                     continue;
                 }
 
-                List<JsonObject> parts = new ArrayList<>();
+                StringBuilder textBuilder = new StringBuilder();
                 for (JsonElement block : content) {
                     if (!block.isJsonObject()) continue;
                     JsonObject b = block.getAsJsonObject();
                     String type = JsonlUtil.getStr(b, "type");
                     if ("text".equals(type)) {
-                        JsonObject part = new JsonObject();
-                        part.addProperty("type", "text");
-                        part.addProperty("text", JsonlUtil.getStr(b, "text"));
-                        parts.add(part);
+                        String text = JsonlUtil.getStr(b, "text");
+                        if (text != null && !text.isEmpty()) {
+                            if (!textBuilder.isEmpty()) textBuilder.append('\n');
+                            textBuilder.append(text);
+                        }
                     }
                 }
 
-                if (!parts.isEmpty()) {
-                    result.add(new SessionMessage(
-                        UUID.randomUUID().toString(),
-                        "user",
-                        parts,
-                        System.currentTimeMillis(),
-                        null,
-                        null));
+                if (!textBuilder.isEmpty()) {
+                    result.add(new EntryData.Prompt(textBuilder.toString(), timestamp, null, "", ""));
                 }
 
             } else if ("assistant".equals(role)) {
                 ToolResultMap toolResults = collectToolResultsFromFollowing(rawMessages, i + 1);
 
-                List<JsonObject> parts = new ArrayList<>();
                 for (JsonElement block : content) {
                     if (!block.isJsonObject()) continue;
                     JsonObject b = block.getAsJsonObject();
                     String type = JsonlUtil.getStr(b, "type");
 
                     if ("text".equals(type)) {
-                        JsonObject part = new JsonObject();
-                        part.addProperty("type", "text");
-                        part.addProperty("text", JsonlUtil.getStr(b, "text"));
-                        parts.add(part);
+                        String text = JsonlUtil.getStr(b, "text");
+                        if (text != null && !text.isEmpty()) {
+                            result.add(new EntryData.Text(
+                                new StringBuilder(text), timestamp, "", "", ""));
+                        }
 
                     } else if ("tool_use".equals(type)) {
                         String toolCallId = JsonlUtil.getStr(b, "id");
@@ -92,32 +89,19 @@ public final class AnthropicClientImporter {
                         String argsJson = b.has("input") ? GSON.toJson(b.get("input")) : "{}";
 
                         @Nullable String resultContent = toolResults.get(toolCallId);
-                        boolean hasResult = resultContent != null;
 
-                        JsonObject invocation = new JsonObject();
-                        invocation.addProperty("state", hasResult ? "result" : "call");
-                        invocation.addProperty("toolCallId", toolCallId);
-                        invocation.addProperty("toolName", toolName);
-                        invocation.addProperty("args", argsJson);
-                        if (hasResult) {
-                            invocation.addProperty("result", resultContent);
+                        result.add(new EntryData.ToolCall(
+                            toolName, argsJson, "other", resultContent,
+                            null, null, null, false, null, false,
+                            timestamp, "", "", ""));
+
+                    } else if ("thinking".equals(type) || "reasoning".equals(type)) {
+                        String text = JsonlUtil.getStr(b, "text");
+                        if (text != null && !text.isEmpty()) {
+                            result.add(new EntryData.Thinking(
+                                new StringBuilder(text), timestamp, "", "", ""));
                         }
-
-                        JsonObject part = new JsonObject();
-                        part.addProperty("type", "tool-invocation");
-                        part.add("toolInvocation", invocation);
-                        parts.add(part);
                     }
-                }
-
-                if (!parts.isEmpty()) {
-                    result.add(new SessionMessage(
-                        UUID.randomUUID().toString(),
-                        "assistant",
-                        parts,
-                        System.currentTimeMillis(),
-                        null,
-                        null));
                 }
             }
         }

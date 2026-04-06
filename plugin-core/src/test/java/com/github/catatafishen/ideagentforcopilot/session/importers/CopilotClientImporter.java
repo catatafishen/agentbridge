@@ -1,11 +1,10 @@
 package com.github.catatafishen.ideagentforcopilot.session.importers;
 
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -13,6 +12,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,15 +27,15 @@ public final class CopilotClientImporter {
     }
 
     @NotNull
-    public static List<SessionMessage> importFile(@NotNull Path path) throws IOException {
+    public static List<EntryData> importFile(@NotNull Path path) throws IOException {
         String content = Files.readString(path, StandardCharsets.UTF_8);
         List<JsonObject> events = JsonlUtil.parseJsonl(content);
         return processEvents(events);
     }
 
     @NotNull
-    private static List<SessionMessage> processEvents(@NotNull List<JsonObject> events) {
-        List<SessionMessage> result = new ArrayList<>();
+    private static List<EntryData> processEvents(@NotNull List<JsonObject> events) {
+        List<EntryData> result = new ArrayList<>();
         AssistantBuffer assistantBuffer = null;
         @Nullable String currentModel = null;
 
@@ -43,34 +43,22 @@ public final class CopilotClientImporter {
             String type = JsonlUtil.getStr(event, "type");
             JsonObject data = JsonlUtil.getObject(event, "data");
             if (data == null) data = new JsonObject();
+            String eventTs = extractEventTimestamp(event);
 
             switch (type) {
                 case "session.start" -> {
-                    if (data != null) {
-                        currentModel = JsonlUtil.getStr(data, "selectedModel");
-                    }
+                    currentModel = JsonlUtil.getStr(data, "selectedModel");
                 }
 
                 case "user.message" -> {
                     if (assistantBuffer != null) {
-                        SessionMessage msg = assistantBuffer.build(currentModel);
-                        if (msg != null) result.add(msg);
+                        result.addAll(assistantBuffer.build());
                         assistantBuffer = null;
                     }
 
-                    String userContent = data != null ? JsonlUtil.getStr(data, "content") : null;
+                    String userContent = JsonlUtil.getStr(data, "content");
                     if (userContent != null && !userContent.isEmpty()) {
-                        JsonObject textPart = new JsonObject();
-                        textPart.addProperty("type", "text");
-                        textPart.addProperty("text", userContent);
-
-                        result.add(new SessionMessage(
-                            UUID.randomUUID().toString(),
-                            "user",
-                            List.of(textPart),
-                            System.currentTimeMillis(),
-                            null,
-                            null));
+                        result.add(new EntryData.Prompt(userContent, eventTs, null));
                     }
                 }
 
@@ -78,12 +66,13 @@ public final class CopilotClientImporter {
                     if (assistantBuffer == null) {
                         assistantBuffer = new AssistantBuffer();
                     }
-                    String reasoningContent = data != null ? JsonlUtil.getStr(data, "content") : null;
+                    String reasoningContent = JsonlUtil.getStr(data, "content");
                     if (reasoningContent != null && !reasoningContent.isEmpty()) {
-                        JsonObject reasoningPart = new JsonObject();
-                        reasoningPart.addProperty("type", "reasoning");
-                        reasoningPart.addProperty("text", reasoningContent);
-                        assistantBuffer.addPart(reasoningPart);
+                        assistantBuffer.addEntry(new EntryData.Thinking(
+                            new StringBuilder(reasoningContent),
+                            eventTs,
+                            "",
+                            currentModel != null ? currentModel : ""));
                     }
                 }
 
@@ -91,14 +80,21 @@ public final class CopilotClientImporter {
                     if (assistantBuffer == null) {
                         assistantBuffer = new AssistantBuffer();
                     }
-                    String textContent = data != null ? JsonlUtil.getStr(data, "content") : null;
-                    if (textContent != null && !textContent.isEmpty()) {
-                        JsonObject textPart = new JsonObject();
-                        textPart.addProperty("type", "text");
-                        textPart.addProperty("text", textContent);
-                        assistantBuffer.addPart(textPart);
+                    // Update model first so entries created below have the latest model
+                    String messageModel = JsonlUtil.getStr(data, "model");
+                    if (messageModel != null && !messageModel.isEmpty()) {
+                        currentModel = messageModel;
                     }
-                    if (data != null && data.has("toolRequests") && data.get("toolRequests").isJsonArray()) {
+
+                    String textContent = JsonlUtil.getStr(data, "content");
+                    if (textContent != null && !textContent.isEmpty()) {
+                        assistantBuffer.addEntry(new EntryData.Text(
+                            new StringBuilder(textContent),
+                            eventTs,
+                            "",
+                            currentModel != null ? currentModel : ""));
+                    }
+                    if (data.has("toolRequests") && data.get("toolRequests").isJsonArray()) {
                         for (JsonElement toolReqEl : data.getAsJsonArray("toolRequests")) {
                             if (!toolReqEl.isJsonObject()) continue;
                             JsonObject toolReq = toolReqEl.getAsJsonObject();
@@ -109,28 +105,21 @@ public final class CopilotClientImporter {
                             if (toolName == null) toolName = "unknown";
                             String argsJson = toolReq.has("arguments") ? GSON.toJson(toolReq.get("arguments")) : "{}";
 
-                            JsonObject invocation = new JsonObject();
-                            invocation.addProperty("state", "call");
-                            invocation.addProperty("toolCallId", toolCallId);
-                            invocation.addProperty("toolName", toolName);
-                            invocation.addProperty("args", argsJson);
+                            EntryData.ToolCall toolCall = new EntryData.ToolCall(
+                                toolName, argsJson, "other", null, null,
+                                null, null, false, null, false,
+                                eventTs, "",
+                                currentModel != null ? currentModel : "");
 
-                            JsonObject toolPart = new JsonObject();
-                            toolPart.addProperty("type", "tool-invocation");
-                            toolPart.add("toolInvocation", invocation);
-
-                            int partIndex = assistantBuffer.addPart(toolPart);
-                            assistantBuffer.trackToolCall(toolCallId, partIndex);
+                            int entryIndex = assistantBuffer.addEntry(toolCall);
+                            assistantBuffer.trackToolCall(toolCallId, entryIndex);
                         }
-                    }
-                    if (data != null) {
-                        currentModel = JsonlUtil.getStr(data, "model");
                     }
                 }
 
                 case "tool.execution_complete" -> {
                     if (assistantBuffer == null) break;
-                    String toolCallId = data != null ? JsonlUtil.getStr(data, "toolCallId") : null;
+                    String toolCallId = JsonlUtil.getStr(data, "toolCallId");
                     if (toolCallId == null || toolCallId.isEmpty()) break;
 
                     String resultContent = extractExecutionResult(data);
@@ -139,8 +128,7 @@ public final class CopilotClientImporter {
 
                 case "assistant.turn_end" -> {
                     if (assistantBuffer != null) {
-                        SessionMessage msg = assistantBuffer.build(currentModel);
-                        if (msg != null) result.add(msg);
+                        result.addAll(assistantBuffer.build());
                         assistantBuffer = null;
                     }
                 }
@@ -149,38 +137,36 @@ public final class CopilotClientImporter {
                     if (assistantBuffer == null) {
                         assistantBuffer = new AssistantBuffer();
                     }
-                    String toolCallId = data != null ? JsonlUtil.getStr(data, "toolCallId") : null;
-                    String agentName = data != null ? JsonlUtil.getStr(data, "agentName") : null;
+                    String toolCallId = JsonlUtil.getStr(data, "toolCallId");
+                    String agentName = JsonlUtil.getStr(data, "agentName");
                     if (agentName == null) agentName = "general-purpose";
-                    String agentDisplayName = data != null ? JsonlUtil.getStr(data, "agentDisplayName") : null;
+                    String agentDisplayName = JsonlUtil.getStr(data, "agentDisplayName");
                     if (agentDisplayName == null) agentDisplayName = agentName;
 
-                    JsonObject subagentPart = new JsonObject();
-                    subagentPart.addProperty("type", "subagent");
-                    subagentPart.addProperty("agentType", agentName);
-                    subagentPart.addProperty("description", agentDisplayName);
-                    subagentPart.addProperty("status", "running");
+                    EntryData.SubAgent subAgent = new EntryData.SubAgent(
+                        agentName, agentDisplayName, null, null, "running",
+                        0, toolCallId, false, null,
+                        eventTs, "",
+                        currentModel != null ? currentModel : "");
 
-                    int partIndex = assistantBuffer.addPart(subagentPart);
+                    int entryIndex = assistantBuffer.addEntry(subAgent);
                     if (toolCallId != null && !toolCallId.isEmpty()) {
-                        assistantBuffer.trackSubagent(toolCallId, partIndex);
+                        assistantBuffer.trackSubagent(toolCallId, entryIndex);
                     }
                 }
 
                 case "subagent.completed" -> {
                     if (assistantBuffer == null) break;
-                    String toolCallId = data != null ? JsonlUtil.getStr(data, "toolCallId") : null;
+                    String toolCallId = JsonlUtil.getStr(data, "toolCallId");
                     if (toolCallId != null && !toolCallId.isEmpty()) {
                         assistantBuffer.upgradeSubagentToDone(toolCallId);
                     }
                 }
 
                 case "assistant.usage" -> {
-                    if (data != null) {
-                        String model = JsonlUtil.getStr(data, "model");
-                        if (model != null && !model.isEmpty()) {
-                            currentModel = model;
-                        }
+                    String model = JsonlUtil.getStr(data, "model");
+                    if (model != null && !model.isEmpty()) {
+                        currentModel = model;
                     }
                 }
 
@@ -190,11 +176,16 @@ public final class CopilotClientImporter {
         }
 
         if (assistantBuffer != null) {
-            SessionMessage msg = assistantBuffer.build(currentModel);
-            if (msg != null) result.add(msg);
+            result.addAll(assistantBuffer.build());
         }
 
         return result;
+    }
+
+    @NotNull
+    private static String extractEventTimestamp(@NotNull JsonObject event) {
+        String ts = JsonlUtil.getStr(event, "timestamp");
+        return (ts != null && !ts.isEmpty()) ? ts : Instant.now().toString();
     }
 
     @NotNull
@@ -223,60 +214,47 @@ public final class CopilotClientImporter {
     }
 
     private static final class AssistantBuffer {
-        private final List<JsonObject> parts = new ArrayList<>();
+        private final List<EntryData> entries = new ArrayList<>();
         private final Map<String, Integer> toolCallIndexes = new LinkedHashMap<>();
         private final Map<String, Integer> subagentIndexes = new LinkedHashMap<>();
 
-        int addPart(@NotNull JsonObject part) {
-            int idx = parts.size();
-            parts.add(part);
+        int addEntry(@NotNull EntryData entry) {
+            int idx = entries.size();
+            entries.add(entry);
             return idx;
         }
 
-        void trackToolCall(@NotNull String toolCallId, int partIndex) {
-            toolCallIndexes.put(toolCallId, partIndex);
+        void trackToolCall(@NotNull String toolCallId, int entryIndex) {
+            toolCallIndexes.put(toolCallId, entryIndex);
         }
 
-        void trackSubagent(@NotNull String toolCallId, int partIndex) {
-            subagentIndexes.put(toolCallId, partIndex);
+        void trackSubagent(@NotNull String toolCallId, int entryIndex) {
+            subagentIndexes.put(toolCallId, entryIndex);
         }
 
         void upgradeToolCallToResult(@NotNull String toolCallId, @NotNull String resultContent) {
             Integer idx = toolCallIndexes.get(toolCallId);
-            if (idx == null || idx < 0 || idx >= parts.size()) return;
-
-            JsonObject existing = parts.get(idx);
-            if (!existing.has("toolInvocation")) return;
-
-            JsonObject invocation = existing.getAsJsonObject("toolInvocation").deepCopy();
-            invocation.addProperty("state", "result");
-            invocation.addProperty("result", resultContent);
-
-            JsonObject updated = new JsonObject();
-            updated.addProperty("type", "tool-invocation");
-            updated.add("toolInvocation", invocation);
-            parts.set(idx, updated);
+            if (idx == null || idx < 0 || idx >= entries.size()) return;
+            EntryData entry = entries.get(idx);
+            if (entry instanceof EntryData.ToolCall tc) {
+                tc.setResult(resultContent);
+                tc.setStatus("done");
+            }
         }
 
         void upgradeSubagentToDone(@NotNull String toolCallId) {
             Integer idx = subagentIndexes.get(toolCallId);
-            if (idx == null || idx < 0 || idx >= parts.size()) return;
-
-            JsonObject existing = parts.get(idx).deepCopy();
-            existing.addProperty("status", "done");
-            parts.set(idx, existing);
+            if (idx == null || idx < 0 || idx >= entries.size()) return;
+            EntryData entry = entries.get(idx);
+            if (entry instanceof EntryData.SubAgent sa) {
+                sa.setStatus("done");
+            }
         }
 
-        @Nullable
-        SessionMessage build(@Nullable String model) {
-            if (parts.isEmpty()) return null;
-            return new SessionMessage(
-                UUID.randomUUID().toString(),
-                "assistant",
-                new ArrayList<>(parts),
-                System.currentTimeMillis(),
-                null,
-                model);
+        @NotNull
+        List<EntryData> build() {
+            if (entries.isEmpty()) return List.of();
+            return new ArrayList<>(entries);
         }
     }
 }

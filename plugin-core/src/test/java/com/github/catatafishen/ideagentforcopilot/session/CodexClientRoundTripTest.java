@@ -2,9 +2,7 @@ package com.github.catatafishen.ideagentforcopilot.session;
 
 import com.github.catatafishen.ideagentforcopilot.session.exporters.CodexClientExporter;
 import com.github.catatafishen.ideagentforcopilot.session.importers.CodexClientImporter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.EntryDataConverter;
-import com.github.catatafishen.ideagentforcopilot.session.v2.SessionMessage;
-import com.google.gson.JsonObject;
+import com.github.catatafishen.ideagentforcopilot.ui.EntryData;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -27,8 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Tests for {@link CodexClientImporter} and {@link CodexClientExporter}.
  * Validates import, export, and round-trip conversion between Codex's native
- * rollout JSONL format (+ SQLite {@code threads} table) and the v2
- * {@link SessionMessage} model.
+ * rollout JSONL format (+ SQLite {@code threads} table) and the
+ * {@link EntryData} model.
  */
 class CodexClientRoundTripTest {
 
@@ -44,13 +42,13 @@ class CodexClientRoundTripTest {
             "{\"type\":\"message\",\"role\":\"assistant\",\"id\":\"resp_abc\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hi there!\"}]}"
         );
 
-        List<SessionMessage> messages = CodexClientImporter.importRolloutFile(rollout);
+        List<EntryData> entries = CodexClientImporter.importRolloutFile(rollout);
 
-        assertEquals(2, messages.size());
-        assertEquals("user", messages.get(0).role);
-        assertEquals("Hello", extractText(messages.get(0)));
-        assertEquals("assistant", messages.get(1).role);
-        assertEquals("Hi there!", extractText(messages.get(1)));
+        assertEquals(2, entries.size());
+        assertTrue(entries.get(0) instanceof EntryData.Prompt);
+        assertEquals("Hello", ((EntryData.Prompt) entries.get(0)).getText());
+        assertTrue(entries.get(1) instanceof EntryData.Text);
+        assertEquals("Hi there!", ((EntryData.Text) entries.get(1)).getRaw().toString());
     }
 
     @Test
@@ -62,23 +60,18 @@ class CodexClientRoundTripTest {
             "{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"The file contains: file data\"}]}"
         );
 
-        List<SessionMessage> messages = CodexClientImporter.importRolloutFile(rollout);
+        List<EntryData> entries = CodexClientImporter.importRolloutFile(rollout);
 
-        assertEquals(2, messages.size());
+        assertEquals(3, entries.size());
 
-        SessionMessage assistant = messages.get(1);
         boolean foundTool = false;
         boolean foundText = false;
-        for (JsonObject part : assistant.parts) {
-            String type = part.get("type").getAsString();
-            if ("tool-invocation".equals(type)) {
+        for (EntryData entry : entries) {
+            if (entry instanceof EntryData.ToolCall tc) {
                 foundTool = true;
-                JsonObject inv = part.getAsJsonObject("toolInvocation");
-                assertEquals("result", inv.get("state").getAsString());
-                assertEquals("call_1", inv.get("toolCallId").getAsString());
-                assertEquals("read_file", inv.get("toolName").getAsString());
-                assertEquals("file data", inv.get("result").getAsString());
-            } else if ("text".equals(type)) {
+                assertEquals("read_file", tc.getTitle());
+                assertEquals("file data", tc.getResult());
+            } else if (entry instanceof EntryData.Text) {
                 foundText = true;
             }
         }
@@ -94,15 +87,14 @@ class CodexClientRoundTripTest {
             "{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Done thinking\"}]}"
         );
 
-        List<SessionMessage> messages = CodexClientImporter.importRolloutFile(rollout);
-        assertEquals(2, messages.size());
+        List<EntryData> entries = CodexClientImporter.importRolloutFile(rollout);
+        assertEquals(3, entries.size());
 
-        SessionMessage assistant = messages.get(1);
         boolean hasReasoning = false;
-        for (JsonObject part : assistant.parts) {
-            if ("reasoning".equals(part.get("type").getAsString())) {
+        for (EntryData entry : entries) {
+            if (entry instanceof EntryData.Thinking t) {
                 hasReasoning = true;
-                assertEquals("Let me consider...", part.get("text").getAsString());
+                assertEquals("Let me consider...", t.getRaw().toString());
             }
         }
         assertTrue(hasReasoning, "Should have reasoning part");
@@ -116,8 +108,8 @@ class CodexClientRoundTripTest {
             "{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"Hello\"}]}"
         );
 
-        List<SessionMessage> messages = CodexClientImporter.importRolloutFile(rollout);
-        assertEquals(2, messages.size());
+        List<EntryData> entries = CodexClientImporter.importRolloutFile(rollout);
+        assertEquals(2, entries.size());
     }
 
     @Test
@@ -133,25 +125,25 @@ class CodexClientRoundTripTest {
             "{\"type\":\"function_call_output\",\"call_id\":\"orphan_1\",\"output\":\"orphan result\"}"
         );
 
-        List<SessionMessage> messages = CodexClientImporter.importRolloutFile(rollout);
-        // user + flushed assistant with orphan tool
-        assertEquals(2, messages.size());
+        List<EntryData> entries = CodexClientImporter.importRolloutFile(rollout);
+        // user prompt + flushed orphan tool call
+        assertEquals(2, entries.size());
     }
 
     // ── Export tests ─────────────────────────────────────────────────
 
     @Test
     void exportSessionCreatesRolloutAndInsertThread() throws IOException, SQLException {
-        List<SessionMessage> messages = List.of(
-            userMessage("Hello"),
-            assistantMessage("World")
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Hello"),
+            new EntryData.Text(new StringBuilder("World"))
         );
 
         Path sessionsDir = tempDir.resolve("sessions");
         Path dbPath = tempDir.resolve("codex.db");
         createThreadsTable(dbPath);
 
-        String threadId = CodexClientExporter.exportSession(EntryDataConverter.fromMessages(messages), sessionsDir, dbPath);
+        String threadId = CodexClientExporter.exportSession(entries, sessionsDir, dbPath);
         assertNotNull(threadId);
 
         // Verify thread row exists
@@ -176,21 +168,19 @@ class CodexClientRoundTripTest {
     void exportEmptyMessagesReturnsNull() {
         Path sessionsDir = tempDir.resolve("sessions");
         Path dbPath = tempDir.resolve("codex.db");
-        assertNull(CodexClientExporter.exportSession(EntryDataConverter.fromMessages(List.of()), sessionsDir, dbPath));
+        assertNull(CodexClientExporter.exportSession(List.of(), sessionsDir, dbPath));
     }
 
     @Test
     void exportProducesToolCallItems() throws IOException, SQLException {
-        JsonObject toolPart = toolInvocationPart("call_1", "read_file", "{\"path\":\"/a\"}", "data");
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(toolPart), System.currentTimeMillis(), null, null);
+        EntryData.ToolCall toolCall = new EntryData.ToolCall("read_file", "{\"path\":\"/a\"}", "other", "data");
 
         Path sessionsDir = tempDir.resolve("sessions");
         Path dbPath = tempDir.resolve("codex.db");
         createThreadsTable(dbPath);
 
-        String threadId = CodexClientExporter.exportSession(EntryDataConverter.fromMessages(
-            List.of(userMessage("read"), assistant)), sessionsDir, dbPath);
+        String threadId = CodexClientExporter.exportSession(
+            List.of(new EntryData.Prompt("read"), toolCall), sessionsDir, dbPath);
         assertNotNull(threadId);
 
         String content = Files.readString(sessionsDir.resolve(threadId).resolve("rollout.jsonl"));
@@ -213,10 +203,10 @@ class CodexClientRoundTripTest {
         createThreadsTable(dbPath);
         insertThread(dbPath, "thread-1", rolloutFile.toString(), 1000, 2000);
 
-        List<SessionMessage> messages = CodexClientImporter.importLatestThread(dbPath);
-        assertEquals(2, messages.size());
-        assertEquals("Test question", extractText(messages.get(0)));
-        assertEquals("Test answer", extractText(messages.get(1)));
+        List<EntryData> entries = CodexClientImporter.importLatestThread(dbPath);
+        assertEquals(2, entries.size());
+        assertEquals("Test question", extractText(entries.get(0)));
+        assertEquals("Test answer", extractText(entries.get(1)));
     }
 
     @Test
@@ -232,9 +222,9 @@ class CodexClientRoundTripTest {
         insertThread(dbPath, "old-thread", oldRollout.toString(), 100, 100);
         insertThread(dbPath, "new-thread", newRollout.toString(), 200, 200);
 
-        List<SessionMessage> messages = CodexClientImporter.importLatestThread(dbPath);
-        assertEquals(1, messages.size());
-        assertEquals("New", extractText(messages.get(0)));
+        List<EntryData> entries = CodexClientImporter.importLatestThread(dbPath);
+        assertEquals(1, entries.size());
+        assertEquals("New", extractText(entries.get(0)));
     }
 
     @Test
@@ -247,8 +237,8 @@ class CodexClientRoundTripTest {
         insertThread(dbPath, "arch-thread", rollout.toString(), 100, 100);
         archiveThread(dbPath, "arch-thread");
 
-        List<SessionMessage> messages = CodexClientImporter.importLatestThread(dbPath);
-        assertTrue(messages.isEmpty(), "Archived threads should not be imported");
+        List<EntryData> entries = CodexClientImporter.importLatestThread(dbPath);
+        assertTrue(entries.isEmpty(), "Archived threads should not be imported");
     }
 
     @Test
@@ -261,20 +251,20 @@ class CodexClientRoundTripTest {
 
     @Test
     void roundTripPreservesTextContent() throws IOException, SQLException {
-        List<SessionMessage> original = List.of(
-            userMessage("What is Rust?"),
-            assistantMessage("A systems language.")
+        List<EntryData> original = List.of(
+            new EntryData.Prompt("What is Rust?"),
+            new EntryData.Text(new StringBuilder("A systems language."))
         );
 
         Path sessionsDir = tempDir.resolve("rt-sessions");
         Path dbPath = tempDir.resolve("rt-codex.db");
         createThreadsTable(dbPath);
 
-        String threadId = CodexClientExporter.exportSession(EntryDataConverter.fromMessages(original), sessionsDir, dbPath);
+        String threadId = CodexClientExporter.exportSession(original, sessionsDir, dbPath);
         assertNotNull(threadId);
 
         Path rolloutFile = sessionsDir.resolve(threadId).resolve("rollout.jsonl");
-        List<SessionMessage> imported = CodexClientImporter.importRolloutFile(rolloutFile);
+        List<EntryData> imported = CodexClientImporter.importRolloutFile(rolloutFile);
 
         assertEquals(2, imported.size());
         assertEquals("What is Rust?", extractText(imported.get(0)));
@@ -283,36 +273,32 @@ class CodexClientRoundTripTest {
 
     @Test
     void roundTripPreservesToolCalls() throws IOException, SQLException {
-        JsonObject textPart = textPart("Reading file");
-        JsonObject toolPart = toolInvocationPart("call_1", "read_file", "{\"path\":\"/a\"}", "file data");
+        EntryData.ToolCall toolCall = new EntryData.ToolCall("read_file", "{\"path\":\"/a\"}", "other", "file data");
 
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(textPart, toolPart),
-            System.currentTimeMillis(), null, null);
-
-        List<SessionMessage> original = List.of(userMessage("Read /a"), assistant);
+        List<EntryData> original = List.of(
+            new EntryData.Prompt("Read /a"),
+            new EntryData.Text(new StringBuilder("Reading file")),
+            toolCall
+        );
 
         Path sessionsDir = tempDir.resolve("rt-sessions-tools");
         Path dbPath = tempDir.resolve("rt-codex-tools.db");
         createThreadsTable(dbPath);
 
-        String threadId = CodexClientExporter.exportSession(EntryDataConverter.fromMessages(original), sessionsDir, dbPath);
+        String threadId = CodexClientExporter.exportSession(original, sessionsDir, dbPath);
         assertNotNull(threadId);
 
         Path rolloutFile = sessionsDir.resolve(threadId).resolve("rollout.jsonl");
-        List<SessionMessage> imported = CodexClientImporter.importRolloutFile(rolloutFile);
+        List<EntryData> imported = CodexClientImporter.importRolloutFile(rolloutFile);
 
-        assertEquals(2, imported.size());
-        SessionMessage importedAssistant = imported.get(1);
+        assertEquals(3, imported.size());
 
         boolean foundTool = false;
-        for (JsonObject part : importedAssistant.parts) {
-            if ("tool-invocation".equals(part.get("type").getAsString())) {
+        for (EntryData entry : imported) {
+            if (entry instanceof EntryData.ToolCall tc) {
                 foundTool = true;
-                JsonObject inv = part.getAsJsonObject("toolInvocation");
-                assertEquals("result", inv.get("state").getAsString());
-                assertEquals("read_file", inv.get("toolName").getAsString());
-                assertEquals("file data", inv.get("result").getAsString());
+                assertEquals("read_file", tc.getTitle());
+                assertEquals("file data", tc.getResult());
             }
         }
         assertTrue(foundTool);
@@ -320,36 +306,29 @@ class CodexClientRoundTripTest {
 
     @Test
     void roundTripPreservesReasoning() throws IOException, SQLException {
-        JsonObject reasoning = new JsonObject();
-        reasoning.addProperty("type", "reasoning");
-        reasoning.addProperty("text", "Let me think...");
-
-        JsonObject text = textPart("Here is my answer");
-
-        SessionMessage assistant = new SessionMessage(
-            "a1", "assistant", List.of(reasoning, text),
-            System.currentTimeMillis(), null, null);
-
-        List<SessionMessage> original = List.of(userMessage("Think"), assistant);
+        List<EntryData> original = List.of(
+            new EntryData.Prompt("Think"),
+            new EntryData.Thinking(new StringBuilder("Let me think...")),
+            new EntryData.Text(new StringBuilder("Here is my answer"))
+        );
 
         Path sessionsDir = tempDir.resolve("rt-sessions-reasoning");
         Path dbPath = tempDir.resolve("rt-codex-reasoning.db");
         createThreadsTable(dbPath);
 
-        String threadId = CodexClientExporter.exportSession(EntryDataConverter.fromMessages(original), sessionsDir, dbPath);
+        String threadId = CodexClientExporter.exportSession(original, sessionsDir, dbPath);
         assertNotNull(threadId);
 
         Path rolloutFile = sessionsDir.resolve(threadId).resolve("rollout.jsonl");
-        List<SessionMessage> imported = CodexClientImporter.importRolloutFile(rolloutFile);
+        List<EntryData> imported = CodexClientImporter.importRolloutFile(rolloutFile);
 
-        assertEquals(2, imported.size());
-        SessionMessage importedAssistant = imported.get(1);
+        assertEquals(3, imported.size());
 
         boolean foundReasoning = false;
-        for (JsonObject part : importedAssistant.parts) {
-            if ("reasoning".equals(part.get("type").getAsString())) {
+        for (EntryData entry : imported) {
+            if (entry instanceof EntryData.Thinking t) {
                 foundReasoning = true;
-                assertEquals("Let me think...", part.get("text").getAsString());
+                assertEquals("Let me think...", t.getRaw().toString());
             }
         }
         assertTrue(foundReasoning, "Reasoning should survive round-trip");
@@ -363,45 +342,10 @@ class CodexClientRoundTripTest {
         return file;
     }
 
-    private static SessionMessage userMessage(String text) {
-        return new SessionMessage("u-" + text.hashCode(), "user", List.of(textPart(text)),
-            System.currentTimeMillis(), null, null);
-    }
-
-    private static SessionMessage assistantMessage(String text) {
-        return new SessionMessage("a-" + text.hashCode(), "assistant", List.of(textPart(text)),
-            System.currentTimeMillis(), "Codex", null);
-    }
-
-    private static JsonObject textPart(String text) {
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "text");
-        part.addProperty("text", text);
-        return part;
-    }
-
-    private static JsonObject toolInvocationPart(String callId, String toolName, String args, String result) {
-        JsonObject invocation = new JsonObject();
-        invocation.addProperty("state", "result");
-        invocation.addProperty("toolCallId", callId);
-        invocation.addProperty("toolName", toolName);
-        invocation.addProperty("args", args);
-        invocation.addProperty("result", result);
-
-        JsonObject part = new JsonObject();
-        part.addProperty("type", "tool-invocation");
-        part.add("toolInvocation", invocation);
-        return part;
-    }
-
-    private static String extractText(SessionMessage msg) {
-        StringBuilder sb = new StringBuilder();
-        for (JsonObject part : msg.parts) {
-            if ("text".equals(part.get("type").getAsString())) {
-                sb.append(part.get("text").getAsString());
-            }
-        }
-        return sb.toString();
+    private static String extractText(EntryData entry) {
+        if (entry instanceof EntryData.Prompt p) return p.getText();
+        if (entry instanceof EntryData.Text t) return t.getRaw().toString();
+        return "";
     }
 
     private static void createThreadsTable(Path dbPath) throws SQLException {
