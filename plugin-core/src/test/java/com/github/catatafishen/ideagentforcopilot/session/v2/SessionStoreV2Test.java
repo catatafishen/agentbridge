@@ -283,7 +283,7 @@ class SessionStoreV2Test {
         EntryData.ToolCall tc = (EntryData.ToolCall) result.get(0);
         assertTrue(tc.getAutoDenied());
         assertEquals("Operation not allowed", tc.getDenialReason());
-        assertTrue(tc.getMcpHandled());
+        assertEquals("deleteFile", tc.getPluginTool());
     }
 
     @Test
@@ -877,7 +877,7 @@ class SessionStoreV2Test {
             "/a.txt",
             true,
             "User declined",
-            true,
+            "editFile",
             "2024-01-01T00:00:00Z",
             "copilot",
             "gpt-4",
@@ -899,7 +899,7 @@ class SessionStoreV2Test {
         assertEquals("/a.txt", tc.getFilePath());
         assertTrue(tc.getAutoDenied());
         assertEquals("User declined", tc.getDenialReason());
-        assertTrue(tc.getMcpHandled());
+        assertEquals("editFile", tc.getPluginTool());
         assertEquals("2024-01-01T00:00:00Z", tc.getTimestamp());
         assertEquals("copilot", tc.getAgent());
         assertEquals("gpt-4", tc.getModel());
@@ -918,7 +918,7 @@ class SessionStoreV2Test {
             null,       // filePath
             false,
             null,       // denialReason
-            false,
+            null,
             "",         // timestamp
             "",         // agent
             "",         // model
@@ -939,7 +939,7 @@ class SessionStoreV2Test {
         assertNull(tc.getFilePath());
         assertFalse(tc.getAutoDenied());
         assertNull(tc.getDenialReason());
-        assertFalse(tc.getMcpHandled());
+        assertNull(tc.getPluginTool());
     }
 
     @Test

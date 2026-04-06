@@ -57,7 +57,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             // MCP is handling this tool — mark as agentbridge tool (solid border) and set running
             executeJs("ChatController.markMcpHandled('$did')")
             // Mark the entry as MCP handled for persistence
-            toolCallEntries[did]?.mcpHandled = true
+            toolCallEntries[did]?.pluginTool = toolCallNames[did]
         } else {
             // COMPLETE, EXTERNAL, FAILED — just remove the spinner; border already shows origin
             val jsState = if (state == ToolChipRegistry.ChipState.FAILED) "failed" else "complete"
@@ -420,7 +420,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         val isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
         if (isMcpHandled) {
-            entry.mcpHandled = true
+            entry.pluginTool = cleanTitle
         }
 
         val initialStatus = if (isMcpHandled) "running" else "pending"
@@ -488,7 +488,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     did = newDid
                     if (registration.initialState() == ToolChipRegistry.ChipState.RUNNING) {
                         executeJs("ChatController.markMcpHandled('$did')")
-                        toolCallEntries[did]?.mcpHandled = true
+                        toolCallEntries[did]?.pluginTool = toolCallNames[did]
                     }
                     LOG.debug("updateToolCall: re-correlated chip $id: $did -> $newDid")
                 }
@@ -570,7 +570,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             cleanTitle, arguments, resolvedKind,
             timestamp = timestamp(), agent = currentAgent
         )
-        if (isMcpHandled) entry.mcpHandled = true
+        if (isMcpHandled) entry.pluginTool = cleanTitle
         toolCallNames[toolDid] = cleanTitle
         toolCallEntries[toolDid] = entry
         entries.add(entry)
@@ -1019,10 +1019,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         toolCallEntries[id] = EntryData.ToolCall(
             title, e.arguments, e.kind,
             result = result, status = status, description = e.description,
-            mcpHandled = e.mcpHandled
+            pluginTool = e.pluginTool
         )
         val paramsAttr = if (e.arguments != null) " data-params='${esc(e.arguments)}'" else ""
-        val mcpAttr = if (e.mcpHandled) " data-mcp-handled='true'" else ""
+        val mcpAttr = if (e.pluginTool != null) " data-mcp-handled='true'" else ""
         metaChips.append("<tool-chip label='${esc(label)}' status='complete' kind='${esc(e.kind)}' data-chip-for='$id'$paramsAttr$mcpAttr></tool-chip>")
     }
 
