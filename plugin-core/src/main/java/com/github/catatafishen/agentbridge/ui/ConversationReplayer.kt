@@ -24,6 +24,9 @@ internal class ConversationReplayer {
     /** Entries to render immediately (populated by [loadAndSplit]). */
     fun recentEntries(): List<EntryData> = recentSnapshot
 
+    /** All entries still waiting in the deferred queue, in chronological order (oldest first). */
+    fun deferredEntries(): List<EntryData> = deferredEntries.toList()
+
     /** Number of entries still waiting in the deferred queue. */
     fun deferredCount(): Int = deferredEntries.size
 
