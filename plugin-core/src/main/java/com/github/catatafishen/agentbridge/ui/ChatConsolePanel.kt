@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.services.ToolChipRegistry
 import com.github.catatafishen.agentbridge.services.ToolRegistry
@@ -92,7 +93,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
     private val pendingPermissionCallbacks =
-        java.util.concurrent.ConcurrentHashMap<String, (com.github.catatafishen.agentbridge.bridge.PermissionResponse) -> Unit>()
+        java.util.concurrent.ConcurrentHashMap<String, (PermissionResponse) -> Unit>()
     private val pendingAskUserCallbacks = java.util.concurrent.ConcurrentHashMap<String, (String) -> Unit>()
 
     @Volatile
@@ -183,16 +184,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
             val permissionResponseQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
             permissionResponseQuery.addHandler { data ->
-                // data format: "reqId:deny", "reqId:once", "reqId:session", or "reqId:always"
-                val colonIdx = data.lastIndexOf(':')
-                if (colonIdx > 0) {
-                    val reqId = data.substring(0, colonIdx)
-                    val response = when (data.substring(colonIdx + 1)) {
-                        "once" -> com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_ONCE
-                        "session" -> com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_SESSION
-                        "always" -> com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_ALWAYS
-                        else -> com.github.catatafishen.agentbridge.bridge.PermissionResponse.DENY
-                    }
+                parsePermissionResponse(data)?.let { (reqId, response) ->
                     pendingPermissionCallbacks.remove(reqId)?.invoke(response)
                 }
                 null
@@ -397,36 +389,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             )
         entries.add(entry)
 
-        val label = toolChipTitle(cleanTitle, arguments)
-        val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
-        val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
-        val safeKind = escJs(resolvedKind)
+        val reg = registerToolChip(cleanTitle, arguments, resolvedKind, id)
+        toolCallNames[reg.domId] = cleanTitle
+        toolCallEntries[reg.domId] = entry
+        if (reg.isMcpHandled) entry.pluginTool = cleanTitle
 
-        // Parse args for correlation
-        val argsObj = arguments?.let {
-            try {
-                JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
-            } catch (_: Exception) {
-                null
-            }
-        }
-
-        // Register with chip registry — returns chipId and whether MCP already handled it
-        val registration = registry.registerClientSide(cleanTitle, argsObj, id)
-        val chipId = registration.chipId()
-        val did = "t-$chipId"
-        toolCallNames[did] = cleanTitle
-        toolCallEntries[did] = entry
-
-        val isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
-        if (isMcpHandled) {
-            entry.pluginTool = cleanTitle
-        }
-
-        val initialStatus = if (isMcpHandled) ChipStatus.RUNNING else ChipStatus.PENDING
-        executeJs("ChatController.upsertToolChip('$currentTurnId','main','$did','${escJs(label)}','$paramsJson','$safeKind','$initialStatus')")
-        if (isMcpHandled) {
-            executeJs("ChatController.markMcpHandled('$did')")
+        val initialStatus = if (reg.isMcpHandled) ChipStatus.RUNNING else ChipStatus.PENDING
+        executeJs("ChatController.upsertToolChip('$currentTurnId','main','${reg.domId}','${escJs(reg.label)}','${reg.paramsJson}','${reg.safeKind}','$initialStatus')")
+        if (reg.isMcpHandled) {
+            executeJs("ChatController.markMcpHandled('${reg.domId}')")
         }
     }
 
@@ -536,39 +507,21 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val resolvedKind = kind ?: "other"
         val cleanTitle = title.trim('\'', '"')
 
-        val label = toolChipTitle(cleanTitle, arguments)
-        val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
-        val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
-        val safeKind = escJs(resolvedKind)
-
-        // Register with chip registry to get the hash-based chipId.
-        // The DOM chip MUST use "t-$chipId" so the kindStateListener can find it
-        // when MCP fires markMcpHandled with the same "t-$chipId".
-        val argsObj = arguments?.let {
-            try {
-                JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
-            } catch (_: Exception) {
-                null
-            }
-        }
-        val registration = registry.registerClientSide(cleanTitle, argsObj, toolId)
-        val chipId = registration.chipId()
-        val toolDid = "t-$chipId"
-        val isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
-        val isExternal = !isMcpHandled
+        val reg = registerToolChip(cleanTitle, arguments, resolvedKind, toolId)
+        val isExternal = !reg.isMcpHandled
 
         val entry = EntryData.ToolCall(
             cleanTitle, arguments, resolvedKind,
             timestamp = timestamp(), agent = currentAgent
         )
-        if (isMcpHandled) entry.pluginTool = cleanTitle
-        toolCallNames[toolDid] = cleanTitle
-        toolCallEntries[toolDid] = entry
+        if (reg.isMcpHandled) entry.pluginTool = cleanTitle
+        toolCallNames[reg.domId] = cleanTitle
+        toolCallEntries[reg.domId] = entry
         entries.add(entry)
 
-        executeJs("ChatController.addSubAgentToolCall('$saDid','$toolDid','${escJs(label)}','$paramsJson','$safeKind',$isExternal)")
-        if (isMcpHandled) {
-            executeJs("ChatController.markMcpHandled('$toolDid')")
+        executeJs("ChatController.addSubAgentToolCall('$saDid','${reg.domId}','${escJs(reg.label)}','${reg.paramsJson}','${reg.safeKind}',$isExternal)")
+        if (reg.isMcpHandled) {
+            executeJs("ChatController.markMcpHandled('${reg.domId}')")
         }
     }
 
@@ -632,10 +585,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         )
         if (autoDenied || !initialResult.isNullOrBlank() || initialStatus == "completed" || initialStatus == "failed") {
             val status = if (autoDenied) "denied" else (initialStatus ?: "completed")
-            val resultHtml =
-                if (autoDenied) FAILED_SPAN else if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else FAILED_SPAN
-            val encoded = encodeBase64(resultHtml)
-            executeJs("ChatController.updateSubAgent('$did','$status','$encoded')")
+            renderSubAgentResult(did, status, autoDenied, initialResult)
         }
     }
 
@@ -657,11 +607,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             if (description != null) it.result = "$description\n\n$result"
         }
         val did = domId(id)
-        val jsStatus = if (autoDenied) "denied" else status
-        val resultHtml =
-            if (autoDenied) FAILED_SPAN else if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
-        val encoded = encodeBase64(resultHtml)
-        executeJs("ChatController.updateSubAgent('$did','$jsStatus','$encoded')")
+        renderSubAgentResult(did, status, autoDenied, result)
         toolJustCompleted = true
     }
 
@@ -1179,24 +1125,29 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     // ── Permission requests ────────────────────────────────────────
 
     fun handleWebPermissionResponse(data: String) {
-        val colonIdx = data.indexOf(':')
-        if (colonIdx > 0) {
-            val reqId = data.substring(0, colonIdx)
-            val response = when (data.substring(colonIdx + 1)) {
-                "once" -> com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_ONCE
-                "session" -> com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_SESSION
-                "always" -> com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_ALWAYS
-                else -> com.github.catatafishen.agentbridge.bridge.PermissionResponse.DENY
-            }
+        parsePermissionResponse(data)?.let { (reqId, response) ->
             pendingPermissionCallbacks.remove(reqId)?.invoke(response)
         }
+    }
+
+    private fun parsePermissionResponse(data: String): Pair<String, PermissionResponse>? {
+        val colonIdx = data.indexOf(':')
+        if (colonIdx <= 0) return null
+        val reqId = data.substring(0, colonIdx)
+        val response = when (data.substring(colonIdx + 1)) {
+            "once" -> PermissionResponse.ALLOW_ONCE
+            "session" -> PermissionResponse.ALLOW_SESSION
+            "always" -> PermissionResponse.ALLOW_ALWAYS
+            else -> PermissionResponse.DENY
+        }
+        return reqId to response
     }
 
     override fun showPermissionRequest(
         reqId: String,
         toolDisplayName: String,
         description: String,
-        onRespond: (com.github.catatafishen.agentbridge.bridge.PermissionResponse) -> Unit
+        onRespond: (PermissionResponse) -> Unit
     ) {
         pendingPermissionCallbacks[reqId] = onRespond
         val safeId = escJs(reqId)
@@ -1504,6 +1455,52 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         ?: clean.replaceFirstChar { it.uppercaseChar() }
         val subtitle = formatToolSubtitle(clean, arguments)
         return if (subtitle != null) "$display — $subtitle" else display
+    }
+
+    private data class ChipRegistration(
+        val label: String,
+        val paramsJson: String,
+        val safeKind: String,
+        val chipId: String,
+        val domId: String,
+        val isMcpHandled: Boolean
+    )
+
+    private fun registerToolChip(
+        cleanTitle: String,
+        arguments: String?,
+        resolvedKind: String,
+        correlationId: String
+    ): ChipRegistration {
+        val label = toolChipTitle(cleanTitle, arguments)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
+        val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
+        val safeKind = escJs(resolvedKind)
+        val argsObj = arguments?.let {
+            try {
+                JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val registration = registry.registerClientSide(cleanTitle, argsObj, correlationId)
+        val chipId = registration.chipId()
+        return ChipRegistration(
+            label = label,
+            paramsJson = paramsJson,
+            safeKind = safeKind,
+            chipId = chipId,
+            domId = "t-$chipId",
+            isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
+        )
+    }
+
+    private fun renderSubAgentResult(did: String, status: String, autoDenied: Boolean, result: String?) {
+        val jsStatus = if (autoDenied) "denied" else status
+        val resultHtml =
+            if (autoDenied) FAILED_SPAN else if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
+        val encoded = encodeBase64(resultHtml)
+        executeJs("ChatController.updateSubAgent('$did','$jsStatus','$encoded')")
     }
 
     private fun prettyJson(json: String): String {
