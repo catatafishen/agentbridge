@@ -325,7 +325,7 @@ const ChatController = {
         ctx.meta!.appendChild(chip);
         ctx.meta!.classList.add('show');
         const promptBubble = document.createElement('message-bubble');
-        promptBubble.innerHTML = '<span class="subagent-prefix subagent-c' + colorIndex + '">@' + escHtml(displayName) + '</span> ' + (promptHtml || '');
+        promptBubble.innerHTML = '<span class="subagent-prefix subagent-c' + colorIndex + '">@' + escHtml(displayName) + '</span> ' + (promptHtml ? decodeBase64(promptHtml) : '');
         ctx.msg!.appendChild(promptBubble);
         const msg = document.createElement('chat-message');
         msg.setAttribute('type', 'agent');
@@ -354,9 +354,10 @@ const ChatController = {
         this._container()?.scrollIfNeeded();
     },
 
-    updateSubAgent(sectionId: string, status: string, resultHtml?: string): void {
+    updateSubAgent(sectionId: string, status: string, encodedResultHtml?: string): void {
         const el = document.getElementById('result-' + sectionId);
         if (el) {
+            const resultHtml = encodedResultHtml ? decodeBase64(encodedResultHtml) : null;
             el.innerHTML = resultHtml || (status === 'completed' ? 'Completed' : '<span style="color:var(--error)">\u2716 Failed</span>');
         }
         const chip = document.querySelector('[data-chip-for="sa-' + sectionId + '"]');

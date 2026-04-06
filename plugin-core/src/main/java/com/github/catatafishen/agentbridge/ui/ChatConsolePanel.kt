@@ -634,7 +634,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val promptHtml = encodeBase64(markdownToHtml(promptText))
         val ts = displayTs(entry.timestamp)
         executeJs(
-            "ChatController.addSubAgent('$currentTurnId','main','$did','${escJs(displayName)}',$colorIndex,encodeBase64('$promptHtml'),'${
+            "ChatController.addSubAgent('$currentTurnId','main','$did','${escJs(displayName)}',$colorIndex,'$promptHtml','${
                 escJs(
                     ts
                 )
@@ -645,7 +645,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             val resultHtml =
                 if (autoDenied) FAILED_SPAN else if (!initialResult.isNullOrBlank()) markdownToHtml(initialResult) else if (initialStatus == "completed") "Completed" else FAILED_SPAN
             val encoded = encodeBase64(resultHtml)
-            executeJs("ChatController.updateSubAgent('$did','$status',encodeBase64('$encoded'))")
+            executeJs("ChatController.updateSubAgent('$did','$status','$encoded')")
         }
     }
 
@@ -671,7 +671,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val resultHtml =
             if (autoDenied) FAILED_SPAN else if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
         val encoded = encodeBase64(resultHtml)
-        executeJs("ChatController.updateSubAgent('$did','$jsStatus',encodeBase64('$encoded'))")
+        executeJs("ChatController.updateSubAgent('$did','$jsStatus','$encoded')")
         toolJustCompleted = true
     }
 
@@ -965,7 +965,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     "id" to id,
                     "label" to label,
                     "kind" to e.kind,
-                    "status" to ChipStatus.COMPLETE
+                    "status" to status
                 )
                 if (e.arguments != null) map["params"] = e.arguments
                 if (e.pluginTool != null) map["pluginTool"] = e.pluginTool
@@ -985,11 +985,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 val displayName = saInfo?.displayName ?: e.agentType.replaceFirstChar { it.uppercaseChar() }
                 val resultHtml = if (!e.result.isNullOrBlank()) markdownToHtml(e.result!!) else "Completed"
                 val id = "batch-sa-${batchIdCounter++}"
+                val status = if (e.autoDenied) ChipStatus.DENIED else (e.status ?: ChipStatus.COMPLETE)
                 mapOf(
                     "type" to "subagent",
                     "id" to id,
                     "label" to displayName,
-                    "status" to ChipStatus.COMPLETE,
+                    "status" to status,
                     "colorIndex" to e.colorIndex,
                     "resultHtml" to resultHtml
                 )
