@@ -106,6 +106,7 @@ class ChatToolWindowContent(
     private var persistedEntryCount = 0
 
     private lateinit var contextManager: PromptContextManager
+    private lateinit var contextChipStrip: JPanel
 
     init {
         setupUI()
@@ -668,6 +669,8 @@ class ChatToolWindowContent(
         promptTextArea.setOneLineMode(false)
         promptTextArea.border = null
         contextManager = PromptContextManager(project, promptTextArea) { text -> appendResponse(text) }
+        contextManager.onItemsChanged =
+            { ApplicationManager.getApplication().invokeLater { refreshContextChipStrip() } }
 
         pasteToScratchHandler = PasteToScratchHandler(project, promptTextArea, contextManager)
         promptOrchestrator = PromptOrchestrator(
@@ -781,6 +784,12 @@ class ChatToolWindowContent(
         scrollPane.border = null
         scrollPane.viewportBorder = null
         row.border = JBUI.Borders.empty()
+
+        contextChipStrip = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 4, 2))
+        contextChipStrip.isOpaque = false
+        contextChipStrip.border = JBUI.Borders.empty(2, 4, 0, 4)
+        contextChipStrip.isVisible = false
+        row.add(contextChipStrip, BorderLayout.NORTH)
         row.add(scrollPane, BorderLayout.CENTER)
 
         return row
@@ -816,6 +825,7 @@ class ChatToolWindowContent(
         val entryId = consolePanel.addPromptEntry(prompt, ctxFiles, bubbleHtml)
         appendNewEntries()
         promptTextArea.text = ""
+        contextManager.clearContextItems()
 
         val selectedModelId = resolveSelectedModelId()
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -866,20 +876,54 @@ class ChatToolWindowContent(
     private fun buildBubbleHtml(rawText: String, items: List<ContextItemData>): String? {
         if (items.isEmpty()) return null
         val sb = StringBuilder()
-        var idx = 0
-        for (ch in rawText) {
-            if (ch == PromptContextManager.ORC && idx < items.size) {
-                val item = items[idx++]
-                val href =
-                    if (item.isSelection && item.startLine > 0) "openfile://${item.path}:${item.startLine}" else "openfile://${item.path}"
-                val title =
-                    escHtml(if (item.isSelection && item.startLine > 0) "${item.path}:${item.startLine}" else item.path)
-                sb.append("<a class='prompt-ctx-chip' href='$href' title='$title'>${escHtml(item.name)}</a>")
-            } else {
-                appendHtmlChar(ch, sb)
-            }
+        for (item in items) {
+            val href = if (item.isSelection && item.startLine > 0)
+                "openfile://${item.path}:${item.startLine}" else "openfile://${item.path}"
+            val title = escHtml(
+                if (item.isSelection && item.startLine > 0)
+                    "${item.path}:${item.startLine}" else item.path
+            )
+            sb.append("<a class='prompt-ctx-chip' href='$href' title='$title'>${escHtml(item.name)}</a>")
+        }
+        if (rawText.isNotBlank()) {
+            sb.append(' ')
+            for (ch in rawText) appendHtmlChar(ch, sb)
         }
         return sb.toString().trim()
+    }
+
+    private fun refreshContextChipStrip() {
+        val items = contextManager.collectInlineContextItems()
+        contextChipStrip.removeAll()
+        for (item in items) {
+            val chip = createContextChip(item)
+            contextChipStrip.add(chip)
+        }
+        contextChipStrip.isVisible = items.isNotEmpty()
+        contextChipStrip.revalidate()
+        contextChipStrip.repaint()
+    }
+
+    private fun createContextChip(item: ContextItemData): JComponent {
+        val panel = JBPanel<JBPanel<*>>(BorderLayout())
+        panel.isOpaque = false
+        panel.border = JBUI.Borders.compound(
+            JBUI.Borders.customLine(JBColor.border(), 1),
+            JBUI.Borders.empty(1, 4)
+        )
+        val label = JBLabel(item.name)
+        label.font = label.font.deriveFont(label.font.size2D - 1f)
+        val removeBtn = JBLabel("\u00d7")
+        removeBtn.border = JBUI.Borders.emptyLeft(4)
+        removeBtn.cursor = java.awt.Cursor(java.awt.Cursor.HAND_CURSOR)
+        removeBtn.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                contextManager.removeContextItem(item)
+            }
+        })
+        panel.add(label, BorderLayout.CENTER)
+        panel.add(removeBtn, BorderLayout.EAST)
+        return panel
     }
 
     private fun appendHtmlChar(ch: Char, sb: StringBuilder) {

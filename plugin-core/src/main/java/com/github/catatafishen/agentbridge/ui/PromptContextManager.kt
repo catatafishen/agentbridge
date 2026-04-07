@@ -8,10 +8,10 @@ import com.intellij.openapi.ui.Messages
 import com.intellij.ui.EditorTextField
 
 /**
- * Manages inline context chips in the prompt editor: insertion, collection,
- * clearing, clipboard detection, and building ACP resource references.
+ * Manages context items for the prompt input.
+ * Items are stored in a plain list and displayed via a dedicated chip strip panel.
  *
- * Extracted from [AgenticCopilotToolWindowContent] to reduce its complexity.
+ * Extracted from [ChatToolWindowContent] to reduce its complexity.
  */
 class PromptContextManager(
     private val project: Project,
@@ -19,91 +19,53 @@ class PromptContextManager(
     private val appendResponse: (String) -> Unit
 ) {
 
-    companion object {
-        /** Unicode Object Replacement Character — placeholder for inline context chips. */
-        const val ORC = '\uFFFC'
+    private val _items = mutableListOf<ContextItemData>()
+    var onItemsChanged: (() -> Unit)? = null
+
+    // ── Context item CRUD ──────────────────────────────────────────────
+
+    fun addContextItem(data: ContextItemData) {
+        if (_items.any { it.path == data.path && it.startLine == data.startLine }) return
+        _items.add(data)
+        onItemsChanged?.invoke()
     }
 
-    init {
-        // Dispose orphaned inlays whenever their ORC placeholder character is deleted.
-        // This makes backspace over a chip feel like deleting a single character.
-        promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
-            override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
-                val removed = event.oldFragment
-                if (removed.isEmpty() || removed.chars().noneMatch { it == ORC.code }) return
-                val editor = promptTextArea.editor ?: return
-                val inlays = editor.inlayModel
-                    .getInlineElementsInRange(0, editor.document.textLength, ContextChipRenderer::class.java)
-                val orcOffsets = mutableSetOf<Int>()
-                val text = editor.document.charsSequence
-                for (i in text.indices) {
-                    if (text[i] == ORC) orcOffsets.add(i)
-                }
-                for (inlay in inlays) {
-                    if (inlay.offset !in orcOffsets) {
-                        com.intellij.openapi.util.Disposer.dispose(inlay)
-                    }
-                }
-            }
-        })
+    fun removeContextItem(item: ContextItemData) {
+        _items.remove(item)
+        onItemsChanged?.invoke()
     }
 
-    // ── Inline chip CRUD ──────────────────────────────────────────────
-
-    /** Insert a U+FFFC placeholder at the caret and attach an inlay chip for the given context item. */
+    /** Kept for API compatibility; delegates to [addContextItem], ignores the editor param. */
     fun insertInlineChip(editor: EditorEx, data: ContextItemData) {
-        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-            val offset = editor.caretModel.offset
-            editor.document.insertString(offset, ORC.toString())
-            editor.caretModel.moveToOffset(offset + 1)
-        }
-        val inlayOffset = editor.caretModel.offset - 1
-        editor.inlayModel.addInlineElement(inlayOffset, true, ContextChipRenderer(data))
+        addContextItem(data)
     }
 
-    /** Collect all context items from active inline inlays in the prompt editor. */
-    fun collectInlineContextItems(): List<ContextItemData> {
-        val editor = promptTextArea.editor ?: return emptyList()
-        val docLength = editor.document.textLength
-        return editor.inlayModel
-            .getInlineElementsInRange(0, docLength, ContextChipRenderer::class.java)
-            .map { it.renderer.contextData }
+    /** Returns a snapshot of all current context items. */
+    fun collectInlineContextItems(): List<ContextItemData> = _items.toList()
+
+    /** Clears all context items and notifies listeners. */
+    fun clearContextItems() {
+        _items.clear()
+        onItemsChanged?.invoke()
     }
 
-    /** Remove all inline context chips and their ORC placeholders from the prompt editor. */
+    /** Kept for API compatibility; delegates to [clearContextItems]. */
     fun clearInlineChips(editor: EditorEx) {
-        val inlays = editor.inlayModel
-            .getInlineElementsInRange(0, editor.document.textLength, ContextChipRenderer::class.java)
-            .toList()
-        if (inlays.isEmpty()) return
-        com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-            for (inlay in inlays.sortedByDescending { it.offset }) {
-                val off = inlay.offset
-                if (off < editor.document.textLength && editor.document.charsSequence[off] == ORC) {
-                    editor.document.deleteString(off, off + 1)
-                }
-                com.intellij.openapi.util.Disposer.dispose(inlay)
-            }
-        }
+        clearContextItems()
     }
 
     /**
-     * Replace each ORC in [rawText] with a backtick-wrapped text reference
-     * from the corresponding context item, e.g. `` `AuthLoginService.kt:116-170` ``.
+     * Builds the prompt text by prepending backtick-wrapped item names when items are present.
      */
-    fun replaceOrcsWithTextRefs(rawText: String, items: List<ContextItemData>): String {
-        if (items.isEmpty()) return rawText.replace(ORC.toString(), "").trim()
-        val sb = StringBuilder()
-        var idx = 0
-        for (ch in rawText) {
-            if (ch == ORC && idx < items.size) {
-                sb.append('`').append(items[idx++].name).append('`')
-            } else {
-                sb.append(ch)
-            }
-        }
-        return sb.toString().trim()
+    fun buildPromptText(rawText: String, items: List<ContextItemData>): String {
+        if (items.isEmpty()) return rawText.trim()
+        val refs = items.joinToString(" ") { "`${it.name}`" }
+        return if (rawText.isBlank()) refs else "$refs $rawText".trim()
     }
+
+    /** Shim kept for compatibility; delegates to [buildPromptText]. */
+    fun replaceOrcsWithTextRefs(rawText: String, items: List<ContextItemData>) =
+        buildPromptText(rawText, items)
 
     // ── Clipboard detection ───────────────────────────────────────────
 
@@ -194,9 +156,7 @@ class PromptContextManager(
             return
         }
 
-        val promptEditor = promptTextArea.editor as? EditorEx ?: return
-        insertInlineChip(
-            promptEditor,
+        addContextItem(
             ContextItemData(
                 path = path, name = currentFile.name, startLine = 1, endLine = lineCount,
                 fileTypeName = currentFile.fileType.name, isSelection = false
@@ -224,9 +184,7 @@ class PromptContextManager(
         val startLine = document.getLineNumber(selectionModel.selectionStart) + 1
         val endLine = document.getLineNumber(selectionModel.selectionEnd) + 1
 
-        val promptEditor = promptTextArea.editor as? EditorEx ?: return
-        insertInlineChip(
-            promptEditor,
+        addContextItem(
             ContextItemData(
                 path = currentFile.path, name = "${currentFile.name}:$startLine-$endLine",
                 startLine = startLine, endLine = endLine,
@@ -255,9 +213,7 @@ class PromptContextManager(
                     0
                 }
 
-                val promptEditor = promptTextArea.editor as? EditorEx ?: return
-                insertInlineChip(
-                    promptEditor,
+                addContextItem(
                     ContextItemData(
                         path = path, name = vf.name, startLine = 1, endLine = lineCount,
                         fileTypeName = vf.fileType.name, isSelection = false

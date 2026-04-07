@@ -5,7 +5,6 @@ import com.github.catatafishen.agentbridge.settings.ScratchTypeSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileTypes.PlainTextLanguage
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -177,17 +176,13 @@ internal class PasteToScratchHandler(
                 )
                 if (file != null) {
                     com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(file, true)
-                    val promptEditor = promptTextArea.editor as? EditorEx
-                    if (promptEditor != null) {
-                        contextManager.insertInlineChip(
-                            promptEditor,
-                            ContextItemData(
-                                path = file.path, name = file.name,
-                                startLine = 1, endLine = 0,
-                                fileTypeName = file.fileType.name, isSelection = false
-                            )
+                    contextManager.addContextItem(
+                        ContextItemData(
+                            path = file.path, name = file.name,
+                            startLine = 1, endLine = 0,
+                            fileTypeName = file.fileType.name, isSelection = false
                         )
-                    }
+                    )
                     // openFile(focus=true) steals focus; schedule a second invokeLater so
                     // this runs after the file editor has finished grabbing focus.
                     ApplicationManager.getApplication().invokeLater {
