@@ -305,6 +305,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("ChatController.setPromptStats('$short','${escJs(multiplier)}')")
     }
 
+    override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) {
+        executeJs("ChatController.setCodeChangeStats($linesAdded,$linesRemoved)")
+    }
+
     override fun setCurrentModel(modelId: String) {
         executeJs("ChatController.setCurrentModel('${escJs(modelId)}')")
     }
@@ -676,7 +680,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun emitTurnStats(
         durationMs: Long, inputTokens: Int, outputTokens: Int, costUsd: Double,
-        toolCallCount: Int, model: String, multiplier: String
+        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String
     ) {
         val prev = entries.filterIsInstance<EntryData.TurnStats>().lastOrNull()
         entries.add(
@@ -687,6 +691,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 outputTokens = outputTokens.toLong(),
                 costUsd = costUsd,
                 toolCallCount = toolCallCount,
+                linesAdded = linesAdded,
+                linesRemoved = linesRemoved,
                 model = model,
                 multiplier = multiplier,
                 totalDurationMs = (prev?.totalDurationMs ?: 0) + durationMs,
@@ -694,6 +700,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 totalOutputTokens = (prev?.totalOutputTokens ?: 0) + outputTokens.toLong(),
                 totalCostUsd = (prev?.totalCostUsd ?: 0.0) + costUsd,
                 totalToolCalls = (prev?.totalToolCalls ?: 0) + toolCallCount,
+                totalLinesAdded = (prev?.totalLinesAdded ?: 0) + linesAdded,
+                totalLinesRemoved = (prev?.totalLinesRemoved ?: 0) + linesRemoved,
             )
         )
         // Render the turn summary footer in the chat panel
@@ -702,6 +710,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             inputTokens,
             outputTokens,
             toolCallCount,
+            linesAdded,
+            linesRemoved,
             model,
             multiplier
         )
@@ -710,7 +720,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     private fun buildTurnSummaryJson(
         durationMs: Long, inputTokens: Int, outputTokens: Int,
-        toolCallCount: Int,
+        toolCallCount: Int, linesAdded: Int, linesRemoved: Int,
         model: String, multiplier: String
     ): String {
         val parts = mutableListOf<String>()
@@ -718,6 +728,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         parts.add("\"inputTokens\":${inputTokens}")
         parts.add("\"outputTokens\":${outputTokens}")
         parts.add("\"tools\":${toolCallCount}")
+        parts.add("\"added\":${linesAdded}")
+        parts.add("\"removed\":${linesRemoved}")
         parts.add("\"model\":\"${escJs(model)}\"")
         if (multiplier.isNotEmpty()) parts.add("\"multiplier\":\"${escJs(multiplier)}\"")
         return "{${parts.joinToString(",")}}"
@@ -886,6 +898,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             "inputTokens" to e.inputTokens,
             "outputTokens" to e.outputTokens,
             "tools" to e.toolCallCount,
+            "added" to e.linesAdded,
+            "removed" to e.linesRemoved,
             "model" to e.model,
         )
         if (e.multiplier.isNotEmpty()) m["multiplier"] = e.multiplier

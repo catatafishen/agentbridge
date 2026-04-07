@@ -126,6 +126,8 @@ internal object ConversationSerializer {
                 outputTokens = obj["outputTokens"]?.asLong ?: 0,
                 costUsd = obj["costUsd"]?.asDouble ?: 0.0,
                 toolCallCount = obj["toolCallCount"]?.asInt ?: 0,
+                linesAdded = obj["linesAdded"]?.asInt ?: 0,
+                linesRemoved = obj["linesRemoved"]?.asInt ?: 0,
                 model = obj["model"]?.asString ?: "",
                 multiplier = obj["multiplier"]?.asString ?: "",
                 totalDurationMs = obj["totalDurationMs"]?.asLong ?: 0,
@@ -133,6 +135,8 @@ internal object ConversationSerializer {
                 totalOutputTokens = obj["totalOutputTokens"]?.asLong ?: 0,
                 totalCostUsd = obj["totalCostUsd"]?.asDouble ?: 0.0,
                 totalToolCalls = obj["totalToolCalls"]?.asInt ?: 0,
+                totalLinesAdded = obj["totalLinesAdded"]?.asInt ?: 0,
+                totalLinesRemoved = obj["totalLinesRemoved"]?.asInt ?: 0,
                 entryId = eid.ifEmpty { java.util.UUID.randomUUID().toString() }
             )
 

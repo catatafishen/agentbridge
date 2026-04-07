@@ -62,6 +62,8 @@
     --kind-think: rgb(170, 155, 210);
     --kind-search: rgb(110, 165, 210);
     --kind-other: rgb(160, 165, 170);
+    --diff-add: rgb(63, 185, 80);
+    --diff-del: rgb(248, 83, 73);
     --spin-bg: rgb(60, 60, 60);
     --code-bg: rgb(30, 30, 30);
     --tbl-border: rgb(60, 60, 60);
@@ -473,6 +475,19 @@ working-indicator .working-text {
     padding: 1px var(--sp-2);
     cursor: default;
     gap: var(--sp-2);
+}
+
+.diff-stat {
+    display: flex;
+    gap: var(--sp-2);
+}
+
+.diff-add {
+    color: var(--diff-add, rgb(63, 185, 80));
+}
+
+.diff-del {
+    color: var(--diff-del, rgb(248, 83, 73));
 }
 
 .chip-dimmed {

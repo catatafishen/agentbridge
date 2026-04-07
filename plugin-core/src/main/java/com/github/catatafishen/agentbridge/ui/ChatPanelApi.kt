@@ -27,6 +27,7 @@ interface ChatPanelApi : Disposable {
     fun removePromptEntry(entryId: String)
 
     fun setPromptStats(modelId: String, multiplier: String)
+    fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int)
     fun setCurrentModel(modelId: String)
     fun setCurrentProfile(profileId: String)
     fun setCurrentAgent(agentName: String, profileId: String, clientType: String = "")
@@ -108,7 +109,7 @@ interface ChatPanelApi : Disposable {
     fun finishResponse(toolCallCount: Int = 0, modelId: String = "", multiplier: String = "1x")
     fun emitTurnStats(
         durationMs: Long, inputTokens: Int, outputTokens: Int, costUsd: Double,
-        toolCallCount: Int, model: String, multiplier: String
+        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String
     )
 
     fun showQuickReplies(options: List<String>)

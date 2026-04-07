@@ -113,6 +113,8 @@ sealed class EntryData {
         val outputTokens: Long = 0,
         val costUsd: Double = 0.0,
         val toolCallCount: Int = 0,
+        val linesAdded: Int = 0,
+        val linesRemoved: Int = 0,
         val model: String = "",
         val multiplier: String = "",
         val totalDurationMs: Long = 0,
@@ -120,6 +122,8 @@ sealed class EntryData {
         val totalOutputTokens: Long = 0,
         val totalCostUsd: Double = 0.0,
         val totalToolCalls: Int = 0,
+        val totalLinesAdded: Int = 0,
+        val totalLinesRemoved: Int = 0,
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 

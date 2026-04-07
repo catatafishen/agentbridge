@@ -393,9 +393,9 @@ class EntryDataJsonAdapterTest {
     @Test
     void turnStatsRoundTrip() {
         EntryData.TurnStats stats = new EntryData.TurnStats(
-            "t3", 45230, 1200, 3500, 0.015, 8,
+            "t3", 45230, 1200, 3500, 0.015, 8, 42, 7,
             "claude-opus-4.6", "5x",
-            120000, 5000, 15000, 0.065, 25,
+            120000, 5000, 15000, 0.065, 25, 150, 30,
             "eid-stats-1"
         );
         JsonObject json = EntryDataJsonAdapter.serialize(stats);
@@ -406,6 +406,8 @@ class EntryDataJsonAdapterTest {
         assertEquals(3500, json.get("outputTokens").getAsLong());
         assertEquals(0.015, json.get("costUsd").getAsDouble(), 0.0001);
         assertEquals(8, json.get("toolCallCount").getAsInt());
+        assertEquals(42, json.get("linesAdded").getAsInt());
+        assertEquals(7, json.get("linesRemoved").getAsInt());
         assertEquals("claude-opus-4.6", json.get("model").getAsString());
         assertEquals("5x", json.get("multiplier").getAsString());
         assertEquals(120000, json.get("totalDurationMs").getAsLong());
@@ -413,6 +415,8 @@ class EntryDataJsonAdapterTest {
         assertEquals(15000, json.get("totalOutputTokens").getAsLong());
         assertEquals(0.065, json.get("totalCostUsd").getAsDouble(), 0.0001);
         assertEquals(25, json.get("totalToolCalls").getAsInt());
+        assertEquals(150, json.get("totalLinesAdded").getAsInt());
+        assertEquals(30, json.get("totalLinesRemoved").getAsInt());
         assertEquals("eid-stats-1", json.get("entryId").getAsString());
 
         EntryData deserialized = EntryDataJsonAdapter.deserialize(json);
@@ -424,6 +428,8 @@ class EntryDataJsonAdapterTest {
         assertEquals(3500, rt.getOutputTokens());
         assertEquals(0.015, rt.getCostUsd(), 0.0001);
         assertEquals(8, rt.getToolCallCount());
+        assertEquals(42, rt.getLinesAdded());
+        assertEquals(7, rt.getLinesRemoved());
         assertEquals("claude-opus-4.6", rt.getModel());
         assertEquals("5x", rt.getMultiplier());
         assertEquals(120000, rt.getTotalDurationMs());
@@ -431,6 +437,8 @@ class EntryDataJsonAdapterTest {
         assertEquals(15000, rt.getTotalOutputTokens());
         assertEquals(0.065, rt.getTotalCostUsd(), 0.0001);
         assertEquals(25, rt.getTotalToolCalls());
+        assertEquals(150, rt.getTotalLinesAdded());
+        assertEquals(30, rt.getTotalLinesRemoved());
         assertEquals("eid-stats-1", rt.getEntryId());
     }
 

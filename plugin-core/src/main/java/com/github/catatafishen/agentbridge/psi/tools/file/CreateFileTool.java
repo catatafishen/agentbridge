@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
+import com.github.catatafishen.agentbridge.psi.CodeChangeTracker;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.FileAccessTracker;
 import com.github.catatafishen.agentbridge.ui.renderers.WriteFileRenderer;
@@ -104,6 +105,7 @@ public final class CreateFileTool extends FileTool {
         });
 
         String result = resultFuture.get(10, TimeUnit.SECONDS);
+        CodeChangeTracker.recordChange(lineCount, 0);
         followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel(project) + " created");
         FileAccessTracker.recordWrite(project, pathStr);
         return result;

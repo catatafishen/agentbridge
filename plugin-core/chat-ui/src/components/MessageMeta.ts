@@ -105,6 +105,31 @@ export default class MessageMeta extends HTMLElement {
         });
     }
 
+    setCodeChangeStats(added: number, removed: number): void {
+        const strip = this._strip;
+        if (!strip) return;
+        let chip = strip.querySelector('.diff-stat') as HTMLElement;
+        if (!chip) {
+            chip = document.createElement('span');
+            chip.className = 'turn-chip stats diff-stat';
+            strip.appendChild(chip);
+        }
+        chip.innerHTML = '';
+        if (added > 0) {
+            const add = document.createElement('span');
+            add.className = 'diff-add';
+            add.textContent = '+' + added;
+            chip.appendChild(add);
+        }
+        if (removed > 0) {
+            const del = document.createElement('span');
+            del.className = 'diff-del';
+            del.textContent = '−' + removed;
+            chip.appendChild(del);
+        }
+        this.scheduleNavUpdate();
+    }
+
     private _createNav(label: string, direction: number): HTMLElement {
         const btn = document.createElement('button');
         btn.className = 'chip-nav hidden';
