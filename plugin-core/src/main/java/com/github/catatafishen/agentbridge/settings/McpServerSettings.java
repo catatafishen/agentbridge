@@ -102,6 +102,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         myState.setKindExecuteColorKey(key);
     }
 
+    public @org.jetbrains.annotations.Nullable String getKindSearchColorKey() {
+        return myState.getKindSearchColorKey();
+    }
+
+    public void setKindSearchColorKey(@org.jetbrains.annotations.Nullable String key) {
+        myState.setKindSearchColorKey(key);
+    }
+
     public boolean isSmoothScrollEnabled() {
         return myState.smoothScrollEnabled;
     }
@@ -143,6 +151,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
+        private String kindSearchColorKey = null;
 
         public int getPort() {
             return port;
@@ -222,6 +231,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setKindExecuteColorKey(@org.jetbrains.annotations.Nullable String kindExecuteColorKey) {
             this.kindExecuteColorKey = kindExecuteColorKey;
+        }
+
+        public @org.jetbrains.annotations.Nullable String getKindSearchColorKey() {
+            return kindSearchColorKey;
+        }
+
+        public void setKindSearchColorKey(@org.jetbrains.annotations.Nullable String kindSearchColorKey) {
+            this.kindSearchColorKey = kindSearchColorKey;
         }
     }
 }

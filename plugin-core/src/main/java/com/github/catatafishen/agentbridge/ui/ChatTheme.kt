@@ -157,10 +157,11 @@ object ChatTheme {
         }
         sb.append("--active-agent:${rgb(AGENT_COLOR)};--active-agent-a06:${rgba(AGENT_COLOR, 0.06)};")
         val kindRead = ToolKindColors.readColor(mcpSettings)
+        val kindSearch = ToolKindColors.searchColor(mcpSettings)
         val kindEdit = ToolKindColors.editColor(mcpSettings)
         val kindExecute = ToolKindColors.executeColor(mcpSettings)
-        sb.append("--kind-read:${rgb(kindRead)};--kind-edit:${rgb(kindEdit)};")
-        sb.append("--kind-execute:${rgb(kindExecute)};--kind-search:${rgb(kindRead)};")
+        sb.append("--kind-read:${rgb(kindRead)};--kind-search:${rgb(kindSearch)};")
+        sb.append("--kind-edit:${rgb(kindEdit)};--kind-execute:${rgb(kindExecute)};")
         sb.append("--kind-think:${rgb(KIND_THINK_COLOR)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
         // Per-agent bubble color overrides — injected only when the user has chosen a custom color.
         // The CSS uses var(--client-X-bubble-bg, fallback) so these only take effect when present.

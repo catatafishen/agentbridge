@@ -22,6 +22,9 @@ object ToolKindColors {
     val DEFAULT_READ: JBColor = JBColor(Color(0x3A, 0x95, 0x95), Color(100, 185, 185))
 
     @JvmField
+    val DEFAULT_SEARCH: JBColor = JBColor(Color(0x36, 0x6A, 0x9A), Color(110, 165, 210))
+
+    @JvmField
     val DEFAULT_EDIT: JBColor = JBColor(Color(0xA0, 0x7A, 0x3A), Color(205, 155, 95))
 
     @JvmField
@@ -30,6 +33,10 @@ object ToolKindColors {
     @JvmStatic
     fun readColor(settings: McpServerSettings?): JBColor =
         ThemeColor.fromKey(settings?.kindReadColorKey)?.color ?: DEFAULT_READ
+
+    @JvmStatic
+    fun searchColor(settings: McpServerSettings?): JBColor =
+        ThemeColor.fromKey(settings?.kindSearchColorKey)?.color ?: DEFAULT_SEARCH
 
     @JvmStatic
     fun editColor(settings: McpServerSettings?): JBColor =
