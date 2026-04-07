@@ -21,7 +21,6 @@ import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.*
@@ -705,66 +704,6 @@ class ChatToolWindowContent(
             editor.settings.isUseSoftWraps = true
             editor.contentComponent.border = JBUI.Borders.empty(4, 6)
             editor.setBorder(null)
-
-            // The editor has two viewports: the outer JBScrollPane wrapping EditorTextField
-            // and IntelliJ's own inner JScrollPane inside the editor. Selection highlights
-            // are clipped to the inner viewport, so when IntelliJ's auto-scroll-to-caret
-            // moves the inner viewport to the caret position, only the caret line appears
-            // selected even though the full selection is correct.
-            //
-            // Fix: keep both viewports in sync at all times via ChangeListeners. The outer
-            // viewport is the authority — the inner is always set to mirror its Y offset.
-            // This way IntelliJ's auto-scroll (which targets the inner viewport) is
-            // immediately undone by our listener, and the outer viewport (scrolled by our
-            // caret listener) controls what the user sees.
-            //
-            // Use invokeLater so the outer viewport (promptTextArea.parent) is already set
-            // by the time we attach listeners — components are in the hierarchy at that point.
-            ApplicationManager.getApplication().invokeLater {
-                val outerViewport = promptTextArea.parent as? JViewport ?: return@invokeLater
-                val innerViewport = editor.scrollPane.viewport
-                var syncing = false
-
-                // When the outer viewport scrolls (e.g. driven by our caret listener),
-                // mirror the new Y position into the inner viewport.
-                outerViewport.addChangeListener {
-                    if (!syncing) {
-                        syncing = true
-                        innerViewport.viewPosition = Point(0, outerViewport.viewPosition.y)
-                        editor.contentComponent.repaint()
-                        syncing = false
-                    }
-                }
-
-                // When IntelliJ tries to auto-scroll the inner viewport (e.g. scroll-to-caret),
-                // reset it back to the outer viewport's position so the selection stays visible.
-                innerViewport.addChangeListener {
-                    if (!syncing && innerViewport.viewPosition.y != outerViewport.viewPosition.y) {
-                        syncing = true
-                        innerViewport.viewPosition = Point(0, outerViewport.viewPosition.y)
-                        editor.contentComponent.repaint()
-                        syncing = false
-                    }
-                }
-            }
-
-            // Scroll the outer JBScrollPane to keep the caret visible while typing.
-            // The ChangeListener above will sync the inner viewport automatically.
-            editor.caretModel.addCaretListener(object : com.intellij.openapi.editor.event.CaretListener {
-                override fun caretPositionChanged(event: com.intellij.openapi.editor.event.CaretEvent) {
-                    ApplicationManager.getApplication().invokeLater {
-                        val caretOffset = editor.caretModel.offset
-                        val caretPoint = editor.offsetToXY(caretOffset)
-                        val lineHeight = editor.lineHeight
-                        val converted = SwingUtilities.convertPoint(
-                            editor.contentComponent, caretPoint, promptTextArea
-                        )
-                        promptTextArea.scrollRectToVisible(
-                            Rectangle(converted.x, converted.y, 1, lineHeight)
-                        )
-                    }
-                }
-            })
         }
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
@@ -776,12 +715,8 @@ class ChatToolWindowContent(
             }
         })
 
-        val scrollPane = JBScrollPane(promptTextArea)
-        scrollPane.horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
-        scrollPane.border = null
-        scrollPane.viewportBorder = null
         row.border = JBUI.Borders.empty()
-        row.add(scrollPane, BorderLayout.CENTER)
+        row.add(promptTextArea, BorderLayout.CENTER)
 
         return row
     }
