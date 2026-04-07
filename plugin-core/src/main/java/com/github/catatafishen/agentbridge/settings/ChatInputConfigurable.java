@@ -32,6 +32,7 @@ public final class ChatInputConfigurable implements Configurable {
     private JComboBox<String> triggerCharCombo;
     private JBCheckBox followModeCheckbox;
     private JBCheckBox smoothScrollCheckbox;
+    private JBCheckBox showTurnStatsCheckbox;
 
     public ChatInputConfigurable(@NotNull Project project) {
         this.project = project;
@@ -69,6 +70,12 @@ public final class ChatInputConfigurable implements Configurable {
         smoothScrollCheckbox.setToolTipText(
             "⚠ May cause screen tearing on some systems. Disable if you see visual artifacts while scrolling.");
 
+        showTurnStatsCheckbox = new JBCheckBox(
+            "Show turn stats below messages (duration, tokens, lines changed)",
+            mcpSettings.isShowTurnStats());
+        showTurnStatsCheckbox.setToolTipText(
+            "Displays a summary footer below the last message of each agent turn. Disabling saves vertical space.");
+
         JBLabel descLabel = new JBLabel(
             "<html>Appearance and interaction settings for the chat panel, "
                 + "input area, and editor integration.</html>");
@@ -98,6 +105,8 @@ public final class ChatInputConfigurable implements Configurable {
             .addVerticalGap(4)
             .addComponent(smoothScrollCheckbox)
             .addTooltip("⚠ May cause screen tearing on some systems")
+            .addVerticalGap(4)
+            .addComponent(showTurnStatsCheckbox)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -125,7 +134,8 @@ public final class ChatInputConfigurable implements Configurable {
         if (!selectedTriggerChar().equals(s.getFileSearchTrigger())) return true;
         if (followModeCheckbox.isSelected() != ActiveAgentManager.getFollowAgentFiles(project)) return true;
         McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
-        return smoothScrollCheckbox.isSelected() != mcpSettings.isSmoothScrollEnabled();
+        if (smoothScrollCheckbox.isSelected() != mcpSettings.isSmoothScrollEnabled()) return true;
+        return showTurnStatsCheckbox.isSelected() != mcpSettings.isShowTurnStats();
     }
 
     @Override
@@ -141,9 +151,11 @@ public final class ChatInputConfigurable implements Configurable {
 
         McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
         mcpSettings.setSmoothScrollEnabled(smoothScrollCheckbox.isSelected());
+        mcpSettings.setShowTurnStats(showTurnStatsCheckbox.isSelected());
         var chatPanel = ChatConsolePanel.Companion.getInstance(project);
         if (chatPanel != null) {
             chatPanel.setSmoothScroll(smoothScrollCheckbox.isSelected());
+            chatPanel.setShowTurnStats(showTurnStatsCheckbox.isSelected());
         }
     }
 
@@ -160,6 +172,7 @@ public final class ChatInputConfigurable implements Configurable {
         followModeCheckbox.setSelected(ActiveAgentManager.getFollowAgentFiles(project));
         McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
         smoothScrollCheckbox.setSelected(mcpSettings.isSmoothScrollEnabled());
+        showTurnStatsCheckbox.setSelected(mcpSettings.isShowTurnStats());
     }
 
     @Override
@@ -171,6 +184,7 @@ public final class ChatInputConfigurable implements Configurable {
         triggerCharCombo = null;
         followModeCheckbox = null;
         smoothScrollCheckbox = null;
+        showTurnStatsCheckbox = null;
     }
 
     private String selectedTriggerChar() {

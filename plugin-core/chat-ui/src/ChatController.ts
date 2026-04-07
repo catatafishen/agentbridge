@@ -14,6 +14,26 @@ function _showNotification(title: string, body: string, actions?: { action: stri
     }
 }
 
+/** Format milliseconds as human-readable duration: "45s", "1m 23s", "2h 5m" */
+function _formatDuration(ms: number): string {
+    if (ms <= 0) return '';
+    const totalSec = Math.round(ms / 1000);
+    if (totalSec < 60) return totalSec + 's';
+    const min = Math.floor(totalSec / 60);
+    const sec = totalSec % 60;
+    if (min < 60) return sec > 0 ? min + 'm ' + sec + 's' : min + 'm';
+    const hr = Math.floor(min / 60);
+    const remMin = min % 60;
+    return remMin > 0 ? hr + 'h ' + remMin + 'm' : hr + 'h';
+}
+
+/** Format token count: "1.2k", "245", "12.3k" */
+function _formatTokens(n: number): string {
+    if (n < 1000) return String(n);
+    if (n < 10000) return (n / 1000).toFixed(1) + 'k';
+    return Math.round(n / 1000) + 'k';
+}
+
 const ChatController = {
     _domMessageLimit: 80,
 
@@ -524,12 +544,81 @@ const ChatController = {
         (meta as any).setCodeChangeStats(added, removed);
     },
 
+    /**
+     * Renders the final turn summary, replacing any live stats footer with
+     * a comprehensive chip strip showing duration, tokens, tools, and diff.
+     */
+    renderTurnSummary(stats: {
+        duration: number; inputTokens: number; outputTokens: number;
+        tools: number; added: number; removed: number;
+        model: string; multiplier?: string;
+    }): void {
+        const row = this._lastAgentRow();
+        if (!row) return;
+
+        // Remove ALL existing stats footers so only the final summary remains
+        document.querySelectorAll('message-meta.stats-footer').forEach(el => el.remove());
+
+        const meta = document.createElement('message-meta') as any;
+        meta.classList.add('stats-footer', 'show');
+        row.appendChild(meta);
+
+        // Duration chip: "45s" or "1m 23s"
+        const dur = _formatDuration(stats.duration);
+        if (dur) {
+            const chip = document.createElement('span');
+            chip.className = 'turn-chip stats';
+            chip.textContent = '⏱ ' + dur;
+            meta.appendChild(chip);
+        }
+
+        // Token chip: "1.2k in · 3.4k out"
+        if (stats.inputTokens > 0 || stats.outputTokens > 0) {
+            const chip = document.createElement('span');
+            chip.className = 'turn-chip stats';
+            chip.textContent = _formatTokens(stats.inputTokens) + ' in · ' + _formatTokens(stats.outputTokens) + ' out';
+            chip.setAttribute('title', stats.model || '');
+            meta.appendChild(chip);
+        }
+
+        // Tool count chip
+        if (stats.tools > 0) {
+            const chip = document.createElement('span');
+            chip.className = 'turn-chip stats';
+            chip.textContent = stats.tools + (stats.tools === 1 ? ' tool' : ' tools');
+            meta.appendChild(chip);
+        }
+
+        // Multiplier chip (e.g. "5x")
+        if (stats.multiplier) {
+            const chip = document.createElement('span');
+            chip.className = 'turn-chip stats';
+            chip.textContent = stats.multiplier;
+            chip.setAttribute('title', stats.model || '');
+            meta.appendChild(chip);
+        }
+
+        // Diff chip: +42 −7
+        if (stats.added > 0 || stats.removed > 0) {
+            meta.setCodeChangeStats(stats.added, stats.removed);
+        }
+    },
+
     _lastAgentRow(): Element | null {
         const rows = document.querySelectorAll('.agent-row');
         return rows[rows.length - 1] ?? null;
     },
 
+    /**
+     * Ensures a stats footer exists on the given agent row.
+     * Removes any previously placed stats footer from OTHER agent rows so
+     * only the latest row displays live stats (fixes "stats on multiple messages").
+     */
     _ensureStatsFooter(agentRow: Element): HTMLElement {
+        // Remove footers from all OTHER rows
+        document.querySelectorAll('message-meta.stats-footer').forEach(el => {
+            if (el.parentElement !== agentRow) el.remove();
+        });
         let meta = agentRow.querySelector('message-meta.stats-footer') as HTMLElement | null;
         if (!meta) {
             meta = document.createElement('message-meta');

@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.acp.client.AcpClient
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
+import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -163,6 +164,9 @@ object ChatTheme {
         sb.append("--kind-read:${rgb(kindRead)};--kind-search:${rgb(kindSearch)};")
         sb.append("--kind-edit:${rgb(kindEdit)};--kind-execute:${rgb(kindExecute)};")
         sb.append("--kind-think:${rgb(KIND_THINK_COLOR)};--kind-other:${rgb(KIND_OTHER_COLOR)};")
+        val diffAdd = ToolRenderers.SUCCESS_COLOR as Color
+        val diffDel = ToolRenderers.FAIL_COLOR as Color
+        sb.append("--diff-add:${rgb(diffAdd)};--diff-del:${rgb(diffDel)};")
         // Per-agent bubble color overrides — injected only when the user has chosen a custom color.
         // The CSS uses var(--client-X-bubble-bg, fallback) so these only take effect when present.
         for (clientType in listOf("copilot", "claude", "opencode", "junie", "kiro", "codex")) {

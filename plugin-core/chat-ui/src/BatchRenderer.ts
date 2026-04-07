@@ -70,7 +70,19 @@ interface NudgeSentTurn {
     timestamp: string;
 }
 
-type BatchTurn = UserTurn | AgentTurn | SeparatorTurn | NudgeSentTurn;
+interface StatsTurn {
+    type: 'stats';
+    duration: number;
+    inputTokens: number;
+    outputTokens: number;
+    tools: number;
+    added: number;
+    removed: number;
+    model: string;
+    multiplier?: string;
+}
+
+type BatchTurn = UserTurn | AgentTurn | SeparatorTurn | NudgeSentTurn | StatsTurn;
 
 // ── Public API ──────────────────────────────────────────────
 
@@ -94,6 +106,9 @@ export function renderBatchFragment(encodedJson: string): DocumentFragment {
                 break;
             case 'nudge_sent':
                 fragment.appendChild(_renderNudgeSentTurn(turn));
+                break;
+            case 'stats':
+                _appendStatsToLastAgent(fragment, turn);
                 break;
         }
     }
@@ -246,4 +261,66 @@ function _appendSubAgent(entry: SubAgentEntry, meta: HTMLElement, msg: HTMLEleme
     bubble.innerHTML = entry.resultHtml ?? 'Completed';
     indent.appendChild(bubble);
     msg.appendChild(indent);
+}
+
+/**
+ * Finds the last agent chat-message in the fragment and appends a stats footer.
+ * Used to restore turn stats on session resume.
+ */
+function _appendStatsToLastAgent(fragment: DocumentFragment, stats: StatsTurn): void {
+    const agents = fragment.querySelectorAll('chat-message[type="agent"]');
+    const lastAgent = agents[agents.length - 1];
+    if (!lastAgent) return;
+
+    const meta = document.createElement('message-meta') as any;
+    meta.classList.add('stats-footer', 'show');
+
+    // Duration chip
+    if (stats.duration > 0) {
+        const chip = document.createElement('span');
+        chip.className = 'turn-chip stats';
+        const totalSec = Math.round(stats.duration / 1000);
+        let dur: string;
+        if (totalSec < 60) dur = totalSec + 's';
+        else {
+            const m = Math.floor(totalSec / 60), s = totalSec % 60;
+            dur = s > 0 ? m + 'm ' + s + 's' : m + 'm';
+        }
+        chip.textContent = '⏱ ' + dur;
+        meta.appendChild(chip);
+    }
+
+    // Token chip
+    if (stats.inputTokens > 0 || stats.outputTokens > 0) {
+        const fmt = (n: number) => n < 1000 ? String(n) : n < 10000 ? (n / 1000).toFixed(1) + 'k' : Math.round(n / 1000) + 'k';
+        const chip = document.createElement('span');
+        chip.className = 'turn-chip stats';
+        chip.textContent = fmt(stats.inputTokens) + ' in · ' + fmt(stats.outputTokens) + ' out';
+        chip.setAttribute('title', stats.model || '');
+        meta.appendChild(chip);
+    }
+
+    // Tool count chip
+    if (stats.tools > 0) {
+        const chip = document.createElement('span');
+        chip.className = 'turn-chip stats';
+        chip.textContent = stats.tools + (stats.tools === 1 ? ' tool' : ' tools');
+        meta.appendChild(chip);
+    }
+
+    // Multiplier chip
+    if (stats.multiplier) {
+        const chip = document.createElement('span');
+        chip.className = 'turn-chip stats';
+        chip.textContent = stats.multiplier;
+        chip.setAttribute('title', stats.model || '');
+        meta.appendChild(chip);
+    }
+
+    // Diff chip
+    if (stats.added > 0 || stats.removed > 0) {
+        meta.setCodeChangeStats(stats.added, stats.removed);
+    }
+
+    lastAgent.appendChild(meta);
 }

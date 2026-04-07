@@ -229,6 +229,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                         if (McpServerSettings.getInstance(project).isSmoothScrollEnabled) {
                             setSmoothScroll(true)
                         }
+                        if (!McpServerSettings.getInstance(project).isShowTurnStats) {
+                            setShowTurnStats(false)
+                        }
                     }
                 }, browser.cefBrowser
             )
@@ -264,6 +267,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     fun setSmoothScroll(enabled: Boolean) {
         executeJs("document.querySelector('chat-container').style.scrollBehavior = '${if (enabled) "smooth" else "auto"}'")
+    }
+
+    fun setShowTurnStats(enabled: Boolean) {
+        executeJs("document.documentElement.classList.toggle('hide-turn-stats', ${!enabled})")
     }
 
     override fun addPromptEntry(
@@ -698,6 +705,26 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 totalLinesRemoved = (prev?.totalLinesRemoved ?: 0) + linesRemoved,
             )
         )
+        // Render the turn summary footer in the chat panel
+        val statsJson = buildTurnSummaryJson(durationMs, inputTokens, outputTokens, toolCallCount, linesAdded, linesRemoved, model, multiplier)
+        executeJs("ChatController.renderTurnSummary($statsJson)")
+    }
+
+    private fun buildTurnSummaryJson(
+        durationMs: Long, inputTokens: Int, outputTokens: Int,
+        toolCallCount: Int, linesAdded: Int, linesRemoved: Int,
+        model: String, multiplier: String
+    ): String {
+        val parts = mutableListOf<String>()
+        parts.add("\"duration\":${durationMs}")
+        parts.add("\"inputTokens\":${inputTokens}")
+        parts.add("\"outputTokens\":${outputTokens}")
+        parts.add("\"tools\":${toolCallCount}")
+        parts.add("\"added\":${linesAdded}")
+        parts.add("\"removed\":${linesRemoved}")
+        parts.add("\"model\":\"${escJs(model)}\"")
+        if (multiplier.isNotEmpty()) parts.add("\"multiplier\":\"${escJs(multiplier)}\"")
+        return "{${parts.joinToString(",")}}"
     }
 
     override fun showQuickReplies(options: List<String>) {
@@ -820,7 +847,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                     i++
                 }
 
-                is EntryData.Status, is EntryData.ContextFiles, is EntryData.TurnStats -> i++
+                is EntryData.Status, is EntryData.ContextFiles -> i++
+                is EntryData.TurnStats -> {
+                    turns.add(serializeTurnStatsTurn(e))
+                    i++
+                }
                 else -> {
                     val (turn, nextI) = serializeAgentTurn(entries, i)
                     turns.add(turn)
@@ -850,6 +881,21 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             "html" to esc(e.text),
             "timestamp" to displayTs(e.timestamp)
         )
+
+    private fun serializeTurnStatsTurn(e: EntryData.TurnStats): Map<String, Any?> {
+        val m = mutableMapOf<String, Any?>(
+            "type" to "stats",
+            "duration" to e.durationMs,
+            "inputTokens" to e.inputTokens,
+            "outputTokens" to e.outputTokens,
+            "tools" to e.toolCallCount,
+            "added" to e.linesAdded,
+            "removed" to e.linesRemoved,
+            "model" to e.model,
+        )
+        if (e.multiplier.isNotEmpty()) m["multiplier"] = e.multiplier
+        return m
+    }
 
     /** Adds a sent nudge entry to the in-memory entries list for persistence. */
     override fun addNudgeEntry(id: String, text: String) {
@@ -883,7 +929,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         while (i < entries.size) {
             val e = entries[i]
             if (e is EntryData.Prompt || e is EntryData.Nudge || e is EntryData.SessionSeparator || e is EntryData.Status) break
-            if (e is EntryData.ContextFiles || e is EntryData.TurnStats) {
+            if (e is EntryData.ContextFiles || e is EntryData.TurnStats || e is EntryData.Status) {
                 i++; continue
             }
             if (hadToolOrSubagent && (e is EntryData.Text || e is EntryData.Thinking)) flushSegment()
