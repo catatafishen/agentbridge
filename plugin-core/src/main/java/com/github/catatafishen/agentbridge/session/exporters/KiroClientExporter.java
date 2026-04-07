@@ -42,6 +42,24 @@ public final class KiroClientExporter {
 
     private static final String STATE_RESULT = "result";
 
+    /**
+     * Maximum characters allowed per individual tool result in the exported history.
+     * Large file reads / search results are truncated to this limit to prevent the
+     * context window from being filled by a single historical tool call.
+     */
+    private static final int MAX_TOOL_RESULT_CHARS = 4_000;
+
+    /**
+     * Maximum total character budget for the exported conversation history.
+     * Claude's 200K-token context window is approximately 800K chars; we reserve a
+     * conservative 400K chars for history, leaving room for system prompt, the new
+     * user message, and the model's response.
+     * <p>
+     * When the history exceeds this budget (after per-result truncation), the oldest
+     * complete user-turn blocks are dropped from the front until it fits.
+     */
+    private static final int MAX_TOTAL_HISTORY_CHARS = 400_000;
+
     private KiroClientExporter() {
     }
 
@@ -197,6 +215,15 @@ public final class KiroClientExporter {
                 String argsStr = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
                 String resultStr = toolCall.getResult() != null ? toolCall.getResult() : "";
 
+                // Truncate large tool results — raw file reads and search dumps can be hundreds
+                // of KB each. In exported history the agent no longer needs the raw content
+                // (it already acted on it); a summary stub preserves conversation structure
+                // without inflating the context window past Anthropic's limit.
+                if (resultStr.length() > MAX_TOOL_RESULT_CHARS) {
+                    resultStr = resultStr.substring(0, MAX_TOOL_RESULT_CHARS)
+                        + "\n[... truncated for context window ...]";
+                }
+
                 JsonObject inputObj;
                 try {
                     inputObj = JsonParser.parseString(argsStr).getAsJsonObject();
@@ -283,6 +310,11 @@ public final class KiroClientExporter {
             result.add(wrapMessage(KIND_ASSISTANT_MESSAGE, UUID.randomUUID().toString(), content));
         }
 
+        // Drop oldest user-turn blocks if the total history exceeds the context-window budget.
+        // Each tool result was already truncated per-item above; this handles sessions that have
+        // accumulated too many turns overall. Must run last so structural fixes are already applied.
+        trimToSizeBudget(result);
+
         return result;
     }
 
@@ -336,6 +368,57 @@ public final class KiroClientExporter {
             } else {
                 i++;
             }
+        }
+    }
+
+    /**
+     * Drops the oldest complete user-turn blocks from the front of {@code messages}
+     * until the total serialized character count is within {@link #MAX_TOTAL_HISTORY_CHARS}.
+     *
+     * <p>A "user-turn block" is everything from one {@code Prompt} up to (but not including)
+     * the next {@code Prompt}. Dropping the block preserves the structural validity of the
+     * remaining history because each surviving block still starts with a {@code Prompt} and
+     * has matching {@code AssistantMessage}/{@code ToolResults} pairs.</p>
+     *
+     * <p>If fewer than two {@code Prompt} messages remain, no further trimming is performed.
+     * This guarantees the history always starts with at least one user message.</p>
+     */
+    private static void trimToSizeBudget(@NotNull List<JsonObject> messages) {
+        int totalChars = 0;
+        for (JsonObject m : messages) {
+            totalChars += GSON.toJson(m).length();
+        }
+        if (totalChars <= MAX_TOTAL_HISTORY_CHARS) return;
+
+        while (totalChars > MAX_TOTAL_HISTORY_CHARS) {
+            // Find the index of the second Prompt so we can drop everything before it.
+            int secondPromptIdx = -1;
+            int promptsSeen = 0;
+            for (int i = 0; i < messages.size(); i++) {
+                if (KIND_PROMPT.equals(messages.get(i).get("kind").getAsString())) {
+                    promptsSeen++;
+                    if (promptsSeen == 2) {
+                        secondPromptIdx = i;
+                        break;
+                    }
+                }
+            }
+
+            if (secondPromptIdx == -1) {
+                LOG.warn("Kiro export: history exceeds budget (" + totalChars
+                    + " chars) but only one Prompt remains — cannot trim further");
+                break;
+            }
+
+            int charsDropped = 0;
+            for (int i = 0; i < secondPromptIdx; i++) {
+                charsDropped += GSON.toJson(messages.get(i)).length();
+            }
+            LOG.warn("Kiro export: trimming " + secondPromptIdx
+                + " oldest messages (" + charsDropped + " chars) — history was "
+                + totalChars + " chars, budget is " + MAX_TOTAL_HISTORY_CHARS);
+            messages.subList(0, secondPromptIdx).clear();
+            totalChars -= charsDropped;
         }
     }
 

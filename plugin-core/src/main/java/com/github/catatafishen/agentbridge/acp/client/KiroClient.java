@@ -10,6 +10,7 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
+import java.util.Map;
 
 public final class KiroClient extends AcpClient {
 
@@ -48,6 +49,15 @@ public final class KiroClient extends AcpClient {
             synchronized (recentStderr) {
                 recentStderr.addLast(line);
                 if (recentStderr.size() > STDERR_BUFFER_SIZE) recentStderr.removeFirst();
+            }
+            // When Kiro's agent-loop thread panics, the Rust panic hook prints the message to
+            // stderr but the main process thread stays alive — stdout remains open, so readLoop
+            // never gets EOF and pending futures wait until the full inactivity timeout (minutes).
+            // Force-kill the process as soon as we detect a panic so readLoop gets EOF immediately
+            // and the error surfaces in the UI within ~500ms instead of after the timeout.
+            if (line.contains("The application panicked") || line.contains("thread 'agent") && line.contains("panicked")) {
+                LOG.warn("Kiro panic detected — force-killing process to unblock pending futures");
+                destroyProcess();
             }
         });
     }
@@ -204,6 +214,13 @@ public final class KiroClient extends AcpClient {
             com.intellij.openapi.diagnostic.Logger.getInstance(KiroClient.class)
                 .info("Kiro: wrote agent definition to " + agentPath + " to restrict built-in tools");
         }
+    }
+
+    @Override
+    protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
+        // RUST_BACKTRACE=1 causes the Kiro process to print full stack traces on panic,
+        // making crash diagnostics significantly easier.
+        return Map.of("RUST_BACKTRACE", "1");
     }
 
     @Override

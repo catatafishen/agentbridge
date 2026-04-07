@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -136,7 +137,7 @@ class KiroClientExporterTest {
                     "{\"content\":[{\"type\":\"text\",\"text\":\"file data\"}]}")
             ));
 
-        assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
+        assertEquals(4, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults + placeholder AssistantMessage");
 
         JsonObject assistantMsg = kiroMessages.get(1);
         assertEquals("AssistantMessage", assistantMsg.get("kind").getAsString());
@@ -164,7 +165,7 @@ class KiroClientExporterTest {
         assertEquals(toolUseId, toolResultUseId, "toolUseId must match between use and result");
 
         JsonObject results = trData.getAsJsonObject("results");
-        assertTrue(results.size() > 0, "results map should not be empty");
+        assertFalse(results.isEmpty(), "results map should not be empty");
     }
 
     @Test
@@ -177,7 +178,7 @@ class KiroClientExporterTest {
                 toolCall("search_text", "{}", "result2")
             ));
 
-        assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
+        assertEquals(4, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults + placeholder AssistantMessage");
 
         var assistantContent = kiroMessages.get(1).getAsJsonObject("data").getAsJsonArray("content");
         assertEquals(3, assistantContent.size(), "text + 2 toolUse blocks");
@@ -311,7 +312,7 @@ class KiroClientExporterTest {
                 toolCall("search_text", "{\"query\":\"hello\"}",
                     "{\"content\":[{\"type\":\"text\",\"text\":\"found it\"}]}")
             ));
-        assertEquals(3, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults");
+        assertEquals(4, kiroMessages.size(), "Prompt + AssistantMessage + ToolResults + placeholder AssistantMessage");
 
         JsonObject results = kiroMessages.get(2).getAsJsonObject("data").getAsJsonObject("results");
         // Get the first (and only) tool result entry — toolCallId is a random UUID now
@@ -388,6 +389,68 @@ class KiroClientExporterTest {
             assertFalse(
                 "AssistantMessage".equals(kinds.get(i)) && "AssistantMessage".equals(kinds.get(i + 1)),
                 "Consecutive AssistantMessages at index " + i + ": " + kinds);
+        }
+    }
+
+    @Test
+    void largeToolResultIsTruncated() {
+        // Tool results exceeding MAX_TOOL_RESULT_CHARS (4000 chars) should be truncated so that
+        // the exported history stays within Anthropic's context window limit.
+        String largeResult = "x".repeat(10_000);
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(
+                userPrompt("read big file"),
+                assistantText("Reading."),
+                toolCall("read_file", "{}", largeResult)
+            ));
+
+        // The ToolResults at index 2 should have the result truncated
+        JsonObject trMsg = kiroMessages.get(2);
+        assertEquals("ToolResults", trMsg.get("kind").getAsString());
+
+        JsonObject resultEntry = trMsg.getAsJsonObject("data")
+            .getAsJsonArray("content")
+            .get(0).getAsJsonObject()
+            .getAsJsonObject("data")
+            .getAsJsonArray("content")
+            .get(0).getAsJsonObject()
+            .getAsJsonObject("data")
+            .getAsJsonArray("content")
+            .get(0).getAsJsonObject();
+        String resultText = resultEntry.get("text").getAsString();
+        assertTrue(resultText.length() < largeResult.length(),
+            "Tool result should be truncated but was same length: " + resultText.length());
+        assertTrue(resultText.contains("truncated"), "Truncation marker should be present");
+    }
+
+    @Test
+    void historyExceedingBudgetIsTrimmedFromOldest() {
+        // Build a conversation with many turns to exceed MAX_TOTAL_HISTORY_CHARS.
+        // Each turn has a text + tool call with a 4000-char result (just at the truncation limit).
+        // We create enough turns to exceed the 400K-char budget.
+        List<EntryData> entries = new ArrayList<>();
+        // Add 120 turns: each produces ~5KB after export → 120 × 5KB = ~600KB > 400KB budget
+        String repeatedResult = "a".repeat(4_000);  // exactly at truncation limit
+        for (int i = 0; i < 120; i++) {
+            entries.add(userPrompt("Turn " + i));
+            entries.add(assistantText("Answer " + i));
+            entries.add(toolCall("read_file", "{}", repeatedResult));
+        }
+
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(entries);
+
+        // Must still start with a Prompt and be structurally valid
+        assertFalse(kiroMessages.isEmpty(), "Messages should not be empty after trim");
+        assertEquals("Prompt", kiroMessages.getFirst().get("kind").getAsString(),
+            "Must start with a Prompt after trim");
+        // Must be smaller than the 120-turn original
+        assertTrue(kiroMessages.size() < entries.size(),
+            "Trimmed list should be shorter than original — was: " + kiroMessages.size());
+        // No consecutive same-kind messages
+        for (int i = 0; i < kiroMessages.size() - 1; i++) {
+            String a = kiroMessages.get(i).get("kind").getAsString();
+            String b = kiroMessages.get(i + 1).get("kind").getAsString();
+            assertNotEquals(a, b, "Consecutive same-kind messages at " + i + ": " + a);
         }
     }
 
