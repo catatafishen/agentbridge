@@ -151,8 +151,6 @@ public final class EntryDataJsonAdapter {
             addIfNonZero(json, "outputTokens", ts.getOutputTokens());
             addIfNonZero(json, "costUsd", ts.getCostUsd());
             addIfNonZero(json, "toolCallCount", ts.getToolCallCount());
-            addIfNonZero(json, "linesAdded", ts.getLinesAdded());
-            addIfNonZero(json, "linesRemoved", ts.getLinesRemoved());
             addNonEmpty(json, "model", ts.getModel());
             addNonEmpty(json, "multiplier", ts.getMultiplier());
             addIfNonZero(json, "totalDurationMs", ts.getTotalDurationMs());
@@ -160,8 +158,6 @@ public final class EntryDataJsonAdapter {
             addIfNonZero(json, "totalOutputTokens", ts.getTotalOutputTokens());
             addIfNonZero(json, "totalCostUsd", ts.getTotalCostUsd());
             addIfNonZero(json, "totalToolCalls", ts.getTotalToolCalls());
-            addIfNonZero(json, "totalLinesAdded", ts.getTotalLinesAdded());
-            addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
             json.addProperty("entryId", ts.getEntryId());
 
         } else if (entry instanceof EntryData.SessionSeparator sep) {
@@ -291,8 +287,6 @@ public final class EntryDataJsonAdapter {
                 longVal(json, "outputTokens"),
                 doubleVal(json, "costUsd"),
                 intVal(json, "toolCallCount"),
-                intVal(json, "linesAdded"),
-                intVal(json, "linesRemoved"),
                 str(json, "model"),
                 str(json, "multiplier"),
                 longVal(json, "totalDurationMs"),
@@ -300,8 +294,6 @@ public final class EntryDataJsonAdapter {
                 longVal(json, "totalOutputTokens"),
                 doubleVal(json, "totalCostUsd"),
                 intVal(json, "totalToolCalls"),
-                intVal(json, "totalLinesAdded"),
-                intVal(json, "totalLinesRemoved"),
                 entryId);
             case TYPE_NUDGE -> new EntryData.Nudge(
                 str(json, "text"),

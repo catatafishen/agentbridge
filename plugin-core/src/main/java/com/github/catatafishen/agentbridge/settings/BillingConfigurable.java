@@ -25,6 +25,7 @@ public final class BillingConfigurable implements Configurable {
     private BillingSettings settings;
     private JBLabel statusLabel;
     private JPanel mainPanel;
+    private boolean ghAuthenticated;
 
     @Override
     public @Nls(capitalization = Nls.Capitalization.Title) String getDisplayName() {
@@ -57,6 +58,8 @@ public final class BillingConfigurable implements Configurable {
         installNote.setFont(JBUI.Fonts.smallFont());
 
         showCopilotUsageCb = new JBCheckBox("Show Copilot usage graph in toolbar");
+        showCopilotUsageCb.setEnabled(false);
+        showCopilotUsageCb.setToolTipText("Requires a successful gh auth login before it can be enabled.");
 
         JButton recheckButton = new JButton("Recheck");
         recheckButton.addActionListener(e -> refreshGhCliStatusAsync());
@@ -95,7 +98,9 @@ public final class BillingConfigurable implements Configurable {
 
     @Override
     public void apply() {
-        settings.setShowCopilotUsage(showCopilotUsageCb.isSelected());
+        if (ghAuthenticated) {
+            settings.setShowCopilotUsage(showCopilotUsageCb.isSelected());
+        }
         String ghPath = ghBinaryPathField.getText().trim();
         settings.setGhBinaryPath(ghPath.isEmpty() ? null : ghPath);
     }
@@ -105,6 +110,7 @@ public final class BillingConfigurable implements Configurable {
         showCopilotUsageCb.setSelected(settings.isShowCopilotUsage());
         String ghPath = settings.getGhBinaryPath();
         ghBinaryPathField.setText(ghPath != null ? ghPath : "");
+        showCopilotUsageCb.setEnabled(false);
         refreshGhCliStatusAsync();
     }
 
@@ -128,6 +134,10 @@ public final class BillingConfigurable implements Configurable {
 
             SwingUtilities.invokeLater(() -> {
                 if (statusLabel == null) return;
+                ghAuthenticated = authenticated;
+                if (showCopilotUsageCb != null) {
+                    showCopilotUsageCb.setEnabled(authenticated);
+                }
                 if (ghCli == null) {
                     statusLabel.setText("GitHub CLI not found — install from cli.github.com");
                     statusLabel.setForeground(Color.RED);

@@ -76,8 +76,6 @@ interface StatsTurn {
     inputTokens: number;
     outputTokens: number;
     tools: number;
-    added: number;
-    removed: number;
     model: string;
     multiplier?: string;
 }
@@ -302,24 +300,6 @@ function _buildStatBar(stats: StatsTurn): HTMLElement {
     if (stats.model) {
         const name = stats.model.includes('/') ? stats.model.split('/').pop()! : stats.model;
         parts.push(name);
-    }
-
-    if (stats.added > 0 || stats.removed > 0) {
-        const diffEl = document.createElement('span');
-        if (stats.added > 0) {
-            const a = document.createElement('span');
-            a.className = 'diff-add';
-            a.textContent = '+' + stats.added;
-            diffEl.appendChild(a);
-        }
-        if (stats.removed > 0) {
-            if (stats.added > 0) diffEl.appendChild(document.createTextNode('\u2009'));
-            const d = document.createElement('span');
-            d.className = 'diff-del';
-            d.textContent = '\u2212' + stats.removed;
-            diffEl.appendChild(d);
-        }
-        parts.push(diffEl);
     }
 
     if (stats.inputTokens > 0 || stats.outputTokens > 0) {

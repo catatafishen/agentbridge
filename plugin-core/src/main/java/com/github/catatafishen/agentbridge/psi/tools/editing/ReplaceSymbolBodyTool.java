@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.psi.tools.editing;
 
-import com.github.catatafishen.agentbridge.psi.CodeChangeTracker;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.FileAccessTracker;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
@@ -128,7 +127,6 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
 
                 int replacedLines = loc.endLine() - loc.startLine() + 1;
                 int newLineCount = (int) fNew.chars().filter(c -> c == '\n').count() + 1;
-                CodeChangeTracker.recordChange(newLineCount, replacedLines);
                 result.complete("Replaced lines " + loc.startLine() + "-" + loc.endLine()
                     + " (" + replacedLines + " lines) with " + (newLineCount - 1) + " lines in " + pathStr
                     + FORMATTED_SUFFIX);

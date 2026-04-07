@@ -7,7 +7,6 @@ import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient
 import com.github.catatafishen.agentbridge.agent.AgentException
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
-import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentScratchTracker
@@ -30,7 +29,6 @@ data class PromptOrchestratorCallbacks(
     val requestFocusAfterTurn: () -> Unit,
     val onTimerIncrementToolCalls: () -> Unit,
     val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double?) -> Unit,
-    val onTimerSetCodeChangeStats: (added: Int, removed: Int) -> Unit,
     /** Called for plan-tree and file-tracking side-effects (remains in ChatToolWindowContent). */
     val onClientUpdate: (SessionUpdate) -> Unit,
     /** Trigger a new prompt execution (used for queued messages). */
@@ -95,8 +93,6 @@ class PromptOrchestrator(
     private val toolCallArgs = mutableMapOf<String, String>() // arguments from tool_call_update
     private var pendingBanner: PendingBanner? = null
     private var turnHadContent = false
-    private var codeChangeListener: Runnable? = null
-
     private var pendingRawText = ""
     private var pendingPromptEntryId = ""
 
@@ -255,21 +251,6 @@ class PromptOrchestrator(
         turnHadContent = false
         activeSubAgentStack.clear()
         turnModelId = selectedModelId
-        CodeChangeTracker.clear()
-
-        // Register real-time listener so code-change chips update as each tool runs.
-        codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
-        val listener = Runnable {
-            ApplicationManager.getApplication().invokeLater {
-                val changes = CodeChangeTracker.get()
-                if (changes[0] > 0 || changes[1] > 0) {
-                    consolePanel().setCodeChangeStats(changes[0], changes[1])
-                    callbacks.onTimerSetCodeChangeStats(changes[0], changes[1])
-                }
-            }
-        }
-        codeChangeListener = listener
-        CodeChangeTracker.addListener(listener)
         ApplicationManager.getApplication().invokeLater {
             consolePanel().setCurrentProfile(agentManager.activeProfileId)
             consolePanel().setCurrentModel(selectedModelId)
@@ -401,10 +382,6 @@ class PromptOrchestrator(
     }
 
     private fun handlePromptCompletion(prompt: String) {
-        // Unregister the real-time code-change listener before finalising the turn.
-        codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
-        codeChangeListener = null
-
         PsiBridgeService.getInstance(project).flushPendingAutoFormat()
         PsiBridgeService.getInstance(project).clearFileAccessTracking()
         pendingBanner = null
@@ -426,20 +403,13 @@ class PromptOrchestrator(
             callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
         }
 
-        val codeChanges = CodeChangeTracker.getAndClear()
-        if (codeChanges[0] > 0 || codeChanges[1] > 0) {
-            ApplicationManager.getApplication().invokeLater {
-                consolePanel().setCodeChangeStats(codeChanges[0], codeChanges[1])
-            }
-        }
-
         callbacks.notifyIfUnfocused(turnToolCallCount)
 
         val turnDuration = System.currentTimeMillis() - turnStartedAt
         val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
         consolePanel().emitTurnStats(
             turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
-            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier
+            turnToolCallCount, turnModelId, turnMultiplier
         )
 
         callbacks.saveTurnStatistics(prompt, turnToolCallCount, turnModelId)
@@ -480,8 +450,6 @@ class PromptOrchestrator(
         val agentName = agentManager.activeProfile.displayName
         log.warn("$agentName: empty turn — session state corrupted, resetting session")
 
-        codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
-        codeChangeListener = null
         pendingBanner = null
 
         // Drop the ACP client's cached session ID too, so the next createSession()

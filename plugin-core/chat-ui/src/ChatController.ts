@@ -37,8 +37,7 @@ function _formatTokens(n: number): string {
 /** Build a turn-summary-bar element: a horizontal rule with stats centered. */
 function _buildTurnSummaryBar(stats: {
     duration: number; inputTokens: number; outputTokens: number;
-    tools: number; added: number; removed: number;
-    model: string; multiplier?: string;
+    tools: number; model: string; multiplier?: string;
 }): HTMLElement {
     const bar = document.createElement('div');
     bar.className = 'turn-summary-bar';
@@ -55,24 +54,6 @@ function _buildTurnSummaryBar(stats: {
     if (stats.model) {
         const name = stats.model.includes('/') ? stats.model.split('/').pop()! : stats.model;
         parts.push(name);
-    }
-
-    if (stats.added > 0 || stats.removed > 0) {
-        const diffEl = document.createElement('span');
-        if (stats.added > 0) {
-            const a = document.createElement('span');
-            a.className = 'diff-add';
-            a.textContent = '+' + stats.added;
-            diffEl.appendChild(a);
-        }
-        if (stats.removed > 0) {
-            if (stats.added > 0) diffEl.appendChild(document.createTextNode('\u2009'));
-            const d = document.createElement('span');
-            d.className = 'diff-del';
-            d.textContent = '\u2212' + stats.removed;
-            diffEl.appendChild(d);
-        }
-        parts.push(diffEl);
     }
 
     if (stats.inputTokens > 0 || stats.outputTokens > 0) {
@@ -614,12 +595,8 @@ const ChatController = {
         meta.appendChild(chip);
     },
 
-    setCodeChangeStats(added: number, removed: number): void {
-        if (!this._turnActive) return;
-        const row = this._lastAgentRow();
-        if (!row) return;
-        const meta = this._ensureStatsFooter(row);
-        (meta as any).setCodeChangeStats(added, removed);
+    setCodeChangeStats(_added: number, _removed: number): void {
+        // no-op: live diff chips removed
     },
 
     /**
@@ -628,8 +605,7 @@ const ChatController = {
      */
     renderTurnSummary(stats: {
         duration: number; inputTokens: number; outputTokens: number;
-        tools: number; added: number; removed: number;
-        model: string; multiplier?: string;
+        tools: number; model: string; multiplier?: string;
     }): void {
         // Remove ALL live stats footers across every agent row (the footer may be
         // stranded on an earlier row if new segments were added after the last

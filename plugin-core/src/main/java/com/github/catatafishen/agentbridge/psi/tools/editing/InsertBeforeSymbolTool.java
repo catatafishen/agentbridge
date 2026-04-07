@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.psi.tools.editing;
 
-import com.github.catatafishen.agentbridge.psi.CodeChangeTracker;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.FileAccessTracker;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
@@ -133,7 +132,6 @@ public final class InsertBeforeSymbolTool extends EditingTool {
         String resultStr = result.get(15, TimeUnit.SECONDS);
         if (!resultStr.startsWith(ToolUtils.ERROR_PREFIX) && !resultStr.startsWith(SYMBOL_PREFIX)) {
             int insertedLines = (int) content.chars().filter(c -> c == '\n').count() + 1;
-            CodeChangeTracker.recordChange(insertedLines, 0);
             FileTool.followFileIfEnabled(project, pathStr, anchorLine[0], anchorLine[0] + insertedLines - 1,
                 FileTool.HIGHLIGHT_EDIT, "inserting before " + symbolName);
             FileAccessTracker.recordWrite(project, pathStr);

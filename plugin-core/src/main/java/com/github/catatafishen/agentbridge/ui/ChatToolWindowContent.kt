@@ -687,9 +687,6 @@ class ChatToolWindowContent(
                 onTimerRecordUsage = { i, o, c ->
                     if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c)
                 },
-                onTimerSetCodeChangeStats = { a, r ->
-                    if (::processingTimerPanel.isInitialized) processingTimerPanel.setCodeChangeStats(a, r)
-                },
                 onClientUpdate = ::handleClientUpdate,
                 sendPromptDirectly = ::sendPromptDirectly,
                 restorePromptText = ::restorePromptText,
@@ -1934,8 +1931,7 @@ class ChatToolWindowContent(
                         processingTimerPanel.restoreSessionStats(
                             lastStats.totalDurationMs, lastStats.totalInputTokens,
                             lastStats.totalOutputTokens, lastStats.totalCostUsd,
-                            lastStats.totalToolCalls, lastStats.totalLinesAdded,
-                            lastStats.totalLinesRemoved, turnCount
+                            lastStats.totalToolCalls, turnCount
                         )
                     }
                     persistedEntryCount = conversationReplayer.totalLoadedCount()
@@ -2048,7 +2044,6 @@ class ChatToolWindowContent(
         billing.billingCycleStartUsed = -1
         billing.resetLocalCounter()
         if (::processingTimerPanel.isInitialized) processingTimerPanel.resetSession()
-        com.github.catatafishen.agentbridge.psi.CodeChangeTracker.clearSession()
         com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project).clearSessionAllowedTools()
     }
 
