@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings;
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.CleanupSettings;
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
@@ -14,13 +15,6 @@ import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 
-/**
- * Settings page at <b>Settings → Tools → AgentBridge → UI/UX</b>.
- * <p>
- * Consolidates all user-facing behavior and appearance settings:
- * shortcut hints, smart paste, file search trigger, follow-agent mode,
- * and smooth scrolling.
- */
 public final class ChatInputConfigurable implements Configurable {
 
     private final Project project;
@@ -34,6 +28,10 @@ public final class ChatInputConfigurable implements Configurable {
     private JBCheckBox smoothScrollCheckbox;
     private JBCheckBox showTurnStatsCheckbox;
 
+    private JSpinner scratchRetentionSpinner;
+    private JCheckBox autoCloseTabsCheckbox;
+    private JCheckBox closeRunningTerminalsCheckbox;
+
     public ChatInputConfigurable(@NotNull Project project) {
         this.project = project;
     }
@@ -46,6 +44,7 @@ public final class ChatInputConfigurable implements Configurable {
     @Override
     public @NotNull JComponent createComponent() {
         McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
+        CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);
 
         showHintsCheckBox = new JBCheckBox("Show keyboard shortcut hints in prompt placeholder");
         smartPasteCheckBox = new JBCheckBox("Enable smart paste");
@@ -75,6 +74,19 @@ public final class ChatInputConfigurable implements Configurable {
             mcpSettings.isShowTurnStats());
         showTurnStatsCheckbox.setToolTipText(
             "Displays a summary footer below the last message of each agent turn. Disabling saves vertical space.");
+
+        scratchRetentionSpinner = new JSpinner(new SpinnerNumberModel(
+            cleanupSettings.getScratchRetentionHours(), 0, 8760, 1));
+
+        autoCloseTabsCheckbox = new JCheckBox("Auto-close agent tabs between turns",
+            cleanupSettings.isAutoCloseAgentTabs());
+
+        closeRunningTerminalsCheckbox = new JCheckBox("Also close running terminal tabs",
+            cleanupSettings.isAutoCloseRunningTerminals());
+        closeRunningTerminalsCheckbox.setEnabled(cleanupSettings.isAutoCloseAgentTabs());
+
+        autoCloseTabsCheckbox.addChangeListener(e ->
+            closeRunningTerminalsCheckbox.setEnabled(autoCloseTabsCheckbox.isSelected()));
 
         JBLabel descLabel = new JBLabel(
             "<html>Appearance and interaction settings for the chat panel, "
@@ -107,6 +119,11 @@ public final class ChatInputConfigurable implements Configurable {
             .addTooltip("⚠ May cause screen tearing on some systems")
             .addVerticalGap(4)
             .addComponent(showTurnStatsCheckbox)
+            .addVerticalGap(4)
+            .addSeparator(8)
+            .addLabeledComponent("Scratch file retention (hours, 0 = forever):", scratchRetentionSpinner)
+            .addComponent(autoCloseTabsCheckbox)
+            .addComponent(closeRunningTerminalsCheckbox)
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -135,7 +152,11 @@ public final class ChatInputConfigurable implements Configurable {
         if (followModeCheckbox.isSelected() != ActiveAgentManager.getFollowAgentFiles(project)) return true;
         McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
         if (smoothScrollCheckbox.isSelected() != mcpSettings.isSmoothScrollEnabled()) return true;
-        return showTurnStatsCheckbox.isSelected() != mcpSettings.isShowTurnStats();
+        if (showTurnStatsCheckbox.isSelected() != mcpSettings.isShowTurnStats()) return true;
+        CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);
+        if ((int) scratchRetentionSpinner.getValue() != cleanupSettings.getScratchRetentionHours()) return true;
+        if (autoCloseTabsCheckbox.isSelected() != cleanupSettings.isAutoCloseAgentTabs()) return true;
+        return closeRunningTerminalsCheckbox.isSelected() != cleanupSettings.isAutoCloseRunningTerminals();
     }
 
     @Override
@@ -157,6 +178,11 @@ public final class ChatInputConfigurable implements Configurable {
             chatPanel.setSmoothScroll(smoothScrollCheckbox.isSelected());
             chatPanel.setShowTurnStats(showTurnStatsCheckbox.isSelected());
         }
+
+        CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);
+        cleanupSettings.setScratchRetentionHours((int) scratchRetentionSpinner.getValue());
+        cleanupSettings.setAutoCloseAgentTabs(autoCloseTabsCheckbox.isSelected());
+        cleanupSettings.setAutoCloseRunningTerminals(closeRunningTerminalsCheckbox.isSelected());
     }
 
     @Override
@@ -173,6 +199,12 @@ public final class ChatInputConfigurable implements Configurable {
         McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
         smoothScrollCheckbox.setSelected(mcpSettings.isSmoothScrollEnabled());
         showTurnStatsCheckbox.setSelected(mcpSettings.isShowTurnStats());
+
+        CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);
+        scratchRetentionSpinner.setValue(cleanupSettings.getScratchRetentionHours());
+        autoCloseTabsCheckbox.setSelected(cleanupSettings.isAutoCloseAgentTabs());
+        closeRunningTerminalsCheckbox.setSelected(cleanupSettings.isAutoCloseRunningTerminals());
+        closeRunningTerminalsCheckbox.setEnabled(cleanupSettings.isAutoCloseAgentTabs());
     }
 
     @Override
@@ -185,6 +217,9 @@ public final class ChatInputConfigurable implements Configurable {
         followModeCheckbox = null;
         smoothScrollCheckbox = null;
         showTurnStatsCheckbox = null;
+        scratchRetentionSpinner = null;
+        autoCloseTabsCheckbox = null;
+        closeRunningTerminalsCheckbox = null;
     }
 
     private String selectedTriggerChar() {
