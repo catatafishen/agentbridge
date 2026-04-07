@@ -17,6 +17,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiFile;
+import com.intellij.openapi.progress.EmptyProgressIndicator;
+import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -64,14 +66,22 @@ public abstract class QualityTool extends Tool {
      *
      * <p>Uses {@code findRegisteredQuickFix} (the non-deprecated iteration API). Returning {@code null}
      * from the predicate on every element causes it to iterate the full list as a side-effect.</p>
+     *
+     * <p>Wrapped in {@link ProgressManager#runProcess} with an {@link EmptyProgressIndicator} to
+     * satisfy {@code runBlockingCancellable} requirements inside TypeScript language-service quick
+     * fixes, which must be called from a thread that has a ProgressIndicator or coroutine Job in
+     * its context (see {@code TypeScriptLanguageServiceFix.getText}).</p>
      */
     protected static List<String> collectQuickFixNames(HighlightInfo h) {
         List<String> names = new ArrayList<>();
-        h.findRegisteredQuickFix((descriptor, range) -> {
-            String text = descriptor.getAction().getText();
-            if (!text.isBlank()) names.add(text);
-            return null; // return null to continue iterating all registered fixes
-        });
+        ProgressManager.getInstance().runProcess(
+            () -> h.findRegisteredQuickFix((descriptor, range) -> {
+                String text = descriptor.getAction().getText();
+                if (!text.isBlank()) names.add(text);
+                return null; // return null to continue iterating all registered fixes
+            }),
+            new EmptyProgressIndicator()
+        );
         return names;
     }
 
