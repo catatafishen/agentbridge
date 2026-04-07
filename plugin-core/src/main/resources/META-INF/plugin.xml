@@ -370,13 +370,6 @@
       id="com.github.catatafishen.agentbridge.chatHistory"
       displayName="Chat History"/>
 
-    <!-- ── Cleanup ── -->
-    <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.settings"
-      instance="com.github.catatafishen.agentbridge.settings.CleanupConfigurable"
-      id="com.github.catatafishen.agentbridge.cleanup"
-      displayName="Cleanup"/>
-
     <!-- ── MCP section (server config + child pages) ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.settings"
