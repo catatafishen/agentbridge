@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.settings;
 
 import com.github.catatafishen.agentbridge.acp.client.AcpClient;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.services.GenericSettings;
 import com.github.catatafishen.agentbridge.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
@@ -26,6 +27,8 @@ import java.awt.*;
  */
 public final class OpenCodeClientConfigurable implements Configurable {
 
+    public static final int DEFAULT_CONTEXT_LIMIT_CHARS = 0;
+
     private static final String AGENT_ID = "opencode";
 
     @SuppressWarnings("unused")
@@ -40,6 +43,7 @@ public final class OpenCodeClientConfigurable implements Configurable {
     private JBLabel statusLabel;
     private JBTextField binaryPathField;
     private @Nullable ThemeColorComboBox bubbleColorCombo;
+    private JSpinner contextLimitSpinner;
     private JPanel mainPanel;
 
     @Override
@@ -51,6 +55,14 @@ public final class OpenCodeClientConfigurable implements Configurable {
         binaryPathField.setToolTipText("Absolute path to the opencode binary. Leave empty to find it on PATH.");
 
         bubbleColorCombo = new ThemeColorComboBox();
+
+        contextLimitSpinner = new JSpinner(new SpinnerNumberModel(
+            new GenericSettings("opencode").getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS),
+            0, 2_000_000, 50_000));
+        contextLimitSpinner.setToolTipText(
+            "<html>Maximum characters of conversation history exported to OpenCode's database.<br>"
+                + "0 = unlimited. OpenCode handles context compaction internally;<br>"
+                + "set only if you hit overflow errors. Default: unlimited (0).</html>");
 
         HyperlinkLabel installLink = new HyperlinkLabel("Install OpenCode from npmjs.com/package/opencode-ai");
         installLink.setHyperlinkTarget("https://www.npmjs.com/package/opencode-ai");
@@ -69,6 +81,8 @@ public final class OpenCodeClientConfigurable implements Configurable {
             .addTooltip("Leave empty to auto-detect on PATH.")
             .addLabeledComponent("Bubble color:", bubbleColorCombo)
             .addTooltip("Choose a theme-aware accent color for message bubbles when using OpenCode.")
+            .addLabeledComponent("Session history limit:", contextLimitSpinner)
+            .addTooltip("<html>0 = unlimited. OpenCode handles context compaction internally; set only if you hit overflow errors.</html>")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         mainPanel.setBorder(JBUI.Borders.empty(8));
@@ -88,6 +102,10 @@ public final class OpenCodeClientConfigurable implements Configurable {
             String key = tc != null ? tc.name() : null;
             if (!java.util.Objects.equals(key, AcpClient.loadAgentBubbleColorKey(AGENT_ID))) return true;
         }
+        if (contextLimitSpinner != null) {
+            int storedLimit = new GenericSettings(AGENT_ID).getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS);
+            if (!contextLimitSpinner.getValue().equals(storedLimit)) return true;
+        }
         return false;
     }
 
@@ -99,6 +117,9 @@ public final class OpenCodeClientConfigurable implements Configurable {
             ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
             AcpClient.saveAgentBubbleColorKey(AGENT_ID, tc != null ? tc.name() : null);
         }
+        if (contextLimitSpinner != null) {
+            new GenericSettings(AGENT_ID).setContextHistoryLimit((Integer) contextLimitSpinner.getValue());
+        }
     }
 
     @Override
@@ -109,6 +130,9 @@ public final class OpenCodeClientConfigurable implements Configurable {
         if (bubbleColorCombo != null) {
             bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)));
         }
+        if (contextLimitSpinner != null) {
+            contextLimitSpinner.setValue(new GenericSettings(AGENT_ID).getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS));
+        }
     }
 
     @Override
@@ -116,6 +140,7 @@ public final class OpenCodeClientConfigurable implements Configurable {
         statusLabel = null;
         binaryPathField = null;
         bubbleColorCombo = null;
+        contextLimitSpinner = null;
         mainPanel = null;
     }
 

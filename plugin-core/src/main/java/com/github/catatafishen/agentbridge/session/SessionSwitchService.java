@@ -13,6 +13,9 @@ import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.session.exporters.KiroClientExporter;
 import com.github.catatafishen.agentbridge.session.exporters.OpenCodeClientExporter;
 import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.settings.JunieClientConfigurable;
+import com.github.catatafishen.agentbridge.settings.KiroClientConfigurable;
+import com.github.catatafishen.agentbridge.settings.OpenCodeClientConfigurable;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -269,7 +272,9 @@ public final class SessionSwitchService implements Disposable {
         @Nullable String basePath,
         @NotNull String toProfileId) {
         Path sessionsDir = KiroClientExporter.defaultSessionsDir();
-        String sessionId = KiroClientExporter.exportSession(entries, basePath, sessionsDir);
+        int limit = new GenericSettings(AgentProfileManager.KIRO_PROFILE_ID, project)
+            .getContextHistoryLimit(KiroClientConfigurable.DEFAULT_CONTEXT_LIMIT_CHARS);
+        String sessionId = KiroClientExporter.exportSession(entries, basePath, sessionsDir, limit);
         if (sessionId != null) {
             new GenericSettings(toProfileId, project).setResumeSessionId(sessionId);
             LOG.info("Exported v2 session to Kiro: " + sessionId + " for profile " + toProfileId);
@@ -285,7 +290,9 @@ public final class SessionSwitchService implements Disposable {
         @Nullable String basePath,
         @NotNull String toProfileId) {
         Path dir = Path.of(System.getProperty(USER_HOME_PROPERTY), JUNIE_HOME, JUNIE_SESSIONS_DIR);
-        exportToAcpLocalSession(entries, basePath, toProfileId, dir, "Junie");
+        int limit = new GenericSettings(AgentProfileManager.JUNIE_PROFILE_ID, project)
+            .getContextHistoryLimit(JunieClientConfigurable.DEFAULT_CONTEXT_LIMIT_CHARS);
+        exportToAcpLocalSession(entries, basePath, toProfileId, dir, "Junie", limit);
     }
 
     /**
@@ -303,7 +310,8 @@ public final class SessionSwitchService implements Disposable {
         @Nullable String basePath,
         @NotNull String toProfileId,
         @NotNull Path sessionsBaseDir,
-        @NotNull String clientName) {
+        @NotNull String clientName,
+        int maxTotalChars) {
         try {
             String newSessionId = UUID.randomUUID().toString();
             Path sessionDir = sessionsBaseDir.resolve(newSessionId);
@@ -326,7 +334,7 @@ public final class SessionSwitchService implements Disposable {
                 StandardCharsets.UTF_8);
 
             // Write messages.jsonl via AnthropicMessageExporter
-            AnthropicClientExporter.exportToFile(entries, sessionDir.resolve("messages.jsonl"));
+            AnthropicClientExporter.exportToFile(entries, sessionDir.resolve("messages.jsonl"), maxTotalChars);
 
             // Set resumeSessionId so AcpClient sends it on the next session/new
             new GenericSettings(toProfileId, project).setResumeSessionId(newSessionId);
@@ -538,7 +546,9 @@ public final class SessionSwitchService implements Disposable {
     private void exportToOpenCode(@NotNull List<EntryData> entries, @Nullable String basePath) {
         Path dbPath = OpenCodeClientExporter.defaultDbPath();
         String projectDir = basePath != null ? basePath : "";
-        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, projectDir);
+        int limit = new GenericSettings(AgentProfileManager.OPENCODE_PROFILE_ID, project)
+            .getContextHistoryLimit(OpenCodeClientConfigurable.DEFAULT_CONTEXT_LIMIT_CHARS);
+        String sessionId = OpenCodeClientExporter.exportSession(entries, dbPath, projectDir, limit);
         if (sessionId != null) {
             new GenericSettings(AgentProfileManager.OPENCODE_PROFILE_ID, project)
                 .setResumeSessionId(sessionId);

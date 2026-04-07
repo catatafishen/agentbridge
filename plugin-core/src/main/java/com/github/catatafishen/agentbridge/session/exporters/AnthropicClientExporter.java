@@ -36,8 +36,17 @@ public final class AnthropicClientExporter {
     public static void exportToFile(
         @NotNull List<EntryData> entries,
         @NotNull Path targetPath) throws IOException {
+        exportToFile(entries, targetPath, 0);
+    }
+
+    public static void exportToFile(
+        @NotNull List<EntryData> entries,
+        @NotNull Path targetPath,
+        int maxTotalChars) throws IOException {
 
         List<AnthropicMessage> anthropicMessages = toAnthropicMessages(entries);
+
+        trimToSizeBudget(anthropicMessages, maxTotalChars);
 
         StringBuilder sb = new StringBuilder();
         for (AnthropicMessage msg : anthropicMessages) {
@@ -204,6 +213,36 @@ public final class AnthropicClientExporter {
     // ------------------------------------------------------------------
     // Merge & helpers
     // ------------------------------------------------------------------
+
+    private static void trimToSizeBudget(@NotNull List<AnthropicMessage> messages, int maxTotalChars) {
+        if (maxTotalChars <= 0) return;
+        // Count total serialized chars
+        int total = messages.stream().mapToInt(m -> m.toJsonLine().length()).sum();
+        while (total > maxTotalChars && messages.size() >= 2) {
+            // Drop the oldest user+assistant pair to keep the conversation structurally valid.
+            // AnthropicMessage alternates user/assistant; first message must be user.
+            int dropCount = 0;
+            // Find how many messages form the first complete exchange to drop.
+            // Drop the first message (user), then drop the following assistant messages up to and
+            // including any message that has tool_use blocks (which need matching tool_results
+            // in the next user message). Simplest safe approach: drop the first user+assistant pair.
+            for (int i = 0; i < messages.size() && dropCount == 0; i++) {
+                if (ROLE_USER.equals(messages.get(i).role())) {
+                    // Find the end of this user's "turn" = up to (not including) the next user message.
+                    int j = i + 1;
+                    while (j < messages.size() && !ROLE_USER.equals(messages.get(j).role())) j++;
+                    // Drop from i to j (exclusive) = the oldest user message + all following assistant messages until next user.
+                    int charsDropped = 0;
+                    for (int k = i; k < j; k++) charsDropped += messages.get(k).toJsonLine().length();
+                    messages.subList(i, j).clear();
+                    total -= charsDropped;
+                    dropCount = j - i;
+                    break;
+                }
+            }
+            if (dropCount == 0) break; // nothing to drop
+        }
+    }
 
     @NotNull
     private static List<AnthropicMessage> mergeConsecutiveSameRole(@NotNull List<AnthropicMessage> messages) {

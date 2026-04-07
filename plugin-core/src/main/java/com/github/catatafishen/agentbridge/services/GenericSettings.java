@@ -112,6 +112,22 @@ public final class GenericSettings {
 
     // ── Limits ───────────────────────────────────────────────────────────────
 
+    // ── Context history limits ────────────────────────────────────────────────
+
+    /**
+     * Maximum total characters to export in conversation history when switching agents.
+     * 0 means unlimited.
+     *
+     * @param defaultLimit the value to return when no override is stored
+     */
+    public int getContextHistoryLimit(int defaultLimit) {
+        return getProperties().getInt(key("contextHistoryLimit"), defaultLimit);
+    }
+
+    public void setContextHistoryLimit(int limit) {
+        getProperties().setValue(key("contextHistoryLimit"), limit, 0);
+    }
+
     public int getMaxToolCallsPerTurn() {
         return getProperties().getInt(key("maxToolCallsPerTurn"), DEFAULT_MAX_TOOL_CALLS);
     }

@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.settings;
 
 import com.github.catatafishen.agentbridge.acp.client.AcpClient;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.services.GenericSettings;
 import com.github.catatafishen.agentbridge.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
@@ -21,6 +22,8 @@ import java.awt.*;
 
 public final class KiroClientConfigurable implements Configurable {
 
+    public static final int DEFAULT_CONTEXT_LIMIT_CHARS = 600_000;
+
     private static final String AGENT_ID = "kiro";
 
     @SuppressWarnings("unused")
@@ -35,6 +38,7 @@ public final class KiroClientConfigurable implements Configurable {
     private JBLabel statusLabel;
     private JBTextField binaryPathField;
     private @Nullable ThemeColorComboBox bubbleColorCombo;
+    private JSpinner contextLimitSpinner;
     private JPanel panel;
 
     @Override
@@ -46,6 +50,13 @@ public final class KiroClientConfigurable implements Configurable {
         binaryPathField.setToolTipText("Absolute path to the kiro-cli binary. Leave empty to find it on PATH.");
 
         bubbleColorCombo = new ThemeColorComboBox();
+
+        contextLimitSpinner = new JSpinner(new SpinnerNumberModel(
+            new GenericSettings("kiro").getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS),
+            0, 2_000_000, 50_000));
+        contextLimitSpinner.setToolTipText(
+            "<html>Maximum characters of conversation history exported to Kiro's session file.<br>"
+                + "0 = unlimited. Reduce if Kiro reports context overflow. Default: 600 000.</html>");
 
         HyperlinkLabel docsLink = new HyperlinkLabel("Kiro CLI documentation at kiro.dev/docs/cli/acp");
         docsLink.setHyperlinkTarget("https://kiro.dev/docs/cli/acp/");
@@ -64,6 +75,8 @@ public final class KiroClientConfigurable implements Configurable {
             .addTooltip("Leave empty to auto-detect on PATH.")
             .addLabeledComponent("Bubble color:", bubbleColorCombo)
             .addTooltip("Choose a theme-aware accent color for message bubbles when using Kiro.")
+            .addLabeledComponent("Session history limit:", contextLimitSpinner)
+            .addTooltip("<html>Maximum characters of conversation history exported to Kiro's session file.<br>0 = unlimited. Reduce if Kiro reports context overflow. Default: 600 000.</html>")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -80,6 +93,10 @@ public final class KiroClientConfigurable implements Configurable {
             String key = tc != null ? tc.name() : null;
             if (!java.util.Objects.equals(key, AcpClient.loadAgentBubbleColorKey(AGENT_ID))) return true;
         }
+        if (contextLimitSpinner != null) {
+            int storedLimit = new GenericSettings(AGENT_ID).getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS);
+            if (!contextLimitSpinner.getValue().equals(storedLimit)) return true;
+        }
         return false;
     }
 
@@ -91,6 +108,9 @@ public final class KiroClientConfigurable implements Configurable {
             ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
             AcpClient.saveAgentBubbleColorKey(AGENT_ID, tc != null ? tc.name() : null);
         }
+        if (contextLimitSpinner != null) {
+            new GenericSettings(AGENT_ID).setContextHistoryLimit((Integer) contextLimitSpinner.getValue());
+        }
     }
 
     @Override
@@ -101,6 +121,9 @@ public final class KiroClientConfigurable implements Configurable {
         if (bubbleColorCombo != null) {
             bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)));
         }
+        if (contextLimitSpinner != null) {
+            contextLimitSpinner.setValue(new GenericSettings(AGENT_ID).getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS));
+        }
     }
 
     @Override
@@ -108,6 +131,7 @@ public final class KiroClientConfigurable implements Configurable {
         statusLabel = null;
         binaryPathField = null;
         bubbleColorCombo = null;
+        contextLimitSpinner = null;
         panel = null;
     }
 

@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.settings;
 import com.github.catatafishen.agentbridge.acp.client.AcpClient;
 import com.github.catatafishen.agentbridge.agent.junie.JunieKeyStore;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
+import com.github.catatafishen.agentbridge.services.GenericSettings;
 import com.github.catatafishen.agentbridge.ui.ThemeColor;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
@@ -23,6 +24,8 @@ import java.awt.*;
 
 public final class JunieClientConfigurable implements Configurable {
 
+    public static final int DEFAULT_CONTEXT_LIMIT_CHARS = 600_000;
+
     private static final String AGENT_ID = "junie";
 
     @SuppressWarnings("unused")
@@ -38,6 +41,7 @@ public final class JunieClientConfigurable implements Configurable {
     private JBTextField binaryPathField;
     private JBPasswordField authTokenField;
     private @Nullable ThemeColorComboBox bubbleColorCombo;
+    private JSpinner contextLimitSpinner;
     private JPanel panel;
 
     @Override
@@ -53,6 +57,13 @@ public final class JunieClientConfigurable implements Configurable {
         authTokenField.setToolTipText("Generate a token at https://junie.jetbrains.com/cli. Leave empty to use CLI credentials.");
 
         bubbleColorCombo = new ThemeColorComboBox();
+
+        contextLimitSpinner = new JSpinner(new SpinnerNumberModel(
+            new GenericSettings("junie").getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS),
+            0, 2_000_000, 50_000));
+        contextLimitSpinner.setToolTipText(
+            "<html>Maximum characters of conversation history exported to Junie's session file.<br>"
+                + "0 = unlimited. Reduce if Junie reports context overflow. Default: 600 000.</html>");
 
         HyperlinkLabel authLink = new HyperlinkLabel("Generate an auth token at junie.jetbrains.com/cli");
         authLink.setHyperlinkTarget("https://junie.jetbrains.com/cli");
@@ -86,6 +97,8 @@ public final class JunieClientConfigurable implements Configurable {
             .addTooltip("Leave empty to auto-detect on PATH.")
             .addLabeledComponent("Bubble color:", bubbleColorCombo)
             .addTooltip("Choose a theme-aware accent color for message bubbles when using Junie.")
+            .addLabeledComponent("Session history limit:", contextLimitSpinner)
+            .addTooltip("<html>Maximum characters of conversation history exported to Junie's session file.<br>0 = unlimited. Reduce if Junie reports context overflow. Default: 600 000.</html>")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -103,6 +116,10 @@ public final class JunieClientConfigurable implements Configurable {
             ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
             String key = tc != null ? tc.name() : null;
             if (!java.util.Objects.equals(key, AcpClient.loadAgentBubbleColorKey(AGENT_ID))) return true;
+        }
+        if (contextLimitSpinner != null) {
+            int storedLimit = new GenericSettings(AGENT_ID).getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS);
+            if (!contextLimitSpinner.getValue().equals(storedLimit)) return true;
         }
         return false;
     }
@@ -126,6 +143,9 @@ public final class JunieClientConfigurable implements Configurable {
         if (bubbleColorCombo != null) {
             ThemeColor tc = bubbleColorCombo.getSelectedThemeColor();
             AcpClient.saveAgentBubbleColorKey(AGENT_ID, tc != null ? tc.name() : null);
+        }
+        if (contextLimitSpinner != null) {
+            new GenericSettings(AGENT_ID).setContextHistoryLimit((Integer) contextLimitSpinner.getValue());
         }
 
         // Restart Junie if auth token changed (so new token is picked up by the process)
@@ -162,6 +182,9 @@ public final class JunieClientConfigurable implements Configurable {
         if (bubbleColorCombo != null) {
             bubbleColorCombo.setSelectedThemeColor(ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)));
         }
+        if (contextLimitSpinner != null) {
+            contextLimitSpinner.setValue(new GenericSettings(AGENT_ID).getContextHistoryLimit(DEFAULT_CONTEXT_LIMIT_CHARS));
+        }
     }
 
     @Override
@@ -170,6 +193,7 @@ public final class JunieClientConfigurable implements Configurable {
         binaryPathField = null;
         authTokenField = null;
         bubbleColorCombo = null;
+        contextLimitSpinner = null;
         panel = null;
     }
 

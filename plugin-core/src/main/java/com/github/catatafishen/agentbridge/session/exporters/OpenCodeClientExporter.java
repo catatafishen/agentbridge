@@ -97,6 +97,17 @@ public final class OpenCodeClientExporter {
         @NotNull List<EntryData> entries,
         @NotNull Path dbPath,
         @NotNull String projectDir) {
+        return exportSession(entries, dbPath, projectDir, 0);
+    }
+
+    @Nullable
+    public static String exportSession(
+        @NotNull List<EntryData> entries,
+        @NotNull Path dbPath,
+        @NotNull String projectDir,
+        int maxTotalChars) {
+
+        entries = trimEntriesToBudget(entries, maxTotalChars);
 
         if (entries.isEmpty()) return null;
 
@@ -245,6 +256,68 @@ public final class OpenCodeClientExporter {
     }
 
     // ── ID generation ─────────────────────────────────────────────────────────
+
+    private static @NotNull List<EntryData> trimEntriesToBudget(@NotNull List<EntryData> entries, int maxTotalChars) {
+        if (maxTotalChars <= 0) return entries;
+        // Rough char count: sum up text/result content of all entries
+        int total = 0;
+        for (EntryData e : entries) {
+            if (e instanceof EntryData.Prompt p) total += p.getText().length();
+            else if (e instanceof EntryData.Text t) total += t.getRaw().length();
+            else if (e instanceof EntryData.ToolCall tc) {
+                if (tc.getArguments() != null) total += tc.getArguments().length();
+                if (tc.getResult() != null) total += tc.getResult().length();
+            }
+        }
+        if (total <= maxTotalChars) return entries;
+
+        List<EntryData> result = new ArrayList<>(entries);
+        while (total > maxTotalChars) {
+            // Find the second Prompt index
+            int secondPromptIdx = -1;
+            int promptsSeen = 0;
+            for (int i = 0; i < result.size(); i++) {
+                if (result.get(i) instanceof EntryData.Prompt) {
+                    if (++promptsSeen == 2) {
+                        secondPromptIdx = i;
+                        break;
+                    }
+                }
+            }
+            if (secondPromptIdx != -1) {
+                int charsDropped = 0;
+                for (int i = 0; i < secondPromptIdx; i++) {
+                    EntryData e = result.get(i);
+                    if (e instanceof EntryData.Prompt p) charsDropped += p.getText().length();
+                    else if (e instanceof EntryData.Text t) charsDropped += t.getRaw().length();
+                    else if (e instanceof EntryData.ToolCall tc) {
+                        if (tc.getArguments() != null) charsDropped += tc.getArguments().length();
+                        if (tc.getResult() != null) charsDropped += tc.getResult().length();
+                    }
+                }
+                result.subList(0, secondPromptIdx).clear();
+                total -= charsDropped;
+            } else {
+                // Single-turn: drop oldest non-Prompt entry
+                // find first non-Prompt entry after the initial Prompt
+                int dropIdx = -1;
+                for (int i = 1; i < result.size(); i++) {
+                    if (!(result.get(i) instanceof EntryData.Prompt)) {
+                        dropIdx = i;
+                        break;
+                    }
+                }
+                if (dropIdx == -1) break;
+                EntryData dropped = result.remove(dropIdx);
+                if (dropped instanceof EntryData.Text t) total -= t.getRaw().length();
+                else if (dropped instanceof EntryData.ToolCall tc) {
+                    if (tc.getArguments() != null) total -= tc.getArguments().length();
+                    if (tc.getResult() != null) total -= tc.getResult().length();
+                }
+            }
+        }
+        return result;
+    }
 
     /**
      * Generates an OpenCode-style prefixed ID (e.g. {@code ses_abc123...}).

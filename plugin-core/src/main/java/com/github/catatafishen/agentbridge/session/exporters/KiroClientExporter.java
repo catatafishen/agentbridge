@@ -50,17 +50,6 @@ public final class KiroClientExporter {
      */
     private static final int MAX_TOOL_RESULT_CHARS = 50_000;
 
-    /**
-     * Maximum total character budget for the exported conversation history.
-     * Claude's 200K-token context window is approximately 800K chars; we reserve a
-     * conservative 400K chars for history, leaving room for system prompt, the new
-     * user message, and the model's response.
-     * <p>
-     * When the history exceeds this budget (after per-result truncation), the oldest
-     * complete user-turn blocks are dropped from the front until it fits.
-     */
-    private static final int MAX_TOTAL_HISTORY_CHARS = 400_000;
-
     private KiroClientExporter() {
     }
 
@@ -77,6 +66,15 @@ public final class KiroClientExporter {
         @NotNull List<EntryData> entries,
         @Nullable String cwd,
         @NotNull Path sessionsDir) {
+        return exportSession(entries, cwd, sessionsDir, 0);
+    }
+
+    @Nullable
+    public static String exportSession(
+        @NotNull List<EntryData> entries,
+        @Nullable String cwd,
+        @NotNull Path sessionsDir,
+        int maxTotalChars) {
 
         if (entries.isEmpty()) {
             LOG.info("No messages to export to Kiro");
@@ -89,7 +87,7 @@ public final class KiroClientExporter {
             String sessionId = UUID.randomUUID().toString();
 
             writeSessionJson(sessionId, cwd, sessionsDir);
-            writeMessagesJsonl(entries, sessionId, sessionsDir);
+            writeMessagesJsonl(entries, sessionId, sessionsDir, maxTotalChars);
 
             LOG.info("Exported v2 session to Kiro CLI: " + sessionId
                 + " (" + entries.size() + " entries)");
@@ -157,9 +155,10 @@ public final class KiroClientExporter {
     private static void writeMessagesJsonl(
         @NotNull List<EntryData> entries,
         @NotNull String sessionId,
-        @NotNull Path sessionsDir) throws IOException {
+        @NotNull Path sessionsDir,
+        int maxTotalChars) throws IOException {
 
-        List<JsonObject> kiroMessages = toKiroMessages(entries);
+        List<JsonObject> kiroMessages = toKiroMessages(entries, maxTotalChars);
 
         StringBuilder sb = new StringBuilder();
         for (JsonObject msg : kiroMessages) {
@@ -175,6 +174,11 @@ public final class KiroClientExporter {
 
     @NotNull
     static List<JsonObject> toKiroMessages(@NotNull List<EntryData> entries) {
+        return toKiroMessages(entries, 0);
+    }
+
+    @NotNull
+    static List<JsonObject> toKiroMessages(@NotNull List<EntryData> entries, int maxTotalChars) {
         List<JsonObject> result = new ArrayList<>();
         List<JsonObject> assistantBlocks = new ArrayList<>();
         List<ToolPair> pendingTools = new ArrayList<>();
@@ -313,7 +317,7 @@ public final class KiroClientExporter {
         // Drop oldest user-turn blocks if the total history exceeds the context-window budget.
         // Each tool result was already truncated per-item above; this handles sessions that have
         // accumulated too many turns overall. Must run last so structural fixes are already applied.
-        trimToSizeBudget(result);
+        trimToSizeBudget(result, maxTotalChars);
 
         return result;
     }
@@ -373,7 +377,9 @@ public final class KiroClientExporter {
 
     /**
      * Drops the oldest complete conversation blocks from {@code messages} until the total
-     * serialized character count is within {@link #MAX_TOTAL_HISTORY_CHARS}.
+     * serialized character count is within {@code maxTotalChars}.
+     *
+     * <p>If {@code maxTotalChars} is 0 or negative, the method returns immediately (unlimited).</p>
      *
      * <p><b>Multi-turn sessions (multiple Prompts):</b> drops the oldest user-turn block
      * (everything from one {@code Prompt} up to the next). This is the common case.</p>
@@ -384,14 +390,15 @@ public final class KiroClientExporter {
      * the assistant makes many tool-call rounds — without this fallback the history would
      * exceed the Anthropic API context limit and produce "invalid conversation history".</p>
      */
-    private static void trimToSizeBudget(@NotNull List<JsonObject> messages) {
+    private static void trimToSizeBudget(@NotNull List<JsonObject> messages, int maxTotalChars) {
+        if (maxTotalChars <= 0) return;
         int totalChars = 0;
         for (JsonObject m : messages) {
             totalChars += GSON.toJson(m).length();
         }
-        if (totalChars <= MAX_TOTAL_HISTORY_CHARS) return;
+        if (totalChars <= maxTotalChars) return;
 
-        while (totalChars > MAX_TOTAL_HISTORY_CHARS) {
+        while (totalChars > maxTotalChars) {
             // Find the index of the second Prompt so we can drop everything before it.
             int secondPromptIdx = -1;
             int promptsSeen = 0;
@@ -413,7 +420,7 @@ public final class KiroClientExporter {
                 }
                 LOG.warn("Kiro export: trimming " + secondPromptIdx
                     + " oldest messages (" + charsDropped + " chars) — history was "
-                    + totalChars + " chars, budget is " + MAX_TOTAL_HISTORY_CHARS);
+                    + totalChars + " chars, budget is " + maxTotalChars);
                 messages.subList(0, secondPromptIdx).clear();
                 totalChars -= charsDropped;
                 continue;
@@ -460,7 +467,7 @@ public final class KiroClientExporter {
             }
             LOG.warn("Kiro export: single-turn trim: dropping " + (dropEnd - firstAssistantIdx)
                 + " oldest tool-call round(s) (" + charsDropped + " chars) — history was "
-                + totalChars + " chars, budget is " + MAX_TOTAL_HISTORY_CHARS);
+                + totalChars + " chars, budget is " + maxTotalChars);
             messages.subList(firstAssistantIdx, dropEnd).clear();
             totalChars -= charsDropped;
         }

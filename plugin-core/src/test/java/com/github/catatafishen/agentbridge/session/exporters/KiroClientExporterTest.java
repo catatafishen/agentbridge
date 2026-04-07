@@ -437,7 +437,7 @@ class KiroClientExporterTest {
             entries.add(toolCall("read_file", "{}", repeatedResult));
         }
 
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(entries);
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(entries, 400_000);
 
         // Must still start with a Prompt and be structurally valid
         assertFalse(kiroMessages.isEmpty(), "Messages should not be empty after trim");
@@ -470,7 +470,7 @@ class KiroClientExporterTest {
         }
         entries.add(assistantText("Done!"));
 
-        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(entries);
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(entries, 400_000);
 
         assertFalse(kiroMessages.isEmpty(), "Messages must not be empty after trim");
         assertEquals("Prompt", kiroMessages.getFirst().get("kind").getAsString(),
