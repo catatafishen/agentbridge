@@ -264,7 +264,7 @@ function _appendSubAgent(entry: SubAgentEntry, meta: HTMLElement, msg: HTMLEleme
 }
 
 /**
- * Finds the last agent chat-message in the fragment and appends a stats footer.
+ * Finds the last agent chat-message in the fragment and appends a turn summary bar.
  * Used to restore turn stats on session resume.
  */
 function _appendStatsToLastAgent(fragment: DocumentFragment, stats: StatsTurn): void {
@@ -272,55 +272,69 @@ function _appendStatsToLastAgent(fragment: DocumentFragment, stats: StatsTurn): 
     const lastAgent = agents[agents.length - 1];
     if (!lastAgent) return;
 
-    const meta = document.createElement('message-meta') as any;
-    meta.classList.add('stats-footer', 'show');
+    const bar = document.createElement('div');
+    bar.className = 'turn-summary-bar';
 
-    // Duration chip
-    if (stats.duration > 0) {
-        const chip = document.createElement('span');
-        chip.className = 'turn-chip stats';
-        const totalSec = Math.round(stats.duration / 1000);
-        let dur: string;
+    const totalSec = Math.round(stats.duration / 1000);
+    let dur = '';
+    if (totalSec > 0) {
         if (totalSec < 60) dur = totalSec + 's';
         else {
             const m = Math.floor(totalSec / 60), s = totalSec % 60;
             dur = s > 0 ? m + 'm ' + s + 's' : m + 'm';
         }
-        chip.textContent = '⏱ ' + dur;
-        meta.appendChild(chip);
+    }
+    const fmt = (n: number): string =>
+        n < 1000 ? String(n) : n < 10000 ? (n / 1000).toFixed(1) + 'k' : Math.round(n / 1000) + 'k';
+
+    const parts: Array<string | HTMLElement> = ['Turn complete'];
+
+    if (stats.model) {
+        const name = stats.model.includes('/') ? stats.model.split('/').pop()! : stats.model;
+        parts.push(name);
     }
 
-    // Token chip
-    if (stats.inputTokens > 0 || stats.outputTokens > 0) {
-        const fmt = (n: number) => n < 1000 ? String(n) : n < 10000 ? (n / 1000).toFixed(1) + 'k' : Math.round(n / 1000) + 'k';
-        const chip = document.createElement('span');
-        chip.className = 'turn-chip stats';
-        chip.textContent = fmt(stats.inputTokens) + ' in · ' + fmt(stats.outputTokens) + ' out';
-        chip.setAttribute('title', stats.model || '');
-        meta.appendChild(chip);
-    }
-
-    // Tool count chip
-    if (stats.tools > 0) {
-        const chip = document.createElement('span');
-        chip.className = 'turn-chip stats';
-        chip.textContent = stats.tools + (stats.tools === 1 ? ' tool' : ' tools');
-        meta.appendChild(chip);
-    }
-
-    // Multiplier chip
-    if (stats.multiplier) {
-        const chip = document.createElement('span');
-        chip.className = 'turn-chip stats';
-        chip.textContent = stats.multiplier;
-        chip.setAttribute('title', stats.model || '');
-        meta.appendChild(chip);
-    }
-
-    // Diff chip
     if (stats.added > 0 || stats.removed > 0) {
-        meta.setCodeChangeStats(stats.added, stats.removed);
+        const diffEl = document.createElement('span');
+        if (stats.added > 0) {
+            const a = document.createElement('span');
+            a.className = 'diff-add';
+            a.textContent = '+' + stats.added;
+            diffEl.appendChild(a);
+        }
+        if (stats.removed > 0) {
+            if (stats.added > 0) diffEl.appendChild(document.createTextNode('\u2009'));
+            const d = document.createElement('span');
+            d.className = 'diff-del';
+            d.textContent = '\u2212' + stats.removed;
+            diffEl.appendChild(d);
+        }
+        parts.push(diffEl);
     }
 
-    lastAgent.appendChild(meta);
+    if (stats.inputTokens > 0 || stats.outputTokens > 0) {
+        parts.push(fmt(stats.inputTokens) + ' / ' + fmt(stats.outputTokens) + ' tokens');
+    }
+
+    if (stats.tools > 0) {
+        parts.push(stats.tools + (stats.tools === 1 ? ' tool' : ' tools'));
+    }
+
+    if (stats.multiplier) {
+        parts.push(stats.multiplier);
+    }
+
+    if (dur) parts.push(dur);
+
+    const sep = ' \u2014 ';
+    parts.forEach((part, i) => {
+        if (i > 0) bar.appendChild(document.createTextNode(sep));
+        if (typeof part === 'string') {
+            bar.appendChild(document.createTextNode(part));
+        } else {
+            bar.appendChild(part);
+        }
+    });
+
+    lastAgent.appendChild(bar);
 }

@@ -63,6 +63,7 @@ const ChatController = {
     },
 
     _thinkingCounter: 0,
+    _turnActive: false,
     _currentProfile: '',
     _currentClientType: '',
     _ctx: {} as Record<string, TurnContext & { thinkingMsg?: HTMLElement | null; thinkingChip?: HTMLElement | null }>,
@@ -104,6 +105,7 @@ const ChatController = {
             const details = document.createElement('turn-details');
             msg.appendChild(details);
             this._insertMsg(msg);
+            this._turnActive = true;
             ctx.msg = msg;
             ctx.meta = meta;
             ctx.details = details;
@@ -421,10 +423,12 @@ const ChatController = {
         this._msgs().innerHTML = '';
         this._ctx = {};
         this._thinkingCounter = 0;
+        this._turnActive = false;
         this._currentProfile = '';
     },
 
     finalizeTurn(turnId: string, statsJson?: string): void {
+        this._turnActive = false;
         this.hideWorkingIndicator();
         const ctx = this._ctx[turnId + '-main'];
         if (ctx?.textBubble && !ctx.textBubble.textContent?.trim()) {
@@ -526,6 +530,7 @@ const ChatController = {
     },
 
     setPromptStats(model: string, multiplier: string): void {
+        if (!this._turnActive) return;
         const row = this._lastAgentRow();
         if (!row) return;
         const meta = this._ensureStatsFooter(row);
@@ -538,6 +543,7 @@ const ChatController = {
     },
 
     setCodeChangeStats(added: number, removed: number): void {
+        if (!this._turnActive) return;
         const row = this._lastAgentRow();
         if (!row) return;
         const meta = this._ensureStatsFooter(row);
@@ -545,8 +551,8 @@ const ChatController = {
     },
 
     /**
-     * Renders the final turn summary, replacing any live stats footer with
-     * a comprehensive chip strip showing duration, tokens, tools, and diff.
+     * Renders the final turn summary as a subtle text bar below the last agent message.
+     * Replaces any live stats footer with: "Turn complete — model — +N −N — tokens — tools — duration"
      */
     renderTurnSummary(stats: {
         duration: number; inputTokens: number; outputTokens: number;
@@ -556,52 +562,72 @@ const ChatController = {
         const row = this._lastAgentRow();
         if (!row) return;
 
-        // Remove ALL existing stats footers so only the final summary remains
-        document.querySelectorAll('message-meta.stats-footer').forEach(el => el.remove());
+        // Remove any live stats footer from this row
+        row.querySelectorAll('message-meta.stats-footer').forEach(el => el.remove());
+        // Remove any previous summary bar (shouldn't exist but guard anyway)
+        row.querySelectorAll('.turn-summary-bar').forEach(el => el.remove());
 
-        const meta = document.createElement('message-meta') as any;
-        meta.classList.add('stats-footer', 'show');
-        row.appendChild(meta);
+        const bar = document.createElement('div');
+        bar.className = 'turn-summary-bar';
 
-        // Duration chip: "45s" or "1m 23s"
-        const dur = _formatDuration(stats.duration);
-        if (dur) {
-            const chip = document.createElement('span');
-            chip.className = 'turn-chip stats';
-            chip.textContent = '⏱ ' + dur;
-            meta.appendChild(chip);
+        const parts: Array<string | HTMLElement> = ['Turn complete'];
+
+        // Model name (use short form after last '/')
+        if (stats.model) {
+            const name = stats.model.includes('/') ? stats.model.split('/').pop()! : stats.model;
+            parts.push(name);
         }
 
-        // Token chip: "1.2k in · 3.4k out"
-        if (stats.inputTokens > 0 || stats.outputTokens > 0) {
-            const chip = document.createElement('span');
-            chip.className = 'turn-chip stats';
-            chip.textContent = _formatTokens(stats.inputTokens) + ' in · ' + _formatTokens(stats.outputTokens) + ' out';
-            chip.setAttribute('title', stats.model || '');
-            meta.appendChild(chip);
-        }
-
-        // Tool count chip
-        if (stats.tools > 0) {
-            const chip = document.createElement('span');
-            chip.className = 'turn-chip stats';
-            chip.textContent = stats.tools + (stats.tools === 1 ? ' tool' : ' tools');
-            meta.appendChild(chip);
-        }
-
-        // Multiplier chip (e.g. "5x")
-        if (stats.multiplier) {
-            const chip = document.createElement('span');
-            chip.className = 'turn-chip stats';
-            chip.textContent = stats.multiplier;
-            chip.setAttribute('title', stats.model || '');
-            meta.appendChild(chip);
-        }
-
-        // Diff chip: +42 −7
+        // Diff: +N −N with colors
         if (stats.added > 0 || stats.removed > 0) {
-            meta.setCodeChangeStats(stats.added, stats.removed);
+            const diffEl = document.createElement('span');
+            if (stats.added > 0) {
+                const a = document.createElement('span');
+                a.className = 'diff-add';
+                a.textContent = '+' + stats.added;
+                diffEl.appendChild(a);
+            }
+            if (stats.removed > 0) {
+                if (stats.added > 0) diffEl.appendChild(document.createTextNode('\u2009'));
+                const d = document.createElement('span');
+                d.className = 'diff-del';
+                d.textContent = '\u2212' + stats.removed;
+                diffEl.appendChild(d);
+            }
+            parts.push(diffEl);
         }
+
+        // Tokens
+        if (stats.inputTokens > 0 || stats.outputTokens > 0) {
+            parts.push(_formatTokens(stats.inputTokens) + ' / ' + _formatTokens(stats.outputTokens) + ' tokens');
+        }
+
+        // Tool count
+        if (stats.tools > 0) {
+            parts.push(stats.tools + (stats.tools === 1 ? ' tool' : ' tools'));
+        }
+
+        // Multiplier (e.g. "5x")
+        if (stats.multiplier) {
+            parts.push(stats.multiplier);
+        }
+
+        // Duration
+        const dur = _formatDuration(stats.duration);
+        if (dur) parts.push(dur);
+
+        // Assemble with em-dash separators
+        const sep = ' \u2014 ';
+        parts.forEach((part, i) => {
+            if (i > 0) bar.appendChild(document.createTextNode(sep));
+            if (typeof part === 'string') {
+                bar.appendChild(document.createTextNode(part));
+            } else {
+                bar.appendChild(part);
+            }
+        });
+
+        row.appendChild(bar);
     },
 
     _lastAgentRow(): Element | null {

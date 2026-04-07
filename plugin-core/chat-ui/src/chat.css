@@ -344,6 +344,23 @@ working-indicator .working-text {
     display: none !important;
 }
 
+/* ── Turn summary bar (replaces chip-based stats footer) ── */
+.turn-summary-bar {
+    font-size: 0.78em;
+    color: var(--think);
+    opacity: 0.65;
+    margin-top: var(--sp-2);
+    padding: var(--sp-1) 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: 0.01em;
+}
+
+.hide-turn-stats .turn-summary-bar {
+    display: none !important;
+}
+
 .meta.show {
     display: flex;
 }
