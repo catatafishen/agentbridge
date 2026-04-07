@@ -614,12 +614,8 @@ const ChatController = {
         meta.appendChild(chip);
     },
 
-    setCodeChangeStats(added: number, removed: number): void {
-        if (!this._turnActive) return;
-        const row = this._lastAgentRow();
-        if (!row) return;
-        const meta = this._ensureStatsFooter(row);
-        (meta as any).setCodeChangeStats(added, removed);
+    setCodeChangeStats(_added: number, _removed: number): void {
+        // Live diff chips in intermediate sections removed — stats appear only in the turn summary.
     },
 
     /**
