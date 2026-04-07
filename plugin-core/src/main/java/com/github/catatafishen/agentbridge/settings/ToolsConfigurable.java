@@ -39,6 +39,7 @@ public final class ToolsConfigurable implements Configurable {
     private final Map<ToolRegistry.Category, List<JBCheckBox>> categoryCheckboxes = new LinkedHashMap<>();
 
     private @Nullable ThemeColorComboBox readColorCombo;
+    private @Nullable ThemeColorComboBox searchColorCombo;
     private @Nullable ThemeColorComboBox editColorCombo;
     private @Nullable ThemeColorComboBox executeColorCombo;
 
@@ -205,14 +206,17 @@ public final class ToolsConfigurable implements Configurable {
         section.add(hint);
 
         readColorCombo = new ThemeColorComboBox();
+        searchColorCombo = new ThemeColorComboBox();
         editColorCombo = new ThemeColorComboBox();
         executeColorCombo = new ThemeColorComboBox();
 
         readColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindReadColorKey()));
+        searchColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindSearchColorKey()));
         editColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindEditColorKey()));
         executeColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindExecuteColorKey()));
 
         section.add(colorRow("Read & Navigate", readColorCombo));
+        section.add(colorRow("Search & Query", searchColorCombo));
         section.add(colorRow("Edit & Refactor", editColorCombo));
         section.add(colorRow("Run & Execute", executeColorCombo));
 
@@ -240,9 +244,9 @@ public final class ToolsConfigurable implements Configurable {
      * Returns the kind accent color for [tool], honoring settings overrides.
      */
     private static Color kindColorFor(ToolDefinition tool, McpServerSettings settings) {
-        if (tool.isReadOnly()) return ToolKindColors.readColor(settings);
         return switch (tool.kind()) {
-            case EDIT, WRITE -> ToolKindColors.editColor(settings);
+            case SEARCH -> ToolKindColors.searchColor(settings);
+            case EDIT, WRITE, DELETE, MOVE -> ToolKindColors.editColor(settings);
             case EXECUTE -> ToolKindColors.executeColor(settings);
             default -> ToolKindColors.readColor(settings);
         };
@@ -256,6 +260,8 @@ public final class ToolsConfigurable implements Configurable {
         }
         if (readColorCombo != null
             && !Objects.equals(keyOf(readColorCombo), settings.getKindReadColorKey())) return true;
+        if (searchColorCombo != null
+            && !Objects.equals(keyOf(searchColorCombo), settings.getKindSearchColorKey())) return true;
         if (editColorCombo != null
             && !Objects.equals(keyOf(editColorCombo), settings.getKindEditColorKey())) return true;
         return executeColorCombo != null
@@ -269,6 +275,7 @@ public final class ToolsConfigurable implements Configurable {
             settings.setToolEnabled(entry.getKey(), entry.getValue().isSelected());
         }
         if (readColorCombo != null) settings.setKindReadColorKey(keyOf(readColorCombo));
+        if (searchColorCombo != null) settings.setKindSearchColorKey(keyOf(searchColorCombo));
         if (editColorCombo != null) settings.setKindEditColorKey(keyOf(editColorCombo));
         if (executeColorCombo != null) settings.setKindExecuteColorKey(keyOf(executeColorCombo));
     }
@@ -281,6 +288,8 @@ public final class ToolsConfigurable implements Configurable {
         }
         if (readColorCombo != null)
             readColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindReadColorKey()));
+        if (searchColorCombo != null)
+            searchColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindSearchColorKey()));
         if (editColorCombo != null)
             editColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindEditColorKey()));
         if (executeColorCombo != null)
@@ -290,6 +299,7 @@ public final class ToolsConfigurable implements Configurable {
     @Override
     public void disposeUIResources() {
         readColorCombo = null;
+        searchColorCombo = null;
         editColorCombo = null;
         executeColorCombo = null;
         toolCheckboxes.clear();
