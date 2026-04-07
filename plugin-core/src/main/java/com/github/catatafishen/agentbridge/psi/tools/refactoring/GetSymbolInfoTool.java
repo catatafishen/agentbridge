@@ -103,7 +103,8 @@ public final class GetSymbolInfoTool extends RefactoringTool {
                 PsiElement element = psiFile.findElementAt(offset);
                 PsiNamedElement named = findNamedAncestor(element);
                 if (named == null) {
-                    String snippet = doc.getText().substring(lineStart, Math.min(lineEnd, lineStart + 120)).trim();
+                    int snippetEnd = Math.min(lineEnd, lineStart + 120);
+                    String snippet = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, snippetEnd)).trim();
                     return "No named symbol found at " + filePath + ":" + line + ". Line content: " + snippet;
                 }
 
@@ -120,7 +121,7 @@ public final class GetSymbolInfoTool extends RefactoringTool {
         if (args.has(PARAM_COLUMN)) {
             return Math.max(0, args.get(PARAM_COLUMN).getAsInt() - 1);
         }
-        String lineText = doc.getText().substring(lineStart, lineEnd);
+        String lineText = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, lineEnd));
         int col = 0;
         while (col < lineText.length() && Character.isWhitespace(lineText.charAt(col))) col++;
         return col;
@@ -178,8 +179,8 @@ public final class GetSymbolInfoTool extends RefactoringTool {
         }
 
         // Fallback: show element text
-        String text = element.getText();
-        if (text.length() > 400) text = text.substring(0, 400) + "...";
+        int textLen = element.getTextLength();
+        String text = textLen > 400 ? element.getText().substring(0, 400) + "..." : element.getText();
         sb.append("\nDeclaration:\n").append(text);
         return sb.toString();
     }

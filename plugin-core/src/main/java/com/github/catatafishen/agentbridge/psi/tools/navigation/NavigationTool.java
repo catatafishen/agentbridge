@@ -71,14 +71,14 @@ public abstract class NavigationTool extends Tool {
         return result[0];
     }
 
-    protected String buildReferenceEntry(com.intellij.psi.PsiReference ref, String filePattern, String basePath) {
+    protected String buildReferenceEntry(com.intellij.psi.PsiReference ref, String filePattern, java.util.regex.Pattern compiledGlob, String basePath) {
         PsiElement refEl = ref.getElement();
         PsiFile file = refEl.getContainingFile();
         if (file == null || file.getVirtualFile() == null) return null;
         String relPath = basePath != null
             ? relativize(basePath, file.getVirtualFile().getPath())
             : file.getVirtualFile().getPath();
-        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern)) return null;
+        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern, compiledGlob)) return null;
         Document doc = FileDocumentManager.getInstance().getDocument(file.getVirtualFile());
         if (doc == null) return null;
         int line = doc.getLineNumber(refEl.getTextOffset()) + 1;

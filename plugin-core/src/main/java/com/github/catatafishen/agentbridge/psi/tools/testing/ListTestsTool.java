@@ -76,9 +76,10 @@ public final class ListTestsTool extends TestingTool {
             List<String> tests = new ArrayList<>();
             String basePath = project.getBasePath();
             ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+            var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
 
             fileIndex.iterateContent(vf -> {
-                if (isTestSourceFile(vf, filePattern, fileIndex)) {
+                if (isTestSourceFile(vf, filePattern, compiledGlob, fileIndex)) {
                     collectTestMethodsFromFile(vf, basePath, tests);
                 }
                 return tests.size() < 500;
@@ -89,11 +90,11 @@ public final class ListTestsTool extends TestingTool {
         });
     }
 
-    private boolean isTestSourceFile(VirtualFile vf, String filePattern, ProjectFileIndex fileIndex) {
+    private boolean isTestSourceFile(VirtualFile vf, String filePattern, java.util.regex.Pattern compiledGlob, ProjectFileIndex fileIndex) {
         if (vf.isDirectory()) return false;
         String name = vf.getName();
         if (!name.endsWith(ToolUtils.JAVA_EXTENSION) && !name.endsWith(".kt")) return false;
-        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(name, filePattern)) return false;
+        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(name, filePattern, compiledGlob)) return false;
         return fileIndex.isInTestSourceContent(vf);
     }
 

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.AgentTabTracker;
@@ -41,20 +42,25 @@ public abstract class TerminalTool extends Tool {
         return ToolRegistry.Category.TERMINAL;
     }
 
-    /**
-     * Find the best matching terminal widget: by tab name if given, otherwise the selected tab.
-     */
     protected Object findTerminalWidget(Class<?> managerClass, String tabName) throws Exception {
         if (tabName != null) {
             return findTerminalWidgetByTabName(managerClass, tabName);
         }
-        var toolWindow = ToolWindowManager.getInstance(project)
-            .getToolWindow(TERMINAL_TOOL_WINDOW_ID);
-        if (toolWindow == null) return null;
-        var selected = toolWindow.getContentManager().getSelectedContent();
-        if (selected == null) return null;
-        var findWidget = managerClass.getMethod(FIND_WIDGET_BY_CONTENT_METHOD, Content.class);
-        return findWidget.invoke(null, selected);
+        Object[] result = {null};
+        EdtUtil.invokeAndWait(() -> {
+            try {
+                var toolWindow = ToolWindowManager.getInstance(project)
+                    .getToolWindow(TERMINAL_TOOL_WINDOW_ID);
+                if (toolWindow == null) return;
+                var selected = toolWindow.getContentManager().getSelectedContent();
+                if (selected == null) return;
+                var findWidget = managerClass.getMethod(FIND_WIDGET_BY_CONTENT_METHOD, Content.class);
+                result[0] = findWidget.invoke(null, selected);
+            } catch (Exception e) {
+                LOG.warn("findTerminalWidget failed", e);
+            }
+        });
+        return result[0];
     }
 
     /**
@@ -121,54 +127,63 @@ public abstract class TerminalTool extends Tool {
         }
     }
 
-    /**
-     * Find a TerminalWidget by tab name using Content userData.
-     */
     protected Object findTerminalWidgetByTabName(Class<?> managerClass, String tabName) {
+        Object[] result = {null};
         try {
-            var toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID);
-            if (toolWindow == null) return null;
+            EdtUtil.invokeAndWait(() -> {
+                try {
+                    var toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TERMINAL_TOOL_WINDOW_ID);
+                    if (toolWindow == null) return;
 
-            var findWidgetByContent = managerClass.getMethod(FIND_WIDGET_BY_CONTENT_METHOD, Content.class);
+                    var findWidgetByContent = managerClass.getMethod(FIND_WIDGET_BY_CONTENT_METHOD, Content.class);
 
-            for (var content : toolWindow.getContentManager().getContents()) {
-                String displayName = content.getDisplayName();
-                if (displayName != null && displayName.contains(tabName)) {
-                    Object widget = findWidgetByContent.invoke(null, content);
-                    if (widget != null) {
-                        LOG.info("Reusing terminal tab '" + displayName + "'");
-                        return widget;
+                    for (var content : toolWindow.getContentManager().getContents()) {
+                        String displayName = content.getDisplayName();
+                        if (displayName != null && displayName.contains(tabName)) {
+                            Object widget = findWidgetByContent.invoke(null, content);
+                            if (widget != null) {
+                                LOG.info("Reusing terminal tab '" + displayName + "'");
+                                result[0] = widget;
+                                return;
+                            }
+                        }
                     }
+                } catch (Exception e) {
+                    LOG.warn("Could not find terminal tab: " + tabName, e);
                 }
-            }
+            });
         } catch (Exception e) {
-            LOG.warn("Could not find terminal tab: " + tabName, e);
+            LOG.warn("findTerminalWidgetByTabName EDT dispatch failed: " + tabName, e);
         }
-
-        return null;
+        return result[0];
     }
 
-    /**
-     * Resolve terminal content by tab name (fuzzy match) or return the selected tab.
-     * Returns null if no matching tab is found.
-     */
     protected Content resolveTerminalContent(String tabName) {
-        var toolWindow = ToolWindowManager.getInstance(project)
-            .getToolWindow(TERMINAL_TOOL_WINDOW_ID);
-        if (toolWindow == null) return null;
+        Content[] result = {null};
+        try {
+            EdtUtil.invokeAndWait(() -> {
+                var toolWindow = ToolWindowManager.getInstance(project)
+                    .getToolWindow(TERMINAL_TOOL_WINDOW_ID);
+                if (toolWindow == null) return;
 
-        var contentManager = toolWindow.getContentManager();
-        if (tabName == null) {
-            return contentManager.getSelectedContent();
-        }
+                var contentManager = toolWindow.getContentManager();
+                if (tabName == null) {
+                    result[0] = contentManager.getSelectedContent();
+                    return;
+                }
 
-        for (var content : contentManager.getContents()) {
-            String name = content.getDisplayName();
-            if (name != null && name.contains(tabName)) {
-                return content;
-            }
+                for (var content : contentManager.getContents()) {
+                    String name = content.getDisplayName();
+                    if (name != null && name.contains(tabName)) {
+                        result[0] = content;
+                        return;
+                    }
+                }
+            });
+        } catch (Exception e) {
+            LOG.warn("resolveTerminalContent failed", e);
         }
-        return null;
+        return result[0];
     }
 
     protected void readTerminalText(CompletableFuture<String> resultFuture,
@@ -226,23 +241,29 @@ public abstract class TerminalTool extends Tool {
     protected void appendOpenTerminalTabs(StringBuilder result) {
         result.append("Open terminal tabs:\n");
         try {
-            var toolWindowManager = ToolWindowManager.getInstance(project);
-            var toolWindow = toolWindowManager.getToolWindow(TERMINAL_TOOL_WINDOW_ID);
-            if (toolWindow != null) {
-                var contentManager = toolWindow.getContentManager();
-                var contents = contentManager.getContents();
-                if (contents.length == 0) {
-                    result.append("  (none)\n");
-                } else {
-                    for (var content : contents) {
-                        String name = content.getDisplayName();
-                        boolean selected = content == contentManager.getSelectedContent();
-                        result.append(selected ? "  ▸ " : "  • ").append(name).append("\n");
+            EdtUtil.invokeAndWait(() -> {
+                try {
+                    var toolWindowManager = ToolWindowManager.getInstance(project);
+                    var toolWindow = toolWindowManager.getToolWindow(TERMINAL_TOOL_WINDOW_ID);
+                    if (toolWindow != null) {
+                        var contentManager = toolWindow.getContentManager();
+                        var contents = contentManager.getContents();
+                        if (contents.length == 0) {
+                            result.append("  (none)\n");
+                        } else {
+                            for (var content : contents) {
+                                String name = content.getDisplayName();
+                                boolean selected = content == contentManager.getSelectedContent();
+                                result.append(selected ? "  ▸ " : "  • ").append(name).append("\n");
+                            }
+                        }
+                    } else {
+                        result.append("  (Terminal tool window not available)\n");
                     }
+                } catch (Exception e) {
+                    result.append("  (Could not list open terminals)\n");
                 }
-            } else {
-                result.append("  (Terminal tool window not available)\n");
-            }
+            });
         } catch (Exception e) {
             result.append("  (Could not list open terminals)\n");
         }

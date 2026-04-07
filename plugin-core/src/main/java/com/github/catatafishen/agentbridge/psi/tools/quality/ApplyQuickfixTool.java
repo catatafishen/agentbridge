@@ -50,13 +50,12 @@ public final class ApplyQuickfixTool extends QualityTool {
         return "Apply an IntelliJ quick-fix at a specific file and line";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"file", TYPE_STRING, "Path to the file containing the problem"},
@@ -86,9 +85,52 @@ public final class ApplyQuickfixTool extends QualityTool {
                     return;
                 }
 
+                // Read-only phase: resolve file, document, find problems — no WriteAction needed
+                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                if (psiFile == null) {
+                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr);
+                    return;
+                }
+
+                Document document = FileDocumentManager.getInstance().getDocument(vf);
+                if (document == null) {
+                    resultFuture.complete("Error: Cannot get document for: " + pathStr);
+                    return;
+                }
+
+                if (targetLine < 1 || targetLine > document.getLineCount()) {
+                    resultFuture.complete("Error: Line " + targetLine + " is out of bounds (file has "
+                        + document.getLineCount() + FORMAT_LINES_SUFFIX);
+                    return;
+                }
+
+                int lineStartOffset = document.getLineStartOffset(targetLine - 1);
+                int lineEndOffset = document.getLineEndOffset(targetLine - 1);
+
+                var profile = com.intellij.profile.codeInspection.InspectionProjectProfileManager
+                    .getInstance(project).getCurrentProfile();
+                var toolWrapper = profile.getInspectionTool(inspectionId, project);
+
+                if (toolWrapper == null) {
+                    resultFuture.complete("Error: Inspection '" + inspectionId + "' not found. "
+                        + "Use the inspection ID from run_inspections output (e.g., 'RedundantCast', 'unused').");
+                    return;
+                }
+
+                List<com.intellij.codeInspection.ProblemDescriptor> lineProblems =
+                    findProblemsOnLine(toolWrapper.getTool(), psiFile, lineStartOffset, lineEndOffset);
+
+                if (lineProblems.isEmpty()) {
+                    resultFuture.complete("No problems found for inspection '" + inspectionId + "' at line " + targetLine
+                        + " in " + pathStr + ". The inspection may have been resolved, or it may be a global inspection "
+                        + "that doesn't support quickfixes. Try using edit_text instead.");
+                    return;
+                }
+
+                // Write phase: only the actual fix application needs WriteAction
                 WriteAction.run(() -> {
                     try {
-                        resultFuture.complete(executeQuickfix(vf, pathStr, targetLine, inspectionId, fixIndex));
+                        resultFuture.complete(applyAndReportFix(lineProblems, fixIndex, pathStr, targetLine));
                     } catch (Exception e) {
                         LOG.warn("Error applying quickfix", e);
                         resultFuture.complete("Error applying quickfix: " + e.getMessage());
@@ -114,42 +156,6 @@ public final class ApplyQuickfixTool extends QualityTool {
     }
 
     // ── Private helpers ──────────────────────────────────────
-
-    private String executeQuickfix(VirtualFile vf, String pathStr, int targetLine,
-                                   String inspectionId, int fixIndex) {
-        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-        if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
-
-        Document document = FileDocumentManager.getInstance().getDocument(vf);
-        if (document == null) return "Error: Cannot get document for: " + pathStr;
-
-        if (targetLine < 1 || targetLine > document.getLineCount()) {
-            return "Error: Line " + targetLine + " is out of bounds (file has " + document.getLineCount() + FORMAT_LINES_SUFFIX;
-        }
-
-        int lineStartOffset = document.getLineStartOffset(targetLine - 1);
-        int lineEndOffset = document.getLineEndOffset(targetLine - 1);
-
-        var profile = com.intellij.profile.codeInspection.InspectionProjectProfileManager
-            .getInstance(project).getCurrentProfile();
-        var toolWrapper = profile.getInspectionTool(inspectionId, project);
-
-        if (toolWrapper == null) {
-            return "Error: Inspection '" + inspectionId + "' not found. " +
-                "Use the inspection ID from run_inspections output (e.g., 'RedundantCast', 'unused').";
-        }
-
-        List<com.intellij.codeInspection.ProblemDescriptor> lineProblems =
-            findProblemsOnLine(toolWrapper.getTool(), psiFile, lineStartOffset, lineEndOffset);
-
-        if (lineProblems.isEmpty()) {
-            return "No problems found for inspection '" + inspectionId + "' at line " + targetLine +
-                " in " + pathStr + ". The inspection may have been resolved, or it may be a global inspection " +
-                "that doesn't support quickfixes. Try using edit_text instead.";
-        }
-
-        return applyAndReportFix(lineProblems, fixIndex, pathStr, targetLine);
-    }
 
     private List<com.intellij.codeInspection.ProblemDescriptor> findProblemsOnLine(
         com.intellij.codeInspection.InspectionProfileEntry tool, PsiFile psiFile,

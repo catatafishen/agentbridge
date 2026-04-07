@@ -149,7 +149,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
 
     private static int calculateEndOffset(Document doc, SymbolLocation loc) {
         int endOffset = doc.getLineEndOffset(loc.endLine() - 1);
-        if (endOffset < doc.getTextLength() && doc.getText().charAt(endOffset) == '\n') {
+        if (endOffset < doc.getTextLength() && doc.getCharsSequence().charAt(endOffset) == '\n') {
             endOffset++;
         }
         return endOffset;

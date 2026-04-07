@@ -28,6 +28,11 @@ public final class ToolUtils {
     public static final String ELEMENT_TYPE_FUNCTION = "function";
     public static final String ELEMENT_TYPE_METHOD = "method";
 
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.lang.reflect.Method> IS_INTERFACE_CACHE =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.lang.reflect.Method> IS_ENUM_CACHE =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
     private ToolUtils() {
     }
 
@@ -55,12 +60,26 @@ public final class ToolUtils {
 
     static String classifyJavaClass(PsiElement element) {
         try {
-            if ((boolean) element.getClass().getMethod("isInterface").invoke(element))
-                return ELEMENT_TYPE_INTERFACE;
-            if ((boolean) element.getClass().getMethod("isEnum").invoke(element)) return ELEMENT_TYPE_ENUM;
-        } catch (NoSuchMethodException | java.lang.reflect.InvocationTargetException
-                 | IllegalAccessException ignored) {
-            // Reflection unavailable for this PsiClass variant
+            var isInterface = IS_INTERFACE_CACHE.computeIfAbsent(
+                element.getClass(), c -> {
+                    try {
+                        return c.getMethod("isInterface");
+                    } catch (NoSuchMethodException e) {
+                        return null;
+                    }
+                });
+            if (isInterface != null && (boolean) isInterface.invoke(element)) return ELEMENT_TYPE_INTERFACE;
+            var isEnum = IS_ENUM_CACHE.computeIfAbsent(
+                element.getClass(), c -> {
+                    try {
+                        return c.getMethod("isEnum");
+                    } catch (NoSuchMethodException e) {
+                        return null;
+                    }
+                });
+            if (isEnum != null && (boolean) isEnum.invoke(element)) return ELEMENT_TYPE_ENUM;
+        } catch (java.lang.reflect.InvocationTargetException | IllegalAccessException ignored) {
+            // Reflection invocation failed for this PsiClass variant
         }
         return ELEMENT_TYPE_CLASS;
     }
@@ -77,13 +96,26 @@ public final class ToolUtils {
 
     static String classifyKotlinClass(PsiElement element) {
         try {
-            var isInterface = element.getClass().getMethod("isInterface");
-            if ((boolean) isInterface.invoke(element)) return ELEMENT_TYPE_INTERFACE;
-            var isEnum = element.getClass().getMethod("isEnum");
-            if ((boolean) isEnum.invoke(element)) return ELEMENT_TYPE_ENUM;
-        } catch (NoSuchMethodException | java.lang.reflect.InvocationTargetException
-                 | IllegalAccessException ignored) {
-            // Reflection unavailable for this Kotlin class variant
+            var isInterface = IS_INTERFACE_CACHE.computeIfAbsent(
+                element.getClass(), c -> {
+                    try {
+                        return c.getMethod("isInterface");
+                    } catch (NoSuchMethodException e) {
+                        return null;
+                    }
+                });
+            if (isInterface != null && (boolean) isInterface.invoke(element)) return ELEMENT_TYPE_INTERFACE;
+            var isEnum = IS_ENUM_CACHE.computeIfAbsent(
+                element.getClass(), c -> {
+                    try {
+                        return c.getMethod("isEnum");
+                    } catch (NoSuchMethodException e) {
+                        return null;
+                    }
+                });
+            if (isEnum != null && (boolean) isEnum.invoke(element)) return ELEMENT_TYPE_ENUM;
+        } catch (java.lang.reflect.InvocationTargetException | IllegalAccessException ignored) {
+            // Reflection invocation failed for this Kotlin class variant
         }
         return ELEMENT_TYPE_CLASS;
     }
@@ -126,7 +158,7 @@ public final class ToolUtils {
         if (lineIndex < 0 || lineIndex >= doc.getLineCount()) return "";
         int start = doc.getLineStartOffset(lineIndex);
         int end = doc.getLineEndOffset(lineIndex);
-        return doc.getText().substring(start, end).trim();
+        return doc.getText(new com.intellij.openapi.util.TextRange(start, end)).trim();
     }
 
     /**
@@ -145,11 +177,19 @@ public final class ToolUtils {
      * {@code *.java} matches {@code Foo.java} (filename only).
      */
     public static boolean doesNotMatchGlob(String path, String pattern) {
+        return doesNotMatchGlob(path, pattern, globToRegex(pattern));
+    }
+
+    public static boolean doesNotMatchGlob(String path, String pattern, java.util.regex.Pattern compiled) {
         if (pattern.isEmpty()) return false;
         String normalizedPath = path.replace('\\', '/');
         boolean isPathPattern = pattern.contains("/") || pattern.contains("**");
         String target = isPathPattern ? normalizedPath : lastSegment(normalizedPath);
-        return !globToRegex(pattern).matcher(target).matches();
+        return !compiled.matcher(target).matches();
+    }
+
+    public static java.util.regex.Pattern compileGlob(String pattern) {
+        return globToRegex(pattern);
     }
 
     private static String lastSegment(String path) {

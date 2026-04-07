@@ -93,15 +93,17 @@ public final class FindReferencesTool extends NavigationTool {
 
     private void collectDefinitionReferences(PsiElement definition, GlobalSearchScope scope,
                                              String filePattern, String basePath, List<String> results) {
+        var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
         for (PsiReference ref : ReferencesSearch.search(definition, scope).findAll()) {
             if (results.size() >= 100) break;
-            String entry = buildReferenceEntry(ref, filePattern, basePath);
+            String entry = buildReferenceEntry(ref, filePattern, compiledGlob, basePath);
             if (entry != null) results.add(entry);
         }
     }
 
     private void collectWordReferences(String symbol, GlobalSearchScope scope,
                                        String filePattern, String basePath, List<String> results) {
+        var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
         PsiSearchHelper.getInstance(project).processElementsWithWord(
             (element, offsetInElement) -> {
                 com.intellij.psi.PsiFile file = element.getContainingFile();
@@ -109,7 +111,7 @@ public final class FindReferencesTool extends NavigationTool {
                 String relPath = basePath != null
                     ? relativize(basePath, file.getVirtualFile().getPath())
                     : file.getVirtualFile().getPath();
-                if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern))
+                if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern, compiledGlob))
                     return true;
 
                 com.intellij.openapi.editor.Document doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()

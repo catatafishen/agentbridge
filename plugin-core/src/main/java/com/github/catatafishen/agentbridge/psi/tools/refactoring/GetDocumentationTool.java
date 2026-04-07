@@ -186,8 +186,8 @@ public final class GetDocumentationTool extends RefactoringTool {
             LOG.warn("extractDocComment error", e);
         }
 
-        String elementText = element.getText();
-        if (elementText.length() > 500) elementText = elementText.substring(0, 500) + "...";
+        int textLen = element.getTextLength();
+        String elementText = textLen > 500 ? element.getText().substring(0, 500) + "..." : element.getText();
         return "No documentation available for " + symbol + ". Element found:\n" + elementText;
     }
 }

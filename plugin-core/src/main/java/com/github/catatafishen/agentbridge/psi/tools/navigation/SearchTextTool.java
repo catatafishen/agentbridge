@@ -45,6 +45,7 @@ public final class SearchTextTool extends NavigationTool {
     }
 
     private record SearchParams(Pattern pattern, String basePath, String filePattern,
+                                Pattern compiledFileGlob,
                                 List<String> results, @Nullable List<MatchPosition> positions,
                                 AtomicInteger skippedLarge, int maxResults, int contextLines) {
     }
@@ -128,7 +129,8 @@ public final class SearchTextTool extends NavigationTool {
         List<String> results = new ArrayList<>();
         List<MatchPosition> positions = followAgent ? new ArrayList<>() : null;
         AtomicInteger skippedLarge = new AtomicInteger(0);
-        var params = new SearchParams(pattern, basePath, filePattern, results, positions, skippedLarge, maxResults, contextLines);
+        var compiledFileGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
+        var params = new SearchParams(pattern, basePath, filePattern, compiledFileGlob, results, positions, skippedLarge, maxResults, contextLines);
         ProjectFileIndex.getInstance(project).iterateContent(vf -> processFile(vf, params));
 
         if (positions != null && !positions.isEmpty()) {
@@ -180,7 +182,8 @@ public final class SearchTextTool extends NavigationTool {
         if (vf.isDirectory()) return true;
         String relPath = relativize(p.basePath(), vf.getPath());
         if (relPath == null) return true;
-        if (!p.filePattern().isEmpty() && ToolUtils.doesNotMatchGlob(relPath, p.filePattern())) return true;
+        if (!p.filePattern().isEmpty() && ToolUtils.doesNotMatchGlob(relPath, p.filePattern(), p.compiledFileGlob()))
+            return true;
         if (vf.getLength() > 1_000_000) {
             p.skippedLarge().incrementAndGet();
             return p.results().size() < p.maxResults();

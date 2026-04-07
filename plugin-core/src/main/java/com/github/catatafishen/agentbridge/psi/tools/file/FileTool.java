@@ -67,9 +67,11 @@ public abstract class FileTool extends Tool {
         if (pathSet == null || pathSet.isEmpty()) return;
 
         List<String> paths = new ArrayList<>(pathSet);
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger remaining = new java.util.concurrent.atomic.AtomicInteger(paths.size());
 
-        EdtUtil.invokeAndWait(() -> {
-            for (String pathStr : paths) {
+        for (String pathStr : paths) {
+            EdtUtil.invokeLater(() -> {
                 try {
                     VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
                     if (vf != null) {
@@ -89,11 +91,26 @@ public abstract class FileTool extends Tool {
                 } catch (Exception e) {
                     LOG.warn("Deferred auto-format failed for " + pathStr + ": " + e.getMessage());
                 }
+                if (remaining.decrementAndGet() == 0) {
+                    try {
+                        WriteAction.run(() ->
+                            FileDocumentManager.getInstance().saveAllDocuments());
+                    } catch (Exception e) {
+                        LOG.warn("Failed to save documents after auto-format", e);
+                    }
+                    latch.countDown();
+                }
+            });
+        }
+
+        try {
+            if (!latch.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                LOG.warn("flushPendingAutoFormat timed out after 30 seconds");
             }
-            // Save all documents to disk so git sees the formatted content
-            WriteAction.run(() ->
-                FileDocumentManager.getInstance().saveAllDocuments());
-        });
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("flushPendingAutoFormat interrupted");
+        }
     }
 
     // ── Agent label ───────────────────────────────────────────────────────────

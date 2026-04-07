@@ -263,19 +263,20 @@ public final class RunTestsTool extends TestingTool {
         return ApplicationManager.getApplication().runReadAction((Computable<List<String>>) () -> {
             List<String> classes = new ArrayList<>();
             ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
-            fileIndex.iterateContent(vf -> processTestFile(vf, fileIndex, target, classes));
+            var compiledGlob = target.isEmpty() ? null : ToolUtils.compileGlob(target);
+            fileIndex.iterateContent(vf -> processTestFile(vf, fileIndex, target, compiledGlob, classes));
             return classes;
         });
     }
 
     private boolean processTestFile(com.intellij.openapi.vfs.VirtualFile vf,
-                                    ProjectFileIndex fileIndex, String target, List<String> classes) {
+                                    ProjectFileIndex fileIndex, String target, java.util.regex.Pattern compiledGlob, List<String> classes) {
         if (!fileIndex.isInTestSourceContent(vf)) return true;
         if (vf.isDirectory()) return true;
         String name = vf.getName();
         if (!name.endsWith(ToolUtils.JAVA_EXTENSION) && !name.endsWith(".kt")) return true;
         String simpleName = name.substring(0, name.lastIndexOf('.'));
-        if (ToolUtils.doesNotMatchGlob(simpleName, target)) return true;
+        if (ToolUtils.doesNotMatchGlob(simpleName, target, compiledGlob)) return true;
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return true;
         String fqn = extractClassFqn(psiFile, simpleName);

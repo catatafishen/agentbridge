@@ -107,13 +107,14 @@ public final class ListProjectFilesTool extends NavigationTool {
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
         List<FileEntry> entries = new ArrayList<>();
+        var compiledGlob = pattern.isEmpty() ? null : ToolUtils.compileGlob(pattern);
         ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
         fileIndex.iterateContent(vf -> {
             if (vf.isDirectory()) return true;
             String relPath = relativize(basePath, vf.getPath());
             if (relPath == null) return true;
             if (!dir.isEmpty() && !relPath.startsWith(dir)) return true;
-            if (!pattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, pattern)) return true;
+            if (!pattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, pattern, compiledGlob)) return true;
             long size = vf.getLength();
             long ts = vf.getTimeStamp();
             if (!matchesSizeAndDateFilters(size, ts, minSize, maxSize, modifiedAfter, modifiedBefore)) return true;

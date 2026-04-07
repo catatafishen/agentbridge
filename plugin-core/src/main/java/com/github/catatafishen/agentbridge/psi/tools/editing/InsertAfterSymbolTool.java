@@ -124,7 +124,7 @@ public final class InsertAfterSymbolTool extends EditingTool {
                 normalized += "\n";
             }
             int offset = doc.getLineEndOffset(loc.endLine() - 1);
-            if (offset < doc.getTextLength() && doc.getText().charAt(offset) == '\n') {
+            if (offset < doc.getTextLength() && doc.getCharsSequence().charAt(offset) == '\n') {
                 offset++;
             }
             final String fContent = normalized;

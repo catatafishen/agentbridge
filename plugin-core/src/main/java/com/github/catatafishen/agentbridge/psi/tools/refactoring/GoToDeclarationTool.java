@@ -147,7 +147,7 @@ public final class GoToDeclarationTool extends RefactoringTool {
     }
 
     private boolean matchesSymbolName(PsiElement element, String symbolName) {
-        return element.getText().equals(symbolName)
+        return element.textMatches(symbolName)
             || (element instanceof PsiNamedElement named && symbolName.equals(named.getName()));
     }
 

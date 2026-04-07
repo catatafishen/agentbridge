@@ -308,7 +308,7 @@ public class WriteFileTool extends FileTool {
         int startOffset = doc.getLineStartOffset(startLine - 1);
         int endOffset = doc.getLineEndOffset(endLine - 1);
         // Include the trailing newline if present so the replacement is clean
-        if (endOffset < doc.getTextLength() && doc.getText().charAt(endOffset) == '\n') {
+        if (endOffset < doc.getTextLength() && doc.getCharsSequence().charAt(endOffset) == '\n') {
             endOffset++;
         }
         // Ensure new_str ends with newline for clean line replacement
