@@ -928,8 +928,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         while (i < entries.size) {
             val e = entries[i]
-            if (e is EntryData.Prompt || e is EntryData.Nudge || e is EntryData.SessionSeparator || e is EntryData.Status) break
-            if (e is EntryData.ContextFiles || e is EntryData.TurnStats || e is EntryData.Status) {
+            if (e is EntryData.Prompt || e is EntryData.Nudge || e is EntryData.SessionSeparator
+                || e is EntryData.Status || e is EntryData.TurnStats) break
+            if (e is EntryData.ContextFiles) {
                 i++; continue
             }
             if (hadToolOrSubagent && (e is EntryData.Text || e is EntryData.Thinking)) flushSegment()
