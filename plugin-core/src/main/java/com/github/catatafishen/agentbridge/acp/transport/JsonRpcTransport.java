@@ -360,9 +360,12 @@ public class JsonRpcTransport {
     private String buildStderrContext() {
         synchronized (stderrBuffer) {
             if (stderrBuffer.isEmpty()) return "";
-            StringJoiner sj = new StringJoiner(" | ");
-            stderrBuffer.forEach(sj::add);
-            return sj.toString();
+            // Return only the first 3 lines so the error message shown to the user
+            // is concise. The full backtrace is already logged line-by-line as WARN.
+            return stderrBuffer.stream()
+                .filter(line -> !line.isBlank())
+                .limit(3)
+                .collect(java.util.stream.Collectors.joining(" | "));
         }
     }
 

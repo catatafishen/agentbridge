@@ -523,6 +523,15 @@ public final class ActiveAgentManager implements Disposable {
         return acpConnected;
     }
 
+    /**
+     * Returns {@code true} if the current agent client is alive and healthy,
+     * without triggering an automatic restart. Safe to call from error handlers
+     * where auto-starting a new process would be undesirable.
+     */
+    public boolean isClientHealthy() {
+        return started && acpClient != null && acpClient.isHealthy();
+    }
+
     public void setConnected(boolean connected) {
         this.acpConnected = connected;
     }

@@ -746,12 +746,24 @@ class PromptOrchestrator(
         }
 
         val isRecoverable = isCancelled || (e is AgentException && e.isRecoverable)
+        // If the agent process crashed but a new process has already started and restored the
+        // session, preserve the session so the next prompt reuses the context instead of
+        // starting fresh. isClientHealthy() does not trigger an auto-restart.
+        val isProcessCrashWithRecovery = !isCancelled
+            && generateSequence(e as Throwable?) { it.cause }.any {
+            it.message?.contains("process exited unexpectedly", ignoreCase = true) == true
+        }
+            && agentManager.isClientHealthy()
         if (!isRecoverable) {
-            // Drop the ACP client's cached session ID too, so the next createSession()
-            // goes through the full load/new flow instead of hitting the early-return
-            // "reuse" path with the still-invalid session (mirrors handleSessionCorrupted).
-            agentManager.client.dropCurrentSession()
-            currentSessionId = null
+            if (isProcessCrashWithRecovery) {
+                log.info("Agent process crashed but recovered — preserving session $currentSessionId for retry")
+            } else {
+                // Drop the ACP client's cached session ID too, so the next createSession()
+                // goes through the full load/new flow instead of hitting the early-return
+                // "reuse" path with the still-invalid session (mirrors handleSessionCorrupted).
+                agentManager.client.dropCurrentSession()
+                currentSessionId = null
+            }
             callbacks.updateSessionInfo()
         }
 
