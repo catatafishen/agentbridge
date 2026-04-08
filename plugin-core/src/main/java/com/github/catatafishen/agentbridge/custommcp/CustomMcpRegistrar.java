@@ -19,6 +19,9 @@ import java.util.Set;
  * Connects to each enabled server at startup, discovers its tools, and registers
  * {@link CustomMcpToolProxy} instances in {@link PsiBridgeService}.
  * Also handles re-sync when settings are updated.
+ * <p>
+ * Maintains a {@link CustomMcpClient} per server so that MCP sessions are preserved
+ * across tool calls and properly terminated when servers are removed or disabled.
  */
 @Service(Service.Level.PROJECT)
 public final class CustomMcpRegistrar {
@@ -26,10 +29,17 @@ public final class CustomMcpRegistrar {
     private static final Logger LOG = Logger.getInstance(CustomMcpRegistrar.class);
 
     private final Project project;
+
     /**
      * Maps server ID → set of proxy tool IDs currently registered for that server.
      */
     private final Map<String, Set<String>> registeredByServer = new HashMap<>();
+
+    /**
+     * Maps server ID → the active MCP client for that server.
+     * Used to close sessions when a server is unregistered or replaced.
+     */
+    private final Map<String, CustomMcpClient> clientByServer = new HashMap<>();
 
     public CustomMcpRegistrar(@NotNull Project project) {
         this.project = project;
@@ -46,7 +56,7 @@ public final class CustomMcpRegistrar {
      * newly enabled servers and registers their tools.
      * <p>
      * Safe to call on any thread (uses pooled HTTP connections, no EDT usage).
-     * Synchronized to prevent concurrent modification of {@link #registeredByServer}
+     * Synchronized to prevent concurrent modification of internal maps
      * when called from both startup and settings-apply threads.
      */
     public synchronized void syncRegistrations() {
@@ -81,6 +91,7 @@ public final class CustomMcpRegistrar {
     /**
      * Connects to one server, discovers its tools, and registers proxy instances.
      * Replaces any previously registered tools for the same server ID.
+     * Closes the old client's session before creating a new one.
      * Logs a warning and skips silently on connection failure.
      */
     private void connectAndRegister(@NotNull PsiBridgeService bridge, @NotNull CustomMcpServerConfig server) {
@@ -91,10 +102,11 @@ public final class CustomMcpRegistrar {
 
             if (tools.isEmpty()) {
                 LOG.info("Custom MCP server '" + server.getName() + "' reported no tools");
+                client.close();
                 return;
             }
 
-            // Replace any stale registrations for this server
+            // Close old client session and replace stale registrations for this server
             unregisterServerTools(bridge, server.getId());
 
             Set<String> registered = new HashSet<>();
@@ -108,19 +120,30 @@ public final class CustomMcpRegistrar {
                 LOG.info("Registered custom MCP proxy: " + proxy.id() + " → " + server.getUrl());
             }
             registeredByServer.put(server.getId(), registered);
+            clientByServer.put(server.getId(), client);
 
         } catch (Exception e) {
+            client.close();
             LOG.warn("Failed to connect to custom MCP server '" + server.getName()
                 + "' at " + server.getUrl() + ": " + e.getMessage());
         }
     }
 
+    /**
+     * Unregisters proxy tools for a server and terminates the MCP session.
+     */
     private void unregisterServerTools(@NotNull PsiBridgeService bridge, @NotNull String serverId) {
         Set<String> toolIds = registeredByServer.get(serverId);
-        if (toolIds == null) return;
-        for (String toolId : toolIds) {
-            bridge.unregisterTool(toolId);
-            LOG.info("Unregistered custom MCP proxy: " + toolId);
+        if (toolIds != null) {
+            for (String toolId : toolIds) {
+                bridge.unregisterTool(toolId);
+                LOG.info("Unregistered custom MCP proxy: " + toolId);
+            }
+        }
+
+        CustomMcpClient oldClient = clientByServer.remove(serverId);
+        if (oldClient != null) {
+            oldClient.close();
         }
     }
 }

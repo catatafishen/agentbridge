@@ -153,8 +153,7 @@ public final class CustomMcpConfigurable implements Configurable {
         }
         testButton.setEnabled(false);
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            try {
-                CustomMcpClient client = new CustomMcpClient(server.getUrl());
+            try (CustomMcpClient client = new CustomMcpClient(server.getUrl())) {
                 client.initialize();
                 List<CustomMcpClient.ToolInfo> tools = client.listTools();
                 String toolList = tools.stream()
