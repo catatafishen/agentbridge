@@ -100,7 +100,7 @@ public final class ChatInputConfigurable implements Configurable {
             .addVerticalGap(8)
             .addSeparator(8)
             .addComponent(showHintsCheckBox)
-            .addTooltip("Display Enter/Shift+Enter/Ctrl+Enter hints in the prompt placeholder text.")
+            .addTooltip("Show a keyboard shortcut hint bar below the chat input.")
             .addVerticalGap(4)
             .addSeparator(8)
             .addComponent(softWrapsCheckBox)
@@ -189,6 +189,7 @@ public final class ChatInputConfigurable implements Configurable {
         var chatContent = com.github.catatafishen.agentbridge.ui.ChatToolWindowContent.Companion.getInstance(project);
         if (chatContent != null) {
             chatContent.setSoftWrapsEnabled(softWrapsCheckBox.isSelected());
+            chatContent.setShortcutHintsVisible(showHintsCheckBox.isSelected());
         }
 
         CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);

@@ -68,6 +68,7 @@ class ChatToolWindowContent(
     private lateinit var controlsToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
+    private lateinit var shortcutHintPanel: PromptShortcutHintPanel
     private var isSending = false
 
     @Volatile
@@ -271,20 +272,16 @@ class ChatToolWindowContent(
 
     private fun promptPlaceholder(): String {
         val name = agentManager.activeProfile.displayName
-        val settings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
         val action = if (isSending) "Nudge" else "Ask"
-        if (!settings.isShowShortcutHints) {
-            return "$action $name..."
-        }
-        val ctrl = if (com.intellij.openapi.util.SystemInfo.isMac) "⌘" else "Ctrl"
-        val shift = if (com.intellij.openapi.util.SystemInfo.isMac) "⇧" else "Shift"
-        val enter = if (com.intellij.openapi.util.SystemInfo.isMac) "⏎" else "Enter"
-        return "$action $name... ($enter ${action.lowercase()} · $shift+$enter new line · $ctrl+$enter stop & send)"
+        return "$action $name..."
     }
 
     private fun updatePromptPlaceholder() {
         val editor = promptTextArea.editor as? EditorEx ?: return
         editor.setPlaceholder(promptPlaceholder())
+        if (::shortcutHintPanel.isInitialized) {
+            shortcutHintPanel.setNudgeMode(isSending)
+        }
     }
 
     fun disconnectFromAgent() {
@@ -648,6 +645,13 @@ class ChatToolWindowContent(
             com.intellij.ui.SideBorder(JBColor.border(), com.intellij.ui.SideBorder.TOP),
             JBUI.Borders.empty(0, 0, 2, 0)
         )
+
+        shortcutHintPanel = PromptShortcutHintPanel(project)
+        shortcutHintPanel.alignmentX = Component.LEFT_ALIGNMENT
+        shortcutHintPanel.isVisible =
+            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
+        footer.add(shortcutHintPanel)
+
         val controlsRow = createControlsRow()
         controlsRow.alignmentX = Component.LEFT_ALIGNMENT
         footer.add(controlsRow)
@@ -841,6 +845,12 @@ class ChatToolWindowContent(
 
     fun setSoftWrapsEnabled(enabled: Boolean) {
         promptTextArea.editor?.settings?.isUseSoftWraps = enabled
+    }
+
+    fun setShortcutHintsVisible(visible: Boolean) {
+        if (::shortcutHintPanel.isInitialized) {
+            shortcutHintPanel.isVisible = visible
+        }
     }
 
     private fun setSendingState(sending: Boolean) {
