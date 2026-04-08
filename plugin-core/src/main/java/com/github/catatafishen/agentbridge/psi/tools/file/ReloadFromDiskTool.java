@@ -64,7 +64,7 @@ public final class ReloadFromDiskTool extends FileTool {
         if (!args.has("path") || args.get("path").isJsonNull()) {
             VirtualFile root = LocalFileSystem.getInstance().findFileByPath(basePath);
             if (root == null) return "Project root not found";
-            VfsUtil.markDirtyAndRefresh(true, true, true, root);
+            VfsUtil.markDirtyAndRefresh(false, true, true, root);
             return "Reloaded project root from disk (" + basePath + ")";
         }
 
@@ -81,7 +81,7 @@ public final class ReloadFromDiskTool extends FileTool {
             return "File not found: " + pathStr;
         }
 
-        VfsUtil.markDirtyAndRefresh(true, vf.isDirectory(), true, vf);
+        VfsUtil.markDirtyAndRefresh(false, vf.isDirectory(), true, vf);
         return "Reloaded from disk: " + vf.getPath();
     }
 }

@@ -67,6 +67,38 @@ public abstract class FileTool extends Tool {
         if (pathSet == null || pathSet.isEmpty()) return;
 
         List<String> paths = new ArrayList<>(pathSet);
+
+        if (com.intellij.openapi.application.ApplicationManager.getApplication().isDispatchThread()) {
+            // Already on EDT — run formatting directly without blocking to avoid deadlock
+            for (String pathStr : paths) {
+                try {
+                    VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
+                    if (vf != null) {
+                        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+                        if (psiFile != null) {
+                            WriteAction.run(() ->
+                                CommandProcessor.getInstance().executeCommand(project, () -> {
+                                    PsiDocumentManager.getInstance(project).commitAllDocuments();
+                                    new OptimizeImportsProcessor(project, psiFile).run();
+                                    new ReformatCodeProcessor(psiFile, false).run();
+                                    PsiDocumentManager.getInstance(project).commitAllDocuments();
+                                }, "Auto-Format (Deferred)", null)
+                            );
+                            LOG.info("Deferred auto-format (EDT): " + pathStr);
+                        }
+                    }
+                } catch (Exception e) {
+                    LOG.warn("Deferred auto-format failed for " + pathStr + ": " + e.getMessage());
+                }
+            }
+            try {
+                WriteAction.run(() -> FileDocumentManager.getInstance().saveAllDocuments());
+            } catch (Exception e) {
+                LOG.warn("Failed to save documents after auto-format", e);
+            }
+            return;
+        }
+
         java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         java.util.concurrent.atomic.AtomicInteger remaining = new java.util.concurrent.atomic.AtomicInteger(paths.size());
 

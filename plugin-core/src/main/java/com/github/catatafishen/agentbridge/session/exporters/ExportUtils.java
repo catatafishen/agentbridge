@@ -45,7 +45,9 @@ public final class ExportUtils {
      */
     @NotNull
     public static File sessionsDir(@Nullable String basePath) {
-        String base = basePath != null ? basePath : "";
-        return new File(base + "/.agent-work/sessions");
+        if (basePath == null || basePath.isEmpty()) {
+            return new File(".agent-work/sessions");
+        }
+        return new File(basePath, ".agent-work/sessions");
     }
 }

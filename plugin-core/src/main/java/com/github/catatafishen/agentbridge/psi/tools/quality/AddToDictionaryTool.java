@@ -67,6 +67,8 @@ public final class AddToDictionaryTool extends QualityTool {
                     .invoke(spellChecker, word, project);
                 resultFuture.complete("Added '" + word + "' to project dictionary. " +
                     "It will no longer be flagged as a typo in future inspections.");
+            } catch (ClassNotFoundException e) {
+                resultFuture.complete("Spellchecker plugin is not available in this IDE build.");
             } catch (Exception e) {
                 LOG.error("Error adding word to dictionary", e);
                 resultFuture.complete(ToolUtils.ERROR_PREFIX + "adding word to dictionary: " + e.getMessage());

@@ -28,9 +28,9 @@ public final class ToolUtils {
     public static final String ELEMENT_TYPE_FUNCTION = "function";
     public static final String ELEMENT_TYPE_METHOD = "method";
 
-    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.lang.reflect.Method> IS_INTERFACE_CACHE =
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.util.Optional<java.lang.reflect.Method>> IS_INTERFACE_CACHE =
         new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.lang.reflect.Method> IS_ENUM_CACHE =
+    private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.util.Optional<java.lang.reflect.Method>> IS_ENUM_CACHE =
         new java.util.concurrent.ConcurrentHashMap<>();
 
     private ToolUtils() {
@@ -60,23 +60,23 @@ public final class ToolUtils {
 
     static String classifyJavaClass(PsiElement element) {
         try {
-            var isInterface = IS_INTERFACE_CACHE.computeIfAbsent(
+            java.lang.reflect.Method isInterface = IS_INTERFACE_CACHE.computeIfAbsent(
                 element.getClass(), c -> {
                     try {
-                        return c.getMethod("isInterface");
+                        return java.util.Optional.of(c.getMethod("isInterface"));
                     } catch (NoSuchMethodException e) {
-                        return null;
+                        return java.util.Optional.empty();
                     }
-                });
+                }).orElse(null);
             if (isInterface != null && (boolean) isInterface.invoke(element)) return ELEMENT_TYPE_INTERFACE;
-            var isEnum = IS_ENUM_CACHE.computeIfAbsent(
+            java.lang.reflect.Method isEnum = IS_ENUM_CACHE.computeIfAbsent(
                 element.getClass(), c -> {
                     try {
-                        return c.getMethod("isEnum");
+                        return java.util.Optional.of(c.getMethod("isEnum"));
                     } catch (NoSuchMethodException e) {
-                        return null;
+                        return java.util.Optional.empty();
                     }
-                });
+                }).orElse(null);
             if (isEnum != null && (boolean) isEnum.invoke(element)) return ELEMENT_TYPE_ENUM;
         } catch (java.lang.reflect.InvocationTargetException | IllegalAccessException ignored) {
             // Reflection invocation failed for this PsiClass variant
@@ -96,23 +96,23 @@ public final class ToolUtils {
 
     static String classifyKotlinClass(PsiElement element) {
         try {
-            var isInterface = IS_INTERFACE_CACHE.computeIfAbsent(
+            java.lang.reflect.Method isInterface = IS_INTERFACE_CACHE.computeIfAbsent(
                 element.getClass(), c -> {
                     try {
-                        return c.getMethod("isInterface");
+                        return java.util.Optional.of(c.getMethod("isInterface"));
                     } catch (NoSuchMethodException e) {
-                        return null;
+                        return java.util.Optional.empty();
                     }
-                });
+                }).orElse(null);
             if (isInterface != null && (boolean) isInterface.invoke(element)) return ELEMENT_TYPE_INTERFACE;
-            var isEnum = IS_ENUM_CACHE.computeIfAbsent(
+            java.lang.reflect.Method isEnum = IS_ENUM_CACHE.computeIfAbsent(
                 element.getClass(), c -> {
                     try {
-                        return c.getMethod("isEnum");
+                        return java.util.Optional.of(c.getMethod("isEnum"));
                     } catch (NoSuchMethodException e) {
-                        return null;
+                        return java.util.Optional.empty();
                     }
-                });
+                }).orElse(null);
             if (isEnum != null && (boolean) isEnum.invoke(element)) return ELEMENT_TYPE_ENUM;
         } catch (java.lang.reflect.InvocationTargetException | IllegalAccessException ignored) {
             // Reflection invocation failed for this Kotlin class variant
@@ -182,10 +182,11 @@ public final class ToolUtils {
 
     public static boolean doesNotMatchGlob(String path, String pattern, java.util.regex.Pattern compiled) {
         if (pattern.isEmpty()) return false;
+        java.util.regex.Pattern effectivePattern = compiled != null ? compiled : globToRegex(pattern);
         String normalizedPath = path.replace('\\', '/');
         boolean isPathPattern = pattern.contains("/") || pattern.contains("**");
         String target = isPathPattern ? normalizedPath : lastSegment(normalizedPath);
-        return !compiled.matcher(target).matches();
+        return !effectivePattern.matcher(target).matches();
     }
 
     public static java.util.regex.Pattern compileGlob(String pattern) {
