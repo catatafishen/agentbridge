@@ -670,7 +670,9 @@ class ChatToolWindowContent(
             .getEditorField(com.intellij.openapi.fileTypes.PlainTextLanguage.INSTANCE, project, editorCustomizations)
         @Suppress("UsePropertyAccessSyntax") // isOneLineMode getter is protected in EditorTextField
         promptTextArea.setOneLineMode(false)
-        promptTextArea.border = null
+        // Padding is applied here (not on editor.contentComponent) to avoid interfering with
+        // IntelliJ's selection painting, which uses the contentComponent's full bounds.
+        promptTextArea.border = JBUI.Borders.empty(4, 6)
         contextManager = PromptContextManager(project, promptTextArea) { text -> appendResponse(text) }
 
         pasteToScratchHandler = PasteToScratchHandler(project, promptTextArea, contextManager)
@@ -708,22 +710,7 @@ class ChatToolWindowContent(
             editor.setShowPlaceholderWhenFocused(true)
             editor.settings.isUseSoftWraps =
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isSoftWrapsEnabled
-            editor.contentComponent.border = JBUI.Borders.empty(4, 6)
             editor.setBorder(null)
-            // Workaround for IntelliJ 2026.1 selection rendering regression:
-            // IntelliJ's internal auto-scroll (scrollToCaret) shifts the viewport before the
-            // selection dirty-regions are painted, so only the caret line appears highlighted.
-            // Double-deferred repaint (two nested invokeLater) ensures the repaint runs after
-            // both the scroll and any subsequent layout passes complete.
-            editor.selectionModel.addSelectionListener(object : com.intellij.openapi.editor.event.SelectionListener {
-                override fun selectionChanged(e: com.intellij.openapi.editor.event.SelectionEvent) {
-                    ApplicationManager.getApplication().invokeLater {
-                        ApplicationManager.getApplication().invokeLater {
-                            editor.contentComponent.repaint()
-                        }
-                    }
-                }
-            })
         }
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
