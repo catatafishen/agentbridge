@@ -1,87 +1,119 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.openapi.keymap.KeymapUtil
-import com.intellij.openapi.options.ShowSettingsUtil
-import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.labels.LinkLabel
+import com.intellij.ui.components.JBPanel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.*
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import javax.swing.Box
+import javax.swing.BoxLayout
+import javax.swing.JPanel
 import javax.swing.KeyStroke
 
 /**
- * Compact hint bar below the prompt input that shows keyboard shortcuts
- * using JetBrains-styled key badges with OS-native keystroke text.
+ * Transparent overlay that shows keyboard shortcut hints centered inside
+ * the prompt editor. Mouse-transparent so all events pass through to the
+ * editor underneath.
  *
- * Updates dynamically: "send" ↔ "nudge" when the agent is working.
- * Includes a settings link to open the UI/UX configuration page.
+ * Reads actual key bindings from the IntelliJ keymap so customized
+ * shortcuts are reflected in the displayed hints.
+ *
+ * Visibility is managed by [ChatToolWindowContent]: shown when the editor
+ * is empty, hidden once the user types.
  */
-class PromptShortcutHintPanel(private val project: Project) :
-    com.intellij.ui.components.JBPanel<com.intellij.ui.components.JBPanel<*>>(
-        FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)
-    ) {
+class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(GridBagLayout()) {
 
     private val sendLabel: JBLabel
 
     init {
         isOpaque = false
-        border = JBUI.Borders.empty(2, 6, 2, 4)
 
-        val enterStroke = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0)
-        val shiftEnterStroke = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK)
-        val ctrlEnterStroke = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK)
-        val ctrlShiftEnterStroke = KeyStroke.getKeyStroke(
-            KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK
+        val inner = JPanel()
+        inner.isOpaque = false
+        inner.layout = BoxLayout(inner, BoxLayout.Y_AXIS)
+
+        val row1 = createRow()
+        sendLabel = addShortcutEntry(
+            row1,
+            PromptShortcutAction.SEND_ID,
+            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0),
+            "send"
+        )
+        addDot(row1)
+        addShortcutEntry(
+            row1,
+            PromptShortcutAction.NEW_LINE_ID,
+            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK),
+            "new line"
         )
 
-        sendLabel = addShortcutEntry(enterStroke, "send")
-        addDot()
-        addShortcutEntry(shiftEnterStroke, "new line")
-        addDot()
-        addShortcutEntry(ctrlEnterStroke, "stop && send")
-        addDot()
-        addShortcutEntry(ctrlShiftEnterStroke, "queue")
+        val row2 = createRow()
+        addShortcutEntry(
+            row2,
+            PromptShortcutAction.STOP_AND_SEND_ID,
+            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
+            "stop && send"
+        )
+        addDot(row2)
+        addShortcutEntry(
+            row2,
+            PromptShortcutAction.QUEUE_ID,
+            KeyStroke.getKeyStroke(
+                KeyEvent.VK_ENTER,
+                InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK
+            ),
+            "queue"
+        )
 
-        add(Box.createHorizontalStrut(JBUI.scale(6)))
-        add(createSettingsLink())
+        inner.add(row1)
+        inner.add(Box.createVerticalStrut(JBUI.scale(2)))
+        inner.add(row2)
+
+        add(inner)
     }
 
+    /** Toggle between "send" and "nudge" label when the agent is working. */
     fun setNudgeMode(nudge: Boolean) {
         sendLabel.text = if (nudge) "nudge" else "send"
     }
 
-    private fun addShortcutEntry(keystroke: KeyStroke, label: String): JBLabel {
-        val keyText = KeymapUtil.getKeystrokeText(keystroke)
-        add(KeyBadge(keyText))
+    /** All mouse events pass through to the editor underneath. */
+    override fun contains(x: Int, y: Int): Boolean = false
+
+    private fun createRow(): JPanel {
+        val row = JPanel(FlowLayout(FlowLayout.CENTER, JBUI.scale(2), 0))
+        row.isOpaque = false
+        row.alignmentX = Component.CENTER_ALIGNMENT
+        return row
+    }
+
+    private fun addShortcutEntry(
+        row: JPanel,
+        actionId: String,
+        fallbackStroke: KeyStroke,
+        label: String
+    ): JBLabel {
+        val stroke = PromptShortcutAction.resolveKeystroke(actionId, fallbackStroke)
+        val keyText = KeymapUtil.getKeystrokeText(stroke)
+        row.add(KeyBadge(keyText))
         val lbl = JBLabel(label).apply {
             font = JBUI.Fonts.smallFont()
             foreground = UIUtil.getContextHelpForeground()
         }
-        add(lbl)
+        row.add(lbl)
         return lbl
     }
 
-    private fun addDot() {
-        add(JBLabel("\u00B7").apply {
+    private fun addDot(row: JPanel) {
+        row.add(JBLabel("\u00B7").apply {
             font = JBUI.Fonts.smallFont()
             foreground = UIUtil.getContextHelpForeground()
             border = JBUI.Borders.empty(0, 2)
         })
-    }
-
-    private fun createSettingsLink(): Component {
-        return LinkLabel<Any?>("Customize\u2026", null) { _, _ ->
-            ShowSettingsUtil.getInstance()
-                .showSettingsDialog(project, "com.github.catatafishen.agentbridge.chatInput")
-        }.apply {
-            font = JBUI.Fonts.smallFont()
-            border = JBUI.Borders.empty(0, 2)
-        }
     }
 
     /**

@@ -475,4 +475,25 @@
     <projectViewNodeDecorator
       implementation="com.github.catatafishen.agentbridge.psi.AgentFileDecorator"/>
   </extensions>
+
+  <actions>
+    <group id="AgentBridge.PromptShortcuts" text="AgentBridge Chat Prompt">
+      <action id="AgentBridge.Prompt.Send"
+              class="com.github.catatafishen.agentbridge.ui.PromptShortcutAction"
+              text="Send Prompt"
+              description="Send the current prompt text (or nudge if the agent is working)"/>
+      <action id="AgentBridge.Prompt.NewLine"
+              class="com.github.catatafishen.agentbridge.ui.PromptShortcutAction"
+              text="New Line"
+              description="Insert a new line in the chat prompt"/>
+      <action id="AgentBridge.Prompt.StopAndSend"
+              class="com.github.catatafishen.agentbridge.ui.PromptShortcutAction"
+              text="Stop and Send"
+              description="Force-stop the current agent work and send the prompt"/>
+      <action id="AgentBridge.Prompt.Queue"
+              class="com.github.catatafishen.agentbridge.ui.PromptShortcutAction"
+              text="Queue Message"
+              description="Queue the prompt to be sent after the agent finishes current work"/>
+    </group>
+  </actions>
 </idea-plugin>

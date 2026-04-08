@@ -269,17 +269,10 @@ class ChatToolWindowContent(
         )
     }
 
-    private fun promptPlaceholder(): String {
-        val name = agentManager.activeProfile.displayName
-        val action = if (isSending) "Nudge" else "Ask"
-        return "$action $name..."
-    }
-
     private fun updatePromptPlaceholder() {
-        val editor = promptTextArea.editor as? EditorEx ?: return
-        editor.setPlaceholder(promptPlaceholder())
         if (::shortcutHintPanel.isInitialized) {
             shortcutHintPanel.setNudgeMode(isSending)
+            updateOverlayVisibility()
         }
     }
 
@@ -645,12 +638,6 @@ class ChatToolWindowContent(
             JBUI.Borders.empty(0, 0, 2, 0)
         )
 
-        shortcutHintPanel = PromptShortcutHintPanel(project)
-        shortcutHintPanel.alignmentX = Component.LEFT_ALIGNMENT
-        shortcutHintPanel.isVisible =
-            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
-        footer.add(shortcutHintPanel)
-
         val controlsRow = createControlsRow()
         controlsRow.alignmentX = Component.LEFT_ALIGNMENT
         footer.add(controlsRow)
@@ -709,8 +696,6 @@ class ChatToolWindowContent(
         promptTextArea.addSettingsProvider { editor ->
             setupPromptKeyBindings(editor)
             setupPromptContextMenu(editor)
-            editor.setPlaceholder(promptPlaceholder())
-            editor.setShowPlaceholderWhenFocused(true)
             editor.settings.isUseSoftWraps =
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isSoftWrapsEnabled
             editor.setBorder(null)
@@ -721,12 +706,35 @@ class ChatToolWindowContent(
                 ApplicationManager.getApplication().invokeLater {
                     promptTextArea.revalidate()
                     checkSlashCommandAutocomplete()
+                    updateOverlayVisibility()
                 }
             }
         })
 
+        // Shortcut hint overlay centered inside the editor area
+        shortcutHintPanel = PromptShortcutHintPanel()
+        shortcutHintPanel.isVisible =
+            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
+
+        // JLayeredPane layers the editor (background) and hint overlay (foreground).
+        // The custom layout delegates sizing to the editor so the splitter works correctly.
+        val editorWrapper = JLayeredPane()
+        editorWrapper.layout = object : LayoutManager {
+            override fun addLayoutComponent(name: String?, comp: Component?) {}
+            override fun removeLayoutComponent(comp: Component?) {}
+            override fun preferredLayoutSize(parent: Container): Dimension = promptTextArea.preferredSize
+            override fun minimumLayoutSize(parent: Container): Dimension = promptTextArea.minimumSize
+            override fun layoutContainer(parent: Container) {
+                val bounds = Rectangle(0, 0, parent.width, parent.height)
+                promptTextArea.bounds = bounds
+                shortcutHintPanel.bounds = bounds
+            }
+        }
+        editorWrapper.add(promptTextArea, JLayeredPane.DEFAULT_LAYER)
+        editorWrapper.add(shortcutHintPanel, JLayeredPane.PALETTE_LAYER)
+
         row.border = JBUI.Borders.empty()
-        row.add(promptTextArea, BorderLayout.CENTER)
+        row.add(editorWrapper, BorderLayout.CENTER)
 
         return row
     }
@@ -846,10 +854,15 @@ class ChatToolWindowContent(
         promptTextArea.editor?.settings?.isUseSoftWraps = enabled
     }
 
-    fun setShortcutHintsVisible(visible: Boolean) {
-        if (::shortcutHintPanel.isInitialized) {
-            shortcutHintPanel.isVisible = visible
-        }
+    fun setShortcutHintsVisible() {
+        updateOverlayVisibility()
+    }
+
+    private fun updateOverlayVisibility() {
+        if (!::shortcutHintPanel.isInitialized) return
+        val showHints = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
+        val editorEmpty = promptTextArea.text.isEmpty()
+        shortcutHintPanel.isVisible = showHints && editorEmpty
     }
 
     private fun setSendingState(sending: Boolean) {
@@ -1580,7 +1593,6 @@ class ChatToolWindowContent(
         registerTriggerCharDetection(editor)
     }
 
-    // Use IntelliJ's action system so the shortcut takes priority over the editor's built-in Enter handler.
     private fun registerEnterSend(contentComponent: JComponent) {
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) {
@@ -1592,7 +1604,10 @@ class ChatToolWindowContent(
                 }
             }
         }.registerCustomShortcutSet(
-            CustomShortcutSet(KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0)),
+            PromptShortcutAction.resolveShortcutSet(
+                PromptShortcutAction.SEND_ID,
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0)
+            ),
             contentComponent
         )
     }
@@ -1607,7 +1622,8 @@ class ChatToolWindowContent(
                 editor.caretModel.moveToOffset(offset + 1)
             }
         }.registerCustomShortcutSet(
-            CustomShortcutSet(
+            PromptShortcutAction.resolveShortcutSet(
+                PromptShortcutAction.NEW_LINE_ID,
                 KeyStroke.getKeyStroke(
                     java.awt.event.KeyEvent.VK_ENTER,
                     java.awt.event.InputEvent.SHIFT_DOWN_MASK
@@ -1621,7 +1637,8 @@ class ChatToolWindowContent(
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) = onForceStopAndSend()
         }.registerCustomShortcutSet(
-            CustomShortcutSet(
+            PromptShortcutAction.resolveShortcutSet(
+                PromptShortcutAction.STOP_AND_SEND_ID,
                 KeyStroke.getKeyStroke(
                     java.awt.event.KeyEvent.VK_ENTER,
                     java.awt.event.InputEvent.CTRL_DOWN_MASK
@@ -1635,7 +1652,8 @@ class ChatToolWindowContent(
         object : AnAction() {
             override fun actionPerformed(e: AnActionEvent) = onQueueMessageClicked()
         }.registerCustomShortcutSet(
-            CustomShortcutSet(
+            PromptShortcutAction.resolveShortcutSet(
+                PromptShortcutAction.QUEUE_ID,
                 KeyStroke.getKeyStroke(
                     java.awt.event.KeyEvent.VK_ENTER,
                     java.awt.event.InputEvent.CTRL_DOWN_MASK or java.awt.event.InputEvent.SHIFT_DOWN_MASK

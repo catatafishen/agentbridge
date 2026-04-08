@@ -47,7 +47,7 @@ public final class ChatInputConfigurable implements Configurable {
         McpServerSettings mcpSettings = McpServerSettings.getInstance(project);
         CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);
 
-        showHintsCheckBox = new JBCheckBox("Show keyboard shortcut hints in prompt placeholder");
+        showHintsCheckBox = new JBCheckBox("Show keyboard shortcut hints in chat input");
         smartPasteCheckBox = new JBCheckBox("Enable smart paste");
         softWrapsCheckBox = new JBCheckBox("Enable soft wraps in chat input");
         smartPasteMinLinesSpinner = new JSpinner(new SpinnerNumberModel(
@@ -100,7 +100,8 @@ public final class ChatInputConfigurable implements Configurable {
             .addVerticalGap(8)
             .addSeparator(8)
             .addComponent(showHintsCheckBox)
-            .addTooltip("Show a keyboard shortcut hint bar below the chat input.")
+            .addTooltip("Display shortcut hints centered inside the input area when it is empty.")
+            .addComponent(createKeymapLink())
             .addVerticalGap(4)
             .addSeparator(8)
             .addComponent(softWrapsCheckBox)
@@ -146,6 +147,15 @@ public final class ChatInputConfigurable implements Configurable {
         smartPasteMinCharsSpinner.setEnabled(enabled);
     }
 
+    private JComponent createKeymapLink() {
+        var link = new com.intellij.ui.components.labels.LinkLabel<Void>(
+            "Customize keyboard shortcuts…", null,
+            (aSource, aLinkData) -> com.intellij.openapi.options.ShowSettingsUtil.getInstance()
+                .showSettingsDialog(project, "Keymap"));
+        link.setBorder(JBUI.Borders.emptyLeft(20));
+        return link;
+    }
+
     @Override
     public boolean isModified() {
         if (showHintsCheckBox == null) return false;
@@ -189,7 +199,7 @@ public final class ChatInputConfigurable implements Configurable {
         var chatContent = com.github.catatafishen.agentbridge.ui.ChatToolWindowContent.Companion.getInstance(project);
         if (chatContent != null) {
             chatContent.setSoftWrapsEnabled(softWrapsCheckBox.isSelected());
-            chatContent.setShortcutHintsVisible(showHintsCheckBox.isSelected());
+            chatContent.setShortcutHintsVisible();
         }
 
         CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);
