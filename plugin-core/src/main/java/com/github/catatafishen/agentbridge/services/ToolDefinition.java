@@ -130,9 +130,20 @@ public interface ToolDefinition {
 
     /**
      * True if the tool only reads data and never modifies state.
+     * This value is exposed as the MCP {@code readOnlyHint} annotation to clients.
      */
     default boolean isReadOnly() {
         return false;
+    }
+
+    /**
+     * True if this tool must acquire the global write semaphore before executing.
+     * Defaults to {@code !isReadOnly()}, but long-running execution tools (build, test, run-command)
+     * should override this to return {@code false} so they do not block PSI-mutating tools for
+     * their full execution duration (which can be minutes).
+     */
+    default boolean needsWriteLock() {
+        return !isReadOnly();
     }
 
     /**

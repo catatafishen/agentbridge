@@ -228,11 +228,13 @@ public final class PsiBridgeService implements Disposable {
         // Determine if this tool requires synchronous execution (file/git/editing tools).
         boolean requiresSync = def.category() != null && SYNC_TOOL_CATEGORIES.contains(def.category().name());
 
-        // Global write semaphore: serialize all non-readonly tools to prevent EDT flooding
-        // and race conditions. Multiple concurrent write/heavy operations each posting lambdas
-        // via invokeLater can saturate the EDT queue and cause the IDE to freeze.
+        // Global write semaphore: serialize PSI-mutating tools to prevent EDT flooding and race
+        // conditions. Multiple concurrent writes each posting lambdas via invokeLater can saturate
+        // the EDT queue and cause the IDE to freeze.
+        // Long-running execution tools (build, test, run-command) override needsWriteLock() = false
+        // so they do not starve PSI-mutating tools for minutes at a time.
         // Sync-category tools (FILE, EDITING, REFACTOR, GIT) also use per-tool locks for ordering.
-        boolean needsGlobalLock = !def.isReadOnly();
+        boolean needsGlobalLock = def.needsWriteLock();
 
         // Track whether this is a write operation that should participate in batch draining.
         // Write tools register with WriteBatchCoordinator BEFORE acquiring the semaphore so
@@ -749,7 +751,8 @@ public final class PsiBridgeService implements Disposable {
         @Nullable com.intellij.openapi.vfs.VirtualFile vf,
         String path) {
         boolean alreadyOpen = vf != null
-            && com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf);
+            && com.intellij.openapi.application.ReadAction.compute(
+            () -> com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf));
         if (alreadyOpen) return preWriteWaiter;
         // Subscribe a file-specific waiter BEFORE opening so we can't miss the new daemon pass.
         // Use preWriteStamp = -1: the write already happened before this waiter is created, so

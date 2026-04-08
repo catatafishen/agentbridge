@@ -60,80 +60,92 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         return (McpHttpServer) project.getService(McpServerControl.class);
     }
 
-    public synchronized void start() throws IOException {
-        if (running) return;
-        McpServerSettings settings = McpServerSettings.getInstance(project);
-        int port = settings.getPort();
-        activeTransportMode = settings.getTransportMode();
+    public void start() throws IOException {
+        synchronized (this) {
+            if (running) return;
+            McpServerSettings settings = McpServerSettings.getInstance(project);
+            int port = settings.getPort();
+            activeTransportMode = settings.getTransportMode();
 
-        protocolHandler = new McpProtocolHandler(project);
+            protocolHandler = new McpProtocolHandler(project);
 
-        // Try to bind to the configured port; if it fails, auto-allocate the next available port
-        int actualPort = port;
-        IOException lastError = null;
-        for (int attempt = 0; attempt < 100; attempt++) {
-            try {
-                httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", actualPort), 0);
-                break;
-            } catch (IOException e) {
-                lastError = e;
-                actualPort++;
+            // Try to bind to the configured port; if it fails, auto-allocate the next available port
+            int actualPort = port;
+            IOException lastError = null;
+            for (int attempt = 0; attempt < 100; attempt++) {
+                try {
+                    httpServer = HttpServer.create(new InetSocketAddress("127.0.0.1", actualPort), 0);
+                    break;
+                } catch (IOException e) {
+                    lastError = e;
+                    actualPort++;
+                }
             }
+
+            if (httpServer == null) {
+                throw new IOException("Failed to bind MCP server to any port starting from " + port, lastError);
+            }
+
+            // If port changed, save it to settings
+            if (actualPort != port) {
+                settings.setPort(actualPort);
+                LOG.info("[MCP] port conflict: " + port + " was in use; allocated " + actualPort + " instead for project: " + project.getBasePath());
+            }
+
+            httpServer.createContext("/health", this::handleHealth);
+
+            if (activeTransportMode == TransportMode.SSE) {
+                sseTransport = new McpSseTransport(protocolHandler);
+                httpServer.createContext("/sse", sseTransport::handleSseConnect);
+                httpServer.createContext("/message", sseTransport::handleMessage);
+                sseTransport.start();
+            } else {
+                httpServer.createContext("/mcp", this::handleMcp);
+            }
+
+            // SSE mode blocks one thread per connection; use a cached pool so it scales.
+            // Streamable HTTP uses short-lived requests, so a fixed pool would also work.
+            httpServer.setExecutor(Executors.newCachedThreadPool());
+            httpServer.start();
+            running = true;
+            LOG.info("[MCP] server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
+                + ") for project: " + project.getBasePath());
         }
-
-        if (httpServer == null) {
-            throw new IOException("Failed to bind MCP server to any port starting from " + port, lastError);
-        }
-
-        // If port changed, save it to settings
-        if (actualPort != port) {
-            settings.setPort(actualPort);
-            LOG.info("[MCP] port conflict: " + port + " was in use; allocated " + actualPort + " instead for project: " + project.getBasePath());
-        }
-
-        httpServer.createContext("/health", this::handleHealth);
-
-        if (activeTransportMode == TransportMode.SSE) {
-            sseTransport = new McpSseTransport(protocolHandler);
-            httpServer.createContext("/sse", sseTransport::handleSseConnect);
-            httpServer.createContext("/message", sseTransport::handleMessage);
-            sseTransport.start();
-        } else {
-            httpServer.createContext("/mcp", this::handleMcp);
-        }
-
-        // SSE mode blocks one thread per connection; use a cached pool so it scales.
-        // Streamable HTTP uses short-lived requests, so a fixed pool would also work.
-        httpServer.setExecutor(Executors.newCachedThreadPool());
-        httpServer.start();
-        running = true;
-        LOG.info("[MCP] server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
-            + ") for project: " + project.getBasePath());
+        // Fire status notification AFTER releasing the synchronized lock. Firing inside the lock
+        // is a deadlock risk: syncPublisher dispatches listeners synchronously, and any listener
+        // that re-enters start()/stop() from another thread would deadlock on the monitor.
         project.getMessageBus().syncPublisher(STATUS_TOPIC).serverStatusChanged();
     }
 
     /**
      * Start on a specific port (saves the port to settings first).
      */
-    public synchronized void start(int port) throws IOException {
+    public void start(int port) throws IOException {
         McpServerSettings.getInstance(project).setPort(port);
         start();
     }
 
-    public synchronized void stop() {
-        if (!running || httpServer == null) return;
-        if (sseTransport != null) {
-            sseTransport.stop();
-            sseTransport = null;
+    public void stop() {
+        boolean notify;
+        synchronized (this) {
+            if (!running || httpServer == null) return;
+            if (sseTransport != null) {
+                sseTransport.stop();
+                sseTransport = null;
+            }
+            httpServer.stop(1);
+            httpServer = null;
+            protocolHandler = null;
+            activeTransportMode = null;
+            running = false;
+            activeConnections.set(0);
+            notify = !project.isDisposed();
+            LOG.info("[MCP] server stopped for project: " + project.getBasePath());
         }
-        httpServer.stop(1);
-        httpServer = null;
-        protocolHandler = null;
-        activeTransportMode = null;
-        running = false;
-        activeConnections.set(0);
-        LOG.info("[MCP] server stopped for project: " + project.getBasePath());
-        if (!project.isDisposed()) {
+        // Fire status notification AFTER releasing the synchronized lock. Firing inside the lock
+        // is a deadlock risk: syncPublisher dispatches listeners synchronously, and any listener
+        // that re-enters start()/stop() from another thread would deadlock on the monitor.
+        if (notify) {
             project.getMessageBus().syncPublisher(STATUS_TOPIC).serverStatusChanged();
         }
     }
