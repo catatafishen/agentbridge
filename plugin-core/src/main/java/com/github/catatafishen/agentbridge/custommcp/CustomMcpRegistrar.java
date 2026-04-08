@@ -116,8 +116,11 @@ public final class CustomMcpRegistrar implements Disposable {
             if (tools.isEmpty()) {
                 LOG.info("Custom MCP server '" + server.getName() + "' reported no tools");
                 client.close();
-                unregisterServerTools(bridge, server.getId());
-                registeredByServer.remove(server.getId());
+                // Clean up any stale registration/client from a prior successful connection
+                if (registeredByServer.containsKey(server.getId()) || clientByServer.containsKey(server.getId())) {
+                    unregisterServerTools(bridge, server.getId());
+                    registeredByServer.remove(server.getId());
+                }
                 return;
             }
 
