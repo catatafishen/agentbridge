@@ -45,6 +45,19 @@ public final class ClaudeCliExporter {
      */
     private static final String CLAUDE_CLI_VERSION_FALLBACK = "2.1.78";
 
+    /**
+     * Maximum serialized size (in chars) of the Anthropic message payload exported to the
+     * Claude CLI session JSONL file.  When the history exceeds this budget, the oldest
+     * user+assistant turn pairs are dropped first (via {@link AnthropicClientExporter#trimToSizeBudget})
+     * until the payload fits.
+     *
+     * <p>Claude's context window is 200 k tokens (≈ 800 k chars at ~4 chars/token).
+     * System prompt, tools, and the live turn consume roughly 100 k chars, so
+     * 500 k chars of history leaves a comfortable margin while allowing large sessions
+     * to resume without a "prompt too long" error from the API.</p>
+     */
+    private static final int MAX_EXPORT_CHARS = 500_000;
+
     private ClaudeCliExporter() {
     }
 
@@ -55,6 +68,12 @@ public final class ClaudeCliExporter {
         @NotNull String cwd) throws IOException {
 
         List<AnthropicMessage> anthropicMessages = AnthropicClientExporter.toAnthropicMessages(entries);
+        int originalCount = anthropicMessages.size();
+        AnthropicClientExporter.trimToSizeBudget(anthropicMessages, MAX_EXPORT_CHARS);
+        if (anthropicMessages.size() < originalCount) {
+            LOG.info("Claude CLI export trimmed from " + originalCount + " to " + anthropicMessages.size()
+                + " messages to stay within " + MAX_EXPORT_CHARS + " char budget");
+        }
 
         String cliVersion = detectCliVersion(targetPath.getParent());
         String gitBranch = detectGitBranch(cwd);

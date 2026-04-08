@@ -214,7 +214,7 @@ public final class AnthropicClientExporter {
     // Merge & helpers
     // ------------------------------------------------------------------
 
-    private static void trimToSizeBudget(@NotNull List<AnthropicMessage> messages, int maxTotalChars) {
+    static void trimToSizeBudget(@NotNull List<AnthropicMessage> messages, int maxTotalChars) {
         if (maxTotalChars <= 0) return;
         // Count total serialized chars
         int total = messages.stream().mapToInt(m -> m.toJsonLine().length()).sum();
