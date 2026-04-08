@@ -91,6 +91,71 @@ If developing a plugin, adhere to these guidelines to avoid performance degradat
   offloaded to background threads. Never hold the UI thread.
 - **Cache Information:** Store PSI data in `UserData` or use custom indexes to avoid recomputing data.
 
+# MCP Tool Development Best Practices
+
+When adding or modifying MCP tools (in `psi/tools/`), follow these conventions derived from the
+[MCP specification](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) and
+[community best practices](https://modelcontextprotocol.info/docs/tutorials/writing-effective-tools/).
+
+## Tool Descriptions
+
+Descriptions are the primary way agents decide which tool to use. Write them as if briefing a new
+team member:
+
+- **What it does** — the core action in one sentence
+- **When to use it** — differentiate from similar tools (e.g., `search_text` vs `search_symbols` vs
+  `find_references`)
+- **What it returns** — describe the response format so agents know what to expect
+- **Key parameters** — mention important parameters, defaults, and modes
+- **Caveats** — anything that could surprise (e.g., "does NOT update references", "UI action only")
+
+Bad: `"Delete a file"` \
+Good: `"Delete a file from the project. This is permanent and cannot be undone with the undo tool."`
+
+## Response Enrichment
+
+Tool responses should include enough context that the agent doesn't need follow-up calls to understand
+the state:
+
+- **Git tools**: Append branch context (current branch, tracking, ahead/behind, staged/modified counts)
+  using `getBranchContext()` or `getBranchSummary()` from `GitTool` base class
+- **Write tools**: Append git status annotation (tracked/untracked/staged) using `FileTool.getGitFileStatus()`
+- **Pre-validation**: Check preconditions before acting (e.g., `git_commit` checks if anything is staged)
+  and return actionable error messages
+- **Warnings**: Flag risky operations (e.g., committing to main/master, push divergence)
+
+## Auto-Fetch for Remote Operations
+
+Git tools that reference remote branches (`origin/*`, `remotes/*`) should auto-fetch before operating:
+
+- Use `autoFetchForRemoteRef(ref)` from `GitTool` base — throttled to once per 60 seconds
+- This prevents stale-ref failures in merge, rebase, diff, and push operations
+- Always include a note in the response when a fetch was performed
+
+## Error Handling
+
+- Return errors starting with `"Error: "` or `"Error (exit N): "` — the MCP protocol handler detects
+  these prefixes to set `isError: true` in the MCP response
+- Make error messages actionable: tell the agent what to do to fix it, not just what went wrong
+- Bad: `"Error: nothing to commit"` \
+  Good: `"Error: Nothing staged for commit. Use git_stage to stage files first, or pass all: true to auto-stage."`
+
+## MCP Annotations
+
+Set annotation hints correctly in the tool class:
+
+- `isReadOnly()` — true if the tool never modifies project state
+- `isDestructive()` — true if changes are hard to undo (delete, reset --hard)
+- `isIdempotent()` — true if calling with same args produces same result (defaults to `isReadOnly()`).
+  Override to `true` for write tools that are idempotent (e.g., `write_file`, `format_code`, `set_theme`)
+- `openWorldHint` — true if the tool accesses external resources (network, filesystem outside project)
+
+## Token Efficiency
+
+- Don't return more data than the agent needs — use pagination, filtering, and truncation
+- When returning large outputs, prefer summaries with details available via follow-up parameters
+- The `truncateIfNeeded()` in `McpProtocolHandler` provides a safety net, but tools should self-limit
+
 # Agent Definition Formats
 
 Different ACP agents support custom agent definitions with tool filtering, but use different formats.
