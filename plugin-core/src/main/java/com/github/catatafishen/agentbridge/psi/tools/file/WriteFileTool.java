@@ -112,6 +112,23 @@ public class WriteFileTool extends FileTool {
         // [0] = start line, [1] = end line (1-based) to scroll/highlight after write; -1 = don't.
         int[] followRange = {-1, -1};
 
+        // For full-content writes of new files, do disk I/O on the current background thread
+        // rather than dispatching to EDT — blocking disk operations on the UI thread cause freezes.
+        if (args.has(PARAM_CONTENT)) {
+            VirtualFile existingVf = com.intellij.openapi.application.ReadAction.compute(
+                () -> resolveVirtualFile(pathStr));
+            if (existingVf == null) {
+                createNewFile(pathStr, args.get(PARAM_CONTENT).getAsString(), resultFuture);
+                String result = resultFuture.get(15, TimeUnit.SECONDS);
+                if (autoFormat && !result.startsWith("Error")) queueAutoFormat(project, pathStr);
+                followRange[0] = 1;
+                followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
+                    HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
+                FileAccessTracker.recordWrite(project, pathStr);
+                return result;
+            }
+        }
+
         EdtUtil.invokeLater(() -> {
             try {
                 VirtualFile vf = resolveVirtualFile(pathStr);
@@ -157,7 +174,7 @@ public class WriteFileTool extends FileTool {
             FileDocumentManager.getInstance().saveDocument(doc);
             int[] diff = CodeChangeTracker.diffLines(oldContent, newContent);
             CodeChangeTracker.recordChange(diff[0], diff[1]);
-            String syntaxWarning = checkSyntaxErrors(pathStr);
+            String syntaxWarning = checkSyntaxErrors(doc, pathStr);
             if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
             String formatNote = autoFormat && syntaxWarning.isEmpty() ? AUTO_FORMAT_SUFFIX : "";
             resultFuture.complete("Written: " + pathStr + " (" + newContent.length() + FORMAT_CHARS_SUFFIX + formatNote + syntaxWarning);
@@ -265,7 +282,7 @@ public class WriteFileTool extends FileTool {
         );
         FileDocumentManager.getInstance().saveDocument(doc);
         CodeChangeTracker.recordChange(CodeChangeTracker.countLines(normalizedNew), CodeChangeTracker.countLines(normalizedOld));
-        String syntaxWarning = checkSyntaxErrors(pathStr);
+        String syntaxWarning = checkSyntaxErrors(doc, pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
         followRange[0] = doc.getLineNumber(finalIdx) + 1;
         int ctxEnd = Math.min(finalIdx + normalizedNew.length(), doc.getTextLength());
@@ -327,7 +344,7 @@ public class WriteFileTool extends FileTool {
         );
         FileDocumentManager.getInstance().saveDocument(doc);
         CodeChangeTracker.recordChange(CodeChangeTracker.countLines(fNew), replacedLines);
-        String syntaxWarning = checkSyntaxErrors(pathStr);
+        String syntaxWarning = checkSyntaxErrors(doc, pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
         int ctxEnd = Math.min(fStart + fNew.length(), doc.getTextLength());
         followRange[1] = doc.getLineNumber(Math.max(ctxEnd - 1, fStart)) + 1;
@@ -421,7 +438,7 @@ public class WriteFileTool extends FileTool {
         CodeChangeTracker.recordChange(
             positions.size() * CodeChangeTracker.countLines(normalizedNew),
             positions.size() * CodeChangeTracker.countLines(normalizedOld));
-        String syntaxWarning = checkSyntaxErrors(pathStr);
+        String syntaxWarning = checkSyntaxErrors(doc, pathStr);
         if (autoFormat && syntaxWarning.isEmpty()) queueAutoFormat(project, pathStr);
         int firstPos = positions.getFirst();
         followRange[0] = doc.getLineNumber(firstPos) + 1;
@@ -482,16 +499,17 @@ public class WriteFileTool extends FileTool {
     /**
      * Check for syntax errors in a file after writing.
      * Returns a warning string if errors are found, or empty string if clean.
-     * Runs on EDT (caller must be on EDT).
+     * Runs on EDT (caller must be on EDT). Commits only the supplied document rather than
+     * all open documents to avoid stalling unrelated document trees.
      */
-    private String checkSyntaxErrors(String pathStr) {
+    private String checkSyntaxErrors(Document doc, String pathStr) {
         try {
             VirtualFile vf = resolveVirtualFile(pathStr);
             if (vf == null) return "";
-            PsiDocumentManager.getInstance(project).commitAllDocuments();
+            // Commit only the document we just wrote — not all open documents
+            PsiDocumentManager.getInstance(project).commitDocument(doc);
             PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
             if (psiFile == null) return "";
-            Document doc = psiFile.getViewProvider().getDocument();
 
             List<String> errors = new ArrayList<>();
             collectPsiErrors(psiFile, doc, errors);

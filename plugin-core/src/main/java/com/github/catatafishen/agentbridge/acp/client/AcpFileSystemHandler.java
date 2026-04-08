@@ -85,11 +85,21 @@ final class AcpFileSystemHandler {
 
         String absolutePath = resolveAbsolutePath(path);
 
+        // Check for new file without EDT — disk I/O must not run on the UI thread
+        boolean isNewFile = com.intellij.openapi.application.ApplicationManager.getApplication()
+            .runReadAction((com.intellij.openapi.util.Computable<Boolean>)
+                () -> LocalFileSystem.getInstance().findFileByPath(absolutePath) == null);
+
+        if (isNewFile) {
+            // Disk I/O on the current (background) thread
+            createNewFile(absolutePath, content);
+            return null;
+        }
+
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeAndWait(() -> {
             VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(absolutePath);
-
             if (vf == null) {
-                // createNewFile does its own file I/O and VFS refresh outside any write action
+                // File was created concurrently between the check and here — fall back to createNewFile
                 createNewFile(absolutePath, content);
                 return;
             }

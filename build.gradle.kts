@@ -16,7 +16,7 @@ idea {
     }
 }
 
-val baseVersion = "1.5.0"
+val baseVersion = "0.0.0"
 val buildTimestamp = providers.exec {
     commandLine("date", "+%Y%m%d-%H%M")
 }.standardOutput.asText.get().trim()

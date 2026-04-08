@@ -46,6 +46,7 @@ public final class McpProtocolHandler {
     private static final String SERVER_VERSION = BuildInfo.getVersion();
     private static final String PROTOCOL_VERSION = "2025-11-25";
     private static final String STARTUP_INSTRUCTIONS_URI = "resource://default-startup-instructions.md";
+    private static final String STARTUP_INSTRUCTIONS = loadInstructions();
     private static final String RESOURCES_CURSOR_PREFIX = "resources:";
     private static final String RESOURCE_TEMPLATES_CURSOR_PREFIX = "resourceTemplates:";
 
@@ -103,7 +104,7 @@ public final class McpProtocolHandler {
         result.addProperty("protocolVersion", PROTOCOL_VERSION);
         result.add("capabilities", capabilities);
         result.add("serverInfo", serverInfo);
-        result.addProperty("instructions", loadInstructions());
+        result.addProperty("instructions", STARTUP_INSTRUCTIONS);
 
         return respondResult(msg, result);
     }
@@ -299,7 +300,7 @@ public final class McpProtocolHandler {
             JsonObject content = new JsonObject();
             content.addProperty("uri", STARTUP_INSTRUCTIONS_URI);
             content.addProperty("mimeType", "text/markdown");
-            content.addProperty("text", loadInstructions());
+            content.addProperty("text", STARTUP_INSTRUCTIONS);
             return ResourceReadResult.success(content);
         }
 

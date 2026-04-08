@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
-import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
@@ -65,7 +64,7 @@ public final class GetProblemsTool extends QualityTool {
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
-        EdtUtil.invokeLater(() -> {
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
                 ApplicationManager.getApplication().runReadAction(() -> collectProblems(pathStr, resultFuture));
             } catch (Exception e) {
