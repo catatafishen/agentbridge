@@ -4,6 +4,7 @@ import com.intellij.codeInspection.InspectionToolResultExporter;
 import com.intellij.codeInspection.ex.GlobalInspectionContextEx;
 import com.intellij.codeInspection.ex.InspectionToolWrapper;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileEditor;
 import com.intellij.openapi.project.Project;
@@ -16,6 +17,9 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 /**
@@ -34,6 +38,12 @@ import java.util.function.Function;
 public final class PlatformApiCompat {
 
     private static final Logger LOG = Logger.getInstance(PlatformApiCompat.class);
+
+    /**
+     * Per-provider timeout for {@link #collectEditorNotificationTexts}.
+     * Providers that exceed this budget are skipped with a warning.
+     */
+    private static final long NOTIFICATION_PROVIDER_TIMEOUT_MS = 500;
     private static final String LANG_SHELL_SCRIPT = "Shell Script";
     private static final String LANG_JAVASCRIPT = "JavaScript";
     private static final String LANG_PYTHON = "Python";
@@ -129,15 +139,46 @@ public final class PlatformApiCompat {
      * </ul>
      *
      * <p>All three methods exist and work correctly at runtime. The Gradle build compiles without errors.</p>
+     *
+     * <p><b>Threading:</b> {@code collectNotificationData} is thread-safe but can trigger expensive
+     * index operations in third-party providers (e.g., Kubernetes does a full word search across all
+     * project files to detect kube-config files). Running it on the EDT blocks the UI thread for
+     * tens of seconds when the file index is stale.  This method therefore runs each provider's
+     * {@code collectNotificationData} on a pooled background thread with a
+     * {@value #NOTIFICATION_PROVIDER_TIMEOUT_MS}ms per-provider timeout.
+     * {@code factory.apply(editor)} still runs on the EDT (we are always called from EDT).</p>
+     *
+     * @param project the current project
+     * @param vf      the file whose notification banners to collect
+     * @param editor  the editor showing the file (needed for factory application)
+     * @return banner texts, never null
      */
     public static @NotNull List<String> collectEditorNotificationTexts(
         @NotNull Project project, @NotNull VirtualFile vf, @NotNull FileEditor editor) {
         List<String> notifications = new ArrayList<>();
         for (var provider : EditorNotificationProvider.EP_NAME.getExtensions(project)) {
             try {
-                Function<? super FileEditor, ? extends JComponent> factory =
-                    provider.collectNotificationData(project, vf);
+                // collectNotificationData is thread-safe (no @RequiresEdt) but may trigger
+                // expensive index operations that would freeze the EDT for 10-60 seconds.
+                // Run it on a pooled thread with a hard timeout to keep the EDT responsive.
+                Future<Function<? super FileEditor, ? extends JComponent>> future =
+                    ApplicationManager.getApplication().executeOnPooledThread(
+                        () -> ReadAction.compute(() -> provider.collectNotificationData(project, vf)));
+
+                Function<? super FileEditor, ? extends JComponent> factory;
+                try {
+                    factory = future.get(NOTIFICATION_PROVIDER_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                } catch (TimeoutException e) {
+                    future.cancel(true);
+                    LOG.warn("Skipped slow EditorNotificationProvider: "
+                        + provider.getClass().getName()
+                        + " (exceeded " + NOTIFICATION_PROVIDER_TIMEOUT_MS
+                        + "ms — likely doing expensive index operations on EDT)");
+                    continue;
+                }
+
                 if (factory == null) continue;
+                // factory.apply(editor) creates Swing components; must run on EDT (we already are)
                 JComponent panel = factory.apply(editor);
                 if (panel instanceof EditorNotificationPanel enp) {
                     String text = enp.getText();
@@ -145,6 +186,8 @@ public final class PlatformApiCompat {
                         notifications.add("[BANNER] " + text);
                     }
                 }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             } catch (Exception e) {
                 // Skip failing providers — some may not be compatible with the current context
             }
