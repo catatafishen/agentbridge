@@ -120,11 +120,8 @@ intellij-copilot-plugin/
 | **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`, `list_terminals`                                                                                                                                                                                                                                                                    |
 | **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `run_scratch_file`, `get_active_file`, `get_open_editors`, `search_conversation_history`, `get_chat_html`, `list_themes`, `set_theme`                                                                                                                                      |
 | **Debugging**       | `breakpoint_list`, `breakpoint_add`, `breakpoint_add_exception`, `breakpoint_update`, `breakpoint_remove`, `debug_session_list`, `debug_session_stop`, `debug_step`, `debug_run_to_line`, `debug_snapshot`, `debug_variable_detail`, `debug_inspect_frame`, `debug_evaluate`, `debug_read_console`                                                     |
-| **Database**†       | `list_data_sources`, `list_tables`, `get_schema`, `database_execute_query`‡                                                                                                                                                                                                                                                                            |
 
-*\* Requires Qodana or SonarLint plugin.*  
-*† Requires JetBrains Database plugin (`com.intellij.database`). Adds 3 tools (+1 in experimental module).*  
-*‡ `database_execute_query` only available in the experimental plugin build.*
+*\* Requires Qodana or SonarLint plugin.*
 
 ## Requirements
 
