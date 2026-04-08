@@ -61,6 +61,16 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         myState.smartPasteMinChars = chars;
     }
 
+    // ── Soft wraps ──────────────────────────────────────────────────────────
+
+    public boolean isSoftWrapsEnabled() {
+        return myState.softWrapsEnabled;
+    }
+
+    public void setSoftWrapsEnabled(boolean enabled) {
+        myState.softWrapsEnabled = enabled;
+    }
+
     // ── File search trigger ─────────────────────────────────────────────────
 
     @NotNull
@@ -87,6 +97,7 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
     public static final class State {
         public boolean showShortcutHints = true;
         public boolean smartPasteEnabled = true;
+        public boolean softWrapsEnabled = true;
         public int smartPasteMinLines = DEFAULT_SMART_PASTE_MIN_LINES;
         public int smartPasteMinChars = DEFAULT_SMART_PASTE_MIN_CHARS;
         @NotNull

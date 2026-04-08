@@ -34,7 +34,7 @@ class ChatToolWindowContent(
     private val toolWindow: com.intellij.openapi.wm.ToolWindow
 ) {
 
-    private companion object {
+    companion object {
         private val LOG =
             com.intellij.openapi.diagnostic.Logger.getInstance(ChatToolWindowContent::class.java)
         const val MSG_LOADING = "Loading..."
@@ -42,6 +42,10 @@ class ChatToolWindowContent(
         const val AGENT_WORK_DIR = ".agent-work"
         const val CARD_CONNECT = "connect"
         const val CARD_CHAT = "chat"
+
+        private val instances = java.util.concurrent.ConcurrentHashMap<Project, ChatToolWindowContent>()
+
+        fun getInstance(project: Project): ChatToolWindowContent? = instances[project]
     }
 
     private val cardLayout = CardLayout()
@@ -107,6 +111,7 @@ class ChatToolWindowContent(
     private lateinit var contextManager: PromptContextManager
 
     init {
+        instances[project] = this
         setupUI()
         subscribeToFocusRestoreEvents()
         // Initialise the session store's agent name from the currently active profile.
@@ -701,18 +706,21 @@ class ChatToolWindowContent(
             setupPromptContextMenu(editor)
             editor.setPlaceholder(promptPlaceholder())
             editor.setShowPlaceholderWhenFocused(true)
-            editor.settings.isUseSoftWraps = true
+            editor.settings.isUseSoftWraps =
+                com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isSoftWrapsEnabled
             editor.contentComponent.border = JBUI.Borders.empty(4, 6)
             editor.setBorder(null)
             // Workaround for IntelliJ 2026.1 selection rendering regression:
             // IntelliJ's internal auto-scroll (scrollToCaret) shifts the viewport before the
             // selection dirty-regions are painted, so only the caret line appears highlighted.
-            // Queueing a deferred full repaint after each selection change ensures the selection
-            // highlight is re-painted after the viewport settles.
+            // Double-deferred repaint (two nested invokeLater) ensures the repaint runs after
+            // both the scroll and any subsequent layout passes complete.
             editor.selectionModel.addSelectionListener(object : com.intellij.openapi.editor.event.SelectionListener {
                 override fun selectionChanged(e: com.intellij.openapi.editor.event.SelectionEvent) {
                     ApplicationManager.getApplication().invokeLater {
-                        editor.contentComponent.repaint()
+                        ApplicationManager.getApplication().invokeLater {
+                            editor.contentComponent.repaint()
+                        }
                     }
                 }
             })
@@ -843,6 +851,10 @@ class ChatToolWindowContent(
 
     private fun escHtml(s: String) =
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")
+
+    fun setSoftWrapsEnabled(enabled: Boolean) {
+        promptTextArea.editor?.settings?.isUseSoftWraps = enabled
+    }
 
     private fun setSendingState(sending: Boolean) {
         isSending = sending

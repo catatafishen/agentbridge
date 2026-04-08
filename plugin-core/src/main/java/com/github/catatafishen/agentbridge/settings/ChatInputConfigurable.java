@@ -21,6 +21,7 @@ public final class ChatInputConfigurable implements Configurable {
 
     private JBCheckBox showHintsCheckBox;
     private JBCheckBox smartPasteCheckBox;
+    private JBCheckBox softWrapsCheckBox;
     private JSpinner smartPasteMinLinesSpinner;
     private JSpinner smartPasteMinCharsSpinner;
     private JComboBox<String> triggerCharCombo;
@@ -48,6 +49,7 @@ public final class ChatInputConfigurable implements Configurable {
 
         showHintsCheckBox = new JBCheckBox("Show keyboard shortcut hints in prompt placeholder");
         smartPasteCheckBox = new JBCheckBox("Enable smart paste");
+        softWrapsCheckBox = new JBCheckBox("Enable soft wraps in chat input");
         smartPasteMinLinesSpinner = new JSpinner(new SpinnerNumberModel(
             ChatInputSettings.DEFAULT_SMART_PASTE_MIN_LINES, 1, 100, 1));
         smartPasteMinCharsSpinner = new JSpinner(new SpinnerNumberModel(
@@ -101,6 +103,10 @@ public final class ChatInputConfigurable implements Configurable {
             .addTooltip("Display Enter/Shift+Enter/Ctrl+Enter hints in the prompt placeholder text.")
             .addVerticalGap(4)
             .addSeparator(8)
+            .addComponent(softWrapsCheckBox)
+            .addTooltip("Wrap long lines in the chat input instead of scrolling horizontally.")
+            .addVerticalGap(4)
+            .addSeparator(8)
             .addComponent(smartPasteCheckBox)
             .addTooltip("Intercept large clipboard pastes to create scratch files or inline file references.")
             .addLabeledComponent("Min lines to trigger:", smartPasteMinLinesSpinner)
@@ -145,6 +151,7 @@ public final class ChatInputConfigurable implements Configurable {
         if (showHintsCheckBox == null) return false;
         ChatInputSettings s = ChatInputSettings.getInstance();
         if (showHintsCheckBox.isSelected() != s.isShowShortcutHints()) return true;
+        if (softWrapsCheckBox.isSelected() != s.isSoftWrapsEnabled()) return true;
         if (smartPasteCheckBox.isSelected() != s.isSmartPasteEnabled()) return true;
         if ((int) smartPasteMinLinesSpinner.getValue() != s.getSmartPasteMinLines()) return true;
         if ((int) smartPasteMinCharsSpinner.getValue() != s.getSmartPasteMinChars()) return true;
@@ -163,6 +170,7 @@ public final class ChatInputConfigurable implements Configurable {
     public void apply() {
         ChatInputSettings s = ChatInputSettings.getInstance();
         s.setShowShortcutHints(showHintsCheckBox.isSelected());
+        s.setSoftWrapsEnabled(softWrapsCheckBox.isSelected());
         s.setSmartPasteEnabled(smartPasteCheckBox.isSelected());
         s.setSmartPasteMinLines((int) smartPasteMinLinesSpinner.getValue());
         s.setSmartPasteMinChars((int) smartPasteMinCharsSpinner.getValue());
@@ -178,6 +186,10 @@ public final class ChatInputConfigurable implements Configurable {
             chatPanel.setSmoothScroll(smoothScrollCheckbox.isSelected());
             chatPanel.setShowTurnStats(showTurnStatsCheckbox.isSelected());
         }
+        var chatContent = com.github.catatafishen.agentbridge.ui.ChatToolWindowContent.Companion.getInstance(project);
+        if (chatContent != null) {
+            chatContent.setSoftWrapsEnabled(softWrapsCheckBox.isSelected());
+        }
 
         CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);
         cleanupSettings.setScratchRetentionHours((int) scratchRetentionSpinner.getValue());
@@ -189,6 +201,7 @@ public final class ChatInputConfigurable implements Configurable {
     public void reset() {
         ChatInputSettings s = ChatInputSettings.getInstance();
         showHintsCheckBox.setSelected(s.isShowShortcutHints());
+        softWrapsCheckBox.setSelected(s.isSoftWrapsEnabled());
         smartPasteCheckBox.setSelected(s.isSmartPasteEnabled());
         smartPasteMinLinesSpinner.setValue(s.getSmartPasteMinLines());
         smartPasteMinCharsSpinner.setValue(s.getSmartPasteMinChars());
@@ -211,6 +224,7 @@ public final class ChatInputConfigurable implements Configurable {
     public void disposeUIResources() {
         showHintsCheckBox = null;
         smartPasteCheckBox = null;
+        softWrapsCheckBox = null;
         smartPasteMinLinesSpinner = null;
         smartPasteMinCharsSpinner = null;
         triggerCharCombo = null;
