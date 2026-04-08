@@ -35,7 +35,8 @@ public final class GitLogTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Show commit history";
+        return "Show commit history. Supports filtering by author, date range, file path, "
+            + "and branch. Use max_count to limit results. Default: 20 commits.";
     }
 
     @Override

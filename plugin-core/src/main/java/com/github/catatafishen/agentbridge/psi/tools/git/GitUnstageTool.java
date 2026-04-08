@@ -31,16 +31,16 @@ public final class GitUnstageTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Unstage files that were previously staged";
+        return "Unstage files that were previously staged. Returns result with branch summary "
+            + "including staged/unstaged file counts.";
     }
-
-    
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Unstage {path}";
     }
@@ -72,6 +72,9 @@ public final class GitUnstageTool extends GitTool {
             return "Error: provide 'path' or 'paths' parameter";
         }
 
-        return runGit(cmdArgs.toArray(String[]::new));
+        String result = runGit(cmdArgs.toArray(String[]::new));
+        if (result.startsWith("Error")) return result;
+
+        return result + getBranchSummary();
     }
 }

@@ -37,7 +37,7 @@ public final class GitTagTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "List, create, or delete tags";
+        return "List, create, or delete tags. Supports annotated tags with messages, filtering by glob pattern, and sorting (e.g. '-creatordate' for newest first).";
     }
 
     @Override

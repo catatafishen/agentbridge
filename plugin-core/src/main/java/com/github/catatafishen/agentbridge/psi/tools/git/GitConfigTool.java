@@ -35,7 +35,8 @@ public final class GitConfigTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Get or set git configuration options";
+        return "Get or set git configuration options. Use list: true to see all config. " +
+                "Use global: true for user-level settings, omit for repository-level. Returns the current value when getting.";
     }
 
     @Override

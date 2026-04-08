@@ -29,7 +29,8 @@ public final class GitShowTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Show details and diff for a specific commit";
+        return "Show details and diff for a specific commit. Returns commit message, author, date, and full diff. " +
+                "Use stat_only: true for a file-level summary without diff content. Use git_log for commit history.";
     }
 
     @Override

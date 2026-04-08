@@ -32,7 +32,8 @@ public final class GitBranchTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "List, create, switch, or delete branches";
+        return "List, create, switch, or delete branches. After create or switch, returns "
+            + "branch context: tracking status, ahead/behind counts, and uncommitted changes.";
     }
 
     @Override
@@ -73,12 +74,21 @@ public final class GitBranchTool extends GitTool {
                 String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
                     ? args.get(PARAM_BASE).getAsString()
                     : "HEAD";
-                yield runGit(CMD_BRANCH, name, base);
+                String result = runGit(CMD_BRANCH, name, base);
+                if (result.startsWith("Error")) yield result;
+
+                String baseDesc = "HEAD".equals(base) ? runGitQuiet("rev-parse", "--short", "HEAD") : base;
+                yield (result.isBlank() ? "Created branch '" + name + "'" : result)
+                    + "\n\n--- Context ---\n"
+                    + "Base: " + (baseDesc != null ? baseDesc : base) + "\n"
+                    + "No tracking branch set — use git_push with set_upstream: true to push\n";
             }
             case "switch", "checkout" -> {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'switch'";
-                yield runGit("switch", name);
+                String result = runGit("switch", name);
+                if (result.startsWith("Error")) yield result;
+                yield result + getBranchContext();
             }
             case "delete" -> {
                 String name = requireName(args);

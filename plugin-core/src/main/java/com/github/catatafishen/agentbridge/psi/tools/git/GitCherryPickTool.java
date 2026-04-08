@@ -32,7 +32,8 @@ public final class GitCherryPickTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Apply specific commits from another branch";
+        return "Apply specific commits from another branch onto the current branch. " +
+                "Use no_commit: true to apply changes without committing. If conflicts occur, resolve them and use continue_pick: true.";
     }
 
     @Override

@@ -34,7 +34,8 @@ public final class GitDiffTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Show changes as a diff";
+        return "Show changes as a diff. Auto-fetches from origin when comparing against a remote "
+            + "ref (origin/*). Supports staged-only, stat-only, and file-scoped diffs.";
     }
 
     @Override
@@ -61,6 +62,10 @@ public final class GitDiffTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
+        // Auto-fetch when comparing against a remote ref
+        String commitRef = args.has(PARAM_COMMIT) ? args.get(PARAM_COMMIT).getAsString() : null;
+        String fetchNote = autoFetchForRemoteRef(commitRef);
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("diff");
 
@@ -70,8 +75,8 @@ public final class GitDiffTool extends GitTool {
             cmdArgs.add("--cached");
         }
 
-        if (args.has(PARAM_COMMIT) && !args.get(PARAM_COMMIT).getAsString().isEmpty()) {
-            cmdArgs.add(args.get(PARAM_COMMIT).getAsString());
+        if (commitRef != null && !commitRef.isEmpty()) {
+            cmdArgs.add(commitRef);
         }
 
         boolean statOnly = args.has(PARAM_STAT_ONLY)
@@ -85,7 +90,7 @@ public final class GitDiffTool extends GitTool {
             cmdArgs.add(args.get("path").getAsString());
         }
 
-        return runGit(cmdArgs.toArray(String[]::new));
+        return fetchNote + runGit(cmdArgs.toArray(String[]::new));
     }
 
     @Override

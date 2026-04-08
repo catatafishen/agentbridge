@@ -30,7 +30,8 @@ public final class GitRevertTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Revert a commit by creating a new commit";
+        return "Revert a commit by creating a new inverse commit. Does not delete history — safe for shared branches. " +
+                "Use no_commit: true to stage the revert without committing.";
     }
 
     @Override

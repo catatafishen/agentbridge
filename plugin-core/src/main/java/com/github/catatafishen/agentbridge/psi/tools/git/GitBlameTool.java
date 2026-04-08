@@ -30,7 +30,8 @@ public final class GitBlameTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Show per-line authorship for a file";
+        return "Show per-line authorship for a file. Returns commit hash, author, and date for each line. " +
+                "Use line_start/line_end to blame a specific range. Use get_file_history for commit-level history.";
     }
 
     @Override

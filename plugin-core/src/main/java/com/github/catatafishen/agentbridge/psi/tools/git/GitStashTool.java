@@ -35,7 +35,8 @@ public final class GitStashTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Push, pop, apply, list, or drop stashed changes";
+        return "Push, pop, apply, list, or drop stashed changes. Stash saves uncommitted work temporarily without committing. " +
+                "Use include_untracked: true to also stash new files.";
     }
 
     @Override

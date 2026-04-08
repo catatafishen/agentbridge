@@ -31,16 +31,17 @@ public final class GitResetTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Reset HEAD to a specific commit";
+        return "Reset HEAD to a specific commit. Modes: 'soft' keeps changes staged, "
+            + "'mixed' (default) unstages changes, 'hard' discards all changes. "
+            + "Can also reset a specific file path (unstages it).";
     }
-
-
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EXECUTE;
     }
-@Override
+
+    @Override
     public boolean isDestructive() {
         return true;
     }

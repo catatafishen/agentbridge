@@ -26,7 +26,8 @@ public final class GetFileHistoryTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Get git commit history for a file, including renames";
+        return "Get git commit history for a file, including renames. Returns commit hash, author, date, and message per commit. " +
+                "Use git_log for repository-wide history. Use git_blame for per-line authorship.";
     }
 
     @Override
