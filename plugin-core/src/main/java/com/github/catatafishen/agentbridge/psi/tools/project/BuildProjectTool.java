@@ -36,13 +36,17 @@ public final class BuildProjectTool extends ProjectTool {
         return "Trigger incremental compilation of the project or a specific module";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
+    public boolean needsWriteLock() {
+        return false;
+    }
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Build project";
     }

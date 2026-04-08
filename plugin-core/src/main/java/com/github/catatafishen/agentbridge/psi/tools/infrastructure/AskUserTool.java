@@ -56,6 +56,11 @@ public final class AskUserTool extends InfrastructureTool {
     }
 
     @Override
+    public boolean isReadOnly() {
+        return true;
+    }
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         JsonObject schema = schema(new Object[][]{
             {PARAM_QUESTION, TYPE_STRING, "Question to ask the user"},

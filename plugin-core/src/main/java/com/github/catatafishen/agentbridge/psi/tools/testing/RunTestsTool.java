@@ -86,6 +86,11 @@ public final class RunTestsTool extends TestingTool {
     }
 
     @Override
+    public boolean needsWriteLock() {
+        return false;
+    }
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Run tests: {target}";
     }
