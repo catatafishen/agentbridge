@@ -36,7 +36,8 @@ public final class GetFileOutlineTool extends NavigationTool {
 
     @Override
     public @NotNull String description() {
-        return "Get the structure of a file -- classes, methods, and fields with line numbers";
+        return "Get the structure of a file — classes, methods, and fields with line numbers. " +
+                "Works on any project file. Use get_class_outline for library/JDK classes by fully-qualified name.";
     }
 
 

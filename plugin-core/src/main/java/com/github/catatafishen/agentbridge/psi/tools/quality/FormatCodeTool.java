@@ -34,16 +34,21 @@ public final class FormatCodeTool extends QualityTool {
 
     @Override
     public @NotNull String description() {
-        return "Manually format a file using IntelliJ's configured code style";
+        return "Manually format a file using IntelliJ's configured code style. "
+            + "Useful after edit_text match failures to normalize whitespace before retrying.";
     }
 
-    
+    @Override
+    public boolean isIdempotent() {
+        return true;
+    }
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Absolute or project-relative path to the file to format"}

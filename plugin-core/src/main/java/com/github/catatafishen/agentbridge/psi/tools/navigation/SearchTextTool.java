@@ -67,7 +67,9 @@ public final class SearchTextTool extends NavigationTool {
 
     @Override
     public @NotNull String description() {
-        return "Search for text or regex patterns across project files using IntelliJ's editor buffers";
+        return "Search for text or regex patterns across project files using IntelliJ's editor buffers. " +
+                "Returns file paths with line numbers and matching text. " +
+                "For semantic symbol lookup, use search_symbols instead. For finding all usages of a known symbol, use find_references.";
     }
 
     @Override

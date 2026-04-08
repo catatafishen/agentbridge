@@ -33,7 +33,8 @@ public final class ReadTerminalOutputTool extends TerminalTool {
 
     @Override
     public @NotNull String description() {
-        return "Read output from an integrated terminal tab";
+        return "Read recent output from an integrated terminal tab. Returns the last N lines from the terminal buffer. " +
+                "Use list_terminals to see available tab names.";
     }
 
 

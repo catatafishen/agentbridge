@@ -38,7 +38,7 @@ public final class HttpRequestTool extends InfrastructureTool {
 
     @Override
     public @NotNull String description() {
-        return "Make an HTTP request (GET/POST/PUT/PATCH/DELETE) to a URL";
+        return "Make an HTTP request (GET/POST/PUT/PATCH/DELETE) to a URL. Returns status code, headers, and response body.";
     }
 
 

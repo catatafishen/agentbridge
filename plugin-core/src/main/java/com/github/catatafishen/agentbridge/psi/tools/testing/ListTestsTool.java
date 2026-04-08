@@ -43,7 +43,8 @@ public final class ListTestsTool extends TestingTool {
 
     @Override
     public @NotNull String description() {
-        return "List test classes and methods in the project";
+        return "List test classes and methods in the project. Returns fully-qualified test names with file paths and line numbers. " +
+                "Use file_pattern to filter (e.g., '*IntegrationTest*'). Use run_tests to execute discovered tests.";
     }
 
     @Override

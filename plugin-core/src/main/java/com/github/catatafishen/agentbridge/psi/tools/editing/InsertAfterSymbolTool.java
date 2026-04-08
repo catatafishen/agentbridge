@@ -43,7 +43,8 @@ public final class InsertAfterSymbolTool extends EditingTool {
 
     @Override
     public @NotNull String description() {
-        return "Insert content after a symbol definition. Auto-formats and optimizes imports immediately on every call";
+        return "Insert content after a symbol definition. PSI-aware — finds symbols by name, no line numbers needed. " +
+                "Auto-formats and optimizes imports immediately. Use for adding new methods after an existing one.";
     }
 
     @Override

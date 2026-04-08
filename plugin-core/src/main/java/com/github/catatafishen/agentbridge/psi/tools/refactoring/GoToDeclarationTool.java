@@ -47,7 +47,9 @@ public final class GoToDeclarationTool extends RefactoringTool {
 
     @Override
     public @NotNull String description() {
-        return "Navigate to the declaration of a symbol at a given file and line";
+        return "Navigate to the declaration of a symbol at a given file and line. Returns the source file path, line number, " +
+                "and a code snippet of the declaration. Use get_symbol_info for documentation at a position, " +
+                "or get_documentation when you have the fully-qualified name.";
     }
 
     @Override

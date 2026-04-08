@@ -48,7 +48,8 @@ public final class GetHighlightsTool extends QualityTool {
 
     @Override
     public @NotNull String description() {
-        return "Get cached editor highlights for open files";
+        return "Get cached editor highlights for open files. Richer than get_problems — includes inspections, intentions, " +
+                "and quick-fix action names. Use get_compilation_errors for a fast compile-error-only check.";
     }
 
     @Override

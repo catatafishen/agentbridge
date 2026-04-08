@@ -43,7 +43,8 @@ public final class InsertBeforeSymbolTool extends EditingTool {
 
     @Override
     public @NotNull String description() {
-        return "Insert content before a symbol definition. Auto-formats and optimizes imports immediately on every call";
+        return "Insert content before a symbol definition. PSI-aware — finds symbols by name, no line numbers needed. " +
+                "Auto-formats and optimizes imports immediately. Use for adding annotations, comments, or companion methods.";
     }
 
     @Override

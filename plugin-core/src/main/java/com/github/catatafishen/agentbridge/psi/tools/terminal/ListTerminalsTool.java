@@ -26,7 +26,7 @@ public final class ListTerminalsTool extends TerminalTool {
 
     @Override
     public @NotNull String description() {
-        return "List active terminal tabs";
+        return "List active terminal tabs with their names. Use tab names with read_terminal_output or write_terminal_input.";
     }
 
 

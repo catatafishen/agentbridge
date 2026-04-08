@@ -359,6 +359,43 @@ public abstract class FileTool extends Tool {
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
+    /**
+     * Returns a short git status annotation for a file, e.g. "[git: modified, not staged]".
+     * Runs a single git command via ProcessBuilder. Returns empty string on any error
+     * or if the file is not in a git repo.
+     */
+    protected static String getGitFileStatus(Project project, String pathStr) {
+        String basePath = project.getBasePath();
+        if (basePath == null) return "";
+
+        try {
+            ProcessBuilder pb = new ProcessBuilder("git", "--no-pager", "status", "--porcelain", "--", pathStr);
+            pb.directory(new java.io.File(basePath));
+            pb.redirectErrorStream(true);
+            pb.environment().put("GIT_TERMINAL_PROMPT", "0");
+            Process p = pb.start();
+            String output = new String(p.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+            if (!p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+                return "";
+            }
+            if (output.isEmpty()) return " [git: clean]";
+            // Parse porcelain format: XY filename
+            // X = index state, Y = work-tree state
+            char indexState = output.charAt(0);
+            char workTreeState = output.charAt(1);
+            if (indexState == '?' && workTreeState == '?') return " [git: untracked]";
+            if (indexState == 'A') return " [git: new file, staged]";
+            if (indexState != ' ' && workTreeState == ' ') return " [git: staged]";
+            if (indexState == ' ' && workTreeState == 'M') return " [git: modified, not staged]";
+            if (indexState == 'M' && workTreeState == 'M') return " [git: partially staged]";
+            if (workTreeState == 'D') return " [git: deleted]";
+            return " [git: " + output.substring(0, 2).trim() + "]";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     protected FileTool(Project project) {
         super(project);
     }

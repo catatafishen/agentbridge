@@ -82,6 +82,11 @@ public class WriteFileTool extends FileTool {
     }
 
     @Override
+    public boolean isIdempotent() {
+        return true;
+    }
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"path", TYPE_STRING, "Absolute or project-relative path to the file to write or create"},
@@ -125,7 +130,7 @@ public class WriteFileTool extends FileTool {
                 followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
                     HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
                 FileAccessTracker.recordWrite(project, pathStr);
-                return result;
+                return result + getGitFileStatus(project, pathStr);
             }
         }
 
@@ -155,7 +160,7 @@ public class WriteFileTool extends FileTool {
         followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
             HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
         FileAccessTracker.recordWrite(project, pathStr);
-        return result;
+        return result + getGitFileStatus(project, pathStr);
     }
 
     private void writeFileFullContent(VirtualFile vf, String pathStr, String newContent,

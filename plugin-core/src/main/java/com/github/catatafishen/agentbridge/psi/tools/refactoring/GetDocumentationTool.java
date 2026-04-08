@@ -38,7 +38,8 @@ public final class GetDocumentationTool extends RefactoringTool {
 
     @Override
     public @NotNull String description() {
-        return "Get Javadoc or KDoc for a symbol by fully-qualified name";
+        return "Get Javadoc or KDoc for a symbol by fully-qualified name (e.g. java.util.List). " +
+                "Use get_symbol_info instead when you have a file+line position but not the FQN.";
     }
 
     @Override

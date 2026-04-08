@@ -37,10 +37,11 @@ public final class RunInTerminalTool extends TerminalTool {
 
     @Override
     public @NotNull String description() {
-        return "Run a command in IntelliJ's integrated terminal";
+        return "Run a command in IntelliJ's integrated terminal. Returns terminal output. " +
+                "Use for interactive commands that need stdin (prompts, REPL). For non-interactive commands with captured output, prefer run_command.";
     }
 
-    
+
 
     @Override
     public @NotNull Kind kind() {

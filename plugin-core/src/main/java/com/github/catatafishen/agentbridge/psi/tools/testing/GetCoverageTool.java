@@ -34,7 +34,8 @@ public final class GetCoverageTool extends TestingTool {
 
     @Override
     public @NotNull String description() {
-        return "Retrieve code coverage data, optionally filtered by file or class";
+        return "Retrieve code coverage data, optionally filtered by file or class. " +
+                "Requires a prior test run with coverage enabled. Returns line and branch coverage percentages.";
     }
 
     @Override

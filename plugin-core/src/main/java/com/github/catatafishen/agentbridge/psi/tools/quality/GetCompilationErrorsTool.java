@@ -41,7 +41,9 @@ public final class GetCompilationErrorsTool extends QualityTool {
 
     @Override
     public @NotNull String description() {
-        return "Fast compilation error check using cached daemon results";
+        return "Fast compilation error check using cached daemon results. "
+            + "Lightweight alternative to build_project — checks open files instantly without "
+            + "triggering a full build. Use after edits to verify no compilation errors.";
     }
 
     @Override

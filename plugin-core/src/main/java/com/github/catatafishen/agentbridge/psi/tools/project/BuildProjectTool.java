@@ -33,7 +33,9 @@ public final class BuildProjectTool extends ProjectTool {
 
     @Override
     public @NotNull String description() {
-        return "Trigger incremental compilation of the project or a specific module";
+        return "Trigger incremental compilation of the project or a specific module. "
+            + "Returns build result with error/warning counts. Use get_compilation_errors "
+            + "for a faster check that doesn't trigger a full build.";
     }
 
     @Override

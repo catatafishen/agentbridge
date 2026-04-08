@@ -77,7 +77,8 @@ public final class RunTestsTool extends TestingTool {
 
     @Override
     public @NotNull String description() {
-        return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner; falls back to Gradle for unresolvable targets";
+        return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner; falls back to Gradle for unresolvable targets. " +
+                "Returns pass/fail counts and failure details. Use list_tests to discover available test targets.";
     }
 
     @Override

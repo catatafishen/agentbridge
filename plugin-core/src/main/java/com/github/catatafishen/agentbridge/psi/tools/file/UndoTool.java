@@ -40,7 +40,8 @@ public final class UndoTool extends FileTool {
 
     @Override
     public @NotNull String description() {
-        return "Undo the last N edit actions on a file using IntelliJ's UndoManager";
+        return "Undo the last N edit actions on a file using IntelliJ's UndoManager. " +
+                "Important: each write_file + auto-format counts as 2 undo steps.";
     }
 
     @Override

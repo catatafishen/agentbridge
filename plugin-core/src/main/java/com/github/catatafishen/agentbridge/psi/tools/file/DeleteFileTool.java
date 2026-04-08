@@ -37,7 +37,7 @@ public final class DeleteFileTool extends FileTool {
 
     @Override
     public @NotNull String description() {
-        return "Delete a file from the project via IntelliJ";
+        return "Delete a file from the project. This is permanent and cannot be undone with the undo tool.";
     }
 
     @Override

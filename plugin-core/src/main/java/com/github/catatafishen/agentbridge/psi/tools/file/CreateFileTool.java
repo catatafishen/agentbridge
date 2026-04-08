@@ -37,7 +37,8 @@ public final class CreateFileTool extends FileTool {
 
     @Override
     public @NotNull String description() {
-        return "Create a new file and register it in IntelliJ's VFS";
+        return "Create a new file at the given path. File must not already exist — use write_file to overwrite existing files. " +
+                "Does NOT update references. Use refactor(operation='rename') for reference-aware renames.";
     }
 
     @Override

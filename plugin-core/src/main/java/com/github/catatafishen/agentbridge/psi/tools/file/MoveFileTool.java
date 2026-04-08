@@ -35,7 +35,8 @@ public final class MoveFileTool extends FileTool {
 
     @Override
     public @NotNull String description() {
-        return "Move a file to a different directory";
+        return "Move a file to a different directory. Does NOT update import statements or references — " +
+                "use refactor(operation='rename') for reference-aware moves.";
     }
 
     @Override

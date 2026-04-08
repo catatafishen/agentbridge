@@ -37,7 +37,9 @@ public final class ShowDiffTool extends EditorTool {
 
     @Override
     public @NotNull String description() {
-        return "Show a diff viewer comparing a file to proposed content or another file";
+        return "Open a visual diff viewer in the IDE comparing a file to proposed content or another file. " +
+                "This is a UI action — it opens a panel for the user, not a text response. " +
+                "Use git_diff for programmatic diff output.";
     }
 
     @Override

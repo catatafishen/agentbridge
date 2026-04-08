@@ -44,7 +44,9 @@ public final class SearchSymbolsTool extends NavigationTool {
 
     @Override
     public @NotNull String description() {
-        return "Search for classes, methods, or fields by name using IntelliJ's symbol index";
+        return "Search for classes, methods, or fields by name using IntelliJ's symbol index. " +
+                "Semantic search — finds symbols even if the text doesn't appear literally (e.g. inherited members). " +
+                "For textual/regex search across file contents, use search_text. For all usages of a specific symbol, use find_references.";
     }
 
     @Override

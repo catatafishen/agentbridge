@@ -42,7 +42,9 @@ public final class RunCommandTool extends InfrastructureTool {
 
     @Override
     public @NotNull String description() {
-        return "Run a shell command with paginated output -- prefer this over the built-in bash tool";
+        return "Run a shell command with paginated output. Prefer this over the built-in bash tool. " +
+                "Returns stdout/stderr with exit code. Use offset parameter to paginate large output. " +
+                "Default timeout: 60s. For interactive commands needing stdin, use run_in_terminal instead.";
     }
 
     @Override

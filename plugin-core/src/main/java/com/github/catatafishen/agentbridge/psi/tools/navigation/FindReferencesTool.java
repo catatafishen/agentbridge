@@ -38,7 +38,8 @@ public final class FindReferencesTool extends NavigationTool {
 
     @Override
     public @NotNull String description() {
-        return "Find all usages of a symbol throughout the project";
+        return "Find all usages of a symbol throughout the project. Semantic — finds references even through renames and imports. " +
+                "Returns file paths and line numbers. For textual search, use search_text. For finding symbol definitions, use search_symbols.";
     }
 
     @Override

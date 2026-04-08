@@ -47,7 +47,9 @@ public final class ApplyQuickfixTool extends QualityTool {
 
     @Override
     public @NotNull String description() {
-        return "Apply an IntelliJ quick-fix at a specific file and line";
+        return "Apply an IntelliJ quick-fix by inspection ID at a specific file and line. " +
+                "The inspection_id comes from run_inspections output. " +
+                "For quick-fixes by action name (from get_highlights), use apply_action instead.";
     }
 
     @Override

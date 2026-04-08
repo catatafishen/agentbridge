@@ -43,6 +43,11 @@ public final class AddToDictionaryTool extends QualityTool {
     }
 
     @Override
+    public boolean isIdempotent() {
+        return true;
+    }
+
+    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
             {"word", TYPE_STRING, "The word to add to the project dictionary"}

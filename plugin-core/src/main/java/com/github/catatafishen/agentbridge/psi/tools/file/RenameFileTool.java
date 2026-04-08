@@ -35,10 +35,11 @@ public final class RenameFileTool extends FileTool {
 
     @Override
     public @NotNull String description() {
-        return "Rename a file in place without moving it to a different directory";
+        return "Rename a file in place without moving it. Does NOT update import statements or references — " +
+                "use refactor(operation='rename') for reference-aware renames.";
     }
 
-    
+
 
     @Override
     public @NotNull Kind kind() {
