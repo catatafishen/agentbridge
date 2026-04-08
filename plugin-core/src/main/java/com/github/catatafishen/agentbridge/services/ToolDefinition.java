@@ -162,6 +162,16 @@ public interface ToolDefinition {
     }
 
     /**
+     * True if calling the tool repeatedly with the same arguments produces no additional effect.
+     * Read-only tools are always idempotent. Write tools like write_file (full content) are
+     * idempotent, but append-style or commit tools are not.
+     * Exposed as the MCP {@code idempotentHint} annotation.
+     */
+    default boolean isIdempotent() {
+        return isReadOnly();
+    }
+
+    /**
      * Whether this tool should be denied when called by a sub-agent.
      * Override to return {@code true} for tools that sub-agents must not use
      * (e.g., git write operations that bypass IntelliJ's VCS layer).
@@ -222,14 +232,12 @@ public interface ToolDefinition {
 
     // ── MCP Annotations ────────────────────────────────────────
 
-    /**
-     * Returns MCP tool annotations built from this tool's metadata.
-     */
     default @NotNull JsonObject mcpAnnotations() {
         JsonObject ann = new JsonObject();
         ann.addProperty("title", displayName());
         ann.addProperty("readOnlyHint", isReadOnly());
         ann.addProperty("destructiveHint", isDestructive());
+        ann.addProperty("idempotentHint", isIdempotent());
         ann.addProperty("openWorldHint", isOpenWorld());
         return ann;
     }
