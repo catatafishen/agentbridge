@@ -501,6 +501,10 @@ public final class PlatformApiCompat {
             new git4idea.commands.GitLineHandler(project, repo.getRoot(), command);
         handler.setSilent(true);
         handler.setStdoutSuppressed(true);
+        // Prevent git from opening a text editor (e.g. for rebase --continue commit message).
+        // "true" is a POSIX no-op command that exits 0, making git use the default message.
+        handler.addCustomEnvironmentVariable("GIT_EDITOR", "true");
+        handler.addCustomEnvironmentVariable("GIT_TERMINAL_PROMPT", "0");
         if (args.length > 1) {
             handler.addParameters(java.util.Arrays.asList(args).subList(1, args.length));
         }
