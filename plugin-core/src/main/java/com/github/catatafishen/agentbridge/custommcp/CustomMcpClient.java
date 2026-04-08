@@ -317,7 +317,7 @@ public final class CustomMcpClient implements AutoCloseable {
             // Double-check: another thread may have already re-initialized while we waited for the lock.
             // Only re-initialize if the current session is still the expired one (or has been cleared).
             // If a different (newer) session is active, skip re-init and fall through to retry with it.
-            if (expiredSessionId.equals(sessionId) || sessionId == null) {
+            if (sessionId == null || expiredSessionId.equals(sessionId)) {
                 sessionId = null;
                 initialize();
             }
