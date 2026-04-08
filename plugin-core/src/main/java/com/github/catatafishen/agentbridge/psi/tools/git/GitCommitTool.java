@@ -36,16 +36,17 @@ public final class GitCommitTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Commit staged changes with a message";
+        return "Commit staged changes with a message. Returns the commit result along with "
+            + "branch context: current branch, tracking status, ahead/behind counts, "
+            + "total commits on the branch, and remaining uncommitted changes.";
     }
-
-
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Commit: \"{message}\"";
     }
@@ -68,6 +69,27 @@ public final class GitCommitTool extends GitTool {
             return "Error: 'message' parameter is required";
         }
 
+        boolean commitAll = args.has("all") && args.get("all").getAsBoolean();
+
+        // Pre-commit check: verify there are staged changes (unless --all is used)
+        if (!commitAll) {
+            String staged = runGitQuiet("diff", "--cached", "--name-only");
+            if (staged != null && staged.isEmpty()) {
+                String unstaged = runGitQuiet("diff", "--name-only");
+                String untracked = runGitQuiet("ls-files", "--others", "--exclude-standard");
+                StringBuilder hint = new StringBuilder("Error: nothing staged for commit.");
+                if (unstaged != null && !unstaged.isEmpty()) {
+                    hint.append(" There are unstaged changes — use git_stage first,")
+                        .append(" or pass all: true to auto-stage modified files.");
+                } else if (untracked != null && !untracked.isEmpty()) {
+                    hint.append(" There are untracked files — use git_stage to add them first.");
+                } else {
+                    hint.append(" The working tree is clean — there is nothing to commit.");
+                }
+                return hint.toString();
+            }
+        }
+
         // Open VCS tool window in follow mode
         if (ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
             EdtUtil.invokeLater(() -> {
@@ -84,7 +106,7 @@ public final class GitCommitTool extends GitTool {
             cmdArgs.add("--amend");
         }
 
-        if (args.has("all") && args.get("all").getAsBoolean()) {
+        if (commitAll) {
             cmdArgs.add("--all");
         }
 
@@ -98,7 +120,17 @@ public final class GitCommitTool extends GitTool {
 
         String result = runGit(cmdArgs.toArray(String[]::new));
         showNewCommitInLog();
-        return result;
+
+        if (result.startsWith("Error")) return result;
+
+        // Warn if committing directly to default branch
+        String branch = runGitQuiet("rev-parse", "--abbrev-ref", "HEAD");
+        if ("main".equals(branch) || "master".equals(branch)) {
+            result += "\n\n⚠️ Warning: you committed directly to " + branch
+                + ". Consider using a feature branch instead.";
+        }
+
+        return result + getBranchContext();
     }
 
     @Override

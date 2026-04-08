@@ -33,16 +33,17 @@ public final class GitPullTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Fetch and integrate changes into the current branch";
+        return "Fetch and integrate changes into the current branch. Supports rebase mode "
+            + "(rebase: true) and fast-forward-only (ff_only: true). Returns pull result "
+            + "with branch context.";
     }
-
-    
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public boolean isOpenWorld() {
         return true;
     }
@@ -108,6 +109,9 @@ public final class GitPullTool extends GitTool {
             cmdArgs.add(args.get(PARAM_BRANCH).getAsString());
         }
 
-        return runGit(cmdArgs.toArray(String[]::new));
+        String result = runGit(cmdArgs.toArray(String[]::new));
+        if (result.startsWith("Error")) return result;
+
+        return result + getBranchContext();
     }
 }

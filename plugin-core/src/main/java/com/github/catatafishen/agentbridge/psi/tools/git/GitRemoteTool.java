@@ -30,7 +30,7 @@ public final class GitRemoteTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "List, add, remove, or update remote repositories";
+        return "List, add, remove, or update remote repositories. Returns remote names and URLs.";
     }
 
     @Override

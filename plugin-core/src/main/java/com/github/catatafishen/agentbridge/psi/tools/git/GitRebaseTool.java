@@ -35,7 +35,8 @@ public final class GitRebaseTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Rebase current branch onto another";
+        return "Rebase current branch onto another. Auto-fetches from origin when rebasing "
+            + "onto a remote branch (origin/*). Returns rebase result with branch context.";
     }
 
     @Override
@@ -74,7 +75,16 @@ public final class GitRebaseTool extends GitTool {
         String controlResult = handleControlArgs(args);
         if (controlResult != null) return controlResult;
 
-        return runGit(buildRebaseArgs(args).toArray(String[]::new));
+        // Auto-fetch when rebasing onto a remote branch
+        String branchArg = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
+        String ontoArg = args.has("onto") ? args.get("onto").getAsString() : null;
+        String fetchNote = autoFetchForRemoteRef(branchArg);
+        if (fetchNote.isEmpty()) fetchNote = autoFetchForRemoteRef(ontoArg);
+
+        String result = runGit(buildRebaseArgs(args).toArray(String[]::new));
+        if (result.startsWith("Error")) return fetchNote + result;
+
+        return fetchNote + result + getBranchContext();
     }
 
     private @Nullable String handleControlArgs(@NotNull JsonObject args) throws Exception {

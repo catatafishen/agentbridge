@@ -37,7 +37,8 @@ public final class GitStageTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Stage one or more files for the next commit";
+        return "Stage one or more files for the next commit. Returns a confirmation of what was "
+            + "staged, along with counts of remaining staged, unstaged, and untracked files.";
     }
 
     @Override
@@ -77,10 +78,16 @@ public final class GitStageTool extends GitTool {
 
         refreshAndActivateCommitPanel();
 
+        String base;
         if (result == null || result.isBlank()) {
-            return "Staged: " + String.join(", ", stagedFiles);
+            base = "Staged: " + String.join(", ", stagedFiles);
+        } else {
+            base = result;
         }
-        return result;
+
+        if (base.startsWith("Error")) return base;
+
+        return base + getBranchSummary();
     }
 
     /**

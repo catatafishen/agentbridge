@@ -35,16 +35,17 @@ public final class GitFetchTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Download objects and refs from a remote";
+        return "Download objects and refs from a remote without merging. "
+            + "Most git tools auto-fetch when needed — use this only for explicit sync. "
+            + "Returns fetch result with branch context.";
     }
-
-    
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public boolean isOpenWorld() {
         return true;
     }
@@ -96,6 +97,11 @@ public final class GitFetchTool extends GitTool {
         }
 
         String result = runGit(cmdArgs.toArray(String[]::new));
-        return result.isBlank() ? "Fetch completed successfully." : result;
+        String output = result.isBlank() ? "Fetch completed successfully." : result;
+
+        // Reset throttle so subsequent tools see the fresh state
+        lastFetchTime.set(System.currentTimeMillis());
+
+        return output + getBranchContext();
     }
 }

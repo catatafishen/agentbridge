@@ -26,7 +26,8 @@ public final class GitStatusTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Show working tree status";
+        return "Show working tree status including branch tracking info and stash count. "
+            + "Use verbose: true for full output including untracked files.";
     }
 
     @Override
@@ -53,10 +54,24 @@ public final class GitStatusTool extends GitTool {
         boolean verbose = args.has(PARAM_VERBOSE)
             && args.get(PARAM_VERBOSE).getAsBoolean();
 
+        String result;
         if (verbose) {
-            return runGit("status");
+            result = runGit("status");
+        } else {
+            result = runGit("status", "--short", "--branch");
         }
-        return runGit("status", "--short", "--branch");
+
+        // Append stash count if any
+        String stashList = runGitQuiet("stash", "list");
+        if (stashList != null && !stashList.isEmpty()) {
+            long count = stashList.chars().filter(c -> c == '\n').count();
+            if (!stashList.endsWith("\n")) count++;
+            if (count > 0) {
+                result += "\nStash: " + count + " entr" + (count == 1 ? "y" : "ies");
+            }
+        }
+
+        return result;
     }
 
     @Override

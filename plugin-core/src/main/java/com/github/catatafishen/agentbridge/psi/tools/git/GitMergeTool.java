@@ -36,16 +36,16 @@ public final class GitMergeTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Merge a branch into the current branch";
+        return "Merge a branch into the current branch. Auto-fetches from origin when merging "
+            + "a remote branch (origin/*). Returns merge result with branch context.";
     }
-
-
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Merge {branch}";
     }
@@ -77,6 +77,11 @@ public final class GitMergeTool extends GitTool {
             return runGit("merge", "--abort");
         }
 
+        String branchArg = args.get(PARAM_BRANCH).getAsString();
+
+        // Auto-fetch when merging a remote branch
+        String fetchNote = autoFetchForRemoteRef(branchArg);
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("merge");
 
@@ -97,8 +102,11 @@ public final class GitMergeTool extends GitTool {
             cmdArgs.add(args.get(PARAM_MESSAGE).getAsString());
         }
 
-        cmdArgs.add(args.get(PARAM_BRANCH).getAsString());
+        cmdArgs.add(branchArg);
 
-        return runGit(cmdArgs.toArray(String[]::new));
+        String result = runGit(cmdArgs.toArray(String[]::new));
+        if (result.startsWith("Error")) return fetchNote + result;
+
+        return fetchNote + result + getBranchSummary();
     }
 }

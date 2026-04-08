@@ -33,16 +33,17 @@ public final class GitPushTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Push commits to a remote repository";
+        return "Push commits to a remote repository. Auto-fetches from origin before pushing "
+            + "to detect divergence. Returns push result with remote URL, branch tracking status, "
+            + "and a hint to create a PR if pushing a feature branch.";
     }
-
-    
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EXECUTE;
     }
-@Override
+
+    @Override
     public boolean isDestructive() {
         return true;
     }
@@ -93,12 +94,27 @@ public final class GitPushTool extends GitTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        boolean forceFlag = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
+
+        // Auto-fetch to detect remote divergence before pushing
+        String fetchNote = autoFetchIfStale();
+
+        // Pre-push divergence check (skip for force-push)
+        String divergenceWarning = "";
+        if (!forceFlag) {
+            String behind = runGitQuiet("rev-list", "--count", "HEAD..@{upstream}");
+            if (behind != null && !"0".equals(behind)) {
+                divergenceWarning = "\n⚠️ Remote is " + behind
+                    + " commit(s) ahead of local. Consider pulling first, or use force: true.";
+            }
+        }
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("push");
 
         boolean setUpstream = args.has(PARAM_SET_UPSTREAM) && args.get(PARAM_SET_UPSTREAM).getAsBoolean();
 
-        if (args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean()) {
+        if (forceFlag) {
             cmdArgs.add("--force");
         }
         if (setUpstream) {
@@ -127,6 +143,31 @@ public final class GitPushTool extends GitTool {
             cmdArgs.add("--tags");
         }
 
-        return runGit(cmdArgs.toArray(String[]::new));
+        String result = runGit(cmdArgs.toArray(String[]::new));
+
+        if (result.startsWith("Error")) return fetchNote + result + divergenceWarning;
+
+        // Append context
+        StringBuilder ctx = new StringBuilder(result);
+        if (!fetchNote.isEmpty()) ctx.insert(0, fetchNote);
+        if (!divergenceWarning.isEmpty()) ctx.append(divergenceWarning);
+
+        ctx.append("\n\n--- Context ---\n");
+        String actualBranch = branch != null ? branch
+            : runGitQuiet("rev-parse", "--abbrev-ref", "HEAD");
+        String actualRemote = remote != null ? remote : "origin";
+        ctx.append("Pushed ").append(actualBranch).append(" → ")
+            .append(actualRemote).append('/').append(actualBranch).append('\n');
+
+        String remoteUrl = runGitQuiet("remote", "get-url", actualRemote);
+        if (remoteUrl != null) {
+            ctx.append("Remote: ").append(remoteUrl).append('\n');
+        }
+
+        if (actualBranch != null && !"main".equals(actualBranch) && !"master".equals(actualBranch)) {
+            ctx.append("Tip: create a PR with `gh pr create` if ready for review\n");
+        }
+
+        return ctx.toString();
     }
 }
