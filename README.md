@@ -1,5 +1,7 @@
 # AgentBridge
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/catatafishen/ide-agent-for-copilot/badge)](https://scorecard.dev/viewer/?uri=github.com/catatafishen/ide-agent-for-copilot)
+
 An ACP & MCP bridge connecting AI coding agents to your JetBrains IDE through **117 native MCP tools**.
 
 Instead of operating through a terminal or generating diffs in isolation, agents work through
@@ -61,11 +63,11 @@ graph TD
 
 ### Three Layers
 
-| Layer       | Package                       | Purpose                                                                                                        |
-|-------------|-------------------------------|----------------------------------------------------------------------------------------------------------------|
-| **UI**      | `ui/`                         | Tool window, chat panel, model selector — agent-agnostic                                                       |
-| **Clients** | `acp/client/`, `agent/`       | ACP clients: `CopilotClient`, `JunieClient`, `KiroClient`, `OpenCodeClient`; direct clients: `ClaudeCliClient`, `CodexAppServerClient` |
-| **MCP**     | `mcp-server/`, `psi/`         | IDE tools exposed via Model Context Protocol over stdio + HTTP                                                 |
+| Layer       | Package                 | Purpose                                                                                                                                |
+|-------------|-------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| **UI**      | `ui/`                   | Tool window, chat panel, model selector — agent-agnostic                                                                               |
+| **Clients** | `acp/client/`, `agent/` | ACP clients: `CopilotClient`, `JunieClient`, `KiroClient`, `OpenCodeClient`; direct clients: `ClaudeCliClient`, `CodexAppServerClient` |
+| **MCP**     | `mcp-server/`, `psi/`   | IDE tools exposed via Model Context Protocol over stdio + HTTP                                                                         |
 
 ### Extending for New Agents
 
@@ -107,19 +109,19 @@ intellij-copilot-plugin/
 
 ## MCP Tools (117 tools)
 
-| Category            | Tools                                                                                                                                                                                                                                                                                                                                                  |
-|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Code Navigation** | `search_symbols`, `get_file_outline`, `get_class_outline`, `find_references`, `list_project_files`, `search_text`, `go_to_declaration`, `get_type_hierarchy`, `find_implementations`, `get_call_hierarchy`, `get_documentation`, `get_symbol_info`, `list_directory_tree`, `download_sources`                                                          |
-| **File I/O**        | `read_file`, `write_file`, `edit_text`, `create_file`, `delete_file`, `rename_file`, `move_file`, `undo`, `redo`, `reload_from_disk`                                                                                                                                                                                                                   |
-| **Code Quality**    | `get_problems`, `get_highlights`, `get_available_actions`, `get_action_options`, `apply_quickfix`, `apply_action`, `suppress_inspection`, `optimize_imports`, `format_code`, `add_to_dictionary`, `get_compilation_errors`, `run_qodana`*, `run_sonarqube_analysis`*, `get_sonar_rule_description`*                                                     |
-| **Refactoring**     | `refactor`, `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`                                                                                                                                                                                                                                                                       |
-| **Testing**         | `list_tests`, `run_tests`, `get_coverage`                                                                                                                                                                                                                                                                                                              |
-| **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `mark_directory`, `edit_project_structure`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`, `delete_run_configuration`, `get_project_modules`, `get_project_dependencies`                                                            |
-| **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_revert`, `git_show`, `git_push`, `git_remote`, `git_fetch`, `git_pull`, `git_merge`, `git_rebase`, `git_cherry_pick`, `git_tag`, `git_reset`, `get_file_history`, `git_config`                                            |
-| **Infrastructure**  | `ask_user`, `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `list_run_tabs`, `read_run_output`, `read_build_output`, `interact_with_modal`                                                                                                                                                                                         |
-| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`, `list_terminals`                                                                                                                                                                                                                                                                    |
-| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `run_scratch_file`, `get_active_file`, `get_open_editors`, `search_conversation_history`, `get_chat_html`, `list_themes`, `set_theme`                                                                                                                                      |
-| **Debugging**       | `breakpoint_list`, `breakpoint_add`, `breakpoint_add_exception`, `breakpoint_update`, `breakpoint_remove`, `debug_session_list`, `debug_session_stop`, `debug_step`, `debug_run_to_line`, `debug_snapshot`, `debug_variable_detail`, `debug_inspect_frame`, `debug_evaluate`, `debug_read_console`                                                     |
+| Category            | Tools                                                                                                                                                                                                                                                                                                      |
+|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Code Navigation** | `search_symbols`, `get_file_outline`, `get_class_outline`, `find_references`, `list_project_files`, `search_text`, `go_to_declaration`, `get_type_hierarchy`, `find_implementations`, `get_call_hierarchy`, `get_documentation`, `get_symbol_info`, `list_directory_tree`, `download_sources`              |
+| **File I/O**        | `read_file`, `write_file`, `edit_text`, `create_file`, `delete_file`, `rename_file`, `move_file`, `undo`, `redo`, `reload_from_disk`                                                                                                                                                                       |
+| **Code Quality**    | `get_problems`, `get_highlights`, `get_available_actions`, `get_action_options`, `apply_quickfix`, `apply_action`, `suppress_inspection`, `optimize_imports`, `format_code`, `add_to_dictionary`, `get_compilation_errors`, `run_qodana`*, `run_sonarqube_analysis`*, `get_sonar_rule_description`*        |
+| **Refactoring**     | `refactor`, `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`                                                                                                                                                                                                                           |
+| **Testing**         | `list_tests`, `run_tests`, `get_coverage`                                                                                                                                                                                                                                                                  |
+| **Project**         | `get_project_info`, `build_project`, `get_indexing_status`, `mark_directory`, `edit_project_structure`, `list_run_configurations`, `run_configuration`, `create_run_configuration`, `edit_run_configuration`, `delete_run_configuration`, `get_project_modules`, `get_project_dependencies`                |
+| **Git**             | `git_status`, `git_diff`, `git_log`, `git_blame`, `git_commit`, `git_stage`, `git_unstage`, `git_branch`, `git_stash`, `git_revert`, `git_show`, `git_push`, `git_remote`, `git_fetch`, `git_pull`, `git_merge`, `git_rebase`, `git_cherry_pick`, `git_tag`, `git_reset`, `get_file_history`, `git_config` |
+| **Infrastructure**  | `ask_user`, `http_request`, `run_command`, `read_ide_log`, `get_notifications`, `list_run_tabs`, `read_run_output`, `read_build_output`, `interact_with_modal`                                                                                                                                             |
+| **Terminal**        | `run_in_terminal`, `write_terminal_input`, `read_terminal_output`, `list_terminals`                                                                                                                                                                                                                        |
+| **Editor**          | `open_in_editor`, `show_diff`, `create_scratch_file`, `list_scratch_files`, `run_scratch_file`, `get_active_file`, `get_open_editors`, `search_conversation_history`, `get_chat_html`, `list_themes`, `set_theme`                                                                                          |
+| **Debugging**       | `breakpoint_list`, `breakpoint_add`, `breakpoint_add_exception`, `breakpoint_update`, `breakpoint_remove`, `debug_session_list`, `debug_session_stop`, `debug_step`, `debug_run_to_line`, `debug_snapshot`, `debug_variable_detail`, `debug_inspect_frame`, `debug_evaluate`, `debug_read_console`         |
 
 *\* Requires Qodana or SonarLint plugin.*
 
@@ -128,8 +130,8 @@ intellij-copilot-plugin/
 - **JDK 21** (for plugin development)
 - **IntelliJ IDEA 2025.3+** (any JetBrains IDE)
 - **A supported agent** — any of:
-  - ACP-compatible: GitHub Copilot CLI, Junie, Kiro, OpenCode
-  - Direct subprocess: Claude Code CLI (`claude`), Codex (`codex app-server`)
+    - ACP-compatible: GitHub Copilot CLI, Junie, Kiro, OpenCode
+    - Direct subprocess: Claude Code CLI (`claude`), Codex (`codex app-server`)
 
 ## Quick Start
 
@@ -190,12 +192,12 @@ be removed and the entry marked as ✅.
 
 ### Quick Comparison
 
-| Aspect                     | Copilot CLI                  | Junie CLI          | Kiro CLI                     | OpenCode                  | Claude CLI         | Codex              |
-|----------------------------|------------------------------|--------------------|------------------------------|---------------------------|--------------------|--------------------|
-| Built-in tool filtering¹   | `--excluded-tools` (broken²) | ❌ None             | ✅ Agent definition file      | `permission` config field | ❌ None             | Config flags       |
-| Sends permission requests³ | ✅ For write tools            | ❌ No (none)        | ❌ No (filtering via config)  | ✅ Yes                     | ✅ For write tools  | ✅ For write tools  |
-| Blocking viable?           | ✅ Deny + retry               | ❌ No permission    | ✅ Agent definition           | ✅ Config + permissions    | ✅ Deny + retry     | ✅ Deny + retry     |
-| Workaround                 | Permission denial            | Prompt engineering | `allowedTools` in agent JSON | None needed               | Permission denial  | Permission denial  |
+| Aspect                     | Copilot CLI                  | Junie CLI          | Kiro CLI                     | OpenCode                  | Claude CLI        | Codex             |
+|----------------------------|------------------------------|--------------------|------------------------------|---------------------------|-------------------|-------------------|
+| Built-in tool filtering¹   | `--excluded-tools` (broken²) | ❌ None             | ✅ Agent definition file      | `permission` config field | ❌ None            | Config flags      |
+| Sends permission requests³ | ✅ For write tools            | ❌ No (none)        | ❌ No (filtering via config)  | ✅ Yes                     | ✅ For write tools | ✅ For write tools |
+| Blocking viable?           | ✅ Deny + retry               | ❌ No permission    | ✅ Agent definition           | ✅ Config + permissions    | ✅ Deny + retry    | ✅ Deny + retry    |
+| Workaround                 | Permission denial            | Prompt engineering | `allowedTools` in agent JSON | None needed               | Permission denial | Permission denial |
 
 See [PERMISSIONS.md](docs/PERMISSIONS.md) for the full architecture.
 
