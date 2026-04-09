@@ -387,6 +387,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         kind: String?
     ) {
         val cleanTitle = title.trim('\'', '"')
+
+        // Defensive guard: task_complete should never reach here — PromptOrchestrator
+        // suppresses it. If it does (e.g. stale classloader), render as text instead.
+        if (cleanTitle == "task_complete") {
+            LOG.warn("task_complete reached addToolCallEntry — rendering as text instead of chip")
+            val summary = extractTaskCompleteSummary(arguments)
+            if (summary.isNotBlank()) appendText(summary)
+            return
+        }
+
         finalizeCurrentText()
         val resolvedKind = kind ?: "other"
 
@@ -1624,6 +1634,26 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             // Ignore parse errors
         }
         return null
+    }
+
+    /**
+     * Extract the summary text from task_complete arguments JSON.
+     * Returns the "summary" field if present, otherwise the raw arguments string.
+     */
+    private fun extractTaskCompleteSummary(arguments: String?): String {
+        if (arguments.isNullOrBlank()) return ""
+        try {
+            val json = JsonParser.parseString(arguments)
+            if (json.isJsonObject) {
+                val obj = json.asJsonObject
+                if (obj.has("summary") && obj.get("summary").isJsonPrimitive) {
+                    return obj.get("summary").asString
+                }
+            }
+        } catch (_: Exception) {
+            // not valid JSON — fall through to raw text
+        }
+        return arguments
     }
 
     private fun buildInitialPage(): String {

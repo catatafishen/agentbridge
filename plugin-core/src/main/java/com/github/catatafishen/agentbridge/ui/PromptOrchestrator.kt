@@ -577,6 +577,7 @@ class PromptOrchestrator(
         // text, not as a tool chip. Record the ID so handleStreamingToolCallUpdate can
         // emit the summary text and suppress the chip update.
         if (title == taskCompleteTool) {
+            log.info("task_complete detected (id=$toolCallId) — suppressing chip creation")
             toolCallTitles[toolCallId] = taskCompleteTool
             return
         }
