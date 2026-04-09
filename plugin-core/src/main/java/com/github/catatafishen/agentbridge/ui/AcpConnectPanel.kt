@@ -722,6 +722,7 @@ class AcpConnectPanel(
         ApplicationManager.getApplication().invokeLater {
             connectButton.isEnabled = true
             connectButton.text = "Connect"
+            acpAutoConnectCheckbox.isSelected = agentManager.isAutoConnect
             refreshProfileCombo()
             refreshSessionCombo()
         }

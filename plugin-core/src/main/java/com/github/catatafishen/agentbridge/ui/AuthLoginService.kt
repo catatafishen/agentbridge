@@ -275,13 +275,17 @@ class AuthLoginService(private val project: Project) {
 
     /**
      * Logs out the active agent by cleaning up its authentication data.
-     * Always clears pending auth errors. For Claude CLI, deletes credentials;
-     * for Kiro CLI, delegates to `kiro-cli logout`; for others (including Copilot),
-     * deletes the .agent-work/&lt;agentId&gt;/ directory if it exists.
+     * Always clears pending auth errors.
      *
-     * Copilot CLI has no `logout` subcommand — its tokens live in `~/.copilot/`
-     * or the system credential store. The caller is responsible for stopping the
-     * agent process (disconnectFromAgent) regardless of the return value.
+     * - **Claude CLI**: deletes `~/.claude/.credentials.json`
+     * - **Kiro CLI**: delegates to `kiro-cli logout`
+     * - **Copilot CLI**: runs `gh auth logout` because Copilot CLI authenticates
+     *   via the `gh` token stored in the system keyring — there is no
+     *   `copilot logout` subcommand
+     * - **Others**: deletes `.agent-work/<agentId>/` if it exists
+     *
+     * The caller is responsible for stopping the agent process
+     * (disconnectFromAgent) after this method returns.
      */
     fun logout() {
         try {
@@ -309,6 +313,14 @@ class AuthLoginService(private val project: Project) {
                 return
             }
 
+            // Copilot CLI has no logout subcommand — it authenticates via `gh` keyring token.
+            // Run `gh auth logout` to clear the credential from the system keyring.
+            if (agentId == AgentProfileManager.COPILOT_PROFILE_ID) {
+                logoutGhAuth()
+                clearPendingAuthError()
+                return
+            }
+
             // Generic fallback: delete .agent-work/<agentId>/ if it exists
             val projectBasePath = project.basePath ?: return
             val agentWorkDir = java.nio.file.Path.of(projectBasePath, ".agent-work", agentId)
@@ -321,6 +333,34 @@ class AuthLoginService(private val project: Project) {
             clearPendingAuthError()
         } catch (e: Exception) {
             LOG.warn("Failed to clean up during logout", e)
+        }
+    }
+
+    /**
+     * Runs `gh auth logout --hostname github.com` to revoke the credential
+     * from the system keyring. Copilot CLI authenticates via this credential,
+     * so removing it is the only way to fully log out.
+     *
+     * The command is run with a 10-second timeout. Failure is logged but
+     * does not prevent the rest of the logout flow.
+     */
+    private fun logoutGhAuth() {
+        try {
+            val pb = ProcessBuilder("gh", "auth", "logout", "--hostname", "github.com")
+            pb.redirectErrorStream(true)
+            val process = pb.start()
+            // gh auth logout prompts for confirmation — pipe "Y" via stdin
+            process.outputStream.bufferedWriter().use { it.write("Y\n"); it.flush() }
+            val finished = process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)
+            if (finished) {
+                val output = process.inputStream.bufferedReader().readText().trim()
+                LOG.info("gh auth logout exit=${process.exitValue()}: $output")
+            } else {
+                LOG.warn("gh auth logout timed out after 10s — killing process")
+                process.destroyForcibly()
+            }
+        } catch (e: Exception) {
+            LOG.warn("Failed to run gh auth logout", e)
         }
     }
 
