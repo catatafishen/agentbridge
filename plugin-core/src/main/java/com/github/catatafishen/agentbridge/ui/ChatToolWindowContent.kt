@@ -269,10 +269,17 @@ class ChatToolWindowContent(
         )
     }
 
+    private fun promptPlaceholder(): String {
+        val name = agentManager.activeProfile.displayName
+        val action = if (isSending) "Nudge" else "Ask"
+        return "$action $name..."
+    }
+
     private fun updatePromptPlaceholder() {
+        val editor = promptTextArea.editor as? EditorEx ?: return
+        editor.setPlaceholder(promptPlaceholder())
         if (::shortcutHintPanel.isInitialized) {
             shortcutHintPanel.setNudgeMode(isSending)
-            updateOverlayVisibility()
         }
     }
 
@@ -638,6 +645,12 @@ class ChatToolWindowContent(
             JBUI.Borders.empty(0, 0, 2, 0)
         )
 
+        shortcutHintPanel = PromptShortcutHintPanel { dismissShortcutHints() }
+        shortcutHintPanel.alignmentX = Component.LEFT_ALIGNMENT
+        shortcutHintPanel.isVisible =
+            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
+        footer.add(shortcutHintPanel)
+
         val controlsRow = createControlsRow()
         controlsRow.alignmentX = Component.LEFT_ALIGNMENT
         footer.add(controlsRow)
@@ -696,6 +709,8 @@ class ChatToolWindowContent(
         promptTextArea.addSettingsProvider { editor ->
             setupPromptKeyBindings(editor)
             setupPromptContextMenu(editor)
+            editor.setPlaceholder(promptPlaceholder())
+            editor.setShowPlaceholderWhenFocused(true)
             editor.settings.isUseSoftWraps =
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isSoftWrapsEnabled
             editor.setBorder(null)
@@ -706,36 +721,12 @@ class ChatToolWindowContent(
                 ApplicationManager.getApplication().invokeLater {
                     promptTextArea.revalidate()
                     checkSlashCommandAutocomplete()
-                    updateOverlayVisibility()
                 }
             }
         })
 
-        // Shortcut hint overlay centered inside the editor area.
-        // Not added as a Swing child — painted explicitly in paintChildren
-        // to avoid z-order issues between JLayeredPane and EditorTextField.
-        shortcutHintPanel = PromptShortcutHintPanel()
-        shortcutHintPanel.isVisible =
-            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
-
-        val editorWrapper = object : JPanel(BorderLayout()) {
-            override fun paintChildren(g: Graphics) {
-                super.paintChildren(g)
-                if (!shortcutHintPanel.isVisible) return
-                val pref = shortcutHintPanel.preferredSize
-                if (pref.width <= 0 || pref.height <= 0) return
-                shortcutHintPanel.size = pref
-                shortcutHintPanel.doLayout()
-                val g2 = g.create() as Graphics2D
-                g2.translate((width - pref.width) / 2, (height - pref.height) / 2)
-                shortcutHintPanel.paint(g2)
-                g2.dispose()
-            }
-        }
-        editorWrapper.add(promptTextArea, BorderLayout.CENTER)
-
         row.border = JBUI.Borders.empty()
-        row.add(editorWrapper, BorderLayout.CENTER)
+        row.add(promptTextArea, BorderLayout.CENTER)
 
         return row
     }
@@ -856,15 +847,16 @@ class ChatToolWindowContent(
     }
 
     fun setShortcutHintsVisible() {
-        updateOverlayVisibility()
+        if (!::shortcutHintPanel.isInitialized) return
+        shortcutHintPanel.isVisible =
+            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
     }
 
-    private fun updateOverlayVisibility() {
-        if (!::shortcutHintPanel.isInitialized) return
-        val showHints = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
-        val editorEmpty = promptTextArea.text.isEmpty()
-        shortcutHintPanel.isVisible = showHints && editorEmpty
-        promptTextArea.parent?.repaint()
+    private fun dismissShortcutHints() {
+        com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().setShowShortcutHints(false)
+        if (::shortcutHintPanel.isInitialized) {
+            shortcutHintPanel.isVisible = false
+        }
     }
 
     private fun setSendingState(sending: Boolean) {
