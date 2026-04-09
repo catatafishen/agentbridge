@@ -274,11 +274,17 @@ class AuthLoginService(private val project: Project) {
     }
 
     /**
-     * Logs out the active agent by deleting its authentication data.
-     * For Copilot, this removes the entire .agent-work/copilot/ directory.
+     * Logs out the active agent by cleaning up its authentication data.
+     * Always clears pending auth errors. For Claude CLI, deletes credentials;
+     * for Kiro CLI, delegates to `kiro-cli logout`; for others (including Copilot),
+     * deletes the .agent-work/&lt;agentId&gt;/ directory if it exists.
+     *
+     * Copilot CLI has no `logout` subcommand — its tokens live in `~/.copilot/`
+     * or the system credential store. The caller is responsible for stopping the
+     * agent process (disconnectFromAgent) regardless of the return value.
      */
-    fun logout(): Boolean {
-        return try {
+    fun logout() {
+        try {
             val agentManager = ActiveAgentManager.getInstance(project)
             val profile = agentManager.getActiveProfile()
             val agentId = profile.id
@@ -288,7 +294,7 @@ class AuthLoginService(private val project: Project) {
                 val deleted = ClaudeCliCredentials.logout()
                 LOG.info("Claude CLI logout: credentials deleted=$deleted")
                 clearPendingAuthError()
-                return true
+                return
             }
 
             // Kiro CLI manages its own credentials — delegate to `kiro-cli logout`
@@ -300,23 +306,21 @@ class AuthLoginService(private val project: Project) {
                     .waitFor()
                 LOG.info("Kiro logout exit code: $result")
                 clearPendingAuthError()
-                return true
+                return
             }
 
-            val projectBasePath = project.basePath ?: return false
+            // Generic fallback: delete .agent-work/<agentId>/ if it exists
+            val projectBasePath = project.basePath ?: return
             val agentWorkDir = java.nio.file.Path.of(projectBasePath, ".agent-work", agentId)
             if (java.nio.file.Files.exists(agentWorkDir)) {
                 agentWorkDir.toFile().deleteRecursively()
-                LOG.info("Deleted auth data for agent '$agentId' at $agentWorkDir")
-                clearPendingAuthError()
-                true
+                LOG.info("Deleted agent data for '$agentId' at $agentWorkDir")
             } else {
-                LOG.info("No auth data found for agent '$agentId' at $agentWorkDir")
-                false
+                LOG.info("No agent data found for '$agentId' at $agentWorkDir (nothing to clean up)")
             }
+            clearPendingAuthError()
         } catch (e: Exception) {
-            LOG.warn("Failed to logout", e)
-            false
+            LOG.warn("Failed to clean up during logout", e)
         }
     }
 

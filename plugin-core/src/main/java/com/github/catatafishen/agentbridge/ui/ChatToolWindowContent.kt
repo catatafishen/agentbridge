@@ -1166,9 +1166,8 @@ class ChatToolWindowContent(
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) {
-                    if (authService.logout()) {
-                        disconnectFromAgent()
-                    }
+                    authService.logout()
+                    disconnectFromAgent()
                 }
             })
             group.add(dangerousActionsGroup)
