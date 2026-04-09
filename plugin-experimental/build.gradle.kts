@@ -2,7 +2,7 @@ import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLeve
 
 plugins {
     id("java")
-    id("org.jetbrains.kotlin.jvm") version "2.3.20"
+    id("org.jetbrains.kotlin.jvm") version "2.3.10"
     id("org.jetbrains.intellij.platform") version "2.13.1"
 }
 
