@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
@@ -98,6 +100,23 @@ jobs:
           PLUGIN_VERSION: ${{ steps.version.outputs.version }}
         run: ./gradlew :plugin-core:buildPlugin :plugin-experimental:buildPlugin --no-daemon --quiet
 
+      - name: Collect release artifacts
+        if: steps.version.outputs.skip != 'true'
+        id: artifacts
+        run: |
+          # Copy artifacts to a staging directory with predictable names
+          mkdir -p release-artifacts
+          cp plugin-core/build/distributions/*.zip release-artifacts/
+          cp plugin-experimental/build/distributions/*.zip release-artifacts/
+          echo "dir=release-artifacts" >> "$GITHUB_OUTPUT"
+          ls -la release-artifacts/
+
+      - name: Generate provenance attestation
+        if: steps.version.outputs.skip != 'true'
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-path: '${{ steps.artifacts.outputs.dir }}/*.zip'
+
       - name: Create tag and GitHub release
         if: steps.version.outputs.skip != 'true'
         env:
@@ -118,5 +137,4 @@ jobs:
           gh release create "$TAG" \
             --title "Release $TAG" \
             --notes "$NOTES" \
-            plugin-core/build/distributions/*.zip \
-            plugin-experimental/build/distributions/*.zip
+            ${{ steps.artifacts.outputs.dir }}/*.zip
