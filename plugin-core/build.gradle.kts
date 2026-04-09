@@ -6,6 +6,7 @@ plugins {
     id("java")
     kotlin("jvm") version "2.3.10"
     id("org.jetbrains.intellij.platform") version "2.13.1"
+    jacoco
 }
 
 sourceSets {
@@ -418,6 +419,15 @@ tasks {
     test {
         useJUnitPlatform {
             excludeTags("integration")
+        }
+        finalizedBy(named("jacocoTestReport"))
+    }
+
+    named<JacocoReport>("jacocoTestReport") {
+        dependsOn(named("test"))
+        reports {
+            xml.required.set(true)
+            html.required.set(true)
         }
     }
 

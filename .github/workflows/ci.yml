@@ -94,6 +94,16 @@ jobs:
       - name: Run plugin tests
         run: ./gradlew :plugin-core:test --no-daemon
 
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          files: plugin-core/build/reports/jacoco/test/jacocoTestReport.xml
+          flags: plugin-core
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
       - name: Show test failures
         if: failure()
         run: |
