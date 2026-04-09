@@ -289,7 +289,15 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected boolean isMcpToolTitle(@org.jetbrains.annotations.NotNull String protocolTitle) {
-        return protocolTitle.startsWith("agentbridge-");
+        if (protocolTitle.startsWith("agentbridge-")) {
+            return true;
+        }
+        // Copilot CLI sends human-readable display names (e.g. "Git Stage") in
+        // permission requests instead of the snake_case "agentbridge-git_stage" form
+        // used in session/update notifications. Fall back to ToolRegistry lookup
+        // so these are recognized as MCP tools rather than flagged as built-in.
+        ToolRegistry registry = ToolRegistry.getInstance(project);
+        return registry.findByDisplayName(protocolTitle) != null;
     }
 
     /**

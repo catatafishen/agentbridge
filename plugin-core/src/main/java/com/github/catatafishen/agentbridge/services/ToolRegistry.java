@@ -93,6 +93,21 @@ public final class ToolRegistry {
     }
 
     /**
+     * Look up a tool by its human-readable display name (e.g. "Git Stage").
+     * Used to recognize MCP tools when Copilot CLI sends display names
+     * in permission requests instead of snake_case IDs.
+     */
+    @Nullable
+    public ToolDefinition findByDisplayName(@NotNull String displayName) {
+        for (ToolDefinition def : definitions.values()) {
+            if (displayName.equalsIgnoreCase(def.displayName())) {
+                return def;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Returns all registered tool definitions (built-in + MCP).
      */
     @NotNull
