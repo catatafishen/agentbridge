@@ -59,6 +59,9 @@ class PromptOrchestrator(
 ) {
     private val log = Logger.getInstance(PromptOrchestrator::class.java)
 
+    /** Copilot built-in tool whose summary should render as agent text, not a tool chip. */
+    private val taskCompleteTool = "task_complete"
+
     internal var currentSessionId: String? = null
     internal var conversationSummaryInjected: Boolean = false
     private var currentPromptThread: Thread? = null
@@ -569,6 +572,15 @@ class PromptOrchestrator(
         val kind = toolCall.kind()?.value() ?: "other"
         val arguments = toolCall.arguments()
         if (toolCallId.isEmpty()) return
+
+        // task_complete is a Copilot built-in tool whose summary should render as agent
+        // text, not as a tool chip. Record the ID so handleStreamingToolCallUpdate can
+        // emit the summary text and suppress the chip update.
+        if (title == taskCompleteTool) {
+            toolCallTitles[toolCallId] = taskCompleteTool
+            return
+        }
+
         if (toolCall.isSubAgent) {
             val agentType = toolCall.agentType() ?: return
             turnToolCallCount++
@@ -622,6 +634,21 @@ class PromptOrchestrator(
         }
 
         val callType = toolCallTitles[toolCallId]
+
+        // task_complete: render the summary as agent text instead of updating a chip.
+        // The summary is the agent's concluding message — displaying it inline provides
+        // a natural reading experience instead of hiding it behind a tool chip.
+        if (callType == taskCompleteTool) {
+            val summary = result ?: description ?: ""
+            if (summary.isNotBlank()) {
+                ApplicationManager.getApplication().invokeLater {
+                    if (!stopped) consolePanel().appendText(summary)
+                }
+            }
+            toolCallTitles.remove(toolCallId)
+            return
+        }
+
         val isSubAgent = callType == "task"
         val isInternal = callType == "subagent_internal"
 

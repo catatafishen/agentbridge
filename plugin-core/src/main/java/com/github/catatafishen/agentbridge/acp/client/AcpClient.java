@@ -87,7 +87,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     private static final String VALUE_DENY_ONCE = "deny_once";
     private static final String VALUE_REJECT_ONCE = "reject_once";
     private static final String KEY_TOOL_CALL = "toolCall";
-    private static final Set<String> ALLOWED_BUILT_IN_TOOLS = Set.of("web_fetch", "web_search");
+    private static final Set<String> ALLOWED_BUILT_IN_TOOLS = Set.of("web_fetch", "web_search", "task_complete");
 
     protected final Gson gson = new GsonBuilder()
         .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
@@ -429,8 +429,8 @@ public abstract class AcpClient extends AbstractAgentClient {
             for (NewSessionResponse.SessionConfigOption opt : response.configOptions()) {
                 List<AbstractAgentClient.AgentConfigOptionValue> vals = opt.values() == null ? List.of()
                     : opt.values().stream()
-                    .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
-                    .toList();
+                      .map(v -> new AbstractAgentClient.AgentConfigOptionValue(v.id(), v.label()))
+                      .toList();
                 String optId = opt.id() != null ? opt.id() : "";
                 String label = opt.label() != null ? opt.label() : optId;
                 availableConfigOptions.add(
