@@ -284,6 +284,7 @@ class ChatToolWindowContent(
     }
 
     fun disconnectFromAgent() {
+        LOG.info("disconnectFromAgent: stopping agent and switching to connect panel")
         try {
             agentManager.stop()
         } catch (e: Exception) {
@@ -1166,6 +1167,8 @@ class ChatToolWindowContent(
             ) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
                 override fun actionPerformed(e: AnActionEvent) {
+                    LOG.info("Logout: disabling auto-connect and disconnecting")
+                    agentManager.isAutoConnect = false
                     authService.logout()
                     disconnectFromAgent()
                 }
