@@ -98,7 +98,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5.5.4
         with:
           files: plugin-core/build/reports/jacoco/test/jacocoTestReport.xml
           flags: plugin-core
