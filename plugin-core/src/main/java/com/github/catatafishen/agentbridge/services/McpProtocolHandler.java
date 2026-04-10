@@ -129,10 +129,9 @@ public final class McpProtocolHandler {
             }
 
             MemoryService memoryService = MemoryService.getInstance(project);
-            if (!memoryService.isActive()) {
-                return "";
-            }
-
+            // getStore() triggers lazy initialization — don't check isActive() first,
+            // as that reads the pre-init `initialized` flag and would always return false
+            // on the first call (e.g., during MCP initialize).
             MemoryStore store = memoryService.getStore();
             if (store == null || store.getDrawerCount() == 0) {
                 return "";
