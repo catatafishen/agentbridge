@@ -53,15 +53,15 @@ public final class BreakpointUpdateTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_INDEX, TYPE_INTEGER, "1-based breakpoint index from breakpoint_list. Alternative to file+line."},
-            {PARAM_FILE, TYPE_STRING, "File path to identify the breakpoint. Use with 'line'. Alternative to index."},
-            {PARAM_LINE, TYPE_INTEGER, "Line number (1-based). Use with 'file'. Alternative to index."},
-            {PARAM_ENABLED, TYPE_BOOLEAN, "Enable or disable the breakpoint"},
-            {PARAM_CONDITION, TYPE_STRING, "New condition expression, or empty string to clear"},
-            {PARAM_LOG_EXPRESSION, TYPE_STRING, "New log expression, or empty string to clear"},
-            {PARAM_SUSPEND, TYPE_BOOLEAN, "Whether to suspend on hit"},
-        });
+        return schema(
+            Param.optional(PARAM_INDEX, TYPE_INTEGER, "1-based breakpoint index from breakpoint_list. Alternative to file+line."),
+            Param.optional(PARAM_FILE, TYPE_STRING, "File path to identify the breakpoint. Use with 'line'. Alternative to index."),
+            Param.optional(PARAM_LINE, TYPE_INTEGER, "Line number (1-based). Use with 'file'. Alternative to index."),
+            Param.optional(PARAM_ENABLED, TYPE_BOOLEAN, "Enable or disable the breakpoint"),
+            Param.optional(PARAM_CONDITION, TYPE_STRING, "New condition expression, or empty string to clear"),
+            Param.optional(PARAM_LOG_EXPRESSION, TYPE_STRING, "New log expression, or empty string to clear"),
+            Param.optional(PARAM_SUSPEND, TYPE_BOOLEAN, "Whether to suspend on hit")
+        );
     }
 
     @Override

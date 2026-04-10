@@ -64,13 +64,13 @@ public final class RefactorTool extends RefactoringTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_OPERATION, TYPE_STRING, "Refactoring type: 'rename' or 'safe_delete'"},
-            {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
-            {PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to refactor (class, method, field, or variable)"},
-            {"line", TYPE_INTEGER, "Line number to disambiguate if multiple symbols share the same name"},
-            {PARAM_NEW_NAME, TYPE_STRING, "New name for 'rename' operation. Required when operation is 'rename'"}
-        }, PARAM_OPERATION, "file", PARAM_SYMBOL);
+        return schema(
+            Param.required(PARAM_OPERATION, TYPE_STRING, "Refactoring type: 'rename' or 'safe_delete'"),
+            Param.required("file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
+            Param.required(PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to refactor (class, method, field, or variable)"),
+            Param.optional("line", TYPE_INTEGER, "Line number to disambiguate if multiple symbols share the same name"),
+            Param.optional(PARAM_NEW_NAME, TYPE_STRING, "New name for 'rename' operation. Required when operation is 'rename'")
+        );
     }
 
     @Override

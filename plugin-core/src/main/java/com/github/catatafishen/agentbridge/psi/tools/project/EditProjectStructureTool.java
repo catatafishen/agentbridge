@@ -74,25 +74,24 @@ public final class EditProjectStructureTool extends ProjectTool {
         return "View and modify module dependencies, libraries, SDKs, and project structure";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_ACTION, TYPE_STRING, "Action: 'list_modules', 'list_dependencies', 'add_dependency', 'remove_dependency', 'list_sdks', 'add_sdk', 'remove_sdk'"},
-            {JSON_MODULE, TYPE_STRING, "Module name (required for list_dependencies, add_dependency, remove_dependency)"},
-            {PARAM_DEPENDENCY_NAME, TYPE_STRING, "Name of the dependency to add or remove"},
-            {PARAM_DEPENDENCY_TYPE, TYPE_STRING, "Type of dependency to add: 'library' (default) or 'module'"},
-            {PARAM_SCOPE, TYPE_STRING, "Dependency scope: 'COMPILE' (default), 'TEST', 'RUNTIME', 'PROVIDED'"},
-            {PARAM_JAR_PATH, TYPE_STRING, "Path to JAR file (absolute or project-relative). Required when adding a library dependency"},
-            {PARAM_SDK_TYPE, TYPE_STRING, "SDK type name for add_sdk (e.g., 'Python SDK', 'JavaSDK'). Use list_sdks to see available types"},
-            {PARAM_SDK_NAME, TYPE_STRING, "SDK name for remove_sdk. Use list_sdks to see configured SDK names"},
-            {PARAM_HOME_PATH, TYPE_STRING, "Home path for add_sdk. Use list_sdks to see suggested paths for each SDK type"}
-        }, PARAM_ACTION);
+        return schema(
+            Param.required(PARAM_ACTION, TYPE_STRING, "Action: 'list_modules', 'list_dependencies', 'add_dependency', 'remove_dependency', 'list_sdks', 'add_sdk', 'remove_sdk'"),
+            Param.optional(JSON_MODULE, TYPE_STRING, "Module name (required for list_dependencies, add_dependency, remove_dependency)"),
+            Param.optional(PARAM_DEPENDENCY_NAME, TYPE_STRING, "Name of the dependency to add or remove"),
+            Param.optional(PARAM_DEPENDENCY_TYPE, TYPE_STRING, "Type of dependency to add: 'library' (default) or 'module'"),
+            Param.optional(PARAM_SCOPE, TYPE_STRING, "Dependency scope: 'COMPILE' (default), 'TEST', 'RUNTIME', 'PROVIDED'"),
+            Param.optional(PARAM_JAR_PATH, TYPE_STRING, "Path to JAR file (absolute or project-relative). Required when adding a library dependency"),
+            Param.optional(PARAM_SDK_TYPE, TYPE_STRING, "SDK type name for add_sdk (e.g., 'Python SDK', 'JavaSDK'). Use list_sdks to see available types"),
+            Param.optional(PARAM_SDK_NAME, TYPE_STRING, "SDK name for remove_sdk. Use list_sdks to see configured SDK names"),
+            Param.optional(PARAM_HOME_PATH, TYPE_STRING, "Home path for add_sdk. Use list_sdks to see suggested paths for each SDK type")
+        );
     }
 
     @Override

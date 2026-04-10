@@ -36,7 +36,7 @@ public final class MoveFileTool extends FileTool {
     @Override
     public @NotNull String description() {
         return "Move a file to a different directory. Does NOT update import statements or references — " +
-                "use refactor(operation='rename') for reference-aware moves.";
+            "use refactor(operation='rename') for reference-aware moves.";
     }
 
     @Override
@@ -51,10 +51,10 @@ public final class MoveFileTool extends FileTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Path to the file to move (absolute or project-relative)"},
-            {PARAM_DESTINATION, TYPE_STRING, "Destination directory path (absolute or project-relative)"}
-        }, "path", PARAM_DESTINATION);
+        return schema(
+            Param.required("path", TYPE_STRING, "Path to the file to move (absolute or project-relative)"),
+            Param.required(PARAM_DESTINATION, TYPE_STRING, "Destination directory path (absolute or project-relative)")
+        );
     }
 
     @Override

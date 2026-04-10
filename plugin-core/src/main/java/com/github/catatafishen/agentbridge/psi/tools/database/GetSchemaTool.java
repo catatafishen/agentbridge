@@ -51,11 +51,11 @@ public final class GetSchemaTool extends DatabaseTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_DATA_SOURCE, TYPE_STRING, "Name of the data source"},
-            {PARAM_TABLE, TYPE_STRING, "Table name to get schema for"},
-            {PARAM_SCHEMA, TYPE_STRING, "Optional: schema name (if table name is ambiguous)"},
-        }, PARAM_DATA_SOURCE, PARAM_TABLE);
+        return schema(
+            Param.required(PARAM_DATA_SOURCE, TYPE_STRING, "Name of the data source"),
+            Param.required(PARAM_TABLE, TYPE_STRING, "Table name to get schema for"),
+            Param.optional(PARAM_SCHEMA, TYPE_STRING, "Optional: schema name (if table name is ambiguous)")
+        );
     }
 
     @Override
@@ -82,9 +82,9 @@ public final class GetSchemaTool extends DatabaseTool {
     }
 
     private static @Nullable DasTable findTable(
-            @NotNull DbDataSource dataSource,
-            @NotNull String tableName,
-            @Nullable String schemaFilter) {
+        @NotNull DbDataSource dataSource,
+        @NotNull String tableName,
+        @Nullable String schemaFilter) {
         for (var table : DasUtil.getTables(dataSource)) {
             if (!tableName.equalsIgnoreCase(table.getName())) continue;
             if (schemaFilter == null || schemaFilter.equalsIgnoreCase(DasUtil.getSchema(table))) {

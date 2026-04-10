@@ -66,16 +66,16 @@ public final class GetAvailableActionsTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Path to the file"},
-            {"line", TYPE_INTEGER, "Line number (1-based)"},
-            {PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
+        return schema(
+            Param.required("file", TYPE_STRING, "Path to the file"),
+            Param.required("line", TYPE_INTEGER, "Line number (1-based)"),
+            Param.optional(PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
                 + "Auto-detects the column and returns intention actions at that symbol. "
-                + "Preferred over specifying 'column' manually."},
-            {PARAM_COLUMN, TYPE_INTEGER, "Column number (1-based, optional). "
+                + "Preferred over specifying 'column' manually."),
+            Param.optional(PARAM_COLUMN, TYPE_INTEGER, "Column number (1-based, optional). "
                 + "Use 'symbol' instead when possible. When provided, also returns "
-                + "intention actions available at that exact symbol position (refactoring, conversions, etc.)"}
-        }, "file", "line");
+                + "intention actions available at that exact symbol position (refactoring, conversions, etc.)")
+        );
     }
 
     @Override

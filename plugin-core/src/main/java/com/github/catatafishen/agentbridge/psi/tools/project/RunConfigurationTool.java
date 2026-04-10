@@ -45,10 +45,10 @@ public final class RunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"name", TYPE_STRING, "Exact name of the run configuration"},
-            {"wait_seconds", TYPE_INTEGER, "(Optional) Wait up to this many seconds for the run to complete (default: fire-and-forget). Use read_run_output after to get full output."}
-        }, "name");
+        return schema(
+            Param.required("name", TYPE_STRING, "Exact name of the run configuration"),
+            Param.optional("wait_seconds", TYPE_INTEGER, "(Optional) Wait up to this many seconds for the run to complete (default: fire-and-forget). Use read_run_output after to get full output.")
+        );
     }
 
     @Override

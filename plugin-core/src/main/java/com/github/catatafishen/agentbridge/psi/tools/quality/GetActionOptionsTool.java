@@ -75,14 +75,14 @@ public final class GetActionOptionsTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Path to the file"},
-            {"line", TYPE_INTEGER, "Line number (1-based)"},
-            {PARAM_ACTION_NAME, TYPE_STRING, "Exact action name from get_available_actions output"},
-            {PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
-                + "Auto-detects the column — preferred over specifying 'column' manually."},
-            {PARAM_COLUMN, TYPE_INTEGER, "Column number (1-based, optional). Use 'symbol' instead when possible."}
-        }, "file", "line", PARAM_ACTION_NAME);
+        return schema(
+            Param.required("file", TYPE_STRING, "Path to the file"),
+            Param.required("line", TYPE_INTEGER, "Line number (1-based)"),
+            Param.required(PARAM_ACTION_NAME, TYPE_STRING, "Exact action name from get_available_actions output"),
+            Param.optional(PARAM_SYMBOL, TYPE_STRING, "Symbol name on the line (e.g. '_scrollRAF'). "
+                + "Auto-detects the column — preferred over specifying 'column' manually."),
+            Param.optional(PARAM_COLUMN, TYPE_INTEGER, "Column number (1-based, optional). Use 'symbol' instead when possible.")
+        );
     }
 
     @Override

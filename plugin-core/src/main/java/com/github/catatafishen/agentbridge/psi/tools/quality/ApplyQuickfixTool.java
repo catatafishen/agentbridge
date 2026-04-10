@@ -48,8 +48,8 @@ public final class ApplyQuickfixTool extends QualityTool {
     @Override
     public @NotNull String description() {
         return "Apply an IntelliJ quick-fix by inspection ID at a specific file and line. " +
-                "The inspection_id comes from run_inspections output. " +
-                "For quick-fixes by action name (from get_highlights), use apply_action instead.";
+            "The inspection_id comes from run_inspections output. " +
+            "For quick-fixes by action name (from get_highlights), use apply_action instead.";
     }
 
     @Override
@@ -59,12 +59,12 @@ public final class ApplyQuickfixTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Path to the file containing the problem"},
-            {"line", TYPE_INTEGER, "Line number where the problem is located"},
-            {PARAM_INSPECTION_ID, TYPE_STRING, "The inspection ID from run_inspections output (e.g., 'unused')"},
-            {PARAM_FIX_INDEX, TYPE_INTEGER, "Which fix to apply if multiple are available (default: 0)"}
-        }, "file", "line", PARAM_INSPECTION_ID);
+        return schema(
+            Param.required("file", TYPE_STRING, "Path to the file containing the problem"),
+            Param.required("line", TYPE_INTEGER, "Line number where the problem is located"),
+            Param.required(PARAM_INSPECTION_ID, TYPE_STRING, "The inspection ID from run_inspections output (e.g., 'unused')"),
+            Param.optional(PARAM_FIX_INDEX, TYPE_INTEGER, "Which fix to apply if multiple are available (default: 0)")
+        );
     }
 
     @Override

@@ -39,11 +39,11 @@ public final class DebugSnapshotTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-                {"include_source", TYPE_BOOLEAN, "Include source code context around current line (default: true)"},
-                {"include_variables", TYPE_BOOLEAN, "Include local variables in current frame (default: true)"},
-                {"include_stack", TYPE_BOOLEAN, "Include the call stack (default: true)"},
-        });
+        return schema(
+            Param.optional("include_source", TYPE_BOOLEAN, "Include source code context around current line (default: true)"),
+            Param.optional("include_variables", TYPE_BOOLEAN, "Include local variables in current frame (default: true)"),
+            Param.optional("include_stack", TYPE_BOOLEAN, "Include the call stack (default: true)")
+        );
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.psi.tools.project;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.module.Module;
@@ -11,9 +12,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.openapi.roots.OrderRootType;
 import com.intellij.openapi.vfs.VirtualFile;
-import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -51,22 +50,21 @@ public final class DownloadSourcesTool extends ProjectTool {
         return "Download library sources to enable source navigation and debugging";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_LIBRARY, TYPE_STRING, "Optional library name filter (e.g. 'junit')"}
-        });
+        return schema(
+            Param.optional(PARAM_LIBRARY, TYPE_STRING, "Optional library name filter (e.g. 'junit')")
+        );
     }
 
     @Override

@@ -83,13 +83,13 @@ public final class GitPushTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"},
-            {PARAM_BRANCH, TYPE_STRING, "Branch to push (default: current)"},
-            {PARAM_FORCE, TYPE_BOOLEAN, "Force push"},
-            {PARAM_SET_UPSTREAM, TYPE_BOOLEAN, "Set upstream tracking reference"},
-            {"tags", TYPE_BOOLEAN, "Push all tags"}
-        });
+        return schema(
+            Param.optional(PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"),
+            Param.optional(PARAM_BRANCH, TYPE_STRING, "Branch to push (default: current)"),
+            Param.optional(PARAM_FORCE, TYPE_BOOLEAN, "Force push"),
+            Param.optional(PARAM_SET_UPSTREAM, TYPE_BOOLEAN, "Set upstream tracking reference"),
+            Param.optional("tags", TYPE_BOOLEAN, "Push all tags")
+        );
     }
 
     @Override

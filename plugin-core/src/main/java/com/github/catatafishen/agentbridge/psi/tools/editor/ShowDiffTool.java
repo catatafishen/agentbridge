@@ -38,8 +38,8 @@ public final class ShowDiffTool extends EditorTool {
     @Override
     public @NotNull String description() {
         return "Open a visual diff viewer in the IDE comparing a file to proposed content or another file. " +
-                "This is a UI action — it opens a panel for the user, not a text response. " +
-                "Use git_diff for programmatic diff output.";
+            "This is a UI action — it opens a panel for the user, not a text response. " +
+            "Use git_diff for programmatic diff output.";
     }
 
     @Override
@@ -54,12 +54,12 @@ public final class ShowDiffTool extends EditorTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Path to the first file"},
-            {PARAM_FILE2, TYPE_STRING, "Optional: path to second file for two-file comparison"},
-            {PARAM_CONTENT, TYPE_STRING, "Optional: proposed new content to diff against the current file"},
-            {PARAM_TITLE, TYPE_STRING, "Optional: title for the diff viewer tab"}
-        }, "file");
+        return schema(
+            Param.required("file", TYPE_STRING, "Path to the first file"),
+            Param.optional(PARAM_FILE2, TYPE_STRING, "Optional: path to second file for two-file comparison"),
+            Param.optional(PARAM_CONTENT, TYPE_STRING, "Optional: proposed new content to diff against the current file"),
+            Param.optional(PARAM_TITLE, TYPE_STRING, "Optional: title for the diff viewer tab")
+        );
     }
 
     @Override

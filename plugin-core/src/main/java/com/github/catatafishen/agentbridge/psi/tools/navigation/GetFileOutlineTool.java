@@ -37,25 +37,24 @@ public final class GetFileOutlineTool extends NavigationTool {
     @Override
     public @NotNull String description() {
         return "Get the structure of a file — classes, methods, and fields with line numbers. " +
-                "Works on any project file. Use get_class_outline for library/JDK classes by fully-qualified name.";
+            "Works on any project file. Use get_class_outline for library/JDK classes by fully-qualified name.";
     }
-
-
 
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Absolute or project-relative path to the file to outline"}
-        }, "path");
+        return schema(
+            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to outline")
+        );
     }
 
     @Override

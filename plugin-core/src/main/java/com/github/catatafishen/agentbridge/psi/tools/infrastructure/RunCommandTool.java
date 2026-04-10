@@ -43,8 +43,8 @@ public final class RunCommandTool extends InfrastructureTool {
     @Override
     public @NotNull String description() {
         return "Run a shell command with paginated output. Prefer this over the built-in bash tool. " +
-                "Returns stdout/stderr with exit code. Use offset parameter to paginate large output. " +
-                "Default timeout: 60s. For interactive commands needing stdin, use run_in_terminal instead.";
+            "Returns stdout/stderr with exit code. Use offset parameter to paginate large output. " +
+            "Default timeout: 60s. For interactive commands needing stdin, use run_in_terminal instead.";
     }
 
     @Override
@@ -69,13 +69,13 @@ public final class RunCommandTool extends InfrastructureTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_COMMAND, TYPE_STRING, "Shell command to execute (e.g., 'gradle build', 'cat file.txt')"},
-            {PARAM_TIMEOUT, TYPE_INTEGER, "Timeout in seconds (default: 60)"},
-            {JSON_TITLE, TYPE_STRING, "Human-readable title for the Run panel tab. ALWAYS set this to a short descriptive name"},
-            {PARAM_OFFSET, TYPE_INTEGER, "Character offset to start output from (default: 0). Use for pagination when output is truncated"},
-            {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return per page (default: 8000)"}
-        }, PARAM_COMMAND);
+        return schema(
+            Param.required(PARAM_COMMAND, TYPE_STRING, "Shell command to execute (e.g., 'gradle build', 'cat file.txt')"),
+            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER, "Timeout in seconds (default: 60)"),
+            Param.optional(JSON_TITLE, TYPE_STRING, "Human-readable title for the Run panel tab. ALWAYS set this to a short descriptive name"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Character offset to start output from (default: 0). Use for pagination when output is truncated"),
+            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return per page (default: 8000)")
+        );
     }
 
     @Override

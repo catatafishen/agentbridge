@@ -48,8 +48,8 @@ public final class GoToDeclarationTool extends RefactoringTool {
     @Override
     public @NotNull String description() {
         return "Navigate to the declaration of a symbol at a given file and line. Returns the source file path, line number, " +
-                "and a code snippet of the declaration. Use get_symbol_info for documentation at a position, " +
-                "or get_documentation when you have the fully-qualified name.";
+            "and a code snippet of the declaration. Use get_symbol_info for documentation at a position, " +
+            "or get_documentation when you have the fully-qualified name.";
     }
 
     @Override
@@ -64,11 +64,11 @@ public final class GoToDeclarationTool extends RefactoringTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Path to the file containing the symbol usage"},
-            {PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to look up"},
-            {"line", TYPE_INTEGER, "Line number where the symbol appears"}
-        }, "file", PARAM_SYMBOL, "line");
+        return schema(
+            Param.required("file", TYPE_STRING, "Path to the file containing the symbol usage"),
+            Param.required(PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to look up"),
+            Param.required("line", TYPE_INTEGER, "Line number where the symbol appears")
+        );
     }
 
     @Override

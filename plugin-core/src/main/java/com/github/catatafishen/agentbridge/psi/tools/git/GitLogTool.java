@@ -51,15 +51,15 @@ public final class GitLogTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 20)"},
-            {PARAM_FORMAT, TYPE_STRING, "Output format: 'oneline', 'short', 'medium', 'full'"},
-            {PARAM_AUTHOR, TYPE_STRING, "Filter commits by author name or email"},
-            {PARAM_SINCE, TYPE_STRING, "Show commits after this date (e.g., '2024-01-01', '2 weeks ago')"},
-            {PARAM_UNTIL, TYPE_STRING, "Show commits before this date (e.g., '2024-12-31', '1 week ago')"},
-            {"path", TYPE_STRING, "Show only commits touching this file"},
-            {PARAM_BRANCH, TYPE_STRING, "Show commits from this branch (default: current)"}
-        });
+        return schema(
+            Param.optional(PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 20)"),
+            Param.optional(PARAM_FORMAT, TYPE_STRING, "Output format: 'oneline', 'short', 'medium', 'full'"),
+            Param.optional(PARAM_AUTHOR, TYPE_STRING, "Filter commits by author name or email"),
+            Param.optional(PARAM_SINCE, TYPE_STRING, "Show commits after this date (e.g., '2024-01-01', '2 weeks ago')"),
+            Param.optional(PARAM_UNTIL, TYPE_STRING, "Show commits before this date (e.g., '2024-12-31', '1 week ago')"),
+            Param.optional("path", TYPE_STRING, "Show only commits touching this file"),
+            Param.optional(PARAM_BRANCH, TYPE_STRING, "Show commits from this branch (default: current)")
+        );
     }
 
     @Override

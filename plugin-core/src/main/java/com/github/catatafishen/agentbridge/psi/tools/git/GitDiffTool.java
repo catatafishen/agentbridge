@@ -50,12 +50,12 @@ public final class GitDiffTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_STAGED, TYPE_BOOLEAN, "If true, show staged (cached) changes only"},
-            {PARAM_COMMIT, TYPE_STRING, "Compare against this commit (e.g., 'HEAD~1', branch name)"},
-            {"path", TYPE_STRING, "Limit diff to this file path"},
-            {PARAM_STAT_ONLY, TYPE_BOOLEAN, "If true, show only file stats (insertions/deletions), not full diff"}
-        });
+        return schema(
+            Param.optional(PARAM_STAGED, TYPE_BOOLEAN, "If true, show staged (cached) changes only"),
+            Param.optional(PARAM_COMMIT, TYPE_STRING, "Compare against this commit (e.g., 'HEAD~1', branch name)"),
+            Param.optional("path", TYPE_STRING, "Limit diff to this file path"),
+            Param.optional(PARAM_STAT_ONLY, TYPE_BOOLEAN, "If true, show only file stats (insertions/deletions), not full diff")
+        );
     }
 
     @Override

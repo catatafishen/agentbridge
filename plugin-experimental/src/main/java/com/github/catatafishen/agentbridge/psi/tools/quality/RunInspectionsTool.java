@@ -82,12 +82,12 @@ public final class RunInspectionsTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_SCOPE, TYPE_STRING, "Optional: file or directory path to inspect. Examples: 'src/main/java/com/example/MyClass.java' or 'src/main/java/com/example'"},
-            {PARAM_LIMIT, TYPE_INTEGER, "Page size (default: 100). Maximum problems per response"},
-            {PARAM_OFFSET, TYPE_INTEGER, "Number of problems to skip (default: 0). Use for pagination"},
-            {PARAM_MIN_SEVERITY, TYPE_STRING, "Minimum severity filter. Options: ERROR, WARNING, WEAK_WARNING, INFO. Default: all severities included. Only set this if the user explicitly asks to filter by severity."}
-        });
+        return schema(
+            Param.optional(PARAM_SCOPE, TYPE_STRING, "Optional: file or directory path to inspect. Examples: 'src/main/java/com/example/MyClass.java' or 'src/main/java/com/example'"),
+            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Page size (default: 100). Maximum problems per response"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of problems to skip (default: 0). Use for pagination"),
+            Param.optional(PARAM_MIN_SEVERITY, TYPE_STRING, "Minimum severity filter. Options: ERROR, WARNING, WEAK_WARNING, INFO. Default: all severities included. Only set this if the user explicitly asks to filter by severity.")
+        );
     }
 
     @Override

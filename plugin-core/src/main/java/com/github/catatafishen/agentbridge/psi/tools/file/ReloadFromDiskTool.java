@@ -46,9 +46,9 @@ public final class ReloadFromDiskTool extends FileTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "File or directory path to reload (absolute or project-relative). Omit to reload the entire project root."}
-        });
+        return schema(
+            Param.optional("path", TYPE_STRING, "File or directory path to reload (absolute or project-relative). Omit to reload the entire project root.")
+        );
     }
 
     @Override

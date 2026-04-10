@@ -61,10 +61,10 @@ public final class MemoryKgTimelineTool extends Tool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_SUBJECT, TYPE_STRING, "Subject entity to get timeline for"},
-            {PARAM_LIMIT, TYPE_INTEGER, "Max entries (default: 50)"},
-        }, PARAM_SUBJECT);
+        return schema(
+            Param.required(PARAM_SUBJECT, TYPE_STRING, "Subject entity to get timeline for"),
+            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Max entries (default: 50)")
+        );
     }
 
     @Override

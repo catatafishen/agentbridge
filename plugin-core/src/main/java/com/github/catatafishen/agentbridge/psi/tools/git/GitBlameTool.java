@@ -31,7 +31,7 @@ public final class GitBlameTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Show per-line authorship for a file. Returns commit hash, author, and date for each line. " +
-                "Use line_start/line_end to blame a specific range. Use get_file_history for commit-level history.";
+            "Use line_start/line_end to blame a specific range. Use get_file_history for commit-level history.";
     }
 
     @Override
@@ -46,11 +46,11 @@ public final class GitBlameTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "File path to blame"},
-            {PARAM_LINE_START, TYPE_INTEGER, "Start line number for partial blame"},
-            {PARAM_LINE_END, TYPE_INTEGER, "End line number for partial blame"}
-        }, "path");
+        return schema(
+            Param.required("path", TYPE_STRING, "File path to blame"),
+            Param.optional(PARAM_LINE_START, TYPE_INTEGER, "Start line number for partial blame"),
+            Param.optional(PARAM_LINE_END, TYPE_INTEGER, "End line number for partial blame")
+        );
     }
 
     @Override

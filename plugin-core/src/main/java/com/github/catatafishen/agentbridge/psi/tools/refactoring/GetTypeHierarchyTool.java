@@ -47,10 +47,10 @@ public final class GetTypeHierarchyTool extends RefactoringTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_SYMBOL, TYPE_STRING, "Fully qualified or simple class/interface name"},
-            {PARAM_DIRECTION, TYPE_STRING, "Direction: 'supertypes' (ancestors) or 'subtypes' (descendants). Default: both"}
-        }, PARAM_SYMBOL);
+        return schema(
+            Param.required(PARAM_SYMBOL, TYPE_STRING, "Fully qualified or simple class/interface name"),
+            Param.optional(PARAM_DIRECTION, TYPE_STRING, "Direction: 'supertypes' (ancestors) or 'subtypes' (descendants). Default: both")
+        );
     }
 
     @Override

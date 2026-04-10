@@ -89,16 +89,16 @@ public final class SearchConversationHistoryTool extends EditorTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_QUERY, TYPE_STRING, "Text to search for across conversations (case-insensitive)"},
-            {"file", TYPE_STRING, "Conversation identifier: 'current' for the active session, or an archive timestamp (e.g., '2026-03-04T15-30-00'). Not a filesystem path."},
-            {PARAM_TURN_ID, TYPE_STRING, "Turn ID from conversation summary (e.g. 't3'). Fetches that specific turn in full. Defaults to file='current'."},
-            {PARAM_SINCE, TYPE_STRING, "Filter entries since this time. Accepted: \"5m\", \"2h\", \"16:57:30\", \"2026-03-17\", \"2026-03-17 10:00:00\", \"2026-03-17T10:00:00Z\""},
-            {PARAM_UNTIL, TYPE_STRING, "Filter entries until this time. Same formats as since."},
-            {PARAM_LAST_N, TYPE_INTEGER, "Number of turns (prompts) to return from the end"},
-            {PARAM_OFFSET, TYPE_INTEGER, "Number of turns to skip from the end before returning last_n"},
-            {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"}
-        });
+        return schema(
+            Param.optional(PARAM_QUERY, TYPE_STRING, "Text to search for across conversations (case-insensitive)"),
+            Param.optional("file", TYPE_STRING, "Conversation identifier: 'current' for the active session, or an archive timestamp (e.g., '2026-03-04T15-30-00'). Not a filesystem path."),
+            Param.optional(PARAM_TURN_ID, TYPE_STRING, "Turn ID from conversation summary (e.g. 't3'). Fetches that specific turn in full. Defaults to file='current'."),
+            Param.optional(PARAM_SINCE, TYPE_STRING, "Filter entries since this time. Accepted: \"5m\", \"2h\", \"16:57:30\", \"2026-03-17\", \"2026-03-17 10:00:00\", \"2026-03-17T10:00:00Z\""),
+            Param.optional(PARAM_UNTIL, TYPE_STRING, "Filter entries until this time. Same formats as since."),
+            Param.optional(PARAM_LAST_N, TYPE_INTEGER, "Number of turns (prompts) to return from the end"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of turns to skip from the end before returning last_n"),
+            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)")
+        );
     }
 
     @Override

@@ -31,23 +31,22 @@ public final class GetClassOutlineTool extends NavigationTool {
         return "Get the full API of any class by fully-qualified name, including library and JDK classes";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_CLASS_NAME, TYPE_STRING, "Fully qualified class name (e.g. 'java.util.ArrayList', 'com.intellij.openapi.project.Project')"},
-            {PARAM_INCLUDE_INHERITED, TYPE_BOOLEAN, "If true, include inherited methods and fields from superclasses. Default: false (own members only)"}
-        }, PARAM_CLASS_NAME);
+        return schema(
+            Param.required(PARAM_CLASS_NAME, TYPE_STRING, "Fully qualified class name (e.g. 'java.util.ArrayList', 'com.intellij.openapi.project.Project')"),
+            Param.optional(PARAM_INCLUDE_INHERITED, TYPE_BOOLEAN, "If true, include inherited methods and fields from superclasses. Default: false (own members only)")
+        );
     }
 
     @Override

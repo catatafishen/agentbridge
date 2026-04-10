@@ -41,7 +41,7 @@ public final class UndoTool extends FileTool {
     @Override
     public @NotNull String description() {
         return "Undo the last N edit actions on a file using IntelliJ's UndoManager. " +
-                "Important: each write_file + auto-format counts as 2 undo steps.";
+            "Important: each write_file + auto-format counts as 2 undo steps.";
     }
 
     @Override
@@ -51,10 +51,10 @@ public final class UndoTool extends FileTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Path to the file to undo changes on"},
-            {PARAM_COUNT, TYPE_INTEGER, "Number of undo steps (default: 1). Each write + auto-format counts as 2 steps"}
-        }, "path");
+        return schema(
+            Param.required("path", TYPE_STRING, "Path to the file to undo changes on"),
+            Param.optional(PARAM_COUNT, TYPE_INTEGER, "Number of undo steps (default: 1). Each write + auto-format counts as 2 steps")
+        );
     }
 
     @Override

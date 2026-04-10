@@ -53,12 +53,12 @@ public final class GitCommitTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_MESSAGE, TYPE_STRING, "Commit message (use conventional commit format)"},
-            {PARAM_AMEND, TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"},
-            {PARAM_AUTHOR, TYPE_STRING, "Override the commit author (e.g. 'Name <email@example.com>')"},
-            {"all", TYPE_BOOLEAN, "If true, automatically stage all modified and deleted files"}
-        }, PARAM_MESSAGE);
+        return schema(
+            Param.required(PARAM_MESSAGE, TYPE_STRING, "Commit message (use conventional commit format)"),
+            Param.optional(PARAM_AMEND, TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"),
+            Param.optional(PARAM_AUTHOR, TYPE_STRING, "Override the commit author (e.g. 'Name <email@example.com>')"),
+            Param.optional("all", TYPE_BOOLEAN, "If true, automatically stage all modified and deleted files")
+        );
     }
 
     @Override

@@ -5,7 +5,6 @@ import com.github.catatafishen.agentbridge.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -33,23 +32,22 @@ public final class WriteTerminalInputTool extends TerminalTool {
         return "Send raw text or keystrokes to a running terminal (e.g. answer prompts, send Ctrl-C)";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public boolean isOpenWorld() {
         return true;
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_INPUT, TYPE_STRING, "Text or keystrokes to send. Supports escape sequences: {enter}, {tab}, {ctrl-c}, {ctrl-d}, {ctrl-z}, {escape}, {up}, {down}, {left}, {right}, {backspace}, \\n, \\t"},
-            {"tab_name", TYPE_STRING, "Name of the terminal tab to write to. If omitted, writes to the currently selected tab"}
-        }, PARAM_INPUT);
+        return schema(
+            Param.required(PARAM_INPUT, TYPE_STRING, "Text or keystrokes to send. Supports escape sequences: {enter}, {tab}, {ctrl-c}, {ctrl-d}, {ctrl-z}, {escape}, {up}, {down}, {left}, {right}, {backspace}, \\n, \\t"),
+            Param.optional("tab_name", TYPE_STRING, "Name of the terminal tab to write to. If omitted, writes to the currently selected tab")
+        );
     }
 
     @Override

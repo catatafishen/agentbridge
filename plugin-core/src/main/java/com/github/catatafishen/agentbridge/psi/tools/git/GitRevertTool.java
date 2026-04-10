@@ -31,7 +31,7 @@ public final class GitRevertTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Revert a commit by creating a new inverse commit. Does not delete history — safe for shared branches. " +
-                "Use no_commit: true to stage the revert without committing.";
+            "Use no_commit: true to stage the revert without committing.";
     }
 
     @Override
@@ -41,11 +41,11 @@ public final class GitRevertTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_COMMIT, TYPE_STRING, "Commit SHA to revert"},
-            {PARAM_NO_COMMIT, TYPE_BOOLEAN, "If true, revert changes to working tree without creating a commit"},
-            {PARAM_NO_EDIT, TYPE_BOOLEAN, "If true, use the default commit message without editing"}
-        }, PARAM_COMMIT);
+        return schema(
+            Param.required(PARAM_COMMIT, TYPE_STRING, "Commit SHA to revert"),
+            Param.optional(PARAM_NO_COMMIT, TYPE_BOOLEAN, "If true, revert changes to working tree without creating a commit"),
+            Param.optional(PARAM_NO_EDIT, TYPE_BOOLEAN, "If true, use the default commit message without editing")
+        );
     }
 
     @Override

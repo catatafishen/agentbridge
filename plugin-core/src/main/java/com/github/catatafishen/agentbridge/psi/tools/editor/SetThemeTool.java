@@ -54,9 +54,9 @@ public final class SetThemeTool extends EditorTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_THEME, TYPE_STRING, "Theme name or partial name (e.g., 'Darcula', 'Light')"}
-        }, PARAM_THEME);
+        return schema(
+            Param.required(PARAM_THEME, TYPE_STRING, "Theme name or partial name (e.g., 'Darcula', 'Light')")
+        );
     }
 
     @Override

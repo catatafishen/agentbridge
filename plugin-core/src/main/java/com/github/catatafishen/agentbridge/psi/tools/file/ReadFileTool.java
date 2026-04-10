@@ -57,11 +57,11 @@ public class ReadFileTool extends FileTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Absolute or project-relative path to the file to read"},
-            {PARAM_START_LINE, TYPE_INTEGER, "Optional: first line to read (1-based, inclusive)"},
-            {PARAM_END_LINE, TYPE_INTEGER, "Optional: last line to read (1-based, inclusive). Use with start_line to read a range"}
-        }, "path");
+        return schema(
+            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to read"),
+            Param.optional(PARAM_START_LINE, TYPE_INTEGER, "Optional: first line to read (1-based, inclusive)"),
+            Param.optional(PARAM_END_LINE, TYPE_INTEGER, "Optional: last line to read (1-based, inclusive). Use with start_line to read a range")
+        );
     }
 
     @Override

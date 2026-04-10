@@ -57,15 +57,15 @@ public final class ListProjectFilesTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_DIRECTORY, TYPE_STRING, "Optional subdirectory to list (relative to project root)", ""},
-            {PARAM_PATTERN, TYPE_STRING, "Optional glob pattern (e.g., '*.java', 'src/**/*.kt')", ""},
-            {"sort", TYPE_STRING, "Sort order: 'name' (default, alphabetical), 'size' (largest first), 'modified' (most recently modified first)", ""},
-            {PARAM_MIN_SIZE, TYPE_INTEGER, "Only include files at least this many bytes", ""},
-            {PARAM_MAX_SIZE, TYPE_INTEGER, "Only include files at most this many bytes", ""},
-            {PARAM_MODIFIED_AFTER, TYPE_STRING, "Only include files modified after this time. Accepted: \"5m\", \"2026-03-28\", \"2026-03-28 16:57:30\", \"2026-03-28T16:57:30Z\"", ""},
-            {PARAM_MODIFIED_BEFORE, TYPE_STRING, "Only include files modified before this time. Same formats as modified_after.", ""}
-        });
+        return schema(
+            Param.optional(PARAM_DIRECTORY, TYPE_STRING, "Optional subdirectory to list (relative to project root)", ""),
+            Param.optional(PARAM_PATTERN, TYPE_STRING, "Optional glob pattern (e.g., '*.java', 'src/**/*.kt')", ""),
+            Param.optional("sort", TYPE_STRING, "Sort order: 'name' (default, alphabetical), 'size' (largest first), 'modified' (most recently modified first)", ""),
+            Param.optional(PARAM_MIN_SIZE, TYPE_INTEGER, "Only include files at least this many bytes", ""),
+            Param.optional(PARAM_MAX_SIZE, TYPE_INTEGER, "Only include files at most this many bytes", ""),
+            Param.optional(PARAM_MODIFIED_AFTER, TYPE_STRING, "Only include files modified after this time. Accepted: \"5m\", \"2026-03-28\", \"2026-03-28 16:57:30\", \"2026-03-28T16:57:30Z\"", ""),
+            Param.optional(PARAM_MODIFIED_BEFORE, TYPE_STRING, "Only include files modified before this time. Same formats as modified_after.", "")
+        );
     }
 
     @Override

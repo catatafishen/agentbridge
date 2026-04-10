@@ -50,11 +50,6 @@ public final class ListRunTabsTool extends InfrastructureTool {
     }
 
     @Override
-    public @NotNull JsonObject inputSchema() {
-        return schema(new Object[0][]);
-    }
-
-    @Override
     public @NotNull String execute(@NotNull JsonObject args) {
         var ref = new AtomicReference<String>();
         EdtUtil.invokeAndWait(() -> ref.set(buildTabList()));

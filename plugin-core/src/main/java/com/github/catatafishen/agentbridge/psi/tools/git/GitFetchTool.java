@@ -67,12 +67,12 @@ public final class GitFetchTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"},
-            {PARAM_BRANCH, TYPE_STRING, "Specific branch to fetch"},
-            {PARAM_PRUNE, TYPE_BOOLEAN, "Remove remote-tracking refs that no longer exist on the remote"},
-            {"tags", TYPE_BOOLEAN, "Fetch all tags from the remote"}
-        });
+        return schema(
+            Param.optional(PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"),
+            Param.optional(PARAM_BRANCH, TYPE_STRING, "Specific branch to fetch"),
+            Param.optional(PARAM_PRUNE, TYPE_BOOLEAN, "Remove remote-tracking refs that no longer exist on the remote"),
+            Param.optional("tags", TYPE_BOOLEAN, "Fetch all tags from the remote")
+        );
     }
 
     @Override

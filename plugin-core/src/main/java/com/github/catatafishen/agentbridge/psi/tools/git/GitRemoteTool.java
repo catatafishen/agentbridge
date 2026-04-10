@@ -45,11 +45,11 @@ public final class GitRemoteTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'add', 'remove', 'set_url', 'get_url'"},
-            {"name", TYPE_STRING, "Remote name (required for add/remove/set_url/get_url)"},
-            {"url", TYPE_STRING, "Remote URL (required for add/set_url)"}
-        });
+        return schema(
+            Param.optional(PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'add', 'remove', 'set_url', 'get_url'"),
+            Param.optional("name", TYPE_STRING, "Remote name (required for add/remove/set_url/get_url)"),
+            Param.optional("url", TYPE_STRING, "Remote URL (required for add/set_url)")
+        );
     }
 
     @Override

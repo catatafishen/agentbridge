@@ -39,23 +39,22 @@ public final class ReadRunOutputTool extends InfrastructureTool {
         return "Read output from a recent Run panel tab by name";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {JSON_TAB_NAME, TYPE_STRING, "Name of the Run tab to read (default: most recent)"},
-            {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"}
-        });
+        return schema(
+            Param.optional(JSON_TAB_NAME, TYPE_STRING, "Name of the Run tab to read (default: most recent)"),
+            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)")
+        );
     }
 
     @Override
@@ -65,10 +64,10 @@ public final class ReadRunOutputTool extends InfrastructureTool {
 
         try {
             var findResult = ApplicationManager.getApplication().runReadAction((Computable<Object>) () -> {
-                    var descriptors = collectRunDescriptors();
-                    if (descriptors.isEmpty()) return "No Run or Debug panel tabs available.";
-                    return findTargetRunDescriptor(descriptors, tabName);
-                });
+                var descriptors = collectRunDescriptors();
+                if (descriptors.isEmpty()) return "No Run or Debug panel tabs available.";
+                return findTargetRunDescriptor(descriptors, tabName);
+            });
 
             if (findResult instanceof String errorMsg) return errorMsg;
 

@@ -61,11 +61,11 @@ public final class MemoryStoreTool extends Tool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"content", TYPE_STRING, "The memory content to store"},
-            {"room", TYPE_STRING, "Topic room (e.g. 'architecture', 'decisions'). Default: 'general'"},
-            {PARAM_MEMORY_TYPE, TYPE_STRING, "Type: decision, preference, milestone, problem, technical, general. Default: general"},
-        }, "content");
+        return schema(
+            Param.required("content", TYPE_STRING, "The memory content to store"),
+            Param.optional("room", TYPE_STRING, "Topic room (e.g. 'architecture', 'decisions'). Default: 'general'"),
+            Param.optional(PARAM_MEMORY_TYPE, TYPE_STRING, "Type: decision, preference, milestone, problem, technical, general. Default: general")
+        );
     }
 
     @Override

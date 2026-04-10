@@ -36,7 +36,7 @@ public final class GitStashTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Push, pop, apply, list, or drop stashed changes. Stash saves uncommitted work temporarily without committing. " +
-                "Use include_untracked: true to also stash new files.";
+            "Use include_untracked: true to also stash new files.";
     }
 
     @Override
@@ -51,12 +51,12 @@ public final class GitStashTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'push', 'pop', 'apply', 'drop'"},
-            {PARAM_MESSAGE, TYPE_STRING, "Stash message (for push action)"},
-            {PARAM_INDEX, TYPE_STRING, "Stash index (for pop/apply/drop, e.g., 'stash@{0}')"},
-            {PARAM_INCLUDE_UNTRACKED, TYPE_BOOLEAN, "For push: include untracked files"}
-        });
+        return schema(
+            Param.optional(PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'push', 'pop', 'apply', 'drop'"),
+            Param.optional(PARAM_MESSAGE, TYPE_STRING, "Stash message (for push action)"),
+            Param.optional(PARAM_INDEX, TYPE_STRING, "Stash index (for pop/apply/drop, e.g., 'stash@{0}')"),
+            Param.optional(PARAM_INCLUDE_UNTRACKED, TYPE_BOOLEAN, "For push: include untracked files")
+        );
     }
 
     @Override

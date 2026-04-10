@@ -52,14 +52,14 @@ public final class GitMergeTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_BRANCH, TYPE_STRING, "Branch to merge into current branch"},
-            {PARAM_MESSAGE, TYPE_STRING, "Custom merge commit message"},
-            {PARAM_NO_FF, TYPE_BOOLEAN, "Create a merge commit even for fast-forward merges"},
-            {PARAM_FF_ONLY, TYPE_BOOLEAN, "Only merge if fast-forward is possible"},
-            {PARAM_SQUASH, TYPE_BOOLEAN, "Squash all commits into a single commit (requires manual commit after)"},
-            {PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress merge"}
-        });
+        return schema(
+            Param.optional(PARAM_BRANCH, TYPE_STRING, "Branch to merge into current branch"),
+            Param.optional(PARAM_MESSAGE, TYPE_STRING, "Custom merge commit message"),
+            Param.optional(PARAM_NO_FF, TYPE_BOOLEAN, "Create a merge commit even for fast-forward merges"),
+            Param.optional(PARAM_FF_ONLY, TYPE_BOOLEAN, "Only merge if fast-forward is possible"),
+            Param.optional(PARAM_SQUASH, TYPE_BOOLEAN, "Squash all commits into a single commit (requires manual commit after)"),
+            Param.optional(PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress merge")
+        );
     }
 
     @Override

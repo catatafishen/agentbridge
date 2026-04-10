@@ -56,16 +56,16 @@ public final class GitRebaseTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_BRANCH, TYPE_STRING, "Branch to rebase onto"},
-            {"onto", TYPE_STRING, "Rebase onto a specific commit (used with --onto)"},
-            {PARAM_INTERACTIVE, TYPE_BOOLEAN, "Start an interactive rebase"},
-            {PARAM_AUTOSQUASH, TYPE_BOOLEAN, "Automatically squash fixup! and squash! commits (requires interactive)"},
-            {PARAM_EXEC, TYPE_STRING, "Shell command to run after each rebase step (e.g. 'make test')"},
-            {PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress rebase"},
-            {PARAM_CONTINUE_REBASE, TYPE_BOOLEAN, "Continue a paused rebase after resolving conflicts"},
-            {"skip", TYPE_BOOLEAN, "Skip the current patch and continue rebase"}
-        });
+        return schema(
+            Param.optional(PARAM_BRANCH, TYPE_STRING, "Branch to rebase onto"),
+            Param.optional("onto", TYPE_STRING, "Rebase onto a specific commit (used with --onto)"),
+            Param.optional(PARAM_INTERACTIVE, TYPE_BOOLEAN, "Start an interactive rebase"),
+            Param.optional(PARAM_AUTOSQUASH, TYPE_BOOLEAN, "Automatically squash fixup! and squash! commits (requires interactive)"),
+            Param.optional(PARAM_EXEC, TYPE_STRING, "Shell command to run after each rebase step (e.g. 'make test')"),
+            Param.optional(PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress rebase"),
+            Param.optional(PARAM_CONTINUE_REBASE, TYPE_BOOLEAN, "Continue a paused rebase after resolving conflicts"),
+            Param.optional("skip", TYPE_BOOLEAN, "Skip the current patch and continue rebase")
+        );
     }
 
     @Override

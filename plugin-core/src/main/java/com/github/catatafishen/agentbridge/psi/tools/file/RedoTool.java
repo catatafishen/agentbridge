@@ -49,10 +49,10 @@ public final class RedoTool extends FileTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Path to the file to redo changes on"},
-            {PARAM_COUNT, TYPE_INTEGER, "Number of redo steps (default: 1)"}
-        }, "path");
+        return schema(
+            Param.required("path", TYPE_STRING, "Path to the file to redo changes on"),
+            Param.optional(PARAM_COUNT, TYPE_INTEGER, "Number of redo steps (default: 1)")
+        );
     }
 
     @Override

@@ -59,12 +59,12 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
-            {"symbol", TYPE_STRING, "Name of the symbol to replace (method, class, function, or field)"},
-            {PARAM_NEW_BODY, TYPE_STRING, "The complete new definition to replace the symbol with"},
-            {"line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name"}
-        }, "file", "symbol", PARAM_NEW_BODY);
+        return schema(
+            Param.required("file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
+            Param.required("symbol", TYPE_STRING, "Name of the symbol to replace (method, class, function, or field)"),
+            Param.required(PARAM_NEW_BODY, TYPE_STRING, "The complete new definition to replace the symbol with"),
+            Param.optional("line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name")
+        );
     }
 
     @Override

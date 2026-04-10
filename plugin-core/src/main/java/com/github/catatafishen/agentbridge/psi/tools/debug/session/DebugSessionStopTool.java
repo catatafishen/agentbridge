@@ -40,9 +40,9 @@ public final class DebugSessionStopTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-                {"stop_all", TYPE_BOOLEAN, "Set true to stop all debug sessions (default: stops only the active session)"},
-        });
+        return schema(
+            Param.optional("stop_all", TYPE_BOOLEAN, "Set true to stop all debug sessions (default: stops only the active session)")
+        );
     }
 
     @Override

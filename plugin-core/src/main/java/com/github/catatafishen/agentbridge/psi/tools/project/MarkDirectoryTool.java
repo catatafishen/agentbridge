@@ -66,10 +66,10 @@ public final class MarkDirectoryTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Directory path (absolute or project-relative)"},
-            {"type", TYPE_STRING, "Directory type: 'sources', 'test_sources', 'resources', 'test_resources', 'generated_sources', 'excluded', or 'unmark' to remove marking"}
-        }, "path", "type");
+        return schema(
+            Param.required("path", TYPE_STRING, "Directory path (absolute or project-relative)"),
+            Param.required("type", TYPE_STRING, "Directory type: 'sources', 'test_sources', 'resources', 'test_resources', 'generated_sources', 'excluded', or 'unmark' to remove marking")
+        );
     }
 
     @Override

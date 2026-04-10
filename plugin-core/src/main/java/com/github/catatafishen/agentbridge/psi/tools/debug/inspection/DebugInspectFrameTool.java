@@ -45,9 +45,9 @@ public final class DebugInspectFrameTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-                {"frame_index", TYPE_INTEGER, "Stack frame index (0 = current/top, 1 = caller, etc.)"},
-        }, "frame_index");
+        return schema(
+            Param.required("frame_index", TYPE_INTEGER, "Stack frame index (0 = current/top, 1 = caller, etc.)")
+        );
     }
 
     @Override

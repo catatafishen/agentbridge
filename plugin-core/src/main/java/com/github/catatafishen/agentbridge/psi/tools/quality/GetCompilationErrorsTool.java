@@ -58,9 +58,9 @@ public final class GetCompilationErrorsTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Optional: specific file to check. If omitted, checks all open source files", ""}
-        });
+        return schema(
+            Param.optional("path", TYPE_STRING, "Optional: specific file to check. If omitted, checks all open source files", "")
+        );
     }
 
     @Override

@@ -73,10 +73,10 @@ public final class InteractWithModalTool extends InfrastructureTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_BUTTON, TYPE_STRING, "The button text to click (e.g. 'OK', 'Cancel', 'Yes', 'No'). "
-                + "Omit to inspect the dialog without interacting with it."}
-        }); // no required params — button is optional
+        return schema(
+            Param.optional(PARAM_BUTTON, TYPE_STRING, "The button text to click (e.g. 'OK', 'Cancel', 'Yes', 'No'). "
+                + "Omit to inspect the dialog without interacting with it.")
+        );
     }
 
     @Override

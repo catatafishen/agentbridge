@@ -48,7 +48,7 @@ public final class AskUserTool extends InfrastructureTool {
     @Override
     public @NotNull String description() {
         return "Ask the user a question and wait for their response. Blocks until the user replies (timeout: 120s). " +
-                "Use options parameter to show quick-reply buttons.";
+            "Use options parameter to show quick-reply buttons.";
     }
 
     @Override
@@ -63,10 +63,10 @@ public final class AskUserTool extends InfrastructureTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        JsonObject schema = schema(new Object[][]{
-            {PARAM_QUESTION, TYPE_STRING, "Question to ask the user"},
-            {PARAM_OPTIONS, TYPE_ARRAY, "Reply options shown as quick-reply buttons"}
-        }, PARAM_QUESTION, PARAM_OPTIONS);
+        JsonObject schema = schema(
+            Param.required(PARAM_QUESTION, TYPE_STRING, "Question to ask the user"),
+            Param.required(PARAM_OPTIONS, TYPE_ARRAY, "Reply options shown as quick-reply buttons")
+        );
         addArrayItems(schema, PARAM_OPTIONS);
         return schema;
     }

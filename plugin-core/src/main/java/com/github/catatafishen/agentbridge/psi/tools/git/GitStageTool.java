@@ -53,11 +53,11 @@ public final class GitStageTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        JsonObject s = schema(new Object[][]{
-            {"path", TYPE_STRING, "Single file path to stage"},
-            {PARAM_PATHS, TYPE_ARRAY, "Multiple file paths to stage"},
-            {"all", TYPE_BOOLEAN, "If true, stage all changes (including untracked files)"}
-        });
+        JsonObject s = schema(
+            Param.optional("path", TYPE_STRING, "Single file path to stage"),
+            Param.optional(PARAM_PATHS, TYPE_ARRAY, "Multiple file paths to stage"),
+            Param.optional("all", TYPE_BOOLEAN, "If true, stage all changes (including untracked files)")
+        );
         addArrayItems(s, PARAM_PATHS);
         return s;
     }

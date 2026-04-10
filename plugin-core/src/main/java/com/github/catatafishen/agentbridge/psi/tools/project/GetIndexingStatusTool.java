@@ -49,10 +49,10 @@ public final class GetIndexingStatusTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"wait", TYPE_BOOLEAN, "If true, blocks until indexing finishes"},
-            {PARAM_TIMEOUT, TYPE_INTEGER, "Max seconds to wait when wait=true (default: 30)"}
-        });
+        return schema(
+            Param.optional("wait", TYPE_BOOLEAN, "If true, blocks until indexing finishes"),
+            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER, "Max seconds to wait when wait=true (default: 30)")
+        );
     }
 
     @Override

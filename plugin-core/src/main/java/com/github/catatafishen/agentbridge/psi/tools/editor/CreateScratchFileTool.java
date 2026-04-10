@@ -2,21 +2,18 @@ package com.github.catatafishen.agentbridge.psi.tools.editor;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
-import com.github.catatafishen.agentbridge.services.AgentScratchTracker;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
+import com.github.catatafishen.agentbridge.services.AgentScratchTracker;
 import com.github.catatafishen.agentbridge.ui.renderers.ScratchFileRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.ide.scratch.ScratchFileService;
 import com.intellij.ide.scratch.ScratchRootType;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -46,18 +43,17 @@ public final class CreateScratchFileTool extends EditorTool {
         return "Create a temporary scratch file with the given name and content";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.py', 'notes.md')"},
-            {PARAM_CONTENT, TYPE_STRING, "The content to write to the scratch file"}
-        }, "name", PARAM_CONTENT);
+        return schema(
+            Param.required("name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.py', 'notes.md')"),
+            Param.required(PARAM_CONTENT, TYPE_STRING, "The content to write to the scratch file")
+        );
     }
 
     @Override

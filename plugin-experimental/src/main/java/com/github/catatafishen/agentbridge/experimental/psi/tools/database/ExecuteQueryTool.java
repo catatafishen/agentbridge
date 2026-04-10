@@ -61,11 +61,11 @@ public final class ExecuteQueryTool extends DatabaseTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_DATA_SOURCE, TYPE_STRING, "Name of the data source to execute the query against"},
-            {PARAM_QUERY, TYPE_STRING, "SQL query to execute"},
-            {PARAM_MAX_ROWS, TYPE_INTEGER, "Maximum number of rows to return (default: 100, 0 = no limit)"},
-        }, PARAM_DATA_SOURCE, PARAM_QUERY);
+        return schema(
+            Param.required(PARAM_DATA_SOURCE, TYPE_STRING, "Name of the data source to execute the query against"),
+            Param.required(PARAM_QUERY, TYPE_STRING, "SQL query to execute"),
+            Param.optional(PARAM_MAX_ROWS, TYPE_INTEGER, "Maximum number of rows to return (default: 100, 0 = no limit)")
+        );
     }
 
     @Override
@@ -134,9 +134,9 @@ public final class ExecuteQueryTool extends DatabaseTool {
     }
 
     private static @NotNull String formatResultSet(
-            @NotNull RemoteResultSet rs,
-            @NotNull String dataSourceName,
-            int maxRows) throws Exception {
+        @NotNull RemoteResultSet rs,
+        @NotNull String dataSourceName,
+        int maxRows) throws Exception {
         RemoteResultSetMetaData meta = rs.getMetaData();
         int colCount = meta.getColumnCount();
 

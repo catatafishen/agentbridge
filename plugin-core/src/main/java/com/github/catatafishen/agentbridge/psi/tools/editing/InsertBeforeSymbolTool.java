@@ -44,7 +44,7 @@ public final class InsertBeforeSymbolTool extends EditingTool {
     @Override
     public @NotNull String description() {
         return "Insert content before a symbol definition. PSI-aware — finds symbols by name, no line numbers needed. " +
-                "Auto-formats and optimizes imports immediately. Use for adding annotations, comments, or companion methods.";
+            "Auto-formats and optimizes imports immediately. Use for adding annotations, comments, or companion methods.";
     }
 
     @Override
@@ -59,12 +59,12 @@ public final class InsertBeforeSymbolTool extends EditingTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
-            {"symbol", TYPE_STRING, "Name of the symbol to insert before"},
-            {PARAM_CONTENT, TYPE_STRING, "The content to insert before the symbol"},
-            {"line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name"}
-        }, "file", "symbol", PARAM_CONTENT);
+        return schema(
+            Param.required("file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
+            Param.required("symbol", TYPE_STRING, "Name of the symbol to insert before"),
+            Param.required(PARAM_CONTENT, TYPE_STRING, "The content to insert before the symbol"),
+            Param.optional("line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name")
+        );
     }
 
     @Override

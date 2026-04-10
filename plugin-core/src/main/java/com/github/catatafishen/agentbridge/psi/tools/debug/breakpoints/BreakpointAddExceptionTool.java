@@ -48,10 +48,10 @@ public final class BreakpointAddExceptionTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"exception_class", TYPE_STRING, "Fully qualified exception class name (e.g., java.lang.IllegalStateException), or '*' for any exception"},
-            {"enabled", TYPE_BOOLEAN, "Whether the breakpoint is enabled (default: true)"},
-        }, "exception_class");
+        return schema(
+            Param.required("exception_class", TYPE_STRING, "Fully qualified exception class name (e.g., java.lang.IllegalStateException), or '*' for any exception"),
+            Param.optional("enabled", TYPE_BOOLEAN, "Whether the breakpoint is enabled (default: true)")
+        );
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

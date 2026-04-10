@@ -99,17 +99,17 @@ public final class HttpRequestTool extends InfrastructureTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        JsonObject s = schema(new Object[][]{
-            {PARAM_URL, TYPE_STRING, "Full URL to request (e.g., https://api.example.com/data)"},
-            {PARAM_METHOD, TYPE_STRING, "HTTP method: GET (default), POST, PUT, PATCH, DELETE"},
-            {PARAM_BODY, TYPE_STRING, "Request body (for POST/PUT/PATCH). Mutually exclusive with form_data"},
-            {PARAM_AUTH, TYPE_STRING, "Auth shorthand: 'bearer TOKEN' or 'basic user:pass'"},
-            {PARAM_FOLLOW_REDIRECTS, TYPE_BOOLEAN, "Follow 3xx redirects (default: true)"},
-            {PARAM_TIMEOUT, TYPE_INTEGER, "Read timeout in seconds (default: 30)"},
-            {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum response body characters to return (default: 8000)"},
-            {PARAM_SAVE_TO, TYPE_STRING, "Save response body to this file path instead of returning it (for binary/large responses)"},
-            {PARAM_SHOW_HEADERS, TYPE_BOOLEAN, "Include response headers in output (default: false)"}
-        }, PARAM_URL);
+        JsonObject s = schema(
+            Param.required(PARAM_URL, TYPE_STRING, "Full URL to request (e.g., https://api.example.com/data)"),
+            Param.optional(PARAM_METHOD, TYPE_STRING, "HTTP method: GET (default), POST, PUT, PATCH, DELETE"),
+            Param.optional(PARAM_BODY, TYPE_STRING, "Request body (for POST/PUT/PATCH). Mutually exclusive with form_data"),
+            Param.optional(PARAM_AUTH, TYPE_STRING, "Auth shorthand: 'bearer TOKEN' or 'basic user:pass'"),
+            Param.optional(PARAM_FOLLOW_REDIRECTS, TYPE_BOOLEAN, "Follow 3xx redirects (default: true)"),
+            Param.optional(PARAM_TIMEOUT, TYPE_INTEGER, "Read timeout in seconds (default: 30)"),
+            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum response body characters to return (default: 8000)"),
+            Param.optional(PARAM_SAVE_TO, TYPE_STRING, "Save response body to this file path instead of returning it (for binary/large responses)"),
+            Param.optional(PARAM_SHOW_HEADERS, TYPE_BOOLEAN, "Include response headers in output (default: false)")
+        );
         addDictProperty(s, PARAM_HEADERS, "Request headers as key-value pairs");
         addDictProperty(s, PARAM_FORM_DATA,
             "Form-encoded body as key-value pairs (auto-sets Content-Type: application/x-www-form-urlencoded). Mutually exclusive with body");

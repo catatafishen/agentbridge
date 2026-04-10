@@ -44,7 +44,7 @@ public final class InsertAfterSymbolTool extends EditingTool {
     @Override
     public @NotNull String description() {
         return "Insert content after a symbol definition. PSI-aware — finds symbols by name, no line numbers needed. " +
-                "Auto-formats and optimizes imports immediately. Use for adding new methods after an existing one.";
+            "Auto-formats and optimizes imports immediately. Use for adding new methods after an existing one.";
     }
 
     @Override
@@ -59,12 +59,12 @@ public final class InsertAfterSymbolTool extends EditingTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"},
-            {"symbol", TYPE_STRING, "Name of the symbol to insert after"},
-            {PARAM_CONTENT, TYPE_STRING, "The content to insert after the symbol"},
-            {"line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name"}
-        }, "file", "symbol", PARAM_CONTENT);
+        return schema(
+            Param.required("file", TYPE_STRING, "Absolute or project-relative path to the file containing the symbol"),
+            Param.required("symbol", TYPE_STRING, "Name of the symbol to insert after"),
+            Param.required(PARAM_CONTENT, TYPE_STRING, "The content to insert after the symbol"),
+            Param.optional("line", TYPE_INTEGER, "Optional: line number hint to disambiguate if multiple symbols share the same name")
+        );
     }
 
     @Override

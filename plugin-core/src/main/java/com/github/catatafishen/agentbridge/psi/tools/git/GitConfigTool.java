@@ -36,7 +36,7 @@ public final class GitConfigTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Get or set git configuration options. Use list: true to see all config. " +
-                "Use global: true for user-level settings, omit for repository-level. Returns the current value when getting.";
+            "Use global: true for user-level settings, omit for repository-level. Returns the current value when getting.";
     }
 
     @Override
@@ -51,13 +51,13 @@ public final class GitConfigTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_KEY, TYPE_STRING, "The configuration key (e.g. 'user.email')"},
-            {PARAM_VALUE, TYPE_STRING, "The value to set. If omitted and unset/list are false, performs a get operation."},
-            {PARAM_GLOBAL, TYPE_BOOLEAN, "If true, uses --global flag"},
-            {PARAM_UNSET, TYPE_BOOLEAN, "If true, unsets the given key"},
-            {PARAM_LIST, TYPE_BOOLEAN, "If true, lists all configuration options"}
-        });
+        return schema(
+            Param.optional(PARAM_KEY, TYPE_STRING, "The configuration key (e.g. 'user.email')"),
+            Param.optional(PARAM_VALUE, TYPE_STRING, "The value to set. If omitted and unset/list are false, performs a get operation."),
+            Param.optional(PARAM_GLOBAL, TYPE_BOOLEAN, "If true, uses --global flag"),
+            Param.optional(PARAM_UNSET, TYPE_BOOLEAN, "If true, unsets the given key"),
+            Param.optional(PARAM_LIST, TYPE_BOOLEAN, "If true, lists all configuration options")
+        );
     }
 
     @Override

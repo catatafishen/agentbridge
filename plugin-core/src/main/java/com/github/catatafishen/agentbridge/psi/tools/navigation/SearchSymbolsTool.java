@@ -45,8 +45,8 @@ public final class SearchSymbolsTool extends NavigationTool {
     @Override
     public @NotNull String description() {
         return "Search for classes, methods, or fields by name using IntelliJ's symbol index. " +
-                "Semantic search — finds symbols even if the text doesn't appear literally (e.g. inherited members). " +
-                "For textual/regex search across file contents, use search_text. For all usages of a specific symbol, use find_references.";
+            "Semantic search — finds symbols even if the text doesn't appear literally (e.g. inherited members). " +
+            "For textual/regex search across file contents, use search_text. For all usages of a specific symbol, use find_references.";
     }
 
     @Override
@@ -61,10 +61,10 @@ public final class SearchSymbolsTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"query", TYPE_STRING, "Symbol name to search for, or '*' to list all symbols in the project"},
-            {"type", TYPE_STRING, "Optional: filter by type (class, method, field, property). Default: all types", ""}
-        }, "query");
+        return schema(
+            Param.required("query", TYPE_STRING, "Symbol name to search for, or '*' to list all symbols in the project"),
+            Param.optional("type", TYPE_STRING, "Optional: filter by type (class, method, field, property). Default: all types", "")
+        );
     }
 
     @Override

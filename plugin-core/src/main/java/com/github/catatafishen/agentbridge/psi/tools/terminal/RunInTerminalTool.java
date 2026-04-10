@@ -4,7 +4,6 @@ import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.TerminalOutputRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -38,16 +37,15 @@ public final class RunInTerminalTool extends TerminalTool {
     @Override
     public @NotNull String description() {
         return "Run a command in IntelliJ's integrated terminal. Returns terminal output. " +
-                "Use for interactive commands that need stdin (prompts, REPL). For non-interactive commands with captured output, prefer run_command.";
+            "Use for interactive commands that need stdin (prompts, REPL). For non-interactive commands with captured output, prefer run_command.";
     }
-
-
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public boolean isOpenWorld() {
         return true;
     }
@@ -59,12 +57,12 @@ public final class RunInTerminalTool extends TerminalTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {JSON_COMMAND, TYPE_STRING, "The command to run in the terminal"},
-            {JSON_TAB_NAME, TYPE_STRING, "Name for the terminal tab. If omitted, reuses the most recent agent-created tab or creates a new one"},
-            {JSON_NEW_TAB, TYPE_BOOLEAN, "If true, always create a new terminal tab instead of reusing an existing one"},
-            {JSON_SHELL, TYPE_STRING, "Shell to use (e.g., 'bash', 'zsh'). If omitted, uses the default shell"}
-        }, JSON_COMMAND);
+        return schema(
+            Param.required(JSON_COMMAND, TYPE_STRING, "The command to run in the terminal"),
+            Param.optional(JSON_TAB_NAME, TYPE_STRING, "Name for the terminal tab. If omitted, reuses the most recent agent-created tab or creates a new one"),
+            Param.optional(JSON_NEW_TAB, TYPE_BOOLEAN, "If true, always create a new terminal tab instead of reusing an existing one"),
+            Param.optional(JSON_SHELL, TYPE_STRING, "Shell to use (e.g., 'bash', 'zsh'). If omitted, uses the default shell")
+        );
     }
 
     @Override

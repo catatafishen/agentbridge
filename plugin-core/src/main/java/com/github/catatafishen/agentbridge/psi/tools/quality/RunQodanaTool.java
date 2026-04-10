@@ -44,9 +44,9 @@ public final class RunQodanaTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_LIMIT, TYPE_INTEGER, "Maximum number of problems to return (default: 100)"}
-        });
+        return schema(
+            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Maximum number of problems to return (default: 100)")
+        );
     }
 
     @Override

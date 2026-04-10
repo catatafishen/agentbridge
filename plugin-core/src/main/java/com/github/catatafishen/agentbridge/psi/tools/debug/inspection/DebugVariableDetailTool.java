@@ -62,10 +62,10 @@ public final class DebugVariableDetailTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_PATH, TYPE_STRING, "Variable path to expand (e.g., 'myVar' or 'myObj.field'). Top-level variable name must match exactly."},
-            {PARAM_DEPTH, TYPE_INTEGER, "Maximum expansion depth (default: 2, max: 5)"},
-        }, PARAM_PATH);
+        return schema(
+            Param.required(PARAM_PATH, TYPE_STRING, "Variable path to expand (e.g., 'myVar' or 'myObj.field'). Top-level variable name must match exactly."),
+            Param.optional(PARAM_DEPTH, TYPE_INTEGER, "Maximum expansion depth (default: 2, max: 5)")
+        );
     }
 
     @Override

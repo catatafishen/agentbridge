@@ -38,23 +38,22 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
         return "Read output from a tab in the Build tool window (Gradle/Maven/compiler output)";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {JSON_TAB_NAME, TYPE_STRING, "Name of the Build tab to read (default: currently selected or most recent). Use tab names shown in IntelliJ's Build tool window."},
-            {PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"}
-        });
+        return schema(
+            Param.optional(JSON_TAB_NAME, TYPE_STRING, "Name of the Build tab to read (default: currently selected or most recent). Use tab names shown in IntelliJ's Build tool window."),
+            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)")
+        );
     }
 
     @Override

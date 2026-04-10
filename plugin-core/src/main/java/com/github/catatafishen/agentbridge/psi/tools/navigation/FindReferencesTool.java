@@ -39,7 +39,7 @@ public final class FindReferencesTool extends NavigationTool {
     @Override
     public @NotNull String description() {
         return "Find all usages of a symbol throughout the project. Semantic — finds references even through renames and imports. " +
-                "Returns file paths and line numbers. For textual search, use search_text. For finding symbol definitions, use search_symbols.";
+            "Returns file paths and line numbers. For textual search, use search_text. For finding symbol definitions, use search_symbols.";
     }
 
     @Override
@@ -54,10 +54,10 @@ public final class FindReferencesTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"symbol", TYPE_STRING, "The exact symbol name to search for"},
-            {"file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.java')", ""}
-        }, "symbol");
+        return schema(
+            Param.required("symbol", TYPE_STRING, "The exact symbol name to search for"),
+            Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.java')", "")
+        );
     }
 
     @Override

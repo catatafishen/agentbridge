@@ -47,11 +47,11 @@ public final class GetCallHierarchyTool extends RefactoringTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_SYMBOL, TYPE_STRING, "Method name to find callers for"},
-            {"file", TYPE_STRING, "Path to the file containing the method definition"},
-            {"line", TYPE_INTEGER, "Line number where the method is defined"}
-        }, PARAM_SYMBOL, "file", "line");
+        return schema(
+            Param.required(PARAM_SYMBOL, TYPE_STRING, "Method name to find callers for"),
+            Param.required("file", TYPE_STRING, "Path to the file containing the method definition"),
+            Param.required("line", TYPE_INTEGER, "Line number where the method is defined")
+        );
     }
 
     @Override

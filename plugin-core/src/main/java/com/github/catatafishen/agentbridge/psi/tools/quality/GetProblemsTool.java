@@ -39,8 +39,8 @@ public final class GetProblemsTool extends QualityTool {
     @Override
     public @NotNull String description() {
         return "Get cached editor problems (errors/warnings) for open files. Returns severity, message, and available quick-fixes per problem. " +
-                "Use get_compilation_errors for a faster check focused on compile errors only. " +
-                "Use get_highlights for richer diagnostics including inspections, typos, and intentions.";
+            "Use get_compilation_errors for a faster check focused on compile errors only. " +
+            "Use get_highlights for richer diagnostics including inspections, typos, and intentions.";
     }
 
     @Override
@@ -55,9 +55,9 @@ public final class GetProblemsTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Optional: file path to check. If omitted, checks all open files", ""}
-        });
+        return schema(
+            Param.optional("path", TYPE_STRING, "Optional: file path to check. If omitted, checks all open files", "")
+        );
     }
 
     @Override

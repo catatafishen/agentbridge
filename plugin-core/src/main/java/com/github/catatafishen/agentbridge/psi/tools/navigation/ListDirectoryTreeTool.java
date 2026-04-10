@@ -52,10 +52,10 @@ public final class ListDirectoryTreeTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_PATH, TYPE_STRING, "Directory path (absolute or project-relative). Defaults to project root if omitted."},
-            {PARAM_MAX_DEPTH, TYPE_INTEGER, "Maximum depth to recurse (default: 3). Use 0 for unlimited."},
-        });
+        return schema(
+            Param.optional(PARAM_PATH, TYPE_STRING, "Directory path (absolute or project-relative). Defaults to project root if omitted."),
+            Param.optional(PARAM_MAX_DEPTH, TYPE_INTEGER, "Maximum depth to recurse (default: 3). Use 0 for unlimited.")
+        );
     }
 
     @Override

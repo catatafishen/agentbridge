@@ -78,12 +78,12 @@ public final class GitPullTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"},
-            {PARAM_BRANCH, TYPE_STRING, "Branch to pull (default: current tracking branch)"},
-            {PARAM_REBASE, TYPE_BOOLEAN, "If true, rebase instead of merge when pulling"},
-            {PARAM_FF_ONLY, TYPE_BOOLEAN, "If true, only fast-forward (abort if not possible)"}
-        });
+        return schema(
+            Param.optional(PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"),
+            Param.optional(PARAM_BRANCH, TYPE_STRING, "Branch to pull (default: current tracking branch)"),
+            Param.optional(PARAM_REBASE, TYPE_BOOLEAN, "If true, rebase instead of merge when pulling"),
+            Param.optional(PARAM_FF_ONLY, TYPE_BOOLEAN, "If true, only fast-forward (abort if not possible)")
+        );
     }
 
     @Override

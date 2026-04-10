@@ -33,7 +33,7 @@ public final class GitCherryPickTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Apply specific commits from another branch onto the current branch. " +
-                "Use no_commit: true to apply changes without committing. If conflicts occur, resolve them and use continue_pick: true.";
+            "Use no_commit: true to apply changes without committing. If conflicts occur, resolve them and use continue_pick: true.";
     }
 
     @Override
@@ -48,12 +48,12 @@ public final class GitCherryPickTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        JsonObject s = schema(new Object[][]{
-            {PARAM_COMMITS, TYPE_ARRAY, "One or more commit SHAs to cherry-pick"},
-            {PARAM_NO_COMMIT, TYPE_BOOLEAN, "Apply changes without creating commits"},
-            {PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress cherry-pick"},
-            {PARAM_CONTINUE_PICK, TYPE_BOOLEAN, "Continue cherry-pick after resolving conflicts"}
-        });
+        JsonObject s = schema(
+            Param.optional(PARAM_COMMITS, TYPE_ARRAY, "One or more commit SHAs to cherry-pick"),
+            Param.optional(PARAM_NO_COMMIT, TYPE_BOOLEAN, "Apply changes without creating commits"),
+            Param.optional(PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress cherry-pick"),
+            Param.optional(PARAM_CONTINUE_PICK, TYPE_BOOLEAN, "Continue cherry-pick after resolving conflicts")
+        );
         addArrayItems(s, PARAM_COMMITS);
         return s;
     }

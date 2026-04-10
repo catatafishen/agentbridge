@@ -35,7 +35,7 @@ public final class GetCoverageTool extends TestingTool {
     @Override
     public @NotNull String description() {
         return "Retrieve code coverage data, optionally filtered by file or class. " +
-                "Requires a prior test run with coverage enabled. Returns line and branch coverage percentages.";
+            "Requires a prior test run with coverage enabled. Returns line and branch coverage percentages.";
     }
 
     @Override
@@ -50,9 +50,9 @@ public final class GetCoverageTool extends TestingTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Optional file or class name to filter coverage results", ""}
-        });
+        return schema(
+            Param.optional("file", TYPE_STRING, "Optional file or class name to filter coverage results", "")
+        );
     }
 
     @Override

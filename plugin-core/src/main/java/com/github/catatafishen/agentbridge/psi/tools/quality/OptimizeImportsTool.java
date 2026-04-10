@@ -48,9 +48,9 @@ public final class OptimizeImportsTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Absolute or project-relative path to the file to optimize imports"}
-        }, "path");
+        return schema(
+            Param.required("path", TYPE_STRING, "Absolute or project-relative path to the file to optimize imports")
+        );
     }
 
     @Override

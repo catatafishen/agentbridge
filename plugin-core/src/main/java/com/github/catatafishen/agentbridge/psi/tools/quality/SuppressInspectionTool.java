@@ -46,19 +46,18 @@ public final class SuppressInspectionTool extends QualityTool {
         return "Insert a suppress annotation or comment for a specific inspection at a given line";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Path to the file containing the code to suppress"},
-            {"line", TYPE_INTEGER, "Line number where the inspection finding is located"},
-            {PARAM_INSPECTION_ID, TYPE_STRING, "The inspection ID to suppress (e.g., 'SpellCheckingInspection')"}
-        }, "path", "line", PARAM_INSPECTION_ID);
+        return schema(
+            Param.required("path", TYPE_STRING, "Path to the file containing the code to suppress"),
+            Param.required("line", TYPE_INTEGER, "Line number where the inspection finding is located"),
+            Param.required(PARAM_INSPECTION_ID, TYPE_STRING, "The inspection ID to suppress (e.g., 'SpellCheckingInspection')")
+        );
     }
 
     @Override

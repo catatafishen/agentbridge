@@ -45,7 +45,7 @@ public final class GetProjectModulesTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{});
+        return schema();
     }
 
     @Override
@@ -63,7 +63,7 @@ public final class GetProjectModulesTool extends ProjectTool {
                 for (var entry : rootManager.getOrderEntries()) {
                     if (entry instanceof com.intellij.openapi.roots.LibraryOrderEntry) libCount++;
                     else if (entry instanceof com.intellij.openapi.roots.ModuleOrderEntry me
-                             && !me.getModuleName().isEmpty()) modDepCount++;
+                        && !me.getModuleName().isEmpty()) modDepCount++;
                 }
                 sb.append("  libraries: ").append(libCount).append('\n');
                 sb.append("  module dependencies: ").append(modDepCount).append('\n');

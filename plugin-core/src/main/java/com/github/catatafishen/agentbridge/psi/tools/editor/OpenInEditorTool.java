@@ -55,11 +55,11 @@ public final class OpenInEditorTool extends EditorTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "Path to the file to open"},
-            {"line", TYPE_INTEGER, "Optional: line number to navigate to after opening"},
-            {PARAM_FOCUS, TYPE_BOOLEAN, "Optional: if true (default), the editor gets focus. Set to false to open without stealing focus"}
-        }, "file");
+        return schema(
+            Param.required("file", TYPE_STRING, "Path to the file to open"),
+            Param.optional("line", TYPE_INTEGER, "Optional: line number to navigate to after opening"),
+            Param.optional(PARAM_FOCUS, TYPE_BOOLEAN, "Optional: if true (default), the editor gets focus. Set to false to open without stealing focus")
+        );
     }
 
     @Override

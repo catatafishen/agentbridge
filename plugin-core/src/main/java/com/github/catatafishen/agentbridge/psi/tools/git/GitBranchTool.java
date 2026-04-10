@@ -48,13 +48,13 @@ public final class GitBranchTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'create', 'switch', 'delete'"},
-            {PARAM_NAME, TYPE_STRING, "Branch name (required for create/switch/delete)"},
-            {PARAM_BASE, TYPE_STRING, "Base ref for create (default: HEAD)"},
-            {PARAM_ALL, TYPE_BOOLEAN, "For list: include remote branches"},
-            {PARAM_FORCE, TYPE_BOOLEAN, "For delete: force delete unmerged branches"}
-        });
+        return schema(
+            Param.optional(PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'create', 'switch', 'delete'"),
+            Param.optional(PARAM_NAME, TYPE_STRING, "Branch name (required for create/switch/delete)"),
+            Param.optional(PARAM_BASE, TYPE_STRING, "Base ref for create (default: HEAD)"),
+            Param.optional(PARAM_ALL, TYPE_BOOLEAN, "For list: include remote branches"),
+            Param.optional(PARAM_FORCE, TYPE_BOOLEAN, "For delete: force delete unmerged branches")
+        );
     }
 
     @Override

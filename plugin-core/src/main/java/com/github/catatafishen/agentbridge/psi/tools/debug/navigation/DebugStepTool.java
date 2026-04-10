@@ -44,9 +44,9 @@ public final class DebugStepTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-                {"action", TYPE_STRING, "One of: 'over' (step over), 'into' (step into), 'out' (step out), 'continue' (resume to next breakpoint)"},
-        }, "action");
+        return schema(
+            Param.required("action", TYPE_STRING, "One of: 'over' (step over), 'into' (step into), 'out' (step out), 'continue' (resume to next breakpoint)")
+        );
     }
 
     @Override

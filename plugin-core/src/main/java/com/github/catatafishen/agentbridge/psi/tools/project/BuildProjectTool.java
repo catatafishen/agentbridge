@@ -55,9 +55,9 @@ public final class BuildProjectTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {JSON_MODULE, TYPE_STRING, "Optional: build only a specific module (e.g., 'plugin-core')"}
-        });
+        return schema(
+            Param.optional(JSON_MODULE, TYPE_STRING, "Optional: build only a specific module (e.g., 'plugin-core')")
+        );
     }
 
     @Override

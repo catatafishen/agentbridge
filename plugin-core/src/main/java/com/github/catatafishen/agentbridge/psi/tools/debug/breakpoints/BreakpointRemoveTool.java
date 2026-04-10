@@ -48,12 +48,12 @@ public final class BreakpointRemoveTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_INDEX, TYPE_INTEGER, "1-based breakpoint index from breakpoint_list. Alternative to file+line."},
-            {PARAM_FILE, TYPE_STRING, "File path identifying the breakpoint. Use with 'line'. Alternative to index."},
-            {PARAM_LINE, TYPE_INTEGER, "Line number (1-based). Use with 'file'. Alternative to index."},
-            {PARAM_REMOVE_ALL, TYPE_BOOLEAN, "Set true to remove all breakpoints"},
-        });
+        return schema(
+            Param.optional(PARAM_INDEX, TYPE_INTEGER, "1-based breakpoint index from breakpoint_list. Alternative to file+line."),
+            Param.optional(PARAM_FILE, TYPE_STRING, "File path identifying the breakpoint. Use with 'line'. Alternative to index."),
+            Param.optional(PARAM_LINE, TYPE_INTEGER, "Line number (1-based). Use with 'file'. Alternative to index."),
+            Param.optional(PARAM_REMOVE_ALL, TYPE_BOOLEAN, "Set true to remove all breakpoints")
+        );
     }
 
     @Override

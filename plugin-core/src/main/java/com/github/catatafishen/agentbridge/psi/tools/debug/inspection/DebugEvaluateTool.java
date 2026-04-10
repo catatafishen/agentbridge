@@ -48,10 +48,10 @@ public final class DebugEvaluateTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-                {"expression", TYPE_STRING, "Expression to evaluate in the current debug context"},
-                {"frame_index", TYPE_INTEGER, "Stack frame to evaluate in (default: 0 = current frame)"},
-        }, "expression");
+        return schema(
+            Param.required("expression", TYPE_STRING, "Expression to evaluate in the current debug context"),
+            Param.optional("frame_index", TYPE_INTEGER, "Stack frame to evaluate in (default: 0 = current frame)")
+        );
     }
 
     @Override

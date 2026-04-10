@@ -36,26 +36,25 @@ public final class RenameFileTool extends FileTool {
     @Override
     public @NotNull String description() {
         return "Rename a file in place without moving it. Does NOT update import statements or references — " +
-                "use refactor(operation='rename') for reference-aware renames.";
+            "use refactor(operation='rename') for reference-aware renames.";
     }
-
-
 
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull String permissionTemplate() {
         return "Rename {path} → {new_name}";
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Path to the file to rename (absolute or project-relative)"},
-            {PARAM_NEW_NAME, TYPE_STRING, "New file name (just the filename, not a full path)"}
-        }, "path", PARAM_NEW_NAME);
+        return schema(
+            Param.required("path", TYPE_STRING, "Path to the file to rename (absolute or project-relative)"),
+            Param.required(PARAM_NEW_NAME, TYPE_STRING, "New file name (just the filename, not a full path)")
+        );
     }
 
     @Override

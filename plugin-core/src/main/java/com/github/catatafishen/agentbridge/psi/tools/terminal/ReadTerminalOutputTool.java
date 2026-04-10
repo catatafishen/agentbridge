@@ -34,26 +34,25 @@ public final class ReadTerminalOutputTool extends TerminalTool {
     @Override
     public @NotNull String description() {
         return "Read recent output from an integrated terminal tab. Returns the last N lines from the terminal buffer. " +
-                "Use list_terminals to see available tab names.";
+            "Use list_terminals to see available tab names.";
     }
-
-
 
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"tab_name", TYPE_STRING, "Name of the terminal tab to read from. If omitted, reads from the currently selected terminal tab."},
-            {PARAM_MAX_LINES, TYPE_INTEGER, "Maximum number of lines to return from the end of the terminal buffer (default: 50). Use 0 for the full buffer."}
-        });
+        return schema(
+            Param.optional("tab_name", TYPE_STRING, "Name of the terminal tab to read from. If omitted, reads from the currently selected terminal tab."),
+            Param.optional(PARAM_MAX_LINES, TYPE_INTEGER, "Maximum number of lines to return from the end of the terminal buffer (default: 50). Use 0 for the full buffer.")
+        );
     }
 
     @Override

@@ -50,9 +50,9 @@ public final class DeleteRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"name", TYPE_STRING, "Exact name of the run configuration to delete"}
-        }, "name");
+        return schema(
+            Param.required("name", TYPE_STRING, "Exact name of the run configuration to delete")
+        );
     }
 
     @Override

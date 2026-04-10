@@ -49,14 +49,14 @@ public final class BreakpointAddTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"file", TYPE_STRING, "File path (absolute or project-relative)"},
-            {"line", TYPE_INTEGER, "Line number (1-based)"},
-            {PARAM_CONDITION, TYPE_STRING, "Optional condition expression (breakpoint only fires when true)"},
-            {PARAM_LOG_EXPRESSION, TYPE_STRING, "Optional log expression (non-suspending log breakpoint)"},
-            {PARAM_ENABLED, TYPE_BOOLEAN, "Whether the breakpoint is enabled (default: true)"},
-            {PARAM_SUSPEND, TYPE_BOOLEAN, "Whether to suspend execution on hit (default: true). Set false with log_expression for a tracepoint."},
-        }, "file", "line");
+        return schema(
+            Param.required("file", TYPE_STRING, "File path (absolute or project-relative)"),
+            Param.required("line", TYPE_INTEGER, "Line number (1-based)"),
+            Param.optional(PARAM_CONDITION, TYPE_STRING, "Optional condition expression (breakpoint only fires when true)"),
+            Param.optional(PARAM_LOG_EXPRESSION, TYPE_STRING, "Optional log expression (non-suspending log breakpoint)"),
+            Param.optional(PARAM_ENABLED, TYPE_BOOLEAN, "Whether the breakpoint is enabled (default: true)"),
+            Param.optional(PARAM_SUSPEND, TYPE_BOOLEAN, "Whether to suspend execution on hit (default: true). Set false with log_expression for a tracepoint.")
+        );
     }
 
     @Override

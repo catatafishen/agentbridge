@@ -40,16 +40,16 @@ public final class EditRunConfigurationTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        JsonObject s = schema(new Object[][]{
-            {"name", TYPE_STRING, "Name of the run configuration to edit"},
-            {"jvm_args", TYPE_STRING, "Optional: new JVM arguments"},
-            {"program_args", TYPE_STRING, "Optional: new program arguments"},
-            {"working_dir", TYPE_STRING, "Optional: new working directory"},
-            {"tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')"},
-            {"script_parameters", TYPE_STRING, "Optional: Gradle script parameters (e.g., '--info')"},
-            {"script_path", TYPE_STRING, "Optional: path to the script file (for Shell Script configs)"},
-            {"shared", TYPE_BOOLEAN, "Optional: toggle shared (project file) vs workspace-local storage"}
-        }, "name");
+        JsonObject s = schema(
+            Param.required("name", TYPE_STRING, "Name of the run configuration to edit"),
+            Param.optional("jvm_args", TYPE_STRING, "Optional: new JVM arguments"),
+            Param.optional("program_args", TYPE_STRING, "Optional: new program arguments"),
+            Param.optional("working_dir", TYPE_STRING, "Optional: new working directory"),
+            Param.optional("tasks", TYPE_STRING, "Optional: Gradle task names, space-separated (e.g., ':plugin-core:buildPlugin')"),
+            Param.optional("script_parameters", TYPE_STRING, "Optional: Gradle script parameters (e.g., '--info')"),
+            Param.optional("script_path", TYPE_STRING, "Optional: path to the script file (for Shell Script configs)"),
+            Param.optional("shared", TYPE_BOOLEAN, "Optional: toggle shared (project file) vs workspace-local storage")
+        );
         addDictProperty(s, "env", "Environment variables as key-value pairs");
         return s;
     }

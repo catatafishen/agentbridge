@@ -48,9 +48,9 @@ public final class DebugReadConsoleTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-                {"max_chars", TYPE_INTEGER, "Maximum characters to return (default: 8000)"},
-        });
+        return schema(
+            Param.optional("max_chars", TYPE_INTEGER, "Maximum characters to return (default: 8000)")
+        );
     }
 
     @Override

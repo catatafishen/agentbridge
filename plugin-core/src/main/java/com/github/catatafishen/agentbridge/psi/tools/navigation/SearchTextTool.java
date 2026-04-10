@@ -68,8 +68,8 @@ public final class SearchTextTool extends NavigationTool {
     @Override
     public @NotNull String description() {
         return "Search for text or regex patterns across project files using IntelliJ's editor buffers. " +
-                "Returns file paths with line numbers and matching text. " +
-                "For semantic symbol lookup, use search_symbols instead. For finding all usages of a known symbol, use find_references.";
+            "Returns file paths with line numbers and matching text. " +
+            "For semantic symbol lookup, use search_symbols instead. For finding all usages of a known symbol, use find_references.";
     }
 
     @Override
@@ -84,14 +84,14 @@ public final class SearchTextTool extends NavigationTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"query", TYPE_STRING, "Text or regex pattern to search for"},
-            {"file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.kt', '*.java')", ""},
-            {PARAM_REGEX, TYPE_BOOLEAN, "If true, treat query as regex. Default: false (literal match)"},
-            {PARAM_CASE_SENSITIVE, TYPE_BOOLEAN, "Case-sensitive search. Default: true"},
-            {PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"},
-            {PARAM_CONTEXT_LINES, TYPE_INTEGER, "Lines of context before and after each match (default: 0). Reduces need for follow-up read_file calls."}
-        }, "query");
+        return schema(
+            Param.required("query", TYPE_STRING, "Text or regex pattern to search for"),
+            Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.kt', '*.java')", ""),
+            Param.optional(PARAM_REGEX, TYPE_BOOLEAN, "If true, treat query as regex. Default: false (literal match)"),
+            Param.optional(PARAM_CASE_SENSITIVE, TYPE_BOOLEAN, "Case-sensitive search. Default: true"),
+            Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"),
+            Param.optional(PARAM_CONTEXT_LINES, TYPE_INTEGER, "Lines of context before and after each match (default: 0). Reduces need for follow-up read_file calls.")
+        );
     }
 
     @Override

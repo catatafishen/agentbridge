@@ -44,7 +44,7 @@ public final class ListTestsTool extends TestingTool {
     @Override
     public @NotNull String description() {
         return "List test classes and methods in the project. Returns fully-qualified test names with file paths and line numbers. " +
-                "Use file_pattern to filter (e.g., '*IntegrationTest*'). Use run_tests to execute discovered tests.";
+            "Use file_pattern to filter (e.g., '*IntegrationTest*'). Use run_tests to execute discovered tests.";
     }
 
     @Override
@@ -59,9 +59,9 @@ public final class ListTestsTool extends TestingTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_FILE_PATTERN, TYPE_STRING, "Optional glob pattern to filter test files (e.g., '*IntegrationTest*')", ""}
-        });
+        return schema(
+            Param.optional(PARAM_FILE_PATTERN, TYPE_STRING, "Optional glob pattern to filter test files (e.g., '*IntegrationTest*')", "")
+        );
     }
 
     @Override

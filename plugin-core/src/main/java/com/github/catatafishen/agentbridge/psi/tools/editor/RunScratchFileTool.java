@@ -58,19 +58,18 @@ public final class RunScratchFileTool extends EditorTool {
         return "Run a scratch file using an appropriate run configuration";
     }
 
-    
-
     @Override
     public @NotNull Kind kind() {
         return Kind.EDIT;
     }
-@Override
+
+    @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.kts', 'MyApp.java', 'hello.js')"},
-            {PARAM_MODULE, TYPE_STRING, "Optional: module name for classpath (e.g., 'plugin-core')"},
-            {PARAM_INTERACTIVE, TYPE_BOOLEAN, "Optional: enable interactive/REPL mode (Kotlin scripts)"}
-        }, "name");
+        return schema(
+            Param.required("name", TYPE_STRING, "Scratch file name with extension (e.g., 'test.kts', 'MyApp.java', 'hello.js')"),
+            Param.optional(PARAM_MODULE, TYPE_STRING, "Optional: module name for classpath (e.g., 'plugin-core')"),
+            Param.optional(PARAM_INTERACTIVE, TYPE_BOOLEAN, "Optional: enable interactive/REPL mode (Kotlin scripts)")
+        );
     }
 
     @Override

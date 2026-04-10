@@ -61,11 +61,11 @@ public final class GetSymbolInfoTool extends RefactoringTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_FILE, TYPE_STRING, "File path (absolute or project-relative)"},
-            {PARAM_LINE, TYPE_INTEGER, "1-based line number"},
-            {PARAM_COLUMN, TYPE_INTEGER, "1-based column number (optional, defaults to first non-whitespace on the line)"},
-        }, PARAM_FILE, PARAM_LINE);
+        return schema(
+            Param.required(PARAM_FILE, TYPE_STRING, "File path (absolute or project-relative)"),
+            Param.required(PARAM_LINE, TYPE_INTEGER, "1-based line number"),
+            Param.optional(PARAM_COLUMN, TYPE_INTEGER, "1-based column number (optional, defaults to first non-whitespace on the line)")
+        );
     }
 
     @Override

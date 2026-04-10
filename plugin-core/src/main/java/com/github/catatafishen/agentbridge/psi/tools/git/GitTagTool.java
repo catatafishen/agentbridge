@@ -52,15 +52,15 @@ public final class GitTagTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'create', 'delete'"},
-            {"name", TYPE_STRING, "Tag name (required for create/delete)"},
-            {PARAM_COMMIT, TYPE_STRING, "Commit to tag (default: HEAD, for create)"},
-            {PARAM_MESSAGE, TYPE_STRING, "Tag message (for annotated tags)"},
-            {PARAM_ANNOTATE, TYPE_BOOLEAN, "Create an annotated tag (requires message)"},
-            {PARAM_PATTERN, TYPE_STRING, "Glob pattern to filter tags (for list)"},
-            {"sort", TYPE_STRING, "Sort field for list (e.g., '-creatordate' for newest first)"}
-        });
+        return schema(
+            Param.optional(PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'create', 'delete'"),
+            Param.optional("name", TYPE_STRING, "Tag name (required for create/delete)"),
+            Param.optional(PARAM_COMMIT, TYPE_STRING, "Commit to tag (default: HEAD, for create)"),
+            Param.optional(PARAM_MESSAGE, TYPE_STRING, "Tag message (for annotated tags)"),
+            Param.optional(PARAM_ANNOTATE, TYPE_BOOLEAN, "Create an annotated tag (requires message)"),
+            Param.optional(PARAM_PATTERN, TYPE_STRING, "Glob pattern to filter tags (for list)"),
+            Param.optional("sort", TYPE_STRING, "Sort field for list (e.g., '-creatordate' for newest first)")
+        );
     }
 
     @Override

@@ -49,7 +49,7 @@ public final class GetHighlightsTool extends QualityTool {
     @Override
     public @NotNull String description() {
         return "Get cached editor highlights for open files. Richer than get_problems — includes inspections, intentions, " +
-                "and quick-fix action names. Use get_compilation_errors for a fast compile-error-only check.";
+            "and quick-fix action names. Use get_compilation_errors for a fast compile-error-only check.";
     }
 
     @Override
@@ -64,11 +64,11 @@ public final class GetHighlightsTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Optional: file path to check. If omitted, checks all open files", ""},
-            {PARAM_LIMIT, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"},
-            {PARAM_INCLUDE_UNINDEXED, TYPE_BOOLEAN, "If true, also include highlights from files not indexed by the project (default: false)"}
-        });
+        return schema(
+            Param.optional("path", TYPE_STRING, "Optional: file path to check. If omitted, checks all open files", ""),
+            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Maximum number of highlights to return (default: 100)"),
+            Param.optional(PARAM_INCLUDE_UNINDEXED, TYPE_BOOLEAN, "If true, also include highlights from files not indexed by the project (default: false)")
+        );
     }
 
     @Override

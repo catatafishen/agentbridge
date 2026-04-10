@@ -27,7 +27,7 @@ public final class GetFileHistoryTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Get git commit history for a file, including renames. Returns commit hash, author, date, and message per commit. " +
-                "Use git_log for repository-wide history. Use git_blame for per-line authorship.";
+            "Use git_log for repository-wide history. Use git_blame for per-line authorship.";
     }
 
     @Override
@@ -42,10 +42,10 @@ public final class GetFileHistoryTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Path to the file to get history for (absolute or project-relative)"},
-            {PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 20)"}
-        }, "path");
+        return schema(
+            Param.required("path", TYPE_STRING, "Path to the file to get history for (absolute or project-relative)"),
+            Param.optional(PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 20)")
+        );
     }
 
     @Override

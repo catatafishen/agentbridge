@@ -53,11 +53,11 @@ public final class GitResetTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_COMMIT, TYPE_STRING, "Target commit (default: HEAD)"},
-            {"mode", TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"},
-            {"path", TYPE_STRING, "Reset a specific file path (unstages it)"}
-        });
+        return schema(
+            Param.optional(PARAM_COMMIT, TYPE_STRING, "Target commit (default: HEAD)"),
+            Param.optional("mode", TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"),
+            Param.optional("path", TYPE_STRING, "Reset a specific file path (unstages it)")
+        );
     }
 
     @Override

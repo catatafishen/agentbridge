@@ -47,10 +47,10 @@ public final class DebugRunToLineTool extends DebugTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-                {"file", TYPE_STRING, "File path (absolute or project-relative)"},
-                {"line", TYPE_INTEGER, "Target line number (1-based)"},
-        }, "file", "line");
+        return schema(
+            Param.required("file", TYPE_STRING, "File path (absolute or project-relative)"),
+            Param.required("line", TYPE_INTEGER, "Target line number (1-based)")
+        );
     }
 
     @Override

@@ -78,7 +78,7 @@ public final class RunTestsTool extends TestingTool {
     @Override
     public @NotNull String description() {
         return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner; falls back to Gradle for unresolvable targets. " +
-                "Returns pass/fail counts and failure details. Use list_tests to discover available test targets.";
+            "Returns pass/fail counts and failure details. Use list_tests to discover available test targets.";
     }
 
     @Override
@@ -98,10 +98,10 @@ public final class RunTestsTool extends TestingTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_TARGET, TYPE_STRING, "Test target: fully qualified class class.method (e.g., 'MyTest.testFoo'), or pattern with wildcards (e.g., '*Test')"},
-            {JSON_MODULE, TYPE_STRING, "Optional module name (e.g., 'plugin-core')", ""}
-        }, PARAM_TARGET);
+        return schema(
+            Param.required(PARAM_TARGET, TYPE_STRING, "Test target: fully qualified class class.method (e.g., 'MyTest.testFoo'), or pattern with wildcards (e.g., '*Test')"),
+            Param.optional(JSON_MODULE, TYPE_STRING, "Optional module name (e.g., 'plugin-core')", "")
+        );
     }
 
     @Override

@@ -41,11 +41,11 @@ public final class RunSonarQubeAnalysisTool extends QualityTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_SCOPE, TYPE_STRING, "Analysis scope: 'all' (full project) or 'changed' (VCS changed files only). Default: 'all'"},
-            {PARAM_LIMIT, TYPE_INTEGER, "Maximum number of findings to return. Default: 100"},
-            {PARAM_OFFSET, TYPE_INTEGER, "Pagination offset. Default: 0"}
-        });
+        return schema(
+            Param.optional(PARAM_SCOPE, TYPE_STRING, "Analysis scope: 'all' (full project) or 'changed' (VCS changed files only). Default: 'all'"),
+            Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Maximum number of findings to return. Default: 100"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Pagination offset. Default: 0")
+        );
     }
 
     @Override

@@ -54,9 +54,9 @@ public final class GetProjectDependenciesTool extends ProjectTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_MODULE, TYPE_STRING, "Filter by module name (optional). If omitted, lists all unique libraries across all modules."}
-        });
+        return schema(
+            Param.optional(PARAM_MODULE, TYPE_STRING, "Filter by module name (optional). If omitted, lists all unique libraries across all modules.")
+        );
     }
 
     @Override

@@ -57,9 +57,9 @@ public final class MemoryKgInvalidateTool extends Tool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_TRIPLE_ID, TYPE_INTEGER, "ID of the triple to invalidate (from memory_kg_query results)"},
-        }, PARAM_TRIPLE_ID);
+        return schema(
+            Param.required(PARAM_TRIPLE_ID, TYPE_INTEGER, "ID of the triple to invalidate (from memory_kg_query results)")
+        );
     }
 
     @Override

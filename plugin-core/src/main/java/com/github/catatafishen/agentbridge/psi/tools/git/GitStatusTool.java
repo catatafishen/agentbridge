@@ -42,9 +42,9 @@ public final class GitStatusTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_VERBOSE, TYPE_BOOLEAN, "If true, show full 'git status' output including untracked files"}
-        });
+        return schema(
+            Param.optional(PARAM_VERBOSE, TYPE_BOOLEAN, "If true, show full 'git status' output including untracked files")
+        );
     }
 
     @Override

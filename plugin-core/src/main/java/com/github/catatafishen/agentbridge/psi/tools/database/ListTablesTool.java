@@ -48,10 +48,10 @@ public final class ListTablesTool extends DatabaseTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {PARAM_DATA_SOURCE, TYPE_STRING, "Name of the data source to list tables from"},
-            {PARAM_SCHEMA, TYPE_STRING, "Optional: filter by schema name"},
-        }, PARAM_DATA_SOURCE);
+        return schema(
+            Param.required(PARAM_DATA_SOURCE, TYPE_STRING, "Name of the data source to list tables from"),
+            Param.optional(PARAM_SCHEMA, TYPE_STRING, "Optional: filter by schema name")
+        );
     }
 
     @Override

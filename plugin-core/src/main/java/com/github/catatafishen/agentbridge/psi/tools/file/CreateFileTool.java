@@ -38,7 +38,7 @@ public final class CreateFileTool extends FileTool {
     @Override
     public @NotNull String description() {
         return "Create a new file at the given path. File must not already exist — use write_file to overwrite existing files. " +
-                "Does NOT update references. Use refactor(operation='rename') for reference-aware renames.";
+            "Does NOT update references. Use refactor(operation='rename') for reference-aware renames.";
     }
 
     @Override
@@ -53,10 +53,10 @@ public final class CreateFileTool extends FileTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"path", TYPE_STRING, "Path for the new file (absolute or project-relative). File must not already exist"},
-            {PARAM_CONTENT, TYPE_STRING, "Content to write to the file"}
-        }, "path", PARAM_CONTENT);
+        return schema(
+            Param.required("path", TYPE_STRING, "Path for the new file (absolute or project-relative). File must not already exist"),
+            Param.required(PARAM_CONTENT, TYPE_STRING, "Content to write to the file")
+        );
     }
 
     @Override

@@ -45,7 +45,7 @@ public abstract class Tool implements ToolDefinition {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{});
+        return schema();
     }
 
     @Override
@@ -68,32 +68,52 @@ public abstract class Tool implements ToolDefinition {
     private static final String KEY_DESCRIPTION = "description";
     private static final String KEY_DEFAULT = "default";
 
-    protected static com.google.gson.JsonObject schema(Object[][] params, String... required) {
-        com.google.gson.JsonObject s = new com.google.gson.JsonObject();
-        s.addProperty(KEY_TYPE, "object");
+    /**
+     * Type-safe parameter definition for MCP tool schemas.
+     * Use factory methods to clearly distinguish required from optional parameters.
+     */
+    protected record Param(String name, String type, String description,
+                           @Nullable Object defaultValue, boolean required) {
+
+        public static Param required(String name, String type, String description) {
+            return new Param(name, type, description, null, true);
+        }
+
+        public static Param optional(String name, String type, String description) {
+            return new Param(name, type, description, null, false);
+        }
+
+        public static Param optional(String name, String type, String description, Object defaultValue) {
+            return new Param(name, type, description, defaultValue, false);
+        }
+    }
+
+    protected static com.google.gson.JsonObject schema(Param... params) {
+        com.google.gson.JsonObject root = new com.google.gson.JsonObject();
+        root.addProperty(KEY_TYPE, "object");
         com.google.gson.JsonObject props = new com.google.gson.JsonObject();
-        for (Object[] p : params) {
+        com.google.gson.JsonArray req = new com.google.gson.JsonArray();
+        for (Param p : params) {
             com.google.gson.JsonObject prop = new com.google.gson.JsonObject();
-            prop.addProperty(KEY_TYPE, (String) p[1]);
-            prop.addProperty(KEY_DESCRIPTION, (String) p[2]);
-            if (p.length > 3 && p[3] != null) {
-                if (p[3] instanceof String defaultStr) {
-                    prop.addProperty(KEY_DEFAULT, defaultStr);
-                } else if (p[3] instanceof Number defaultNum) {
-                    prop.addProperty(KEY_DEFAULT, defaultNum);
-                } else if (p[3] instanceof Boolean defaultBool) {
-                    prop.addProperty(KEY_DEFAULT, defaultBool);
-                } else {
-                    prop.addProperty(KEY_DEFAULT, String.valueOf(p[3]));
+            prop.addProperty(KEY_TYPE, p.type());
+            prop.addProperty(KEY_DESCRIPTION, p.description());
+            if (p.defaultValue() != null) {
+                if (p.defaultValue() instanceof String s) {
+                    prop.addProperty(KEY_DEFAULT, s);
+                } else if (p.defaultValue() instanceof Number n) {
+                    prop.addProperty(KEY_DEFAULT, n);
+                } else if (p.defaultValue() instanceof Boolean b) {
+                    prop.addProperty(KEY_DEFAULT, b);
                 }
             }
-            props.add((String) p[0], prop);
+            props.add(p.name(), prop);
+            if (p.required()) {
+                req.add(p.name());
+            }
         }
-        s.add(KEY_PROPERTIES, props);
-        com.google.gson.JsonArray req = new com.google.gson.JsonArray();
-        for (String r : required) req.add(r);
-        s.add(KEY_REQUIRED, req);
-        return s;
+        root.add(KEY_PROPERTIES, props);
+        root.add(KEY_REQUIRED, req);
+        return root;
     }
 
     protected static void addArrayItems(com.google.gson.JsonObject schema, String propName) {

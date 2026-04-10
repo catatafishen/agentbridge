@@ -30,7 +30,7 @@ public final class GitShowTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Show details and diff for a specific commit. Returns commit message, author, date, and full diff. " +
-                "Use stat_only: true for a file-level summary without diff content. Use git_log for commit history.";
+            "Use stat_only: true for a file-level summary without diff content. Use git_log for commit history.";
     }
 
     @Override
@@ -45,11 +45,11 @@ public final class GitShowTool extends GitTool {
 
     @Override
     public @NotNull JsonObject inputSchema() {
-        return schema(new Object[][]{
-            {"ref", TYPE_STRING, "Commit SHA, branch, tag, or ref (default: HEAD)"},
-            {PARAM_STAT_ONLY, TYPE_BOOLEAN, "If true, show only file stats, not full diff content"},
-            {"path", TYPE_STRING, "Limit output to this file path"}
-        });
+        return schema(
+            Param.optional("ref", TYPE_STRING, "Commit SHA, branch, tag, or ref (default: HEAD)"),
+            Param.optional(PARAM_STAT_ONLY, TYPE_BOOLEAN, "If true, show only file stats, not full diff content"),
+            Param.optional("path", TYPE_STRING, "Limit output to this file path")
+        );
     }
 
     @Override
