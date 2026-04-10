@@ -77,7 +77,15 @@ public abstract class Tool implements ToolDefinition {
             prop.addProperty(KEY_TYPE, (String) p[1]);
             prop.addProperty(KEY_DESCRIPTION, (String) p[2]);
             if (p.length > 3 && p[3] != null) {
-                prop.addProperty(KEY_DEFAULT, (String) p[3]);
+                if (p[3] instanceof String defaultStr) {
+                    prop.addProperty(KEY_DEFAULT, defaultStr);
+                } else if (p[3] instanceof Number defaultNum) {
+                    prop.addProperty(KEY_DEFAULT, defaultNum);
+                } else if (p[3] instanceof Boolean defaultBool) {
+                    prop.addProperty(KEY_DEFAULT, defaultBool);
+                } else {
+                    prop.addProperty(KEY_DEFAULT, String.valueOf(p[3]));
+                }
             }
             props.add((String) p[0], prop);
         }

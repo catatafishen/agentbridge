@@ -65,12 +65,12 @@ public final class MemoryKgAddTool extends Tool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-            {PARAM_SUBJECT, TYPE_STRING, "Subject entity (e.g., 'project', 'team', 'auth-module')", true},
-            {PARAM_PREDICATE, TYPE_STRING, "Relationship/predicate (e.g., 'uses', 'prefers', 'depends-on')", true},
-            {PARAM_OBJECT, TYPE_STRING, "Object/value (e.g., 'Java 21', 'conventional commits')", true},
-            {PARAM_VALID_FROM, TYPE_STRING, "ISO 8601 date when this fact became valid (optional)", false},
-            {PARAM_REPLACE, TYPE_BOOLEAN, "If true, invalidate existing triples with same subject+predicate first (default: false)", false},
-        });
+            {PARAM_SUBJECT, TYPE_STRING, "Subject entity (e.g., 'project', 'team', 'auth-module')"},
+            {PARAM_PREDICATE, TYPE_STRING, "Relationship/predicate (e.g., 'uses', 'prefers', 'depends-on')"},
+            {PARAM_OBJECT, TYPE_STRING, "Object/value (e.g., 'Java 21', 'conventional commits')"},
+            {PARAM_VALID_FROM, TYPE_STRING, "ISO 8601 date when this fact became valid (optional)"},
+            {PARAM_REPLACE, TYPE_BOOLEAN, "If true, invalidate existing triples with same subject+predicate first (default: false)"},
+        }, PARAM_SUBJECT, PARAM_PREDICATE, PARAM_OBJECT);
     }
 
     @Override
