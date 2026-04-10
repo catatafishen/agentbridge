@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.memory;
 
 import com.github.catatafishen.agentbridge.memory.embedding.EmbeddingService;
+import com.github.catatafishen.agentbridge.memory.kg.KnowledgeGraph;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.memory.wal.WriteAheadLog;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
@@ -15,13 +16,6 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.nio.file.Path;
 
-/**
- * Project-level lifecycle service for semantic memory.
- * Initializes and manages the MemoryStore, EmbeddingService, and WriteAheadLog.
- *
- * <p>Only active when {@link MemorySettings#isEnabled()} is true.
- * Lazy-initializes on first access.
- */
 @Service(Service.Level.PROJECT)
 public final class MemoryService implements Disposable {
 
@@ -30,12 +24,14 @@ public final class MemoryService implements Disposable {
     private static final String MEMORY_DIR = "memory";
     private static final String LUCENE_INDEX_DIR = "lucene-index";
     private static final String WAL_DIR = "wal";
+    private static final String KG_DB_FILE = "knowledge.sqlite3";
 
     private final Project project;
 
     private volatile MemoryStore store;
     private volatile EmbeddingService embeddingService;
     private volatile WriteAheadLog wal;
+    private volatile KnowledgeGraph knowledgeGraph;
     private volatile boolean initialized;
     private final Object initLock = new Object();
 
@@ -75,6 +71,16 @@ public final class MemoryService implements Disposable {
         if (!MemorySettings.getInstance(project).isEnabled()) return null;
         ensureInitialized();
         return wal;
+    }
+
+    /**
+     * Get the knowledge graph. Initializes if needed.
+     * Returns null if memory is disabled or initialization fails.
+     */
+    public @Nullable KnowledgeGraph getKnowledgeGraph() {
+        if (!MemorySettings.getInstance(project).isEnabled()) return null;
+        ensureInitialized();
+        return knowledgeGraph;
     }
 
     /**
@@ -118,6 +124,11 @@ public final class MemoryService implements Disposable {
                 embeddingService = new EmbeddingService(project);
                 Disposer.register(this, embeddingService);
 
+                // Initialize knowledge graph
+                knowledgeGraph = new KnowledgeGraph(memoryDir.resolve(KG_DB_FILE), wal);
+                knowledgeGraph.initialize();
+                Disposer.register(this, knowledgeGraph);
+
                 initialized = true;
                 LOG.info("MemoryService initialized for project: " + project.getName());
             } catch (IOException e) {
@@ -137,6 +148,6 @@ public final class MemoryService implements Disposable {
     @Override
     public void dispose() {
         initialized = false;
-        // Children (store, embeddingService) are disposed via Disposer tree
+        // Children (store, embeddingService, knowledgeGraph) are disposed via Disposer tree
     }
 }

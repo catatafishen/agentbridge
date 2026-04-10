@@ -7,16 +7,6 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
-/**
- * Creates memory tools when semantic memory is enabled.
- * Tools are only registered when {@link MemorySettings#isEnabled()} is true.
- *
- * <p>P0 tools (always registered when memory is on):
- * - memory_search, memory_store, memory_status
- *
- * <p>P1 tools (registered when memory is on):
- * - memory_wake_up, memory_recall
- */
 public final class MemoryToolFactory {
 
     private MemoryToolFactory() {
@@ -33,7 +23,12 @@ public final class MemoryToolFactory {
             new MemoryStatusTool(project),
             // P1 — layer tools
             new MemoryWakeUpTool(project),
-            new MemoryRecallTool(project)
+            new MemoryRecallTool(project),
+            // P2 — knowledge graph tools
+            new MemoryKgQueryTool(project),
+            new MemoryKgAddTool(project),
+            new MemoryKgInvalidateTool(project),
+            new MemoryKgTimelineTool(project)
         );
     }
 }

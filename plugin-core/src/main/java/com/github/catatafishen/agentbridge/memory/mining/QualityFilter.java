@@ -7,18 +7,6 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.regex.Pattern;
 
-/**
- * Filters out low-quality exchange chunks that would pollute the memory store.
- *
- * <p><b>Attribution:</b> quality heuristics adapted from MemPalace's convo_miner.py (MIT License).
- *
- * <p>Rules:
- * <ul>
- *   <li>Skip if combined Q+A text is shorter than {@code minChunkLength} (default 200)</li>
- *   <li>Skip if content is purely tool-call results with no human-readable insight</li>
- *   <li>Skip if content is a status/nudge message (e.g. "continue", "go ahead")</li>
- * </ul>
- */
 public final class QualityFilter {
 
     /**
@@ -47,13 +35,20 @@ public final class QualityFilter {
     private final int minChunkLength;
 
     public QualityFilter(@NotNull Project project) {
-        this.minChunkLength = MemorySettings.getInstance(project).getMinChunkLength();
+        this(MemorySettings.getInstance(project).getMinChunkLength());
+    }
+
+    /**
+     * Constructor for testing — accepts minChunkLength directly without needing a Project.
+     */
+    QualityFilter(int minChunkLength) {
+        this.minChunkLength = minChunkLength;
     }
 
     /**
      * Check if an exchange chunk passes quality thresholds.
      *
-     * @param promptText  the user's prompt text
+     * @param promptText   the user's prompt text
      * @param responseText the assistant's response text
      * @return true if the chunk is worth mining into a memory drawer
      */
