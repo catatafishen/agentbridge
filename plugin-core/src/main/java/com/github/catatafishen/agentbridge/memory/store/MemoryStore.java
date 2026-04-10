@@ -7,10 +7,8 @@ import com.intellij.openapi.diagnostic.Logger;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.KnnFloatVectorField;
-import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
-import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
@@ -164,7 +162,7 @@ public final class MemoryStore implements Disposable {
      * Semantic search with optional metadata filters.
      */
     public List<DrawerDocument.SearchResult> search(@NotNull MemoryQuery query,
-                                                     float @Nullable [] queryEmbedding) throws IOException {
+                                                    float @Nullable [] queryEmbedding) throws IOException {
         searcherManager.maybeRefresh();
         IndexSearcher searcher = searcherManager.acquire();
         try {
@@ -311,19 +309,28 @@ public final class MemoryStore implements Disposable {
 
     private static DrawerDocument documentToDrawer(@NotNull Document doc) {
         return DrawerDocument.builder()
-            .id(doc.get(FLD_ID))
-            .wing(doc.get(FLD_WING))
-            .room(doc.get(FLD_ROOM))
-            .content(doc.get(FLD_CONTENT))
-            .memoryType(doc.get(FLD_MEMORY_TYPE))
-            .sourceSession(doc.get(FLD_SOURCE_SESSION))
-            .sourceFile(doc.get(FLD_SOURCE_FILE))
-            .agent(doc.get(FLD_AGENT))
+            .id(getString(doc, FLD_ID))
+            .wing(getString(doc, FLD_WING))
+            .room(getString(doc, FLD_ROOM))
+            .content(getString(doc, FLD_CONTENT))
+            .memoryType(getString(doc, FLD_MEMORY_TYPE))
+            .sourceSession(getString(doc, FLD_SOURCE_SESSION))
+            .sourceFile(getString(doc, FLD_SOURCE_FILE))
+            .agent(getString(doc, FLD_AGENT))
             .filedAt(Instant.parse(doc.get(FLD_FILED_AT)))
-            .addedBy(doc.get(FLD_ADDED_BY))
-            .sourceTurnIndex(doc.get(FLD_SOURCE_TURN_INDEX))
-            .sourceCommits(doc.get(FLD_SOURCE_COMMITS))
+            .addedBy(getString(doc, FLD_ADDED_BY))
+            .sourceTurnIndex(getString(doc, FLD_SOURCE_TURN_INDEX))
+            .sourceCommits(getString(doc, FLD_SOURCE_COMMITS))
             .build();
+    }
+
+    /**
+     * Returns the stored field value, or {@code ""} if the field is absent (schema evolution).
+     */
+    @NotNull
+    private static String getString(@NotNull Document doc, @NotNull String field) {
+        String value = doc.get(field);
+        return value != null ? value : "";
     }
 
     @Override
