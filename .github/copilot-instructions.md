@@ -145,6 +145,34 @@ When editing a file, fix **all** issues in that file — not just those caused b
 casts, missing annotations, dead code, pre-existing warnings — fix them in the same edit. This keeps the codebase
 progressively cleaner with every touch.
 
+### Clarity As You Code
+
+When something in the codebase causes confusion — a misleading name, an unexpected file location, a concept that
+doesn't match how it's described, a data flow that took multiple reads to understand — that confusion is a signal.
+It means the next engineer (human or AI) will hit the same wall.
+
+**Track confusions, then fix them:**
+
+- **Self-awareness first.** Notice when you needed multiple reads to understand something, got the wrong mental model
+  initially, or found a name that doesn't reflect what the thing actually does. These are the signals.
+- **If you're touching the file anyway:** improve the clarity immediately — rename, add a clarifying comment, split
+  a responsibility, simplify the data flow. Apply the same standard as "Clean As You Code".
+- **If you're NOT touching the file:** log it to `.agent-work/clarity-backlog.md` with:
+    - What confused you
+    - Why it's misleading (the mental model it implies vs. what it actually does)
+    - A suggested improvement
+
+**What counts as "confusing":**
+
+- A name that implies the wrong scope, type, or behavior (e.g., `loadData` that also renders)
+- A class in a package that doesn't match its responsibility
+- Two concepts using the same word (overloaded terminology)
+- A parameter that silently changes behavior but has a generic name
+- Code that looks like it does X but actually does Y in a non-obvious way
+
+**The goal:** each session should leave the codebase slightly easier to navigate than it was, beyond just the feature
+being added. Confusion has a real cost in future engineering time — treat it like a warning.
+
 ### Warnings and Suppressions
 
 - **Do not suppress warnings** — fix the root cause instead
