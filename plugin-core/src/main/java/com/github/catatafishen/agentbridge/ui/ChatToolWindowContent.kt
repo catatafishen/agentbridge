@@ -703,6 +703,7 @@ class ChatToolWindowContent(
                 onClientUpdate = ::handleClientUpdate,
                 sendPromptDirectly = ::sendPromptDirectly,
                 restorePromptText = ::restorePromptText,
+                onTurnMineEntries = ::mineEntriesAfterTurn,
             )
         )
 
@@ -1880,6 +1881,21 @@ class ChatToolWindowContent(
         }
     }
 
+    /**
+     * Mines the current turn's entries into semantic memory (async, non-blocking).
+     * Called by PromptOrchestrator after each turn completes.
+     */
+    private fun mineEntriesAfterTurn(sessionId: String, agentName: String) {
+        val settings = com.github.catatafishen.agentbridge.memory.MemorySettings.getInstance(project)
+        if (!settings.isEnabled || !settings.isAutoMineOnTurnComplete) return
+
+        val entries = chatConsolePanel.getEntries()
+        if (entries.isEmpty()) return
+
+        val miner = com.github.catatafishen.agentbridge.memory.mining.TurnMiner(project)
+        miner.mineTurn(entries, sessionId, agentName)
+    }
+
     private fun restoreConversation(onComplete: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
             V1ToV2Migrator.migrateIfNeeded(project.basePath)
@@ -2091,6 +2107,16 @@ class ChatToolWindowContent(
     }
 
     private fun archiveConversation() {
+        // Mine remaining entries before archiving (safety net for missed turns)
+        val settings = com.github.catatafishen.agentbridge.memory.MemorySettings.getInstance(project)
+        if (settings.isEnabled && settings.isAutoMineOnSessionArchive) {
+            val entries = chatConsolePanel.getEntries()
+            if (entries.isNotEmpty()) {
+                val sessionId = conversationStore.getCurrentSessionId(project.basePath)
+                val miner = com.github.catatafishen.agentbridge.memory.mining.TurnMiner(project)
+                miner.mineTurn(entries, sessionId, agentManager.activeProfile.displayName)
+            }
+        }
         conversationStore.archive(project.basePath)
         persistedEntryCount = 0
     }
