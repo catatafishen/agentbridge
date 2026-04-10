@@ -48,7 +48,7 @@ class MemoryStoreTest {
             .wing("project-x")
             .room("technical")
             .content("We use Java 21 for this project")
-            .memoryType(DrawerDocument.TYPE_TECHNICAL)
+            .memoryType(DrawerDocument.TYPE_CONTEXT)
             .build();
 
         String id = store.addDrawer(doc, embedding);

@@ -133,6 +133,7 @@ public final class TurnMiner {
         String combinedText = exchange.combinedText();
         String memoryType = MemoryClassifier.classify(combinedText);
         String room = RoomDetector.detect(combinedText);
+        Instant filedAt = parseExchangeTimestamp(exchange.timestamp());
 
         try {
             float[] vector = embedder.embed(combinedText);
@@ -145,7 +146,7 @@ public final class TurnMiner {
                 .memoryType(memoryType)
                 .sourceSession(sessionId)
                 .agent(agentName)
-                .filedAt(Instant.now())
+                .filedAt(filedAt)
                 .addedBy(DrawerDocument.ADDED_BY_MINER)
                 .build();
 
@@ -162,7 +163,7 @@ public final class TurnMiner {
     }
 
     private static void extractTriples(String text, String wing, String drawerId,
-                                        @Nullable KnowledgeGraph kg) {
+                                       @Nullable KnowledgeGraph kg) {
         if (kg == null) return;
 
         List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, wing, drawerId);
@@ -181,6 +182,21 @@ public final class TurnMiner {
         }
         if (!triples.isEmpty()) {
             LOG.info("Extracted " + triples.size() + " KG triple(s) from drawer " + drawerId);
+        }
+    }
+
+    /**
+     * Parse the ISO 8601 timestamp from an exchange, falling back to now if missing or unparseable.
+     */
+    private static Instant parseExchangeTimestamp(String timestamp) {
+        if (timestamp == null || timestamp.isEmpty()) {
+            return Instant.now();
+        }
+        try {
+            return Instant.parse(timestamp);
+        } catch (Exception e) {
+            LOG.debug("Unparseable exchange timestamp: " + timestamp);
+            return Instant.now();
         }
     }
 

@@ -23,46 +23,39 @@ class MemoryClassifierTest {
     }
 
     @Test
-    void classifiesPreference() {
-        assertEquals(DrawerDocument.TYPE_PREFERENCE,
-            MemoryClassifier.classify("I prefer tabs over spaces, always use 4-space indentation"));
-    }
-
-    @Test
-    void classifiesMilestone() {
-        assertEquals(DrawerDocument.TYPE_MILESTONE,
-            MemoryClassifier.classify("It works! We finally shipped the feature and released v2.0"));
-    }
-
-    @Test
     void classifiesProblem() {
         assertEquals(DrawerDocument.TYPE_PROBLEM,
             MemoryClassifier.classify("There's a bug causing the app to crash with a regression"));
     }
 
     @Test
-    void classifiesTechnical() {
-        assertEquals(DrawerDocument.TYPE_TECHNICAL,
-            MemoryClassifier.classify("The architecture uses a clean pattern with API interface abstraction"));
+    void classifiesSolution() {
+        assertEquals(DrawerDocument.TYPE_SOLUTION,
+            MemoryClassifier.classify("We fixed the bug and resolved the issue. The solution was to reset the cache."));
+    }
+
+    @Test
+    void classifiesSolutionWithTurnsOut() {
+        assertEquals(DrawerDocument.TYPE_SOLUTION,
+            MemoryClassifier.classify("Turns out the fix was simple. By changing the timeout, it's working now."));
+    }
+
+    @Test
+    void classifiesContext() {
+        assertEquals(DrawerDocument.TYPE_CONTEXT,
+            MemoryClassifier.classify("The architecture uses a clean pattern with interface abstraction"));
+    }
+
+    @Test
+    void classifiesContextWithStructure() {
+        assertEquals(DrawerDocument.TYPE_CONTEXT,
+            MemoryClassifier.classify("The module structure consists of three layers responsible for different concerns"));
     }
 
     @Test
     void fallsBackToGeneral() {
         assertEquals(DrawerDocument.TYPE_GENERAL,
             MemoryClassifier.classify("Hello, how are you today?"));
-    }
-
-    @Test
-    void disambiguatesResolvedProblemAsMilestone() {
-        // Text with problem markers AND resolution markers → milestone
-        assertEquals(DrawerDocument.TYPE_MILESTONE,
-            MemoryClassifier.classify("The bug in the login module was fixed and is working now"));
-    }
-
-    @Test
-    void problemWithFixedBecomeMilestone() {
-        assertEquals(DrawerDocument.TYPE_MILESTONE,
-            MemoryClassifier.classify("The crash was a regression. We fixed the root cause and resolved the issue"));
     }
 
     @Test
@@ -79,7 +72,7 @@ class MemoryClassifierTest {
 
     @Test
     void multipleTypesHighestScoreWins() {
-        // More decision markers than technical markers
+        // More decision markers than context markers
         String text = "We decided to go with this instead of that, we chose the tradeoff. " +
             "The architecture is clean.";
         assertEquals(DrawerDocument.TYPE_DECISION, MemoryClassifier.classify(text));

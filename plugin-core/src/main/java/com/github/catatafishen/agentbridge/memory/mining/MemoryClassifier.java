@@ -9,27 +9,20 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Classifies exchange chunks into one of 5 memory types using regex marker scoring.
+ * Classifies exchange chunks into one of 4 memory types using regex marker scoring.
  *
  * <p><b>Attribution:</b> classification markers and disambiguation logic adapted from
  * MemPalace's general_extractor.py (MIT License).
  *
- * <p>Types: decision, preference, milestone, problem, technical.
+ * <p>Types: context, decision, problem, solution.
  * Falls back to {@link DrawerDocument#TYPE_GENERAL} if no markers match.
+ *
+ * <p>Types are orthogonal to rooms (see {@link RoomDetector}): type = "what kind
+ * of knowledge", room = "what topic area".
  */
 public final class MemoryClassifier {
 
     private static final Map<String, List<Pattern>> TYPE_MARKERS = buildTypeMarkers();
-
-    /**
-     * Patterns indicating a resolved problem (should be reclassified as milestone).
-     */
-    private static final List<Pattern> RESOLVED_PATTERNS = List.of(
-        Pattern.compile("\\bfixed\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("\\bresolved\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("\\bworking now\\b", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("\\bthat solved\\b", Pattern.CASE_INSENSITIVE)
-    );
 
     private MemoryClassifier() {
     }
@@ -59,15 +52,6 @@ public final class MemoryClassifier {
             }
         }
 
-        // Disambiguation: a "problem" with resolution markers → milestone
-        if (DrawerDocument.TYPE_PROBLEM.equals(bestType)) {
-            for (Pattern resolved : RESOLVED_PATTERNS) {
-                if (resolved.matcher(lowerText).find()) {
-                    return DrawerDocument.TYPE_MILESTONE;
-                }
-            }
-        }
-
         return bestType;
     }
 
@@ -83,27 +67,9 @@ public final class MemoryClassifier {
             Pattern.compile("\\bgoing with\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\bchose\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\btradeoff\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\btrade-off\\b", Pattern.CASE_INSENSITIVE)
-        ));
-
-        markers.put(DrawerDocument.TYPE_PREFERENCE, List.of(
-            Pattern.compile("\\bi prefer\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\balways use\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bnever do\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bdon't like\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bmy style\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bmy convention\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bplease always\\b", Pattern.CASE_INSENSITIVE)
-        ));
-
-        markers.put(DrawerDocument.TYPE_MILESTONE, List.of(
-            Pattern.compile("\\bit works\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bfinally\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bbreakthrough\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bshipped\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bcompleted\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bsuccessfully\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\breleased\\b", Pattern.CASE_INSENSITIVE)
+            Pattern.compile("\\btrade-off\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bpros and cons\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\brationale\\b", Pattern.CASE_INSENSITIVE)
         ));
 
         markers.put(DrawerDocument.TYPE_PROBLEM, List.of(
@@ -113,19 +79,36 @@ public final class MemoryClassifier {
             Pattern.compile("\\bworkaround\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\bfailing\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\bcrash\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\berror\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bregression\\b", Pattern.CASE_INSENSITIVE)
+            Pattern.compile("\\bregression\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bdoesn't work\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bcan't\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bunable to\\b", Pattern.CASE_INSENSITIVE)
         ));
 
-        markers.put(DrawerDocument.TYPE_TECHNICAL, List.of(
+        markers.put(DrawerDocument.TYPE_SOLUTION, List.of(
+            Pattern.compile("\\bfixed\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bresolved\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bworking now\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bthat solved\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bthe fix\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bsolution\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bthe key was\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bturns out\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bfigured out\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bby changing\\b", Pattern.CASE_INSENSITIVE)
+        ));
+
+        markers.put(DrawerDocument.TYPE_CONTEXT, List.of(
             Pattern.compile("\\barchitecture\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\bpattern\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\brefactor\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bapi\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\binterface\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\babstraction\\b", Pattern.CASE_INSENSITIVE),
             Pattern.compile("\\bimplementation\\b", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bdesign\\b", Pattern.CASE_INSENSITIVE)
+            Pattern.compile("\\bstructure\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bresponsible for\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bconsists of\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bworks by\\b", Pattern.CASE_INSENSITIVE)
         ));
 
         return Map.copyOf(markers);

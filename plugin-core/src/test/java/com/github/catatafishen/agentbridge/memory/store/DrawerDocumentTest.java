@@ -81,12 +81,21 @@ class DrawerDocumentTest {
 
     @Test
     void typeConstantsAreDefined() {
+        assertNotNull(DrawerDocument.TYPE_CONTEXT);
         assertNotNull(DrawerDocument.TYPE_DECISION);
-        assertNotNull(DrawerDocument.TYPE_PREFERENCE);
-        assertNotNull(DrawerDocument.TYPE_MILESTONE);
         assertNotNull(DrawerDocument.TYPE_PROBLEM);
-        assertNotNull(DrawerDocument.TYPE_TECHNICAL);
+        assertNotNull(DrawerDocument.TYPE_SOLUTION);
         assertNotNull(DrawerDocument.TYPE_GENERAL);
+    }
+
+    @Test
+    void roomConstantsAreDefined() {
+        assertNotNull(DrawerDocument.ROOM_CODEBASE);
+        assertNotNull(DrawerDocument.ROOM_DEBUGGING);
+        assertNotNull(DrawerDocument.ROOM_WORKFLOW);
+        assertNotNull(DrawerDocument.ROOM_DECISIONS);
+        assertNotNull(DrawerDocument.ROOM_PREFERENCES);
+        assertNotNull(DrawerDocument.ROOM_GENERAL);
     }
 
     @Test

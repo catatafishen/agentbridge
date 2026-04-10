@@ -42,7 +42,7 @@ public final class MemoryRecallTool extends Tool {
     @Override
     public @NotNull String description() {
         return "Targeted recall from a specific room in memory. More focused than memory_search "
-            + "— use when you know the topic area (e.g. 'architecture', 'decisions'). "
+            + "— use when you know the topic area (e.g. 'codebase', 'debugging', 'decisions'). "
             + "Returns drawers filtered by wing and room with optional text query.";
     }
 
@@ -64,7 +64,7 @@ public final class MemoryRecallTool extends Tool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("room", TYPE_STRING, "Room to recall from (e.g. 'architecture', 'decisions', 'problems')"),
+            Param.required("room", TYPE_STRING, "Room to recall from (e.g. 'codebase', 'debugging', 'workflow', 'decisions', 'preferences')"),
             Param.optional(PARAM_QUERY, TYPE_STRING, "Optional search query within the room"),
             Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Max results (default: 5)")
         );
