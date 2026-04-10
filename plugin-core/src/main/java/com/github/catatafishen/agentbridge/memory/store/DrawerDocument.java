@@ -21,13 +21,19 @@ public record DrawerDocument(
     @NotNull String sourceFile,
     @NotNull String agent,
     @NotNull Instant filedAt,
-    @NotNull String addedBy
+    @NotNull String addedBy,
+    @NotNull String sourceTurnIndex,
+    @NotNull String sourceCommits
 ) {
 
-    /** Maximum content length allowed (from MemPalace config.py sanitize_content). */
+    /**
+     * Maximum content length allowed (from MemPalace config.py sanitize_content).
+     */
     public static final int MAX_CONTENT_LENGTH = 100_000;
 
-    /** Maximum entity/name length (from MemPalace config.py sanitize_name). */
+    /**
+     * Maximum entity/name length (from MemPalace config.py sanitize_name).
+     */
     public static final int MAX_NAME_LENGTH = 128;
 
     /**
@@ -72,25 +78,78 @@ public record DrawerDocument(
         private String agent = "";
         private Instant filedAt = Instant.now();
         private String addedBy = ADDED_BY_MINER;
+        private String sourceTurnIndex = "";
+        private String sourceCommits = "";
 
-        public Builder id(@NotNull String id) { this.id = id; return this; }
-        public Builder wing(@NotNull String wing) { this.wing = wing; return this; }
-        public Builder room(@NotNull String room) { this.room = room; return this; }
-        public Builder content(@NotNull String content) { this.content = content; return this; }
-        public Builder memoryType(@NotNull String memoryType) { this.memoryType = memoryType; return this; }
-        public Builder sourceSession(@NotNull String sourceSession) { this.sourceSession = sourceSession; return this; }
-        public Builder sourceFile(@NotNull String sourceFile) { this.sourceFile = sourceFile; return this; }
-        public Builder agent(@NotNull String agent) { this.agent = agent; return this; }
-        public Builder filedAt(@NotNull Instant filedAt) { this.filedAt = filedAt; return this; }
-        public Builder addedBy(@NotNull String addedBy) { this.addedBy = addedBy; return this; }
+        public Builder id(@NotNull String id) {
+            this.id = id;
+            return this;
+        }
+
+        public Builder wing(@NotNull String wing) {
+            this.wing = wing;
+            return this;
+        }
+
+        public Builder room(@NotNull String room) {
+            this.room = room;
+            return this;
+        }
+
+        public Builder content(@NotNull String content) {
+            this.content = content;
+            return this;
+        }
+
+        public Builder memoryType(@NotNull String memoryType) {
+            this.memoryType = memoryType;
+            return this;
+        }
+
+        public Builder sourceSession(@NotNull String sourceSession) {
+            this.sourceSession = sourceSession;
+            return this;
+        }
+
+        public Builder sourceFile(@NotNull String sourceFile) {
+            this.sourceFile = sourceFile;
+            return this;
+        }
+
+        public Builder agent(@NotNull String agent) {
+            this.agent = agent;
+            return this;
+        }
+
+        public Builder filedAt(@NotNull Instant filedAt) {
+            this.filedAt = filedAt;
+            return this;
+        }
+
+        public Builder addedBy(@NotNull String addedBy) {
+            this.addedBy = addedBy;
+            return this;
+        }
+
+        public Builder sourceTurnIndex(@NotNull String sourceTurnIndex) {
+            this.sourceTurnIndex = sourceTurnIndex;
+            return this;
+        }
+
+        public Builder sourceCommits(@NotNull String sourceCommits) {
+            this.sourceCommits = sourceCommits;
+            return this;
+        }
 
         public DrawerDocument build() {
-            return new DrawerDocument(id, wing, room, content, memoryType, sourceSession, sourceFile, agent, filedAt, addedBy);
+            return new DrawerDocument(id, wing, room, content, memoryType, sourceSession,
+                sourceFile, agent, filedAt, addedBy, sourceTurnIndex, sourceCommits);
         }
     }
 
     /**
      * Search result wrapping a drawer with its relevance score.
      */
-    public record SearchResult(@NotNull DrawerDocument drawer, float score) {}
+    public record SearchResult(@NotNull DrawerDocument drawer, float score) {
+    }
 }

@@ -71,6 +71,8 @@ public final class MemoryStore implements Disposable {
     private static final String FLD_AGENT = "agent";
     private static final String FLD_FILED_AT = "filed_at";
     private static final String FLD_ADDED_BY = "added_by";
+    private static final String FLD_SOURCE_TURN_INDEX = "source_turn_index";
+    private static final String FLD_SOURCE_COMMITS = "source_commits";
 
     private static final float DUPLICATE_THRESHOLD = 0.9f;
 
@@ -140,6 +142,8 @@ public final class MemoryStore implements Disposable {
         doc.add(new StringField(FLD_AGENT, drawer.agent(), Field.Store.YES));
         doc.add(new StringField(FLD_FILED_AT, drawer.filedAt().toString(), Field.Store.YES));
         doc.add(new StringField(FLD_ADDED_BY, drawer.addedBy(), Field.Store.YES));
+        doc.add(new StringField(FLD_SOURCE_TURN_INDEX, drawer.sourceTurnIndex(), Field.Store.YES));
+        doc.add(new StringField(FLD_SOURCE_COMMITS, drawer.sourceCommits(), Field.Store.YES));
 
         // WAL before write
         JsonObject walPayload = new JsonObject();
@@ -317,6 +321,8 @@ public final class MemoryStore implements Disposable {
             .agent(doc.get(FLD_AGENT))
             .filedAt(Instant.parse(doc.get(FLD_FILED_AT)))
             .addedBy(doc.get(FLD_ADDED_BY))
+            .sourceTurnIndex(doc.get(FLD_SOURCE_TURN_INDEX))
+            .sourceCommits(doc.get(FLD_SOURCE_COMMITS))
             .build();
     }
 

@@ -112,8 +112,26 @@ public final class MemorySearchTool extends Tool {
             sb.append("Wing: ").append(d.wing()).append(" | Room: ").append(d.room())
                 .append(" | Type: ").append(d.memoryType()).append('\n');
             sb.append("Filed: ").append(d.filedAt()).append(" | By: ").append(d.addedBy()).append('\n');
+            appendSourceReference(sb, d);
             sb.append("Content:\n").append(d.content()).append("\n\n");
         }
         return sb.toString().trim();
+    }
+
+    /**
+     * Append source traceability lines (session/turn, commits) if available.
+     */
+    static void appendSourceReference(StringBuilder sb, DrawerDocument d) {
+        String turn = d.sourceTurnIndex();
+        String session = d.sourceSession();
+        if (!turn.isEmpty() && !session.isEmpty()) {
+            sb.append("Source: turn t").append(turn).append(" in session ").append(session).append('\n');
+            sb.append("  → search_conversation_history(file='").append(session)
+                .append("', turn_id='t").append(turn).append("')\n");
+        }
+        String commits = d.sourceCommits();
+        if (!commits.isEmpty()) {
+            sb.append("Commits: ").append(commits).append('\n');
+        }
     }
 }

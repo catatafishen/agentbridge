@@ -89,10 +89,6 @@ public final class TurnMiner {
         return executePipeline(entries, sessionId, agentName, store, embedder, filter, maxDrawers, wing, null);
     }
 
-    /**
-     * Package-private for testing — runs the full mining pipeline with explicit dependencies
-     * and optional knowledge graph for triple extraction.
-     */
     MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
                                MemoryStore store, Embedder embedder, QualityFilter filter,
                                int maxDrawers, String wing, @Nullable KnowledgeGraph kg) {
@@ -105,10 +101,13 @@ public final class TurnMiner {
         int filtered = 0;
         int duplicates = 0;
 
-        for (ExchangeChunker.Exchange exchange : exchanges) {
+        for (int i = 0; i < exchanges.size(); i++) {
             if (stored >= maxDrawers) break;
 
-            MineExchangeResult result = mineOneExchange(exchange, wing, sessionId, agentName, filter, store, embedder, kg);
+            ExchangeChunker.Exchange exchange = exchanges.get(i);
+            int turnIndex = i + 1;
+            MineExchangeResult result = mineOneExchange(exchange, wing, sessionId, agentName,
+                filter, store, embedder, kg, turnIndex);
             stored += result.stored;
             filtered += result.filtered;
             duplicates += result.duplicates;
@@ -125,7 +124,8 @@ public final class TurnMiner {
     private MineExchangeResult mineOneExchange(ExchangeChunker.Exchange exchange,
                                                String wing, String sessionId, String agentName,
                                                QualityFilter filter, MemoryStore store,
-                                               Embedder embedder, @Nullable KnowledgeGraph kg) {
+                                               Embedder embedder, @Nullable KnowledgeGraph kg,
+                                               int turnIndex) {
         if (!filter.passes(exchange.prompt(), exchange.response())) {
             return new MineExchangeResult(0, 1, 0);
         }
@@ -134,6 +134,7 @@ public final class TurnMiner {
         String memoryType = MemoryClassifier.classify(combinedText);
         String room = RoomDetector.detect(combinedText);
         Instant filedAt = parseExchangeTimestamp(exchange.timestamp());
+        String commits = String.join(",", exchange.commitHashes());
 
         try {
             float[] vector = embedder.embed(combinedText);
@@ -148,6 +149,8 @@ public final class TurnMiner {
                 .agent(agentName)
                 .filedAt(filedAt)
                 .addedBy(DrawerDocument.ADDED_BY_MINER)
+                .sourceTurnIndex(String.valueOf(turnIndex))
+                .sourceCommits(commits)
                 .build();
 
             String result = store.addDrawer(drawer, vector);

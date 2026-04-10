@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 /**
  * Tests for {@link DrawerDocument} record, builder, and SearchResult.
@@ -25,6 +27,8 @@ class DrawerDocumentTest {
             .agent("copilot")
             .filedAt(now)
             .addedBy(DrawerDocument.ADDED_BY_MINER)
+            .sourceTurnIndex("5")
+            .sourceCommits("abc1234,def5678")
             .build();
 
         assertEquals("drawer_myproject_general_abc123", doc.id());
@@ -37,6 +41,8 @@ class DrawerDocumentTest {
         assertEquals("copilot", doc.agent());
         assertEquals(now, doc.filedAt());
         assertEquals(DrawerDocument.ADDED_BY_MINER, doc.addedBy());
+        assertEquals("5", doc.sourceTurnIndex());
+        assertEquals("abc1234,def5678", doc.sourceCommits());
     }
 
     @Test
@@ -53,6 +59,8 @@ class DrawerDocumentTest {
         assertEquals("", doc.agent());
         assertNotNull(doc.filedAt());
         assertEquals(DrawerDocument.ADDED_BY_MINER, doc.addedBy());
+        assertEquals("", doc.sourceTurnIndex());
+        assertEquals("", doc.sourceCommits());
     }
 
     @Test

@@ -104,6 +104,7 @@ public final class MemoryRecallTool extends Tool {
         for (DrawerDocument.SearchResult result : results) {
             DrawerDocument d = result.drawer();
             sb.append("[").append(d.memoryType()).append("] ").append(d.filedAt()).append('\n');
+            MemorySearchTool.appendSourceReference(sb, d);
             sb.append(d.content()).append("\n\n");
         }
         return sb.toString().trim();

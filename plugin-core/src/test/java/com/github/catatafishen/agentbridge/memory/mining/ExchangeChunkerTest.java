@@ -3,9 +3,14 @@ package com.github.catatafishen.agentbridge.memory.mining;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link ExchangeChunker} — Q+A pair extraction from EntryData.
@@ -61,7 +66,7 @@ class ExchangeChunkerTest {
     }
 
     @Test
-    void toolCallsAreSkipped() {
+    void toolCallsAreSkippedFromResponseText() {
         List<EntryData> entries = List.of(
             new EntryData.Prompt("Fix the bug"),
             new EntryData.ToolCall("read_file"),
@@ -122,7 +127,7 @@ class ExchangeChunkerTest {
     @Test
     void combinedTextContainsBothPromptAndResponse() {
         ExchangeChunker.Exchange ex = new ExchangeChunker.Exchange(
-            "my prompt", "my response", "");
+            "my prompt", "my response", "", "", List.of());
         String combined = ex.combinedText();
         assertTrue(combined.contains("my prompt"));
         assertTrue(combined.contains("my response"));
@@ -136,5 +141,146 @@ class ExchangeChunkerTest {
 
         List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
         assertTrue(exchanges.isEmpty());
+    }
+
+    // --- Traceability: entryId ---
+
+    @Test
+    void promptEntryIdIsCaptured() {
+        EntryData.Prompt prompt = new EntryData.Prompt("Question", "2024-01-01T00:00:00Z");
+        List<EntryData> entries = List.of(prompt, new EntryData.Text("Answer"));
+
+        List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
+        assertEquals(1, exchanges.size());
+        assertEquals(prompt.getEntryId(), exchanges.get(0).promptEntryId());
+        assertFalse(exchanges.get(0).promptEntryId().isEmpty());
+    }
+
+    @Test
+    void multipleExchangesPreserveTheirOwnEntryIds() {
+        EntryData.Prompt p1 = new EntryData.Prompt("Q1");
+        EntryData.Prompt p2 = new EntryData.Prompt("Q2");
+        List<EntryData> entries = List.of(
+            p1, new EntryData.Text("A1"),
+            p2, new EntryData.Text("A2")
+        );
+
+        List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
+        assertEquals(2, exchanges.size());
+        assertEquals(p1.getEntryId(), exchanges.get(0).promptEntryId());
+        assertEquals(p2.getEntryId(), exchanges.get(1).promptEntryId());
+        assertNotEquals(exchanges.get(0).promptEntryId(), exchanges.get(1).promptEntryId());
+    }
+
+    // --- Traceability: git commit hashes ---
+
+    @Test
+    void gitCommitHashExtractedFromToolCallResult() {
+        EntryData.ToolCall commitTc = new EntryData.ToolCall("git_commit");
+        commitTc.setResult("[fix/my-branch abc1234] fix: resolve null pointer");
+
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Fix the NPE"),
+            commitTc,
+            new EntryData.Text("Done.")
+        );
+
+        List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
+        assertEquals(1, exchanges.size());
+        assertEquals(List.of("abc1234"), exchanges.get(0).commitHashes());
+    }
+
+    @Test
+    void multipleCommitsInSameExchange() {
+        EntryData.ToolCall tc1 = new EntryData.ToolCall("git_commit");
+        tc1.setResult("[main aaa1111] feat: add feature A");
+        EntryData.ToolCall tc2 = new EntryData.ToolCall("git_commit");
+        tc2.setResult("[main bbb2222] fix: fix feature A edge case");
+
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Add feature and fix edge case"),
+            tc1, tc2,
+            new EntryData.Text("Both done.")
+        );
+
+        List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
+        assertEquals(List.of("aaa1111", "bbb2222"), exchanges.get(0).commitHashes());
+    }
+
+    @Test
+    void commitHashesResetBetweenExchanges() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("git_commit");
+        tc.setResult("[main abc1234] fix: first");
+
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("First turn"),
+            tc,
+            new EntryData.Text("Done first."),
+            new EntryData.Prompt("Second turn, no commits"),
+            new EntryData.Text("Done second.")
+        );
+
+        List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
+        assertEquals(2, exchanges.size());
+        assertEquals(List.of("abc1234"), exchanges.get(0).commitHashes());
+        assertTrue(exchanges.get(1).commitHashes().isEmpty());
+    }
+
+    @Test
+    void toolCallWithNullResultDoesNotCrash() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("read_file");
+        // result is null by default
+
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Read a file"),
+            tc,
+            new EntryData.Text("File content.")
+        );
+
+        List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
+        assertEquals(1, exchanges.size());
+        assertTrue(exchanges.get(0).commitHashes().isEmpty());
+    }
+
+    @Test
+    void toolCallWithNoGitOutputHasNoHashes() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("write_file");
+        tc.setResult("Written: src/Main.java (500 chars)");
+
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Write a file"),
+            tc,
+            new EntryData.Text("Done.")
+        );
+
+        List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
+        assertTrue(exchanges.get(0).commitHashes().isEmpty());
+    }
+
+    @Test
+    void extractCommitHashesHandlesFullSha() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("git_commit");
+        tc.setResult("[main 0123456789abcdef0123456789abcdef01234567] full sha");
+
+        List<String> out = new ArrayList<>();
+        ExchangeChunker.extractCommitHashes(tc, out);
+        assertEquals(1, out.size());
+        assertEquals("0123456789abcdef0123456789abcdef01234567", out.get(0));
+    }
+
+    @Test
+    void commitHashesAreUnmodifiableInExchange() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("git_commit");
+        tc.setResult("[main abc1234] commit");
+
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Commit"),
+            tc,
+            new EntryData.Text("Done.")
+        );
+
+        List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
+        assertThrows(UnsupportedOperationException.class,
+            () -> exchanges.get(0).commitHashes().add("should-fail"));
     }
 }

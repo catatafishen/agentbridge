@@ -12,7 +12,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link MemoryStore} using a temporary Lucene index.
@@ -206,6 +210,44 @@ class MemoryStoreTest {
     void emptyTaxonomy() throws IOException {
         Map<String, Map<String, Integer>> taxonomy = store.getTaxonomy();
         assertTrue(taxonomy.isEmpty());
+    }
+
+    @Test
+    void traceabilityFieldsAreStoredAndRetrieved() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("trace-1")
+            .wing("proj")
+            .room("codebase")
+            .content("Refactored auth module with unique content " + System.nanoTime())
+            .sourceTurnIndex("3")
+            .sourceCommits("abc1234,def5678")
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        MemoryQuery q = MemoryQuery.filter().wing("proj").room("codebase").build();
+        List<DrawerDocument.SearchResult> results = store.search(q, null);
+        assertEquals(1, results.size());
+        DrawerDocument retrieved = results.get(0).drawer();
+        assertEquals("3", retrieved.sourceTurnIndex());
+        assertEquals("abc1234,def5678", retrieved.sourceCommits());
+    }
+
+    @Test
+    void traceabilityFieldsDefaultToEmptyString() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("no-trace-1")
+            .wing("proj")
+            .room("general")
+            .content("No traceability info with unique content " + System.nanoTime())
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        MemoryQuery q = MemoryQuery.filter().wing("proj").room("general").build();
+        List<DrawerDocument.SearchResult> results = store.search(q, null);
+        assertEquals(1, results.size());
+        DrawerDocument retrieved = results.get(0).drawer();
+        assertEquals("", retrieved.sourceTurnIndex());
+        assertEquals("", retrieved.sourceCommits());
     }
 
     private void addTestDrawer(String id, String wing, String room, float[] embedding) throws IOException {
