@@ -4,21 +4,20 @@
 [![Release](https://img.shields.io/github/v/release/catatafishen/agentbridge?label=release)](https://github.com/catatafishen/agentbridge/releases/latest)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![CodeQL](https://github.com/catatafishen/agentbridge/actions/workflows/codeql.yml/badge.svg)](https://github.com/catatafishen/agentbridge/actions/workflows/codeql.yml)
-[![codecov](https://codecov.io/gh/catatafishen/agentbridge/branch/master/graph/badge.svg)](https://codecov.io/gh/catatafishen/agentbridge)
+[![codecov](https://codecov.io/gh/catatafishen/agentbridge/graph/badge.svg)](https://codecov.io/gh/catatafishen/agentbridge)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/catatafishen/agentbridge/badge)](https://scorecard.dev/viewer/?uri=github.com/catatafishen/agentbridge)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12428/badge)](https://www.bestpractices.dev/projects/12428)
 
 A JetBrains IDE plugin that bridges AI coding agents to IntelliJ platform APIs through
-native MCP tools. Agents work through inspections, refactorings, the test runner,
+**120+ native MCP tools**. Agents work through inspections, refactorings, the test runner,
 the build system, and Git — the same tools you use — instead of operating through a terminal
 or generating diffs in isolation.
 
 **Key highlights:**
 
 - **6 agents** — Copilot, Claude Code, Codex, Kiro, Junie, OpenCode. Switch with one click.
-- **Extensive MCP toolset** — code navigation, refactoring, testing, debugging, git, project
-  management, and more. Tools are context-aware and load conditionally based on your IDE
-  plugins (Java support, Database, Qodana, SonarQube).
+- **120+ MCP tools** — code navigation, refactoring, testing, debugging, git, project management,
+  and more — all through native IntelliJ APIs.
 - **Cross-client session resume** — switch agents without losing conversation history.
 - **PWA web access** — use the chat from any device on your local network via HTTPS.
 - **Human in the loop** — every action is visible in the IDE. Undo, review, or redirect at any point.
@@ -103,7 +102,7 @@ graph TD
             XC["CodexAppServerClient — Codex"]
         end
         subgraph mcp["MCP Layer"]
-            PSI["PsiBridgeService (HTTP ↔ MCP tools)"]
+            PSI["PsiBridgeService (HTTP ↔ 120+ tools)"]
         end
         TW --> AAM
         AAM --> clients
@@ -121,10 +120,8 @@ graph TD
 - **UI** — JCEF-based chat panel, model selector, context management. Agent-agnostic.
 - **Clients** — `AcpClient` (shared by Copilot, Junie, Kiro, OpenCode), `ClaudeCliClient`,
   `CodexAppServerClient`. Each wraps its agent CLI's stdin/stdout protocol.
-- **MCP** — Tools implemented against IntelliJ's PSI, VFS, and platform APIs. Exposed
-  via an HTTP bridge to a bundled MCP stdio server (JAR). Tools load conditionally based
-  on available IDE plugins — Java-specific tools only appear when Java support is active,
-  database tools when the Database plugin is installed, etc.
+- **MCP** — 120+ tools implemented against IntelliJ's PSI, VFS, and platform APIs. Exposed
+  via an HTTP bridge to a bundled MCP stdio server (JAR).
 
 ### Cross-Client Session Resume
 
@@ -134,9 +131,9 @@ history across all six supported agents. See [docs/SESSION-RESUME.md](docs/SESSI
 
 ### IntelliJ-Native File Operations
 
-Built-in agent file tools (like `bash`, `edit`, `create`) are **auto-denied** so the agent
-retries using AgentBridge MCP tools instead. These write through IntelliJ's Document API —
-supporting undo/redo, triggering auto-format, and keeping the editor in sync.
+Built-in agent file tools (like `bash`, `edit`, `create`) are **denied at the permission
+level**. The agent retries using AgentBridge MCP tools, which write through IntelliJ's
+Document API — supporting undo/redo, triggering auto-format, and keeping the editor in sync.
 
 ## Requirements
 
@@ -184,7 +181,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the full development guide.
 agentbridge/
 ├── plugin-core/           # Main plugin — UI, agent clients, MCP tools (Java 21)
 ├── mcp-server/            # Bundled MCP stdio server (JAR)
-└── plugin-experimental/   # Experimental tools (run_inspections, execute_query)
+├── plugin-experimental/   # Experimental tools (run_inspections, execute_query)
+└── integration-tests/     # Integration test suite
 ```
 
 ## Documentation
