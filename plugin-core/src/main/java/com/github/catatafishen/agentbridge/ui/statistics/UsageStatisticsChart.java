@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -51,7 +52,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD));
         add(titleLabel, BorderLayout.NORTH);
 
-        canvas = new ChartCanvas();
+        canvas = new ChartCanvas(metric);
         add(canvas, BorderLayout.CENTER);
 
         emptyLabel = new JBLabel("No data");
@@ -73,6 +74,9 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         remove(emptyLabel);
         add(canvas, BorderLayout.CENTER);
 
+        LocalDate rangeStart = snapshot.startDate();
+        LocalDate rangeEnd = snapshot.endDate();
+
         Map<String, List<UsageStatisticsData.DailyAgentStats>> byAgent = snapshot.dailyStats().stream()
             .collect(Collectors.groupingBy(UsageStatisticsData.DailyAgentStats::agentId));
 
@@ -85,11 +89,18 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
             int colorIndex = ChatTheme.INSTANCE.agentColorIndex(agentId);
             JBColor agentColor = ChatTheme.INSTANCE.getSA_COLORS()[colorIndex];
 
-            List<DataPoint> points = new ArrayList<>();
+            // Index metric values by date for O(1) lookup
+            Map<LocalDate, Long> valuesByDate = new LinkedHashMap<>();
             for (UsageStatisticsData.DailyAgentStats stats : agentStats) {
-                long x = stats.date().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
-                long y = extractMetricValue(stats);
-                points.add(new DataPoint(x, y, stats.date()));
+                valuesByDate.merge(stats.date(), extractMetricValue(stats), Long::sum);
+            }
+
+            // Fill every day in the selected range, using zero for days without data
+            List<DataPoint> points = new ArrayList<>();
+            for (LocalDate d = rangeStart; !d.isAfter(rangeEnd); d = d.plusDays(1)) {
+                long x = d.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+                long y = valuesByDate.getOrDefault(d, 0L);
+                points.add(new DataPoint(x, y, d));
             }
 
             seriesList.add(new DataSeries(agentId, agentColor, points));
@@ -111,7 +122,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
             case TOKENS -> stats.inputTokens() + stats.outputTokens();
             case TOOL_CALLS -> stats.toolCalls();
             case CODE_CHANGES -> stats.linesAdded() + stats.linesRemoved();
-            case AGENT_TIME -> stats.durationMs() / 1000;
+            case AGENT_TIME -> stats.durationMs() / 60_000;
         };
     }
 
@@ -126,11 +137,14 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
      */
     private static final class ChartCanvas extends JPanel {
 
+        private final UsageStatisticsData.Metric metric;
         private List<DataSeries> seriesList = List.of();
         private long xMin, xMax, yMin, yMax;
 
-        ChartCanvas() {
-            setOpaque(false);
+        ChartCanvas(UsageStatisticsData.Metric metric) {
+            this.metric = metric;
+            // Must stay opaque so Swing's RepaintManager always
+            // repaints this component when repaint() is called.
         }
 
         void setData(List<DataSeries> seriesList) {
@@ -174,13 +188,13 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
             super.paintComponent(g);
             if (seriesList.isEmpty()) return;
 
+            int w = getWidth();
+            int h = getHeight();
+
             Graphics2D g2 = (Graphics2D) g.create();
             try {
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 g2.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-
-                int w = getWidth();
-                int h = getHeight();
                 int plotLeft = MARGIN_LEFT;
                 int plotRight = w - MARGIN_RIGHT;
                 int plotTop = MARGIN_TOP;
@@ -213,7 +227,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
                     g2.setColor(GRID_LINE_COLOR);
                     g2.drawLine(plotLeft, py, plotRight, py);
                     g2.setColor(GRID_LABEL_COLOR);
-                    String label = formatCompact(yVal);
+                    String label = formatYLabel(yVal, metric);
                     int labelW = fm.stringWidth(label);
                     g2.drawString(label, plotLeft - labelW - 4, py + fm.getAscent() / 2);
                 }
@@ -333,5 +347,21 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
             return v == (long) v ? (long) v + "K" : String.format("%.1fK", v);
         }
         return Long.toString(value);
+    }
+
+    private static String formatDuration(long minutes) {
+        if (minutes >= 60) {
+            long h = minutes / 60;
+            long m = minutes % 60;
+            return m == 0 ? h + "h" : h + "h " + m + "m";
+        }
+        return minutes + "m";
+    }
+
+    private static String formatYLabel(long value, UsageStatisticsData.Metric metric) {
+        if (metric == UsageStatisticsData.Metric.AGENT_TIME) {
+            return formatDuration(value);
+        }
+        return formatCompact(value);
     }
 }

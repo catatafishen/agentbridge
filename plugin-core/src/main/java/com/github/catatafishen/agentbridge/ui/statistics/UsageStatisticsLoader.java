@@ -47,7 +47,7 @@ final class UsageStatisticsLoader {
         List<SessionStoreV2.SessionRecord> sessions =
             SessionStoreV2.getInstance(project).listSessions(basePath);
         if (sessions.isEmpty()) {
-            LOG.debug("Statistics: no sessions found for basePath=" + basePath);
+            LOG.info("Statistics: no sessions found for basePath=" + basePath);
             return emptySnapshot(startDate, endDate);
         }
 
@@ -73,9 +73,18 @@ final class UsageStatisticsLoader {
         }
 
         List<UsageStatisticsData.DailyAgentStats> dailyStats = buildDailyStats(accumulators);
-        LOG.debug("Statistics: loaded " + sessions.size() + " sessions, "
+        LOG.info("Statistics: loaded " + sessions.size() + " sessions, "
             + accumulators.size() + " day/agent buckets, "
             + dailyStats.stream().mapToInt(UsageStatisticsData.DailyAgentStats::turns).sum() + " total turns");
+
+        // For "all time", start from the earliest data date instead of 2020-01-01
+        // to avoid creating thousands of zero-fill points in the chart
+        if (range == UsageStatisticsData.TimeRange.ALL && !accumulators.isEmpty()) {
+            startDate = accumulators.keySet().stream()
+                .map(DayAgentKey::date)
+                .min(Comparator.naturalOrder())
+                .orElse(startDate);
+        }
 
         return new UsageStatisticsData.StatisticsSnapshot(
             dailyStats, startDate, endDate, agentIds, agentDisplayNames);

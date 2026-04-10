@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.ui.statistics;
 
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.ComboBox;
 import com.intellij.ui.JBColor;
@@ -19,6 +21,8 @@ import java.util.Map;
  * and six metric charts arranged in a 2×3 grid.
  */
 class UsageStatisticsPanel extends JBPanel<UsageStatisticsPanel> {
+
+    private static final Logger LOG = Logger.getInstance(UsageStatisticsPanel.class);
 
     private final Project project;
     private final ComboBox<UsageStatisticsData.TimeRange> rangeCombo;
@@ -80,9 +84,17 @@ class UsageStatisticsPanel extends JBPanel<UsageStatisticsPanel> {
     }
 
     private void loadData(UsageStatisticsData.TimeRange range) {
+        // Use ModalityState.any() so the callback runs even inside a modal dialog
+        ModalityState modality = ModalityState.any();
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            UsageStatisticsData.StatisticsSnapshot snapshot = UsageStatisticsLoader.load(project, range);
-            ApplicationManager.getApplication().invokeLater(() -> updateCharts(snapshot));
+            try {
+                UsageStatisticsData.StatisticsSnapshot snapshot = UsageStatisticsLoader.load(project, range);
+                LOG.info("Statistics panel: loaded " + snapshot.dailyStats().size()
+                    + " daily stats, " + snapshot.agentIds().size() + " agents");
+                ApplicationManager.getApplication().invokeLater(() -> updateCharts(snapshot), modality);
+            } catch (Exception e) {
+                LOG.error("Statistics panel: failed to load data for range " + range, e);
+            }
         });
     }
 
