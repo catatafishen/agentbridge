@@ -37,6 +37,8 @@ data class PromptOrchestratorCallbacks(
     val sendPromptDirectly: (String) -> Unit,
     /** Restore the user's prompt text to the input box on send failure. */
     val restorePromptText: (rawText: String) -> Unit,
+    /** Called after turn completion to mine entries into semantic memory (async, non-blocking). */
+    val onTurnMineEntries: (sessionId: String, agentName: String) -> Unit,
 )
 
 /** Stored banner message to re-display at the start of the next prompt turn. */
@@ -467,6 +469,12 @@ class PromptOrchestrator(
             if (ActiveAgentManager.getFollowAgentFiles(project)) {
                 callbacks.requestFocusAfterTurn()
             }
+        }
+
+        // Trigger semantic memory mining (async, non-blocking)
+        val sessionId = currentSessionId
+        if (sessionId != null) {
+            callbacks.onTurnMineEntries(sessionId, agentManager.activeProfile.displayName)
         }
     }
 
