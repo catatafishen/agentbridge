@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.memory.store;
 
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
 
@@ -32,15 +31,25 @@ public record DrawerDocument(
     public static final int MAX_NAME_LENGTH = 128;
 
     /**
-     * Memory types — adapted from MemPalace's general_extractor.py.
-     * "emotional" replaced with "technical" for coding context.
+     * Memory types — orthogonal to rooms, classifies the nature of the knowledge.
+     * Adapted from MemPalace's general_extractor.py with coding-specific refinements.
      */
+    public static final String TYPE_CONTEXT = "context";
     public static final String TYPE_DECISION = "decision";
-    public static final String TYPE_PREFERENCE = "preference";
-    public static final String TYPE_MILESTONE = "milestone";
     public static final String TYPE_PROBLEM = "problem";
-    public static final String TYPE_TECHNICAL = "technical";
+    public static final String TYPE_SOLUTION = "solution";
     public static final String TYPE_GENERAL = "general";
+
+    /**
+     * Room constants — topic shelves for memory recall.
+     * Orthogonal to types: room = "where to look", type = "what kind of knowledge".
+     */
+    public static final String ROOM_CODEBASE = "codebase";
+    public static final String ROOM_DEBUGGING = "debugging";
+    public static final String ROOM_WORKFLOW = "workflow";
+    public static final String ROOM_DECISIONS = "decisions";
+    public static final String ROOM_PREFERENCES = "preferences";
+    public static final String ROOM_GENERAL = "general";
 
     public static final String ADDED_BY_MINER = "miner";
     public static final String ADDED_BY_MCP = "mcp";
@@ -55,7 +64,7 @@ public record DrawerDocument(
     public static final class Builder {
         private String id = "";
         private String wing = "";
-        private String room = "general";
+        private String room = ROOM_GENERAL;
         private String content = "";
         private String memoryType = TYPE_GENERAL;
         private String sourceSession = "";

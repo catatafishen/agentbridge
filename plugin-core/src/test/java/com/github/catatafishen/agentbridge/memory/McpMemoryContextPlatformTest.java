@@ -35,7 +35,7 @@ public class McpMemoryContextPlatformTest extends MemoryPlatformTestCase {
             .wing("test-project")
             .room("technical")
             .content("We implemented semantic memory using Lucene for fast retrieval")
-            .memoryType(DrawerDocument.TYPE_TECHNICAL)
+            .memoryType(DrawerDocument.TYPE_CONTEXT)
             .filedAt(Instant.now())
             .addedBy(DrawerDocument.ADDED_BY_MINER)
             .build();
