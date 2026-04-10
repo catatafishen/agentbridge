@@ -189,6 +189,7 @@ class ChatToolWindowContent(
             Separator.create(),
             ProjectFilesDropdownAction(),
             Separator.create(),
+            StatisticsAction(),
             SettingsAction()
         )
         toolWindow.setTitleActions(actions)
@@ -1188,6 +1189,17 @@ class ChatToolWindowContent(
                 com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
             )
             popup.showUnderneathOf(component)
+        }
+    }
+
+    /** Toolbar button that opens the usage statistics dialog. */
+    private inner class StatisticsAction : AnAction(
+        "Usage Statistics", "View usage statistics across agent sessions",
+        AllIcons.Actions.ProfileCPU
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+        override fun actionPerformed(e: AnActionEvent) {
+            com.github.catatafishen.agentbridge.ui.statistics.UsageStatisticsDialog(project).show()
         }
     }
 
