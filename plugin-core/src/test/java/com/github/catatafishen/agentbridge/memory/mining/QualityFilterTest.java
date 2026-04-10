@@ -120,4 +120,107 @@ class QualityFilterTest {
         assertTrue(filter.passes(prompt, response));
         assertFalse(strictFilter.passes(prompt, response));
     }
+
+    // --- Additional status patterns ---
+
+    @Test
+    void rejectsProceed() {
+        // Response long enough so combined > minChunkLength (200), to ensure isStatusMessage() is reached
+        assertFalse(filter.passes("proceed",
+            "On it! I will start by analyzing the codebase structure, then implement the changes across " +
+                "all affected modules. The refactoring will touch the service layer, repository layer, " +
+                "and the controller endpoints to ensure consistency."));
+    }
+
+    @Test
+    void rejectsSure() {
+        assertFalse(filter.passes("sure",
+            "Starting the implementation now. I will begin with the authentication module and " +
+                "refactor the token validation logic to use a more robust approach. Then I will " +
+                "update the integration tests to cover the new flows."));
+    }
+
+    @Test
+    void rejectsThanks() {
+        assertFalse(filter.passes("thanks", "You're welcome!"));
+    }
+
+    @Test
+    void rejectsThankYou() {
+        assertFalse(filter.passes("thank you", "Glad to help!"));
+    }
+
+    @Test
+    void rejectsDone() {
+        assertFalse(filter.passes("done", "Alright, wrapping up..."));
+    }
+
+    @Test
+    void rejectsNext() {
+        assertFalse(filter.passes("next", "Moving to the next task..."));
+    }
+
+    @Test
+    void rejectsNo() {
+        assertFalse(filter.passes("no", "Understood, I will not do that."));
+    }
+
+    @Test
+    void rejectsStatusWithPunctuation() {
+        assertFalse(filter.passes("ok!", "Processing..."));
+        assertFalse(filter.passes("yes.", "Got it!"));
+        assertFalse(filter.passes("thanks!", "Sure!"));
+    }
+
+    @Test
+    void rejectsStatusWithWhitespace() {
+        assertFalse(filter.passes("  continue  ", "Continuing..."));
+        assertFalse(filter.passes("\tok\n", "Done!"));
+    }
+
+    // --- JSON line tool output detection ---
+
+    @Test
+    void rejectsJsonHeavyResponse() {
+        StringBuilder jsonOutput = new StringBuilder();
+        for (int i = 0; i < 15; i++) {
+            jsonOutput.append("\"key").append(i).append("\": \"value").append(i).append("\"\n");
+        }
+        assertFalse(filter.passes(
+            "Show me the entire configuration in JSON format",
+            jsonOutput.toString()));
+    }
+
+    @Test
+    void rejectsJsonBracesHeavyResponse() {
+        StringBuilder jsonOutput = new StringBuilder();
+        for (int i = 0; i < 10; i++) {
+            jsonOutput.append("{\n");
+            jsonOutput.append("  \"name\": \"item").append(i).append("\"\n");
+            jsonOutput.append("}\n");
+        }
+        assertFalse(filter.passes(
+            "Show me all the items in our data store",
+            jsonOutput.toString()));
+    }
+
+    // --- Response with fewer than 5 lines (isToolOutputHeavy early return) ---
+
+    @Test
+    void shortResponseWithToolCharsIsNotFiltered() {
+        String response = "│ src/main/java/Auth.java\n" +
+            "│ src/main/java/User.java\n" +
+            "│ src/main/java/Service.java";
+        // Only 3 lines → isToolOutputHeavy returns false (< 5 lines)
+        // Combined is long enough (> 200 chars) so it should pass
+        String prompt = "Show me the files related to authentication and user management systems so I can understand the project structure and dependencies better";
+        assertTrue(filter.passes(prompt, response));
+    }
+
+    @Test
+    void fourLineToolOutputNotFiltered() {
+        String response = "│ line one with some content here\n│ line two with more content\n│ line three showing output\n│ line four with the last bit of tool output displayed here";
+        String prompt = "Please list the top-level source directories in our project structure and explain how they are organized for the build process and continuous integration pipeline";
+        assertTrue(filter.passes(prompt, response));
+    }
 }

@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.memory.mining;
 
 import com.github.catatafishen.agentbridge.memory.MemoryService;
 import com.github.catatafishen.agentbridge.memory.MemorySettings;
-import com.github.catatafishen.agentbridge.memory.embedding.EmbeddingService;
+import com.github.catatafishen.agentbridge.memory.embedding.Embedder;
 import com.github.catatafishen.agentbridge.memory.store.DrawerDocument;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.ui.EntryData;
@@ -29,6 +29,14 @@ public final class TurnMiner {
 
     private final Project project;
 
+    /**
+     * Package-private constructor for testing — bypasses project dependency.
+     * Tests should call {@link #executePipeline} directly.
+     */
+    TurnMiner() {
+        this.project = null;
+    }
+
     public TurnMiner(@NotNull Project project) {
         this.project = project;
     }
@@ -54,7 +62,7 @@ public final class TurnMiner {
     private MineResult doMine(List<EntryData> entries, String sessionId, String agentName) {
         MemoryService memoryService = MemoryService.getInstance(project);
         MemoryStore store = memoryService.getStore();
-        EmbeddingService embedding = memoryService.getEmbeddingService();
+        Embedder embedding = memoryService.getEmbeddingService();
 
         if (store == null || embedding == null) {
             return MineResult.EMPTY;
@@ -64,7 +72,15 @@ public final class TurnMiner {
         String wing = memoryService.getEffectiveWing();
         QualityFilter filter = new QualityFilter(project);
 
-        // Step 1: Extract Q+A pairs
+        return executePipeline(entries, sessionId, agentName, store, embedding, filter, maxDrawers, wing);
+    }
+
+    /**
+     * Package-private for testing — runs the full mining pipeline with explicit dependencies.
+     */
+    MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
+                               MemoryStore store, Embedder embedder, QualityFilter filter,
+                               int maxDrawers, String wing) {
         List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
         if (exchanges.isEmpty()) {
             return MineResult.EMPTY;
@@ -77,7 +93,7 @@ public final class TurnMiner {
         for (ExchangeChunker.Exchange exchange : exchanges) {
             if (stored >= maxDrawers) break;
 
-            MineExchangeResult result = mineOneExchange(exchange, wing, sessionId, agentName, filter, store, embedding);
+            MineExchangeResult result = mineOneExchange(exchange, wing, sessionId, agentName, filter, store, embedder);
             stored += result.stored;
             filtered += result.filtered;
             duplicates += result.duplicates;
@@ -94,7 +110,7 @@ public final class TurnMiner {
     private MineExchangeResult mineOneExchange(ExchangeChunker.Exchange exchange,
                                                String wing, String sessionId, String agentName,
                                                QualityFilter filter, MemoryStore store,
-                                               EmbeddingService embedding) {
+                                               Embedder embedder) {
         if (!filter.passes(exchange.prompt(), exchange.response())) {
             return new MineExchangeResult(0, 1, 0);
         }
@@ -104,7 +120,7 @@ public final class TurnMiner {
         String room = RoomDetector.detect(combinedText);
 
         try {
-            float[] vector = embedding.embed(combinedText);
+            float[] vector = embedder.embed(combinedText);
             String drawerId = MemoryStore.generateDrawerId(wing, room, combinedText);
             DrawerDocument drawer = DrawerDocument.builder()
                 .id(drawerId)

@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.memory.layers;
 
-import com.github.catatafishen.agentbridge.memory.embedding.EmbeddingService;
+import com.github.catatafishen.agentbridge.memory.embedding.Embedder;
 import com.github.catatafishen.agentbridge.memory.store.DrawerDocument;
 import com.github.catatafishen.agentbridge.memory.store.MemoryQuery;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
@@ -22,16 +22,16 @@ public final class DeepSearchLayer implements MemoryStack {
     private static final int DEFAULT_LIMIT = 10;
 
     private final MemoryStore store;
-    private final EmbeddingService embeddingService;
+    private final Embedder embedder;
     private final int limit;
 
-    public DeepSearchLayer(@NotNull MemoryStore store, @NotNull EmbeddingService embeddingService) {
-        this(store, embeddingService, DEFAULT_LIMIT);
+    public DeepSearchLayer(@NotNull MemoryStore store, @NotNull Embedder embedder) {
+        this(store, embedder, DEFAULT_LIMIT);
     }
 
-    public DeepSearchLayer(@NotNull MemoryStore store, @NotNull EmbeddingService embeddingService, int limit) {
+    public DeepSearchLayer(@NotNull MemoryStore store, @NotNull Embedder embedder, int limit) {
         this.store = store;
-        this.embeddingService = embeddingService;
+        this.embedder = embedder;
         this.limit = limit;
     }
 
@@ -50,7 +50,7 @@ public final class DeepSearchLayer implements MemoryStack {
         if (query == null || query.isEmpty()) return "";
 
         try {
-            float[] embedding = embeddingService.embed(query);
+            float[] embedding = embedder.embed(query);
             MemoryQuery mq = MemoryQuery.withEmbedding(embedding)
                 .wing(wing)
                 .limit(limit)
