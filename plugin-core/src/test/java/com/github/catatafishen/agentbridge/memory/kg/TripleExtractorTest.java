@@ -16,6 +16,8 @@ class TripleExtractorTest {
     private static final String WING = "test-project";
     private static final String DRAWER_ID = "drawer_test_001";
 
+    // ── Pattern matching tests ────────────────────────────────────────────
+
     @Test
     void decisionPattern() {
         String text = "We decided to use JWT tokens for authentication.\nThis keeps it stateless.";
@@ -136,7 +138,6 @@ class TripleExtractorTest {
 
     @Test
     void maxTriplesPerTextRespected() {
-        // Build text with many extractable patterns
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 20; i++) {
             sb.append("We use tool-").append(i).append(" for task-").append(i).append(".\n");
@@ -151,9 +152,175 @@ class TripleExtractorTest {
         String text = "We use it.";
         List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
 
-        // "it" is only 2 chars, should be filtered out
         assertTrue(triples.isEmpty());
     }
+
+    // ── Markdown stripping tests ──────────────────────────────────────────
+
+    @Test
+    void markdownBoldIsUnwrapped() {
+        String text = "We use **Gradle** for building.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertContainsTriple(triples, "uses", "Gradle");
+    }
+
+    @Test
+    void markdownBoldDoesNotProduceArtifacts() {
+        // Regression: previously extracted "**lazy" as a triple object
+        String text = "The system uses **lazy initialization** for startup performance.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        for (TripleExtractor.ExtractedTriple triple : triples) {
+            assertFalse(triple.object().contains("**"),
+                "Object contains markdown artifact: " + triple.object());
+        }
+    }
+
+    @Test
+    void fencedCodeBlockIsRemoved() {
+        String text = "We use Gradle for building.\n```groovy\nplugins {\n  id 'java'\n}\n```\nThis works well.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertContainsTriple(triples, "uses", "Gradle");
+        // Should not extract patterns from inside code blocks
+        for (TripleExtractor.ExtractedTriple triple : triples) {
+            assertFalse(triple.object().contains("plugins"),
+                "Extracted from code block: " + triple.object());
+        }
+    }
+
+    @Test
+    void inlineCodeIsRemoved() {
+        String text = "We use `HashMap<String, Object>` for caching.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        for (TripleExtractor.ExtractedTriple triple : triples) {
+            assertFalse(triple.object().contains("HashMap"),
+                "Extracted inline code content: " + triple.object());
+        }
+    }
+
+    @Test
+    void markdownLinksAreUnwrapped() {
+        String result = TripleExtractor.stripMarkdown("See [Lucene docs](https://lucene.apache.org) for details.");
+
+        assertTrue(result.contains("Lucene docs"));
+        assertFalse(result.contains("https://"));
+    }
+
+    @Test
+    void headersAreStripped() {
+        String result = TripleExtractor.stripMarkdown("## Architecture\nWe use microservices.");
+
+        assertFalse(result.contains("##"));
+        assertTrue(result.contains("Architecture"));
+    }
+
+    // ── Quality filtering tests ───────────────────────────────────────────
+
+    @Test
+    void rejectsAllStopwordObjects() {
+        // "the memory" — both words are stopwords → rejected
+        assertFalse(TripleExtractor.isQualityObject("the memory"));
+        assertFalse(TripleExtractor.isQualityObject("a new method"));
+        assertFalse(TripleExtractor.isQualityObject("the old system"));
+    }
+
+    @Test
+    void acceptsObjectsWithSpecificTerms() {
+        assertTrue(TripleExtractor.isQualityObject("Gradle"));
+        assertTrue(TripleExtractor.isQualityObject("ONNX Runtime"));
+        assertTrue(TripleExtractor.isQualityObject("write-ahead log"));
+        assertTrue(TripleExtractor.isQualityObject("the plugin classloader"));
+    }
+
+    @Test
+    void rejectsTooManyWords() {
+        String longObject = "this is a very long object phrase that contains way too many words for a triple";
+        assertFalse(TripleExtractor.isQualityObject(longObject));
+    }
+
+    @Test
+    void rejectsTooShort() {
+        assertFalse(TripleExtractor.isQualityObject("it"));
+        assertFalse(TripleExtractor.isQualityObject("ab"));
+    }
+
+    // ── Sentence isolation tests ──────────────────────────────────────────
+
+    @Test
+    void patternDoesNotCrossNewlines() {
+        // Regression: "implemented" pattern captured across sentence boundary
+        // producing "Restart the IDE and the agent should now recall memories"
+        String text = "We implemented the wake-up fix.\nRestart the IDE and the agent should now recall memories.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        for (TripleExtractor.ExtractedTriple triple : triples) {
+            assertFalse(triple.object().contains("Restart"),
+                "Pattern crossed sentence boundary: " + triple.object());
+        }
+    }
+
+    @Test
+    void patternDoesNotCrossPeriodBoundary() {
+        String text = "We implemented the memory fix. Restart the IDE now.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        for (TripleExtractor.ExtractedTriple triple : triples) {
+            assertFalse(triple.object().contains("Restart"),
+                "Pattern crossed period boundary: " + triple.object());
+        }
+    }
+
+    @Test
+    void sentenceSplittingPreservesMultiplePatterns() {
+        String text = "We use Lucene for search.\nThe project depends on ONNX Runtime for inference.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertContainsTriple(triples, "uses", "Lucene");
+        assertContainsTriple(triples, "depends-on", "ONNX Runtime");
+    }
+
+    // ── Deduplication tests ───────────────────────────────────────────────
+
+    @Test
+    void duplicatePredicateObjectIsSkipped() {
+        String text = "We use Gradle for building.\nThe project uses Gradle for compilation.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        long gradleCount = triples.stream()
+            .filter(t -> t.predicate().equals("uses") && t.object().equals("Gradle"))
+            .count();
+        assertEquals(1, gradleCount, "Duplicate Gradle triple should be deduplicated");
+    }
+
+    // ── Sentence splitting unit tests ─────────────────────────────────────
+
+    @Test
+    void splitSentencesOnNewlines() {
+        List<String> sentences = TripleExtractor.splitSentences("First line.\nSecond line.");
+
+        assertEquals(2, sentences.size());
+        assertEquals("First line.", sentences.get(0));
+        assertEquals("Second line.", sentences.get(1));
+    }
+
+    @Test
+    void splitSentencesOnPeriodUppercase() {
+        List<String> sentences = TripleExtractor.splitSentences("First sentence. Second sentence.");
+
+        assertEquals(2, sentences.size());
+    }
+
+    @Test
+    void splitSentencesSkipsEmptyLines() {
+        List<String> sentences = TripleExtractor.splitSentences("First.\n\n\nSecond.");
+
+        assertEquals(2, sentences.size());
+    }
+
+    // ── Helper ────────────────────────────────────────────────────────────
 
     private static void assertContainsTriple(List<TripleExtractor.ExtractedTriple> triples,
                                               String predicate, String objectSubstring) {
