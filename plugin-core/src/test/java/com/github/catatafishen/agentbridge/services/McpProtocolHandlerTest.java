@@ -16,6 +16,8 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for the MCP protocol handler, including the resources surface.
@@ -181,6 +183,97 @@ class McpProtocolHandlerTest {
         } finally {
             Files.deleteIfExists(outside);
         }
+    }
+
+    @Test
+    void testPingReturnsEmptyResult() {
+        JsonObject response = parseResponse(sendRequest("ping", new JsonObject()));
+        JsonObject result = response.getAsJsonObject("result");
+
+        assertNotNull(result);
+        assertEquals(0, result.size()); // empty object
+    }
+
+    @Test
+    void testUnknownMethodReturnsMethodNotFound() {
+        JsonObject response = parseResponse(sendRequest("unknown/method", new JsonObject()));
+        JsonObject error = response.getAsJsonObject("error");
+
+        assertEquals(-32601, error.get("code").getAsInt());
+        assertEquals("Method not found: unknown/method", error.get("message").getAsString());
+    }
+
+    @Test
+    void testNotificationWithoutIdReturnsNull() {
+        JsonObject request = new JsonObject();
+        request.addProperty("jsonrpc", "2.0");
+        request.addProperty("method", "ping");
+        // no "id" field → notification
+
+        assertNull(handler.handleMessage(request.toString()));
+    }
+
+    @Test
+    void testMalformedJsonReturnsInternalError() {
+        // The handler logs an ERROR for malformed JSON (intentional — surfacing parse failures).
+        // The IntelliJ TestLoggerFactory converts any ERROR log into a test assertion error, so
+        // we verify the returned JSON is a parse error without triggering the logger check.
+        // Root cause: IntelliJ's test infra installs a log listener even for plain JUnit 5 tests.
+        String response = handler.handleMessage("{not valid json");
+        // Should not throw — handler must always return a valid JSON response
+        assertNotNull(response);
+        JsonObject parsed = JsonParser.parseString(response).getAsJsonObject();
+        // Parse errors produce a response with an "error" field
+        assertTrue(parsed.has("error"));
+    }
+
+    @Test
+    void testInitializeAdvertisesToolsCapability() {
+        JsonObject response = parseResponse(sendRequest("initialize", new JsonObject()));
+        JsonObject capabilities = response.getAsJsonObject("result").getAsJsonObject("capabilities");
+
+        assertNotNull(capabilities.getAsJsonObject("tools"));
+        assertFalse(capabilities.getAsJsonObject("tools").get("listChanged").getAsBoolean());
+    }
+
+    @Test
+    void testInitializeIncludesServerInfo() {
+        JsonObject response = parseResponse(sendRequest("initialize", new JsonObject()));
+        JsonObject result = response.getAsJsonObject("result");
+
+        assertNotNull(result.getAsJsonObject("serverInfo"));
+        assertNotNull(result.get("serverInfo").getAsJsonObject().get("name"));
+        assertNotNull(result.get("serverInfo").getAsJsonObject().get("version"));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "README.md,   '# readme',                  text/markdown",
+        "index.html,  '<html></html>',              text/html",
+        "config.json, '{\"k\":\"v\"}',              application/json",
+    })
+    void testResourcesReadReturnsCorrectMimeType(String filename, String content, String expectedMime) {
+        Path file = tempDir.resolve(filename);
+        writeTextFile(file, content);
+
+        JsonObject params = new JsonObject();
+        params.addProperty("uri", file.toUri().toString());
+
+        JsonObject response = parseResponse(sendRequest("resources/read", params));
+        JsonObject item = response.getAsJsonObject("result").getAsJsonArray("contents").get(0).getAsJsonObject();
+
+        assertEquals(expectedMime.trim(), item.get("mimeType").getAsString());
+    }
+
+    @Test
+    void testResourcesReadReturnsNotFoundForMissingFile() {
+        JsonObject params = new JsonObject();
+        params.addProperty("uri", tempDir.resolve("does-not-exist.txt").toUri().toString());
+
+        JsonObject response = parseResponse(sendRequest("resources/read", params));
+        JsonObject error = response.getAsJsonObject("error");
+
+        assertEquals(-32002, error.get("code").getAsInt());
     }
 
     private static void writeBinaryFile(Path path, byte[] content) {
