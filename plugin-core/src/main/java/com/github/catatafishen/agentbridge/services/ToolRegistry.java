@@ -33,7 +33,8 @@ public final class ToolRegistry {
         OTHER("Other"),
         MACRO("Recorded Macros"),
         CUSTOM_MCP("Custom MCP Servers"),
-        DATABASE("Database");
+        DATABASE("Database"),
+        MEMORY("Memory");
 
         public final String displayName;
 

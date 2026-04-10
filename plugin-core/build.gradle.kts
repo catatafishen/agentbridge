@@ -62,6 +62,9 @@ dependencies {
     // SQLite JDBC (used by OpenCode session import)
     implementation("org.xerial:sqlite-jdbc:3.51.3.0")
 
+    // ONNX Runtime for embedding model inference (semantic memory)
+    implementation("com.microsoft.onnxruntime:onnxruntime:1.24.3")
+
     testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
     testImplementation(
         "junit:junit:${

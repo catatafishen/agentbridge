@@ -344,6 +344,12 @@
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.AgentScratchTracker"/>
 
+    <!-- Semantic memory service + settings -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.memory.MemorySettings"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.memory.MemoryService"/>
+
     <!-- Custom external MCP server proxy -->
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.custommcp.CustomMcpSettings"/>
@@ -452,6 +458,13 @@
       instance="com.github.catatafishen.agentbridge.settings.ScratchTypesConfigurable"
       id="com.github.catatafishen.agentbridge.scratchTypes"
       displayName="Scratch File Types"/>
+
+    <!-- ── Memory (semantic memory / MemPalace) ── -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.memory.MemorySettingsConfigurable"
+      id="com.github.catatafishen.agentbridge.memory"
+      displayName="Memory"/>
 
     <!-- ── Web Access ── -->
     <projectConfigurable
