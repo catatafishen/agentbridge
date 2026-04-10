@@ -6,7 +6,7 @@
 [![CodeQL](https://github.com/catatafishen/agentbridge/actions/workflows/codeql.yml/badge.svg)](https://github.com/catatafishen/agentbridge/actions/workflows/codeql.yml)
 [![codecov](https://codecov.io/gh/catatafishen/agentbridge/graph/badge.svg)](https://codecov.io/gh/catatafishen/agentbridge)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/catatafishen/agentbridge/badge)](https://scorecard.dev/viewer/?uri=github.com/catatafishen/agentbridge)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12428/badge)](https://www.bestpractices.dev/projects/12428)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/12428/badge?v=2)](https://www.bestpractices.dev/projects/12428)
 
 A JetBrains IDE plugin that bridges AI coding agents to IntelliJ platform APIs through
 **120+ native MCP tools**. Agents work through inspections, refactorings, the test runner,
