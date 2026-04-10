@@ -117,6 +117,19 @@ jobs:
         with:
           subject-path: '${{ steps.artifacts.outputs.dir }}/*.zip'
 
+      - name: Install cosign
+        if: steps.version.outputs.skip != 'true'
+        uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003  # v4.1.1
+
+      - name: Sign release artifacts with cosign
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          for artifact in ${{ steps.artifacts.outputs.dir }}/*.zip; do
+            cosign sign-blob --yes \
+              --bundle "${artifact}.sigstore.json" \
+              "$artifact"
+          done
+
       - name: Create tag and GitHub release
         if: steps.version.outputs.skip != 'true'
         env:
@@ -137,4 +150,5 @@ jobs:
           gh release create "$TAG" \
             --title "Release $TAG" \
             --notes "$NOTES" \
-            ${{ steps.artifacts.outputs.dir }}/*.zip
+            ${{ steps.artifacts.outputs.dir }}/*.zip \
+            ${{ steps.artifacts.outputs.dir }}/*.sigstore.json
