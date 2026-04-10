@@ -2,6 +2,7 @@ export default class ChatContainer extends HTMLElement {
     private _init = false;
     private _autoScroll = true;
     private _autoScrollLocked = false; // true when user explicitly disabled via toggle
+    private _restoring = false; // true while initial history batch is being inserted
     private _messages!: HTMLDivElement;
     private _workingIndicator!: HTMLElement;
     private _scrollRAF: number | null = null;
@@ -51,7 +52,7 @@ export default class ChatContainer extends HTMLElement {
 
         // When the container or its content resizes, re-anchor to bottom if auto-scrolling
         this._resizeObs = new ResizeObserver(() => {
-            if (this._autoScroll) {
+            if (this._autoScroll && !this._restoring) {
                 this._programmaticScroll = true;
                 this.scrollTop = this.scrollHeight;
             }
@@ -169,7 +170,7 @@ export default class ChatContainer extends HTMLElement {
     }
 
     scrollIfNeeded(): void {
-        if (this._autoScroll) {
+        if (this._autoScroll && !this._restoring) {
             this._programmaticScroll = true;
             this.scrollTop = this.scrollHeight;
         }
@@ -178,6 +179,16 @@ export default class ChatContainer extends HTMLElement {
     forceScroll(): void {
         this._programmaticScroll = true;
         this.scrollTop = this.scrollHeight;
+    }
+
+    /** Suppress auto-scroll while initial history batch is being inserted. */
+    pauseAutoScrollForRestore(): void {
+        this._restoring = true;
+    }
+
+    /** Re-enable auto-scroll after initial history batch has been rendered. */
+    stopAutoScrollRestore(): void {
+        this._restoring = false;
     }
 
     compensateScroll(targetY: number): void {

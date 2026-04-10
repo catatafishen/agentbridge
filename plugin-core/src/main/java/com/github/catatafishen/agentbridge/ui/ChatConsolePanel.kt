@@ -115,7 +115,6 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         /** Active panels keyed by project — used by MCP tool to retrieve page HTML. */
         private val instances = java.util.concurrent.ConcurrentHashMap<Project, ChatConsolePanel>()
-
         fun getInstance(project: Project): ChatConsolePanel? = instances[project]
 
         private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
@@ -131,6 +130,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         private val BUILD_TOOLS = setOf(
             "read_build_output", "build_project"
         )
+        private val GIT_HISTORY_TOOLS = setOf("git_log", "git_show")
     }
 
     // ── Init ───────────────────────────────────────────────────────
@@ -797,7 +797,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (count > 0) turnCounter += count
         val json = serializeBatchTurns(entries)
         if (json != "[]") {
-            executeJs("ChatController.restoreBatch('${encodeBase64(json)}')")
+            val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
+            executeJs("ChatController.restoreBatchFinal('${encodeBase64(json)}', $smooth)")
         }
     }
 
@@ -1401,6 +1402,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (baseName?.trim('\'', '"') == "git_commit" && tryNavigateToCommit(entry?.result)) {
             return
         }
+        if (baseName?.trim('\'', '"') in GIT_HISTORY_TOOLS && tryNavigateToGitLog(entry?.result)) {
+            return
+        }
         // If the tool arguments contain old_str/new_str, open IntelliJ's diff viewer directly.
         val diff = extractDiffFromArgs(entry?.arguments)
         if (diff != null) {
@@ -1545,6 +1549,21 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             } catch (_: Exception) {
                 // best-effort navigation
             }
+        }
+        return true
+    }
+
+    /**
+     * Extracts a full 40-char commit hash from the first `commit <hash>` line of git_log/git_show
+     * output and navigates to it in the VCS Log. Returns true if a hash was found (async nav),
+     * false if the result doesn't contain a valid commit line (falls through to popup).
+     */
+    private fun tryNavigateToGitLog(result: String?): Boolean {
+        if (result.isNullOrBlank()) return false
+        val hash = Regex("""^commit ([0-9a-f]{40})$""", RegexOption.MULTILINE)
+            .find(result)?.groupValues?.get(1) ?: return false
+        ApplicationManager.getApplication().invokeLater {
+            PlatformApiCompat.showRevisionInLogAfterRefresh(project, hash)
         }
         return true
     }

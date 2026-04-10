@@ -116,6 +116,8 @@ const ChatController = {
     _container(): HTMLElement & {
         scrollIfNeeded(): void;
         forceScroll(): void;
+        pauseAutoScrollForRestore(): void;
+        stopAutoScrollRestore(): void;
         compensateScroll(targetY: number): void;
         autoScroll: boolean;
         workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void; stop(ms: number): void }
@@ -123,6 +125,8 @@ const ChatController = {
         return document.querySelector<HTMLElement & {
             scrollIfNeeded(): void;
             forceScroll(): void;
+            pauseAutoScrollForRestore(): void;
+            stopAutoScrollRestore(): void;
             compensateScroll(targetY: number): void;
             autoScroll: boolean;
             workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void; stop(ms: number): void }
@@ -706,6 +710,36 @@ const ChatController = {
                 container.compensateScroll(targetScroll);
             }
         }
+    },
+
+    restoreBatchFinal(encodedJson: string, smoothAfter: boolean): void {
+        const container = this._container();
+        if (container) {
+            container.style.scrollBehavior = 'auto';
+            container.pauseAutoScrollForRestore();
+        }
+
+        const fragment = renderBatchFragment(encodedJson);
+        const msgs = this._msgs();
+        msgs.appendChild(fragment);
+        this._moveQueuedToBottom();
+
+        if (!container) return;
+
+        // Two rAFs: first for initial layout, second for code-block setup (_copyObs fires in rAF).
+        // After both, instantly jump to bottom, then restore smooth scroll for subsequent use.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                container.stopAutoScrollRestore();
+                container.style.scrollBehavior = 'auto';
+                container.forceScroll();
+                if (smoothAfter) {
+                    requestAnimationFrame(() => {
+                        container.style.scrollBehavior = 'smooth';
+                    });
+                }
+            });
+        });
     },
 
     showLoadMore(count: number): void {
