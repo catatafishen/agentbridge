@@ -64,10 +64,10 @@ public final class MemoryKgQueryTool extends Tool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-            {PARAM_SUBJECT, TYPE_STRING, "Filter by subject entity (e.g., 'project', 'team')", false},
-            {PARAM_PREDICATE, TYPE_STRING, "Filter by relationship (e.g., 'uses', 'prefers')", false},
-            {PARAM_OBJECT, TYPE_STRING, "Filter by object (substring match)", false},
-            {PARAM_LIMIT, TYPE_INTEGER, "Max results (default: 20)", false},
+            {PARAM_SUBJECT, TYPE_STRING, "Filter by subject entity (e.g., 'project', 'team')"},
+            {PARAM_PREDICATE, TYPE_STRING, "Filter by relationship (e.g., 'uses', 'prefers')"},
+            {PARAM_OBJECT, TYPE_STRING, "Filter by object (substring match)"},
+            {PARAM_LIMIT, TYPE_INTEGER, "Max results (default: 20)"},
         });
     }
 

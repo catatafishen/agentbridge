@@ -64,10 +64,10 @@ public final class MemoryRecallTool extends Tool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(new Object[][]{
-            {"room", TYPE_STRING, "Room to recall from (e.g. 'architecture', 'decisions', 'problems')", true},
-            {PARAM_QUERY, TYPE_STRING, "Optional search query within the room", false},
-            {PARAM_LIMIT, TYPE_INTEGER, "Max results (default: 5)", false},
-        });
+            {"room", TYPE_STRING, "Room to recall from (e.g. 'architecture', 'decisions', 'problems')"},
+            {PARAM_QUERY, TYPE_STRING, "Optional search query within the room"},
+            {PARAM_LIMIT, TYPE_INTEGER, "Max results (default: 5)"},
+        }, "room");
     }
 
     @Override
