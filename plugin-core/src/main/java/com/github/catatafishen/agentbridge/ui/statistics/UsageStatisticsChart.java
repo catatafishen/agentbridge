@@ -77,33 +77,11 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         LocalDate rangeStart = snapshot.startDate();
         LocalDate rangeEnd = snapshot.endDate();
 
-        Map<String, List<UsageStatisticsData.DailyAgentStats>> byAgent = snapshot.dailyStats().stream()
-            .collect(Collectors.groupingBy(UsageStatisticsData.DailyAgentStats::agentId));
-
-        List<DataSeries> seriesList = new ArrayList<>();
-
-        for (Map.Entry<String, List<UsageStatisticsData.DailyAgentStats>> entry : byAgent.entrySet()) {
-            String agentId = entry.getKey();
-            List<UsageStatisticsData.DailyAgentStats> agentStats = entry.getValue();
-
-            int colorIndex = ChatTheme.INSTANCE.agentColorIndex(agentId);
-            JBColor agentColor = ChatTheme.INSTANCE.getSA_COLORS()[colorIndex];
-
-            // Index metric values by date for O(1) lookup
-            Map<LocalDate, Long> valuesByDate = new LinkedHashMap<>();
-            for (UsageStatisticsData.DailyAgentStats stats : agentStats) {
-                valuesByDate.merge(stats.date(), extractMetricValue(stats), Long::sum);
-            }
-
-            // Fill every day in the selected range, using zero for days without data
-            List<DataPoint> points = new ArrayList<>();
-            for (LocalDate d = rangeStart; !d.isAfter(rangeEnd); d = d.plusDays(1)) {
-                long x = d.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
-                long y = valuesByDate.getOrDefault(d, 0L);
-                points.add(new DataPoint(x, y, d));
-            }
-
-            seriesList.add(new DataSeries(agentId, agentColor, points));
+        List<DataSeries> seriesList;
+        if (metric == UsageStatisticsData.Metric.CODE_CHANGES) {
+            seriesList = buildCodeChangeSeries(snapshot.dailyStats(), rangeStart, rangeEnd);
+        } else {
+            seriesList = buildStandardSeries(snapshot.dailyStats(), rangeStart, rangeEnd);
         }
 
         canvas.setData(seriesList);
@@ -113,6 +91,74 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
 
         revalidate();
         repaint();
+    }
+
+    private List<DataSeries> buildStandardSeries(
+        List<UsageStatisticsData.DailyAgentStats> dailyStats,
+        LocalDate rangeStart, LocalDate rangeEnd) {
+
+        Map<String, List<UsageStatisticsData.DailyAgentStats>> byAgent = dailyStats.stream()
+            .collect(Collectors.groupingBy(UsageStatisticsData.DailyAgentStats::agentId));
+
+        List<DataSeries> seriesList = new ArrayList<>();
+        for (var entry : byAgent.entrySet()) {
+            String agentId = entry.getKey();
+
+            Map<LocalDate, Long> valuesByDate = new LinkedHashMap<>();
+            for (UsageStatisticsData.DailyAgentStats stats : entry.getValue()) {
+                valuesByDate.merge(stats.date(), extractMetricValue(stats), Long::sum);
+            }
+
+            seriesList.add(new DataSeries(agentId, agentColor(agentId),
+                fillDateRange(valuesByDate, rangeStart, rangeEnd)));
+        }
+        return seriesList;
+    }
+
+    private List<DataSeries> buildCodeChangeSeries(
+        List<UsageStatisticsData.DailyAgentStats> dailyStats,
+        LocalDate rangeStart, LocalDate rangeEnd) {
+
+        Map<String, List<UsageStatisticsData.DailyAgentStats>> byAgent = dailyStats.stream()
+            .collect(Collectors.groupingBy(UsageStatisticsData.DailyAgentStats::agentId));
+
+        List<DataSeries> seriesList = new ArrayList<>();
+        for (var entry : byAgent.entrySet()) {
+            String agentId = entry.getKey();
+            JBColor color = agentColor(agentId);
+
+            Map<LocalDate, Long> addByDate = new LinkedHashMap<>();
+            Map<LocalDate, Long> removeByDate = new LinkedHashMap<>();
+            for (UsageStatisticsData.DailyAgentStats stats : entry.getValue()) {
+                addByDate.merge(stats.date(), (long) stats.linesAdded(), Long::sum);
+                removeByDate.merge(stats.date(), (long) stats.linesRemoved(), Long::sum);
+            }
+
+            seriesList.add(new DataSeries(agentId, color,
+                fillDateRange(addByDate, rangeStart, rangeEnd)));
+            // Negate removals so they render below the zero baseline
+            Map<LocalDate, Long> negRemoveByDate = new LinkedHashMap<>();
+            removeByDate.forEach((date, val) -> negRemoveByDate.put(date, -val));
+            seriesList.add(new DataSeries(agentId, color,
+                fillDateRange(negRemoveByDate, rangeStart, rangeEnd)));
+        }
+        return seriesList;
+    }
+
+    private static JBColor agentColor(String agentId) {
+        int colorIndex = ChatTheme.INSTANCE.agentColorIndex(agentId);
+        return ChatTheme.INSTANCE.getSA_COLORS()[colorIndex];
+    }
+
+    private static List<DataPoint> fillDateRange(Map<LocalDate, Long> valuesByDate,
+                                                 LocalDate start, LocalDate end) {
+        List<DataPoint> points = new ArrayList<>();
+        for (LocalDate d = start; !d.isAfter(end); d = d.plusDays(1)) {
+            long x = d.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli();
+            long y = valuesByDate.getOrDefault(d, 0L);
+            points.add(new DataPoint(x, y, d));
+        }
+        return points;
     }
 
     private long extractMetricValue(UsageStatisticsData.DailyAgentStats stats) {
@@ -175,9 +221,11 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
             // Always include zero on the Y axis so bars are grounded
             yMin = Math.min(0, yLo);
             yMax = yHi;
-            // Pad the top by 10% so the peak isn't clipped against the border
+            // Pad top/bottom by 10% so peaks aren't clipped against the border
             if (yMax > yMin) {
-                yMax += (yMax - yMin) / 10;
+                long padding = (yMax - yMin) / 10;
+                yMax += padding;
+                if (yMin < 0) yMin -= padding;
             } else {
                 yMax = yMin + 1;
             }
@@ -233,6 +281,15 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
                 }
             }
 
+            // Draw a prominent zero baseline when the chart spans negative values
+            if (yMin < 0 && yMax > 0) {
+                int zeroY = plotBottom - (int) ((double) (-yMin) / (yMax - yMin) * plotH);
+                g2.setColor(GRID_LABEL_COLOR);
+                g2.setStroke(new BasicStroke(1.5f));
+                g2.drawLine(plotLeft, zeroY, plotRight, zeroY);
+                g2.setStroke(new BasicStroke(1.0f));
+            }
+
             // X-axis date labels
             List<LocalDate> dates = collectUniqueDates();
             if (!dates.isEmpty()) {
@@ -279,14 +336,15 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
                     }
                 }
 
-                // Build the fill path (extend line to bottom, close)
+                // Build the fill path (extend line to zero baseline, close)
                 Path2D.Double fillPath = new Path2D.Double(linePath);
                 DataPoint lastPt = points.getLast();
                 DataPoint firstPt = points.getFirst();
                 int lastPx = plotLeft + mapX(lastPt.x, plotW);
                 int firstPx = plotLeft + mapX(firstPt.x, plotW);
-                fillPath.lineTo(lastPx, plotBottom);
-                fillPath.lineTo(firstPx, plotBottom);
+                int zeroY = plotBottom - mapY(0, plotH);
+                fillPath.lineTo(lastPx, zeroY);
+                fillPath.lineTo(firstPx, zeroY);
                 fillPath.closePath();
 
                 // Clip to the plot area
@@ -338,6 +396,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
     }
 
     private static String formatCompact(long value) {
+        if (value < 0) return "-" + formatCompact(-value);
         if (value >= 1_000_000) {
             double v = value / 1_000_000.0;
             return v == (long) v ? (long) v + "M" : String.format("%.1fM", v);
