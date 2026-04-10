@@ -21,8 +21,6 @@ import java.nio.file.Path;
 public final class ClaudeCliCredentials {
 
     private static final Logger LOG = Logger.getInstance(ClaudeCliCredentials.class);
-    private static final Path CREDENTIALS_PATH =
-        Path.of(System.getProperty("user.home"), ".claude", ".credentials.json");
 
     private final boolean loggedIn;
     @Nullable
@@ -39,11 +37,12 @@ public final class ClaudeCliCredentials {
      */
     @NotNull
     public static ClaudeCliCredentials read() {
+        Path path = credentialsPath();
         try {
-            if (!Files.exists(CREDENTIALS_PATH)) {
+            if (!Files.exists(path)) {
                 return new ClaudeCliCredentials(false, null);
             }
-            String content = Files.readString(CREDENTIALS_PATH);
+            String content = Files.readString(path);
             JsonObject root = JsonParser.parseString(content).getAsJsonObject();
             if (!root.has("claudeAiOauth")) {
                 return new ClaudeCliCredentials(false, null);
@@ -92,10 +91,14 @@ public final class ClaudeCliCredentials {
      */
     public static boolean logout() {
         try {
-            return Files.deleteIfExists(CREDENTIALS_PATH);
+            return Files.deleteIfExists(credentialsPath());
         } catch (IOException e) {
             LOG.warn("Failed to delete Claude CLI credentials: " + e.getMessage());
             return false;
         }
+    }
+
+    static Path credentialsPath() {
+        return Path.of(System.getProperty("user.home"), ".claude", ".credentials.json");
     }
 }
