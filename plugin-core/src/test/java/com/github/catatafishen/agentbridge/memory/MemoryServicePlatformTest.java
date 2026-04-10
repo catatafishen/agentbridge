@@ -89,4 +89,18 @@ public class MemoryServicePlatformTest extends MemoryPlatformTestCase {
         MemoryService service = MemoryService.getInstance(getProject());
         assertSame("getWriteAheadLog() should return replaced WAL", wal, service.getWriteAheadLog());
     }
+
+    /**
+     * Documents that isActive() returns false on a fresh (non-initialized) MemoryService,
+     * even when the memory feature is enabled in settings. Code that needs to check memory
+     * availability should call getStore() (which triggers lazy init) instead of isActive().
+     *
+     * <p>Regression guard: McpProtocolHandler.buildMemoryContext() previously checked
+     * isActive() before getStore(), which caused wake-up context to never be injected.
+     */
+    public void testIsActiveReturnsFalseBeforeLazyInitEvenWhenEnabled() {
+        enableMemory();
+        MemoryService fresh = new MemoryService(getProject());
+        assertFalse("isActive() must return false before lazy init", fresh.isActive());
+    }
 }
