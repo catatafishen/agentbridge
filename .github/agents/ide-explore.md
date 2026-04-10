@@ -30,6 +30,15 @@ tools:
 - agentbridge/git_blame
 - agentbridge/git_status
 
+# Memory (read-only — search and recall)
+
+- agentbridge/memory_search
+- agentbridge/memory_status
+- agentbridge/memory_wake_up
+- agentbridge/memory_recall
+- agentbridge/memory_kg_query
+- agentbridge/memory_kg_timeline
+
 ---
 
 You are a fast, focused codebase explorer running inside an IntelliJ IDE plugin.

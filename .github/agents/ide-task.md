@@ -36,6 +36,18 @@ tools:
 - agentbridge/git_status
 - agentbridge/git_diff
 
+# Memory (full access)
+
+- agentbridge/memory_search
+- agentbridge/memory_store
+- agentbridge/memory_status
+- agentbridge/memory_wake_up
+- agentbridge/memory_recall
+- agentbridge/memory_kg_query
+- agentbridge/memory_kg_add
+- agentbridge/memory_kg_invalidate
+- agentbridge/memory_kg_timeline
+
 ---
 
 You are a task executor running inside an IntelliJ IDE plugin.

@@ -21,6 +21,13 @@ tools:
   - agentbridge/git_diff
   - agentbridge/git_blame
   - agentbridge/git_status
+  # Memory (read-only — search and recall)
+  - agentbridge/memory_search
+  - agentbridge/memory_status
+  - agentbridge/memory_wake_up
+  - agentbridge/memory_recall
+  - agentbridge/memory_kg_query
+  - agentbridge/memory_kg_timeline
 ---
 
 You are a fast, focused codebase explorer running inside an IntelliJ IDE plugin.
@@ -67,6 +74,17 @@ disk files instead of live editor buffers and miss unsaved changes.
 | `git_diff`         | See current changes or compare commits.                 |
 | `git_blame`        | See who last changed each line.                         |
 | `git_status`       | Current branch and changed files.                       |
+
+### Memory (when enabled)
+
+| Tool                 | Use For                                                        |
+|----------------------|----------------------------------------------------------------|
+| `memory_search`      | Semantic search across stored memories (drawers).              |
+| `memory_status`      | Check memory system status (drawer count, index health).       |
+| `memory_wake_up`     | Get multi-layer context summary for session start.             |
+| `memory_recall`      | Recall memories filtered by wing/room.                         |
+| `memory_kg_query`    | Query structured facts from the knowledge graph.               |
+| `memory_kg_timeline` | View history of a subject's facts over time.                   |
 
 ## How to Work
 

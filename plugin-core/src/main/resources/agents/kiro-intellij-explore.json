@@ -45,7 +45,13 @@
     "@intellij-code-tools/list_scratch_files",
     "@intellij-code-tools/list_terminals",
     "@intellij-code-tools/read_terminal_output",
-    "@intellij-code-tools/search_conversation_history"
+    "@intellij-code-tools/search_conversation_history",
+    "@intellij-code-tools/memory_search",
+    "@intellij-code-tools/memory_status",
+    "@intellij-code-tools/memory_wake_up",
+    "@intellij-code-tools/memory_recall",
+    "@intellij-code-tools/memory_kg_query",
+    "@intellij-code-tools/memory_kg_timeline"
   ],
   "allowedTools": [
     "@intellij-code-tools/read_file",
@@ -90,6 +96,12 @@
     "@intellij-code-tools/list_scratch_files",
     "@intellij-code-tools/list_terminals",
     "@intellij-code-tools/read_terminal_output",
-    "@intellij-code-tools/search_conversation_history"
+    "@intellij-code-tools/search_conversation_history",
+    "@intellij-code-tools/memory_search",
+    "@intellij-code-tools/memory_status",
+    "@intellij-code-tools/memory_wake_up",
+    "@intellij-code-tools/memory_recall",
+    "@intellij-code-tools/memory_kg_query",
+    "@intellij-code-tools/memory_kg_timeline"
   ]
 }

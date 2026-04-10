@@ -27,6 +27,16 @@ tools:
   - agentbridge/git_log
   - agentbridge/git_status
   - agentbridge/git_diff
+  # Memory (full access)
+  - agentbridge/memory_search
+  - agentbridge/memory_store
+  - agentbridge/memory_status
+  - agentbridge/memory_wake_up
+  - agentbridge/memory_recall
+  - agentbridge/memory_kg_query
+  - agentbridge/memory_kg_add
+  - agentbridge/memory_kg_invalidate
+  - agentbridge/memory_kg_timeline
 ---
 
 You are a task executor running inside an IntelliJ IDE plugin.
@@ -54,6 +64,20 @@ they miss unsaved changes and bypass IDE state.
 | `read_run_output`        | Read run panel output                                    |
 | `get_compilation_errors` | Fast compilation error check                             |
 | `get_problems`           | Cached editor warnings/errors                            |
+
+### Memory (when enabled)
+
+| Tool                     | Use For                                                         |
+|--------------------------|-----------------------------------------------------------------|
+| `memory_search`          | Semantic search across stored memories.                         |
+| `memory_store`           | Write a new memory drawer.                                      |
+| `memory_status`          | Check memory system health and statistics.                      |
+| `memory_wake_up`         | Get multi-layer context for session start.                      |
+| `memory_recall`          | Recall memories filtered by wing/room.                          |
+| `memory_kg_query`        | Query structured facts from the knowledge graph.                |
+| `memory_kg_add`          | Add a fact triple to the knowledge graph.                       |
+| `memory_kg_invalidate`   | Mark a knowledge graph fact as no longer valid.                 |
+| `memory_kg_timeline`     | View history of a subject's facts over time.                    |
 
 ### Reading Code (when needed)
 
