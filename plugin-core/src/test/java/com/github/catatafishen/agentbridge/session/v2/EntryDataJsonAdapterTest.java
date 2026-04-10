@@ -396,6 +396,7 @@ class EntryDataJsonAdapterTest {
             "t3", 45230, 1200, 3500, 0.015, 8, 42, 7,
             "claude-opus-4.6", "5x",
             120000, 5000, 15000, 0.065, 25, 150, 30,
+            "2026-04-10T09:00:00Z",
             "eid-stats-1"
         );
         JsonObject json = EntryDataJsonAdapter.serialize(stats);
@@ -417,6 +418,7 @@ class EntryDataJsonAdapterTest {
         assertEquals(25, json.get("totalToolCalls").getAsInt());
         assertEquals(150, json.get("totalLinesAdded").getAsInt());
         assertEquals(30, json.get("totalLinesRemoved").getAsInt());
+        assertEquals("2026-04-10T09:00:00Z", json.get("timestamp").getAsString());
         assertEquals("eid-stats-1", json.get("entryId").getAsString());
 
         EntryData deserialized = EntryDataJsonAdapter.deserialize(json);
@@ -439,6 +441,7 @@ class EntryDataJsonAdapterTest {
         assertEquals(25, rt.getTotalToolCalls());
         assertEquals(150, rt.getTotalLinesAdded());
         assertEquals(30, rt.getTotalLinesRemoved());
+        assertEquals("2026-04-10T09:00:00Z", rt.getTimestamp());
         assertEquals("eid-stats-1", rt.getEntryId());
     }
 
@@ -459,6 +462,7 @@ class EntryDataJsonAdapterTest {
         assertFalse(json.has("linesRemoved"), "zero linesRemoved should be omitted");
         assertFalse(json.has("model"), "empty model should be omitted");
         assertFalse(json.has("multiplier"), "empty multiplier should be omitted");
+        assertFalse(json.has("timestamp"), "empty timestamp should be omitted");
         assertTrue(json.has("entryId"), "entryId should always be present");
     }
 }

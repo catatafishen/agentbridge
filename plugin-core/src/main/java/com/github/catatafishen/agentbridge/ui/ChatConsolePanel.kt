@@ -712,6 +712,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 totalToolCalls = (prev?.totalToolCalls ?: 0) + toolCallCount,
                 totalLinesAdded = (prev?.totalLinesAdded ?: 0) + linesAdded,
                 totalLinesRemoved = (prev?.totalLinesRemoved ?: 0) + linesRemoved,
+                timestamp = java.time.Instant.now().toString(),
             )
         )
         // Render the turn summary footer in the chat panel

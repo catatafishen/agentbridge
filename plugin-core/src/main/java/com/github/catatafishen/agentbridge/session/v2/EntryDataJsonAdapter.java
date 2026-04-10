@@ -146,6 +146,7 @@ public final class EntryDataJsonAdapter {
         } else if (entry instanceof EntryData.TurnStats ts) {
             json.addProperty("type", TYPE_TURN_STATS);
             json.addProperty("turnId", ts.getTurnId());
+            addNonEmpty(json, "timestamp", ts.getTimestamp());
             addIfNonZero(json, "durationMs", ts.getDurationMs());
             addIfNonZero(json, "inputTokens", ts.getInputTokens());
             addIfNonZero(json, "outputTokens", ts.getOutputTokens());
@@ -302,6 +303,7 @@ public final class EntryDataJsonAdapter {
                 intVal(json, "totalToolCalls"),
                 intVal(json, "totalLinesAdded"),
                 intVal(json, "totalLinesRemoved"),
+                str(json, "timestamp"),
                 entryId);
             case TYPE_NUDGE -> new EntryData.Nudge(
                 str(json, "text"),

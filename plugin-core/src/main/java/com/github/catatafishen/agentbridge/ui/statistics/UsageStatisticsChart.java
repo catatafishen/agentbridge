@@ -100,6 +100,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         }
 
         chart.setDatasets(datasets);
+        chart.update();
         revalidate();
         repaint();
     }

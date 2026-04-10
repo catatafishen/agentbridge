@@ -124,6 +124,7 @@ sealed class EntryData {
         val totalToolCalls: Int = 0,
         val totalLinesAdded: Int = 0,
         val totalLinesRemoved: Int = 0,
+        override val timestamp: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
     ) : EntryData()
 
