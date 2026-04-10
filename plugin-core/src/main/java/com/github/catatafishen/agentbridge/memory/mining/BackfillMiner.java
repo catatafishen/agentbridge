@@ -12,19 +12,19 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
-/**
- * Mines all existing conversation sessions into the memory store.
- * Runs asynchronously on a background thread. Call {@link #run(Consumer)} to start.
- *
- * <p>This is intended to be triggered once when memory is first enabled, to backfill
- * memories from historical conversations. Duplicate detection in {@link com.github.catatafishen.agentbridge.memory.store.MemoryStore}
- * ensures idempotency — re-running is safe but wasteful.
- */
 public final class BackfillMiner {
 
     private static final Logger LOG = Logger.getInstance(BackfillMiner.class);
 
     private final Project project;
+
+    /**
+     * Package-private constructor for testing — bypasses project dependency.
+     * Tests should call {@link #executeBackfill} directly.
+     */
+    BackfillMiner() {
+        this.project = null;
+    }
 
     public BackfillMiner(@NotNull Project project) {
         this.project = project;
@@ -44,6 +44,22 @@ public final class BackfillMiner {
         );
     }
 
+    /**
+     * Loads entries for a session by ID.
+     */
+    @FunctionalInterface
+    interface EntryLoader {
+        List<EntryData> load(String sessionId);
+    }
+
+    /**
+     * Mines a list of entries for a session, returning the result synchronously.
+     */
+    @FunctionalInterface
+    interface MineFunction {
+        TurnMiner.MineResult mine(List<EntryData> entries, String sessionId, String agent);
+    }
+
     private BackfillResult doBackfill(Consumer<String> progressCallback) {
         SessionStoreV2 sessionStore = SessionStoreV2.getInstance(project);
         String basePath = project.getBasePath();
@@ -55,9 +71,24 @@ public final class BackfillMiner {
             return new BackfillResult(0, 0, 0, 0, 0);
         }
 
+        TurnMiner miner = new TurnMiner(project);
+        EntryLoader loader = sessionId -> sessionStore.loadEntriesBySessionId(basePath, sessionId);
+        MineFunction mineFn = (entries, sid, agent) -> miner.mineTurn(entries, sid, agent).join();
+
+        BackfillResult result = executeBackfill(sessions, loader, mineFn, progressCallback);
+        MemorySettings.getInstance(project).setBackfillCompleted(true);
+        return result;
+    }
+
+    /**
+     * Package-private for testing — runs the backfill iteration with explicit dependencies.
+     */
+    BackfillResult executeBackfill(List<SessionStoreV2.SessionRecord> sessions,
+                                   EntryLoader entryLoader,
+                                   MineFunction miner,
+                                   Consumer<String> progressCallback) {
         progressCallback.accept("Found " + sessions.size() + " sessions to mine.");
 
-        TurnMiner miner = new TurnMiner(project);
         int totalSessions = sessions.size();
         int processedSessions = 0;
         int totalStored = 0;
@@ -74,10 +105,10 @@ public final class BackfillMiner {
                 + ": " + sessionLabel);
 
             try {
-                List<EntryData> entries = sessionStore.loadEntriesBySessionId(basePath, session.id());
+                List<EntryData> entries = entryLoader.load(session.id());
                 if (entries == null || entries.isEmpty()) continue;
 
-                TurnMiner.MineResult result = miner.mineTurn(entries, session.id(), session.agent()).join();
+                TurnMiner.MineResult result = miner.mine(entries, session.id(), session.agent());
                 totalStored += result.stored();
                 totalFiltered += result.filtered();
                 totalDuplicates += result.duplicates();
@@ -86,8 +117,6 @@ public final class BackfillMiner {
                 LOG.warn("Failed to mine session " + session.id(), e);
             }
         }
-
-        MemorySettings.getInstance(project).setBackfillCompleted(true);
 
         String summary = "Backfill complete: " + totalStored + " memories stored from "
             + processedSessions + " sessions (" + totalDuplicates + " duplicates, "

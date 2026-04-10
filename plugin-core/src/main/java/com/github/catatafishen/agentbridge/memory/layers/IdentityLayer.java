@@ -25,10 +25,17 @@ public final class IdentityLayer implements MemoryStack {
     private static final Logger LOG = Logger.getInstance(IdentityLayer.class);
     private static final String IDENTITY_FILE = "identity.txt";
 
-    private final Project project;
+    private final Path basePath;
 
     public IdentityLayer(@NotNull Project project) {
-        this.project = project;
+        this(project.getBasePath() != null ? Path.of(project.getBasePath()) : null);
+    }
+
+    /**
+     * Package-private constructor for testing — accepts a base path directly.
+     */
+    IdentityLayer(@Nullable Path basePath) {
+        this.basePath = basePath;
     }
 
     @Override
@@ -58,8 +65,7 @@ public final class IdentityLayer implements MemoryStack {
     }
 
     private @Nullable Path getIdentityPath() {
-        String basePath = project.getBasePath();
         if (basePath == null) return null;
-        return Path.of(basePath, ".agent-work", "memory", IDENTITY_FILE);
+        return basePath.resolve(".agent-work").resolve("memory").resolve(IDENTITY_FILE);
     }
 }

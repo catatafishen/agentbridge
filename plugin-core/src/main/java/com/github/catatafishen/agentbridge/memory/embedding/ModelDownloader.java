@@ -179,8 +179,9 @@ public final class ModelDownloader {
 
     /**
      * Remove partially downloaded files on failure.
+     * Package-private for testing.
      */
-    private static void cleanup() {
+    static void cleanup() {
         try {
             Files.deleteIfExists(getModelPath());
             Files.deleteIfExists(getVocabPath());

@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.memory.layers;
 
+import com.github.catatafishen.agentbridge.memory.embedding.Embedder;
+import com.github.catatafishen.agentbridge.memory.embedding.EmbeddingService;
 import com.github.catatafishen.agentbridge.memory.store.DrawerDocument;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.memory.wal.WriteAheadLog;
@@ -15,14 +17,13 @@ import java.time.Instant;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for L1 ({@link EssentialStoryLayer}) and L2 ({@link OnDemandLayer}).
+ * Tests for L1 ({@link EssentialStoryLayer}), L2 ({@link OnDemandLayer}), and
+ * L3 ({@link DeepSearchLayer}).
  * Uses a real {@link MemoryStore} backed by a temp Lucene index.
- * L0 (IdentityLayer) requires a Project mock and is tested separately.
- * L3 (DeepSearchLayer) requires EmbeddingService and ONNX model, so is skipped.
+ * L0 (IdentityLayer) is tested in {@link IdentityLayerTest}.
  */
 class MemoryLayersTest {
 
@@ -173,14 +174,204 @@ class MemoryLayersTest {
         assertEquals(2, lineCount);
     }
 
-    // --- DeepSearchLayer (L3) — interface only, requires EmbeddingService + ONNX ---
+    // --- DeepSearchLayer (L3) — uses fake Embedder ---
 
     @Test
-    void deepSearchImplementsMemoryStack() {
-        // Verify DeepSearchLayer is a MemoryStack (full test requires ONNX model)
-        assertNotNull(DeepSearchLayer.class.getInterfaces());
-        assertEquals(1, DeepSearchLayer.class.getInterfaces().length);
-        assertEquals(MemoryStack.class, DeepSearchLayer.class.getInterfaces()[0]);
+    void deepSearchLayerIdAndName() {
+        Embedder fake = text -> uniqueVector();
+        DeepSearchLayer layer = new DeepSearchLayer(store, fake);
+        assertEquals("L3-deep-search", layer.layerId());
+        assertEquals("Deep Search", layer.displayName());
+    }
+
+    @Test
+    void deepSearchNullQueryReturnsEmpty() {
+        Embedder fake = text -> uniqueVector();
+        DeepSearchLayer layer = new DeepSearchLayer(store, fake);
+        String result = layer.render(WING, null);
+        assertEquals("", result);
+    }
+
+    @Test
+    void deepSearchEmptyQueryReturnsEmpty() {
+        Embedder fake = text -> uniqueVector();
+        DeepSearchLayer layer = new DeepSearchLayer(store, fake);
+        String result = layer.render(WING, "");
+        assertEquals("", result);
+    }
+
+    @Test
+    void deepSearchReturnsResultsForMatchingQuery() throws Exception {
+        // Use a consistent vector for the stored drawer
+        float[] storedVec = new float[EmbeddingService.EMBEDDING_DIM];
+        storedVec[0] = 1.0f;
+
+        DrawerDocument drawer = DrawerDocument.builder()
+            .id("deep-1")
+            .wing(WING)
+            .room("coding")
+            .content("Authentication using JWT tokens with refresh rotation")
+            .memoryType("decision")
+            .sourceSession("session-1")
+            .agent("test-agent")
+            .filedAt(java.time.Instant.now())
+            .addedBy("test")
+            .build();
+        store.addDrawer(drawer, storedVec);
+
+        // Embedder returns the same vector → high cosine similarity
+        Embedder sameVector = text -> {
+            float[] v = new float[EmbeddingService.EMBEDDING_DIM];
+            v[0] = 1.0f;
+            return v;
+        };
+
+        DeepSearchLayer layer = new DeepSearchLayer(store, sameVector);
+        String result = layer.render(WING, "authentication");
+        assertTrue(result.startsWith("## Deep Search Results"));
+        assertTrue(result.contains("authentication"));
+        assertTrue(result.contains("JWT"));
+        assertTrue(result.contains("[decision]"));
+    }
+
+    @Test
+    void deepSearchNoResultsReturnsEmpty() {
+        // Empty store → no results
+        Embedder fake = text -> uniqueVector();
+        DeepSearchLayer layer = new DeepSearchLayer(store, fake);
+        String result = layer.render(WING, "anything");
+        assertEquals("", result);
+    }
+
+    @Test
+    void deepSearchEmbedderFailureReturnsEmpty() {
+        Embedder failing = text -> {
+            throw new RuntimeException("ONNX crashed");
+        };
+        DeepSearchLayer layer = new DeepSearchLayer(store, failing);
+        String result = layer.render(WING, "some query");
+        assertEquals("", result);
+    }
+
+    @Test
+    void deepSearchScoreFormatting() throws Exception {
+        float[] storedVec = new float[EmbeddingService.EMBEDDING_DIM];
+        storedVec[1] = 1.0f;
+
+        DrawerDocument drawer = DrawerDocument.builder()
+            .id("deep-score")
+            .wing(WING)
+            .room("testing")
+            .content("Unit testing with JUnit 5 and assertions")
+            .memoryType("technical")
+            .sourceSession("session-1")
+            .agent("test-agent")
+            .filedAt(java.time.Instant.now())
+            .addedBy("test")
+            .build();
+        store.addDrawer(drawer, storedVec);
+
+        Embedder sameVector = text -> {
+            float[] v = new float[EmbeddingService.EMBEDDING_DIM];
+            v[1] = 1.0f;
+            return v;
+        };
+
+        DeepSearchLayer layer = new DeepSearchLayer(store, sameVector);
+        String result = layer.render(WING, "junit testing");
+        // Score should be formatted with 2 decimal places
+        assertTrue(result.matches("(?s).*\\[\\d\\.\\d{2}].*"));
+    }
+
+    @Test
+    void deepSearchTruncatesLongContent() throws Exception {
+        String longContent = "A".repeat(500);
+        float[] storedVec = new float[EmbeddingService.EMBEDDING_DIM];
+        storedVec[2] = 1.0f;
+
+        DrawerDocument drawer = DrawerDocument.builder()
+            .id("deep-trunc")
+            .wing(WING)
+            .room("coding")
+            .content(longContent)
+            .memoryType("technical")
+            .sourceSession("session-1")
+            .agent("test-agent")
+            .filedAt(java.time.Instant.now())
+            .addedBy("test")
+            .build();
+        store.addDrawer(drawer, storedVec);
+
+        Embedder sameVector = text -> {
+            float[] v = new float[EmbeddingService.EMBEDDING_DIM];
+            v[2] = 1.0f;
+            return v;
+        };
+
+        DeepSearchLayer layer = new DeepSearchLayer(store, sameVector);
+        String result = layer.render(WING, "long content");
+        assertTrue(result.contains("…"));
+    }
+
+    @Test
+    void deepSearchRespectsLimit() throws Exception {
+        // Add 5 drawers, use limit 2
+        for (int i = 0; i < 5; i++) {
+            float[] vec = new float[EmbeddingService.EMBEDDING_DIM];
+            vec[3 + i] = 1.0f;
+            DrawerDocument drawer = DrawerDocument.builder()
+                .id("deep-lim-" + i)
+                .wing(WING)
+                .room("coding")
+                .content("Memory item number " + i + " with sufficient content")
+                .memoryType("technical")
+                .sourceSession("session-1")
+                .agent("test-agent")
+                .filedAt(java.time.Instant.now())
+                .addedBy("test")
+                .build();
+            store.addDrawer(drawer, vec);
+        }
+
+        // Query vector that has some similarity to all stored vectors
+        Embedder queryEmb = text -> {
+            float[] v = new float[EmbeddingService.EMBEDDING_DIM];
+            for (int i = 3; i < 8; i++) v[i] = 0.5f;
+            // Normalize
+            float norm = 0;
+            for (float f : v) norm += f * f;
+            norm = (float) Math.sqrt(norm);
+            for (int i = 0; i < v.length; i++) v[i] /= norm;
+            return v;
+        };
+
+        DeepSearchLayer layer = new DeepSearchLayer(store, queryEmb, 2);
+        String result = layer.render(WING, "memory items");
+        assertFalse(result.isEmpty());
+        long lineCount = result.lines().filter(l -> l.startsWith("- [")).count();
+        assertEquals(2, lineCount);
+    }
+
+    // --- OnDemandLayer edge cases ---
+
+    @Test
+    void onDemandEmptyStringQueryRendersGenericHeader() throws IOException {
+        addDrawer("od-empty-q", WING, "coding", "decision", "Some important decision about the codebase");
+
+        OnDemandLayer layer = new OnDemandLayer(store);
+        String result = layer.render(WING, "");
+        assertTrue(result.startsWith("## On-Demand Recall\n"));
+        assertFalse(result.contains(" — "));
+    }
+
+    @Test
+    void onDemandTruncatesLongContent() throws IOException {
+        String longContent = "B".repeat(500);
+        addDrawer("od-trunc", WING, "coding", "technical", longContent);
+
+        OnDemandLayer layer = new OnDemandLayer(store);
+        String result = layer.render(WING, null);
+        assertTrue(result.contains("…"));
     }
 
     // --- MemoryStack interface contract ---
@@ -189,9 +380,12 @@ class MemoryLayersTest {
     void allLayersImplementMemoryStack() {
         EssentialStoryLayer l1 = new EssentialStoryLayer(store);
         OnDemandLayer l2 = new OnDemandLayer(store);
+        Embedder fake = text -> uniqueVector();
+        DeepSearchLayer l3 = new DeepSearchLayer(store, fake);
         // Verify interface contract
         assertInstanceOf(MemoryStack.class, l1);
         assertInstanceOf(MemoryStack.class, l2);
+        assertInstanceOf(MemoryStack.class, l3);
     }
 
     private void addDrawer(String id, String wing, String room, String memoryType, String content) throws IOException {

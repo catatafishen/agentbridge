@@ -1,5 +1,9 @@
 package com.github.catatafishen.agentbridge.memory.embedding;
 
+import ai.onnxruntime.OnnxTensor;
+import ai.onnxruntime.OrtEnvironment;
+import ai.onnxruntime.OrtException;
+import ai.onnxruntime.OrtSession;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -12,22 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import ai.onnxruntime.OnnxTensor;
-import ai.onnxruntime.OrtEnvironment;
-import ai.onnxruntime.OrtException;
-import ai.onnxruntime.OrtSession;
-
-/**
- * Manages the ONNX Runtime session for all-MiniLM-L6-v2 and produces
- * 384-dimensional float embeddings from text.
- *
- * <p>Lazy initialization: the model is downloaded on first use and the
- * ONNX session is created on the first {@link #embed} call.
- *
- * <p><b>Attribution:</b> embedding pipeline adapted from the
- * sentence-transformers all-MiniLM-L6-v2 model's expected workflow.
- */
-public final class EmbeddingService implements Disposable {
+public final class EmbeddingService implements Disposable, Embedder {
 
     private static final Logger LOG = Logger.getInstance(EmbeddingService.class);
 
@@ -38,38 +27,59 @@ public final class EmbeddingService implements Disposable {
     private volatile OrtEnvironment env;
     private volatile OrtSession session;
     private volatile WordPieceTokenizer tokenizer;
+    private volatile InferenceFunction inference;
     private volatile boolean initialized;
     private final Object initLock = new Object();
+
+    /**
+     * Runs ONNX inference on tokenized input, returning a 384-dim embedding.
+     */
+    @FunctionalInterface
+    interface InferenceFunction {
+        float[] run(WordPieceTokenizer.TokenizedInput input) throws Exception;
+    }
 
     public EmbeddingService(@NotNull Project project) {
         this.project = project;
     }
 
     /**
+     * Package-private for testing — pre-initializes with a custom tokenizer and inference function,
+     * bypassing ONNX Runtime and model download.
+     */
+    EmbeddingService(WordPieceTokenizer tokenizer, InferenceFunction inference) {
+        this.project = null;
+        this.tokenizer = tokenizer;
+        this.inference = inference;
+        this.initialized = true;
+    }
+
+    /**
      * Produce a 384-dimensional embedding for the given text.
      * Initializes the ONNX session on first call (downloads model if needed).
      *
-     * @throws IOException  if the model cannot be downloaded
-     * @throws OrtException if ONNX inference fails
+     * @throws IOException if the model cannot be downloaded
+     * @throws Exception   if ONNX inference fails
      */
-    public float[] embed(@NotNull String text) throws IOException, OrtException {
+    @Override
+    public float[] embed(@NotNull String text) throws Exception {
         ensureInitialized();
 
         WordPieceTokenizer.TokenizedInput input = tokenizer.tokenize(text);
-        return runInference(input);
+        return inference.run(input);
     }
 
     /**
      * Batch-embed multiple texts. More efficient than repeated single calls
      * when processing multiple chunks from a turn.
      */
-    public List<float[]> embedBatch(@NotNull List<String> texts) throws IOException, OrtException {
+    public List<float[]> embedBatch(@NotNull List<String> texts) throws Exception {
         ensureInitialized();
 
         List<float[]> results = new ArrayList<>(texts.size());
         for (String text : texts) {
             WordPieceTokenizer.TokenizedInput input = tokenizer.tokenize(text);
-            results.add(runInference(input));
+            results.add(inference.run(input));
         }
         return results;
     }
@@ -97,6 +107,7 @@ public final class EmbeddingService implements Disposable {
                 OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
                 opts.setIntraOpNumThreads(1);
                 session = env.createSession(modelPath.toString(), opts);
+                inference = this::runOnnxInference;
                 initialized = true;
                 LOG.info("EmbeddingService initialized with model from " + modelPath);
             } catch (OrtException e) {
@@ -106,10 +117,10 @@ public final class EmbeddingService implements Disposable {
     }
 
     /**
-     * Run inference on a single tokenized input.
+     * Run inference on a single tokenized input via ONNX Runtime.
      * Performs mean pooling over token embeddings, then L2-normalizes the result.
      */
-    private float[] runInference(@NotNull WordPieceTokenizer.TokenizedInput input) throws OrtException {
+    private float[] runOnnxInference(@NotNull WordPieceTokenizer.TokenizedInput input) throws OrtException {
         int seqLen = input.sequenceLength();
 
         OnnxTensor inputIds = OnnxTensor.createTensor(env,
@@ -143,7 +154,7 @@ public final class EmbeddingService implements Disposable {
      * Mean pooling: average token embeddings, weighted by the attention mask
      * to exclude padding tokens.
      */
-    private static float[] meanPool(float[][] tokenEmbeddings, long[] attentionMask) {
+    static float[] meanPool(float[][] tokenEmbeddings, long[] attentionMask) {
         float[] sum = new float[EMBEDDING_DIM];
         int count = 0;
 
@@ -168,7 +179,7 @@ public final class EmbeddingService implements Disposable {
     /**
      * L2-normalize a vector in place and return it.
      */
-    private static float[] l2Normalize(float[] vec) {
+    static float[] l2Normalize(float[] vec) {
         float norm = 0;
         for (float v : vec) {
             norm += v * v;
