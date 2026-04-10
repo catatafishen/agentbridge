@@ -6,7 +6,12 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for {@link AgentProfileManager}.
@@ -43,12 +48,12 @@ class AgentProfileManagerTest {
     @DisplayName("All known profile IDs are present")
     void allKnownProfileIdsPresent() {
         for (String id : List.of(
-                AgentProfileManager.COPILOT_PROFILE_ID,
-                AgentProfileManager.OPENCODE_PROFILE_ID,
-                AgentProfileManager.CLAUDE_CLI_PROFILE_ID,
-                AgentProfileManager.JUNIE_PROFILE_ID,
-                AgentProfileManager.KIRO_PROFILE_ID,
-                AgentProfileManager.CODEX_PROFILE_ID)) {
+            AgentProfileManager.COPILOT_PROFILE_ID,
+            AgentProfileManager.OPENCODE_PROFILE_ID,
+            AgentProfileManager.CLAUDE_CLI_PROFILE_ID,
+            AgentProfileManager.JUNIE_PROFILE_ID,
+            AgentProfileManager.KIRO_PROFILE_ID,
+            AgentProfileManager.CODEX_PROFILE_ID)) {
             assertNotNull(manager.getProfile(id), "Profile not found: " + id);
         }
     }
@@ -138,9 +143,9 @@ class AgentProfileManagerTest {
         manager.saveBinaryPath(AgentProfileManager.COPILOT_PROFILE_ID, "/custom/copilot");
         AgentProfileManager.PersistedState state = manager.getState();
         AgentProfileManager.ProfileOverride saved = state.overrides.stream()
-                .filter(o -> AgentProfileManager.COPILOT_PROFILE_ID.equals(o.profileId))
-                .findFirst()
-                .orElse(null);
+            .filter(o -> AgentProfileManager.COPILOT_PROFILE_ID.equals(o.profileId))
+            .findFirst()
+            .orElse(null);
         assertNotNull(saved, "Expected override for copilot");
         assertEquals("/custom/copilot", saved.customBinaryPath);
     }
