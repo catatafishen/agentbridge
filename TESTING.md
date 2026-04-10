@@ -74,6 +74,95 @@ Run a single test class:
 
 In IntelliJ, right-click any test class or method and select **Run**.
 
+## IntelliJ Platform Tests
+
+Platform tests use IntelliJ's `BasePlatformTestCase` to get a real `Project` instance with a
+fully functional service container. Use these when testing code that resolves project services
+via `getInstance(project)` — the service wiring that pure JUnit 5 tests can't reach.
+
+### When to Use Platform Tests vs JUnit 5
+
+| Scenario | Use |
+|----------|-----|
+| Testing a pure algorithm, utility, or data structure | JUnit 5 |
+| Testing code with explicit dependency injection | JUnit 5 |
+| Testing project service resolution (`SomeService.getInstance(project)`) | Platform test |
+| Testing `PersistentStateComponent` state management | Platform test |
+| Testing service lifecycle (init, dispose) | Platform test |
+| Testing private methods that wire project services | Platform test |
+
+### Writing a Platform Test
+
+Platform tests extend `BasePlatformTestCase` (JUnit 3 style). Test methods must be `public void`
+and start with `test` — no `@Test` annotation.
+
+```java
+public class MyPlatformTest extends BasePlatformTestCase {
+
+    @Override
+    protected void setUp() throws Exception {
+        super.setUp();
+        // Reset state, configure services
+    }
+
+    public void testServiceResolves() {
+        MyService service = MyService.getInstance(getProject());
+        assertNotNull(service);
+    }
+}
+```
+
+### Replacing Services (`ServiceContainerUtil`)
+
+Use `ServiceContainerUtil.replaceService()` to inject test doubles into the service container.
+The replacement is scoped to `getTestRootDisposable()` and auto-restored after each test.
+
+```java
+import com.intellij.openapi.components.ComponentManager;
+import com.intellij.testFramework.ServiceContainerUtil;
+
+// From Java, cast to ComponentManager for Kotlin interop
+ServiceContainerUtil.replaceService(
+    (ComponentManager) getProject(),
+    MyService.class,
+    testInstance,
+    getTestRootDisposable()
+);
+```
+
+### Memory Platform Test Base Class
+
+For memory subsystem tests, extend `MemoryPlatformTestCase` which provides:
+
+- `enableMemory()` / `disableMemory()` — toggle memory settings
+- `replaceMemoryService(store, embedding, wal, kg)` — inject test components
+- `replaceMemoryServiceWithTestComponents()` — creates real Lucene store + fake embedding
+- `memorySettings()` — shortcut to `MemorySettings.getInstance(getProject())`
+- `getTempMemoryDir()` — temp directory for test artifacts
+- Automatic settings reset in `setUp()` to prevent state leaks between tests
+
+### Running Platform Tests
+
+Platform tests **must** run via Gradle — the IntelliJ test runner lacks the required
+`--add-opens` JVM flags:
+
+```bash
+./gradlew :plugin-core:test --tests "com.github.catatafishen.agentbridge.memory.*PlatformTest"
+```
+
+### Testability Patterns
+
+The codebase uses several patterns to make code testable without Mockito:
+
+| Pattern | Description | Example |
+|---------|-------------|---------|
+| **Two-constructor** | Public `(Project)` + package-private no-arg | `TurnMiner`, `BackfillMiner` |
+| **Value constructor** | Public `(Project)` delegates to package-private `(int)` | `QualityFilter` |
+| **Extracted pipeline method** | Package-private method with explicit dependencies | `TurnMiner.executePipeline()` |
+| **Functional interfaces** | Injectable lambdas for I/O boundaries | `Embedder`, `EntryLoader`, `MineFunction` |
+| **Test constructor** | Package-private constructor accepting pre-built components | `MemoryService`, `EmbeddingService` |
+| **`ServiceContainerUtil`** | Replace services in platform tests | `MemoryPlatformTestCase` |
+
 ## Integration Tests
 
 The `integration-tests` module is scaffolded for end-to-end tests that depend on `plugin-core`.

@@ -39,6 +39,24 @@ public final class MemoryService implements Disposable {
         this.project = project;
     }
 
+    /**
+     * Package-private constructor for testing — pre-initializes with provided components,
+     * bypassing {@link #ensureInitialized()} and ONNX Runtime dependency.
+     *
+     * <p>Use with {@code ServiceContainerUtil.replaceService()} in platform tests to inject
+     * a controllable MemoryService into the project's service container.
+     */
+    MemoryService(@NotNull Project project, @Nullable MemoryStore store,
+                  @Nullable EmbeddingService embeddingService,
+                  @Nullable WriteAheadLog wal, @Nullable KnowledgeGraph knowledgeGraph) {
+        this.project = project;
+        this.store = store;
+        this.embeddingService = embeddingService;
+        this.wal = wal;
+        this.knowledgeGraph = knowledgeGraph;
+        this.initialized = true;
+    }
+
     public static MemoryService getInstance(@NotNull Project project) {
         return PlatformApiCompat.getService(project, MemoryService.class);
     }
