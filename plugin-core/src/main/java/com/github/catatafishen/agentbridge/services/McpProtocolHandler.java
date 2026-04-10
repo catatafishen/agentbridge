@@ -1,6 +1,11 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.BuildInfo;
+import com.github.catatafishen.agentbridge.memory.MemoryService;
+import com.github.catatafishen.agentbridge.memory.MemorySettings;
+import com.github.catatafishen.agentbridge.memory.layers.EssentialStoryLayer;
+import com.github.catatafishen.agentbridge.memory.layers.IdentityLayer;
+import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
@@ -104,9 +109,59 @@ public final class McpProtocolHandler {
         result.addProperty("protocolVersion", PROTOCOL_VERSION);
         result.add("capabilities", capabilities);
         result.add("serverInfo", serverInfo);
-        result.addProperty("instructions", STARTUP_INSTRUCTIONS);
+        result.addProperty("instructions", buildInstructions());
 
         return respondResult(msg, result);
+    }
+
+    private @NotNull String buildInstructions() {
+        String memoryContext = buildMemoryContext();
+        if (memoryContext.isEmpty()) {
+            return STARTUP_INSTRUCTIONS;
+        }
+        return STARTUP_INSTRUCTIONS + "\n\n" + memoryContext;
+    }
+
+    private @NotNull String buildMemoryContext() {
+        try {
+            if (!MemorySettings.getInstance(project).isEnabled()) {
+                return "";
+            }
+
+            MemoryService memoryService = MemoryService.getInstance(project);
+            if (!memoryService.isActive()) {
+                return "";
+            }
+
+            MemoryStore store = memoryService.getStore();
+            if (store == null || store.getDrawerCount() == 0) {
+                return "";
+            }
+
+            String wing = memoryService.getEffectiveWing();
+            StringBuilder sb = new StringBuilder("---\n\nSEMANTIC MEMORY (auto-injected at session start):\n\n");
+
+            IdentityLayer identity = new IdentityLayer(project);
+            String identityContent = identity.render(wing, null);
+            if (!identityContent.isEmpty()) {
+                sb.append(identityContent).append("\n\n");
+            }
+
+            EssentialStoryLayer essentialStory = new EssentialStoryLayer(store);
+            String storyContent = essentialStory.render(wing, null);
+            if (!storyContent.isEmpty()) {
+                sb.append(storyContent).append("\n\n");
+            }
+
+            sb.append("Memory tools: memory_search (semantic recall), memory_recall (room-filtered), ")
+                .append("memory_store (save fact), memory_status (stats), ")
+                .append("memory_kg_query / memory_kg_add / memory_kg_timeline (knowledge graph).");
+
+            return sb.toString();
+        } catch (Exception e) {
+            LOG.warn("Failed to build memory context for MCP init", e);
+            return "";
+        }
     }
 
     private static String loadInstructions() {

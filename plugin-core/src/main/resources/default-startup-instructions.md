@@ -52,6 +52,17 @@ include relevant tool guidance in the prompt you write for them: \
 - All sub-agents: "Use IDE git tools (git_status, git_diff, git_log, etc.) for reading git state — never shell git." \
 - All sub-agents: "Do NOT use git write commands (git_commit, git_stage, etc.) — only the main agent may write."
 
+SEMANTIC MEMORY (if enabled):
+When memory tools are available (prefixed with `memory_`), you have access to semantic recall
+of past conversations. Key tools:
+- `memory_search` — semantic search across all memories (best for open-ended recall)
+- `memory_recall` — targeted recall from a specific room/topic
+- `memory_store` — save an important fact, decision, or preference
+- `memory_status` — see memory stats (drawer counts by wing/room)
+- `memory_kg_query` — query the knowledge graph for structured facts
+- `memory_kg_add` — add a structured fact (subject-predicate-object triple)
+Memory context (recent memories, identity) is automatically included above when available.
+
 QUICK-REPLY BUTTONS:
 You may append a `[quick-reply: ...]` tag at the end of your response to render clickable buttons. \
 Only use when the options genuinely save the user effort — e.g. confirming a destructive action, \

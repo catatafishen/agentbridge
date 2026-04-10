@@ -3,6 +3,9 @@ package com.github.catatafishen.agentbridge.memory.mining;
 import com.github.catatafishen.agentbridge.memory.MemoryService;
 import com.github.catatafishen.agentbridge.memory.MemorySettings;
 import com.github.catatafishen.agentbridge.memory.embedding.Embedder;
+import com.github.catatafishen.agentbridge.memory.kg.KgTriple;
+import com.github.catatafishen.agentbridge.memory.kg.KnowledgeGraph;
+import com.github.catatafishen.agentbridge.memory.kg.TripleExtractor;
 import com.github.catatafishen.agentbridge.memory.store.DrawerDocument;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.ui.EntryData;
@@ -10,6 +13,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
 import java.util.List;
@@ -71,8 +75,9 @@ public final class TurnMiner {
         int maxDrawers = MemorySettings.getInstance(project).getMaxDrawersPerTurn();
         String wing = memoryService.getEffectiveWing();
         QualityFilter filter = new QualityFilter(project);
+        KnowledgeGraph kg = memoryService.getKnowledgeGraph();
 
-        return executePipeline(entries, sessionId, agentName, store, embedding, filter, maxDrawers, wing);
+        return executePipeline(entries, sessionId, agentName, store, embedding, filter, maxDrawers, wing, kg);
     }
 
     /**
@@ -81,6 +86,16 @@ public final class TurnMiner {
     MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
                                MemoryStore store, Embedder embedder, QualityFilter filter,
                                int maxDrawers, String wing) {
+        return executePipeline(entries, sessionId, agentName, store, embedder, filter, maxDrawers, wing, null);
+    }
+
+    /**
+     * Package-private for testing — runs the full mining pipeline with explicit dependencies
+     * and optional knowledge graph for triple extraction.
+     */
+    MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
+                               MemoryStore store, Embedder embedder, QualityFilter filter,
+                               int maxDrawers, String wing, @Nullable KnowledgeGraph kg) {
         List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
         if (exchanges.isEmpty()) {
             return MineResult.EMPTY;
@@ -93,7 +108,7 @@ public final class TurnMiner {
         for (ExchangeChunker.Exchange exchange : exchanges) {
             if (stored >= maxDrawers) break;
 
-            MineExchangeResult result = mineOneExchange(exchange, wing, sessionId, agentName, filter, store, embedder);
+            MineExchangeResult result = mineOneExchange(exchange, wing, sessionId, agentName, filter, store, embedder, kg);
             stored += result.stored;
             filtered += result.filtered;
             duplicates += result.duplicates;
@@ -110,7 +125,7 @@ public final class TurnMiner {
     private MineExchangeResult mineOneExchange(ExchangeChunker.Exchange exchange,
                                                String wing, String sessionId, String agentName,
                                                QualityFilter filter, MemoryStore store,
-                                               Embedder embedder) {
+                                               Embedder embedder, @Nullable KnowledgeGraph kg) {
         if (!filter.passes(exchange.prompt(), exchange.response())) {
             return new MineExchangeResult(0, 1, 0);
         }
@@ -135,10 +150,37 @@ public final class TurnMiner {
                 .build();
 
             String result = store.addDrawer(drawer, vector);
-            return result != null ? new MineExchangeResult(1, 0, 0) : new MineExchangeResult(0, 0, 1);
+            if (result != null) {
+                extractTriples(combinedText, wing, drawerId, kg);
+                return new MineExchangeResult(1, 0, 0);
+            }
+            return new MineExchangeResult(0, 0, 1);
         } catch (Exception e) {
             LOG.warn("Failed to mine exchange", e);
             return new MineExchangeResult(0, 0, 0);
+        }
+    }
+
+    private static void extractTriples(String text, String wing, String drawerId,
+                                        @Nullable KnowledgeGraph kg) {
+        if (kg == null) return;
+
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, wing, drawerId);
+        for (TripleExtractor.ExtractedTriple extracted : triples) {
+            try {
+                KgTriple triple = KgTriple.builder()
+                    .subject(extracted.subject())
+                    .predicate(extracted.predicate())
+                    .object(extracted.object())
+                    .sourceDrawer(extracted.sourceDrawerId())
+                    .build();
+                kg.addTriple(triple);
+            } catch (Exception e) {
+                LOG.debug("Failed to add extracted triple: " + extracted, e);
+            }
+        }
+        if (!triples.isEmpty()) {
+            LOG.info("Extracted " + triples.size() + " KG triple(s) from drawer " + drawerId);
         }
     }
 
