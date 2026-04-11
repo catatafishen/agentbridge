@@ -86,7 +86,8 @@ public final class PsiBridgeService implements Disposable {
      */
     private volatile boolean nudgesHeld = false;
     private final java.util.Queue<String> messageQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    private volatile Runnable onNudgeConsumed;
+    private final java.util.concurrent.atomic.AtomicReference<Runnable> onNudgeConsumed =
+        new java.util.concurrent.atomic.AtomicReference<>();
 
     public PsiBridgeService(@NotNull Project project) {
         this.project = project;
@@ -138,7 +139,7 @@ public final class PsiBridgeService implements Disposable {
     }
 
     public void setOnNudgeConsumed(@Nullable Runnable callback) {
-        onNudgeConsumed = callback;
+        onNudgeConsumed.set(callback);
     }
 
     /**
@@ -151,11 +152,9 @@ public final class PsiBridgeService implements Disposable {
     }
 
     public void addOnNudgeConsumed(@NotNull Runnable callback) {
-        Runnable current = onNudgeConsumed;
-        onNudgeConsumed = current == null ? callback : () -> {
-            current.run();
-            callback.run();
-        };
+        onNudgeConsumed.accumulateAndGet(callback, (current, newCb) ->
+            current == null ? newCb : () -> { current.run(); newCb.run(); }
+        );
     }
 
     public void enqueueMessage(@NotNull String message) {
@@ -182,7 +181,7 @@ public final class PsiBridgeService implements Disposable {
         if (nudgesHeld) return null;
         String nudge = pendingNudge.getAndSet(null);
         if (nudge != null) {
-            Runnable cb = onNudgeConsumed;
+            Runnable cb = onNudgeConsumed.get();
             if (cb != null) cb.run();
         }
         return nudge;

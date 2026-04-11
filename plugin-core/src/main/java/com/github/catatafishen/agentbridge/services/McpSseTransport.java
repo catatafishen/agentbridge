@@ -31,6 +31,7 @@ final class McpSseTransport {
 
     private static final Logger LOG = Logger.getInstance(McpSseTransport.class);
     private static final long KEEP_ALIVE_INTERVAL_SECONDS = 30;
+    private static final int MAX_SSE_SESSIONS = 10;
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
 
@@ -78,6 +79,12 @@ final class McpSseTransport {
         if (!"GET".equals(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(405, -1);
             exchange.close();
+            return;
+        }
+
+        if (sessions.size() >= MAX_SSE_SESSIONS) {
+            LOG.warn("SSE session limit reached (" + MAX_SSE_SESSIONS + "), rejecting new connection");
+            sendJsonError(exchange, 503, "SSE session limit reached (" + MAX_SSE_SESSIONS + ")");
             return;
         }
 
