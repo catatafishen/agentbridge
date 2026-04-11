@@ -21,17 +21,17 @@ import java.util.stream.Collectors;
 
 /**
  * Chart component that renders usage metrics over time using Java2D.
- * Each agent gets its own colored line and fill area, stacked from the baseline.
+ * Each agent gets its own colored line and fill area rendered independently and filled to the baseline.
  */
 class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
 
     private static final Logger LOG = Logger.getInstance(UsageStatisticsChart.class);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("MM/dd");
 
-    private static final int MARGIN_LEFT = 48;
-    private static final int MARGIN_RIGHT = 12;
-    private static final int MARGIN_TOP = 8;
-    private static final int MARGIN_BOTTOM = 24;
+    private static final int MARGIN_LEFT = JBUI.scale(48);
+    private static final int MARGIN_RIGHT = JBUI.scale(12);
+    private static final int MARGIN_TOP = JBUI.scale(8);
+    private static final int MARGIN_BOTTOM = JBUI.scale(24);
 
     private static final Color GRID_LINE_COLOR = new JBColor(
         new Color(220, 220, 220), new Color(60, 60, 60));
@@ -163,7 +163,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
 
     private long extractMetricValue(UsageStatisticsData.DailyAgentStats stats) {
         return switch (metric) {
-            case PREMIUM_REQUESTS -> (long) stats.premiumRequests();
+            case PREMIUM_REQUESTS -> Math.round(stats.premiumRequests());
             case TURNS -> stats.turns();
             case TOKENS -> stats.inputTokens() + stats.outputTokens();
             case TOOL_CALLS -> stats.toolCalls();
@@ -218,9 +218,9 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
             }
             xMin = xLo;
             xMax = xHi;
-            // Always include zero on the Y axis so bars are grounded
+            // Always include zero on the Y axis so fills are grounded at the baseline
             yMin = Math.min(0, yLo);
-            yMax = yHi;
+            yMax = Math.max(0, yHi);
             // Pad top/bottom by 10% so peaks aren't clipped against the border
             if (yMax > yMin) {
                 long padding = (yMax - yMin) / 10;

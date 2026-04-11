@@ -91,7 +91,10 @@ class UsageStatisticsPanel extends JBPanel<UsageStatisticsPanel> {
                 UsageStatisticsData.StatisticsSnapshot snapshot = UsageStatisticsLoader.load(project, range);
                 LOG.info("Statistics panel: loaded " + snapshot.dailyStats().size()
                     + " daily stats, " + snapshot.agentIds().size() + " agents");
-                ApplicationManager.getApplication().invokeLater(() -> updateCharts(snapshot), modality);
+                ApplicationManager.getApplication().invokeLater(() -> {
+                    if (project.isDisposed()) return;
+                    updateCharts(snapshot);
+                }, modality);
             } catch (Exception e) {
                 LOG.error("Statistics panel: failed to load data for range " + range, e);
             }

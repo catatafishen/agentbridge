@@ -17,16 +17,16 @@ final class UsageStatisticsData {
      * Aggregated metrics for a single day and a single agent.
      */
     record DailyAgentStats(
-            LocalDate date,
-            String agentId,
-            int turns,
-            long inputTokens,
-            long outputTokens,
-            int toolCalls,
-            long durationMs,
-            int linesAdded,
-            int linesRemoved,
-            double premiumRequests
+        LocalDate date,
+        String agentId,
+        int turns,
+        long inputTokens,
+        long outputTokens,
+        int toolCalls,
+        long durationMs,
+        int linesAdded,
+        int linesRemoved,
+        double premiumRequests
     ) {
     }
 
@@ -34,11 +34,11 @@ final class UsageStatisticsData {
      * Complete statistics snapshot for a date range, ready for chart rendering.
      */
     record StatisticsSnapshot(
-            List<DailyAgentStats> dailyStats,
-            LocalDate startDate,
-            LocalDate endDate,
-            Set<String> agentIds,
-            Map<String, String> agentDisplayNames
+        List<DailyAgentStats> dailyStats,
+        LocalDate startDate,
+        LocalDate endDate,
+        Set<String> agentIds,
+        Map<String, String> agentDisplayNames
     ) {
         long totalTurns() {
             return dailyStats.stream().mapToInt(DailyAgentStats::turns).sum();
@@ -46,8 +46,8 @@ final class UsageStatisticsData {
 
         long totalTokens() {
             return dailyStats.stream()
-                    .mapToLong(s -> s.inputTokens() + s.outputTokens())
-                    .sum();
+                .mapToLong(s -> s.inputTokens() + s.outputTokens())
+                .sum();
         }
 
         long totalToolCalls() {
@@ -87,7 +87,7 @@ final class UsageStatisticsData {
 
         LocalDate startDate() {
             if (days < 0) return LocalDate.of(2020, 1, 1);
-            return LocalDate.now().minusDays(days);
+            return LocalDate.now().minusDays(days - 1L);
         }
     }
 

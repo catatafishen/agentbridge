@@ -116,8 +116,8 @@ final class UsageStatisticsLoader {
             String line;
             while ((line = reader.readLine()) != null) {
                 // Track timestamps from all entries for date attribution.
-                // TurnStats entries lack their own timestamp, so we use the
-                // most recent timestamp from a preceding entry (prompt/text/tool).
+                // TurnStats entries added before v2.5 lack their own timestamp, so we also
+                // track the most recent timestamp seen in any preceding entry as a fallback.
                 int tsIdx = line.indexOf("\"timestamp\":\"");
                 if (tsIdx >= 0) {
                     int start = tsIdx + "\"timestamp\":\"".length();
@@ -138,6 +138,10 @@ final class UsageStatisticsLoader {
                     if (!(entry instanceof EntryData.TurnStats stats)) continue;
 
                     LocalDate date = extractDate(obj, lastSeenTimestamp);
+                    if (date == null) {
+                        LOG.debug("Skipping TurnStats entry with no resolvable timestamp in " + jsonlPath.getFileName());
+                        continue;
+                    }
                     if (date.isBefore(startDate) || date.isAfter(endDate)) continue;
 
                     DayAgentKey key = new DayAgentKey(date, agentId);
@@ -159,6 +163,7 @@ final class UsageStatisticsLoader {
         }
     }
 
+    @Nullable
     private static LocalDate extractDate(JsonObject obj, @Nullable String fallbackTimestamp) {
         String ts = null;
         if (obj.has("timestamp")) {
@@ -175,7 +180,7 @@ final class UsageStatisticsLoader {
                 // Unparseable timestamp — fall through
             }
         }
-        return LocalDate.now();
+        return null;
     }
 
     /**
