@@ -3,13 +3,9 @@ package com.github.catatafishen.agentbridge.psi.tools.quality;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
-
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Adds a word to the project spell-check dictionary.
@@ -60,26 +56,21 @@ public final class AddToDictionaryTool extends QualityTool {
         if (word.isEmpty()) {
             return "Error: word cannot be empty";
         }
-
-        CompletableFuture<String> resultFuture = new CompletableFuture<>();
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            try {
-                // SpellCheckerManager is a bundled plugin class not available at Gradle compile time,
-                // so we use reflection to avoid a hard compile-time dependency.
-                Class<?> managerClass = Class.forName("com.intellij.spellchecker.SpellCheckerManager");
-                Object spellChecker = managerClass.getMethod("getInstance", Project.class).invoke(null, project);
-                managerClass.getMethod("acceptWordAsCorrect", String.class, Project.class)
-                    .invoke(spellChecker, word, project);
-                resultFuture.complete("Added '" + word + "' to project dictionary. " +
-                    "It will no longer be flagged as a typo in future inspections.");
-            } catch (ClassNotFoundException e) {
-                resultFuture.complete("Spellchecker plugin is not available in this IDE build.");
-            } catch (Exception e) {
-                LOG.error("Error adding word to dictionary", e);
-                resultFuture.complete(ToolUtils.ERROR_PREFIX + "adding word to dictionary: " + e.getMessage());
-            }
-        });
-        return resultFuture.get(10, TimeUnit.SECONDS);
+        try {
+            // SpellCheckerManager is a bundled plugin class not available at Gradle compile time,
+            // so we use reflection to avoid a hard compile-time dependency.
+            Class<?> managerClass = Class.forName("com.intellij.spellchecker.SpellCheckerManager");
+            Object spellChecker = managerClass.getMethod("getInstance", Project.class).invoke(null, project);
+            managerClass.getMethod("acceptWordAsCorrect", String.class, Project.class)
+                .invoke(spellChecker, word, project);
+            return "Added '" + word + "' to project dictionary. " +
+                "It will no longer be flagged as a typo in future inspections.";
+        } catch (ClassNotFoundException e) {
+            return "Spellchecker plugin is not available in this IDE build.";
+        } catch (Exception e) {
+            LOG.error("Error adding word to dictionary", e);
+            return ToolUtils.ERROR_PREFIX + "adding word to dictionary: " + e.getMessage();
+        }
     }
 
     @Override

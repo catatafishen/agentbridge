@@ -29,9 +29,8 @@ import java.util.stream.Stream;
  * <h3>Threading model</h3>
  * <ul>
  *   <li>{@link AddToDictionaryTool} — validation errors return synchronously; the
- *       actual dictionary update runs on a pooled thread via
- *       {@code executeOnPooledThread}. Both paths are safe to call from the EDT test
- *       thread (no EDT callback is dispatched back).</li>
+ *       actual dictionary update runs synchronously via reflection on the calling
+ *       thread. Safe to call from the EDT (no EDT dispatch involved).</li>
  *   <li>{@link GetHighlightsTool} without a path — uses {@code executeOnPooledThread}
  *       + {@code runReadAction} only; safe to call from EDT. With a path, it calls
  *       {@code ensureDaemonAnalyzed} which dispatches via {@code EdtUtil.invokeLater};
@@ -195,8 +194,8 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
      * supplied word. In test environments the SpellChecker plugin may not be available;
      * the tool handles both cases gracefully without returning "Error:".
      *
-     * <p>Safe to call from the EDT: the actual dictionary work runs on a pooled thread
-     * via {@code executeOnPooledThread} and never dispatches back to the EDT.
+     * <p>Safe to call from the EDT: the spell-checker reflection call runs synchronously
+     * on the calling thread and does not dispatch back to the EDT.
      */
     public void testAddToDictionaryWithWord() throws Exception {
         String result = addToDictionaryTool.execute(args("word", "testword"));
