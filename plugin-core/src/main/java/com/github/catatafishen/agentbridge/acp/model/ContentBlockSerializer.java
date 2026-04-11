@@ -18,23 +18,31 @@ public class ContentBlockSerializer implements JsonSerializer<ContentBlock> {
     @Override
     public JsonElement serialize(ContentBlock src, Type typeOfSrc, JsonSerializationContext ctx) {
         JsonObject obj = new JsonObject();
-        if (src instanceof ContentBlock.Text t) {
-            obj.addProperty("type", "text");
-            obj.addProperty("text", t.text());
-        } else if (src instanceof ContentBlock.Thinking t) {
-            obj.addProperty("type", "thinking");
-            obj.addProperty("thinking", t.thinking());
-        } else if (src instanceof ContentBlock.Image img) {
-            obj.addProperty("type", "image");
-            obj.addProperty("data", img.data());
-            obj.addProperty("mimeType", img.mimeType());
-        } else if (src instanceof ContentBlock.Audio a) {
-            obj.addProperty("type", "audio");
-            obj.addProperty("data", a.data());
-            obj.addProperty("mimeType", a.mimeType());
-        } else if (src instanceof ContentBlock.Resource r) {
-            obj.addProperty("type", "resource");
-            obj.add("resource", ctx.serialize(r.resource(), ContentBlock.ResourceLink.class));
+        switch (src) {
+            case ContentBlock.Text t -> {
+                obj.addProperty("type", "text");
+                obj.addProperty("text", t.text());
+            }
+            case ContentBlock.Thinking t -> {
+                obj.addProperty("type", "thinking");
+                obj.addProperty("thinking", t.thinking());
+            }
+            case ContentBlock.Image img -> {
+                obj.addProperty("type", "image");
+                obj.addProperty("data", img.data());
+                obj.addProperty("mimeType", img.mimeType());
+            }
+            case ContentBlock.Audio a -> {
+                obj.addProperty("type", "audio");
+                obj.addProperty("data", a.data());
+                obj.addProperty("mimeType", a.mimeType());
+            }
+            case ContentBlock.Resource r -> {
+                obj.addProperty("type", "resource");
+                obj.add("resource", ctx.serialize(r.resource(), ContentBlock.ResourceLink.class));
+            }
+            case null, default -> {
+            }
         }
         return obj;
     }

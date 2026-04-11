@@ -48,6 +48,7 @@ public final class OpenCodeClientExporter {
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final String OPENCODE_VERSION = "1.2.0";
     private static final String IMPORTED_TITLE = "AgentBridge Session";
+    private static final String FIELD_INPUT = "input";
 
     private OpenCodeClientExporter() {
     }
@@ -587,7 +588,7 @@ public final class OpenCodeClientExporter {
             cache.addProperty("read", 0);
             cache.addProperty("write", 0);
             JsonObject tokens = new JsonObject();
-            tokens.addProperty("input", 0);
+            tokens.addProperty(FIELD_INPUT, 0);
             tokens.addProperty("output", 0);
             tokens.addProperty("reasoning", 0);
             tokens.add("cache", cache);
@@ -645,19 +646,19 @@ public final class OpenCodeClientExporter {
             try {
                 JsonElement parsed = com.google.gson.JsonParser.parseString(argsStr);
                 if (parsed.isJsonObject()) {
-                    stateObj.add("input", parsed);
+                    stateObj.add(FIELD_INPUT, parsed);
                 } else {
                     JsonObject wrapper = new JsonObject();
                     wrapper.addProperty("raw", argsStr);
-                    stateObj.add("input", wrapper);
+                    stateObj.add(FIELD_INPUT, wrapper);
                 }
             } catch (Exception e) {
                 JsonObject wrapper = new JsonObject();
                 wrapper.addProperty("raw", argsStr);
-                stateObj.add("input", wrapper);
+                stateObj.add(FIELD_INPUT, wrapper);
             }
         } else {
-            stateObj.add("input", new JsonObject());
+            stateObj.add(FIELD_INPUT, new JsonObject());
         }
 
         if (completed) {

@@ -23,6 +23,7 @@ public final class EntryDataJsonAdapter {
 
     private static final Logger LOG = Logger.getInstance(EntryDataJsonAdapter.class);
 
+    // Type discriminators
     public static final String TYPE_PROMPT = "prompt";
     public static final String TYPE_TEXT = "text";
     public static final String TYPE_THINKING = "thinking";
@@ -33,6 +34,27 @@ public final class EntryDataJsonAdapter {
     public static final String TYPE_SEPARATOR = "separator";
     public static final String TYPE_TURN_STATS = "turnStats";
     public static final String TYPE_NUDGE = "nudge";
+
+    // JSON field name constants (used in both serialize and deserialize)
+    private static final String KEY_TYPE = "type";
+    private static final String KEY_TIMESTAMP = "timestamp";
+    private static final String KEY_ENTRY_ID = "entryId";
+    private static final String KEY_MODEL = "model";
+    private static final String KEY_AGENT = "agent";
+    private static final String KEY_TEXT = "text";
+    private static final String KEY_RAW = "raw";
+    private static final String KEY_NAME = "name";
+    private static final String KEY_PATH = "path";
+    private static final String KEY_TITLE = "title";
+    private static final String KEY_DESCRIPTION = "description";
+    private static final String KEY_RESULT = "result";
+    private static final String KEY_STATUS = "status";
+    private static final String KEY_AUTO_DENIED = "autoDenied";
+    private static final String KEY_DENIAL_REASON = "denialReason";
+    private static final String KEY_PLUGIN_TOOL = "pluginTool";
+    private static final String KEY_FILES = "files";
+    private static final String KEY_CONTEXT_FILES = "contextFiles";
+    private static final String KEY_PROMPT = "prompt";
 
     private EntryDataJsonAdapter() {
         throw new IllegalStateException("Utility class");
@@ -47,137 +69,141 @@ public final class EntryDataJsonAdapter {
     public static JsonObject serialize(@NotNull EntryData entry) {
         JsonObject json = new JsonObject();
 
-        if (entry instanceof EntryData.Prompt p) {
-            json.addProperty("type", TYPE_PROMPT);
-            json.addProperty("text", p.getText());
-            addNonEmpty(json, "timestamp", p.getTimestamp());
-            if (p.getContextFiles() != null && !p.getContextFiles().isEmpty()) {
-                JsonArray arr = new JsonArray();
-                for (var ref : p.getContextFiles()) {
-                    JsonObject obj = new JsonObject();
-                    obj.addProperty("name", ref.getName());
-                    obj.addProperty("path", ref.getPath());
-                    if (ref.getLine() != 0) {
-                        obj.addProperty("line", ref.getLine());
+        switch (entry) {
+            case EntryData.Prompt p -> {
+                json.addProperty(KEY_TYPE, TYPE_PROMPT);
+                json.addProperty(KEY_TEXT, p.getText());
+                addNonEmpty(json, KEY_TIMESTAMP, p.getTimestamp());
+                if (p.getContextFiles() != null && !p.getContextFiles().isEmpty()) {
+                    JsonArray arr = new JsonArray();
+                    for (var ref : p.getContextFiles()) {
+                        JsonObject obj = new JsonObject();
+                        obj.addProperty(KEY_NAME, ref.getName());
+                        obj.addProperty(KEY_PATH, ref.getPath());
+                        if (ref.getLine() != 0) {
+                            obj.addProperty("line", ref.getLine());
+                        }
+                        arr.add(obj);
                     }
-                    arr.add(obj);
+                    json.add(KEY_CONTEXT_FILES, arr);
                 }
-                json.add("contextFiles", arr);
+                addNonEmpty(json, "id", p.getId());
+                json.addProperty(KEY_ENTRY_ID, p.getEntryId());
             }
-            addNonEmpty(json, "id", p.getId());
-            json.addProperty("entryId", p.getEntryId());
-
-        } else if (entry instanceof EntryData.Text t) {
-            json.addProperty("type", TYPE_TEXT);
-            json.addProperty("raw", t.getRaw());
-            addNonEmpty(json, "timestamp", t.getTimestamp());
-            addNonEmpty(json, "agent", t.getAgent());
-            addNonEmpty(json, "model", t.getModel());
-            json.addProperty("entryId", t.getEntryId());
-
-        } else if (entry instanceof EntryData.Thinking th) {
-            json.addProperty("type", TYPE_THINKING);
-            json.addProperty("raw", th.getRaw());
-            addNonEmpty(json, "timestamp", th.getTimestamp());
-            addNonEmpty(json, "agent", th.getAgent());
-            addNonEmpty(json, "model", th.getModel());
-            json.addProperty("entryId", th.getEntryId());
-
-        } else if (entry instanceof EntryData.ToolCall tc) {
-            json.addProperty("type", TYPE_TOOL);
-            json.addProperty("title", tc.getTitle());
-            addNonEmpty(json, "arguments", tc.getArguments());
-            addNonEmpty(json, "kind", tc.getKind());
-            addNonEmpty(json, "result", tc.getResult());
-            addNonEmpty(json, "status", tc.getStatus());
-            addNonEmpty(json, "description", tc.getDescription());
-            addNonEmpty(json, "filePath", tc.getFilePath());
-            if (tc.getAutoDenied()) {
-                json.addProperty("autoDenied", true);
+            case EntryData.Text t -> {
+                json.addProperty(KEY_TYPE, TYPE_TEXT);
+                json.addProperty(KEY_RAW, t.getRaw());
+                addNonEmpty(json, KEY_TIMESTAMP, t.getTimestamp());
+                addNonEmpty(json, KEY_AGENT, t.getAgent());
+                addNonEmpty(json, KEY_MODEL, t.getModel());
+                json.addProperty(KEY_ENTRY_ID, t.getEntryId());
             }
-            addNonEmpty(json, "denialReason", tc.getDenialReason());
-            String pluginTool = tc.getPluginTool();
-            if (pluginTool != null) json.addProperty("pluginTool", pluginTool);
-            addNonEmpty(json, "timestamp", tc.getTimestamp());
-            addNonEmpty(json, "agent", tc.getAgent());
-            addNonEmpty(json, "model", tc.getModel());
-            json.addProperty("entryId", tc.getEntryId());
-
-        } else if (entry instanceof EntryData.SubAgent sa) {
-            json.addProperty("type", TYPE_SUBAGENT);
-            json.addProperty("agentType", sa.getAgentType());
-            json.addProperty("description", sa.getDescription());
-            addNonEmpty(json, "prompt", sa.getPrompt());
-            addNonEmpty(json, "result", sa.getResult());
-            addNonEmpty(json, "status", sa.getStatus());
-            if (sa.getColorIndex() != 0) {
-                json.addProperty("colorIndex", sa.getColorIndex());
+            case EntryData.Thinking th -> {
+                json.addProperty(KEY_TYPE, TYPE_THINKING);
+                json.addProperty(KEY_RAW, th.getRaw());
+                addNonEmpty(json, KEY_TIMESTAMP, th.getTimestamp());
+                addNonEmpty(json, KEY_AGENT, th.getAgent());
+                addNonEmpty(json, KEY_MODEL, th.getModel());
+                json.addProperty(KEY_ENTRY_ID, th.getEntryId());
             }
-            addNonEmpty(json, "callId", sa.getCallId());
-            if (sa.getAutoDenied()) {
-                json.addProperty("autoDenied", true);
-            }
-            addNonEmpty(json, "denialReason", sa.getDenialReason());
-            addNonEmpty(json, "timestamp", sa.getTimestamp());
-            addNonEmpty(json, "agent", sa.getAgent());
-            addNonEmpty(json, "model", sa.getModel());
-            json.addProperty("entryId", sa.getEntryId());
-
-        } else if (entry instanceof EntryData.ContextFiles cf) {
-            json.addProperty("type", TYPE_CONTEXT);
-            if (!cf.getFiles().isEmpty()) {
-                JsonArray arr = new JsonArray();
-                for (var ref : cf.getFiles()) {
-                    JsonObject obj = new JsonObject();
-                    obj.addProperty("name", ref.getName());
-                    obj.addProperty("path", ref.getPath());
-                    arr.add(obj);
+            case EntryData.ToolCall tc -> {
+                json.addProperty(KEY_TYPE, TYPE_TOOL);
+                json.addProperty(KEY_TITLE, tc.getTitle());
+                addNonEmpty(json, "arguments", tc.getArguments());
+                addNonEmpty(json, "kind", tc.getKind());
+                addNonEmpty(json, KEY_RESULT, tc.getResult());
+                addNonEmpty(json, KEY_STATUS, tc.getStatus());
+                addNonEmpty(json, KEY_DESCRIPTION, tc.getDescription());
+                addNonEmpty(json, "filePath", tc.getFilePath());
+                if (tc.getAutoDenied()) {
+                    json.addProperty(KEY_AUTO_DENIED, true);
                 }
-                json.add("files", arr);
+                addNonEmpty(json, KEY_DENIAL_REASON, tc.getDenialReason());
+                String pluginTool = tc.getPluginTool();
+                if (pluginTool != null) json.addProperty(KEY_PLUGIN_TOOL, pluginTool);
+                addNonEmpty(json, KEY_TIMESTAMP, tc.getTimestamp());
+                addNonEmpty(json, KEY_AGENT, tc.getAgent());
+                addNonEmpty(json, KEY_MODEL, tc.getModel());
+                json.addProperty(KEY_ENTRY_ID, tc.getEntryId());
             }
-            json.addProperty("entryId", cf.getEntryId());
-
-        } else if (entry instanceof EntryData.Status st) {
-            json.addProperty("type", TYPE_STATUS);
-            json.addProperty("icon", st.getIcon());
-            json.addProperty("message", st.getMessage());
-            json.addProperty("entryId", st.getEntryId());
-
-        } else if (entry instanceof EntryData.TurnStats ts) {
-            json.addProperty("type", TYPE_TURN_STATS);
-            json.addProperty("turnId", ts.getTurnId());
-            addNonEmpty(json, "timestamp", ts.getTimestamp());
-            addIfNonZero(json, "durationMs", ts.getDurationMs());
-            addIfNonZero(json, "inputTokens", ts.getInputTokens());
-            addIfNonZero(json, "outputTokens", ts.getOutputTokens());
-            addIfNonZero(json, "costUsd", ts.getCostUsd());
-            addIfNonZero(json, "toolCallCount", ts.getToolCallCount());
-            addIfNonZero(json, "linesAdded", ts.getLinesAdded());
-            addIfNonZero(json, "linesRemoved", ts.getLinesRemoved());
-            addNonEmpty(json, "model", ts.getModel());
-            addNonEmpty(json, "multiplier", ts.getMultiplier());
-            addIfNonZero(json, "totalDurationMs", ts.getTotalDurationMs());
-            addIfNonZero(json, "totalInputTokens", ts.getTotalInputTokens());
-            addIfNonZero(json, "totalOutputTokens", ts.getTotalOutputTokens());
-            addIfNonZero(json, "totalCostUsd", ts.getTotalCostUsd());
-            addIfNonZero(json, "totalToolCalls", ts.getTotalToolCalls());
-            addIfNonZero(json, "totalLinesAdded", ts.getTotalLinesAdded());
-            addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
-            json.addProperty("entryId", ts.getEntryId());
-
-        } else if (entry instanceof EntryData.SessionSeparator sep) {
-            json.addProperty("type", TYPE_SEPARATOR);
-            addNonEmpty(json, "timestamp", sep.getTimestamp());
-            addNonEmpty(json, "agent", sep.getAgent());
-            json.addProperty("entryId", sep.getEntryId());
-
-        } else if (entry instanceof EntryData.Nudge n) {
-            json.addProperty("type", TYPE_NUDGE);
-            json.addProperty("text", n.getText());
-            json.addProperty("id", n.getId());
-            if (n.getSent()) json.addProperty("sent", true);
-            addNonEmpty(json, "timestamp", n.getTimestamp());
-            json.addProperty("entryId", n.getEntryId());
+            case EntryData.SubAgent sa -> {
+                json.addProperty(KEY_TYPE, TYPE_SUBAGENT);
+                json.addProperty("agentType", sa.getAgentType());
+                json.addProperty(KEY_DESCRIPTION, sa.getDescription());
+                addNonEmpty(json, KEY_PROMPT, sa.getPrompt());
+                addNonEmpty(json, KEY_RESULT, sa.getResult());
+                addNonEmpty(json, KEY_STATUS, sa.getStatus());
+                if (sa.getColorIndex() != 0) {
+                    json.addProperty("colorIndex", sa.getColorIndex());
+                }
+                addNonEmpty(json, "callId", sa.getCallId());
+                if (sa.getAutoDenied()) {
+                    json.addProperty(KEY_AUTO_DENIED, true);
+                }
+                addNonEmpty(json, KEY_DENIAL_REASON, sa.getDenialReason());
+                addNonEmpty(json, KEY_TIMESTAMP, sa.getTimestamp());
+                addNonEmpty(json, KEY_AGENT, sa.getAgent());
+                addNonEmpty(json, KEY_MODEL, sa.getModel());
+                json.addProperty(KEY_ENTRY_ID, sa.getEntryId());
+            }
+            case EntryData.ContextFiles cf -> {
+                json.addProperty(KEY_TYPE, TYPE_CONTEXT);
+                if (!cf.getFiles().isEmpty()) {
+                    JsonArray arr = new JsonArray();
+                    for (var ref : cf.getFiles()) {
+                        JsonObject obj = new JsonObject();
+                        obj.addProperty(KEY_NAME, ref.getName());
+                        obj.addProperty(KEY_PATH, ref.getPath());
+                        arr.add(obj);
+                    }
+                    json.add(KEY_FILES, arr);
+                }
+                json.addProperty(KEY_ENTRY_ID, cf.getEntryId());
+            }
+            case EntryData.Status st -> {
+                json.addProperty(KEY_TYPE, TYPE_STATUS);
+                json.addProperty("icon", st.getIcon());
+                json.addProperty("message", st.getMessage());
+                json.addProperty(KEY_ENTRY_ID, st.getEntryId());
+            }
+            case EntryData.TurnStats ts -> {
+                json.addProperty(KEY_TYPE, TYPE_TURN_STATS);
+                json.addProperty("turnId", ts.getTurnId());
+                addNonEmpty(json, KEY_TIMESTAMP, ts.getTimestamp());
+                addIfNonZero(json, "durationMs", ts.getDurationMs());
+                addIfNonZero(json, "inputTokens", ts.getInputTokens());
+                addIfNonZero(json, "outputTokens", ts.getOutputTokens());
+                addIfNonZero(json, "costUsd", ts.getCostUsd());
+                addIfNonZero(json, "toolCallCount", ts.getToolCallCount());
+                addIfNonZero(json, "linesAdded", ts.getLinesAdded());
+                addIfNonZero(json, "linesRemoved", ts.getLinesRemoved());
+                addNonEmpty(json, KEY_MODEL, ts.getModel());
+                addNonEmpty(json, "multiplier", ts.getMultiplier());
+                addIfNonZero(json, "totalDurationMs", ts.getTotalDurationMs());
+                addIfNonZero(json, "totalInputTokens", ts.getTotalInputTokens());
+                addIfNonZero(json, "totalOutputTokens", ts.getTotalOutputTokens());
+                addIfNonZero(json, "totalCostUsd", ts.getTotalCostUsd());
+                addIfNonZero(json, "totalToolCalls", ts.getTotalToolCalls());
+                addIfNonZero(json, "totalLinesAdded", ts.getTotalLinesAdded());
+                addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
+                json.addProperty(KEY_ENTRY_ID, ts.getEntryId());
+            }
+            case EntryData.SessionSeparator sep -> {
+                json.addProperty(KEY_TYPE, TYPE_SEPARATOR);
+                addNonEmpty(json, KEY_TIMESTAMP, sep.getTimestamp());
+                addNonEmpty(json, KEY_AGENT, sep.getAgent());
+                json.addProperty(KEY_ENTRY_ID, sep.getEntryId());
+            }
+            case EntryData.Nudge n -> {
+                json.addProperty(KEY_TYPE, TYPE_NUDGE);
+                json.addProperty(KEY_TEXT, n.getText());
+                json.addProperty("id", n.getId());
+                if (n.getSent()) json.addProperty("sent", true);
+                addNonEmpty(json, KEY_TIMESTAMP, n.getTimestamp());
+                json.addProperty(KEY_ENTRY_ID, n.getEntryId());
+            }
+            default -> {
+            }
         }
 
         return json;
@@ -191,8 +217,8 @@ public final class EntryDataJsonAdapter {
      */
     @Nullable
     public static EntryData deserialize(@NotNull JsonObject json) {
-        String type = str(json, "type");
-        String entryId = str(json, "entryId");
+        String type = str(json, KEY_TYPE);
+        String entryId = str(json, KEY_ENTRY_ID);
         if (entryId.isEmpty()) {
             entryId = UUID.randomUUID().toString();
         }
@@ -200,79 +226,78 @@ public final class EntryDataJsonAdapter {
         return switch (type) {
             case TYPE_PROMPT -> {
                 List<ContextFileRef> contextFiles = null;
-                if (json.has("contextFiles") && json.get("contextFiles").isJsonArray()) {
+                if (json.has(KEY_CONTEXT_FILES) && json.get(KEY_CONTEXT_FILES).isJsonArray()) {
                     contextFiles = new ArrayList<>();
-                    for (var element : json.getAsJsonArray("contextFiles")) {
+                    for (var element : json.getAsJsonArray(KEY_CONTEXT_FILES)) {
                         JsonObject obj = element.getAsJsonObject();
                         contextFiles.add(new ContextFileRef(
-                            str(obj, "name"),
-                            str(obj, "path"),
+                            str(obj, KEY_NAME),
+                            str(obj, KEY_PATH),
                             intVal(obj, "line")));
                     }
                 }
                 yield new EntryData.Prompt(
-                    str(json, "text"),
-                    str(json, "timestamp"),
+                    str(json, KEY_TEXT),
+                    str(json, KEY_TIMESTAMP),
                     contextFiles,
                     str(json, "id"),
                     entryId);
             }
             case TYPE_TEXT -> new EntryData.Text(
-                str(json, "raw"),
-                str(json, "timestamp"),
-                str(json, "agent"),
-                str(json, "model"),
+                str(json, KEY_RAW),
+                str(json, KEY_TIMESTAMP),
+                str(json, KEY_AGENT),
+                str(json, KEY_MODEL),
                 entryId);
             case TYPE_THINKING -> new EntryData.Thinking(
-                str(json, "raw"),
-                str(json, "timestamp"),
-                str(json, "agent"),
-                str(json, "model"),
+                str(json, KEY_RAW),
+                str(json, KEY_TIMESTAMP),
+                str(json, KEY_AGENT),
+                str(json, KEY_MODEL),
                 entryId);
             case TYPE_TOOL -> {
-                // Read new format first, fall back to legacy boolean
-                String pluginTool = json.has("pluginTool") ? json.get("pluginTool").getAsString() : null;
+                String pluginTool = json.has(KEY_PLUGIN_TOOL) ? json.get(KEY_PLUGIN_TOOL).getAsString() : null;
                 if (pluginTool == null && bool(json, "mcpHandled")) {
-                    pluginTool = str(json, "title"); // best effort: use the title as the tool name
+                    pluginTool = str(json, KEY_TITLE);
                 }
                 yield new EntryData.ToolCall(
-                    str(json, "title"),
+                    str(json, KEY_TITLE),
                     strOrNull(json, "arguments"),
                     str(json, "kind"),
-                    strOrNull(json, "result"),
-                    strOrNull(json, "status"),
-                    strOrNull(json, "description"),
+                    strOrNull(json, KEY_RESULT),
+                    strOrNull(json, KEY_STATUS),
+                    strOrNull(json, KEY_DESCRIPTION),
                     strOrNull(json, "filePath"),
-                    bool(json, "autoDenied"),
-                    strOrNull(json, "denialReason"),
+                    bool(json, KEY_AUTO_DENIED),
+                    strOrNull(json, KEY_DENIAL_REASON),
                     pluginTool,
-                    str(json, "timestamp"),
-                    str(json, "agent"),
-                    str(json, "model"),
+                    str(json, KEY_TIMESTAMP),
+                    str(json, KEY_AGENT),
+                    str(json, KEY_MODEL),
                     entryId);
             }
             case TYPE_SUBAGENT -> new EntryData.SubAgent(
                 str(json, "agentType"),
-                str(json, "description"),
-                strOrNull(json, "prompt"),
-                strOrNull(json, "result"),
-                strOrNull(json, "status"),
+                str(json, KEY_DESCRIPTION),
+                strOrNull(json, KEY_PROMPT),
+                strOrNull(json, KEY_RESULT),
+                strOrNull(json, KEY_STATUS),
                 intVal(json, "colorIndex"),
                 strOrNull(json, "callId"),
-                bool(json, "autoDenied"),
-                strOrNull(json, "denialReason"),
-                str(json, "timestamp"),
-                str(json, "agent"),
-                str(json, "model"),
+                bool(json, KEY_AUTO_DENIED),
+                strOrNull(json, KEY_DENIAL_REASON),
+                str(json, KEY_TIMESTAMP),
+                str(json, KEY_AGENT),
+                str(json, KEY_MODEL),
                 entryId);
             case TYPE_CONTEXT -> {
                 List<FileRef> files = new ArrayList<>();
-                if (json.has("files") && json.get("files").isJsonArray()) {
-                    for (var element : json.getAsJsonArray("files")) {
+                if (json.has(KEY_FILES) && json.get(KEY_FILES).isJsonArray()) {
+                    for (var element : json.getAsJsonArray(KEY_FILES)) {
                         JsonObject obj = element.getAsJsonObject();
                         files.add(new FileRef(
-                            str(obj, "name"),
-                            str(obj, "path")));
+                            str(obj, KEY_NAME),
+                            str(obj, KEY_PATH)));
                     }
                 }
                 yield new EntryData.ContextFiles(files, entryId);
@@ -282,8 +307,8 @@ public final class EntryDataJsonAdapter {
                 str(json, "message"),
                 entryId);
             case TYPE_SEPARATOR -> new EntryData.SessionSeparator(
-                str(json, "timestamp"),
-                str(json, "agent"),
+                str(json, KEY_TIMESTAMP),
+                str(json, KEY_AGENT),
                 entryId);
             case TYPE_TURN_STATS -> new EntryData.TurnStats(
                 str(json, "turnId"),
@@ -294,7 +319,7 @@ public final class EntryDataJsonAdapter {
                 intVal(json, "toolCallCount"),
                 intVal(json, "linesAdded"),
                 intVal(json, "linesRemoved"),
-                str(json, "model"),
+                str(json, KEY_MODEL),
                 str(json, "multiplier"),
                 longVal(json, "totalDurationMs"),
                 longVal(json, "totalInputTokens"),
@@ -303,13 +328,13 @@ public final class EntryDataJsonAdapter {
                 intVal(json, "totalToolCalls"),
                 intVal(json, "totalLinesAdded"),
                 intVal(json, "totalLinesRemoved"),
-                str(json, "timestamp"),
+                str(json, KEY_TIMESTAMP),
                 entryId);
             case TYPE_NUDGE -> new EntryData.Nudge(
-                str(json, "text"),
+                str(json, KEY_TEXT),
                 str(json, "id"),
                 bool(json, "sent"),
-                str(json, "timestamp"),
+                str(json, KEY_TIMESTAMP),
                 entryId);
             default -> {
                 LOG.debug("Skipping unknown entry type during deserialization: " + type);

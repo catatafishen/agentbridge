@@ -92,6 +92,9 @@ public final class ChatWebServer implements Disposable {
     // ── Web Push ──────────────────────────────────────────────────────────────
     private volatile WebPushSender webPush;
 
+    // ── HTTP executor ─────────────────────────────────────────────────────────
+    private volatile java.util.concurrent.ExecutorService serverExecutor;
+
     // ── Current state (for /info) ─────────────────────────────────────────────
     private volatile String currentModel = "";
     private volatile String projectName = "";
@@ -231,6 +234,7 @@ public final class ChatWebServer implements Disposable {
         }
 
         var executor = Executors.newCachedThreadPool();
+        serverExecutor = executor;
 
         IOException lastError = null;
         for (int attempt = 0; attempt < 10; attempt++) {
@@ -376,6 +380,10 @@ public final class ChatWebServer implements Disposable {
             httpServer = null;
         }
         running = false;
+        if (serverExecutor != null) {
+            serverExecutor.shutdownNow();
+            serverExecutor = null;
+        }
         LOG.info("[ChatWebServer] stopped for project: " + project.getBasePath());
     }
 

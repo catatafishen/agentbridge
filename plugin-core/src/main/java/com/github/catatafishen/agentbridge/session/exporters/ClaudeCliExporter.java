@@ -37,6 +37,9 @@ public final class ClaudeCliExporter {
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().serializeNulls().create();
     private static final String FIELD_SESSION_ID = "sessionId";
     private static final String FIELD_VERSION = "version";
+    private static final String ROLE_ASSISTANT = "assistant";
+    private static final String CONTENT_TYPE_TOOL_USE = "tool_use";
+    private static final String STOP_REASON_END_TURN = "end_turn";
 
     /**
      * Fallback version used in exported events when the real CLI version cannot be
@@ -99,8 +102,8 @@ public final class ClaudeCliExporter {
                 ? Instant.ofEpochMilli(msg.createdAt())
                 : sessionStart;
 
-            boolean hasToolUse = "assistant".equals(msg.role()) && msg.contentBlocks().stream()
-                .anyMatch(b -> b.has("type") && "tool_use".equals(b.get("type").getAsString()));
+            boolean hasToolUse = ROLE_ASSISTANT.equals(msg.role()) && msg.contentBlocks().stream()
+                .anyMatch(b -> b.has("type") && CONTENT_TYPE_TOOL_USE.equals(b.get("type").getAsString()));
             boolean hasToolResult = "user".equals(msg.role()) && msg.contentBlocks().stream()
                 .anyMatch(b -> b.has("type") && "tool_result".equals(b.get("type").getAsString()));
 
@@ -279,7 +282,7 @@ public final class ClaudeCliExporter {
                 event.addProperty("sourceToolAssistantUUID", sourceToolAssistantUuid);
             }
         } else {
-            event.addProperty("type", "assistant");
+            event.addProperty("type", ROLE_ASSISTANT);
             event.addProperty("requestId", UUID.randomUUID().toString());
             event.addProperty("userType", "external");
             event.addProperty("entrypoint", "sdk-cli");
@@ -304,7 +307,7 @@ public final class ClaudeCliExporter {
 
         // Assistant messages must match the Anthropic API response structure that Claude CLI
         // expects when rebuilding conversation context during --resume.
-        if ("assistant".equals(msg.role())) {
+        if (ROLE_ASSISTANT.equals(msg.role())) {
             messagePayload.addProperty("id", "msg_" + uuid.replace("-", "").substring(0, 24));
             messagePayload.addProperty("type", "message");
             String model = msg.model();
@@ -314,8 +317,8 @@ public final class ClaudeCliExporter {
             // "end_turn" otherwise.  Claude CLI uses this to determine conversation flow
             // when rebuilding context for --resume.
             boolean hasToolUse = msg.contentBlocks().stream()
-                .anyMatch(b -> b.has("type") && "tool_use".equals(b.get("type").getAsString()));
-            messagePayload.addProperty("stop_reason", hasToolUse ? "tool_use" : "end_turn");
+                .anyMatch(b -> b.has("type") && CONTENT_TYPE_TOOL_USE.equals(b.get("type").getAsString()));
+            messagePayload.addProperty("stop_reason", hasToolUse ? CONTENT_TYPE_TOOL_USE : STOP_REASON_END_TURN);
             messagePayload.add("stop_sequence", JsonNull.INSTANCE);
         }
 
