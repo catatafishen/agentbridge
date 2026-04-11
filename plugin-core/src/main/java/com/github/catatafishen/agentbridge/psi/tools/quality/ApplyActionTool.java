@@ -7,7 +7,6 @@ import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.GitDiffRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.intention.IntentionAction;
-import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -225,22 +224,14 @@ public final class ApplyActionTool extends QualityTool {
             return ACTION_PREFIX + actionName + "' made no changes. It may require user input via a dialog. "
                 + "Try get_action_options to inspect what dialog options it shows.";
         }
-        return formatApplyResult(actionName, pathStr, targetLine, diff, false);
+        return formatApplyResult(actionName, pathStr, targetLine, diff, true);
     }
 
     /**
-     * Invokes the action respecting its {@link IntentionAction#startInWriteAction()} contract.
-     * Actions that return {@code false} (e.g. refactoring-based fixes) manage their own
-     * write lock internally and must NOT be wrapped in a {@link WriteCommandAction}, because
-     * they start progress / read-actions internally which would deadlock inside a write action.
+     * Delegates to the base-class contract-aware invocation, unpacking the {@link ActionContext}.
      */
     private void invokeRespectingWriteAction(String actionName, ActionContext ctx) {
-        if (ctx.action().startInWriteAction()) {
-            WriteCommandAction.runWriteCommandAction(project, actionName, null,
-                () -> ctx.action().invoke(project, ctx.editor(), ctx.psiFile()));
-        } else {
-            ctx.action().invoke(project, ctx.editor(), ctx.psiFile());
-        }
+        invokeRespectingWriteAction(actionName, ctx.action(), ctx.editor(), ctx.psiFile());
     }
 
     private record ActionContext(IntentionAction action, Editor editor, PsiFile psiFile, Document doc) {

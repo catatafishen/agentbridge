@@ -165,6 +165,25 @@ public abstract class QualityTool extends Tool {
         return result;
     }
 
+    /**
+     * Invokes the action respecting its {@link IntentionAction#startInWriteAction()} contract.
+     * Actions that return {@code false} (e.g. refactoring-based fixes) manage their own
+     * write lock internally and must NOT be wrapped in a {@link com.intellij.openapi.command.WriteCommandAction},
+     * because they start progress/read-actions internally which would deadlock inside a write action.
+     *
+     * <p><b>Why extracted:</b> Both {@code ApplyActionTool} and {@code GetActionOptionsTool}
+     * invoke intentions and must use the same invocation contract.
+     */
+    protected void invokeRespectingWriteAction(String actionName, IntentionAction action,
+                                               Editor editor, PsiFile psiFile) {
+        if (action.startInWriteAction()) {
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(
+                project, actionName, null, () -> action.invoke(project, editor, psiFile));
+        } else {
+            action.invoke(project, editor, psiFile);
+        }
+    }
+
     protected record FilePair(VirtualFile vf, PsiFile psiFile) {
     }
 
