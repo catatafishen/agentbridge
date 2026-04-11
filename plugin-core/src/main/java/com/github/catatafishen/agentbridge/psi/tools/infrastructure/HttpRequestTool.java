@@ -295,7 +295,6 @@ public final class HttpRequestTool extends InfrastructureTool {
                 var view = factory.createBuilder(project).getConsole();
 
                 NopProcessHandler processHandler = new NopProcessHandler();
-                processHandler.startNotify();
 
                 new RunContentExecutor(project, processHandler)
                     .withTitle(tabTitle)

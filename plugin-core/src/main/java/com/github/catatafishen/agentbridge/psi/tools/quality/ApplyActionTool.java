@@ -186,8 +186,7 @@ public final class ApplyActionTool extends QualityTool {
     private String applyWithOption(String option, String actionName, String pathStr, int targetLine,
                                    String before, ActionContext ctx) {
         boolean selected = DialogInterceptor.runAndSelectOption(
-            () -> WriteCommandAction.runWriteCommandAction(project, actionName, null,
-                () -> ctx.action().invoke(project, ctx.editor(), ctx.psiFile())),
+            () -> invokeRespectingWriteAction(actionName, ctx),
             option
         );
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
@@ -203,8 +202,7 @@ public final class ApplyActionTool extends QualityTool {
 
     private String applyAsDryRun(String actionName, String pathStr, String before,
                                  ActionContext ctx, VirtualFile vf) {
-        WriteCommandAction.runWriteCommandAction(project, actionName, null,
-            () -> ctx.action().invoke(project, ctx.editor(), ctx.psiFile()));
+        invokeRespectingWriteAction(actionName, ctx);
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
         String after = ctx.doc().getText();
         String diff = DiffUtils.unifiedDiff(before, after, pathStr);
@@ -218,8 +216,7 @@ public final class ApplyActionTool extends QualityTool {
 
     private String applyNormally(String actionName, String pathStr, int targetLine,
                                  String before, ActionContext ctx) {
-        WriteCommandAction.runWriteCommandAction(project, actionName, null,
-            () -> ctx.action().invoke(project, ctx.editor(), ctx.psiFile()));
+        invokeRespectingWriteAction(actionName, ctx);
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
         FileDocumentManager.getInstance().saveDocument(ctx.doc());
         String after = ctx.doc().getText();
@@ -229,6 +226,21 @@ public final class ApplyActionTool extends QualityTool {
                 + "Try get_action_options to inspect what dialog options it shows.";
         }
         return formatApplyResult(actionName, pathStr, targetLine, diff, false);
+    }
+
+    /**
+     * Invokes the action respecting its {@link IntentionAction#startInWriteAction()} contract.
+     * Actions that return {@code false} (e.g. refactoring-based fixes) manage their own
+     * write lock internally and must NOT be wrapped in a {@link WriteCommandAction}, because
+     * they start progress / read-actions internally which would deadlock inside a write action.
+     */
+    private void invokeRespectingWriteAction(String actionName, ActionContext ctx) {
+        if (ctx.action().startInWriteAction()) {
+            WriteCommandAction.runWriteCommandAction(project, actionName, null,
+                () -> ctx.action().invoke(project, ctx.editor(), ctx.psiFile()));
+        } else {
+            ctx.action().invoke(project, ctx.editor(), ctx.psiFile());
+        }
     }
 
     private record ActionContext(IntentionAction action, Editor editor, PsiFile psiFile, Document doc) {
