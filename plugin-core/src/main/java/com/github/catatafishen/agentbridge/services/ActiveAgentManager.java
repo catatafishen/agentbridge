@@ -471,7 +471,7 @@ public final class ActiveAgentManager implements Disposable {
     }
 
     private static int clamp(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
+        return Math.clamp(value, min, max);
     }
 
     @NotNull
