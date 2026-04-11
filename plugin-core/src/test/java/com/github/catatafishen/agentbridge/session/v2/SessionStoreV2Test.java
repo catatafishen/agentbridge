@@ -790,7 +790,7 @@ class SessionStoreV2Test {
             new EntryData.Status("✓", "Done", "st1"),
             new EntryData.SessionSeparator("2024-01-01T00:00:05Z", "copilot", "sep1"),
             new EntryData.TurnStats("turn-1", 5000L, 1000L, 500L, 0.05, 3, 10, 2,
-                "gpt-4", "1x", 10000L, 2000L, 1000L, 0.10, 6, 20, 4, "ts1")
+                "gpt-4", "1x", 10000L, 2000L, 1000L, 0.10, 6, 20, 4, "", "ts1")
         );
 
         String jsonl = toJsonl(originals);
@@ -962,6 +962,7 @@ class SessionStoreV2Test {
             25,        // totalToolCalls
             500,       // totalLinesAdded
             100,       // totalLinesRemoved
+            "",        // timestamp
             "ts-42"
         );
 
@@ -994,7 +995,7 @@ class SessionStoreV2Test {
     @Test
     void roundTrip_turnStatsWithZeroValues() {
         EntryData.TurnStats original = new EntryData.TurnStats(
-            "turn-empty", 0, 0, 0, 0.0, 0, 0, 0, "", "", 0, 0, 0, 0.0, 0, 0, 0, "ts-zero");
+            "turn-empty", 0, 0, 0, 0.0, 0, 0, 0, "", "", 0, 0, 0, 0.0, 0, 0, 0, "", "ts-zero");
 
         String jsonl = toJsonl(List.of(original));
         List<EntryData> loaded = SessionStoreV2.parseJsonlAutoDetect(jsonl);
