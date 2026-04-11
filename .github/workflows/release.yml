@@ -6,6 +6,14 @@ on:
 
 permissions: read-all
 
+concurrency:
+  # Only one release job runs at a time. cancel-in-progress: false means a second
+  # push queues rather than being dropped. GitHub keeps at most one pending run per
+  # group, so a burst of merges still collapses correctly: the queued run will see
+  # all commits accumulated since the tag the running job is about to create.
+  group: release
+  cancel-in-progress: false
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
