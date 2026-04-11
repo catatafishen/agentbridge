@@ -113,6 +113,7 @@ public final class ChatWebServer implements Disposable {
     public volatile Runnable onDisconnect;
     public volatile Consumer<String> onConnect;
     public volatile Consumer<String> onSelectModel;
+    public volatile Runnable onLoadMore;
 
     public ChatWebServer(@NotNull Project project) {
         this.project = project;
@@ -351,6 +352,9 @@ public final class ChatWebServer implements Disposable {
         server.createContext("/set-model", ex -> handleAction(ex, body -> {
             String modelId = jsonString(body, "modelId");
             if (modelId != null && !modelId.isEmpty() && onSelectModel != null) onSelectModel.accept(modelId);
+        }));
+        server.createContext("/load-more", ex -> handleAction(ex, body -> {
+            if (onLoadMore != null) onLoadMore.run();
         }));
     }
 

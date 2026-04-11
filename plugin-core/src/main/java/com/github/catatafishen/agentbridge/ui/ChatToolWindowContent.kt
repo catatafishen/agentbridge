@@ -1571,6 +1571,9 @@ class ChatToolWindowContent(
             ws.onSelectModel = java.util.function.Consumer { modelId ->
                 ApplicationManager.getApplication().invokeLater { selectModelById(modelId) }
             }
+            ws.onLoadMore = Runnable {
+                ApplicationManager.getApplication().invokeLater { onLoadMoreHistory() }
+            }
         }
 
         return consolePanel.component
