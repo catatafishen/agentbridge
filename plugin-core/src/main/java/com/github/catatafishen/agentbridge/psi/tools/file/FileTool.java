@@ -69,36 +69,10 @@ public abstract class FileTool extends Tool {
         List<String> paths = new ArrayList<>(pathSet);
 
         if (com.intellij.openapi.application.ApplicationManager.getApplication().isDispatchThread()) {
-            // Already on EDT — run formatting directly without blocking to avoid deadlock
             for (String pathStr : paths) {
-                try {
-                    VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
-                    if (vf != null) {
-                        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-                        if (psiFile != null) {
-                            Document doc = psiFile.getViewProvider().getDocument();
-                            WriteAction.run(() ->
-                                CommandProcessor.getInstance().executeCommand(project, () -> {
-                                    if (doc != null)
-                                        PsiDocumentManager.getInstance(project).commitDocument(doc);
-                                    new OptimizeImportsProcessor(project, psiFile).run();
-                                    new ReformatCodeProcessor(psiFile, false).run();
-                                    if (doc != null)
-                                        PsiDocumentManager.getInstance(project).commitDocument(doc);
-                                }, "Auto-Format (Deferred)", null)
-                            );
-                            LOG.info("Deferred auto-format (EDT): " + pathStr);
-                        }
-                    }
-                } catch (Exception e) {
-                    LOG.warn("Deferred auto-format failed for " + pathStr + ": " + e.getMessage());
-                }
+                formatSingleFile(project, pathStr);
             }
-            try {
-                WriteAction.run(() -> FileDocumentManager.getInstance().saveAllDocuments());
-            } catch (Exception e) {
-                LOG.warn("Failed to save documents after auto-format", e);
-            }
+            saveAllDocuments();
             return;
         }
 
@@ -107,35 +81,9 @@ public abstract class FileTool extends Tool {
 
         for (String pathStr : paths) {
             EdtUtil.invokeLater(() -> {
-                try {
-                    VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
-                    if (vf != null) {
-                        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-                        if (psiFile != null) {
-                            Document doc = psiFile.getViewProvider().getDocument();
-                            WriteAction.run(() ->
-                                CommandProcessor.getInstance().executeCommand(project, () -> {
-                                    if (doc != null)
-                                        PsiDocumentManager.getInstance(project).commitDocument(doc);
-                                    new OptimizeImportsProcessor(project, psiFile).run();
-                                    new ReformatCodeProcessor(psiFile, false).run();
-                                    if (doc != null)
-                                        PsiDocumentManager.getInstance(project).commitDocument(doc);
-                                }, "Auto-Format (Deferred)", null)
-                            );
-                            LOG.info("Deferred auto-format: " + pathStr);
-                        }
-                    }
-                } catch (Exception e) {
-                    LOG.warn("Deferred auto-format failed for " + pathStr + ": " + e.getMessage());
-                }
+                formatSingleFile(project, pathStr);
                 if (remaining.decrementAndGet() == 0) {
-                    try {
-                        WriteAction.run(() ->
-                            FileDocumentManager.getInstance().saveAllDocuments());
-                    } catch (Exception e) {
-                        LOG.warn("Failed to save documents after auto-format", e);
-                    }
+                    saveAllDocuments();
                     latch.countDown();
                 }
             });
@@ -148,6 +96,41 @@ public abstract class FileTool extends Tool {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             LOG.warn("flushPendingAutoFormat interrupted");
+        }
+    }
+
+    /**
+     * Formats and optimizes imports for a single file inside a write action.
+     * Shared by both the EDT and non-EDT paths of {@link #flushPendingAutoFormat}.
+     */
+    private static void formatSingleFile(Project project, String pathStr) {
+        try {
+            VirtualFile vf = ToolUtils.resolveVirtualFile(project, pathStr);
+            if (vf == null) return;
+            PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+            if (psiFile == null) return;
+            Document doc = psiFile.getViewProvider().getDocument();
+            WriteAction.run(() ->
+                CommandProcessor.getInstance().executeCommand(project, () -> {
+                    if (doc != null)
+                        PsiDocumentManager.getInstance(project).commitDocument(doc);
+                    new OptimizeImportsProcessor(project, psiFile).run();
+                    new ReformatCodeProcessor(psiFile, false).run();
+                    if (doc != null)
+                        PsiDocumentManager.getInstance(project).commitDocument(doc);
+                }, "Auto-Format (Deferred)", null)
+            );
+            LOG.info("Deferred auto-format: " + pathStr);
+        } catch (Exception e) {
+            LOG.warn("Deferred auto-format failed for " + pathStr + ": " + e.getMessage());
+        }
+    }
+
+    private static void saveAllDocuments() {
+        try {
+            WriteAction.run(() -> FileDocumentManager.getInstance().saveAllDocuments());
+        } catch (Exception e) {
+            LOG.warn("Failed to save documents after auto-format", e);
         }
     }
 
@@ -391,6 +374,9 @@ public abstract class FileTool extends Tool {
             if (indexState == 'M' && workTreeState == 'M') return " [git: partially staged]";
             if (workTreeState == 'D') return " [git: deleted]";
             return " [git: " + output.substring(0, 2).trim() + "]";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "";
         } catch (Exception e) {
             return "";
         }

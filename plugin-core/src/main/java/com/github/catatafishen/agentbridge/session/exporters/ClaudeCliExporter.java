@@ -102,10 +102,8 @@ public final class ClaudeCliExporter {
                 ? Instant.ofEpochMilli(msg.createdAt())
                 : sessionStart;
 
-            boolean hasToolUse = ROLE_ASSISTANT.equals(msg.role()) && msg.contentBlocks().stream()
-                .anyMatch(b -> b.has("type") && CONTENT_TYPE_TOOL_USE.equals(b.get("type").getAsString()));
-            boolean hasToolResult = "user".equals(msg.role()) && msg.contentBlocks().stream()
-                .anyMatch(b -> b.has("type") && "tool_result".equals(b.get("type").getAsString()));
+            boolean hasToolUse = hasContentBlockType(msg, ROLE_ASSISTANT, CONTENT_TYPE_TOOL_USE);
+            boolean hasToolResult = hasContentBlockType(msg, "user", "tool_result");
 
             String sourceAssistantUuid = hasToolResult ? lastToolAssistantUuid : null;
             sb.append(messageEvent(msg, uuid, parentUuid, sourceAssistantUuid, ctx, msgTimestamp)).append('\n');
@@ -316,8 +314,7 @@ public final class ClaudeCliExporter {
             // stop_reason must be "tool_use" when the message contains tool_use blocks,
             // "end_turn" otherwise.  Claude CLI uses this to determine conversation flow
             // when rebuilding context for --resume.
-            boolean hasToolUse = msg.contentBlocks().stream()
-                .anyMatch(b -> b.has("type") && CONTENT_TYPE_TOOL_USE.equals(b.get("type").getAsString()));
+            boolean hasToolUse = hasContentBlockType(msg, ROLE_ASSISTANT, CONTENT_TYPE_TOOL_USE);
             messagePayload.addProperty("stop_reason", hasToolUse ? CONTENT_TYPE_TOOL_USE : STOP_REASON_END_TURN);
             messagePayload.add("stop_sequence", JsonNull.INSTANCE);
         }
@@ -334,6 +331,11 @@ public final class ClaudeCliExporter {
         }
 
         return GSON.toJson(event);
+    }
+
+    private static boolean hasContentBlockType(@NotNull AnthropicMessage msg, @NotNull String role, @NotNull String blockType) {
+        return role.equals(msg.role()) && msg.contentBlocks().stream()
+            .anyMatch(b -> b.has("type") && blockType.equals(b.get("type").getAsString()));
     }
 
     private record EventContext(

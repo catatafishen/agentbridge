@@ -101,7 +101,6 @@ public final class OpenCodeClientExporter {
         return exportSession(entries, dbPath, projectDir, 0);
     }
 
-    @Nullable
     public static String exportSession(
         @NotNull List<EntryData> entries,
         @NotNull Path dbPath,
@@ -112,28 +111,9 @@ public final class OpenCodeClientExporter {
 
         if (entries.isEmpty()) return null;
 
-        // Quick check: at least one exportable entry?
-        boolean hasExportable = false;
-        for (EntryData e : entries) {
-            if (e instanceof EntryData.Prompt || e instanceof EntryData.Text
-                || e instanceof EntryData.Thinking || e instanceof EntryData.ToolCall
-                || e instanceof EntryData.SubAgent) {
-                hasExportable = true;
-                break;
-            }
-        }
-        if (!hasExportable) return null;
+        if (!hasExportableEntries(entries)) return null;
 
-        if (!Files.exists(dbPath)) {
-            LOG.info("OpenCode database not found at " + dbPath + " — creating it");
-            try {
-                Path parent = dbPath.getParent();
-                if (parent != null) Files.createDirectories(parent);
-            } catch (Exception e) {
-                LOG.warn("Failed to create OpenCode database directory: " + dbPath.getParent(), e);
-                return null;
-            }
-        }
+        ensureDatabaseDirectory(dbPath);
 
         String sessionId = generateId("ses");
 
@@ -142,22 +122,58 @@ public final class OpenCodeClientExporter {
 
             long now = System.currentTimeMillis();
             String projectId = findOrCreateProject(conn, projectDir, now);
-
             insertSession(conn, sessionId, projectId, projectDir, now);
 
-            // Track state for message building with linearization.
-            // Consecutive assistant entries share a single message row.
-            String lastUserMessageId = null;
-            long prevTime = now;
-            int messageCount = 0;
+            int messageCount = processEntries(conn, sessionId, entries, now, projectDir);
 
-            // Pending assistant message state (for merging consecutive assistant entries)
-            List<JsonObject> pendingParts = null;
-            String pendingAgent = null;
-            String pendingModel = null;
+            LOG.info("Exported session to OpenCode: " + sessionId
+                + " (project=" + projectId + ", messages=" + messageCount + ")");
+            return sessionId;
+        } catch (SQLException e) {
+            LOG.warn("Failed to export session to OpenCode database: " + dbPath, e);
+            return null;
+        }
+    }
 
-            for (EntryData entry : entries) {
-                if (entry instanceof EntryData.Prompt prompt) {
+    private static boolean hasExportableEntries(@NotNull List<EntryData> entries) {
+        for (EntryData e : entries) {
+            if (e instanceof EntryData.Prompt || e instanceof EntryData.Text
+                || e instanceof EntryData.Thinking || e instanceof EntryData.ToolCall
+                || e instanceof EntryData.SubAgent) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void ensureDatabaseDirectory(@NotNull Path dbPath) {
+        if (!Files.exists(dbPath)) {
+            LOG.info("OpenCode database not found at " + dbPath + " — creating it");
+            try {
+                Path parent = dbPath.getParent();
+                if (parent != null) Files.createDirectories(parent);
+            } catch (Exception e) {
+                LOG.warn("Failed to create OpenCode database directory: " + dbPath.getParent(), e);
+            }
+        }
+    }
+
+    private static int processEntries(
+        Connection conn, String sessionId,
+        @NotNull List<EntryData> entries, long startTime,
+        @NotNull String projectDir) throws SQLException {
+
+        String lastUserMessageId = null;
+        long prevTime = startTime;
+        int messageCount = 0;
+
+        List<JsonObject> pendingParts = null;
+        String pendingAgent = null;
+        String pendingModel = null;
+
+        for (EntryData entry : entries) {
+            switch (entry) {
+                case EntryData.Prompt prompt -> {
                     // Flush any pending assistant message before a new user message
                     if (pendingParts != null && !pendingParts.isEmpty()) {
                         prevTime++;
@@ -179,8 +195,8 @@ public final class OpenCodeClientExporter {
                     lastUserMessageId = flushMessage(conn, sessionId, "user",
                         "", "", List.of(userPart), prevTime, projectDir, null);
                     messageCount++;
-
-                } else if (entry instanceof EntryData.Text text) {
+                }
+                case EntryData.Text text -> {
                     JsonObject part = new JsonObject();
                     part.addProperty("type", "text");
                     part.addProperty("text", text.getRaw());
@@ -190,8 +206,8 @@ public final class OpenCodeClientExporter {
                         pendingModel = text.getModel();
                     }
                     pendingParts.add(part);
-
-                } else if (entry instanceof EntryData.Thinking thinking) {
+                }
+                case EntryData.Thinking thinking -> {
                     JsonObject part = new JsonObject();
                     part.addProperty("type", "reasoning");
                     part.addProperty("text", thinking.getRaw());
@@ -205,8 +221,8 @@ public final class OpenCodeClientExporter {
                         pendingModel = thinking.getModel();
                     }
                     pendingParts.add(part);
-
-                } else if (entry instanceof EntryData.ToolCall toolCall) {
+                }
+                case EntryData.ToolCall toolCall -> {
                     JsonObject part = buildToolInvocationPart(toolCall, prevTime);
                     if (pendingParts == null) {
                         pendingParts = new ArrayList<>();
@@ -214,20 +230,9 @@ public final class OpenCodeClientExporter {
                         pendingModel = toolCall.getModel();
                     }
                     pendingParts.add(part);
-
-                } else if (entry instanceof EntryData.SubAgent subAgent) {
-                    StringBuilder sb = new StringBuilder("[Subagent");
-                    sb.append(" (").append(subAgent.getAgentType()).append(")");
-                    String desc = subAgent.getDescription();
-                    if (desc != null && !desc.isEmpty()) sb.append(": ").append(desc);
-                    sb.append("]");
-                    String subResult = subAgent.getResult();
-                    if (subResult != null && !subResult.isBlank()) {
-                        sb.append("\n").append(subResult);
-                    }
-                    JsonObject part = new JsonObject();
-                    part.addProperty("type", "text");
-                    part.addProperty("text", sb.toString());
+                }
+                case EntryData.SubAgent subAgent -> {
+                    JsonObject part = buildSubAgentPart(subAgent);
                     if (pendingParts == null) {
                         pendingParts = new ArrayList<>();
                         pendingAgent = subAgent.getAgent();
@@ -235,89 +240,106 @@ public final class OpenCodeClientExporter {
                     }
                     pendingParts.add(part);
                 }
-                // Skip: Status, TurnStats, ContextFiles, SessionSeparator
+                default -> {
+                    // Skip: Status, TurnStats, ContextFiles, SessionSeparator
+                }
             }
-
-            // Flush trailing assistant message
-            if (pendingParts != null && !pendingParts.isEmpty()) {
-                prevTime++;
-                flushMessage(conn, sessionId, "assistant",
-                    pendingAgent, pendingModel, pendingParts, prevTime,
-                    projectDir, lastUserMessageId);
-                messageCount++;
-            }
-
-            LOG.info("Exported session to OpenCode: " + sessionId
-                + " (project=" + projectId + ", messages=" + messageCount + ")");
-            return sessionId;
-        } catch (SQLException e) {
-            LOG.warn("Failed to export session to OpenCode database: " + dbPath, e);
-            return null;
         }
+
+        // Flush trailing assistant message
+        if (pendingParts != null && !pendingParts.isEmpty()) {
+            prevTime++;
+            flushMessage(conn, sessionId, "assistant",
+                pendingAgent, pendingModel, pendingParts, prevTime,
+                projectDir, lastUserMessageId);
+            messageCount++;
+        }
+
+        return messageCount;
+    }
+
+    private static JsonObject buildSubAgentPart(@NotNull EntryData.SubAgent subAgent) {
+        StringBuilder sb = new StringBuilder("[Subagent");
+        sb.append(" (").append(subAgent.getAgentType()).append(")");
+        String desc = subAgent.getDescription();
+        if (desc != null && !desc.isEmpty()) sb.append(": ").append(desc);
+        sb.append("]");
+        String subResult = subAgent.getResult();
+        if (subResult != null && !subResult.isBlank()) {
+            sb.append("\n").append(subResult);
+        }
+        JsonObject part = new JsonObject();
+        part.addProperty("type", "text");
+        part.addProperty("text", sb.toString());
+        return part;
     }
 
     // ── ID generation ─────────────────────────────────────────────────────────
 
     private static @NotNull List<EntryData> trimEntriesToBudget(@NotNull List<EntryData> entries, int maxTotalChars) {
         if (maxTotalChars <= 0) return entries;
-        // Rough char count: sum up text/result content of all entries
-        int total = 0;
-        for (EntryData e : entries) {
-            if (e instanceof EntryData.Prompt p) total += p.getText().length();
-            else if (e instanceof EntryData.Text t) total += t.getRaw().length();
-            else if (e instanceof EntryData.ToolCall tc) {
-                if (tc.getArguments() != null) total += tc.getArguments().length();
-                if (tc.getResult() != null) total += tc.getResult().length();
-            }
-        }
+
+        int total = countTotalChars(entries);
         if (total <= maxTotalChars) return entries;
 
         List<EntryData> result = new ArrayList<>(entries);
         while (total > maxTotalChars) {
-            // Find the second Prompt index
-            int secondPromptIdx = -1;
-            int promptsSeen = 0;
-            for (int i = 0; i < result.size(); i++) {
-                if (result.get(i) instanceof EntryData.Prompt) {
-                    if (++promptsSeen == 2) {
-                        secondPromptIdx = i;
-                        break;
-                    }
-                }
-            }
+            int secondPromptIdx = findSecondPromptIndex(result);
             if (secondPromptIdx != -1) {
-                int charsDropped = 0;
-                for (int i = 0; i < secondPromptIdx; i++) {
-                    EntryData e = result.get(i);
-                    if (e instanceof EntryData.Prompt p) charsDropped += p.getText().length();
-                    else if (e instanceof EntryData.Text t) charsDropped += t.getRaw().length();
-                    else if (e instanceof EntryData.ToolCall tc) {
-                        if (tc.getArguments() != null) charsDropped += tc.getArguments().length();
-                        if (tc.getResult() != null) charsDropped += tc.getResult().length();
-                    }
-                }
+                int charsDropped = countTotalChars(result.subList(0, secondPromptIdx));
                 result.subList(0, secondPromptIdx).clear();
                 total -= charsDropped;
             } else {
-                // Single-turn: drop oldest non-Prompt entry
-                // find first non-Prompt entry after the initial Prompt
-                int dropIdx = -1;
-                for (int i = 1; i < result.size(); i++) {
-                    if (!(result.get(i) instanceof EntryData.Prompt)) {
-                        dropIdx = i;
-                        break;
-                    }
-                }
-                if (dropIdx == -1) break;
-                EntryData dropped = result.remove(dropIdx);
-                if (dropped instanceof EntryData.Text t) total -= t.getRaw().length();
-                else if (dropped instanceof EntryData.ToolCall tc) {
-                    if (tc.getArguments() != null) total -= tc.getArguments().length();
-                    if (tc.getResult() != null) total -= tc.getResult().length();
-                }
+                int freed = dropOldestNonPrompt(result);
+                if (freed < 0) break; // nothing to drop
+                total -= freed;
             }
         }
         return result;
+    }
+
+    private static int countEntryChars(@NotNull EntryData e) {
+        return switch (e) {
+            case EntryData.Prompt p -> p.getText().length();
+            case EntryData.Text t -> t.getRaw().length();
+            case EntryData.ToolCall tc -> {
+                int n = 0;
+                if (tc.getArguments() != null) n += tc.getArguments().length();
+                if (tc.getResult() != null) n += tc.getResult().length();
+                yield n;
+            }
+            default -> 0;
+        };
+    }
+
+    private static int countTotalChars(@NotNull List<EntryData> entries) {
+        int total = 0;
+        for (EntryData e : entries) total += countEntryChars(e);
+        return total;
+    }
+
+    private static int findSecondPromptIndex(@NotNull List<EntryData> entries) {
+        int promptsSeen = 0;
+        for (int i = 0; i < entries.size(); i++) {
+            if (entries.get(i) instanceof EntryData.Prompt && ++promptsSeen == 2) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Drops the oldest non-Prompt entry after the initial Prompt.
+     * Returns the number of characters freed, or Integer.MIN_VALUE if nothing could be dropped.
+     */
+    private static int dropOldestNonPrompt(@NotNull List<EntryData> result) {
+        for (int i = 1; i < result.size(); i++) {
+            if (!(result.get(i) instanceof EntryData.Prompt)) {
+                EntryData dropped = result.remove(i);
+                return countEntryChars(dropped);
+            }
+        }
+        return -1;
     }
 
     /**

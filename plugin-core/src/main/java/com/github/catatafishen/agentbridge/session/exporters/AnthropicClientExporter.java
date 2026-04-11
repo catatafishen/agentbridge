@@ -61,153 +61,20 @@ public final class AnthropicClientExporter {
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
-    /**
-     * Converts a flat list of {@link EntryData} entries into Anthropic API message format.
-     *
-     * <p>The Anthropic API requires strict user/assistant alternation with tool_use blocks
-     * in assistant messages and tool_result blocks in the following user message.  When a
-     * text entry follows tool calls, it signals a turn boundary: the current assistant
-     * blocks are flushed as a turn pair before the new text is started.</p>
-     */
     static List<AnthropicMessage> toAnthropicMessages(@NotNull List<EntryData> entries) {
-        List<AnthropicMessage> raw = new ArrayList<>();
-        List<JsonObject> assistantBlocks = new ArrayList<>();
-        List<JsonObject> toolResults = new ArrayList<>();
-        boolean seenToolUse = false;
-        long currentTimestamp = 0;
-        String currentModel = "";
-
+        var builder = new MessageListBuilder();
         for (EntryData entry : entries) {
-            if (entry instanceof EntryData.Prompt prompt) {
-                // Flush pending assistant blocks
-                if (!assistantBlocks.isEmpty()) {
-                    emitTurn(assistantBlocks, toolResults, currentTimestamp, currentModel, raw);
-                    assistantBlocks = new ArrayList<>();
-                    toolResults = new ArrayList<>();
-                    seenToolUse = false;
-                    currentTimestamp = 0;
-                    currentModel = "";
-                }
-                // Add user message
-                String text = prompt.getText();
-                if (!text.isEmpty()) {
-                    raw.add(new AnthropicMessage(ROLE_USER, List.of(textBlock(text)),
-                        parseTimestamp(prompt.getTimestamp()), ""));
-                }
-
-            } else if (entry instanceof EntryData.Text text) {
-                String content = text.getRaw();
-                if (content.isEmpty()) continue;
-
-                if (currentTimestamp == 0) {
-                    currentTimestamp = parseTimestamp(text.getTimestamp());
-                }
-                String entryModel = text.getModel();
-                if (entryModel != null && !entryModel.isEmpty()) {
-                    currentModel = entryModel;
-                }
-
-                if (seenToolUse) {
-                    // Text after tool use = turn boundary
-                    emitTurn(assistantBlocks, toolResults, currentTimestamp, currentModel, raw);
-                    assistantBlocks = new ArrayList<>();
-                    toolResults = new ArrayList<>();
-                    seenToolUse = false;
-                    currentTimestamp = parseTimestamp(text.getTimestamp());
-                    currentModel = entryModel != null && !entryModel.isEmpty() ? entryModel : "";
-                }
-                assistantBlocks.add(textBlock(content));
-
-            } else if (entry instanceof EntryData.ToolCall toolCall) {
-                if (currentTimestamp == 0) {
-                    currentTimestamp = parseTimestamp(toolCall.getTimestamp());
-                }
-                String entryModel = toolCall.getModel();
-                if (entryModel != null && !entryModel.isEmpty()) {
-                    currentModel = entryModel;
-                }
-
-                String toolCallId = UUID.randomUUID().toString();
-                String toolName = ExportUtils.sanitizeToolName(toolCall.getTitle());
-                String argsStr = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
-                String resultStr = toolCall.getResult() != null ? toolCall.getResult() : "";
-
-                JsonObject inputObj;
-                try {
-                    inputObj = JsonParser.parseString(argsStr).getAsJsonObject();
-                } catch (Exception e) {
-                    LOG.warn("Could not parse tool args as JSON object, wrapping as string: " + argsStr);
-                    inputObj = new JsonObject();
-                    inputObj.addProperty("_raw", argsStr);
-                }
-
-                JsonObject toolUseBlock = new JsonObject();
-                toolUseBlock.addProperty("type", TYPE_TOOL_USE);
-                toolUseBlock.addProperty("id", toolCallId);
-                toolUseBlock.addProperty("name", toolName);
-                toolUseBlock.add("input", inputObj);
-
-                JsonObject toolResultBlock = new JsonObject();
-                toolResultBlock.addProperty("type", TYPE_TOOL_RESULT);
-                toolResultBlock.addProperty("tool_use_id", toolCallId);
-                toolResultBlock.addProperty("content", resultStr);
-
-                assistantBlocks.add(toolUseBlock);
-                toolResults.add(toolResultBlock);
-                seenToolUse = true;
-
-            } else if (entry instanceof EntryData.Thinking thinking) {
-                String entryModel = thinking.getModel();
-                if (entryModel != null && !entryModel.isEmpty()) {
-                    currentModel = entryModel;
-                }
-            } else if (entry instanceof EntryData.SubAgent subAgent) {
-                String entryModel = subAgent.getModel();
-                if (entryModel != null && !entryModel.isEmpty()) {
-                    currentModel = entryModel;
-                }
+            switch (entry) {
+                case EntryData.Prompt prompt -> builder.handlePrompt(prompt);
+                case EntryData.Text text -> builder.handleText(text);
+                case EntryData.ToolCall toolCall -> builder.handleToolCall(toolCall);
+                case EntryData.Thinking thinking -> builder.updateModel(thinking.getModel());
+                case EntryData.SubAgent subAgent -> builder.updateModel(subAgent.getModel());
+                default -> { /* Skip Status, TurnStats, ContextFiles, SessionSeparator, Nudge */ }
             }
-            // Skip Status, TurnStats, ContextFiles, SessionSeparator, Nudge
         }
-
-        // Flush remaining
-        if (!assistantBlocks.isEmpty()) {
-            emitTurn(assistantBlocks, toolResults, currentTimestamp, currentModel, raw);
-        }
-
-        return mergeConsecutiveSameRole(raw);
-    }
-
-    private static void emitTurn(
-        @NotNull List<JsonObject> assistantBlocks,
-        @NotNull List<JsonObject> toolResults,
-        long createdAt,
-        @NotNull String model,
-        @NotNull List<AnthropicMessage> out) {
-
-        if (assistantBlocks.isEmpty()) return;
-
-        out.add(new AnthropicMessage(ROLE_ASSISTANT, assistantBlocks, createdAt, model));
-        if (!toolResults.isEmpty()) {
-            out.add(new AnthropicMessage(ROLE_USER, toolResults, createdAt, ""));
-        }
-    }
-
-    private static long parseTimestamp(@NotNull String isoTimestamp) {
-        if (isoTimestamp.isEmpty()) return 0;
-        try {
-            return Instant.parse(isoTimestamp).toEpochMilli();
-        } catch (java.time.format.DateTimeParseException e) {
-            return 0;
-        }
-    }
-
-    @NotNull
-    private static JsonObject textBlock(@NotNull String text) {
-        JsonObject block = new JsonObject();
-        block.addProperty("type", TYPE_TEXT);
-        block.addProperty(TYPE_TEXT, text);
-        return block;
+        builder.flushPending();
+        return mergeConsecutiveSameRole(builder.messages);
     }
 
     // ------------------------------------------------------------------
@@ -216,32 +83,33 @@ public final class AnthropicClientExporter {
 
     static void trimToSizeBudget(@NotNull List<AnthropicMessage> messages, int maxTotalChars) {
         if (maxTotalChars <= 0) return;
-        // Count total serialized chars
+
         int total = messages.stream().mapToInt(m -> m.toJsonLine().length()).sum();
         while (total > maxTotalChars && messages.size() >= 2) {
-            // Drop the oldest user+assistant pair to keep the conversation structurally valid.
-            // AnthropicMessage alternates user/assistant; first message must be user.
-            int dropCount = 0;
-            // Find how many messages form the first complete exchange to drop.
-            // Drop the first message (user), then drop the following assistant messages up to and
-            // including any message that has tool_use blocks (which need matching tool_results
-            // in the next user message). Simplest safe approach: drop the first user+assistant pair.
-            for (int i = 0; i < messages.size() && dropCount == 0; i++) {
-                if (ROLE_USER.equals(messages.get(i).role())) {
-                    // Find the end of this user's "turn" = up to (not including) the next user message.
-                    int j = i + 1;
-                    while (j < messages.size() && !ROLE_USER.equals(messages.get(j).role())) j++;
-                    // Drop from i to j (exclusive) = the oldest user message + all following assistant messages until next user.
-                    int charsDropped = 0;
-                    for (int k = i; k < j; k++) charsDropped += messages.get(k).toJsonLine().length();
-                    messages.subList(i, j).clear();
-                    total -= charsDropped;
-                    dropCount = j - i;
-                    break;
-                }
+            int exchangeEnd = findFirstExchangeEnd(messages);
+            if (exchangeEnd <= 0) break;
+
+            int charsDropped = 0;
+            for (int k = 0; k < exchangeEnd; k++) {
+                charsDropped += messages.get(k).toJsonLine().length();
             }
-            if (dropCount == 0) break; // nothing to drop
+            messages.subList(0, exchangeEnd).clear();
+            total -= charsDropped;
         }
+    }
+
+    /**
+     * Finds the end index (exclusive) of the first user+assistant exchange.
+     * Returns the index of the second user message, or the list size if there's only one exchange.
+     */
+    private static int findFirstExchangeEnd(@NotNull List<AnthropicMessage> messages) {
+        // Skip past the first user message and its associated assistant messages
+        for (int i = 1; i < messages.size(); i++) {
+            if (ROLE_USER.equals(messages.get(i).role())) {
+                return i;
+            }
+        }
+        return messages.size();
     }
 
     @NotNull
@@ -265,6 +133,133 @@ public final class AnthropicClientExporter {
     // ------------------------------------------------------------------
     // Inner types
     // ------------------------------------------------------------------
+
+    /**
+     * Accumulates assistant content blocks and tool results, flushing them as
+     * complete Anthropic messages when turn boundaries are detected.
+     */
+    private static class MessageListBuilder {
+        final List<AnthropicMessage> messages = new ArrayList<>();
+        List<JsonObject> assistantBlocks = new ArrayList<>();
+        List<JsonObject> toolResults = new ArrayList<>();
+        boolean seenToolUse = false;
+        long currentTimestamp = 0;
+        String currentModel = "";
+
+        void handlePrompt(@NotNull EntryData.Prompt prompt) {
+            flushPending();
+            String text = prompt.getText();
+            if (!text.isEmpty()) {
+                messages.add(new AnthropicMessage(ROLE_USER, List.of(textBlock(text)),
+                    parseTimestamp(prompt.getTimestamp()), ""));
+            }
+        }
+
+        void handleText(@NotNull EntryData.Text text) {
+            String content = text.getRaw();
+            if (content.isEmpty()) return;
+
+            initTimestampIfNeeded(text.getTimestamp());
+            updateModel(text.getModel());
+
+            if (seenToolUse) {
+                flushPending();
+                currentTimestamp = parseTimestamp(text.getTimestamp());
+                String entryModel = text.getModel();
+                currentModel = (entryModel != null && !entryModel.isEmpty()) ? entryModel : "";
+            }
+            assistantBlocks.add(textBlock(content));
+        }
+
+        void handleToolCall(@NotNull EntryData.ToolCall toolCall) {
+            initTimestampIfNeeded(toolCall.getTimestamp());
+            updateModel(toolCall.getModel());
+
+            String toolCallId = UUID.randomUUID().toString();
+            String toolName = ExportUtils.sanitizeToolName(toolCall.getTitle());
+            String argsStr = toolCall.getArguments() != null ? toolCall.getArguments() : "{}";
+            String resultStr = toolCall.getResult() != null ? toolCall.getResult() : "";
+
+            JsonObject inputObj;
+            try {
+                inputObj = JsonParser.parseString(argsStr).getAsJsonObject();
+            } catch (Exception e) {
+                LOG.warn("Could not parse tool args as JSON object, wrapping as string: " + argsStr);
+                inputObj = new JsonObject();
+                inputObj.addProperty("_raw", argsStr);
+            }
+
+            JsonObject toolUseBlock = new JsonObject();
+            toolUseBlock.addProperty("type", TYPE_TOOL_USE);
+            toolUseBlock.addProperty("id", toolCallId);
+            toolUseBlock.addProperty("name", toolName);
+            toolUseBlock.add("input", inputObj);
+
+            JsonObject toolResultBlock = new JsonObject();
+            toolResultBlock.addProperty("type", TYPE_TOOL_RESULT);
+            toolResultBlock.addProperty("tool_use_id", toolCallId);
+            toolResultBlock.addProperty("content", resultStr);
+
+            assistantBlocks.add(toolUseBlock);
+            toolResults.add(toolResultBlock);
+            seenToolUse = true;
+        }
+
+        void updateModel(String model) {
+            if (model != null && !model.isEmpty()) {
+                currentModel = model;
+            }
+        }
+
+        void flushPending() {
+            if (!assistantBlocks.isEmpty()) {
+                emitTurn(assistantBlocks, toolResults, currentTimestamp, currentModel, messages);
+            }
+            assistantBlocks = new ArrayList<>();
+            toolResults = new ArrayList<>();
+            seenToolUse = false;
+            currentTimestamp = 0;
+            currentModel = "";
+        }
+
+        private void initTimestampIfNeeded(String timestamp) {
+            if (currentTimestamp == 0) {
+                currentTimestamp = parseTimestamp(timestamp);
+            }
+        }
+
+        private void emitTurn(
+            @NotNull List<JsonObject> blocks,
+            @NotNull List<JsonObject> results,
+            long createdAt,
+            @NotNull String model,
+            @NotNull List<AnthropicMessage> out) {
+
+            if (blocks.isEmpty()) return;
+
+            out.add(new AnthropicMessage(ROLE_ASSISTANT, blocks, createdAt, model));
+            if (!results.isEmpty()) {
+                out.add(new AnthropicMessage(ROLE_USER, results, createdAt, ""));
+            }
+        }
+
+        private static long parseTimestamp(@NotNull String isoTimestamp) {
+            if (isoTimestamp.isEmpty()) return 0;
+            try {
+                return Instant.parse(isoTimestamp).toEpochMilli();
+            } catch (java.time.format.DateTimeParseException e) {
+                return 0;
+            }
+        }
+
+        @NotNull
+        private static JsonObject textBlock(@NotNull String text) {
+            JsonObject block = new JsonObject();
+            block.addProperty("type", TYPE_TEXT);
+            block.addProperty(TYPE_TEXT, text);
+            return block;
+        }
+    }
 
     /**
      * @param createdAt Epoch millis parsed from the entry timestamp (0 if unknown).
