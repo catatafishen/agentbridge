@@ -22,7 +22,6 @@ import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 import com.intellij.xdebugger.XDebuggerManager;
 import com.intellij.xdebugger.breakpoints.XBreakpoint;
-import com.intellij.xdebugger.breakpoints.XBreakpointManager;
 
 import java.util.List;
 
@@ -142,10 +141,16 @@ public class DebugToolsTest extends BasePlatformTestCase {
 
     /**
      * Verifies that {@code execute()} returns the canonical "No breakpoints set."
-     * message when the breakpoint manager contains no breakpoints, as is guaranteed
-     * in a freshly-initialized {@link BasePlatformTestCase} project.
+     * message when the breakpoint manager contains no breakpoints. Uses
+     * {@link BreakpointRemoveTool} with {@code remove_all: true} to clear any default
+     * breakpoints (e.g. the Java plugin's "Java Exception Breakpoints") that may be
+     * registered asynchronously after {@link #setUp()}.
      */
-    public void testListBreakpointsEmptyReturnsNoBreakpointsMessage() {
+    public void testListBreakpointsEmptyReturnsNoBreakpointsMessage() throws Exception {
+        JsonObject removeAll = new JsonObject();
+        removeAll.addProperty("remove_all", true);
+        breakpointRemoveTool.execute(removeAll);
+
         String result = breakpointListTool.execute(new JsonObject());
         assertEquals("Expected 'No breakpoints set.' for an empty breakpoint manager",
             "No breakpoints set.", result);
@@ -216,17 +221,22 @@ public class DebugToolsTest extends BasePlatformTestCase {
     /**
      * Verifies that {@link BreakpointAddTool} does not modify the breakpoint
      * manager when the target file cannot be resolved — i.e. no phantom breakpoint
-     * is created.
+     * is created. Compares the count before and after to avoid assuming a specific
+     * absolute count (default breakpoints such as "Java Exception Breakpoints" may
+     * be present in the test environment).
      */
     public void testAddBreakpointNonexistentFileDoesNotAddBreakpoint() throws Exception {
+        var bpManager = XDebuggerManager.getInstance(getProject()).getBreakpointManager();
+        int countBefore = bpManager.getAllBreakpoints().length;
+
         breakpointAddTool.execute(args(
             "file", "/does/not/exist/Phantom.java",
             "line", "5"
         ));
 
-        var bpManager = XDebuggerManager.getInstance(getProject()).getBreakpointManager();
-        int count = bpManager.getAllBreakpoints().length;
-        assertEquals("No breakpoint should have been added for a nonexistent file", 0, count);
+        int countAfter = bpManager.getAllBreakpoints().length;
+        assertEquals("No breakpoint should have been added for a nonexistent file",
+            countBefore, countAfter);
     }
 
     // ═════════════════════════════════════════════════════════════════════════════
@@ -248,13 +258,15 @@ public class DebugToolsTest extends BasePlatformTestCase {
     }
 
     /**
-     * Verifies that supplying an out-of-range 1-based index (when there are no
-     * breakpoints) returns an error message that mentions the index and the valid
-     * range, as well as a hint to run {@code breakpoint_list}.
+     * Verifies that supplying an out-of-range 1-based index returns an error message
+     * that mentions the index and the valid range, as well as a hint to run
+     * {@code breakpoint_list}. Uses {@code total + 1} as the index so the test is
+     * robust to any number of default breakpoints present in the test environment.
      */
     public void testRemoveBreakpointIndexOutOfRangeReturnsError() throws Exception {
+        int total = XDebuggerManager.getInstance(getProject()).getBreakpointManager().getAllBreakpoints().length;
         JsonObject a = new JsonObject();
-        a.addProperty("index", 1);
+        a.addProperty("index", total + 1);
         String result = breakpointRemoveTool.execute(a);
         assertNotNull("execute() must not return null", result);
         assertTrue("Expected 'Error:' prefix for out-of-range index, got: " + result,
@@ -268,14 +280,17 @@ public class DebugToolsTest extends BasePlatformTestCase {
     /**
      * Verifies that {@code remove_all: true} succeeds even when there are no
      * breakpoints — returning the "Removed all 0 breakpoint(s)." confirmation
-     * rather than an error.
+     * rather than an error. Calls the tool twice: the first call clears any default
+     * breakpoints registered by the Java plugin (e.g. "Java Exception Breakpoints"),
+     * the second call verifies the zero-count confirmation.
      */
     public void testRemoveAllBreakpointsWhenNoneExistReturnsConfirmation() throws Exception {
         JsonObject a = new JsonObject();
         a.addProperty("remove_all", true);
-        String result = breakpointRemoveTool.execute(a);
+        breakpointRemoveTool.execute(a); // clear any defaults (e.g. Java Exception Breakpoints)
+        String result = breakpointRemoveTool.execute(a); // now test the zero-count case
         assertNotNull("execute() must not return null", result);
-        assertTrue("Expected 'Removed all' confirmation, got: " + result,
+        assertTrue("Expected 'Removed all 0' confirmation, got: " + result,
             result.contains("Removed all") && result.contains("0"));
     }
 
@@ -881,18 +896,17 @@ public class DebugToolsTest extends BasePlatformTestCase {
     // ── Private helpers ──────────────────────────────────────────────────────────────
 
     /**
-     * Removes all breakpoints from the project's {@link XBreakpointManager}.
-     * Called from both {@link #setUp()} and {@link #tearDown()} so that every test
-     * method starts and ends with a zero-breakpoint state regardless of what the
-     * Java plugin may have registered (e.g. the default "Java Exception Breakpoints"
-     * entry) or what a previous test may have added.
+     * Removes breakpoints added during a test to prevent state leaking into subsequent
+     * test methods. Note: the Java plugin's default "Java Exception Breakpoints" entry
+     * is registered asynchronously and may reappear between calls; tests that need a
+     * truly zero-breakpoint state must call {@link BreakpointRemoveTool} with
+     * {@code remove_all: true} directly (as the tool's write action runs synchronously).
      */
     private void clearAllBreakpoints() {
         ApplicationManager.getApplication().runWriteAction(() -> {
             var mgr = XDebuggerManager.getInstance(getProject()).getBreakpointManager();
             for (XBreakpoint<?> bp : mgr.getAllBreakpoints()) {
-                //noinspection unchecked,rawtypes
-                mgr.removeBreakpoint((XBreakpoint) bp);
+                mgr.removeBreakpoint(bp);
             }
         });
     }
