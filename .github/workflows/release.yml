@@ -136,8 +136,10 @@ jobs:
 
       - name: Sign release artifacts with cosign
         if: steps.version.outputs.skip != 'true'
+        env:
+          ARTIFACTS_DIR: ${{ steps.artifacts.outputs.dir }}
         run: |
-          for artifact in ${{ steps.artifacts.outputs.dir }}/*.zip; do
+          for artifact in "$ARTIFACTS_DIR"/*.zip; do
             cosign sign-blob --yes \
               --bundle "${artifact}.sigstore.json" \
               "$artifact"
@@ -147,8 +149,9 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          ARTIFACTS_DIR: ${{ steps.artifacts.outputs.dir }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
           git tag "$TAG"
           git push origin "$TAG"
 
@@ -163,5 +166,5 @@ jobs:
           gh release create "$TAG" \
             --title "Release $TAG" \
             --notes "$NOTES" \
-            ${{ steps.artifacts.outputs.dir }}/*.zip \
-            ${{ steps.artifacts.outputs.dir }}/*.sigstore.json
+            "$ARTIFACTS_DIR"/*.zip \
+            "$ARTIFACTS_DIR"/*.sigstore.json
