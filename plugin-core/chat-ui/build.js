@@ -16,6 +16,8 @@ const banner = `/*
 
 `;
 
+const sourcemaps = process.env.BUILD_SOURCEMAPS === '1';
+
 async function build() {
     // 1. Chat components — custom elements + ChatController (loaded first)
     await esbuild.build({
@@ -25,6 +27,7 @@ async function build() {
         globalName: '__chatUI',
         outfile: 'dist/chat-components.js',
         target: 'es2022',
+        sourcemap: sourcemaps ? 'inline' : false,
     });
 
     // 2. Web app — PWA page logic (loaded after chat-components)
@@ -35,6 +38,7 @@ async function build() {
         globalName: '__webApp',
         outfile: 'dist/web-app.js',
         target: 'es2022',
+        sourcemap: sourcemaps ? 'inline' : false,
     });
 
     // 3. Service worker — runs in SW context, no DOM
@@ -44,6 +48,7 @@ async function build() {
         format: 'iife',
         outfile: 'dist/sw.js',
         target: 'es2022',
+        sourcemap: sourcemaps ? 'inline' : false,
     });
 
     // Prepend banner to JS output files

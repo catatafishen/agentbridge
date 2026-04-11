@@ -447,9 +447,11 @@ tasks {
         // can only be tested via integration tests, not unit tests.
         val instrumentedClasses = fileTree("${layout.buildDirectory.get()}/instrumented/instrumentCode") {
             exclude(
-                "**/ui/**",           // Swing/JCEF UI components
-                "**/actions/**",      // AnAction subclasses (need ActionManager)
-                "**/settings/**",     // Settings UI (configurable panels)
+                "**/ui/**",                        // Swing/JCEF UI components (need IDE runtime)
+                "**/actions/**",                   // AnAction subclasses (need ActionManager)
+                "**/settings/*Configurable*",      // Settings UI configurables (need IDE runtime)
+                "**/settings/QrCodePanel*",        // QR code panel (UI, needs IDE runtime)
+                "**/settings/ThemeColorComboBox*", // Theme color combo (UI, needs IDE runtime)
             )
         }
         // Fallback to raw classes if instrumentCode hasn't run (e.g., standalone report)
@@ -457,7 +459,9 @@ tasks {
             exclude(
                 "**/ui/**",
                 "**/actions/**",
-                "**/settings/**",
+                "**/settings/*Configurable*",
+                "**/settings/QrCodePanel*",
+                "**/settings/ThemeColorComboBox*",
             )
         }
         classDirectories.setFrom(

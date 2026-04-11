@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.js",
+    "build:coverage": "BUILD_SOURCEMAPS=1 node build.js",
     "build:watch": "esbuild src/index.ts --bundle --format=iife --global-name=__chatUI --outfile=dist/chat-components.js --target=es2022 --watch",
     "typecheck": "tsc --noEmit"
   },

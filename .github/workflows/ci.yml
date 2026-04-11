@@ -99,8 +99,8 @@ jobs:
         run: npm ci --silent --ignore-scripts
         working-directory: plugin-core/js-tests
 
-      - name: Build chat-ui
-        run: npm run build
+      - name: Build chat-ui with sourcemaps (for coverage mapping to TypeScript)
+        run: npm run build:coverage
         working-directory: plugin-core/chat-ui
 
       - name: Setup Gradle
@@ -108,18 +108,35 @@ jobs:
         with:
           cache-disabled: true
 
-      - name: Generate chat resources
+      - name: Generate chat resources (with sourcemaps for test coverage)
         run: ./gradlew :plugin-core:processResources --no-daemon --quiet
 
-      - name: Run chat-ui tests
-        run: npm test
+      - name: Run chat-ui tests with coverage
+        run: npm run test:coverage
         working-directory: plugin-core/js-tests
+
+      - name: Rebuild chat-ui without sourcemaps (production bundle)
+        run: npm run build
+        working-directory: plugin-core/chat-ui
+
+      - name: Replace generated chat resource with production bundle
+        run: cp plugin-core/chat-ui/dist/chat-components.js plugin-core/build/generated/resources/chat-ui/chat/chat-components.js
 
       - name: Build plugins
         run: ./gradlew :plugin-core:buildPlugin :plugin-experimental:buildPlugin --no-daemon --quiet
 
       - name: Run plugin tests
         run: ./gradlew :plugin-core:test --no-daemon
+
+      - name: Upload chat-ui coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe  # v5.5.4
+        with:
+          files: plugin-core/js-tests/coverage/lcov.info
+          flags: chat-ui
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload coverage to Codecov
         if: always()
