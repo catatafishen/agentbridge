@@ -147,6 +147,12 @@ jobs:
               "$artifact"
           done
 
+      - name: Authenticate git for tag push
+        if: steps.version.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh auth setup-git
+
       - name: Create tag and GitHub release
         if: steps.version.outputs.skip != 'true'
         env:

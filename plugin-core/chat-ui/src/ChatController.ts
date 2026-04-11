@@ -245,9 +245,10 @@ const ChatController = {
         msg.setAttribute('type', 'user');
         if (entryId) msg.id = entryId;
         const meta = document.createElement('message-meta');
-        // Safe: timestamp is a server-generated ISO 8601 time string (digits, colons, letters only).
-        // It is never derived from user input and cannot contain HTML special characters. — lgtm[js/html-constructed-from-input]
-        meta.innerHTML = '<span class="ts">' + timestamp + '</span>';
+        const timestampSpan = document.createElement('span');
+        timestampSpan.className = 'ts';
+        timestampSpan.textContent = timestamp;
+        meta.appendChild(timestampSpan);
         msg.appendChild(meta);
         const bubble = document.createElement('message-bubble');
         bubble.setAttribute('type', 'user');
