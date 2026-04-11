@@ -6,7 +6,6 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.intention.IntentionAction;
-import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
@@ -148,8 +147,7 @@ public final class GetActionOptionsTool extends QualityTool {
 
         // Run the action and intercept any dialog it opens
         DialogInterceptor.DialogInfo dialogInfo = DialogInterceptor.runAndCapture(
-            () -> WriteCommandAction.runWriteCommandAction(project, actionName, null,
-                () -> action.invoke(project, editor, psiFile))
+            () -> invokeRespectingWriteAction(actionName, action, editor, psiFile)
         );
 
         PsiDocumentManager.getInstance(project).commitAllDocuments();

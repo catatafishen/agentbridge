@@ -62,6 +62,9 @@ public final class SuppressInspectionTool extends QualityTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        if (!args.has("path") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {
+            return ToolUtils.ERROR_PREFIX + "Required parameters: path, line, " + PARAM_INSPECTION_ID;
+        }
         String pathStr = args.get("path").getAsString();
         int line = args.get("line").getAsInt();
         String inspectionId = args.get(PARAM_INSPECTION_ID).getAsString().trim();

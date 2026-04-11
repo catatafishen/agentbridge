@@ -15,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.locks.LockSupport;
 import java.util.stream.Stream;
 
 /**
@@ -131,6 +132,10 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
      * Example: {@code args("path", "/tmp/Foo.java", "line", "1")}
      */
     private static JsonObject args(String... pairs) {
+        if (pairs.length % 2 != 0) {
+            throw new IllegalArgumentException(
+                "args() requires an even number of elements (key/value pairs), got " + pairs.length);
+        }
         JsonObject obj = new JsonObject();
         for (int i = 0; i < pairs.length; i += 2) {
             obj.addProperty(pairs[i], pairs[i + 1]);
@@ -161,6 +166,9 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
             UIUtil.dispatchAllInvocationEvents();
             if (System.currentTimeMillis() > deadline) {
                 fail("executeSync timed out after 20 seconds");
+            }
+            if (!future.isDone()) {
+                LockSupport.parkNanos(1_000_000);
             }
         }
         return future.get();
@@ -329,23 +337,20 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
     }
 
     /**
-     * Omitting the {@code line} parameter entirely causes the tool to throw a
-     * {@link NullPointerException} when it accesses {@code args.get("line").getAsInt()}
-     * without a null check. The test verifies this unguarded access throws rather than
-     * returning silently. The NPE is thrown synchronously before any async dispatch.
+     * Omitting the required {@code line} parameter must return a clear error message
+     * instead of throwing. This keeps malformed tool input from crashing the tool
+     * layer and matches the validation behavior of other tools.
      */
-    public void testSuppressInspectionMissingLine() {
+    public void testSuppressInspectionMissingLine() throws Exception {
         JsonObject a = new JsonObject();
         a.addProperty("path", "/some/nonexistent/SuppressMissingLine.java");
         a.addProperty("inspection_id", "TestInspection");
-        // "line" intentionally omitted — tool will NPE on args.get("line").getAsInt()
+        // "line" intentionally omitted — tool should reject with an error message
 
-        try {
-            suppressInspectionTool.execute(a);
-            fail("Expected exception when 'line' parameter is missing");
-        } catch (Exception e) {
-            // Expected: args.get("line") returns null; .getAsInt() on null throws.
-        }
+        String result = suppressInspectionTool.execute(a);
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected error for missing required parameter, got: " + result,
+            result.startsWith("Error:"));
     }
 
     /**
