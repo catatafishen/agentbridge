@@ -32,6 +32,7 @@ jobs:
     name: MCP Server Tests
     runs-on: ubuntu-latest
     needs: validate-wrapper
+    environment: ci
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2.17.0
@@ -68,6 +69,7 @@ jobs:
     name: Build, Test & Verify
     runs-on: ubuntu-latest
     needs: validate-wrapper
+    environment: ci
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2.17.0
