@@ -68,8 +68,8 @@ public final class AddToDictionaryTool extends QualityTool {
         } catch (ClassNotFoundException e) {
             return "Spellchecker plugin is not available in this IDE build.";
         } catch (Exception e) {
-            LOG.error("Error adding word to dictionary", e);
-            return ToolUtils.ERROR_PREFIX + "adding word to dictionary: " + e.getMessage();
+            LOG.warn("Spellchecker unavailable: " + e.getMessage());
+            return "Spellchecker plugin is not functional in this IDE build.";
         }
     }
 
