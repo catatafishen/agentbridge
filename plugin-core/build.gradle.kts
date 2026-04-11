@@ -443,26 +443,52 @@ tasks {
         // changing class hashes. Tests run against these instrumented classes (in
         // build/instrumented/instrumentCode/), so the report must use them too —
         // otherwise JaCoCo reports "execution data does not match" for every class.
-        // Exclude UI and service classes that require the full IDE runtime — these
-        // can only be tested via integration tests, not unit tests.
+        //
+        // Exclude Swing/JCEF UI classes that require the full IDE runtime — these
+        // can only be tested via integration tests. Pure-logic classes in ui/ (e.g.
+        // ConversationSerializer, MessageFormatter, UsageStatisticsData) are kept.
+        val uiExcludes = listOf(
+            "**/ui/*Panel*",                   // Swing panels (AcpConnect, ChatConsole, Permissions, etc.)
+            "**/ui/*Banner*",                  // Swing banners (AuthSetup, GitWarning, Status)
+            "**/ui/ChatToolWindow*",           // ChatToolWindowFactory, ChatToolWindowContent
+            "**/ui/ChatConsolePanel*",         // JCEF chat panel
+            "**/ui/ChatPanelApi*",             // Chat panel API interface (Swing-dependent)
+            "**/ui/ChatTheme*",               // JBColor theme constants
+            "**/ui/ThemeColor*",              // JBColor wrappers
+            "**/ui/ToolKindColors*",          // JBColor tool-kind palette
+            "**/ui/ToolCallPopup*",           // Swing popup
+            "**/ui/AgentIconProvider*",       // Icon loading (needs IDE runtime)
+            "**/ui/FileNavigator*",           // VFS navigation (needs Project)
+            "**/ui/PromptOrchestrator*",      // Prompt orchestration (needs Project + services)
+            "**/ui/PromptContextManager*",    // Context management (needs Project)
+            "**/ui/ConversationReplayer*",    // Replay (needs Project)
+            "**/ui/PromptShortcut*",          // AnAction + Swing
+            "**/ui/ContextChipRenderer*",     // Swing renderer
+            "**/ui/ContextItemData*",         // Data class with Swing dependencies
+            "**/ui/AuthLoginService*",        // OAuth flow (needs IDE runtime)
+            "**/ui/AuthTerminalHelper*",      // Terminal auth (needs IDE runtime)
+            "**/ui/BillingManager*",          // Billing API (needs HTTP client + IDE)
+            "**/ui/CopilotBillingClient*",    // Billing HTTP client
+            "**/ui/PasteToScratchHandler*",   // Editor paste handler (needs IDE runtime)
+            "**/ui/renderers/**",             // All Swing renderers
+            "**/ui/statistics/*Chart*",       // Swing chart component
+            "**/ui/statistics/*Panel*",       // Swing statistics panel
+            "**/ui/statistics/*Dialog*",      // Swing statistics dialog
+        )
+        val otherExcludes = listOf(
+            "**/actions/**",                   // AnAction subclasses (need ActionManager)
+            "**/settings/*Configurable*",      // Settings UI configurables (need IDE runtime)
+            "**/settings/QrCodePanel*",        // QR code panel (UI, needs IDE runtime)
+            "**/settings/ThemeColorComboBox*", // Theme color combo (UI, needs IDE runtime)
+        )
+        val allExcludes = uiExcludes + otherExcludes
+
         val instrumentedClasses = fileTree("${layout.buildDirectory.get()}/instrumented/instrumentCode") {
-            exclude(
-                "**/ui/**",                        // Swing/JCEF UI components (need IDE runtime)
-                "**/actions/**",                   // AnAction subclasses (need ActionManager)
-                "**/settings/*Configurable*",      // Settings UI configurables (need IDE runtime)
-                "**/settings/QrCodePanel*",        // QR code panel (UI, needs IDE runtime)
-                "**/settings/ThemeColorComboBox*", // Theme color combo (UI, needs IDE runtime)
-            )
+            exclude(allExcludes)
         }
         // Fallback to raw classes if instrumentCode hasn't run (e.g., standalone report)
         val rawClasses = fileTree("${layout.buildDirectory.get()}/classes/java/main") {
-            exclude(
-                "**/ui/**",
-                "**/actions/**",
-                "**/settings/*Configurable*",
-                "**/settings/QrCodePanel*",
-                "**/settings/ThemeColorComboBox*",
-            )
+            exclude(allExcludes)
         }
         classDirectories.setFrom(
             if (file("${layout.buildDirectory.get()}/instrumented/instrumentCode").exists())
