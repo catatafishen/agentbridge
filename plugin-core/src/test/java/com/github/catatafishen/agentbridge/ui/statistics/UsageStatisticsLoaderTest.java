@@ -151,14 +151,7 @@ class UsageStatisticsLoaderTest {
         JsonObject obj = new JsonObject();
         obj.addProperty("timestamp", "not-a-date");
         String fallback = "2024-03-20T12:00:00Z";
-        // obj.timestamp is preferred but unparseable; no fallback used because obj has timestamp
-        // Actually, looking at the code: if ts is set from obj but parsing fails, it falls through
-        // and returns null — it doesn't try the fallback after parsing failure.
-        // Wait, let me re-read the code...
-        // The code sets ts from obj.timestamp, then falls through to parse ts.
-        // If ts is set (non-null, non-empty), it tries to parse. If parsing fails, returns null.
-        // The fallback is only used when ts is null.
-        // So: obj has "not-a-date" → ts = "not-a-date" → parse fails → return null
+        // An invalid object timestamp returns null; the fallback is only used when the timestamp is absent.
         assertNull(invokeExtractDate(obj, fallback));
     }
 

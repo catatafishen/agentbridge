@@ -61,12 +61,6 @@ class AcpClientTest {
 
         @Test
         void skipsPromptFailedPrefix() throws Exception {
-            Exception outer = new RuntimeException("Prompt failed for copilot");
-            Exception inner = new RuntimeException("timeout", outer);
-            outer.initCause(inner);
-            // Walk: outer.msg="Prompt failed..." (skipped), inner.msg="timeout" (picked)
-            // But wait, the chain is outer→inner via initCause, but we set outer as inner's cause above
-            // Let me restructure: inner cause should be set on outer
             Exception root = new RuntimeException("real error");
             Exception wrapper = new RuntimeException("Prompt failed for copilot", root);
             assertEquals("real error", invokeExtractRootCauseMessage(wrapper));

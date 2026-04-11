@@ -330,7 +330,7 @@ public final class OpenCodeClientExporter {
 
     /**
      * Drops the oldest non-Prompt entry after the initial Prompt.
-     * Returns the number of characters freed, or Integer.MIN_VALUE if nothing could be dropped.
+     * Returns the number of characters freed, or -1 if nothing could be dropped.
      */
     private static int dropOldestNonPrompt(@NotNull List<EntryData> result) {
         for (int i = 1; i < result.size(); i++) {
