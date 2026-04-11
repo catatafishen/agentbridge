@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -329,6 +330,334 @@ class McpProtocolHandlerTest {
             return '\0';
         }
         return null;
+    }
+
+    // ── parseCursorOffset ─────────────────────────────────────────────────────
+
+    @Test
+    void parseCursorOffset_returnsZeroForNull() throws Exception {
+        assertEquals(0, invokeParseCursorOffset(null, "res:"));
+    }
+
+    @Test
+    void parseCursorOffset_parsesPrefixedOffset() throws Exception {
+        var cursorElement = com.google.gson.JsonParser.parseString("\"res:5\"");
+        assertEquals(5, invokeParseCursorOffset(cursorElement, "res:"));
+    }
+
+    @Test
+    void parseCursorOffset_negativeClampedToZero() throws Exception {
+        var cursorElement = com.google.gson.JsonParser.parseString("\"res:-3\"");
+        assertEquals(0, invokeParseCursorOffset(cursorElement, "res:"));
+    }
+
+    @Test
+    void parseCursorOffset_wrongPrefixThrows() {
+        var cursorElement = com.google.gson.JsonParser.parseString("\"wrong:5\"");
+        var ex = assertThrows(java.lang.reflect.InvocationTargetException.class,
+            () -> invokeParseCursorOffset(cursorElement, "res:"));
+        assertEquals("InvalidCursorException", ex.getCause().getClass().getSimpleName());
+    }
+
+    @Test
+    void parseCursorOffset_nonNumericThrows() {
+        var cursorElement = com.google.gson.JsonParser.parseString("\"res:abc\"");
+        var ex = assertThrows(java.lang.reflect.InvocationTargetException.class,
+            () -> invokeParseCursorOffset(cursorElement, "res:"));
+        assertEquals("InvalidCursorException", ex.getCause().getClass().getSimpleName());
+    }
+
+    // ── encodeCursor ─────────────────────────────────────────────────────────
+
+    @Test
+    void encodeCursor_concatenatesPrefixAndOffset() throws Exception {
+        assertEquals("res:10", invokeEncodeCursor("res:", 10));
+    }
+
+    @Test
+    void encodeCursor_zeroOffset() throws Exception {
+        assertEquals("tmpl:0", invokeEncodeCursor("tmpl:", 0));
+    }
+
+    // ── guessMimeType ────────────────────────────────────────────────────────
+
+    @Test
+    void guessMimeType_java() throws Exception {
+        assertEquals("text/x-java", invokeGuessMimeType(Path.of("Foo.java")));
+    }
+
+    @Test
+    void guessMimeType_kotlin() throws Exception {
+        assertEquals("text/x-kotlin", invokeGuessMimeType(Path.of("Foo.kt")));
+    }
+
+    @Test
+    void guessMimeType_json() throws Exception {
+        assertEquals("application/json", invokeGuessMimeType(Path.of("data.json")));
+    }
+
+    @Test
+    void guessMimeType_markdown() throws Exception {
+        assertEquals("text/markdown", invokeGuessMimeType(Path.of("README.md")));
+    }
+
+    @Test
+    void guessMimeType_yaml() throws Exception {
+        assertEquals("application/yaml", invokeGuessMimeType(Path.of("config.yaml")));
+    }
+
+    @Test
+    void guessMimeType_yml() throws Exception {
+        assertEquals("application/yaml", invokeGuessMimeType(Path.of("config.yml")));
+    }
+
+    @Test
+    void guessMimeType_xml() throws Exception {
+        assertEquals("application/xml", invokeGuessMimeType(Path.of("pom.xml")));
+    }
+
+    @Test
+    void guessMimeType_txt() throws Exception {
+        assertEquals("text/plain", invokeGuessMimeType(Path.of("notes.txt")));
+    }
+
+    @Test
+    void guessMimeType_unknownExtension() throws Exception {
+        assertEquals("application/octet-stream", invokeGuessMimeType(Path.of("data.qzx")));
+    }
+
+    // ── isTextResource ───────────────────────────────────────────────────────
+
+    @Test
+    void isTextResource_trueForJava() throws Exception {
+        assertTrue(invokeIsTextResource(Path.of("Foo.java")));
+    }
+
+    @Test
+    void isTextResource_trueForJson() throws Exception {
+        assertTrue(invokeIsTextResource(Path.of("data.json")));
+    }
+
+    @Test
+    void isTextResource_trueForXml() throws Exception {
+        assertTrue(invokeIsTextResource(Path.of("pom.xml")));
+    }
+
+    @Test
+    void isTextResource_trueForYaml() throws Exception {
+        assertTrue(invokeIsTextResource(Path.of("config.yaml")));
+    }
+
+    @Test
+    void isTextResource_falseForBinary() throws Exception {
+        assertFalse(invokeIsTextResource(Path.of("image.png")));
+    }
+
+    // ── extractMeta ──────────────────────────────────────────────────────────
+
+    @Test
+    void extractMeta_returnsNullsWhenNoMeta() throws Exception {
+        JsonObject params = new JsonObject();
+        Object meta = invokeExtractMeta(params);
+        assertNull(getRecordField(meta, "progressToken"));
+        assertNull(getRecordField(meta, "toolUseId"));
+    }
+
+    @Test
+    void extractMeta_extractsProgressTokenAndToolUseId() throws Exception {
+        JsonObject metaObj = new JsonObject();
+        metaObj.addProperty("progressToken", "42");
+        metaObj.addProperty("claudecode/toolUseId", "tu_abc123");
+        JsonObject params = new JsonObject();
+        params.add("_meta", metaObj);
+
+        Object meta = invokeExtractMeta(params);
+        assertEquals("42", getRecordField(meta, "progressToken"));
+        assertEquals("tu_abc123", getRecordField(meta, "toolUseId"));
+    }
+
+    // ── getOptionalMetaString ────────────────────────────────────────────────
+
+    @Test
+    void getOptionalMetaString_returnsNullForMissingKey() throws Exception {
+        JsonObject meta = new JsonObject();
+        assertNull(invokeGetOptionalMetaString(meta, "missing"));
+    }
+
+    @Test
+    void getOptionalMetaString_returnsStringValue() throws Exception {
+        JsonObject meta = new JsonObject();
+        meta.addProperty("key", "value");
+        assertEquals("value", invokeGetOptionalMetaString(meta, "key"));
+    }
+
+    @Test
+    void getOptionalMetaString_returnsNumberAsString() throws Exception {
+        JsonObject meta = new JsonObject();
+        meta.addProperty("key", 42);
+        assertEquals("42", invokeGetOptionalMetaString(meta, "key"));
+    }
+
+    @Test
+    void getOptionalMetaString_returnsNullForJsonNull() throws Exception {
+        JsonObject meta = new JsonObject();
+        meta.add("key", com.google.gson.JsonNull.INSTANCE);
+        assertNull(invokeGetOptionalMetaString(meta, "key"));
+    }
+
+    @Test
+    void getOptionalMetaString_returnsNullForJsonObject() throws Exception {
+        JsonObject meta = new JsonObject();
+        meta.add("key", new JsonObject());
+        assertNull(invokeGetOptionalMetaString(meta, "key"));
+    }
+
+    // ── truncateIfNeeded ─────────────────────────────────────────────────────
+
+    @Test
+    void truncateIfNeeded_returnsNullForNull() throws Exception {
+        assertNull(invokeTruncateIfNeeded(null));
+    }
+
+    @Test
+    void truncateIfNeeded_returnsShortTextUnchanged() throws Exception {
+        assertEquals("hello", invokeTruncateIfNeeded("hello"));
+    }
+
+    @Test
+    void truncateIfNeeded_truncatesLongText() throws Exception {
+        String longText = "x".repeat(100_000);
+        String result = invokeTruncateIfNeeded(longText);
+        assertNotNull(result);
+        assertTrue(result.length() < longText.length());
+        assertTrue(result.contains("[Output truncated:"));
+        assertTrue(result.contains("characters omitted"));
+    }
+
+    // ── respondResult ────────────────────────────────────────────────────────
+
+    @Test
+    void respondResult_includesJsonRpcAndId() throws Exception {
+        JsonObject request = new JsonObject();
+        request.addProperty("id", 42);
+        JsonObject resultObj = new JsonObject();
+        resultObj.addProperty("data", "test");
+
+        JsonObject response = invokeRespondResult(request, resultObj);
+        assertEquals("2.0", response.get("jsonrpc").getAsString());
+        assertEquals(42, response.get("id").getAsInt());
+        assertTrue(response.has("result"));
+        assertEquals("test", response.getAsJsonObject("result").get("data").getAsString());
+    }
+
+    @Test
+    void respondResult_omitsIdWhenMissing() throws Exception {
+        JsonObject request = new JsonObject();
+        JsonObject resultObj = new JsonObject();
+        JsonObject response = invokeRespondResult(request, resultObj);
+        assertEquals("2.0", response.get("jsonrpc").getAsString());
+        assertFalse(response.has("id"));
+    }
+
+    // ── respondError ─────────────────────────────────────────────────────────
+
+    @Test
+    void respondError_includesCodeAndMessage() throws Exception {
+        JsonObject request = new JsonObject();
+        request.addProperty("id", 7);
+        JsonObject response = invokeRespondError(request, -32600, "Invalid Request");
+        assertEquals("2.0", response.get("jsonrpc").getAsString());
+        assertEquals(7, response.get("id").getAsInt());
+        JsonObject error = response.getAsJsonObject("error");
+        assertEquals(-32600, error.get("code").getAsInt());
+        assertEquals("Invalid Request", error.get("message").getAsString());
+    }
+
+    // ── makeErrorResponse ────────────────────────────────────────────────────
+
+    @Test
+    void makeErrorResponse_withId() throws Exception {
+        com.google.gson.JsonElement idElement = com.google.gson.JsonParser.parseString("99");
+        JsonObject response = invokeMakeErrorResponse(idElement, -32601, "Method not found");
+        assertEquals(99, response.get("id").getAsInt());
+        assertEquals(-32601, response.getAsJsonObject("error").get("code").getAsInt());
+    }
+
+    @Test
+    void makeErrorResponse_withNullId() throws Exception {
+        JsonObject response = invokeMakeErrorResponse(null, -32700, "Parse error");
+        assertFalse(response.has("id"));
+        assertEquals(-32700, response.getAsJsonObject("error").get("code").getAsInt());
+        assertEquals("Parse error", response.getAsJsonObject("error").get("message").getAsString());
+    }
+
+    // ── Reflection helpers ───────────────────────────────────────────────────
+
+    private static int invokeParseCursorOffset(com.google.gson.JsonElement cursor, String prefix) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("parseCursorOffset",
+            com.google.gson.JsonElement.class, String.class);
+        m.setAccessible(true);
+        return (int) m.invoke(null, cursor, prefix);
+    }
+
+    private static String invokeEncodeCursor(String prefix, int offset) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("encodeCursor", String.class, int.class);
+        m.setAccessible(true);
+        return (String) m.invoke(null, prefix, offset);
+    }
+
+    private static String invokeGuessMimeType(Path path) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("guessMimeType", Path.class);
+        m.setAccessible(true);
+        return (String) m.invoke(null, path);
+    }
+
+    private static boolean invokeIsTextResource(Path path) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("isTextResource", Path.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, path);
+    }
+
+    private static Object invokeExtractMeta(JsonObject params) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("extractMeta", JsonObject.class);
+        m.setAccessible(true);
+        return m.invoke(null, params);
+    }
+
+    private static String invokeGetOptionalMetaString(JsonObject meta, String key) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("getOptionalMetaString", JsonObject.class, String.class);
+        m.setAccessible(true);
+        return (String) m.invoke(null, meta, key);
+    }
+
+    private static String invokeTruncateIfNeeded(String text) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("truncateIfNeeded", String.class);
+        m.setAccessible(true);
+        return (String) m.invoke(null, text);
+    }
+
+    private static JsonObject invokeRespondResult(JsonObject request, JsonObject result) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("respondResult", JsonObject.class, JsonObject.class);
+        m.setAccessible(true);
+        return (JsonObject) m.invoke(null, request, result);
+    }
+
+    private static JsonObject invokeRespondError(JsonObject request, int code, String message) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("respondError", JsonObject.class, int.class, String.class);
+        m.setAccessible(true);
+        return (JsonObject) m.invoke(null, request, code, message);
+    }
+
+    private static JsonObject invokeMakeErrorResponse(com.google.gson.JsonElement id, int code, String message) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("makeErrorResponse",
+            com.google.gson.JsonElement.class, int.class, String.class);
+        m.setAccessible(true);
+        return (JsonObject) m.invoke(null, id, code, message);
+    }
+
+    private static Object getRecordField(Object obj, String fieldName) throws Exception {
+        var m = obj.getClass().getMethod(fieldName);
+        return m.invoke(obj);
     }
 
     private String sendRequest(String method, JsonObject params) {
