@@ -6,9 +6,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ToolRegistry {
 
@@ -45,7 +45,7 @@ public final class ToolRegistry {
 
     // ── Instance state (project-scoped) ──────────────────────────────────
 
-    private final Map<String, ToolDefinition> definitions = new LinkedHashMap<>();
+    private final Map<String, ToolDefinition> definitions = new ConcurrentHashMap<>();
 
     @SuppressWarnings("java:S1905") // Cast needed: IDE doesn't resolve Project→ComponentManager supertype
     public static ToolRegistry getInstance(@NotNull Project project) {

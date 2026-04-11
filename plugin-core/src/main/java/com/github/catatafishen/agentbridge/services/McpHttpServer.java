@@ -13,7 +13,6 @@ import org.jetbrains.annotations.NotNull;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -103,9 +102,14 @@ public final class McpHttpServer implements Disposable, McpServerControl {
                 httpServer.createContext("/mcp", this::handleMcp);
             }
 
-            // SSE mode blocks one thread per connection; use a cached pool so it scales.
-            // Streamable HTTP uses short-lived requests, so a fixed pool would also work.
-            httpServer.setExecutor(Executors.newCachedThreadPool());
+            // Bounded thread pool: SSE mode blocks one thread per connection, streamable HTTP
+            // uses short-lived requests. Cap at 20 to prevent thread exhaustion from reconnection storms.
+            httpServer.setExecutor(new java.util.concurrent.ThreadPoolExecutor(
+                2, 20, 60, java.util.concurrent.TimeUnit.SECONDS,
+                new java.util.concurrent.SynchronousQueue<>(),
+                r -> { Thread t = new Thread(r, "mcp-http"); t.setDaemon(true); return t; },
+                new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
+            ));
             httpServer.start();
             running = true;
             LOG.info("[MCP] server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
@@ -176,6 +180,8 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         return s.substring(0, LOG_MAX_CHARS) + "... [truncated " + (s.length() - LOG_MAX_CHARS) + " chars]";
     }
 
+    private static final int MAX_REQUEST_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+
     private void handleMcp(HttpExchange exchange) throws IOException {
         // CORS headers for browser-based agents
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
@@ -197,7 +203,17 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         activeConnections.incrementAndGet();
         McpServerSettings settings = McpServerSettings.getInstance(project);
         try {
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            byte[] bodyBytes = exchange.getRequestBody().readNBytes(MAX_REQUEST_BODY_BYTES + 1);
+            if (bodyBytes.length > MAX_REQUEST_BODY_BYTES) {
+                byte[] err = ("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,"
+                    + "\"message\":\"Request body exceeds " + MAX_REQUEST_BODY_BYTES + " byte limit\"}}")
+                    .getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
+                exchange.sendResponseHeaders(413, err.length);
+                exchange.getResponseBody().write(err);
+                return;
+            }
+            String body = new String(bodyBytes, StandardCharsets.UTF_8);
             if (settings.isDebugLoggingEnabled()) {
                 LOG.info("[MCP] <<< " + truncateForLog(body));
             }
@@ -217,8 +233,9 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             }
         } catch (Exception e) {
             LOG.warn("MCP request error", e);
+            String msg = e.getMessage() != null ? e.getMessage().replace("\"", "'") : e.getClass().getSimpleName();
             byte[] err = ("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error: "
-                + e.getMessage().replace("\"", "'") + "\"}}").getBytes(StandardCharsets.UTF_8);
+                + msg + "\"}}").getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
             exchange.sendResponseHeaders(500, err.length);
             exchange.getResponseBody().write(err);

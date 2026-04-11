@@ -52,7 +52,7 @@ public final class ActiveAgentManager implements Disposable {
     private final Project project;
     private volatile boolean acpConnected;
 
-    private AbstractAgentClient acpClient;
+    private volatile AbstractAgentClient acpClient;
     private AgentConfig cachedConfig;
     private GenericSettings cachedSettings;
     private GenericAgentUiSettings cachedUiSettings;

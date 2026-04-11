@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -116,17 +117,28 @@ final class AcpTerminalHandler {
         return result;
     }
 
+    private static final long WAIT_FOR_EXIT_TIMEOUT_SECONDS = 30L * 60; // 30 minutes
+
     /**
      * {@code terminal/wait_for_exit} — block until the command completes.
+     * Uses a 30-minute timeout to prevent permanently blocking the transport
+     * if a process hangs (e.g. tail -f, zombie process).
      */
     JsonObject waitForExit(@NotNull JsonObject params) throws InterruptedException {
         String terminalId = getRequiredString(params, "terminalId");
         ManagedTerminal terminal = requireTerminal(terminalId);
 
-        int exitCode = terminal.process.waitFor();
+        boolean exited = terminal.process.waitFor(WAIT_FOR_EXIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        if (!exited) {
+            terminal.process.destroyForcibly();
+            LOG.warn("terminal/wait_for_exit timed out after " + WAIT_FOR_EXIT_TIMEOUT_SECONDS
+                + "s for terminal " + terminalId + " — process forcibly destroyed");
+            throw new IllegalStateException("Process timed out after "
+                + WAIT_FOR_EXIT_TIMEOUT_SECONDS + " seconds and was killed");
+        }
 
         JsonObject result = new JsonObject();
-        result.addProperty("exitCode", exitCode);
+        result.addProperty("exitCode", terminal.process.exitValue());
         result.add("signal", null);
         return result;
     }

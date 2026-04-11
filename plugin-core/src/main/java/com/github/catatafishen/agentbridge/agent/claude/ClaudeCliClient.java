@@ -14,9 +14,9 @@ import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
+import com.github.catatafishen.agentbridge.session.SessionSwitchService;
 import com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
-import com.github.catatafishen.agentbridge.session.SessionSwitchService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -90,6 +90,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private static final String SUBTYPE_ERROR = "error";
     private static final String STOP_REASON_END_TURN = "end_turn";
     private static final String PROFILE_FLAG = "--profile";
+    private static final int STDERR_BUFFER_MAX_LINES = 100;
 
     @NotNull
     public static AgentProfile createDefaultProfile() {
@@ -793,8 +794,15 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             try (BufferedReader err = new BufferedReader(
                 new InputStreamReader(proc.getErrorStream(), StandardCharsets.UTF_8))) {
                 String line;
+                int lineCount = 0;
                 while ((line = err.readLine()) != null) {
-                    stderrBuf.append(line).append('\n');
+                    if (lineCount < STDERR_BUFFER_MAX_LINES) {
+                        stderrBuf.append(line).append('\n');
+                    } else if (lineCount == STDERR_BUFFER_MAX_LINES) {
+                        stderrBuf.append("... [stderr truncated after ")
+                            .append(STDERR_BUFFER_MAX_LINES).append(" lines]\n");
+                    }
+                    lineCount++;
                 }
             } catch (IOException ignored) {
                 // Process may have exited; stderr is no longer readable

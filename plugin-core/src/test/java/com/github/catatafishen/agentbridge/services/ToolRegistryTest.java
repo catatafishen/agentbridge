@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -151,12 +153,12 @@ class ToolRegistryTest {
     }
 
     @Test
-    @DisplayName("getAllTools preserves insertion order")
-    void getAllToolsPreservesInsertionOrder() {
+    @DisplayName("getAllTools returns all registered tools (order not guaranteed)")
+    void getAllToolsReturnsAllRegistered() {
         registry.register(def("first", "First"));
         registry.register(def("second", "Second"));
         registry.register(def("third", "Third"));
-        var ids = registry.getAllTools().stream().map(ToolDefinition::id).toList();
-        assertEquals(List.of("first", "second", "third"), ids);
+        var ids = registry.getAllTools().stream().map(ToolDefinition::id).collect(Collectors.toSet());
+        assertEquals(Set.of("first", "second", "third"), ids);
     }
 }
