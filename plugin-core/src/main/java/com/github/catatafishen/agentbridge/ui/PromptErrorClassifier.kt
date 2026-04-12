@@ -67,8 +67,8 @@ object PromptErrorClassifier {
         // Agent process crashed but already recovered — preserve session
         val isProcessCrashWithRecovery = !isCancelled
             && generateSequence(exception as Throwable?) { it.cause }.any {
-                it.message?.contains("process exited unexpectedly", ignoreCase = true) == true
-            }
+            it.message?.contains("process exited unexpectedly", ignoreCase = true) == true
+        }
             && isClientHealthy
 
         val shouldRestorePrompt = !turnHadContent && !isCancelled
@@ -90,5 +90,18 @@ object PromptErrorClassifier {
     fun detectQuickReplies(responseText: String): List<String> {
         val match = QUICK_REPLY_TAG_REGEX.findAll(responseText).lastOrNull() ?: return emptyList()
         return match.groupValues[1].split("|").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    /**
+     * Returns true if the exception cause chain contains a non-recoverable [AgentException],
+     * indicating the agent CLI binary was not found.
+     */
+    fun isCLINotFoundError(e: Exception): Boolean {
+        var cause: Throwable? = e
+        while (cause != null) {
+            if (cause is AgentException && !cause.isRecoverable) return true
+            cause = cause.cause
+        }
+        return false
     }
 }

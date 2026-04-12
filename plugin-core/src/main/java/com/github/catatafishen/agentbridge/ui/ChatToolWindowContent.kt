@@ -811,39 +811,10 @@ class ChatToolWindowContent(
         }
     }
 
-    private fun buildBubbleHtml(rawText: String, items: List<ContextItemData>): String? {
-        if (items.isEmpty()) return null
-        val sb = StringBuilder()
-        var idx = 0
-        for (ch in rawText) {
-            if (ch == PromptContextManager.ORC && idx < items.size) {
-                val item = items[idx++]
-                val href =
-                    if (item.isSelection && item.startLine > 0) "openfile://${item.path}:${item.startLine}" else "openfile://${item.path}"
-                val title =
-                    escHtml(if (item.isSelection && item.startLine > 0) "${item.path}:${item.startLine}" else item.path)
-                sb.append("<a class='prompt-ctx-chip' href='$href' title='$title'>${escHtml(item.name)}</a>")
-            } else {
-                appendHtmlChar(ch, sb)
-            }
-        }
-        return sb.toString().trim()
-    }
+    private fun buildBubbleHtml(rawText: String, items: List<ContextItemData>): String? =
+        PromptBubbleBuilder.buildBubbleHtml(rawText, items)
 
-    private fun appendHtmlChar(ch: Char, sb: StringBuilder) {
-        when (ch) {
-            '&' -> sb.append("&amp;")
-            '<' -> sb.append("&lt;")
-            '>' -> sb.append("&gt;")
-            '\'' -> sb.append("&#39;")
-            '"' -> sb.append("&quot;")
-            '\n' -> sb.append("\n")
-            else -> sb.append(ch)
-        }
-    }
-
-    private fun escHtml(s: String) =
-        s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")
+    private fun escHtml(s: String) = PromptBubbleBuilder.escapeHtml(s)
 
     fun setSoftWrapsEnabled(enabled: Boolean) {
         promptTextArea.editor?.settings?.isUseSoftWraps = enabled
@@ -2246,15 +2217,7 @@ class ChatToolWindowContent(
         }
     }
 
-    /** Returns true if the exception (or its cause chain) indicates the agent CLI binary was not found. */
-    private fun isCLINotFoundError(e: Exception): Boolean {
-        var cause: Throwable? = e
-        while (cause != null) {
-            if (cause is AgentException && !cause.isRecoverable) return true
-            cause = cause.cause
-        }
-        return false
-    }
+    private fun isCLINotFoundError(e: Exception): Boolean = PromptErrorClassifier.isCLINotFoundError(e)
 
     /** Tree node for the Plans tab — display name is shown in the tree. */
     private class FileTreeNode(
