@@ -40,7 +40,9 @@ public final class PsiBridgeService implements Disposable {
      * Listener notified after each MCP tool call completes.
      */
     public interface ToolCallListener {
-        void toolCalled(String toolName, long durationMs, boolean success);
+        void toolCalled(String toolName, long durationMs, boolean success,
+                        long inputSizeBytes, long outputSizeBytes, String clientId,
+                        @Nullable String category);
     }
 
     /**
@@ -153,7 +155,10 @@ public final class PsiBridgeService implements Disposable {
 
     public void addOnNudgeConsumed(@NotNull Runnable callback) {
         onNudgeConsumed.accumulateAndGet(callback, (current, newCb) ->
-            current == null ? newCb : () -> { current.run(); newCb.run(); }
+            current == null ? newCb : () -> {
+                current.run();
+                newCb.run();
+            }
         );
     }
 
@@ -211,11 +216,14 @@ public final class PsiBridgeService implements Disposable {
 
     public String callTool(String toolName, JsonObject arguments, @Nullable String progressToken, @Nullable String toolUseId) {
         LOG.info("PSI Bridge: calling " + toolName + " with args: " + arguments);
+        long inputSize = arguments != null ? arguments.toString().length() : 0;
         ToolDefinition def = registry.findDefinition(toolName);
         if (def == null || !def.hasExecutionHandler()) {
-            fireToolCallEvent(toolName, System.currentTimeMillis(), false);
+            fireToolCallEvent(toolName, System.currentTimeMillis(), false, inputSize, 0, null);
             return "Unknown tool: " + toolName;
         }
+        String categoryName = def.category() != null ? def.category().name() : null;
+        long outputSize = 0;
         long startMs = System.currentTimeMillis();
         boolean success = true;
 
@@ -257,12 +265,12 @@ public final class PsiBridgeService implements Disposable {
                 writeBatchCoordinator.unregisterWrite();
                 writeRegistered = false;
             }
-            fireToolCallEvent(toolName, startMs, false);
+            fireToolCallEvent(toolName, startMs, false, inputSize, 0, categoryName);
             return denied;
         }
 
         if (needsGlobalLock) {
-            String lockError = acquireWriteLock(toolName, startMs);
+            String lockError = acquireWriteLock(toolName, startMs, inputSize, categoryName);
             if (lockError != null) {
                 if (writeRegistered) {
                     writeBatchCoordinator.unregisterWrite();
@@ -340,6 +348,7 @@ public final class PsiBridgeService implements Disposable {
             if (nudge != null) {
                 result = result + "\n\n[User nudge]: " + nudge;
             }
+            outputSize = result.length();
             return result;
         } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
             success = false;
@@ -358,8 +367,7 @@ public final class PsiBridgeService implements Disposable {
             return base;
         } finally {
             if (needsGlobalLock && !semaphoreReleasedEarly) writeToolSemaphore.release();
-            fireToolCallEvent(toolName, startMs, success);
-            // Only restore focus if chat was active before the tool call
+            fireToolCallEvent(toolName, startMs, success, inputSize, outputSize, categoryName);
             if (chatWasActive) {
                 fireFocusRestoreEvent();
             }
@@ -386,25 +394,30 @@ public final class PsiBridgeService implements Disposable {
      * Returns null if acquired successfully, or an error message if the lock could not be acquired.
      */
     @Nullable
-    private String acquireWriteLock(String toolName, long startTimeMs) {
+    private String acquireWriteLock(String toolName, long startTimeMs,
+                                    long inputSizeBytes, @Nullable String category) {
         try {
             if (!writeToolSemaphore.tryAcquire(60, java.util.concurrent.TimeUnit.SECONDS)) {
-                fireToolCallEvent(toolName, startTimeMs, false);
+                fireToolCallEvent(toolName, startTimeMs, false, inputSizeBytes, 0, category);
                 return "Error: IDE is busy processing another tool call. Please retry shortly.";
             }
             return null;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            fireToolCallEvent(toolName, startTimeMs, false);
+            fireToolCallEvent(toolName, startTimeMs, false, inputSizeBytes, 0, category);
             return "Error: Interrupted waiting for write lock.";
         }
     }
 
-    private void fireToolCallEvent(String toolName, long startTimeMs, boolean success) {
+    private void fireToolCallEvent(String toolName, long startTimeMs, boolean success,
+                                   long inputSizeBytes, long outputSizeBytes,
+                                   @Nullable String category) {
         long duration = System.currentTimeMillis() - startTimeMs;
+        String clientId = ActiveAgentManager.getInstance(project).getActiveProfileId();
         try {
             PlatformApiCompat.syncPublisher(project, TOOL_CALL_TOPIC)
-                .toolCalled(toolName, duration, success);
+                .toolCalled(toolName, duration, success, inputSizeBytes, outputSizeBytes,
+                    clientId, category);
         } catch (Exception e) {
             LOG.debug("Failed to fire tool call event", e);
         }

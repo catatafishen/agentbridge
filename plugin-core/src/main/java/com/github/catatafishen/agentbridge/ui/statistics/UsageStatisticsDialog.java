@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui.statistics;
 
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.DialogWrapper;
+import com.intellij.ui.components.JBTabbedPane;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -10,8 +11,7 @@ import javax.swing.*;
 import java.awt.*;
 
 /**
- * Dialog that hosts a {@link UsageStatisticsPanel} for viewing aggregated usage
- * statistics across all agent sessions.
+ * Tabbed dialog hosting usage charts and per-tool MCP call statistics.
  */
 public class UsageStatisticsDialog extends DialogWrapper {
 
@@ -27,7 +27,10 @@ public class UsageStatisticsDialog extends DialogWrapper {
 
     @Override
     protected @Nullable JComponent createCenterPanel() {
-        return new UsageStatisticsPanel(project);
+        JBTabbedPane tabs = new JBTabbedPane();
+        tabs.addTab("Charts", new UsageStatisticsPanel(project));
+        tabs.addTab("Tool Statistics", new ToolStatisticsPanel(project));
+        return tabs;
     }
 
     @Override

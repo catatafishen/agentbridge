@@ -976,6 +976,23 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Subscribes a {@link PsiBridgeService.ToolCallListener} to tool call events on the project
+     * message bus, and returns a {@link Runnable} that disconnects the subscription.
+     *
+     * <p><b>Why extracted:</b> {@code project.getMessageBus().connect()} cannot be resolved in the
+     * IDE daemon because the generic bounds on {@code MessageBus.connect()} differ between the dev
+     * IDE and the target SDK. Cascading: {@code connection.subscribe()} also fails.
+     * The Gradle build compiles without errors.</p>
+     */
+    public static @NotNull Runnable subscribeToolCallListener(
+        @NotNull Project project,
+        @NotNull PsiBridgeService.ToolCallListener listener) {
+        var connection = project.getMessageBus().connect();
+        connection.subscribe(PsiBridgeService.TOOL_CALL_TOPIC, listener);
+        return connection::disconnect;
+    }
+
+    /**
      * Returns the list of installed UI themes.
      *
      * <p><b>Why extracted:</b> {@link com.intellij.ide.ui.LafManager#getInstalledThemes()} is

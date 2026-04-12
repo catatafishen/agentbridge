@@ -425,7 +425,7 @@ class AcpConnectPanel(
 
         connection.subscribe(
             PsiBridgeService.TOOL_CALL_TOPIC,
-            PsiBridgeService.ToolCallListener { toolName, durationMs, success ->
+            PsiBridgeService.ToolCallListener { toolName, durationMs, success, _, _, _, _ ->
                 ApplicationManager.getApplication().invokeLater { addToolCallEntry(toolName, durationMs, success) }
             })
     }

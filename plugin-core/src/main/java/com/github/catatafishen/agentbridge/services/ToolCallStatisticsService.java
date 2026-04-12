@@ -1,0 +1,280 @@
+package com.github.catatafishen.agentbridge.services;
+
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
+import com.intellij.openapi.Disposable;
+import com.intellij.openapi.components.Service;
+import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Project-level service that records every MCP tool call in a SQLite database
+ * ({@code {project}/.agentbridge/tool-stats.db}) and provides query methods for
+ * the Tool Statistics UI panel.
+ *
+ * <p>Subscribes to {@link PsiBridgeService#TOOL_CALL_TOPIC} on the project
+ * message bus. Records are appended on the calling thread (MCP handler threads)
+ * and queried from the EDT for UI rendering.</p>
+ */
+@Service(Service.Level.PROJECT)
+public final class ToolCallStatisticsService implements Disposable {
+
+    private static final Logger LOG = Logger.getInstance(ToolCallStatisticsService.class);
+    private static final String DB_FILENAME = "tool-stats.db";
+
+    private final Project project;
+    private Connection connection;
+    private Runnable disconnectHandle;
+
+    private volatile boolean initialized;
+
+    public ToolCallStatisticsService(@NotNull Project project) {
+        this.project = project;
+    }
+
+    /**
+     * Initialize the SQLite database and subscribe to tool call events.
+     * Called lazily on first access via {@code getInstance()}.
+     */
+    public void initialize() {
+        try {
+            Class.forName("org.sqlite.JDBC");
+            String basePath = project.getBasePath();
+            if (basePath == null) {
+                LOG.warn("Cannot initialize ToolCallStatisticsService: project has no base path");
+                return;
+            }
+            Path dbDir = Path.of(basePath, ".agentbridge");
+            Files.createDirectories(dbDir);
+            Path dbPath = dbDir.resolve(DB_FILENAME);
+            connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
+            connection.setAutoCommit(true);
+            createSchema();
+            subscribeToToolCallEvents();
+            LOG.info("ToolCallStatisticsService initialized at " + dbPath);
+        } catch (ClassNotFoundException | SQLException | IOException e) {
+            LOG.error("Failed to initialize ToolCallStatisticsService", e);
+        }
+    }
+
+    private void createSchema() throws SQLException {
+        try (var stmt = connection.createStatement()) {
+            stmt.execute("""
+                CREATE TABLE IF NOT EXISTS tool_calls (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tool_name  TEXT    NOT NULL,
+                    category   TEXT,
+                    input_size INTEGER NOT NULL,
+                    output_size INTEGER NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    success    INTEGER NOT NULL,
+                    client_id  TEXT    NOT NULL,
+                    timestamp  TEXT    NOT NULL
+                )
+                """);
+            stmt.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tool_calls_timestamp ON tool_calls(timestamp)");
+            stmt.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tool_calls_tool_name ON tool_calls(tool_name)");
+        }
+    }
+
+    private void subscribeToToolCallEvents() {
+        disconnectHandle = PlatformApiCompat.subscribeToolCallListener(project,
+            (toolName, durationMs, success, inputSizeBytes, outputSizeBytes, clientId, category) ->
+                recordCall(new ToolCallRecord(
+                    toolName, category, inputSizeBytes, outputSizeBytes,
+                    durationMs, success, clientId, Instant.now())));
+    }
+
+    /**
+     * Records a single tool call. Thread-safe via SQLite serialization.
+     */
+    public void recordCall(@NotNull ToolCallRecord callRecord) {
+        if (connection == null) return;
+        String sql = """
+            INSERT INTO tool_calls (tool_name, category, input_size, output_size, duration_ms, success, client_id, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, callRecord.toolName());
+            stmt.setString(2, callRecord.category());
+            stmt.setLong(3, callRecord.inputSizeBytes());
+            stmt.setLong(4, callRecord.outputSizeBytes());
+            stmt.setLong(5, callRecord.durationMs());
+            stmt.setInt(6, callRecord.success() ? 1 : 0);
+            stmt.setString(7, callRecord.clientId());
+            stmt.setString(8, callRecord.timestamp().toString());
+            stmt.executeUpdate();
+        } catch (SQLException e) {
+            LOG.warn("Failed to record tool call", e);
+        }
+    }
+
+    /**
+     * Aggregated statistics for a single tool, used by the UI table.
+     */
+    public record ToolAggregate(
+        @NotNull String toolName,
+        @Nullable String category,
+        @NotNull String clientId,
+        long callCount,
+        long avgDurationMs,
+        long totalInputBytes,
+        long totalOutputBytes,
+        long errorCount
+    ) {
+    }
+
+    /**
+     * Appends optional WHERE-clause filters and returns the bound parameter values.
+     */
+    private static List<String> appendFilters(StringBuilder sql, @Nullable String since, @Nullable String clientId) {
+        List<String> params = new ArrayList<>();
+        if (since != null) {
+            sql.append(" AND timestamp >= ?");
+            params.add(since);
+        }
+        if (clientId != null) {
+            sql.append(" AND client_id = ?");
+            params.add(clientId);
+        }
+        return params;
+    }
+
+    private static void bindParams(PreparedStatement stmt, List<String> params) throws SQLException {
+        for (int i = 0; i < params.size(); i++) {
+            stmt.setString(i + 1, params.get(i));
+        }
+    }
+
+    public List<ToolAggregate> queryAggregates(@Nullable String since, @Nullable String clientId) {
+        if (connection == null) return List.of();
+
+        StringBuilder sql = new StringBuilder("""
+            SELECT tool_name, category, client_id,
+                   COUNT(*) AS call_count,
+                   AVG(duration_ms) AS avg_duration,
+                   SUM(input_size) AS total_input,
+                   SUM(output_size) AS total_output,
+                   SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS error_count
+            FROM tool_calls
+            WHERE 1=1
+            """);
+        List<String> params = appendFilters(sql, since, clientId);
+        sql.append(" GROUP BY tool_name, category, client_id ORDER BY call_count DESC");
+
+        List<ToolAggregate> results = new ArrayList<>();
+        try (PreparedStatement stmt = connection.prepareStatement(sql.toString())) {
+            bindParams(stmt, params);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    results.add(new ToolAggregate(
+                        rs.getString("tool_name"),
+                        rs.getString("category"),
+                        rs.getString("client_id"),
+                        rs.getLong("call_count"),
+                        rs.getLong("avg_duration"),
+                        rs.getLong("total_input"),
+                        rs.getLong("total_output"),
+                        rs.getLong("error_count")
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            LOG.warn("Failed to query tool call aggregates", e);
+        }
+        return results;
+    }
+
+    /**
+     * Returns distinct client IDs that have made tool calls, for the filter combo box.
+     */
+    public List<String> getDistinctClients() {
+        if (connection == null) return List.of();
+        List<String> clients = new ArrayList<>();
+        try (ResultSet rs = connection.createStatement()
+            .executeQuery("SELECT DISTINCT client_id FROM tool_calls ORDER BY client_id")) {
+            while (rs.next()) {
+                clients.add(rs.getString("client_id"));
+            }
+        } catch (SQLException e) {
+            LOG.warn("Failed to query distinct clients", e);
+        }
+        return clients;
+    }
+
+    public Map<String, Long> querySummary(@Nullable String since, @Nullable String clientId) {
+        if (connection == null) return Map.of();
+        StringBuilder sql = new StringBuilder("""
+            SELECT COUNT(*) AS total_calls,
+                   COALESCE(SUM(duration_ms), 0) AS total_duration,
+                   COALESCE(SUM(input_size), 0) AS total_input,
+                   COALESCE(SUM(output_size), 0) AS total_output,
+                   SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS total_errors
+            FROM tool_calls
+            WHERE 1=1
+            """);
+        List<String> params = appendFilters(sql, since, clientId);
+
+        Map<String, Long> summary = new LinkedHashMap<>();
+        try (PreparedStatement stmt = connection.prepareStatement(sql.toString())) {
+            bindParams(stmt, params);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    summary.put("totalCalls", rs.getLong("total_calls"));
+                    summary.put("totalDurationMs", rs.getLong("total_duration"));
+                    summary.put("totalInputBytes", rs.getLong("total_input"));
+                    summary.put("totalOutputBytes", rs.getLong("total_output"));
+                    summary.put("totalErrors", rs.getLong("total_errors"));
+                }
+            }
+        } catch (SQLException e) {
+            LOG.warn("Failed to query tool call summary", e);
+        }
+        return summary;
+    }
+
+    public static ToolCallStatisticsService getInstance(@NotNull Project project) {
+        ToolCallStatisticsService service = PlatformApiCompat.getService(project, ToolCallStatisticsService.class);
+        if (!service.initialized) {
+            synchronized (service) {
+                if (!service.initialized) {
+                    service.initialize();
+                    service.initialized = true;
+                }
+            }
+        }
+        return service;
+    }
+
+    @Override
+    public void dispose() {
+        if (disconnectHandle != null) {
+            disconnectHandle.run();
+        }
+        if (connection != null) {
+            try {
+                connection.close();
+            } catch (SQLException e) {
+                LOG.debug("Failed to close tool-stats DB", e);
+            }
+        }
+    }
+}
