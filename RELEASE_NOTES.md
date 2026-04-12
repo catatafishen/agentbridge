@@ -1,6 +1,6 @@
 # Release Notes
 
-## Unreleased
+## 1.47.0 (Unreleased)
 
 ### Cross-Client Session Continuity
 
@@ -41,15 +41,9 @@ New **Statistics** view in the AgentBridge tool window:
 
 ---
 
-### Performance & Reliability
-
-- Reconnects automatically to the statistics database if it is moved (e.g., by git stash or external tooling)
-- Reduced SSE queue-full log noise (downgraded from WARN to INFO)
-- `git_branch create` fixed — was passing `-c` (a `git switch` flag) to `git checkout`, causing crashes
-
 ### Test Coverage & CI Security
 
-- Significantly expanded unit test coverage across statistics, memory, and session mapping layers
+- Significantly expanded unit test coverage
 - CI/CD pipeline hardened: pinned third-party actions to commit SHAs, added `CODEOWNERS`, `SECURITY.md`, Dependabot
   config
 

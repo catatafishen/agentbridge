@@ -76,6 +76,31 @@
     ]]></description>
 
   <change-notes><![CDATA[
+    <h3>1.47.0 &mdash; Session Continuity, Long-Term Memory &amp; Statistics</h3>
+
+    <h4>Cross-Client Session Continuity</h4>
+    <p>Conversations started in one agent can now be resumed in another. The full session history is exported in each
+    agent's native format when you switch &mdash; Kiro, Codex, Junie, opencode, and Copilot all supported.</p>
+
+    <h4>Long-Term Memory</h4>
+    <p>Agents can build and query a persistent memory store that survives session boundaries, backed by IntelliJ's
+    built-in embedded database &mdash; no external services required. Inspired by
+    <a href="https://github.com/milla-jovovich/mempalace">MemPalace</a>.</p>
+    <ul>
+        <li>Organised into a <b>Memory Palace</b> hierarchy: wings (projects) &rarr; rooms (topics) &rarr; drawers (facts)</li>
+        <li>Semantic search via on-device vector embeddings &mdash; no API calls</li>
+        <li><b>Knowledge Graph</b> &mdash; typed subject &rarr; predicate &rarr; object triples with timeline support</li>
+        <li>Automatic memory mining from conversation history</li>
+        <li>9 new MCP tools: <code>memory_store</code>, <code>memory_search</code>, <code>memory_recall</code>,
+        <code>memory_wake_up</code>, <code>memory_status</code>, <code>memory_kg_add</code>,
+        <code>memory_kg_query</code>, <code>memory_kg_invalidate</code>, <code>memory_kg_timeline</code></li>
+    </ul>
+
+    <h4>Tool Usage Statistics</h4>
+    <p>New <b>Statistics</b> view in the AgentBridge tool window &mdash; per-tool call counts, average duration,
+    average data size, total I/O, and error rate. Charts tab shows usage breakdown by category and client.
+    Filter by time range and agent. Backed by a local SQLite database.</p>
+
     <h3>1.16.0 &mdash; Codex, Nudge &amp; PWA</h3>
 
     <h4>OpenAI Codex Support</h4>
