@@ -247,7 +247,11 @@ public final class KiroClientExporter {
                 toolUseBlock.add("data", toolUseData);
 
                 // Build tool_result block
+                boolean isError = "error".equals(toolCall.getStatus());
                 JsonObject resultContent = parseResultContent(resultStr);
+                if (!resultContent.has("isError")) {
+                    resultContent.addProperty("isError", isError);
+                }
 
                 JsonObject jsonContentBlock = new JsonObject();
                 jsonContentBlock.addProperty("kind", CONTENT_KIND_JSON);
@@ -259,6 +263,7 @@ public final class KiroClientExporter {
                 JsonObject toolResultData = new JsonObject();
                 toolResultData.addProperty(KEY_TOOL_USE_ID, toolCallId);
                 toolResultData.add(KEY_CONTENT, resultContentArray);
+                toolResultData.addProperty("status", isError ? "error" : "success");
 
                 JsonObject toolResultBlock = new JsonObject();
                 toolResultBlock.addProperty("kind", CONTENT_KIND_TOOL_RESULT);
@@ -266,7 +271,7 @@ public final class KiroClientExporter {
 
                 assistantBlocks.add(toolUseBlock);
                 pendingTools.add(new ToolPair(toolCallId, toolName, inputObj,
-                    toolUseBlock, toolResultBlock, resultContent));
+                    toolUseBlock, toolResultBlock, resultContent, isError));
                 seenToolUse = true;
 
             }
@@ -507,8 +512,11 @@ public final class KiroClientExporter {
             JsonObject toolKind = new JsonObject();
             toolKind.add("Mcp", mcpInfo);
 
+            JsonObject toolDescription = new JsonObject();
+            toolDescription.add("kind", toolKind);
+
             JsonObject toolMeta = new JsonObject();
-            toolMeta.add("tool", toolKind);
+            toolMeta.add("tool", toolDescription);
 
             JsonArray items = new JsonArray();
             JsonObject jsonItem = new JsonObject();
@@ -519,7 +527,11 @@ public final class KiroClientExporter {
             successWrapper.add("items", items);
 
             JsonObject resultWrapper = new JsonObject();
-            resultWrapper.add("Success", successWrapper);
+            if (pair.isError) {
+                resultWrapper.add("Error", successWrapper);
+            } else {
+                resultWrapper.add("Success", successWrapper);
+            }
             toolMeta.add(STATE_RESULT, resultWrapper);
 
             results.add(pair.toolCallId, toolMeta);
@@ -584,7 +596,8 @@ public final class KiroClientExporter {
         @NotNull JsonObject input,
         @NotNull JsonObject toolUseBlock,
         @NotNull JsonObject toolResultBlock,
-        @NotNull JsonObject resultContent
+        @NotNull JsonObject resultContent,
+        boolean isError
     ) {
     }
 }

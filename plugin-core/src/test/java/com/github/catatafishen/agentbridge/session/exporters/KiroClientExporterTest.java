@@ -319,7 +319,7 @@ class KiroClientExporterTest {
         String toolCallId = results.keySet().iterator().next();
         JsonObject toolEntry = results.getAsJsonObject(toolCallId);
 
-        JsonObject mcp = toolEntry.getAsJsonObject("tool").getAsJsonObject("Mcp");
+        JsonObject mcp = toolEntry.getAsJsonObject("tool").getAsJsonObject("kind").getAsJsonObject("Mcp");
         assertEquals("search_text", mcp.get("toolName").getAsString());
         assertEquals("agentbridge", mcp.get("serverName").getAsString());
         assertEquals("hello", mcp.getAsJsonObject("params").get("query").getAsString());
@@ -511,6 +511,80 @@ class KiroClientExporterTest {
     }
 
     // ── Helper methods ──────────────────────────────────────────────
+
+    @Test
+    void toolResultHasStatusField() {
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(
+                userPrompt("do it"),
+                toolCall("read_file", "{}", "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}")
+            ));
+
+        JsonObject trData = kiroMessages.get(2).getAsJsonObject("data");
+        JsonArray trContent = trData.getAsJsonArray("content");
+        JsonObject toolResultData = trContent.get(0).getAsJsonObject().getAsJsonObject("data");
+
+        assertTrue(toolResultData.has("status"), "toolResult data must have 'status' field");
+        assertEquals("success", toolResultData.get("status").getAsString());
+    }
+
+    @Test
+    void toolResultContentHasIsErrorField() {
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(
+                userPrompt("do it"),
+                toolCall("read_file", "{}", "{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}")
+            ));
+
+        JsonObject trData = kiroMessages.get(2).getAsJsonObject("data");
+        JsonArray trContent = trData.getAsJsonArray("content");
+        JsonObject jsonData = trContent.get(0).getAsJsonObject().getAsJsonObject("data")
+            .getAsJsonArray("content").get(0).getAsJsonObject().getAsJsonObject("data");
+
+        assertTrue(jsonData.has("isError"), "result content JSON must have 'isError' field");
+        assertFalse(jsonData.get("isError").getAsBoolean());
+    }
+
+    @Test
+    void errorToolCallProducesErrorStatusAndResultWrapper() {
+        EntryData.ToolCall errorTool = new EntryData.ToolCall(
+            "read_file", "{\"path\":\"/missing\"}", "other",
+            "{\"content\":[{\"type\":\"text\",\"text\":\"File not found\"}],\"isError\":true}");
+        errorTool.setStatus("error");
+
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(userPrompt("read it"), errorTool));
+
+        // Check toolResult status
+        JsonObject trData = kiroMessages.get(2).getAsJsonObject("data");
+        JsonObject toolResultData = trData.getAsJsonArray("content").get(0)
+            .getAsJsonObject().getAsJsonObject("data");
+        assertEquals("error", toolResultData.get("status").getAsString());
+
+        // Check results map uses "Error" key instead of "Success"
+        String toolCallId = trData.getAsJsonObject("results").keySet().iterator().next();
+        JsonObject toolEntry = trData.getAsJsonObject("results").getAsJsonObject(toolCallId);
+        assertTrue(toolEntry.getAsJsonObject("result").has("Error"),
+            "Error tool calls should use 'Error' key in result wrapper");
+        assertFalse(toolEntry.getAsJsonObject("result").has("Success"));
+    }
+
+    @Test
+    void toolResultsMapHasKindWrapper() {
+        List<JsonObject> kiroMessages = KiroClientExporter.toKiroMessages(
+            List.of(
+                userPrompt("go"),
+                toolCall("search_text", "{\"query\":\"x\"}", "found")
+            ));
+
+        JsonObject results = kiroMessages.get(2).getAsJsonObject("data").getAsJsonObject("results");
+        String id = results.keySet().iterator().next();
+        JsonObject toolInfo = results.getAsJsonObject(id).getAsJsonObject("tool");
+
+        assertTrue(toolInfo.has("kind"), "tool info must have 'kind' wrapper");
+        assertTrue(toolInfo.getAsJsonObject("kind").has("Mcp"),
+            "kind must contain 'Mcp' for agentbridge tools");
+    }
 
     private static EntryData.Prompt userPrompt(String text) {
         return new EntryData.Prompt(text);
