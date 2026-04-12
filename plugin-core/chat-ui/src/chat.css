@@ -878,8 +878,21 @@ table {
     border-collapse: collapse;
     margin: var(--sp-4) 0;
     display: block;
-    max-width: 100%;
     overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+table::-webkit-scrollbar {
+    height: 4px;
+}
+
+table::-webkit-scrollbar-thumb {
+    background: var(--fg-muted);
+    border-radius: 2px;
+}
+
+table::-webkit-scrollbar-track {
+    background: transparent;
 }
 
 th, td {
@@ -887,6 +900,7 @@ th, td {
     border-bottom: 1px solid var(--tbl-border);
     padding: var(--sp-3) var(--sp-6);
     text-align: left;
+    white-space: nowrap;
 }
 
 th {
