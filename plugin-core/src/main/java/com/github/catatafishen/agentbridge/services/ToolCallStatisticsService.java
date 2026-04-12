@@ -197,6 +197,7 @@ public final class ToolCallStatisticsService implements Disposable {
         long avgDurationMs,
         long totalInputBytes,
         long totalOutputBytes,
+        long avgTotalBytes,
         long errorCount
     ) {
     }
@@ -232,6 +233,7 @@ public final class ToolCallStatisticsService implements Disposable {
                    AVG(duration_ms) AS avg_duration,
                    SUM(input_size) AS total_input,
                    SUM(output_size) AS total_output,
+                   AVG(input_size + output_size) AS avg_total,
                    SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS error_count
             FROM tool_calls
             WHERE 1=1
@@ -251,6 +253,7 @@ public final class ToolCallStatisticsService implements Disposable {
                         rs.getLong("avg_duration"),
                         rs.getLong("total_input"),
                         rs.getLong("total_output"),
+                        rs.getLong("avg_total"),
                         rs.getLong("error_count")
                     ));
                 }

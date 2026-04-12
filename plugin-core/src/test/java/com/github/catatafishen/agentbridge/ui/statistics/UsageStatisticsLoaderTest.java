@@ -11,8 +11,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -185,14 +187,50 @@ class UsageStatisticsLoaderTest {
         Files.writeString(jsonlPath, line1 + "\n" + line2 + "\n");
 
         Map<Object, Object> accumulators = new LinkedHashMap<>();
-        Method m = UsageStatisticsLoader.class.getDeclaredMethod(
-            "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class);
-        m.setAccessible(true);
-        m.invoke(null, jsonlPath, "copilot",
-            LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31), accumulators);
+        LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+        Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+        invokeCollectTurnStats(jsonlPath, "copilot", accumulators, agentIds, agentDisplayNames);
 
         assertEquals(1, accumulators.size(),
             "Two entries on the same date/agent should produce exactly one accumulator bucket");
+    }
+
+    @Test
+    void collectTurnStats_tracksAgentChangesWithinSession(@TempDir Path tempDir) throws Exception {
+        Path jsonlPath = tempDir.resolve("mixed.jsonl");
+        String line1 = "{\"type\":\"text\",\"raw\":\"hello\",\"agent\":\"GitHub Copilot\","
+            + "\"entryId\":\"e1\"}";
+        String line2 = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":5000,"
+            + "\"inputTokens\":100,\"outputTokens\":200,\"toolCallCount\":3,"
+            + "\"linesAdded\":10,\"linesRemoved\":5,\"multiplier\":\"1x\","
+            + "\"timestamp\":\"2024-06-15T10:00:00Z\",\"entryId\":\"e2\"}";
+        String line3 = "{\"type\":\"text\",\"raw\":\"hello\",\"agent\":\"Claude Code\","
+            + "\"entryId\":\"e3\"}";
+        String line4 = "{\"type\":\"turnStats\",\"turnId\":\"t2\",\"durationMs\":3000,"
+            + "\"inputTokens\":50,\"outputTokens\":100,\"toolCallCount\":1,"
+            + "\"linesAdded\":5,\"linesRemoved\":2,\"multiplier\":\"1x\","
+            + "\"timestamp\":\"2024-06-15T11:00:00Z\",\"entryId\":\"e4\"}";
+        Files.writeString(jsonlPath, line1 + "\n" + line2 + "\n" + line3 + "\n" + line4 + "\n");
+
+        Map<Object, Object> accumulators = new LinkedHashMap<>();
+        LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+        Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+        invokeCollectTurnStats(jsonlPath, "unknown", accumulators, agentIds, agentDisplayNames);
+
+        Method buildMethod = UsageStatisticsLoader.class.getDeclaredMethod("buildDailyStats", Map.class);
+        buildMethod.setAccessible(true);
+        List<?> result = (List<?>) buildMethod.invoke(null, accumulators);
+
+        assertEquals(2, result.size());
+        assertTrue(agentIds.contains("copilot"));
+        assertTrue(agentIds.contains("claude-cli"));
+        assertEquals("GitHub Copilot", agentDisplayNames.get("copilot"));
+        assertEquals("Claude Code", agentDisplayNames.get("claude-cli"));
+
+        UsageStatisticsData.DailyAgentStats first = (UsageStatisticsData.DailyAgentStats) result.get(0);
+        UsageStatisticsData.DailyAgentStats second = (UsageStatisticsData.DailyAgentStats) result.get(1);
+        assertTrue(Set.of(first.agentId(), second.agentId()).contains("copilot"));
+        assertTrue(Set.of(first.agentId(), second.agentId()).contains("claude-cli"));
     }
 
     @Test
@@ -201,11 +239,9 @@ class UsageStatisticsLoaderTest {
         Files.writeString(jsonlPath, "");
 
         Map<Object, Object> accumulators = new LinkedHashMap<>();
-        Method m = UsageStatisticsLoader.class.getDeclaredMethod(
-            "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class);
-        m.setAccessible(true);
-        m.invoke(null, jsonlPath, "copilot",
-            LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31), accumulators);
+        LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+        Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+        invokeCollectTurnStats(jsonlPath, "copilot", accumulators, agentIds, agentDisplayNames);
 
         assertTrue(accumulators.isEmpty(), "Empty JSONL file should produce no accumulators");
     }
@@ -221,11 +257,9 @@ class UsageStatisticsLoaderTest {
         Files.writeString(jsonlPath, line + "\n");
 
         Map<Object, Object> accumulators = new LinkedHashMap<>();
-        Method m = UsageStatisticsLoader.class.getDeclaredMethod(
-            "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class);
-        m.setAccessible(true);
-        m.invoke(null, jsonlPath, "copilot",
-            LocalDate.of(2025, 1, 1), LocalDate.of(2025, 12, 31), accumulators);
+        LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+        Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+        invokeCollectTurnStats(jsonlPath, "copilot", accumulators, agentIds, agentDisplayNames);
 
         assertTrue(accumulators.isEmpty(), "Entry outside the date range should not be accumulated");
     }
@@ -249,11 +283,9 @@ class UsageStatisticsLoaderTest {
         Files.writeString(jsonlPath, line + "\n");
 
         Map<Object, Object> accumulators = new LinkedHashMap<>();
-        Method collectMethod = UsageStatisticsLoader.class.getDeclaredMethod(
-            "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class);
-        collectMethod.setAccessible(true);
-        collectMethod.invoke(null, jsonlPath, "copilot",
-            LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31), accumulators);
+        LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+        Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+        invokeCollectTurnStats(jsonlPath, "copilot", accumulators, agentIds, agentDisplayNames);
 
         assertFalse(accumulators.isEmpty(), "Precondition: accumulators must be populated by collectTurnStats");
 
@@ -278,5 +310,17 @@ class UsageStatisticsLoaderTest {
         Method m = UsageStatisticsLoader.class.getDeclaredMethod("extractDate", JsonObject.class, String.class);
         m.setAccessible(true);
         return (LocalDate) m.invoke(null, obj, fallback);
+    }
+
+    private static void invokeCollectTurnStats(Path jsonlPath, String agentId,
+                                               Map<Object, Object> accumulators,
+                                               Set<String> agentIds,
+                                               Map<String, String> agentDisplayNames) throws Exception {
+        Method m = UsageStatisticsLoader.class.getDeclaredMethod(
+            "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class, Set.class, Map.class);
+        m.setAccessible(true);
+        m.invoke(null, jsonlPath, agentId,
+            LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31),
+            accumulators, agentIds, agentDisplayNames);
     }
 }

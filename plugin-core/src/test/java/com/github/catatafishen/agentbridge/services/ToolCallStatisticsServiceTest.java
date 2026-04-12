@@ -63,6 +63,7 @@ class ToolCallStatisticsServiceTest {
         assertEquals(42, agg.avgDurationMs());
         assertEquals(256, agg.totalInputBytes());
         assertEquals(4096, agg.totalOutputBytes());
+        assertEquals(4352, agg.avgTotalBytes());
         assertEquals(0, agg.errorCount());
     }
 
@@ -81,6 +82,7 @@ class ToolCallStatisticsServiceTest {
         assertEquals(100, agg.avgDurationMs()); // (50+150+100)/3
         assertEquals(450, agg.totalInputBytes());
         assertEquals(6000, agg.totalOutputBytes());
+        assertEquals(2150, agg.avgTotalBytes()); // (2100+3200+1150)/3 = 6450/3 = 2150
         assertEquals(1, agg.errorCount());
     }
 
