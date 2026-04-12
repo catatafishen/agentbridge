@@ -48,6 +48,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     private McpProtocolHandler protocolHandler;
     private McpSseTransport sseTransport;
     private TransportMode activeTransportMode;
+    private java.util.concurrent.ExecutorService requestExecutor;
     private final AtomicInteger activeConnections = new AtomicInteger(0);
     private volatile boolean running;
 
@@ -104,12 +105,18 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
             // Bounded thread pool: SSE mode blocks one thread per connection, streamable HTTP
             // uses short-lived requests. Cap at 20 to prevent thread exhaustion from reconnection storms.
-            httpServer.setExecutor(new java.util.concurrent.ThreadPoolExecutor(
+            // Uses a small queue (50) to absorb bursts; tasks rejected beyond capacity get auto-500'd by HttpServer.
+            requestExecutor = new java.util.concurrent.ThreadPoolExecutor(
                 2, 20, 60, java.util.concurrent.TimeUnit.SECONDS,
-                new java.util.concurrent.SynchronousQueue<>(),
-                r -> { Thread t = new Thread(r, "mcp-http"); t.setDaemon(true); return t; },
-                new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
-            ));
+                new java.util.concurrent.LinkedBlockingQueue<>(50),
+                r -> {
+                    Thread t = new Thread(r, "mcp-http");
+                    t.setDaemon(true);
+                    return t;
+                },
+                new java.util.concurrent.ThreadPoolExecutor.AbortPolicy()
+            );
+            httpServer.setExecutor(requestExecutor);
             httpServer.start();
             running = true;
             LOG.info("[MCP] server started on port " + actualPort + " (" + activeTransportMode.getDisplayName()
@@ -139,6 +146,10 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             }
             httpServer.stop(1);
             httpServer = null;
+            if (requestExecutor != null) {
+                requestExecutor.shutdownNow();
+                requestExecutor = null;
+            }
             protocolHandler = null;
             activeTransportMode = null;
             running = false;
@@ -205,12 +216,8 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         try {
             byte[] bodyBytes = exchange.getRequestBody().readNBytes(MAX_REQUEST_BODY_BYTES + 1);
             if (bodyBytes.length > MAX_REQUEST_BODY_BYTES) {
-                byte[] err = ("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32600,"
-                    + "\"message\":\"Request body exceeds " + MAX_REQUEST_BODY_BYTES + " byte limit\"}}")
-                    .getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
-                exchange.sendResponseHeaders(413, err.length);
-                exchange.getResponseBody().write(err);
+                sendJsonRpcError(exchange, 413, -32600,
+                    "Request body exceeds " + MAX_REQUEST_BODY_BYTES + " byte limit");
                 return;
             }
             String body = new String(bodyBytes, StandardCharsets.UTF_8);
@@ -233,12 +240,8 @@ public final class McpHttpServer implements Disposable, McpServerControl {
             }
         } catch (Exception e) {
             LOG.warn("MCP request error", e);
-            String msg = e.getMessage() != null ? e.getMessage().replace("\"", "'") : e.getClass().getSimpleName();
-            byte[] err = ("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal error: "
-                + msg + "\"}}").getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
-            exchange.sendResponseHeaders(500, err.length);
-            exchange.getResponseBody().write(err);
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            sendJsonRpcError(exchange, 500, -32603, "Internal error: " + msg);
         } finally {
             exchange.close();
             activeConnections.decrementAndGet();
@@ -261,5 +264,21 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     @Override
     public void dispose() {
         stop();
+    }
+
+    /**
+     * Sends a JSON-RPC error response. Uses Gson for proper JSON escaping.
+     */
+    private static void sendJsonRpcError(HttpExchange exchange, int httpStatus, int rpcCode, String message) throws IOException {
+        com.google.gson.JsonObject error = new com.google.gson.JsonObject();
+        error.addProperty("code", rpcCode);
+        error.addProperty("message", message);
+        com.google.gson.JsonObject resp = new com.google.gson.JsonObject();
+        resp.addProperty("jsonrpc", "2.0");
+        resp.add("error", error);
+        byte[] bytes = resp.toString().getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
+        exchange.sendResponseHeaders(httpStatus, bytes.length);
+        exchange.getResponseBody().write(bytes);
     }
 }

@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Handles the MCP SSE (Server-Sent Events) transport.
@@ -35,8 +36,11 @@ final class McpSseTransport {
     private static final String CONTENT_TYPE = "Content-Type";
     private static final String APPLICATION_JSON = "application/json";
 
+    private static final String ACCESS_CONTROL_ALLOW_ORIGIN = "Access-Control-Allow-Origin";
+
     private final McpProtocolHandler protocolHandler;
     private final Map<String, SseSession> sessions = new ConcurrentHashMap<>();
+    private final AtomicInteger sessionCount = new AtomicInteger(0);
     private ScheduledExecutorService keepAliveExecutor;
 
     McpSseTransport(@NotNull McpProtocolHandler protocolHandler) {
@@ -82,13 +86,17 @@ final class McpSseTransport {
             return;
         }
 
-        if (sessions.size() >= MAX_SSE_SESSIONS) {
+        // Atomic session count check: increment first, rollback if over limit
+        int count = sessionCount.incrementAndGet();
+        if (count > MAX_SSE_SESSIONS) {
+            sessionCount.decrementAndGet();
             LOG.warn("SSE session limit reached (" + MAX_SSE_SESSIONS + "), rejecting new connection");
+            exchange.getResponseHeaders().set(ACCESS_CONTROL_ALLOW_ORIGIN, "*");
             sendJsonError(exchange, 503, "SSE session limit reached (" + MAX_SSE_SESSIONS + ")");
             return;
         }
 
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set(ACCESS_CONTROL_ALLOW_ORIGIN, "*");
         exchange.getResponseHeaders().set(CONTENT_TYPE, "text/event-stream");
         exchange.getResponseHeaders().set("Cache-Control", "no-cache");
         exchange.getResponseHeaders().set("Connection", "keep-alive");
@@ -107,12 +115,11 @@ final class McpSseTransport {
             session.awaitClose();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            removeSession(session.getSessionId());
         } catch (IOException e) {
             LOG.warn("Failed to send endpoint event", e);
-            removeSession(session.getSessionId());
         } finally {
             removeSession(session.getSessionId());
+            sessionCount.decrementAndGet();
             LOG.info("SSE session handler exiting: " + session.getSessionId());
         }
     }
@@ -122,7 +129,7 @@ final class McpSseTransport {
      * and sends the response through the corresponding SSE stream.
      */
     void handleMessage(HttpExchange exchange) throws IOException {
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set(ACCESS_CONTROL_ALLOW_ORIGIN, "*");
         exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "POST, OPTIONS");
         exchange.getResponseHeaders().set("Access-Control-Allow-Headers", CONTENT_TYPE);
 
