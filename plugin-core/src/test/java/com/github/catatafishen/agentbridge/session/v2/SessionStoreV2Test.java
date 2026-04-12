@@ -12,7 +12,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -1249,7 +1248,9 @@ class SessionStoreV2Test {
             return store;
         }
 
-        /** Returns the sessions directory for the given tempDir base path. */
+        /**
+         * Returns the sessions directory for the given tempDir base path.
+         */
         private Path sessionsDir() {
             return tempDir.resolve(".agent-work").resolve("sessions");
         }
