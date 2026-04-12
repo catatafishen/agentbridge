@@ -119,9 +119,10 @@ public final class ToolCallStatisticsService implements Disposable {
     }
 
     /**
-     * Records a single tool call. Thread-safe via SQLite serialization.
+     * Records a single tool call. Synchronized because a single {@link Connection} is shared
+     * across MCP handler threads and the EDT.
      */
-    public void recordCall(@NotNull ToolCallRecord callRecord) {
+    public synchronized void recordCall(@NotNull ToolCallRecord callRecord) {
         if (connection == null) return;
         String sql = """
             INSERT INTO tool_calls (tool_name, category, input_size, output_size, duration_ms, success, client_id, timestamp)
@@ -179,7 +180,7 @@ public final class ToolCallStatisticsService implements Disposable {
         }
     }
 
-    public List<ToolAggregate> queryAggregates(@Nullable String since, @Nullable String clientId) {
+    public synchronized List<ToolAggregate> queryAggregates(@Nullable String since, @Nullable String clientId) {
         if (connection == null) return List.of();
 
         StringBuilder sql = new StringBuilder("""
@@ -221,7 +222,7 @@ public final class ToolCallStatisticsService implements Disposable {
     /**
      * Returns distinct client IDs that have made tool calls, for the filter combo box.
      */
-    public List<String> getDistinctClients() {
+    public synchronized List<String> getDistinctClients() {
         if (connection == null) return List.of();
         List<String> clients = new ArrayList<>();
         try (ResultSet rs = connection.createStatement()
@@ -235,7 +236,7 @@ public final class ToolCallStatisticsService implements Disposable {
         return clients;
     }
 
-    public Map<String, Long> querySummary(@Nullable String since, @Nullable String clientId) {
+    public synchronized Map<String, Long> querySummary(@Nullable String since, @Nullable String clientId) {
         if (connection == null) return Map.of();
         StringBuilder sql = new StringBuilder("""
             SELECT COUNT(*) AS total_calls,

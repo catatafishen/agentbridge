@@ -40,6 +40,7 @@ public class ToolStatisticsPanel extends JPanel {
         add(buildTable(), BorderLayout.CENTER);
         add(summaryLabel, BorderLayout.SOUTH);
 
+        refreshClients();
         loadData();
     }
 

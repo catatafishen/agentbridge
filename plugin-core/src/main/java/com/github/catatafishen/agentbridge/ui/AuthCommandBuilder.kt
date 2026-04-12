@@ -61,7 +61,10 @@ object AuthCommandBuilder {
             "$exports && $command"
         } else {
             // Unix shells: export VAR=value; command
-            val exports = envVars.entries.joinToString("; ") { (key, value) -> "export $key='$value'" }
+            // Wrap value in single quotes; escape embedded single quotes using the '\'' shell idiom
+            val exports = envVars.entries.joinToString("; ") { (key, value) ->
+                "export $key='${value.replace("'", "'\\''")}'"
+            }
             "$exports; $command"
         }
     }

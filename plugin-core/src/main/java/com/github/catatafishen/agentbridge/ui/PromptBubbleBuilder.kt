@@ -24,9 +24,9 @@ object PromptBubbleBuilder {
             if (ch == ORC && idx < items.size) {
                 val item = items[idx++]
                 val href = if (item.isSelection && item.startLine > 0)
-                    "openfile://${item.path}:${item.startLine}"
+                    "openfile://${escapeHtml(item.path)}:${item.startLine}"
                 else
-                    "openfile://${item.path}"
+                    "openfile://${escapeHtml(item.path)}"
                 val title = escapeHtml(
                     if (item.isSelection && item.startLine > 0) "${item.path}:${item.startLine}" else item.path
                 )

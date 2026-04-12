@@ -216,7 +216,7 @@ public final class PsiBridgeService implements Disposable {
 
     public String callTool(String toolName, JsonObject arguments, @Nullable String progressToken, @Nullable String toolUseId) {
         LOG.info("PSI Bridge: calling " + toolName + " with args: " + arguments);
-        long inputSize = arguments != null ? arguments.toString().length() : 0;
+        long inputSize = arguments != null ? arguments.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
         ToolDefinition def = registry.findDefinition(toolName);
         if (def == null || !def.hasExecutionHandler()) {
             fireToolCallEvent(toolName, System.currentTimeMillis(), false, inputSize, 0, null);
@@ -348,7 +348,7 @@ public final class PsiBridgeService implements Disposable {
             if (nudge != null) {
                 result = result + "\n\n[User nudge]: " + nudge;
             }
-            outputSize = result.length();
+            outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
             return result;
         } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
             success = false;

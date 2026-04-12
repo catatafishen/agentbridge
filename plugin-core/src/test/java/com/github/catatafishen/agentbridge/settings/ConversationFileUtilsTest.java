@@ -88,7 +88,7 @@ class ConversationFileUtilsTest {
     }
 
     @Test
-    void formatDateMillis_largNegative() {
+    void formatDateMillis_largeNegative() {
         assertEquals("—", ConversationFileUtils.formatDateMillis(Long.MIN_VALUE));
     }
 
@@ -97,7 +97,7 @@ class ConversationFileUtilsTest {
         // Use a known millis value and compute expected with the same formatter
         long millis = 1705312200000L; // some fixed timestamp
         LocalDateTime dateTime = LocalDateTime.ofInstant(
-                java.time.Instant.ofEpochMilli(millis), ZoneId.systemDefault());
+            java.time.Instant.ofEpochMilli(millis), ZoneId.systemDefault());
         String expected = dateTime.format(ConversationFileUtils.DISPLAY_FORMATTER);
         assertEquals(expected, ConversationFileUtils.formatDateMillis(millis));
     }
