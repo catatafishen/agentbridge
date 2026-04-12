@@ -710,7 +710,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
      * (e.g. {@code [{"type":"text","text":"..."}]}). Both forms are handled.
      */
     @NotNull
-    private String extractToolResultContent(@NotNull JsonObject event) {
+    static String extractToolResultContent(@NotNull JsonObject event) {
         if (!event.has(FIELD_CONTENT)) return "";
         JsonElement el = event.get(FIELD_CONTENT);
         if (el.isJsonPrimitive()) return el.getAsString();
