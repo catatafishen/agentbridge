@@ -5,12 +5,13 @@ import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.ui.renderers.HttpRequestRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.execution.RunContentExecutor;
-import com.intellij.execution.process.NopProcessHandler;
+import com.intellij.execution.process.ProcessHandler;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -54,6 +55,8 @@ public final class HttpRequestTool extends InfrastructureTool {
     private static final int DEFAULT_READ_TIMEOUT_SECONDS = 30;
     private static final int DEFAULT_MAX_CHARS = 8000;
     private static final int MAX_BODY_PREVIEW_CHARS = 2000;
+    private static final String AUTHORIZATION_HEADER = "Authorization";
+    private static final String HTTP_PREFIX = "HTTP ";
 
     public HttpRequestTool(Project project) {
         super(project);
@@ -253,13 +256,13 @@ public final class HttpRequestTool extends InfrastructureTool {
         String auth = args.get(PARAM_AUTH).getAsString().trim();
 
         if (auth.toLowerCase().startsWith("bearer ")) {
-            builder.header("Authorization", "Bearer " + auth.substring(7).trim());
+            builder.header(AUTHORIZATION_HEADER, "Bearer " + auth.substring(7).trim());
         } else if (auth.toLowerCase().startsWith("basic ")) {
             String credentials = auth.substring(6).trim();
             String encoded = Base64.getEncoder().encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
-            builder.header("Authorization", "Basic " + encoded);
+            builder.header(AUTHORIZATION_HEADER, "Basic " + encoded);
         } else {
-            builder.header("Authorization", auth);
+            builder.header(AUTHORIZATION_HEADER, auth);
         }
     }
 
@@ -268,7 +271,7 @@ public final class HttpRequestTool extends InfrastructureTool {
     private void showRequestInRunPanel(@NotNull String method, @NotNull String url,
                                        @NotNull HttpRequest request, @Nullable String body) {
         String host = extractHost(url);
-        String tabTitle = "HTTP " + method + " " + host;
+        String tabTitle = HTTP_PREFIX + method + " " + host;
 
         StringBuilder console = new StringBuilder();
         console.append("→ ").append(method).append(' ').append(url).append('\n');
@@ -294,7 +297,30 @@ public final class HttpRequestTool extends InfrastructureTool {
                 var factory = com.intellij.execution.filters.TextConsoleBuilderFactory.getInstance();
                 var view = factory.createBuilder(project).getConsole();
 
-                NopProcessHandler processHandler = new NopProcessHandler();
+                // NopProcessHandler calls startNotify() in its constructor, but
+                // RunContentExecutor.run() also calls startNotify(), causing
+                // "startNotify called already". Use a bare ProcessHandler instead.
+                ProcessHandler processHandler = new ProcessHandler() {
+                    @Override
+                    protected void destroyProcessImpl() {
+                        notifyProcessTerminated(0);
+                    }
+
+                    @Override
+                    protected void detachProcessImpl() {
+                        notifyProcessDetached();
+                    }
+
+                    @Override
+                    public boolean detachIsDefault() {
+                        return false;
+                    }
+
+                    @Override
+                    public @Nullable OutputStream getProcessInput() {
+                        return null;
+                    }
+                };
 
                 new RunContentExecutor(project, processHandler)
                     .withTitle(tabTitle)
@@ -326,7 +352,7 @@ public final class HttpRequestTool extends InfrastructureTool {
     }
 
     private static void logResponse(int statusCode, long elapsedMs, int bodyLength) {
-        LOG.debug("HTTP " + statusCode + " (" + elapsedMs + "ms) - " + bodyLength + " chars");
+        LOG.debug(HTTP_PREFIX + statusCode + " (" + elapsedMs + "ms) - " + bodyLength + " chars");
     }
 
     // ── Response formatting ──────────────────────────────────
@@ -337,7 +363,7 @@ public final class HttpRequestTool extends InfrastructureTool {
                                                   boolean showHeaders,
                                                   int maxChars) {
         StringBuilder result = new StringBuilder();
-        result.append("HTTP ").append(response.statusCode())
+        result.append(HTTP_PREFIX).append(response.statusCode())
             .append(" (").append(elapsedMs).append("ms)\n");
 
         if (showHeaders) {
@@ -374,7 +400,7 @@ public final class HttpRequestTool extends InfrastructureTool {
         Files.createDirectories(filePath.getParent());
         Files.write(filePath, responseBytes);
 
-        return "HTTP " + statusCode + " (" + elapsedMs + "ms)\n\n"
+        return HTTP_PREFIX + statusCode + " (" + elapsedMs + "ms)\n\n"
             + "Response saved to: " + filePath + "\n"
             + "Size: " + responseBytes.length + " bytes";
     }
