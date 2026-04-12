@@ -131,10 +131,12 @@ final class AcpTerminalHandler {
         boolean exited = terminal.process.waitFor(WAIT_FOR_EXIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         if (!exited) {
             terminal.process.destroyForcibly();
+            terminal.stopOutputCapture();
+            terminals.remove(terminalId);
             LOG.warn("terminal/wait_for_exit timed out after " + WAIT_FOR_EXIT_TIMEOUT_SECONDS
-                + "s for terminal " + terminalId + " — process forcibly destroyed");
+                + "s for terminal " + terminalId + " — process forcibly destroyed and resources released");
             throw new IllegalStateException("Process timed out after "
-                + WAIT_FOR_EXIT_TIMEOUT_SECONDS + " seconds and was killed");
+                + WAIT_FOR_EXIT_TIMEOUT_SECONDS + " seconds and was killed (terminal " + terminalId + ")");
         }
 
         JsonObject result = new JsonObject();

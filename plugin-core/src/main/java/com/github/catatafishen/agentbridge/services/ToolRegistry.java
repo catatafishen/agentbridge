@@ -6,6 +6,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -109,10 +110,13 @@ public final class ToolRegistry {
     }
 
     /**
-     * Returns all registered tool definitions (built-in + MCP).
+     * Returns all registered tool definitions (built-in + MCP), sorted by ID
+     * for deterministic ordering across invocations.
      */
     @NotNull
     public List<ToolDefinition> getAllTools() {
-        return List.copyOf(definitions.values());
+        return definitions.values().stream()
+            .sorted(Comparator.comparing(ToolDefinition::id))
+            .toList();
     }
 }
