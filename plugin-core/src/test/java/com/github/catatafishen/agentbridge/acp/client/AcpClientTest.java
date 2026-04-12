@@ -6,6 +6,8 @@ import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import org.mockito.Mockito;
+
 import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -368,10 +370,171 @@ class AcpClientTest {
         }
     }
 
+    // ── buildPermissionOutcome (protected instance) ────────────────────
+
+    @Nested
+    class BuildPermissionOutcome {
+
+        private final AcpClient client = Mockito.mock(AcpClient.class, Mockito.CALLS_REAL_METHODS);
+
+        @Test
+        void normalOptionIdWithChosenOption() {
+            JsonObject chosenOption = new JsonObject();
+            chosenOption.addProperty("kind", "allow_once");
+            chosenOption.addProperty("optionId", "opt-1");
+
+            JsonObject result = client.buildPermissionOutcome("opt-1", chosenOption);
+
+            assertEquals("selected", result.get("outcome").getAsString());
+            assertEquals("opt-1", result.get("optionId").getAsString());
+        }
+
+        @Test
+        void nullChosenOptionStillReturnsOutcome() {
+            JsonObject result = client.buildPermissionOutcome("deny_once", null);
+
+            assertEquals("selected", result.get("outcome").getAsString());
+            assertEquals("deny_once", result.get("optionId").getAsString());
+        }
+
+        @Test
+        void emptyOptionId() {
+            JsonObject result = client.buildPermissionOutcome("", null);
+
+            assertEquals("selected", result.get("outcome").getAsString());
+            assertEquals("", result.get("optionId").getAsString());
+        }
+    }
+
     // ── normalizeSessionUpdateParams (protected instance) ───────────────
 
-    // normalizeSessionUpdateParams and extractSubAgentType are instance methods on abstract AcpClient.
-    // They are tested indirectly through the concrete client tests (CopilotClient, KiroClient, etc.).
+    @Nested
+    class NormalizeSessionUpdateParams {
+
+        private final AcpClient client = Mockito.mock(AcpClient.class, Mockito.CALLS_REAL_METHODS);
+
+        @Test
+        void withUpdateWrapperUnwrapsInnerObject() {
+            JsonObject inner = new JsonObject();
+            inner.addProperty("type", "content");
+            inner.addProperty("text", "hello");
+            JsonObject params = new JsonObject();
+            params.add("update", inner);
+
+            JsonObject result = client.normalizeSessionUpdateParams(params);
+
+            assertEquals("content", result.get("type").getAsString());
+            assertEquals("hello", result.get("text").getAsString());
+            assertFalse(result.has("update"));
+        }
+
+        @Test
+        void withoutUpdateKeyReturnsAsIs() {
+            JsonObject params = new JsonObject();
+            params.addProperty("type", "content");
+            params.addProperty("text", "hello");
+
+            JsonObject result = client.normalizeSessionUpdateParams(params);
+
+            assertSame(params, result);
+        }
+
+        @Test
+        void updateKeyAsNonObjectReturnsAsIs() {
+            JsonObject params = new JsonObject();
+            params.addProperty("update", "not-an-object");
+
+            JsonObject result = client.normalizeSessionUpdateParams(params);
+
+            assertSame(params, result);
+        }
+    }
+
+    // ── getStartupStepFromException (private instance) ──────────────────
+
+    @Nested
+    class GetStartupStepFromException {
+
+        private final AcpClient client = Mockito.mock(AcpClient.class, Mockito.CALLS_REAL_METHODS);
+
+        @Test
+        void launchMethod() throws Exception {
+            assertEquals("process launch", invokeGetStartupStep(exceptionFromMethod("launchProcess")));
+        }
+
+        @Test
+        void startMethod() throws Exception {
+            assertEquals("transport start", invokeGetStartupStep(exceptionFromMethod("startTransport")));
+        }
+
+        @Test
+        void initializeMethod() throws Exception {
+            assertEquals("initialization", invokeGetStartupStep(exceptionFromMethod("initializeConnection")));
+        }
+
+        @Test
+        void authenticateMethod() throws Exception {
+            assertEquals("authentication", invokeGetStartupStep(exceptionFromMethod("authenticateUser")));
+        }
+
+        @Test
+        void fetchModelsMethod() throws Exception {
+            assertEquals("model fetch", invokeGetStartupStep(exceptionFromMethod("fetchModelsFromServer")));
+        }
+
+        @Test
+        void emptyStackTrace() throws Exception {
+            Exception e = new RuntimeException("test");
+            e.setStackTrace(new StackTraceElement[0]);
+            assertEquals("unknown step", invokeGetStartupStep(e));
+        }
+
+        private Exception exceptionFromMethod(String methodName) {
+            Exception e = new RuntimeException("test");
+            e.setStackTrace(new StackTraceElement[]{
+                new StackTraceElement("TestClass", methodName, "Test.java", 1)
+            });
+            return e;
+        }
+
+        private String invokeGetStartupStep(Exception ex) throws Exception {
+            Method m = AcpClient.class.getDeclaredMethod("getStartupStepFromException", Exception.class);
+            m.setAccessible(true);
+            return (String) m.invoke(client, ex);
+        }
+    }
+
+    // ── isMcpResourceTool (private static) ──────────────────────────────
+
+    @Nested
+    class IsMcpResourceTool {
+
+        @Test
+        void readMcpResource() throws Exception {
+            assertTrue(invokeIsMcpResourceTool("read_mcp_resource"));
+        }
+
+        @Test
+        void listMcpResources() throws Exception {
+            assertTrue(invokeIsMcpResourceTool("list_mcp_resources"));
+        }
+
+        @Test
+        void caseInsensitive() throws Exception {
+            assertTrue(invokeIsMcpResourceTool("READ_MCP_RESOURCE"));
+        }
+
+        @Test
+        void randomToolNotMcpResource() throws Exception {
+            assertFalse(invokeIsMcpResourceTool("bash"));
+        }
+
+        private boolean invokeIsMcpResourceTool(String toolId) throws Exception {
+            Method m = AcpClient.class.getDeclaredMethod("isMcpResourceTool", String.class);
+            m.setAccessible(true);
+            return (boolean) m.invoke(null, toolId);
+        }
+    }
 
     // ── extractSubAgentType (protected instance) ────────────────────────
 

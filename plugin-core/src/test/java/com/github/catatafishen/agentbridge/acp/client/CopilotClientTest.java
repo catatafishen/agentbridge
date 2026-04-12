@@ -1,8 +1,13 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
+import com.github.catatafishen.agentbridge.acp.model.Model;
+import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
+import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.lang.reflect.Method;
+import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -170,5 +175,140 @@ class CopilotClientTest {
         Method m = CopilotClient.class.getDeclaredMethod("buildToolReprimand", Set.class);
         m.setAccessible(true);
         return (String) m.invoke(null, tools);
+    }
+
+    // ── resolveToolId (instance override — strips agentbridge- prefix) ──
+
+    @Test
+    void resolveToolId_stripsAgentbridgePrefix() throws Exception {
+        assertEquals("read_file", invokeResolveToolId("agentbridge-read_file"));
+    }
+
+    @Test
+    void resolveToolId_noPrefixUnchanged() throws Exception {
+        assertEquals("bash", invokeResolveToolId("bash"));
+    }
+
+    // ── tryRecoverPromptException (instance override — timeout recovery) ─
+
+    @Test
+    void tryRecoverPromptException_directTimeoutReturnsEndTurn() throws Exception {
+        PromptResponse r = invokeTryRecover(
+            new java.util.concurrent.TimeoutException("timed out"));
+        assertNotNull(r);
+        assertEquals("end_turn", r.stopReason());
+        assertNull(r.usage());
+    }
+
+    @Test
+    void tryRecoverPromptException_wrappedTimeoutReturnsEndTurn() throws Exception {
+        PromptResponse r = invokeTryRecover(
+            new RuntimeException("wrap",
+                new java.util.concurrent.TimeoutException("root")));
+        assertNotNull(r);
+        assertEquals("end_turn", r.stopReason());
+    }
+
+    @Test
+    void tryRecoverPromptException_nonTimeoutReturnsNull() throws Exception {
+        assertNull(invokeTryRecover(new java.io.IOException("network")));
+    }
+
+    // ── getModelMultiplier (instance — extracts _meta.copilotUsage) ─────
+
+    @Test
+    void getModelMultiplier_withCopilotUsage() throws Exception {
+        JsonObject meta = new JsonObject();
+        meta.addProperty("copilotUsage", "1x");
+        assertEquals("1x", invokeGetModelMultiplier(
+            new Model("gpt-4", "GPT-4", null, meta)));
+    }
+
+    @Test
+    void getModelMultiplier_noCopilotUsageField() throws Exception {
+        JsonObject meta = new JsonObject();
+        meta.addProperty("other", "value");
+        assertNull(invokeGetModelMultiplier(
+            new Model("gpt-4", "GPT-4", null, meta)));
+    }
+
+    @Test
+    void getModelMultiplier_nullMeta() throws Exception {
+        assertNull(invokeGetModelMultiplier(
+            new Model("gpt-4", "GPT-4", null, null)));
+    }
+
+    // ── parseToolCallArguments (instance override — rawInput fallback) ───
+
+    @Test
+    void parseToolCallArguments_rawInputFallback() throws Exception {
+        JsonObject raw = new JsonObject();
+        raw.addProperty("command", "ls");
+        JsonObject params = new JsonObject();
+        params.add("rawInput", raw);
+        JsonObject result = invokeParseToolCallArguments(params);
+        assertNotNull(result);
+        assertEquals("ls", result.get("command").getAsString());
+    }
+
+    @Test
+    void parseToolCallArguments_neitherReturnsNull() throws Exception {
+        JsonObject params = new JsonObject();
+        params.addProperty("toolCallId", "abc");
+        assertNull(invokeParseToolCallArguments(params));
+    }
+
+    // ── buildSingleToolReprimand (private static) ───────────────────────
+
+    @Test
+    void buildSingleToolReprimand_containsToolAndAlternative() throws Exception {
+        String result = invokeBuildSingleToolReprimand("bash");
+        assertTrue(result.contains("[System notice]"));
+        assertTrue(result.contains("bash"));
+        assertTrue(result.contains("agentbridge-run_command"));
+    }
+
+    // ── copilotHome (package-private static) ────────────────────────────
+
+    @Test
+    void copilotHome_returnsDotCopilotUnderUserHome() {
+        Path home = CopilotClient.copilotHome();
+        assertEquals(Path.of(System.getProperty("user.home"), ".copilot"), home);
+    }
+
+    // ── Reflection helpers (instance methods via Mockito) ───────────────
+
+    private static CopilotClient allocateClient() {
+        return Mockito.mock(CopilotClient.class, Mockito.CALLS_REAL_METHODS);
+    }
+
+    private static String invokeResolveToolId(String title) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("resolveToolId", String.class);
+        m.setAccessible(true);
+        return (String) m.invoke(allocateClient(), title);
+    }
+
+    private static PromptResponse invokeTryRecover(Exception cause) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("tryRecoverPromptException", Exception.class);
+        m.setAccessible(true);
+        return (PromptResponse) m.invoke(allocateClient(), cause);
+    }
+
+    private static String invokeGetModelMultiplier(Model model) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("getModelMultiplier", Model.class);
+        m.setAccessible(true);
+        return (String) m.invoke(allocateClient(), model);
+    }
+
+    private static JsonObject invokeParseToolCallArguments(JsonObject params) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("parseToolCallArguments", JsonObject.class);
+        m.setAccessible(true);
+        return (JsonObject) m.invoke(allocateClient(), params);
+    }
+
+    private static String invokeBuildSingleToolReprimand(String toolId) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("buildSingleToolReprimand", String.class);
+        m.setAccessible(true);
+        return (String) m.invoke(null, toolId);
     }
 }
