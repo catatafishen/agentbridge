@@ -880,6 +880,9 @@ table {
     display: block;
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    /* Firefox */
+    scrollbar-width: thin;
+    scrollbar-color: var(--fg-muted) transparent;
 }
 
 table::-webkit-scrollbar {
@@ -889,6 +892,11 @@ table::-webkit-scrollbar {
 table::-webkit-scrollbar-thumb {
     background: var(--fg-muted);
     border-radius: 2px;
+}
+
+/* Override global ::-webkit-scrollbar-thumb:hover to keep table scrollbar muted */
+table::-webkit-scrollbar-thumb:hover {
+    background: var(--fg-muted);
 }
 
 table::-webkit-scrollbar-track {
