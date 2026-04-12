@@ -29,7 +29,8 @@ public interface PlatformFacade {
     /**
      * Schedules {@code action} to run on the Event Dispatch Thread.
      *
-     * <p>In production this calls {@code EdtUtil.invokeLater(action)}.
+     * <p>In production this calls
+     * {@code ApplicationManager.getApplication().invokeLater(action)}.
      * In tests the action is run synchronously on the calling thread.
      */
     void invokeLater(Runnable action);

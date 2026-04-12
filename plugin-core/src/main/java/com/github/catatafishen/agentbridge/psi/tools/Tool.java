@@ -37,7 +37,7 @@ public abstract class Tool implements ToolDefinition {
     }
 
     /**
-     * Package-private constructor for unit tests.
+     * Constructor for unit tests — accessible from subclasses in any package.
      *
      * <p>Use {@code DirectPlatformFacade} (in the test source tree) to run threading
      * operations synchronously without requiring a running IntelliJ Platform:
@@ -45,7 +45,7 @@ public abstract class Tool implements ToolDefinition {
      *     MyTool tool = new MyTool(project, new DirectPlatformFacade());
      * </pre>
      */
-    Tool(Project project, PlatformFacade platform) {
+    protected Tool(Project project, PlatformFacade platform) {
         this.project = project;
         this.platform = platform;
     }
@@ -113,12 +113,11 @@ public abstract class Tool implements ToolDefinition {
             prop.addProperty(KEY_TYPE, p.type());
             prop.addProperty(KEY_DESCRIPTION, p.description());
             if (p.defaultValue() != null) {
-                if (p.defaultValue() instanceof String s) {
-                    prop.addProperty(KEY_DEFAULT, s);
-                } else if (p.defaultValue() instanceof Number n) {
-                    prop.addProperty(KEY_DEFAULT, n);
-                } else if (p.defaultValue() instanceof Boolean b) {
-                    prop.addProperty(KEY_DEFAULT, b);
+                switch (p.defaultValue()) {
+                    case String s -> prop.addProperty(KEY_DEFAULT, s);
+                    case Number n -> prop.addProperty(KEY_DEFAULT, n);
+                    case Boolean b -> prop.addProperty(KEY_DEFAULT, b);
+                    default -> { /* unsupported default value type — skip */ }
                 }
             }
             props.add(p.name(), prop);

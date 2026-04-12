@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.settings;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -60,10 +61,10 @@ class ScratchTypeSettingsTest {
     @DisplayName("getDefaultEnabledIds contains kotlin, yaml, Markdown and TEXT")
     void defaultEnabledIds_containsOtherExpected() {
         Set<String> ids = ScratchTypeSettings.getDefaultEnabledIds();
-        assertTrue(ids.contains("kotlin"),   "Expected kotlin");
-        assertTrue(ids.contains("yaml"),     "Expected yaml");
+        assertTrue(ids.contains("kotlin"), "Expected kotlin");
+        assertTrue(ids.contains("yaml"), "Expected yaml");
         assertTrue(ids.contains("Markdown"), "Expected Markdown");
-        assertTrue(ids.contains("TEXT"),     "Expected TEXT");
+        assertTrue(ids.contains("TEXT"), "Expected TEXT");
     }
 
     // ── getDefaults ───────────────────────────────────────────────────────────
@@ -104,7 +105,7 @@ class ScratchTypeSettingsTest {
     @DisplayName("getDefaults maps zsh → sh and shell → sh")
     void defaults_zshAndShellToSh() {
         Map<String, String> m = ScratchTypeSettings.getDefaults();
-        assertEquals("sh", m.get("zsh"),   "zsh → sh");
+        assertEquals("sh", m.get("zsh"), "zsh → sh");
         assertEquals("sh", m.get("shell"), "shell → sh");
     }
 
@@ -168,8 +169,10 @@ class ScratchTypeSettingsTest {
         ScratchTypeSettings settings = new ScratchTypeSettings();
         try {
             assertEquals("sh", settings.resolve("bash"));
+        } catch (AssertionError e) {
+            throw e;
         } catch (Throwable t) {
-            // Language.getRegisteredLanguages() unavailable without IntelliJ platform — skip gracefully
+            Assumptions.abort("Skipping: IntelliJ Language registry unavailable — " + t.getMessage());
         }
     }
 
@@ -181,8 +184,10 @@ class ScratchTypeSettingsTest {
         ScratchTypeSettings settings = new ScratchTypeSettings();
         try {
             assertEquals("xyz123", settings.resolve("xyz123"));
+        } catch (AssertionError e) {
+            throw e;
         } catch (Throwable t) {
-            // Language.getRegisteredLanguages() unavailable without IntelliJ platform — skip gracefully
+            Assumptions.abort("Skipping: IntelliJ Language registry unavailable — " + t.getMessage());
         }
     }
 
@@ -193,8 +198,10 @@ class ScratchTypeSettingsTest {
     void resolveViaLanguageRegistry_unknownLabel_returnsNull() {
         try {
             assertNull(ScratchTypeSettings.resolveViaLanguageRegistry("__definitely_unknown_label_xyz__"));
+        } catch (AssertionError e) {
+            throw e;
         } catch (Throwable t) {
-            // Language registry unavailable without IntelliJ platform — skip gracefully
+            Assumptions.abort("Skipping: IntelliJ Language registry unavailable — " + t.getMessage());
         }
     }
 }
