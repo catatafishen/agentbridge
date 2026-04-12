@@ -153,18 +153,18 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           ARTIFACTS_DIR: ${{ steps.artifacts.outputs.dir }}
         run: |
-          git tag "$TAG"
-          git push origin "$TAG"
-
           # Generate release notes from conventional commits
-          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n2 | tail -n1)
-          if [ "$LATEST_TAG" = "$TAG" ]; then
+          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+          if [ -z "$LATEST_TAG" ]; then
             NOTES=$(git log --pretty=format:"- %s" HEAD)
           else
-            NOTES=$(git log --pretty=format:"- %s" "${LATEST_TAG}..HEAD~0")
+            NOTES=$(git log --pretty=format:"- %s" "${LATEST_TAG}..HEAD")
           fi
 
+          # Create tag + release via GitHub API (no git credentials needed;
+          # persist-credentials: false is set on checkout for security)
           gh release create "$TAG" \
+            --target "$GITHUB_SHA" \
             --title "Release $TAG" \
             --notes "$NOTES" \
             "$ARTIFACTS_DIR"/*.zip \
