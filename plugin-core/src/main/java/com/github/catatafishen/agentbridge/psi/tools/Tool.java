@@ -29,10 +29,25 @@ import java.util.concurrent.TimeoutException;
 public abstract class Tool implements ToolDefinition {
 
     protected final Project project;
+    protected final PlatformFacade platform;
     protected String argumentsHash;
 
     protected Tool(Project project) {
+        this(project, PlatformFacade.application());
+    }
+
+    /**
+     * Package-private constructor for unit tests.
+     *
+     * <p>Use {@code DirectPlatformFacade} (in the test source tree) to run threading
+     * operations synchronously without requiring a running IntelliJ Platform:
+     * <pre>
+     *     MyTool tool = new MyTool(project, new DirectPlatformFacade());
+     * </pre>
+     */
+    Tool(Project project, PlatformFacade platform) {
         this.project = project;
+        this.platform = platform;
     }
 
     @Override
@@ -186,7 +201,13 @@ public abstract class Tool implements ToolDefinition {
                     .withActivateToolWindow(true)
                     .run();
             } catch (Exception e) {
-                processHandler.startNotify();
+                // RunContentExecutor.run() may have already called startNotify() before
+                // throwing (e.g. if the Run panel fails to register the content descriptor).
+                // Only call startNotify() here if the process was not yet started, so the
+                // process output listeners can still receive events and the exit future completes.
+                if (!processHandler.isStartNotified()) {
+                    processHandler.startNotify();
+                }
             }
         });
 

@@ -415,4 +415,32 @@ public class QualityToolsExtendedTest extends BasePlatformTestCase {
         assertTrue("Expected out-of-bounds error, got: " + result,
             result.startsWith("Error:") || result.contains("out of bounds") || result.contains("bounds"));
     }
+
+    // ── QualityToolFactory ──────────────────────────────────────────────────────
+
+    /**
+     * When {@code hasSonar=true}, the factory must include SonarQube tools in the
+     * returned list. This covers the {@code if (hasSonar)} branch in
+     * {@link QualityToolFactory#create}.
+     */
+    public void testQualityToolFactoryIncludesSonarToolsWhenEnabled() {
+        var tools = QualityToolFactory.create(getProject(), true);
+        boolean hasSonarAnalysis = tools.stream().anyMatch(
+            t -> t.id().equals("run_sonarqube_analysis"));
+        boolean hasSonarRule = tools.stream().anyMatch(
+            t -> t.id().equals("get_sonar_rule_description"));
+        assertTrue("Factory must include run_sonarqube_analysis when hasSonar=true", hasSonarAnalysis);
+        assertTrue("Factory must include get_sonar_rule_description when hasSonar=true", hasSonarRule);
+    }
+
+    /**
+     * When {@code hasSonar=false}, the factory must NOT include SonarQube tools.
+     */
+    public void testQualityToolFactoryExcludesSonarToolsWhenDisabled() {
+        var tools = QualityToolFactory.create(getProject(), false);
+        boolean hasSonarAnalysis = tools.stream().anyMatch(
+            t -> t.id().equals("run_sonarqube_analysis"));
+        assertFalse("Factory must not include run_sonarqube_analysis when hasSonar=false",
+            hasSonarAnalysis);
+    }
 }

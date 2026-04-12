@@ -518,4 +518,135 @@ public class GitToolsTest extends BasePlatformTestCase {
                 || result.contains("untracked");
         assertTrue("Error must include actionable guidance, got: " + result, containsHint);
     }
+
+    // ── GitLogTool — additional format/filter tests ───────────────────────────────
+
+    /**
+     * The {@code full} format produces the longest output; it must include author
+     * and commit-date lines.
+     */
+    public void testGitLogFullFormatContainsCommitDate() throws Exception {
+        GitLogTool tool = new GitLogTool(getProject());
+        String result = tool.execute(args("format", "full"));
+
+        assertNotNull(result);
+        assertFalse("Result should not start with 'Error', got: " + result,
+            result.startsWith("Error"));
+        assertTrue("Full format must contain 'Author:', got: " + result,
+            result.contains("Author:"));
+    }
+
+    /**
+     * The {@code author} filter narrows the log to commits by a matching author.
+     * Using "test@example.com" (the address configured in setUp) must return the
+     * single test commit.
+     */
+    public void testGitLogWithAuthorFilter() throws Exception {
+        GitLogTool tool = new GitLogTool(getProject());
+        String result = tool.execute(args("author", "test@example.com"));
+
+        assertNotNull(result);
+        assertFalse("Result should not start with 'Error', got: " + result,
+            result.startsWith("Error"));
+        assertTrue("Expected initial test commit in author-filtered log, got: " + result,
+            result.contains("initial test commit"));
+    }
+
+    /**
+     * The {@code since} filter applied to a date in the past must include the
+     * initial test commit created during setUp.
+     */
+    public void testGitLogWithSinceFilter() throws Exception {
+        GitLogTool tool = new GitLogTool(getProject());
+        String result = tool.execute(args("since", "2000-01-01"));
+
+        assertNotNull(result);
+        assertFalse("Result should not start with 'Error', got: " + result,
+            result.startsWith("Error"));
+        assertTrue("Expected initial test commit in since-filtered log, got: " + result,
+            result.contains("initial test commit"));
+    }
+
+    /**
+     * The {@code until} filter applied to a date far in the future must include
+     * the initial test commit.
+     */
+    public void testGitLogWithUntilFilter() throws Exception {
+        GitLogTool tool = new GitLogTool(getProject());
+        String result = tool.execute(args("until", "2099-12-31"));
+
+        assertNotNull(result);
+        assertFalse("Result should not start with 'Error', got: " + result,
+            result.startsWith("Error"));
+        assertTrue("Expected initial test commit in until-filtered log, got: " + result,
+            result.contains("initial test commit"));
+    }
+
+    /**
+     * The {@code path} filter limits log to commits touching a specific file.
+     * "README.md" was staged and committed in setUp, so the initial commit must appear.
+     */
+    public void testGitLogWithPathFilter() throws Exception {
+        GitLogTool tool = new GitLogTool(getProject());
+        String result = tool.execute(args("path", "README.md"));
+
+        assertNotNull(result);
+        assertFalse("Result should not start with 'Error', got: " + result,
+            result.startsWith("Error"));
+        assertTrue("Expected initial test commit in path-filtered log, got: " + result,
+            result.contains("initial test commit"));
+    }
+
+    /**
+     * The {@code branch} filter selects which branch's history to show.
+     * "master" or "main" should both be valid; the test uses HEAD's branch name
+     * which avoids hardcoding the default branch name.
+     */
+    public void testGitLogWithBranchFilter() throws Exception {
+        // Resolve the actual branch name to avoid hardcoding "master" vs "main".
+        List<String> branchCmd = new ArrayList<>(List.of(gitExec, "rev-parse", "--abbrev-ref", "HEAD"));
+        Process branchProcess = new ProcessBuilder(branchCmd)
+            .directory(new File(basePath))
+            .redirectErrorStream(true)
+            .start();
+        String branchName = new String(branchProcess.getInputStream().readAllBytes()).trim();
+        branchProcess.waitFor();
+        assertFalse("Expected a valid branch name, got: " + branchName, branchName.isBlank());
+
+        GitLogTool tool = new GitLogTool(getProject());
+        String result = tool.execute(args("branch", branchName));
+
+        assertNotNull(result);
+        assertFalse("Result should not start with 'Error', got: " + result,
+            result.startsWith("Error"));
+        assertTrue("Expected initial test commit in branch-filtered log, got: " + result,
+            result.contains("initial test commit"));
+    }
+
+    // ── GitStatusTool — stash coverage ────────────────────────────────────────────
+
+    /**
+     * After creating a stash the status output must include a stash count line.
+     * This exercises the stash-counting branch in {@link GitStatusTool#execute}.
+     */
+    public void testGitStatusWithStashIncludesStashCount() throws Exception {
+        // Create a dirty working tree so git stash has something to stash.
+        java.nio.file.Files.writeString(
+            java.nio.file.Path.of(basePath, "README.md"),
+            "# Modified for stash test\n"
+        );
+        git("stash");
+
+        GitStatusTool tool = new GitStatusTool(getProject());
+        String result = tool.execute(new JsonObject());
+
+        assertNotNull(result);
+        assertFalse("Result should not start with 'Error', got: " + result,
+            result.startsWith("Error"));
+        assertTrue("Expected 'Stash:' line in output with non-empty stash, got: " + result,
+            result.contains("Stash:"));
+
+        // Restore working tree by popping the stash for clean test isolation.
+        git("stash", "pop");
+    }
 }
