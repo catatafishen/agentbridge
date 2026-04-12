@@ -9,11 +9,8 @@ import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -21,9 +18,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * Exports {@link EntryData} list into OpenCode's native SQLite format.
@@ -277,55 +272,19 @@ public final class OpenCodeClientExporter {
     // ── ID generation ─────────────────────────────────────────────────────────
 
     private static @NotNull List<EntryData> trimEntriesToBudget(@NotNull List<EntryData> entries, int maxTotalChars) {
-        if (maxTotalChars <= 0) return entries;
-
-        int total = countTotalChars(entries);
-        if (total <= maxTotalChars) return entries;
-
-        List<EntryData> result = new ArrayList<>(entries);
-        while (total > maxTotalChars) {
-            int secondPromptIdx = findSecondPromptIndex(result);
-            if (secondPromptIdx != -1) {
-                int charsDropped = countTotalChars(result.subList(0, secondPromptIdx));
-                result.subList(0, secondPromptIdx).clear();
-                total -= charsDropped;
-            } else {
-                int freed = dropOldestNonPrompt(result);
-                if (freed < 0) break; // nothing to drop
-                total -= freed;
-            }
-        }
-        return result;
+        return EntryBudgetTrimmer.trimEntriesToBudget(entries, maxTotalChars);
     }
 
     private static int countEntryChars(@NotNull EntryData e) {
-        return switch (e) {
-            case EntryData.Prompt p -> p.getText().length();
-            case EntryData.Text t -> t.getRaw().length();
-            case EntryData.ToolCall tc -> {
-                int n = 0;
-                if (tc.getArguments() != null) n += tc.getArguments().length();
-                if (tc.getResult() != null) n += tc.getResult().length();
-                yield n;
-            }
-            default -> 0;
-        };
+        return EntryBudgetTrimmer.countEntryChars(e);
     }
 
     private static int countTotalChars(@NotNull List<EntryData> entries) {
-        int total = 0;
-        for (EntryData e : entries) total += countEntryChars(e);
-        return total;
+        return EntryBudgetTrimmer.countTotalChars(entries);
     }
 
     private static int findSecondPromptIndex(@NotNull List<EntryData> entries) {
-        int promptsSeen = 0;
-        for (int i = 0; i < entries.size(); i++) {
-            if (entries.get(i) instanceof EntryData.Prompt && ++promptsSeen == 2) {
-                return i;
-            }
-        }
-        return -1;
+        return EntryBudgetTrimmer.findSecondPromptIndex(entries);
     }
 
     /**
@@ -333,13 +292,7 @@ public final class OpenCodeClientExporter {
      * Returns the number of characters freed, or -1 if nothing could be dropped.
      */
     private static int dropOldestNonPrompt(@NotNull List<EntryData> result) {
-        for (int i = 1; i < result.size(); i++) {
-            if (!(result.get(i) instanceof EntryData.Prompt)) {
-                EntryData dropped = result.remove(i);
-                return countEntryChars(dropped);
-            }
-        }
-        return -1;
+        return EntryBudgetTrimmer.dropOldestNonPrompt(result);
     }
 
     /**
@@ -348,8 +301,7 @@ public final class OpenCodeClientExporter {
      */
     @NotNull
     private static String generateId(@NotNull String prefix) {
-        String uuid = UUID.randomUUID().toString().replace("-", "");
-        return prefix + "_" + uuid;
+        return EntryBudgetTrimmer.generateId(prefix);
     }
 
     // ── Project handling ──────────────────────────────────────────────────────
@@ -392,14 +344,7 @@ public final class OpenCodeClientExporter {
 
     @NotNull
     private static String sha1Hex(@NotNull String input) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-1");
-            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException e) {
-            // SHA-1 is always available in Java
-            throw new IllegalStateException("SHA-1 not available", e);
-        }
+        return EntryBudgetTrimmer.sha1Hex(input);
     }
 
     // ── Table creation (for fresh databases only) ─────────────────────────────

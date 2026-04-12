@@ -92,17 +92,7 @@ class PromptContextManager(
      * from the corresponding context item, e.g. `` `AuthLoginService.kt:116-170` ``.
      */
     fun replaceOrcsWithTextRefs(rawText: String, items: List<ContextItemData>): String {
-        if (items.isEmpty()) return rawText.replace(ORC.toString(), "").trim()
-        val sb = StringBuilder()
-        var idx = 0
-        for (ch in rawText) {
-            if (ch == ORC && idx < items.size) {
-                sb.append('`').append(items[idx++].name).append('`')
-            } else {
-                sb.append(ch)
-            }
-        }
-        return sb.toString().trim()
+        return ContextTextUtils.replaceOrcsWithTextRefs(rawText, items)
     }
 
     // ── Clipboard detection ───────────────────────────────────────────
@@ -164,11 +154,7 @@ class PromptContextManager(
      * mismatches (partial first-line selection, mixed tabs/spaces) still match.
      */
     private fun normalizedEquals(a: String, b: String, tabSize: Int): Boolean {
-        if (a == b) return true
-        val spaces = " ".repeat(tabSize.coerceAtLeast(1))
-        val normA = a.replace("\t", spaces).lines().joinToString("\n") { it.trimEnd() }
-        val normB = b.replace("\t", spaces).lines().joinToString("\n") { it.trimEnd() }
-        return normA == normB
+        return ContextTextUtils.normalizedEquals(a, b, tabSize)
     }
 
     // ── File attachment actions ────────────────────────────────────────
@@ -317,14 +303,6 @@ class PromptContextManager(
     }
 
     private fun getMimeTypeForFileType(fileTypeName: String): String {
-        return when (fileTypeName) {
-            "java" -> "text/x-java"
-            "kotlin" -> "text/x-kotlin"
-            "python" -> "text/x-python"
-            "javascript" -> "text/javascript"
-            "typescript" -> "text/typescript"
-            "xml", "html" -> "text/$fileTypeName"
-            else -> "text/plain"
-        }
+        return ContextTextUtils.getMimeTypeForFileType(fileTypeName)
     }
 }

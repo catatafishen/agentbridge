@@ -24,10 +24,6 @@ import com.intellij.psi.PsiManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -45,7 +41,6 @@ public final class RunTestsTool extends TestingTool {
 
     private static final String JSON_MODULE = "module";
     private static final String PARAM_TARGET = "target";
-    private static final String PARAM_MESSAGE = "message";
     private static final String TEST_TYPE_METHOD = "method";
     private static final String TEST_TYPE_CLASS = "class";
     private static final String TEST_TYPE_PATTERN = "pattern";
@@ -583,18 +578,7 @@ public final class RunTestsTool extends TestingTool {
     // ── Result parsing helpers ───────────────────────────────
 
     private String[] parseTestTarget(String target) {
-        String testClass = target;
-        String testMethod = null;
-        int lastDot = target.lastIndexOf('.');
-        if (lastDot > 0) {
-            String possibleMethod = target.substring(lastDot + 1);
-            String possibleClass = target.substring(0, lastDot);
-            if (!possibleMethod.isEmpty() && Character.isLowerCase(possibleMethod.charAt(0))) {
-                testClass = possibleClass;
-                testMethod = possibleMethod;
-            }
-        }
-        return new String[]{testClass, testMethod};
+        return JunitXmlParser.parseTestTarget(target);
     }
 
     private String extractClassFqn(PsiFile psiFile, String simpleName) {
@@ -716,113 +700,7 @@ public final class RunTestsTool extends TestingTool {
     // ── JUnit XML result parsing ─────────────────────────────
 
     private String parseJunitXmlResults(String basePath, String module) {
-        List<Path> reportDirs = findTestReportDirs(basePath, module);
-        if (reportDirs.isEmpty()) return "";
-
-        int totalTests = 0;
-        int totalFailed = 0;
-        int totalErrors = 0;
-        int totalSkipped = 0;
-        double totalTime = 0;
-        List<String> failures = new ArrayList<>();
-
-        for (Path reportDir : reportDirs) {
-            try (var xmlFiles = Files.list(reportDir)) {
-                for (Path xmlFile : xmlFiles.filter(p -> p.toString().endsWith(".xml")).toList()) {
-                    TestSuiteResult result = parseTestSuiteXml(xmlFile);
-                    if (result == null) continue;
-                    totalTests += result.tests;
-                    totalFailed += result.failed;
-                    totalErrors += result.errors;
-                    totalSkipped += result.skipped;
-                    totalTime += result.time;
-                    failures.addAll(result.failures);
-                }
-            } catch (IOException ignored) {
-                // IO errors during directory listing are non-fatal
-            }
-        }
-
-        if (totalTests == 0) return "";
-        return formatTestResults(totalTests, totalFailed, totalErrors, totalSkipped, totalTime, failures);
+        return JunitXmlParser.parseJunitXmlResults(basePath, module);
     }
 
-    private List<Path> findTestReportDirs(String basePath, String module) {
-        List<Path> reportDirs = new ArrayList<>();
-        if (module.isEmpty()) {
-            try (var dirs = Files.walk(Path.of(basePath), 4)) {
-                dirs.filter(p -> p.endsWith("test-results/test") && Files.isDirectory(p))
-                    .forEach(reportDirs::add);
-            } catch (IOException ignored) {
-                // Directory walk errors are non-fatal
-            }
-        } else {
-            Path dir = Path.of(basePath, module, ToolUtils.BUILD_DIR, "test-results", "test");
-            if (Files.isDirectory(dir)) reportDirs.add(dir);
-        }
-        return reportDirs;
-    }
-
-    private record TestSuiteResult(int tests, int failed, int errors, int skipped,
-                                   double time, List<String> failures) {
-    }
-
-    private TestSuiteResult parseTestSuiteXml(Path xmlFile) {
-        try {
-            var dbf = DocumentBuilderFactory.newInstance();
-            //noinspection HttpUrlsUsage - XML feature URI, not an actual URL
-            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            var doc = dbf.newDocumentBuilder().parse(xmlFile.toFile());
-            var suites = doc.getElementsByTagName("testsuite");
-
-            int tests = 0;
-            int failed = 0;
-            int errors = 0;
-            int skipped = 0;
-            double time = 0;
-            List<String> failures = new ArrayList<>();
-
-            for (int i = 0; i < suites.getLength(); i++) {
-                var suite = suites.item(i);
-                tests += intAttr(suite, "tests");
-                failed += intAttr(suite, "failures");
-                errors += intAttr(suite, "errors");
-                skipped += intAttr(suite, "skipped");
-                time += doubleAttr(suite, "time");
-                collectFailureDetails((org.w3c.dom.Element) suite, failures);
-            }
-            return new TestSuiteResult(tests, failed, errors, skipped, time, failures);
-        } catch (Exception ignored) {
-            // XML parsing errors are non-fatal
-            return null;
-        }
-    }
-
-    private static void collectFailureDetails(org.w3c.dom.Element suite, List<String> failures) {
-        var testcases = suite.getElementsByTagName("testcase");
-        for (int j = 0; j < testcases.getLength(); j++) {
-            var tc = testcases.item(j);
-            var failNodes = ((org.w3c.dom.Element) tc).getElementsByTagName("failure");
-            if (failNodes.getLength() > 0) {
-                String tcName = tc.getAttributes().getNamedItem("name").getNodeValue();
-                String cls = tc.getAttributes().getNamedItem("classname").getNodeValue();
-                String msg = failNodes.item(0).getAttributes().getNamedItem(PARAM_MESSAGE).getNodeValue();
-                failures.add(String.format("  %s.%s: %s", cls, tcName, msg));
-            }
-        }
-    }
-
-    private static String formatTestResults(int totalTests, int totalFailed, int totalErrors,
-                                            int totalSkipped, double totalTime, List<String> failures) {
-        int passed = totalTests - totalFailed - totalErrors - totalSkipped;
-        StringBuilder sb = new StringBuilder();
-        sb.append(String.format("Test Results: %d tests, %d passed, %d failed, %d errors, %d skipped (%.1fs)%n",
-            totalTests, passed, totalFailed, totalErrors, totalSkipped, totalTime));
-
-        if (!failures.isEmpty()) {
-            sb.append("\nFailures:\n");
-            failures.forEach(f -> sb.append(f).append("\n"));
-        }
-        return sb.toString().trim();
-    }
 }

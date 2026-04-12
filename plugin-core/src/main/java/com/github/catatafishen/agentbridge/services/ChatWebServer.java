@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings;
 import com.github.catatafishen.agentbridge.settings.ChatWebServerSettings;
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
+import com.github.catatafishen.agentbridge.ui.MessageFormatter;
 import com.google.gson.Gson;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
@@ -459,63 +460,16 @@ public final class ChatWebServer implements Disposable {
         broadcast(json);
     }
 
-    /**
-     * Compacts the event log by removing streaming events that are superseded by
-     * a finalization event.  When {@code finalizeAgentText('t0','main',...)} arrives,
-     * all preceding {@code appendAgentText('t0','main',...)} events become redundant.
-     * Similarly, {@code collapseThinking} supersedes {@code addThinkingText}.
-     *
-     * <p>Without compaction, streaming text tokens dominate the event log (50-200 events
-     * per agent turn) and eventually evict critical events like {@code restoreBatch} —
-     * causing the PWA to show empty messages on initial page load.
-     *
-     * <p>Must be called while holding the monitor on {@code this}.
-     */
     private void compactStreamingEvents(String js) {
-        String removePrefix = null;
-        if (js.startsWith("ChatController.finalizeAgentText(")) {
-            removePrefix = buildStreamingPrefix(js, "ChatController.finalizeAgentText(", "ChatController.appendAgentText(");
-        } else if (js.startsWith("ChatController.collapseThinking(")) {
-            removePrefix = buildStreamingPrefix(js, "ChatController.collapseThinking(", "ChatController.addThinkingText(");
-        }
-        if (removePrefix != null) {
-            // GSON HTML-escapes single quotes as \u0027 — encode the prefix to match
-            String encodedPrefix = removePrefix.replace("'", "\\u0027");
-            eventLog.removeIf(ev -> eventJsStartsWith(ev, encodedPrefix));
-        }
+        EventLogCompactor.compactStreamingEvents(js, eventLog);
     }
 
-    /**
-     * Extracts the first two single-quoted arguments (turnId, agentId) from a JS call
-     * and builds the corresponding streaming-event prefix.
-     *
-     * <p>E.g., for {@code ChatController.finalizeAgentText('t0','main','html')} with
-     * {@code streamPrefix = "ChatController.appendAgentText("}, returns
-     * {@code "ChatController.appendAgentText('t0','main',"}.
-     */
     static @Nullable String buildStreamingPrefix(String js, String finalizePrefix, String streamPrefix) {
-        int q1 = js.indexOf('\'', finalizePrefix.length());
-        if (q1 < 0) return null;
-        int q2 = js.indexOf('\'', q1 + 1);
-        if (q2 < 0) return null;
-        int q3 = js.indexOf('\'', q2 + 1);
-        if (q3 < 0) return null;
-        int q4 = js.indexOf('\'', q3 + 1);
-        if (q4 < 0) return null;
-        String turnId = js.substring(q1 + 1, q2);
-        String agentId = js.substring(q3 + 1, q4);
-        return streamPrefix + "'" + turnId + "','" + agentId + "',";
+        return EventLogCompactor.buildStreamingPrefix(js, finalizePrefix, streamPrefix);
     }
 
-    /**
-     * Checks whether the {@code js} field of the given event JSON starts with {@code jsPrefix}.
-     * Uses fast string matching to avoid full JSON parsing.
-     */
     static boolean eventJsStartsWith(String eventJson, String jsPrefix) {
-        int idx = eventJson.indexOf("\"js\":\"");
-        if (idx < 0) return false;
-        int jsStart = idx + 6;
-        return eventJson.startsWith(jsPrefix, jsStart);
+        return EventLogCompactor.eventJsStartsWith(eventJson, jsPrefix);
     }
 
     /**
@@ -1350,41 +1304,15 @@ public final class ChatWebServer implements Disposable {
     }
 
     private static int parseFromQuery(@Nullable String query) {
-        if (query == null) return 0;
-        for (String part : query.split("&")) {
-            if (part.startsWith("from=")) {
-                try {
-                    return Integer.parseInt(part.substring(5));
-                } catch (NumberFormatException ignored) {
-                }
-            }
-        }
-        return 0;
+        return EventLogCompactor.parseFromQuery(query);
     }
 
     private static int extractSeq(String json) {
-        // Fast extraction of "seq":N from JSON string (avoids full parse)
-        int idx = json.indexOf("\"seq\":");
-        if (idx < 0) return 0;
-        int start = idx + 6;
-        int end = start;
-        while (end < json.length() && Character.isDigit(json.charAt(end))) end++;
-        try {
-            return Integer.parseInt(json.substring(start, end));
-        } catch (NumberFormatException e) {
-            return 0;
-        }
+        return EventLogCompactor.extractSeq(json);
     }
 
-    /**
-     * Extracts the first single-quoted string argument from a JS call like ChatController.fn('value')
-     */
     private static String extractFirstStringArg(String js) {
-        int start = js.indexOf('\'');
-        if (start < 0) return "";
-        int end = js.indexOf('\'', start + 1);
-        if (end < 0) return "";
-        return js.substring(start + 1, end);
+        return EventLogCompactor.extractFirstStringArg(js);
     }
 
     private static @Nullable String jsonString(String body, String key) {
@@ -1459,7 +1387,7 @@ public final class ChatWebServer implements Disposable {
             + "<head>\n"
             + "  <meta charset=\"utf-8\">\n"
             + "  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">\n"
-            + "  <title>AgentBridge — " + escHtml(projectName) + "</title>\n"
+            + "  <title>AgentBridge — " + MessageFormatter.INSTANCE.escapeHtml(projectName) + "</title>\n"
             + "  <link rel=\"manifest\" href=\"/manifest.json\">\n"
             + "  <link rel=\"stylesheet\" href=\"/chat.css\">\n"
             + "  <link rel=\"stylesheet\" href=\"/web-app.css\">\n"
@@ -1468,7 +1396,7 @@ public final class ChatWebServer implements Disposable {
             + "<body class=\"" + bodyClass + "\">\n"
             + "  <div id=\"ab-offline\">Connection lost, reconnecting…</div>\n"
             + "  <div id=\"ab-header\">\n"
-            + "    <div id=\"ab-title\">AgentBridge — " + escHtml(projectName) + "</div>\n"
+            + "    <div id=\"ab-title\">AgentBridge — " + MessageFormatter.INSTANCE.escapeHtml(projectName) + "</div>\n"
             + "    <div id=\"ab-model\"></div>\n"
             + "    <div id=\"ab-status\" title=\"Connecting…\"></div>\n"
             + "    <button id=\"ab-menu-btn\" aria-label=\"Menu\" title=\"Menu\">☰</button>\n"
@@ -1520,10 +1448,6 @@ public final class ChatWebServer implements Disposable {
             + "  <script src=\"/web-app.js\"></script>\n"
             + "</body>\n"
             + "</html>\n";
-    }
-
-    private static String escHtml(String s) {
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private static String escJs(String s) {
