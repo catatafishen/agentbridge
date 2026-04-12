@@ -2,11 +2,17 @@ package com.github.catatafishen.agentbridge.ui.statistics;
 
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -153,6 +159,107 @@ class UsageStatisticsLoaderTest {
         String fallback = "2024-03-20T12:00:00Z";
         // An invalid object timestamp returns null; the fallback is only used when the timestamp is absent.
         assertNull(invokeExtractDate(obj, fallback));
+    }
+
+    // ── collectTurnStats (private static) ──────────────────────────────
+
+    /**
+     * Two {@code TurnStats} entries on the same date (UTC) and same agentId
+     * must land in the same accumulator bucket → map size == 1.
+     */
+    @Test
+    void collectTurnStats_twoEntriesSameDateProducesOneAccumulator(@TempDir Path tempDir) throws Exception {
+        Path jsonlPath = tempDir.resolve("session.jsonl");
+        String line1 = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":5000,"
+                + "\"inputTokens\":100,\"outputTokens\":200,\"toolCallCount\":3,"
+                + "\"linesAdded\":10,\"linesRemoved\":5,\"multiplier\":\"1x\","
+                + "\"timestamp\":\"2024-06-15T10:00:00Z\",\"entryId\":\"e1\"}";
+        String line2 = "{\"type\":\"turnStats\",\"turnId\":\"t2\",\"durationMs\":3000,"
+                + "\"inputTokens\":50,\"outputTokens\":100,\"toolCallCount\":1,"
+                + "\"linesAdded\":5,\"linesRemoved\":2,\"multiplier\":\"1x\","
+                + "\"timestamp\":\"2024-06-15T12:00:00Z\",\"entryId\":\"e2\"}";
+        Files.writeString(jsonlPath, line1 + "\n" + line2 + "\n");
+
+        Map<Object, Object> accumulators = new LinkedHashMap<>();
+        Method m = UsageStatisticsLoader.class.getDeclaredMethod(
+                "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class);
+        m.setAccessible(true);
+        m.invoke(null, jsonlPath, "copilot",
+                LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31), accumulators);
+
+        assertEquals(1, accumulators.size(),
+                "Two entries on the same date/agent should produce exactly one accumulator bucket");
+    }
+
+    @Test
+    void collectTurnStats_emptyFile_producesNoAccumulators(@TempDir Path tempDir) throws Exception {
+        Path jsonlPath = tempDir.resolve("empty.jsonl");
+        Files.writeString(jsonlPath, "");
+
+        Map<Object, Object> accumulators = new LinkedHashMap<>();
+        Method m = UsageStatisticsLoader.class.getDeclaredMethod(
+                "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class);
+        m.setAccessible(true);
+        m.invoke(null, jsonlPath, "copilot",
+                LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31), accumulators);
+
+        assertTrue(accumulators.isEmpty(), "Empty JSONL file should produce no accumulators");
+    }
+
+    @Test
+    void collectTurnStats_entryOutsideDateRange_producesNoAccumulators(@TempDir Path tempDir) throws Exception {
+        Path jsonlPath = tempDir.resolve("old.jsonl");
+        // Entry is in 2023; range is restricted to 2025
+        String line = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":1000,"
+                + "\"inputTokens\":10,\"outputTokens\":20,\"toolCallCount\":1,"
+                + "\"linesAdded\":1,\"linesRemoved\":0,\"multiplier\":\"1x\","
+                + "\"timestamp\":\"2023-01-01T00:00:00Z\",\"entryId\":\"e1\"}";
+        Files.writeString(jsonlPath, line + "\n");
+
+        Map<Object, Object> accumulators = new LinkedHashMap<>();
+        Method m = UsageStatisticsLoader.class.getDeclaredMethod(
+                "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class);
+        m.setAccessible(true);
+        m.invoke(null, jsonlPath, "copilot",
+                LocalDate.of(2025, 1, 1), LocalDate.of(2025, 12, 31), accumulators);
+
+        assertTrue(accumulators.isEmpty(), "Entry outside the date range should not be accumulated");
+    }
+
+    // ── buildDailyStats (private static) ───────────────────────────────
+
+    /**
+     * Populates an accumulators map via {@code collectTurnStats} (already tested
+     * above), then passes it to {@code buildDailyStats} and verifies the result
+     * is non-null and non-empty.  {@code DayAgentKey} is private so we reuse the
+     * map produced by reflection — no need to construct the key directly.
+     */
+    @Test
+    void buildDailyStats_withPopulatedAccumulators_returnsNonEmptyList(@TempDir Path tempDir) throws Exception {
+        // Populate the accumulators map
+        Path jsonlPath = tempDir.resolve("session.jsonl");
+        String line = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":5000,"
+                + "\"inputTokens\":100,\"outputTokens\":200,\"toolCallCount\":3,"
+                + "\"linesAdded\":10,\"linesRemoved\":5,\"multiplier\":\"1x\","
+                + "\"timestamp\":\"2024-06-15T10:00:00Z\",\"entryId\":\"e1\"}";
+        Files.writeString(jsonlPath, line + "\n");
+
+        Map<Object, Object> accumulators = new LinkedHashMap<>();
+        Method collectMethod = UsageStatisticsLoader.class.getDeclaredMethod(
+                "collectTurnStats", Path.class, String.class, LocalDate.class, LocalDate.class, Map.class);
+        collectMethod.setAccessible(true);
+        collectMethod.invoke(null, jsonlPath, "copilot",
+                LocalDate.of(2024, 1, 1), LocalDate.of(2024, 12, 31), accumulators);
+
+        assertFalse(accumulators.isEmpty(), "Precondition: accumulators must be populated by collectTurnStats");
+
+        // Now invoke buildDailyStats with the populated map
+        Method buildMethod = UsageStatisticsLoader.class.getDeclaredMethod("buildDailyStats", Map.class);
+        buildMethod.setAccessible(true);
+        List<?> result = (List<?>) buildMethod.invoke(null, accumulators);
+
+        assertNotNull(result);
+        assertFalse(result.isEmpty());
     }
 
     // ── Reflection helpers ──────────────────────────────────────────────

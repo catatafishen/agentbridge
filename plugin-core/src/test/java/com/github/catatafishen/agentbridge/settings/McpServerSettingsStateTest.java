@@ -204,4 +204,50 @@ class McpServerSettingsStateTest {
         settings.setPort(7777);
         assertEquals(7777, settings.getState().getPort());
     }
+
+    // ── TransportMode ─────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("transportMode defaults to STREAMABLE_HTTP")
+    void defaultTransportMode() {
+        assertEquals(TransportMode.STREAMABLE_HTTP, settings.getTransportMode());
+    }
+
+    @Test
+    @DisplayName("transportMode round-trips correctly")
+    void transportModeRoundTrip() {
+        settings.setTransportMode(TransportMode.SSE);
+        assertEquals(TransportMode.SSE, settings.getTransportMode());
+        settings.setTransportMode(TransportMode.STREAMABLE_HTTP);
+        assertEquals(TransportMode.STREAMABLE_HTTP, settings.getTransportMode());
+    }
+
+    // ── Color key round-trips (edit / execute / search) ───────────────────────
+
+    @Test
+    @DisplayName("kindEditColorKey round-trips correctly")
+    void kindEditColorKeyRoundTrip() {
+        settings.setKindEditColorKey("EditorError.foreground");
+        assertEquals("EditorError.foreground", settings.getKindEditColorKey());
+        settings.setKindEditColorKey(null);
+        assertNull(settings.getKindEditColorKey());
+    }
+
+    @Test
+    @DisplayName("kindExecuteColorKey round-trips correctly")
+    void kindExecuteColorKeyRoundTrip() {
+        settings.setKindExecuteColorKey("EditorWarning.foreground");
+        assertEquals("EditorWarning.foreground", settings.getKindExecuteColorKey());
+        settings.setKindExecuteColorKey(null);
+        assertNull(settings.getKindExecuteColorKey());
+    }
+
+    @Test
+    @DisplayName("kindSearchColorKey round-trips correctly")
+    void kindSearchColorKeyRoundTrip() {
+        settings.setKindSearchColorKey("EditorInfo.foreground");
+        assertEquals("EditorInfo.foreground", settings.getKindSearchColorKey());
+        settings.setKindSearchColorKey(null);
+        assertNull(settings.getKindSearchColorKey());
+    }
 }
