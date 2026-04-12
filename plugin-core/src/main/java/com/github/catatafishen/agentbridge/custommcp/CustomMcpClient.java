@@ -33,7 +33,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * Thread-safe: concurrent {@link #callTool} invocations are supported. Session recovery
  * (on HTTP 404) uses a {@link ReentrantLock} to ensure only one thread re-initializes.
  */
-public final class CustomMcpClient implements AutoCloseable {
+public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
 
     private static final Logger LOG = Logger.getInstance(CustomMcpClient.class);
     private static final Gson GSON = new Gson();
@@ -145,6 +145,7 @@ public final class CustomMcpClient implements AutoCloseable {
      * @param arguments the JSON arguments to pass
      * @return the tool result as text, or an error description on failure
      */
+    @Override
     @NotNull
     public String callTool(@NotNull String toolName, @NotNull JsonObject arguments) {
         try {

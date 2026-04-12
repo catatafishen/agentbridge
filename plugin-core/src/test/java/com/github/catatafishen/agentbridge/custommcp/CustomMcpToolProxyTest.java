@@ -5,15 +5,9 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Tests for {@link CustomMcpToolProxy} — verifies ID namespacing, description
@@ -26,6 +20,8 @@ class CustomMcpToolProxyTest {
     private static final String TOOL_DESC = "Search project files by pattern";
     private static final String INSTRUCTIONS = "Only search within the src/ directory";
 
+    private static final McpToolCaller NOOP_CALLER = (name, args) -> "";
+
     // ── ID composition ─────────────────────────────────────
 
     @Test
@@ -37,7 +33,7 @@ class CustomMcpToolProxyTest {
     @Test
     void id_preservesSpecialCharactersInToolName() {
         var toolInfo = new CustomMcpClient.ToolInfo("read-file.v2", "Read a file", null);
-        var proxy = new CustomMcpToolProxy("srv", mockClient(), toolInfo, "");
+        var proxy = new CustomMcpToolProxy("srv", NOOP_CALLER, toolInfo, "");
         assertEquals("srv_read-file.v2", proxy.id());
     }
 
@@ -105,14 +101,14 @@ class CustomMcpToolProxyTest {
         var schema = new JsonObject();
         schema.addProperty("type", "object");
         var toolInfo = new CustomMcpClient.ToolInfo(TOOL_NAME, TOOL_DESC, schema);
-        var proxy = new CustomMcpToolProxy(SERVER_PREFIX, mockClient(), toolInfo, "");
+        var proxy = new CustomMcpToolProxy(SERVER_PREFIX, NOOP_CALLER, toolInfo, "");
         assertSame(schema, proxy.inputSchema());
     }
 
     @Test
     void inputSchema_returnsNullWhenToolInfoHasNoSchema() {
         var toolInfo = new CustomMcpClient.ToolInfo(TOOL_NAME, TOOL_DESC, null);
-        var proxy = new CustomMcpToolProxy(SERVER_PREFIX, mockClient(), toolInfo, "");
+        var proxy = new CustomMcpToolProxy(SERVER_PREFIX, NOOP_CALLER, toolInfo, "");
         assertNull(proxy.inputSchema());
     }
 
@@ -141,29 +137,31 @@ class CustomMcpToolProxyTest {
     // ── Execute delegation ─────────────────────────────────
 
     @Test
-    void execute_delegatesToClientWithOriginalToolName() {
-        var client = mockClient();
-        when(client.callTool(any(), any())).thenReturn("tool result");
+    void execute_delegatesToCallerWithOriginalToolName() {
+        var capturedName = new AtomicReference<String>();
+        var capturedArgs = new AtomicReference<JsonObject>();
+        McpToolCaller caller = (name, args) -> {
+            capturedName.set(name);
+            capturedArgs.set(args);
+            return "tool result";
+        };
 
         var toolInfo = new CustomMcpClient.ToolInfo(TOOL_NAME, TOOL_DESC, null);
-        var proxy = new CustomMcpToolProxy(SERVER_PREFIX, client, toolInfo, "");
+        var proxy = new CustomMcpToolProxy(SERVER_PREFIX, caller, toolInfo, "");
 
         var args = new JsonObject();
         args.addProperty("pattern", "*.java");
         String result = proxy.execute(args);
 
         assertEquals("tool result", result);
-        verify(client).callTool(eq(TOOL_NAME), eq(args));
+        assertEquals(TOOL_NAME, capturedName.get());
+        assertSame(args, capturedArgs.get());
     }
 
     // ── Helpers ────────────────────────────────────────────
 
     private CustomMcpToolProxy createProxy(String toolDescription, String serverInstructions) {
         var toolInfo = new CustomMcpClient.ToolInfo(TOOL_NAME, toolDescription, null);
-        return new CustomMcpToolProxy(SERVER_PREFIX, mockClient(), toolInfo, serverInstructions);
-    }
-
-    private static CustomMcpClient mockClient() {
-        return mock(CustomMcpClient.class);
+        return new CustomMcpToolProxy(SERVER_PREFIX, NOOP_CALLER, toolInfo, serverInstructions);
     }
 }

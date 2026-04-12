@@ -20,11 +20,11 @@ public final class CustomMcpToolProxy implements ToolDefinition {
     private final String description;
     @Nullable
     private final JsonObject inputSchema;
-    private final CustomMcpClient client;
+    private final McpToolCaller client;
 
     public CustomMcpToolProxy(
         @NotNull String serverPrefix,
-        @NotNull CustomMcpClient client,
+        @NotNull McpToolCaller client,
         @NotNull CustomMcpClient.ToolInfo toolInfo,
         @NotNull String serverInstructions
     ) {

@@ -521,6 +521,13 @@ tasks {
         sourceDirectories.setFrom(files("src/main/java"))
     }
 
+    test {
+        // Allow Mockito to mock final classes under Java 21's module system
+        jvmArgs(
+            "--add-opens", "java.base/java.lang=ALL-UNNAMED"
+        )
+    }
+
     runIde {
         maxHeapSize = "2g"
         // Enable auto-reload of plugin when changes are built
