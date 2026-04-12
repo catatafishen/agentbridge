@@ -422,16 +422,29 @@ function connectSSE(): void {
     };
 }
 
-// Reconnect SSE when the page becomes visible again — mobile browsers
-// freeze/kill background connections, so we need to re-establish on wake.
+// Reconnect SSE and catch up on missed events when the page becomes visible.
+// Mobile browsers freeze/kill background SSE connections, so on wake:
+//   1. Always force-reconnect SSE (the connection may look OPEN but be dead).
+//   2. Immediately fetch missed events via REST so content appears before SSE opens.
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
-        if (!currentEs || currentEs.readyState === EventSource.CLOSED) {
-            if (sseRetry) clearTimeout(sseRetry);
-            connectSSE();
-        }
+        if (sseRetry) clearTimeout(sseRetry);
+        fetchCatchUp();
+        connectSSE();
     }
 });
+
+function fetchCatchUp(): void {
+    fetch('/catch-up?from=' + lastSeq)
+        .then(r => r.json() as Promise<{ events?: SseEvent[]; seq?: number }>)
+        .then(st => {
+            (st.events || []).forEach(ev => {
+                if (!ev.seq || ev.seq > lastSeq) processEvent(ev, false);
+            });
+        })
+        .catch(() => { /* SSE reconnect will recover */
+        });
+}
 
 // ── Notifications ───────────────────────────────────────────────────────────
 

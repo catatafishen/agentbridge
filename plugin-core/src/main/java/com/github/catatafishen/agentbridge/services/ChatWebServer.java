@@ -309,6 +309,7 @@ public final class ChatWebServer implements Disposable {
         server.createContext("/cert.crt", this::handleCert);
         server.createContext("/events", this::handleSse);
         server.createContext("/state", this::handleState);
+        server.createContext("/catch-up", this::handleCatchUp);
         server.createContext("/info", this::handleInfo);
         server.createContext("/prompt", ex -> handleAction(ex, body -> {
             String text = jsonString(body, "text");
@@ -1189,6 +1190,32 @@ public final class ChatWebServer implements Disposable {
             sb.append(snapshot.get(i));
         }
         sb.append("],\"info\":").append(buildInfoJson()).append("}");
+        sendJson(exchange, sb.toString());
+    }
+
+    private void handleCatchUp(HttpExchange exchange) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        int fromSeq = parseFromQuery(exchange.getRequestURI().getQuery());
+        List<String> snapshot;
+        int seq;
+        synchronized (this) {
+            snapshot = new ArrayList<>(eventLog);
+            seq = nextSeq - 1;
+        }
+        StringBuilder sb = new StringBuilder("{\"seq\":").append(seq).append(",\"events\":[");
+        boolean first = true;
+        for (String ev : snapshot) {
+            if (extractSeq(ev) > fromSeq) {
+                if (!first) sb.append(',');
+                sb.append(ev);
+                first = false;
+            }
+        }
+        sb.append("]}");
         sendJson(exchange, sb.toString());
     }
 
