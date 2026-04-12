@@ -447,8 +447,9 @@ public final class PlatformApiCompat {
         var vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project);
         var data = vcsLog.getDataManager();
         if (data == null) {
-            // Log not yet initialized — fall back to direct navigation
-            com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash);
+            // VCS log not yet initialized — skip navigation to avoid a "commit not found" error
+            // bubble. The log hasn't indexed the commit yet, and there's no UI panel to navigate
+            // to anyway. Best-effort follow-mode only runs when the log is already open.
             return;
         }
 
@@ -474,17 +475,17 @@ public final class PlatformApiCompat {
                         case "toString" -> {
                             return "DataPackChangeListenerProxy@" + Integer.toHexString(System.identityHashCode(proxy));
                         }
+                        case "onDataPackChange" -> { /* handled below */ }
+                        default -> {
+                            return null;
+                        }
                     }
-                    if (!"onDataPackChange".equals(method.getName())) return null;
 
                     // The data pack can change multiple times during a refresh (e.g., once when
                     // branch pointers update, again when new commits are indexed). Only navigate
                     // after the new commit is actually present in the VCS log storage — otherwise
                     // showRevisionInMainLog shows a "commit could not be found" error bubble.
-                    boolean commitIndexed = data.getLogProviders().keySet().stream()
-                        .anyMatch(root -> data.getStorage().containsCommit(
-                            new com.intellij.vcs.log.CommitId(hash, root)));
-                    if (!commitIndexed) return null;
+                    if (!isCommitIndexed(data, hash)) return null;
 
                     if (!navigated.compareAndSet(false, true)) return null;
                     data.removeDataPackChangeListener(
@@ -495,14 +496,16 @@ public final class PlatformApiCompat {
                 });
 
         data.addDataPackChangeListener(listener);
+        refreshVcsLogForProject(project, data);
 
-        // Trigger VCS log refresh to pick up the new commit
-        String basePath = project.getBasePath();
-        if (basePath != null) {
-            var root = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(basePath);
-            if (root != null) {
-                data.refresh(java.util.List.of(root));
-            }
+        // Race-condition guard: the commit may have already been indexed between getDataManager()
+        // and addDataPackChangeListener (e.g., IntelliJ auto-refreshed from a filesystem event).
+        // In that case the listener would never fire, so check immediately after registering it.
+        if (isCommitIndexed(data, hash) && navigated.compareAndSet(false, true)) {
+            data.removeDataPackChangeListener(listener);
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
+            return;
         }
 
         // Timeout: clean up listener after 10 seconds to prevent leak
@@ -512,6 +515,26 @@ public final class PlatformApiCompat {
                     data.removeDataPackChangeListener(listener);
                 }
             }, 10, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    private static boolean isCommitIndexed(
+        com.intellij.vcs.log.data.VcsLogData data,
+        com.intellij.vcs.log.Hash hash) {
+        return data.getLogProviders().keySet().stream()
+            .anyMatch(root -> data.getStorage().containsCommit(
+                new com.intellij.vcs.log.CommitId(hash, root)));
+    }
+
+    private static void refreshVcsLogForProject(
+        @NotNull Project project,
+        @NotNull com.intellij.vcs.log.data.VcsLogData data) {
+        // Trigger VCS log refresh to pick up the new commit
+        String basePath = project.getBasePath();
+        if (basePath == null) return;
+        var root = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(basePath);
+        if (root != null) {
+            data.refresh(java.util.List.of(root));
+        }
     }
 
     /**
