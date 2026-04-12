@@ -1,5 +1,5 @@
 <idea-plugin require-restart="false">
-  <id>com.github.catatafishen.agentbridge</id>
+  <id>com.github.catatafishen.ideagentforcopilot</id>
   <name>AgentBridge</name>
   <vendor email="henrik@westergard.org" url="https://github.com/catatafishen/ide-agent-for-copilot">
     AgentBridge Contributors
