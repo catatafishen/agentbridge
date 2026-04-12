@@ -40,6 +40,11 @@ class McpSseTransportTest {
     }
 
     @Test
+    void parseSessionId_returnsNullForEmptyString() throws Exception {
+        assertNull(invokeParseSessionId(""));
+    }
+
+    @Test
     void parseSessionId_handlesNoEqualsSign() throws Exception {
         assertNull(invokeParseSessionId("sessionId"));
     }

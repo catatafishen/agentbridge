@@ -1,13 +1,20 @@
 package com.github.catatafishen.agentbridge.agent.claude;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -160,5 +167,197 @@ class ClaudeCliClientStaticMethodsTest {
         String result = ClaudeCliClient.extractToolResultContent(event);
         assertTrue(result.contains("key"));
         assertTrue(result.contains("value"));
+    }
+
+    // ── extractErrorText (private static) ───────────────────────────────────
+
+    @Test
+    void extractErrorText_returnsPrimitiveString() throws Exception {
+        JsonElement el = new JsonPrimitive("something went wrong");
+        assertEquals("something went wrong", invokeExtractErrorText(el));
+    }
+
+    @Test
+    void extractErrorText_returnsMessageFieldFromObject() throws Exception {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("message", "detailed error");
+        assertEquals("detailed error", invokeExtractErrorText(obj));
+    }
+
+    @Test
+    void extractErrorText_returnsToStringForObjectWithoutMessage() throws Exception {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("code", 500);
+        String result = invokeExtractErrorText(obj);
+        assertEquals(obj.toString(), result);
+    }
+
+    @Test
+    void extractErrorText_returnsToStringForJsonArray() throws Exception {
+        JsonArray arr = new JsonArray();
+        arr.add("err1");
+        arr.add("err2");
+        assertEquals(arr.toString(), invokeExtractErrorText(arr));
+    }
+
+    // ── safeGetInt (private static) ─────────────────────────────────────────
+
+    @Test
+    void safeGetInt_returnsValueWhenPresent() throws Exception {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("tokens", 100);
+        assertEquals(100, invokeSafeGetInt(obj, "tokens"));
+    }
+
+    @Test
+    void safeGetInt_returnsZeroWhenFieldMissing() throws Exception {
+        JsonObject obj = new JsonObject();
+        assertEquals(0, invokeSafeGetInt(obj, "missing"));
+    }
+
+    @Test
+    void safeGetInt_returnsZeroWhenFieldIsJsonNull() throws Exception {
+        JsonObject obj = new JsonObject();
+        obj.add("count", JsonNull.INSTANCE);
+        assertEquals(0, invokeSafeGetInt(obj, "count"));
+    }
+
+    @Test
+    void safeGetInt_returnsExactValue42() throws Exception {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("answer", 42);
+        assertEquals(42, invokeSafeGetInt(obj, "answer"));
+    }
+
+    // ── safeGetDouble (private static) ──────────────────────────────────────
+
+    @Test
+    void safeGetDouble_returnsValueWhenPresent() throws Exception {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("cost", 1.5);
+        assertEquals(1.5, invokeSafeGetDouble(obj, "cost"), 0.0001);
+    }
+
+    @Test
+    void safeGetDouble_returnsZeroWhenFieldMissing() throws Exception {
+        JsonObject obj = new JsonObject();
+        assertEquals(0.0, invokeSafeGetDouble(obj, "missing"), 0.0001);
+    }
+
+    @Test
+    void safeGetDouble_returnsZeroWhenFieldIsJsonNull() throws Exception {
+        JsonObject obj = new JsonObject();
+        obj.add("price", JsonNull.INSTANCE);
+        assertEquals(0.0, invokeSafeGetDouble(obj, "price"), 0.0001);
+    }
+
+    @Test
+    void safeGetDouble_returnsExactValuePi() throws Exception {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("pi", 3.14);
+        assertEquals(3.14, invokeSafeGetDouble(obj, "pi"), 0.0001);
+    }
+
+    // ── respondToControlRequest (private static) ────────────────────────────
+
+    @Test
+    void respondToControlRequest_canUseTool_allowDecision() throws Exception {
+        JsonObject event = new JsonObject();
+        event.addProperty("subtype", "can_use_tool");
+        event.addProperty("requestId", "req-1");
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        invokeRespondToControlRequest(event, baos);
+
+        JsonObject response = JsonParser.parseString(baos.toString(StandardCharsets.UTF_8).trim()).getAsJsonObject();
+        assertEquals("control_response", response.get("type").getAsString());
+        assertEquals("can_use_tool", response.get("subtype").getAsString());
+        assertTrue(response.has("response"));
+        assertEquals("allow", response.getAsJsonObject("response").get("decision").getAsString());
+    }
+
+    @Test
+    void respondToControlRequest_unknownSubtype_noDecision() throws Exception {
+        JsonObject event = new JsonObject();
+        event.addProperty("subtype", "unknown_subtype");
+        event.addProperty("requestId", "req-2");
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        invokeRespondToControlRequest(event, baos);
+
+        JsonObject response = JsonParser.parseString(baos.toString(StandardCharsets.UTF_8).trim()).getAsJsonObject();
+        assertEquals("control_response", response.get("type").getAsString());
+        assertFalse(response.has("response"), "Unknown subtype should not include a 'response' field");
+    }
+
+    @Test
+    void respondToControlRequest_echoesRequestId() throws Exception {
+        JsonObject event = new JsonObject();
+        event.addProperty("subtype", "can_use_tool");
+        event.addProperty("requestId", "my-unique-id-123");
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        invokeRespondToControlRequest(event, baos);
+
+        JsonObject response = JsonParser.parseString(baos.toString(StandardCharsets.UTF_8).trim()).getAsJsonObject();
+        assertEquals("my-unique-id-123", response.get("requestId").getAsString());
+    }
+
+    @Test
+    void respondToControlRequest_outputEndsWithNewline() throws Exception {
+        JsonObject event = new JsonObject();
+        event.addProperty("subtype", "can_use_tool");
+        event.addProperty("requestId", "req-nl");
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+
+        invokeRespondToControlRequest(event, baos);
+
+        String raw = baos.toString(StandardCharsets.UTF_8);
+        assertTrue(raw.endsWith("\n"), "Output should end with a newline");
+    }
+
+    // ── Reflection helpers ──────────────────────────────────────────────────
+
+    private static final Method EXTRACT_ERROR_TEXT;
+    private static final Method SAFE_GET_INT;
+    private static final Method SAFE_GET_DOUBLE;
+    private static final Method RESPOND_TO_CONTROL_REQUEST;
+
+    static {
+        try {
+            EXTRACT_ERROR_TEXT = ClaudeCliClient.class
+                .getDeclaredMethod("extractErrorText", JsonElement.class);
+            EXTRACT_ERROR_TEXT.setAccessible(true);
+
+            SAFE_GET_INT = ClaudeCliClient.class
+                .getDeclaredMethod("safeGetInt", JsonObject.class, String.class);
+            SAFE_GET_INT.setAccessible(true);
+
+            SAFE_GET_DOUBLE = ClaudeCliClient.class
+                .getDeclaredMethod("safeGetDouble", JsonObject.class, String.class);
+            SAFE_GET_DOUBLE.setAccessible(true);
+
+            RESPOND_TO_CONTROL_REQUEST = ClaudeCliClient.class
+                .getDeclaredMethod("respondToControlRequest", JsonObject.class, OutputStream.class);
+            RESPOND_TO_CONTROL_REQUEST.setAccessible(true);
+        } catch (NoSuchMethodException e) {
+            throw new AssertionError("Method not found — signature changed?", e);
+        }
+    }
+
+    private static String invokeExtractErrorText(JsonElement el) throws Exception {
+        return (String) EXTRACT_ERROR_TEXT.invoke(null, el);
+    }
+
+    private static int invokeSafeGetInt(JsonObject obj, String field) throws Exception {
+        return (int) SAFE_GET_INT.invoke(null, obj, field);
+    }
+
+    private static double invokeSafeGetDouble(JsonObject obj, String field) throws Exception {
+        return (double) SAFE_GET_DOUBLE.invoke(null, obj, field);
+    }
+
+    private static void invokeRespondToControlRequest(JsonObject event, OutputStream stdin) throws Exception {
+        RESPOND_TO_CONTROL_REQUEST.invoke(null, event, stdin);
     }
 }

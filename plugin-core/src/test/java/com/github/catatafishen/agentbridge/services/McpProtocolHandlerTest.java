@@ -8,10 +8,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -591,6 +594,173 @@ class McpProtocolHandlerTest {
         assertEquals("Parse error", response.getAsJsonObject("error").get("message").getAsString());
     }
 
+    // ── buildToolResult tests ────────────────────────────────────────────────
+
+    @Test
+    void buildToolResult_normalText_isErrorFalse() throws Exception {
+        JsonObject msg = makeJsonRpcRequest(42);
+        JsonObject response = invokeBuildToolResult(msg, "hello world", false);
+
+        assertEquals("2.0", response.get("jsonrpc").getAsString());
+        assertEquals(42, response.get("id").getAsInt());
+        JsonObject result = response.getAsJsonObject("result");
+        JsonArray content = result.getAsJsonArray("content");
+        assertEquals(1, content.size());
+        JsonObject entry = content.get(0).getAsJsonObject();
+        assertEquals("text", entry.get("type").getAsString());
+        assertEquals("hello world", entry.get("text").getAsString());
+        assertFalse(result.get("isError").getAsBoolean());
+    }
+
+    @Test
+    void buildToolResult_nullText_replacedWithEmptyString() throws Exception {
+        JsonObject msg = makeJsonRpcRequest(1);
+        JsonObject response = invokeBuildToolResult(msg, null, false);
+
+        JsonObject result = response.getAsJsonObject("result");
+        JsonArray content = result.getAsJsonArray("content");
+        assertEquals("", content.get(0).getAsJsonObject().get("text").getAsString());
+    }
+
+    @Test
+    void buildToolResult_isErrorTrue() throws Exception {
+        JsonObject msg = makeJsonRpcRequest(7);
+        JsonObject response = invokeBuildToolResult(msg, "something failed", true);
+
+        JsonObject result = response.getAsJsonObject("result");
+        assertTrue(result.get("isError").getAsBoolean());
+    }
+
+    @Test
+    void buildToolResult_preservesJsonRpcId() throws Exception {
+        JsonObject msg = makeJsonRpcRequest(99);
+        JsonObject response = invokeBuildToolResult(msg, "text", false);
+
+        assertEquals(99, response.get("id").getAsInt());
+        assertEquals("2.0", response.get("jsonrpc").getAsString());
+    }
+
+    // ── respondResourceNotFound tests ────────────────────────────────────────
+
+    @Test
+    void respondResourceNotFound_returnsErrorWithCode32002() throws Exception {
+        JsonObject request = makeJsonRpcRequest(5);
+        JsonObject response = invokeRespondResourceNotFound(request, "file:///missing.txt", "Resource not found");
+
+        JsonObject error = response.getAsJsonObject("error");
+        assertEquals(-32002, error.get("code").getAsInt());
+    }
+
+    @Test
+    void respondResourceNotFound_hasDataUriField() throws Exception {
+        JsonObject request = makeJsonRpcRequest(10);
+        JsonObject response = invokeRespondResourceNotFound(request, "file:///some/path", "Resource not found");
+
+        JsonObject error = response.getAsJsonObject("error");
+        JsonObject data = error.getAsJsonObject("data");
+        assertNotNull(data);
+        assertEquals("file:///some/path", data.get("uri").getAsString());
+    }
+
+    @Test
+    void respondResourceNotFound_errorMessageIsResourceNotFound() throws Exception {
+        JsonObject request = makeJsonRpcRequest(3);
+        JsonObject response = invokeRespondResourceNotFound(request, "file:///x", "Resource not found");
+
+        JsonObject error = response.getAsJsonObject("error");
+        assertEquals("Resource not found", error.get("message").getAsString());
+    }
+
+    @Test
+    void respondResourceNotFound_includesJsonRpcId() throws Exception {
+        JsonObject request = makeJsonRpcRequest(77);
+        JsonObject response = invokeRespondResourceNotFound(request, "file:///y", "Resource not found");
+
+        assertEquals("2.0", response.get("jsonrpc").getAsString());
+        assertEquals(77, response.get("id").getAsInt());
+    }
+
+    // ── buildPagedResourceResponse tests ─────────────────────────────────────
+
+    @Test
+    void buildPagedResourceResponse_itemsWithinPageSize_allReturned_noNextCursor() throws Exception {
+        JsonObject msg = makeJsonRpcRequest(1);
+        List<JsonObject> items = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            JsonObject item = new JsonObject();
+            item.addProperty("name", "item" + i);
+            items.add(item);
+        }
+
+        JsonObject response = invokeBuildPagedResourceResponse(msg, "res:", items, "resources");
+
+        JsonObject result = response.getAsJsonObject("result");
+        JsonArray resources = result.getAsJsonArray("resources");
+        assertEquals(5, resources.size());
+        assertFalse(result.has("nextCursor"));
+    }
+
+    @Test
+    void buildPagedResourceResponse_moreItemsThanPageSize_pageReturned_withNextCursor() throws Exception {
+        JsonObject msg = makeJsonRpcRequest(2);
+        int pageSize = 200; // RESOURCE_PAGE_SIZE
+        List<JsonObject> items = new ArrayList<>();
+        for (int i = 0; i < pageSize + 50; i++) {
+            JsonObject item = new JsonObject();
+            item.addProperty("name", "item" + i);
+            items.add(item);
+        }
+
+        JsonObject response = invokeBuildPagedResourceResponse(msg, "res:", items, "resources");
+
+        JsonObject result = response.getAsJsonObject("result");
+        JsonArray resources = result.getAsJsonArray("resources");
+        assertEquals(pageSize, resources.size());
+        assertEquals("item0", resources.get(0).getAsJsonObject().get("name").getAsString());
+        assertTrue(result.has("nextCursor"));
+        assertEquals("res:" + pageSize, result.get("nextCursor").getAsString());
+    }
+
+    @Test
+    void buildPagedResourceResponse_cursorInRequest_offsetApplied() throws Exception {
+        int pageSize = 200; // RESOURCE_PAGE_SIZE
+        int totalItems = pageSize + 50;
+        int cursorOffset = pageSize;
+
+        JsonObject params = new JsonObject();
+        params.addProperty("cursor", "res:" + cursorOffset);
+        JsonObject msg = makeJsonRpcRequest(3);
+        msg.add("params", params);
+
+        List<JsonObject> items = new ArrayList<>();
+        for (int i = 0; i < totalItems; i++) {
+            JsonObject item = new JsonObject();
+            item.addProperty("name", "item" + i);
+            items.add(item);
+        }
+
+        JsonObject response = invokeBuildPagedResourceResponse(msg, "res:", items, "resources");
+
+        JsonObject result = response.getAsJsonObject("result");
+        JsonArray resources = result.getAsJsonArray("resources");
+        assertEquals(50, resources.size());
+        assertEquals("item" + cursorOffset, resources.get(0).getAsJsonObject().get("name").getAsString());
+        assertFalse(result.has("nextCursor"));
+    }
+
+    @Test
+    void buildPagedResourceResponse_emptyItems_emptyResultArray() throws Exception {
+        JsonObject msg = makeJsonRpcRequest(4);
+        List<JsonObject> items = new ArrayList<>();
+
+        JsonObject response = invokeBuildPagedResourceResponse(msg, "res:", items, "resources");
+
+        JsonObject result = response.getAsJsonObject("result");
+        JsonArray resources = result.getAsJsonArray("resources");
+        assertEquals(0, resources.size());
+        assertFalse(result.has("nextCursor"));
+    }
+
     // ── Reflection helpers ───────────────────────────────────────────────────
 
     private static int invokeParseCursorOffset(com.google.gson.JsonElement cursor, String prefix) throws Exception {
@@ -655,9 +825,39 @@ class McpProtocolHandlerTest {
         return (JsonObject) m.invoke(null, id, code, message);
     }
 
+    private static JsonObject invokeBuildToolResult(JsonObject msg, String text, boolean isError) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("buildToolResult",
+            JsonObject.class, String.class, boolean.class);
+        m.setAccessible(true);
+        return (JsonObject) m.invoke(null, msg, text, isError);
+    }
+
+    private static JsonObject invokeRespondResourceNotFound(JsonObject request, String uri, String message) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("respondResourceNotFound",
+            JsonObject.class, String.class, String.class);
+        m.setAccessible(true);
+        return (JsonObject) m.invoke(null, request, uri, message);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static JsonObject invokeBuildPagedResourceResponse(JsonObject msg, String cursorPrefix,
+                                                               List<JsonObject> items, String itemKey) throws Exception {
+        var m = McpProtocolHandler.class.getDeclaredMethod("buildPagedResourceResponse",
+            JsonObject.class, String.class, List.class, String.class);
+        m.setAccessible(true);
+        return (JsonObject) m.invoke(null, msg, cursorPrefix, items, itemKey);
+    }
+
     private static Object getRecordField(Object obj, String fieldName) throws Exception {
         var m = obj.getClass().getMethod(fieldName);
         return m.invoke(obj);
+    }
+
+    private static JsonObject makeJsonRpcRequest(int id) {
+        JsonObject req = new JsonObject();
+        req.addProperty("jsonrpc", "2.0");
+        req.addProperty("id", id);
+        return req;
     }
 
     private String sendRequest(String method, JsonObject params) {
