@@ -1,0 +1,6 @@
+codecov:
+  require_ci_to_pass: yes
+
+# Map TypeScript coverage paths from test output to repository structure
+fixes:
+  - "../chat-ui/::plugin-core/chat-ui/"  # lcov.info has ../chat-ui/src/*, map to plugin-core/chat-ui/src/*
