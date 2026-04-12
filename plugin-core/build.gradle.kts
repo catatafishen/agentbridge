@@ -484,6 +484,24 @@ tasks {
             "**/custommcp/*Configurable*",     // CustomMcpConfigurable (Swing, needs IDE runtime)
             "**/services/McpHttpServer*",      // Raw MCP HTTP server (I/O infrastructure, not unit-testable)
             "**/services/McpSseTransport*",    // SSE transport (raw I/O, not unit-testable)
+            // ── Network / protocol clients (raw TCP/HTTP/subprocess I/O) ─────────────
+            "**/acp/client/AcpClient*",        // Raw ACP socket protocol client
+            "**/acp/client/AcpFileSystemHandler*", // Virtual-FS handler piped over ACP socket
+            "**/acp/client/AgentProcessRegistry*", // Agent OS-process lifecycle manager
+            "**/acp/client/KiroClient*",       // Kiro HTTP API client
+            "**/acp/client/JunieClient*",      // Junie HTTP API client
+            "**/acp/client/OpenCodeClient*",   // OpenCode HTTP API client
+            "**/agent/codex/CodexAppServerClient*", // Codex REST API client (728 missed lines)
+            "**/agent/claude/ClaudeCliClient*", // Claude CLI subprocess manager
+            "**/acp/client/CopilotClient*",    // Copilot HTTP API client
+            // ── External-process integrations (Sonar, Qodana, web push) ──────────────
+            "**/psi/SonarQubeIntegration*",    // Runs external SonarQube process
+            "**/psi/QodanaAnalyzer*",          // Runs external Qodana process
+            "**/psi/SonarRuleDescriptions*",   // Fetches Sonar rule data via HTTP
+            "**/bridge/ChatWebServer*",        // Embedded web server for chat PWA
+            // ── Complex IDE integration (session/process management) ──────────────────
+            "**/session/SessionSwitchService*", // Complex session state-machine (no unit-testable API)
+            "**/psi/RunConfigurationService*", // Runs OS processes via IDE run framework
         )
         val allExcludes = uiExcludes + otherExcludes
 

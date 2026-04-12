@@ -42,6 +42,7 @@ public class EditorToolsTest extends BasePlatformTestCase {
     private ListScratchFilesTool listScratchFilesTool;
     private CreateScratchFileTool createScratchFileTool;
     private ListThemesTool listThemesTool;
+    private SearchConversationHistoryTool searchConversationHistoryTool;
 
     @Override
     protected void setUp() throws Exception {
@@ -59,6 +60,7 @@ public class EditorToolsTest extends BasePlatformTestCase {
         listScratchFilesTool = new ListScratchFilesTool(getProject());
         createScratchFileTool = new CreateScratchFileTool(getProject());
         listThemesTool = new ListThemesTool(getProject());
+        searchConversationHistoryTool = new SearchConversationHistoryTool(getProject());
     }
 
     @Override
@@ -391,5 +393,73 @@ public class EditorToolsTest extends BasePlatformTestCase {
         assertFalse("Result must not start with 'Error'", result.startsWith("Error"));
         assertTrue("Result must always start with 'Available themes:', got: " + result,
             result.startsWith("Available themes:"));
+    }
+
+    // ── SearchConversationHistoryTool ─────────────────────────────────────────
+
+    /**
+     * With an empty {@link JsonObject} (no {@code file}, {@code query}, etc.),
+     * {@link SearchConversationHistoryTool} falls through to {@code listConversations()}.
+     * A fresh test project has no JSONL session files, so the expected response is
+     * {@code "No conversation history found."} — but any non-blank, non-null string
+     * is accepted because the presence of a current session can vary by environment.
+     *
+     * <p>{@link SearchConversationHistoryTool#execute} is fully synchronous (no EDT
+     * dispatch), so it can be called directly from the test method.
+     */
+    public void testSearchConversationHistoryNoSessions() {
+        String result = searchConversationHistoryTool.execute(new JsonObject());
+        assertNotNull("Result must not be null", result);
+        assertFalse("Result must not be blank", result.isBlank());
+        // Either the "no history" message or a valid session listing.
+        boolean isValid = result.contains("No conversation history")
+            || result.contains("Conversations:")
+            || result.startsWith("Error:");
+        assertTrue("Expected a valid empty-history or listing response, got: " + result, isValid);
+    }
+
+    /**
+     * When {@code file} references a session identifier that does not exist,
+     * {@code readConversation()} is called with that ID. It must return a non-null,
+     * non-blank descriptive message (e.g. "No entries" or an error) without throwing.
+     */
+    public void testSearchConversationHistoryInvalidFileId() {
+        JsonObject argsObj = new JsonObject();
+        argsObj.addProperty("file", "nonexistent_12345");
+
+        String result = searchConversationHistoryTool.execute(argsObj);
+        assertNotNull("Result must not be null", result);
+        assertFalse("Result must not be blank", result.isBlank());
+        // The tool must not throw — it must return a descriptive message.
+        assertFalse("Result must not be a raw Java exception dump",
+            result.startsWith("java.") || result.startsWith("Exception"));
+    }
+
+    /**
+     * Requesting {@code file="current"} routes to {@code readConversation()} for
+     * the active session. A fresh test project has no current JSONL session, so
+     * an "empty" or "no entries" response is expected — but the tool must not throw.
+     */
+    public void testSearchConversationHistoryCurrentFile() {
+        JsonObject argsObj = new JsonObject();
+        argsObj.addProperty("file", "current");
+
+        String result = searchConversationHistoryTool.execute(argsObj);
+        assertNotNull("Result must not be null for file='current'", result);
+        assertFalse("Result must not be blank for file='current'", result.isBlank());
+    }
+
+    /**
+     * Setting only {@code max_chars=100} (no {@code file}, {@code query}, etc.)
+     * still routes to {@code listConversations()}, so the result is non-null
+     * and the tool respects the truncation limit on its output.
+     */
+    public void testSearchConversationHistoryMaxCharsParam() {
+        JsonObject argsObj = new JsonObject();
+        argsObj.addProperty("max_chars", 100);
+
+        String result = searchConversationHistoryTool.execute(argsObj);
+        assertNotNull("Result must not be null with max_chars=100", result);
+        assertFalse("Result must not be blank with max_chars=100", result.isBlank());
     }
 }

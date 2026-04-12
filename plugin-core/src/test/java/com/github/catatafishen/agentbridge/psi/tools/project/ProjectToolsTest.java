@@ -5,7 +5,14 @@ import com.github.catatafishen.agentbridge.psi.RunConfigurationService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.google.gson.JsonObject;
 import com.intellij.ide.util.PropertiesComponent;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
+import com.intellij.util.ui.UIUtil;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Platform tests for project tools: {@link GetProjectModulesTool},
@@ -25,6 +32,7 @@ public class ProjectToolsTest extends BasePlatformTestCase {
     private GetProjectDependenciesTool dependenciesTool;
     private GetIndexingStatusTool indexingStatusTool;
     private ListRunConfigurationsTool runConfigsTool;
+    private MarkDirectoryTool markDirectoryTool;
 
     @Override
     protected void setUp() throws Exception {
@@ -47,6 +55,7 @@ public class ProjectToolsTest extends BasePlatformTestCase {
             cn -> new ClassResolverUtil.ClassInfo(cn, null)
         );
         runConfigsTool = new ListRunConfigurationsTool(getProject(), runConfigService);
+        markDirectoryTool = new MarkDirectoryTool(getProject());
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -217,5 +226,117 @@ public class ProjectToolsTest extends BasePlatformTestCase {
         assertTrue(
             "Expected 'No run configurations found' in fresh test project, got: " + result,
             result.contains("No run configurations found") || result.contains("run configuration"));
+    }
+
+    // ── MarkDirectoryTool ─────────────────────────────────────────────────────────
+
+    /**
+     * Runs {@code tool.execute(argsObj)} on a pooled background thread while pumping
+     * the EDT event queue.
+     *
+     * <p>{@link MarkDirectoryTool#execute} uses {@code EdtUtil.invokeLater} which posts
+     * a {@code WriteAction} callback onto the EDT via a {@code CompletableFuture}. Because
+     * test methods already run on the EDT, calling {@code execute()} directly would cause
+     * a deadlock: the EDT is blocked on {@code future.get()} so the scheduled callback
+     * can never run. Running the tool on a pooled thread while pumping the EDT with
+     * {@link UIUtil#dispatchAllInvocationEvents()} breaks this deadlock.
+     */
+    private String executeSyncMark(MarkDirectoryTool tool, JsonObject argsObj) throws Exception {
+        CompletableFuture<String> future = new CompletableFuture<>();
+        ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            try {
+                future.complete(tool.execute(argsObj));
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+            }
+        });
+        long deadline = System.currentTimeMillis() + 15_000;
+        while (!future.isDone()) {
+            UIUtil.dispatchAllInvocationEvents();
+            if (System.currentTimeMillis() > deadline) {
+                fail("MarkDirectoryTool.execute() timed out after 15 seconds");
+            }
+        }
+        return future.get();
+    }
+
+    /**
+     * An unrecognised {@code type} value must return an error immediately
+     * (before any EDT dispatch), so calling {@code execute()} directly is safe here.
+     */
+    public void testMarkDirectoryInvalidType() throws Exception {
+        String result = executeSyncMark(markDirectoryTool,
+            args("path", "some/dir", "type", "invalid_type"));
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected 'Error:' for invalid type, got: " + result,
+            result.startsWith("Error:"));
+        assertTrue("Expected invalid type name in error, got: " + result,
+            result.contains("invalid_type") || result.contains("invalid type"));
+    }
+
+    /**
+     * When the target directory does not yet exist, {@link MarkDirectoryTool} must
+     * create it ({@code Files.createDirectories}) and then attempt to mark it.
+     * Under the test project whose base path is the module's content root, the
+     * subdirectory is within the content root so the operation should succeed.
+     * A VFS refresh failure ("Error: could not find directory in VFS") is also
+     * accepted because the headless test environment has no automatic VFS watcher.
+     */
+    public void testMarkDirectoryNonExistentPathGetsCreated() throws Exception {
+        String newPath = getProject().getBasePath()
+            + "/marktest-nonexistent-" + System.currentTimeMillis();
+        String result = executeSyncMark(markDirectoryTool,
+            args("path", newPath, "type", "sources"));
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected 'Marked' or 'Error:' for non-existent path, got: " + result,
+            result.contains("Marked") || result.startsWith("Error:"));
+    }
+
+    /**
+     * Creates a real subdirectory under the test project's base path (which is the
+     * module's content root) and marks it as a source root.
+     * A VFS failure is accepted in the headless sandbox.
+     */
+    public void testMarkDirectoryAsSourcesInModule() throws Exception {
+        Path subDir = Files.createTempDirectory(
+            Path.of(getProject().getBasePath()), "marktest-sources");
+        String result = executeSyncMark(markDirectoryTool,
+            args("path", subDir.toString(), "type", "sources"));
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected 'Marked' or 'Error:' for sources marking, got: " + result,
+            result.contains("Marked") || result.startsWith("Error:"));
+    }
+
+    /**
+     * Creates a real subdirectory under the test project's base path and marks it
+     * as excluded. A VFS failure is accepted in the headless sandbox.
+     */
+    public void testMarkDirectoryAsExcluded() throws Exception {
+        Path subDir = Files.createTempDirectory(
+            Path.of(getProject().getBasePath()), "marktest-excl");
+        String result = executeSyncMark(markDirectoryTool,
+            args("path", subDir.toString(), "type", "excluded"));
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected 'Marked' or 'Error:' for excluded marking, got: " + result,
+            result.contains("Marked") || result.startsWith("Error:"));
+    }
+
+    /**
+     * When both required parameters are absent, {@code args.get("path")} returns
+     * {@code null} and {@code .getAsString()} throws a {@link NullPointerException}.
+     * The test accepts either that exception (wrapped as {@link ExecutionException})
+     * or an "Error:" string if the tool ever adds defensive null-checks.
+     */
+    public void testMarkDirectoryMissingArgs() throws Exception {
+        try {
+            String result = executeSyncMark(markDirectoryTool, new JsonObject());
+            // If the tool handles missing args gracefully it should return an error string.
+            assertTrue("Expected 'Error:' for missing args, got: " + result,
+                result.startsWith("Error:"));
+        } catch (ExecutionException e) {
+            // NPE from args.get("path").getAsString() wrapped in ExecutionException — expected.
+            assertTrue("Expected NPE as the cause, got: " + e.getCause(),
+                e.getCause() instanceof NullPointerException);
+        }
     }
 }

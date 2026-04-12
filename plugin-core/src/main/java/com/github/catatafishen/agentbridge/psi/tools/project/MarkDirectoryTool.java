@@ -99,14 +99,17 @@ public final class MarkDirectoryTool extends ProjectTool {
             Files.createDirectories(dirPath);
         }
 
-        VirtualFile vDir = LocalFileSystem.getInstance().refreshAndFindFileByPath(absolutePath);
-        if (vDir == null) {
-            return "Error: could not find directory in VFS: " + absolutePath;
-        }
-
+        // refreshAndFindFileByPath must run on the EDT (it may acquire the write lock
+        // internally for VFS refresh — calling it from a pooled thread while the EDT
+        // holds a write-intent token causes a lock-ordering deadlock).
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
+                VirtualFile vDir = LocalFileSystem.getInstance().refreshAndFindFileByPath(absolutePath);
+                if (vDir == null) {
+                    future.complete("Error: could not find directory in VFS: " + absolutePath);
+                    return;
+                }
                 String result = WriteAction.compute(
                     () -> applyDirectoryMarking(absolutePath, vDir, type));
                 future.complete(result);
