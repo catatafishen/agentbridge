@@ -118,10 +118,10 @@ public final class ToolCallStatisticsService implements Disposable {
             stmt.execute("ALTER TABLE tool_calls ADD COLUMN error_message TEXT");
             LOG.info("Migrated tool_calls table: added error_message column");
         } catch (SQLException e) {
-            // Column already exists — expected for new databases or already-migrated ones
             if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
-                LOG.debug("error_message column migration skipped", e);
+                LOG.warn("Unexpected error migrating tool_calls schema (error_message column)", e);
             }
+            // else: duplicate column — expected for databases that have already been migrated
         }
     }
 
@@ -246,10 +246,10 @@ public final class ToolCallStatisticsService implements Disposable {
         StringBuilder sql = new StringBuilder("""
             SELECT tool_name, category,
                    COUNT(*) AS call_count,
-                   AVG(duration_ms) AS avg_duration,
+                   ROUND(AVG(duration_ms)) AS avg_duration,
                    SUM(input_size) AS total_input,
                    SUM(output_size) AS total_output,
-                   AVG(input_size + output_size) AS avg_total,
+                   ROUND(AVG(input_size + output_size)) AS avg_total,
                    SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS error_count
             FROM tool_calls
             WHERE 1=1
