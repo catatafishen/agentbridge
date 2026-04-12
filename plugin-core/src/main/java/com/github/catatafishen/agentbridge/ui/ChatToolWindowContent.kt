@@ -2,7 +2,6 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.acp.model.Model
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
-import com.github.catatafishen.agentbridge.agent.AgentException
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
