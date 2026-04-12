@@ -128,6 +128,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -501,6 +502,26 @@ class ToolDefinitionContractTest {
         if (tool.isReadOnly()) {
             assertFalse(tool.needsWriteLock(),
                 tool.id() + ": isReadOnly() but needsWriteLock() is true");
+        }
+    }
+
+    @ParameterizedTest(name = "{0} — resultRenderer")
+    @MethodSource("allTools")
+    @DisplayName("resultRenderer() does not throw")
+    void toolResultRendererDoesNotThrow(Tool tool) {
+        // resultRenderer() is @Nullable — null means the default rendering is used.
+        assertDoesNotThrow(tool::resultRenderer,
+            tool.id() + ": resultRenderer() must not throw");
+    }
+
+    @ParameterizedTest(name = "{0} — permissionTemplate")
+    @MethodSource("allTools")
+    @DisplayName("permissionTemplate() is null or a non-blank string")
+    void toolPermissionTemplateIsNullOrNonBlank(Tool tool) {
+        String template = tool.permissionTemplate();
+        if (template != null) {
+            assertFalse(template.isBlank(),
+                tool.id() + ": permissionTemplate() returned a blank string");
         }
     }
 }

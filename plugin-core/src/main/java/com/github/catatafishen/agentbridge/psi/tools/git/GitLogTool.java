@@ -96,7 +96,10 @@ public final class GitLogTool extends GitTool {
         }
 
         if (args.has(PARAM_BRANCH) && !args.get(PARAM_BRANCH).getAsString().isEmpty()) {
-            cmdArgs.add(2, args.get(PARAM_BRANCH).getAsString());
+            // Insert the branch ref as a positional argument before any path separator.
+            // Appending here (rather than inserting at a fixed index) ensures we never
+            // split flag-value pairs like '-n 20'.
+            cmdArgs.add(args.get(PARAM_BRANCH).getAsString());
         }
 
         if (args.has("path") && !args.get("path").getAsString().isEmpty()) {

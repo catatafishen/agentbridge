@@ -480,6 +480,10 @@ tasks {
             "**/settings/*Configurable*",      // Settings UI configurables (need IDE runtime)
             "**/settings/QrCodePanel*",        // QR code panel (UI, needs IDE runtime)
             "**/settings/ThemeColorComboBox*", // Theme color combo (UI, needs IDE runtime)
+            "**/memory/*Configurable*",        // MemorySettingsConfigurable (Swing, needs IDE runtime)
+            "**/custommcp/*Configurable*",     // CustomMcpConfigurable (Swing, needs IDE runtime)
+            "**/services/McpHttpServer*",      // Raw MCP HTTP server (I/O infrastructure, not unit-testable)
+            "**/services/McpSseTransport*",    // SSE transport (raw I/O, not unit-testable)
         )
         val allExcludes = uiExcludes + otherExcludes
 

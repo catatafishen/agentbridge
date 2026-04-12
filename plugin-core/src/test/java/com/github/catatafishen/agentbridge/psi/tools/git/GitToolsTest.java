@@ -32,6 +32,11 @@ public class GitToolsTest extends BasePlatformTestCase {
 
     private String basePath;
     /**
+     * Default branch name detected during {@link #setUp()} (e.g. "master" or "main").
+     * Stored as a field so tests don't need to spawn a subprocess to resolve it.
+     */
+    private String currentBranch;
+    /**
      * Absolute path to the git executable (resolved once in setUp).
      */
     private String gitExec;
@@ -68,6 +73,11 @@ public class GitToolsTest extends BasePlatformTestCase {
         git("init");
         git("config", "user.email", "test@example.com");
         git("config", "user.name", "Test User");
+        // Create a known branch name so tests can reference it deterministically.
+        // We do this before the first commit so the branch is set from the start,
+        // avoiding any ambiguity from git's default branch name (master vs main).
+        git("checkout", "-b", "test-branch");
+        currentBranch = "test-branch";
 
         // Create and commit a single file so that git-log, branch listing, and the
         // "nothing staged" pre-flight check all have a meaningful state to operate on.
@@ -599,22 +609,14 @@ public class GitToolsTest extends BasePlatformTestCase {
 
     /**
      * The {@code branch} filter selects which branch's history to show.
-     * "master" or "main" should both be valid; the test uses HEAD's branch name
-     * which avoids hardcoding the default branch name.
+     * Uses {@link #currentBranch} captured in setUp to avoid hardcoding
+     * "master" vs "main" and to avoid spawning a subprocess inside the test.
      */
     public void testGitLogWithBranchFilter() throws Exception {
-        // Resolve the actual branch name to avoid hardcoding "master" vs "main".
-        List<String> branchCmd = new ArrayList<>(List.of(gitExec, "rev-parse", "--abbrev-ref", "HEAD"));
-        Process branchProcess = new ProcessBuilder(branchCmd)
-            .directory(new File(basePath))
-            .redirectErrorStream(true)
-            .start();
-        String branchName = new String(branchProcess.getInputStream().readAllBytes()).trim();
-        branchProcess.waitFor();
-        assertFalse("Expected a valid branch name, got: " + branchName, branchName.isBlank());
+        assertFalse("currentBranch must be set during setUp", currentBranch.isBlank());
 
         GitLogTool tool = new GitLogTool(getProject());
-        String result = tool.execute(args("branch", branchName));
+        String result = tool.execute(args("branch", currentBranch));
 
         assertNotNull(result);
         assertFalse("Result should not start with 'Error', got: " + result,
