@@ -63,14 +63,21 @@ public final class ToolCallStatisticsService implements Disposable {
             Path dbDir = Path.of(basePath, ".agentbridge");
             Files.createDirectories(dbDir);
             Path dbPath = dbDir.resolve(DB_FILENAME);
-            connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
-            connection.setAutoCommit(true);
-            createSchema();
+            initializeWithConnection(DriverManager.getConnection("jdbc:sqlite:" + dbPath));
             subscribeToToolCallEvents();
             LOG.info("ToolCallStatisticsService initialized at " + dbPath);
         } catch (ClassNotFoundException | SQLException | IOException e) {
             LOG.error("Failed to initialize ToolCallStatisticsService", e);
         }
+    }
+
+    /**
+     * Initialize with an externally-provided connection. Package-private for testing.
+     */
+    void initializeWithConnection(@NotNull Connection conn) throws SQLException {
+        this.connection = conn;
+        connection.setAutoCommit(true);
+        createSchema();
     }
 
     private void createSchema() throws SQLException {

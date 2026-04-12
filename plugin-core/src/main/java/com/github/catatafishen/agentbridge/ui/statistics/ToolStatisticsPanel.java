@@ -86,7 +86,7 @@ public class ToolStatisticsPanel extends JPanel {
         ToolCallStatisticsService service = ToolCallStatisticsService.getInstance(project);
         if (service == null) return;
 
-        String since = computeSince();
+        String since = computeSince(rangeCombo.getSelectedIndex(), Instant.now());
         String clientId = ALL_CLIENTS.equals(clientCombo.getSelectedItem())
             ? null : (String) clientCombo.getSelectedItem();
 
@@ -109,10 +109,12 @@ public class ToolStatisticsPanel extends JPanel {
         clientCombo.setSelectedItem(selected);
     }
 
-    private String computeSince() {
-        int index = rangeCombo.getSelectedIndex();
-        Instant now = Instant.now();
-        return switch (index) {
+    /**
+     * Computes the ISO-8601 timestamp threshold for the given range combo index.
+     * Package-private for testing.
+     */
+    static String computeSince(int rangeIndex, Instant now) {
+        return switch (rangeIndex) {
             case 0 -> now.minus(1, ChronoUnit.HOURS).toString();
             case 1 -> now.minus(24, ChronoUnit.HOURS).toString();
             case 2 -> now.minus(7, ChronoUnit.DAYS).toString();
@@ -121,9 +123,15 @@ public class ToolStatisticsPanel extends JPanel {
     }
 
     private void updateSummary(Map<String, Long> summary) {
+        summaryLabel.setText(formatSummary(summary));
+    }
+
+    /**
+     * Formats a summary map into a human-readable string. Package-private for testing.
+     */
+    static String formatSummary(Map<String, Long> summary) {
         if (summary.isEmpty()) {
-            summaryLabel.setText("No data");
-            return;
+            return "No data";
         }
         long calls = summary.getOrDefault("totalCalls", 0L);
         long errors = summary.getOrDefault("totalErrors", 0L);
@@ -131,8 +139,8 @@ public class ToolStatisticsPanel extends JPanel {
             summary.getOrDefault("totalInputBytes", 0L));
         String totalOutput = ToolStatisticsTableModel.formatBytes(
             summary.getOrDefault("totalOutputBytes", 0L));
-        summaryLabel.setText(String.format(
+        return String.format(
             "Total: %d calls  |  %d errors  |  Input: %s  |  Output: %s",
-            calls, errors, totalInput, totalOutput));
+            calls, errors, totalInput, totalOutput);
     }
 }
