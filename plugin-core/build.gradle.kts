@@ -447,6 +447,9 @@ tasks {
         // Exclude Swing/JCEF UI classes that require the full IDE runtime — these
         // can only be tested via integration tests. Pure-logic classes in ui/ (e.g.
         // ConversationSerializer, MessageFormatter, UsageStatisticsData) are kept.
+        //
+        // NOTE: These are TRULY UNTESTABLE in unit tests (require IDE runtime).
+        // Missing tests for testable logic should NOT be hidden via exclusions.
         val uiExcludes = listOf(
             "**/ui/*Panel*",                   // Swing panels (AcpConnect, ChatConsole, Permissions, etc.)
             "**/ui/*Banner*",                  // Swing banners (AuthSetup, GitWarning, Status)
@@ -482,27 +485,24 @@ tasks {
             "**/settings/ThemeColorComboBox*", // Theme color combo (UI, needs IDE runtime)
             "**/memory/*Configurable*",        // MemorySettingsConfigurable (Swing, needs IDE runtime)
             "**/custommcp/*Configurable*",     // CustomMcpConfigurable (Swing, needs IDE runtime)
-            "**/services/McpHttpServer*",      // Raw MCP HTTP server (I/O infrastructure, not unit-testable)
-            "**/services/McpSseTransport*",    // SSE transport (raw I/O, not unit-testable)
-            // ── Network / protocol clients (raw TCP/HTTP/subprocess I/O) ─────────────
-            "**/acp/client/AcpClient*",        // Raw ACP socket protocol client
-            "**/acp/client/AcpFileSystemHandler*", // Virtual-FS handler piped over ACP socket
-            "**/acp/client/AgentProcessRegistry*", // Agent OS-process lifecycle manager
-            "**/acp/client/KiroClient*",       // Kiro HTTP API client
-            "**/acp/client/JunieClient*",      // Junie HTTP API client
-            "**/acp/client/OpenCodeClient*",   // OpenCode HTTP API client
-            "**/agent/codex/CodexAppServerClient*", // Codex REST API client (728 missed lines)
-            "**/agent/claude/ClaudeCliClient*", // Claude CLI subprocess manager
-            "**/acp/client/CopilotClient*",    // Copilot HTTP API client
-            // ── External-process integrations (Sonar, Qodana, web push) ──────────────
+            // ── Raw I/O infrastructure (socket/HTTP/subprocess) ───────────────────────
+            // These are excluded because they're thin wrappers around OS/network I/O.
+            // Protocol logic (parsing, state machines) should be extracted and tested.
+            "**/services/McpHttpServer*",      // Raw HTTP server (Javalin wrapper)
+            "**/services/McpSseTransport*",    // SSE transport (raw I/O)
+            "**/acp/client/AgentProcessRegistry*", // OS-process lifecycle (ProcessBuilder wrapper)
+            "**/bridge/ChatWebServer*",        // Embedded web server (Javalin wrapper)
+            "**/psi/RunConfigurationService*", // IDE run framework wrapper
+            // ── External-process integrations ─────────────────────────────────────────
             "**/psi/SonarQubeIntegration*",    // Runs external SonarQube process
             "**/psi/QodanaAnalyzer*",          // Runs external Qodana process
             "**/psi/SonarRuleDescriptions*",   // Fetches Sonar rule data via HTTP
-            "**/bridge/ChatWebServer*",        // Embedded web server for chat PWA
-            // ── Complex IDE integration (session/process management) ──────────────────
-            "**/session/SessionSwitchService*", // Complex session state-machine (no unit-testable API)
-            "**/psi/RunConfigurationService*", // Runs OS processes via IDE run framework
         )
+        // TODO: The following are DIFFICULT to test but NOT impossible. Exclusions hide
+        // missing test coverage. Extract testable logic or add integration tests:
+        //   - AcpClient* (protocol clients) — extract protocol logic, mock I/O
+        //   - *Client (agent clients) — extract request/response logic, mock HTTP
+        //   - SessionSwitchService — extract state machine, mock dependencies
         val allExcludes = uiExcludes + otherExcludes
 
         val instrumentedClasses = fileTree("${layout.buildDirectory.get()}/instrumented/instrumentCode") {
