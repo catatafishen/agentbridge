@@ -249,7 +249,7 @@ class UsageStatisticsLoaderTest {
     @Test
     void collectTurnStats_entryOutsideDateRange_producesNoAccumulators(@TempDir Path tempDir) throws Exception {
         Path jsonlPath = tempDir.resolve("old.jsonl");
-        // Entry is in 2023; range is restricted to 2025
+        // Entry is in 2023; range is restricted to 2024
         String line = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":1000,"
             + "\"inputTokens\":10,\"outputTokens\":20,\"toolCallCount\":1,"
             + "\"linesAdded\":1,\"linesRemoved\":0,\"multiplier\":\"1x\","
