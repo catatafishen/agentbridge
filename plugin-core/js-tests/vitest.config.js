@@ -10,12 +10,15 @@ export default defineConfig({
             // lcov for Codecov upload; text-summary for CI log
             reporter: ['lcov', 'text-summary'],
             reportsDirectory: './coverage',
-            // The tests load a pre-built bundle via vm.Script, so coverage is
-            // attributed at the bundle level. With BUILD_SOURCEMAPS=1, esbuild embeds
-            // inline sourcemaps, and V8 maps coverage back to the TypeScript source.
-            // Without sourcemaps the report covers the bundle; still useful for CI gating.
-            include: ['../chat-ui/src/**/*.ts'],
+            // Tests import TypeScript source directly (via setup.js → index.ts).
+            // V8 tracks coverage per-file through Vitest's module transforms.
+            // Use **/ prefix because V8 reports absolute paths and picomatch
+            // needs a pattern that matches anywhere in the path (with contains: true).
+            include: ['**/chat-ui/src/**/*.ts'],
             exclude: ['**/*.d.ts'],
+            // chat-ui source lives outside the Vitest root (js-tests/),
+            // so we must allow external files for V8 to report their coverage.
+            allowExternal: true,
         },
     },
 });

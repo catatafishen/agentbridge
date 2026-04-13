@@ -133,15 +133,11 @@ jobs:
         with:
           cache-disabled: true
 
-      - name: Build chat-ui with sourcemaps (for coverage)
-        run: BUILD_SOURCEMAPS=1 npm run build
-        working-directory: plugin-core/chat-ui
-
       - name: Run chat-ui tests with coverage
         run: npm run test:coverage
         working-directory: plugin-core/js-tests
 
-      - name: Build chat-ui (production, no sourcemaps)
+      - name: Build chat-ui
         run: npm run build
         working-directory: plugin-core/chat-ui
 
