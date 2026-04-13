@@ -256,7 +256,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     private static final List<Model> KNOWN_MODELS =
         buildKnownModels();
 
-    private static List<Model> buildKnownModels() {
+    static List<Model> buildKnownModels() {
         Object[][] rows = {
             // { alias, displayName }
             {"default", "Default (recommended)"},
@@ -342,16 +342,14 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
      * Extract plain text from content blocks, inlining resource file content.
      */
     @NotNull
-    private static String extractPromptText(@NotNull List<ContentBlock> blocks) {
+    static String extractPromptText(@NotNull List<ContentBlock> blocks) {
         StringBuilder sb = new StringBuilder();
         for (ContentBlock block : blocks) {
-            if (block instanceof ContentBlock.Text t) {
-                sb.append(t.text());
-            } else if (block instanceof ContentBlock.Resource r) {
-                ContentBlock.ResourceLink rl = r.resource();
-                if (rl.text() != null && !rl.text().isEmpty()) {
-                    sb.append("File: ").append(rl.uri()).append("\n```\n").append(rl.text()).append("\n```\n\n");
-                }
+            if (block instanceof ContentBlock.Text(String text)) {
+                sb.append(text);
+            } else if (block instanceof ContentBlock.Resource(ContentBlock.ResourceLink rl)
+                && rl.text() != null && !rl.text().isEmpty()) {
+                sb.append("File: ").append(rl.uri()).append("\n```\n").append(rl.text()).append("\n```\n\n");
             }
         }
         return sb.toString();
@@ -736,7 +734,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
      * JSON message to stdin. All {@code can_use_tool} requests are auto-approved; only trusted
      * MCP tools are exposed when {@code excludeAgentBuiltInTools} is enabled.
      */
-    private static void respondToControlRequest(@NotNull JsonObject event, @NotNull OutputStream stdin) {
+    static void respondToControlRequest(@NotNull JsonObject event, @NotNull OutputStream stdin) {
         String subtype = event.has(FIELD_SUBTYPE) ? event.get(FIELD_SUBTYPE).getAsString() : "";
         String requestId = event.has(FIELD_REQUEST_ID) ? event.get(FIELD_REQUEST_ID).getAsString() : "";
 
@@ -765,7 +763,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
      * Format: {@code {"type":"user","message":{"role":"user","content":[{"type":"text","text":"..."}]}}}
      */
     @NotNull
-    private static String buildJsonUserMessage(@NotNull String prompt) {
+    static String buildJsonUserMessage(@NotNull String prompt) {
         JsonObject textBlock = new JsonObject();
         textBlock.addProperty("type", "text");
         textBlock.addProperty("text", prompt);

@@ -5,8 +5,6 @@ import com.github.catatafishen.agentbridge.agent.AgentRegistry;
 import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient;
 import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.agentbridge.bridge.AgentConfig;
-import com.github.catatafishen.agentbridge.bridge.AgentSettings;
-import com.github.catatafishen.agentbridge.bridge.GenericAgentSettings;
 import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.session.SessionSwitchService;
@@ -45,9 +43,9 @@ public final class ActiveAgentManager implements Disposable {
     private static final String KEY_SHARED_TURN_TIMEOUT_MINUTES = "agent.sharedTurnTimeoutMinutes";
     private static final String KEY_SHARED_INACTIVITY_TIMEOUT_SECONDS = "agent.sharedInactivityTimeoutSeconds";
     private static final String KEY_SHARED_MAX_TOOL_CALLS = "agent.sharedMaxToolCallsPerTurn";
-    private static final int DEFAULT_TURN_TIMEOUT_MINUTES = 120;
-    private static final int DEFAULT_INACTIVITY_TIMEOUT_SECONDS = 3000;
-    private static final int DEFAULT_MAX_TOOL_CALLS_PER_TURN = 0;
+    static final int DEFAULT_TURN_TIMEOUT_MINUTES = 120;
+    static final int DEFAULT_INACTIVITY_TIMEOUT_SECONDS = 3000;
+    static final int DEFAULT_MAX_TOOL_CALLS_PER_TURN = 0;
 
     private final Project project;
     private volatile boolean acpConnected;
@@ -410,12 +408,6 @@ public final class ActiveAgentManager implements Disposable {
         return new CommandOverrideAgentConfig(realConfig, storedCommand);
     }
 
-    @NotNull
-    private AgentSettings createAgentSettings() {
-        ensureSettingsForActiveProfile();
-        return new GenericAgentSettings(cachedSettings, project);
-    }
-
     private void ensureSettingsForActiveProfile() {
         String profileId = getActiveProfileId();
         if (cachedSettings == null || !cachedSettings.getPrefix().equals(profileId + ".")) {
@@ -459,7 +451,7 @@ public final class ActiveAgentManager implements Disposable {
         return defaultValue;
     }
 
-    private static int parseIntOrDefault(@Nullable String value, int defaultValue) {
+    static int parseIntOrDefault(@Nullable String value, int defaultValue) {
         if (value == null || value.isBlank()) {
             return defaultValue;
         }
@@ -470,7 +462,7 @@ public final class ActiveAgentManager implements Disposable {
         }
     }
 
-    private static int clamp(int value, int min, int max) {
+    static int clamp(int value, int min, int max) {
         return Math.clamp(value, min, max);
     }
 
