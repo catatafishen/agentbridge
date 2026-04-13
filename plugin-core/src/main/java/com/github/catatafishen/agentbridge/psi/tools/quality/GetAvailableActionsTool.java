@@ -223,19 +223,4 @@ public final class GetAvailableActionsTool extends QualityTool {
         return sb.toString();
     }
 
-    /**
-     * Resolves the 0-based caret column from a symbol name or an explicit column.
-     * Falls back to column 0 if neither resolves successfully.
-     */
-    private static int resolveColumn(Document doc, int targetLine,
-                                     @Nullable String symbol, @Nullable Integer targetCol) {
-        if (symbol != null && !symbol.isBlank()) {
-            int lineStart = doc.getLineStartOffset(targetLine - 1);
-            int lineEnd = doc.getLineEndOffset(targetLine - 1);
-            String lineText = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, lineEnd));
-            int idx = lineText.indexOf(symbol);
-            if (idx >= 0) return idx;
-        }
-        return targetCol != null ? Math.max(0, targetCol - 1) : 0;
-    }
 }

@@ -6,6 +6,7 @@ plugins {
 
 dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 application {
