@@ -4,7 +4,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.InvocationTargetException;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Tests for {@link AgentIdMapper}.
@@ -68,5 +72,14 @@ class AgentIdMapperTest {
         void unknownAgent() {
             assertEquals("my-custom-agent", AgentIdMapper.toAgentId("My Custom Agent"));
         }
+    }
+
+    @Test
+    @DisplayName("private constructor enforces utility-class pattern")
+    void constructorThrowsUtilityClassException() throws Exception {
+        var constructor = AgentIdMapper.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        var ex = assertThrows(InvocationTargetException.class, constructor::newInstance);
+        assertInstanceOf(IllegalStateException.class, ex.getCause());
     }
 }

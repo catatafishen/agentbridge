@@ -1,9 +1,11 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.intellij.openapi.project.Project;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mockito;
 
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -16,6 +18,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -246,8 +249,9 @@ class ToolCallStatisticsServiceTest {
 
         var errors = service.queryRecentErrors(null, "opencode", 10);
         assertEquals(1, errors.size());
-        assertEquals("tool_b", errors.getFirst().toolName());
-        assertEquals("opencode", errors.getFirst().clientId());
+        var first = errors.getFirst();
+        assertEquals("tool_b", first.toolName());
+        assertEquals("opencode", first.clientId());
     }
 
     @Test
@@ -343,5 +347,14 @@ class ToolCallStatisticsServiceTest {
             new SQLException("some other error")));
         assertFalse(ToolCallStatisticsService.isDbMoved(
             new SQLException((String) null)));
+    }
+
+    @Test
+    void initializeThrowsWhenBasePathIsNull() {
+        Project mockProject = Mockito.mock(Project.class);
+        Mockito.when(mockProject.getBasePath()).thenReturn(null);
+
+        ToolCallStatisticsService svc = new ToolCallStatisticsService(mockProject);
+        assertThrows(IllegalStateException.class, svc::initialize);
     }
 }
