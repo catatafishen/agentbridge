@@ -761,6 +761,152 @@ class McpProtocolHandlerTest {
         assertFalse(result.has("nextCursor"));
     }
 
+    // ── handleMessage edge cases ─────────────────────────────────────────────
+
+    @Test
+    void handleMessage_noMethodField_returnsNull() {
+        // Valid JSON object with "id" but no "method" key — should return null
+        JsonObject msg = new JsonObject();
+        msg.addProperty("jsonrpc", "2.0");
+        msg.addProperty("id", 1);
+        assertNull(handler.handleMessage(msg.toString()));
+    }
+
+    @Test
+    void handleMessage_stringId_preservedInResponse() {
+        // JSON-RPC allows string IDs — verify they round-trip correctly
+        JsonObject request = new JsonObject();
+        request.addProperty("jsonrpc", "2.0");
+        request.addProperty("id", "abc-123");
+        request.addProperty("method", "ping");
+
+        String response = handler.handleMessage(request.toString());
+        assertNotNull(response);
+        JsonObject parsed = JsonParser.parseString(response).getAsJsonObject();
+        assertEquals("abc-123", parsed.get("id").getAsString());
+    }
+
+    // ── resources/read edge cases ────────────────────────────────────────────
+
+    @Test
+    void testResourcesReadMissingUriReturnsError() {
+        // params with no "uri" key and no "resource" key → -32602 Missing resource URI
+        JsonObject response = parseResponse(sendRequest("resources/read", new JsonObject()));
+        JsonObject error = response.getAsJsonObject("error");
+
+        assertEquals(-32602, error.get("code").getAsInt());
+        assertEquals("Missing resource URI", error.get("message").getAsString());
+    }
+
+    @Test
+    void testResourcesReadViaNestedResourceUri() {
+        // MCP spec allows params.resource.uri as an alternative to params.uri
+        Path file = tempDir.resolve("nested/test.txt");
+        writeTextFile(file, "nested resource content");
+
+        JsonObject resource = new JsonObject();
+        resource.addProperty("uri", file.toUri().toString());
+        JsonObject params = new JsonObject();
+        params.add("resource", resource);
+
+        JsonObject response = parseResponse(sendRequest("resources/read", params));
+        JsonArray contents = response.getAsJsonObject("result").getAsJsonArray("contents");
+
+        assertEquals(1, contents.size());
+        assertEquals("nested resource content",
+            contents.get(0).getAsJsonObject().get("text").getAsString());
+    }
+
+    @Test
+    void testResourcesReadNonFileSchemeReturnsNotFound() {
+        // URI with http: scheme is neither startup-instructions nor a file: URI → not found
+        JsonObject params = new JsonObject();
+        params.addProperty("uri", "http://example.com/test.txt");
+
+        JsonObject response = parseResponse(sendRequest("resources/read", params));
+        JsonObject error = response.getAsJsonObject("error");
+
+        assertEquals(-32002, error.get("code").getAsInt());
+    }
+
+    // ── truncateIfNeeded boundary ────────────────────────────────────────────
+
+    @Test
+    void truncateIfNeeded_exactBoundaryNotTruncated() throws Exception {
+        // Text exactly at MAX_RESULT_CHARS (80_000) should NOT be truncated
+        String exactText = "x".repeat(80_000);
+        String result = invokeTruncateIfNeeded(exactText);
+        assertEquals(exactText, result);
+    }
+
+    // ── respondError with null request ───────────────────────────────────────
+
+    @Test
+    void respondError_nullRequest_omitsId() throws Exception {
+        JsonObject response = invokeRespondError(null, -32600, "Invalid Request");
+        assertEquals("2.0", response.get("jsonrpc").getAsString());
+        assertFalse(response.has("id"));
+        assertEquals(-32600, response.getAsJsonObject("error").get("code").getAsInt());
+        assertEquals("Invalid Request", response.getAsJsonObject("error").get("message").getAsString());
+    }
+
+    // ── extractMeta with non-object _meta ────────────────────────────────────
+
+    @Test
+    void extractMeta_nonObjectMeta_returnsNullFields() throws Exception {
+        // _meta is a string primitive, not a JsonObject — treated as absent
+        JsonObject params = new JsonObject();
+        params.addProperty("_meta", "not-an-object");
+        Object meta = invokeExtractMeta(params);
+        assertNull(getRecordField(meta, "progressToken"));
+        assertNull(getRecordField(meta, "toolUseId"));
+    }
+
+    // ── getOptionalMetaString with boolean primitive ─────────────────────────
+
+    @Test
+    void getOptionalMetaString_returnsNullForBoolean() throws Exception {
+        // Boolean primitives are neither string nor number — should return null
+        JsonObject meta = new JsonObject();
+        meta.addProperty("key", true);
+        assertNull(invokeGetOptionalMetaString(meta, "key"));
+    }
+
+    // ── parseCursorOffset with JsonNull ──────────────────────────────────────
+
+    @Test
+    void parseCursorOffset_returnsZeroForJsonNull() throws Exception {
+        assertEquals(0, invokeParseCursorOffset(com.google.gson.JsonNull.INSTANCE, "res:"));
+    }
+
+    // ── isTextResource additional types ──────────────────────────────────────
+
+    @Test
+    void isTextResource_trueForMarkdown() throws Exception {
+        assertTrue(invokeIsTextResource(Path.of("README.md")));
+    }
+
+    @Test
+    void isTextResource_trueForPlainText() throws Exception {
+        assertTrue(invokeIsTextResource(Path.of("notes.txt")));
+    }
+
+    @Test
+    void isTextResource_trueForKotlin() throws Exception {
+        assertTrue(invokeIsTextResource(Path.of("Main.kt")));
+    }
+
+    // ── respondResourceNotFound with null request ────────────────────────────
+
+    @Test
+    void respondResourceNotFound_nullRequest_omitsId() throws Exception {
+        JsonObject response = invokeRespondResourceNotFound(null, "file:///x", "Resource not found");
+        assertEquals("2.0", response.get("jsonrpc").getAsString());
+        assertFalse(response.has("id"));
+        assertEquals(-32002, response.getAsJsonObject("error").get("code").getAsInt());
+        assertEquals("file:///x", response.getAsJsonObject("error").getAsJsonObject("data").get("uri").getAsString());
+    }
+
     // ── Reflection helpers ───────────────────────────────────────────────────
 
     private static int invokeParseCursorOffset(com.google.gson.JsonElement cursor, String prefix) throws Exception {

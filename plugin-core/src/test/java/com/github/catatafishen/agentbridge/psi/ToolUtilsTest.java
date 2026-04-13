@@ -1,11 +1,16 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.lang.reflect.Method;
+import java.util.regex.Pattern;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -412,6 +417,134 @@ class ToolUtilsTest {
         @Test
         void grepMessageMentionsSearchText() {
             assertTrue(ToolUtils.getCommandAbuseMessage("grep").contains("search_text"));
+        }
+    }
+
+    @Nested
+    @DisplayName("compileGlob")
+    class CompileGlob {
+        @Test
+        void compiledPatternMatchesStar() {
+            Pattern p = ToolUtils.compileGlob("*.java");
+            assertTrue(p.matcher("Foo.java").matches());
+        }
+
+        @Test
+        void compiledPatternRejectsNonMatch() {
+            Pattern p = ToolUtils.compileGlob("*.java");
+            assertFalse(p.matcher("Foo.kt").matches());
+        }
+
+        @Test
+        void compiledPatternMatchesDoubleStar() {
+            Pattern p = ToolUtils.compileGlob("**/*.java");
+            assertTrue(p.matcher("src/main/Foo.java").matches());
+        }
+
+        @Test
+        void compiledPatternMatchesQuestionMark() {
+            Pattern p = ToolUtils.compileGlob("?.txt");
+            assertTrue(p.matcher("a.txt").matches());
+            assertFalse(p.matcher("ab.txt").matches());
+        }
+
+        @Test
+        void compiledPatternEscapesDot() {
+            Pattern p = ToolUtils.compileGlob("file.txt");
+            assertTrue(p.matcher("file.txt").matches());
+            assertFalse(p.matcher("filextxt").matches());
+        }
+    }
+
+    @Nested
+    @DisplayName("globToRegex (private, via reflection)")
+    class GlobToRegex {
+        private static Method globToRegex;
+
+        @BeforeAll
+        static void init() throws Exception {
+            globToRegex = ToolUtils.class.getDeclaredMethod("globToRegex", String.class);
+            globToRegex.setAccessible(true);
+        }
+
+        private Pattern invoke(String glob) throws Exception {
+            return (Pattern) globToRegex.invoke(null, glob);
+        }
+
+        @Test
+        void starTranslatedToNonSlash() throws Exception {
+            Pattern p = invoke("*");
+            assertTrue(p.matcher("foo").matches());
+            assertTrue(p.matcher("bar.java").matches());
+            assertFalse(p.matcher("a/b").matches(), "* should not cross /");
+        }
+
+        @Test
+        void doubleStarTranslatedToAny() throws Exception {
+            Pattern p = invoke("**");
+            assertTrue(p.matcher("anything").matches());
+            assertTrue(p.matcher("a/b/c").matches(), "** should cross /");
+        }
+
+        @Test
+        void questionMarkTranslatedToSingleChar() throws Exception {
+            Pattern p = invoke("?");
+            assertTrue(p.matcher("a").matches());
+            assertFalse(p.matcher("ab").matches(), "? matches exactly one char");
+            assertFalse(p.matcher("/").matches(), "? should not match /");
+        }
+
+        @Test
+        void literalDotEscaped() throws Exception {
+            Pattern p = invoke(".");
+            assertTrue(p.matcher(".").matches());
+            assertFalse(p.matcher("x").matches(), ". should be literal, not regex any-char");
+        }
+
+        @Test
+        void emptyGlobProducesEmptyMatchPattern() throws Exception {
+            Pattern p = invoke("");
+            assertTrue(p.matcher("").matches());
+            assertFalse(p.matcher("x").matches());
+        }
+    }
+
+    @Nested
+    @DisplayName("doesNotMatchGlob — additional edge cases")
+    class DoesNotMatchGlobEdgeCases {
+        @Test
+        void emptyPatternReturnsFalse() {
+            assertFalse(ToolUtils.doesNotMatchGlob("anything", ""));
+        }
+
+        @Test
+        void escapedDotsInJavaPattern() {
+            // "*.java" must match ".java" literal, not any 5-char suffix
+            assertFalse(ToolUtils.doesNotMatchGlob("Foo.java", "*.java"));
+            assertTrue(ToolUtils.doesNotMatchGlob("Foosjava", "*.java"));
+        }
+    }
+
+    @Nested
+    @DisplayName("truncateOutput — edge cases")
+    class TruncateOutputEdgeCases {
+        @Test
+        void lastPageNoTruncationHint() {
+            // Output of 10 chars; offset=5, maxChars=5 → exactly fits
+            String output = "0123456789";
+            String result = ToolUtils.truncateOutput(output, 5, 5);
+            // Should NOT contain "offset=" pagination hint for more data
+            assertFalse(result.contains("Use offset="), "Last page should not suggest more");
+            assertTrue(result.contains("56789"), "Should contain the remaining content");
+        }
+
+        @Test
+        void maxCharsOneStillWorks() {
+            String output = "abcdef";
+            String result = assertDoesNotThrow(() -> ToolUtils.truncateOutput(output, 1, 0));
+            // Should return exactly 1 char of content plus a truncation hint
+            assertTrue(result.startsWith("a"), "Should start with first character");
+            assertTrue(result.contains("Use offset="), "Should indicate more content available");
         }
     }
 }
