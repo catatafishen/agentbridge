@@ -11,10 +11,10 @@ import javax.swing.JComponent
  */
 object GitLogRenderer : ToolResultRenderer {
 
-    private const val COMMIT_PREFIX = "commit "
-    private val SHORT_PATTERN = Regex("""^[a-f0-9]{7,40}\s+.+\(.+,\s*.+\)$""")
-    private val ONELINE_PATTERN = Regex("""^[a-f0-9]{7,40}\s+.+""")
-    private val MEDIUM_ENTRY = Regex("""^([a-f0-9]{7,40})\s+(.+)\((.+),\s*(.+)\)$""")
+    const val COMMIT_PREFIX = "commit "
+    val SHORT_PATTERN = Regex("""^[a-f0-9]{7,40}\s+.+\(.+,\s*.+\)$""")
+    val ONELINE_PATTERN = Regex("""^[a-f0-9]{7,40}\s+.+""")
+    val MEDIUM_ENTRY = Regex("""^([a-f0-9]{7,40})\s+(.+)\((.+),\s*(.+)\)$""")
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()

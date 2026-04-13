@@ -25,8 +25,8 @@ public final class HttpRequestRenderer implements ToolResultRenderer {
     public static final HttpRequestRenderer INSTANCE = new HttpRequestRenderer();
 
     private static final int MAX_BODY_LINES = 100;
-    private static final String HEADERS_MARKER = "--- Headers ---";
-    private static final String BODY_MARKER = "--- Body ---";
+    static final String HEADERS_MARKER = "--- Headers ---";
+    static final String BODY_MARKER = "--- Body ---";
 
     private HttpRequestRenderer() {
     }
@@ -54,10 +54,10 @@ public final class HttpRequestRenderer implements ToolResultRenderer {
 
     // ── Status line parsing ──────────────────────────────────
 
-    private record StatusInfo(int code, String detail) {
+    record StatusInfo(int code, String detail) {
     }
 
-    private static @Nullable StatusInfo parseStatusLine(@NotNull String output) {
+    static @Nullable StatusInfo parseStatusLine(@NotNull String output) {
         String firstLine = output.lines().findFirst().orElse("");
         if (!firstLine.startsWith("HTTP ")) return null;
 
@@ -92,7 +92,7 @@ public final class HttpRequestRenderer implements ToolResultRenderer {
         return row;
     }
 
-    private static @NotNull List<String> parseHeaders(@NotNull String output, int headersStart, int bodyStart) {
+    static @NotNull List<String> parseHeaders(@NotNull String output, int headersStart, int bodyStart) {
         if (headersStart < 0) return List.of();
         int end = bodyStart >= 0 ? bodyStart : output.length();
         return output.substring(headersStart + HEADERS_MARKER.length(), end)
@@ -101,7 +101,7 @@ public final class HttpRequestRenderer implements ToolResultRenderer {
             .collect(Collectors.toList());
     }
 
-    private static @NotNull String parseBody(@NotNull String output, int bodyStart) {
+    static @NotNull String parseBody(@NotNull String output, int bodyStart) {
         if (bodyStart < 0) return "";
         return output.substring(bodyStart + BODY_MARKER.length()).trim();
     }

@@ -13,7 +13,7 @@ import javax.swing.JComponent
  */
 object GitStatusRenderer : ToolResultRenderer {
 
-    private data class StatusFiles(
+    data class StatusFiles(
         val staged: List<Pair<Char, String>>,
         val unstaged: List<Pair<Char, String>>,
         val untracked: List<String>,
@@ -59,7 +59,7 @@ object GitStatusRenderer : ToolResultRenderer {
         panel.add(row)
     }
 
-    private fun categorizeFiles(lines: List<String>): StatusFiles {
+    fun categorizeFiles(lines: List<String>): StatusFiles {
         val staged = mutableListOf<Pair<Char, String>>()
         val unstaged = mutableListOf<Pair<Char, String>>()
         val untracked = mutableListOf<String>()

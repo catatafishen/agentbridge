@@ -883,7 +883,7 @@ public final class PlatformApiCompat {
         return null;
     }
 
-    private static final java.util.Map<String, String> SHEBANG_LANG_MAP = java.util.Map.ofEntries(
+    static final java.util.Map<String, String> SHEBANG_LANG_MAP = java.util.Map.ofEntries(
         java.util.Map.entry("python", LANG_PYTHON),
         java.util.Map.entry("python3", LANG_PYTHON),
         java.util.Map.entry("node", LANG_JAVASCRIPT),
@@ -902,76 +902,109 @@ public final class PlatformApiCompat {
 
     @Nullable
     private static com.intellij.lang.Language detectViaShebang(@NotNull String text) {
+        String langId = resolveShebangLanguageId(text);
+        return langId != null ? com.intellij.lang.LanguageUtil.findRegisteredLanguage(langId) : null;
+    }
+
+    /**
+     * Extracts the interpreter name from a shebang line.
+     * For {@code #!/usr/bin/env python3} returns {@code "python3"}.
+     * For {@code #!/bin/bash} returns {@code "bash"}.
+     *
+     * @return the interpreter name, or {@code null} if the text doesn't start with {@code #!}
+     */
+    @Nullable
+    static String resolveShebangInterpreter(@NotNull String text) {
         if (!text.startsWith("#!")) return null;
         String firstLine = text.lines().findFirst().orElse("");
-        // Extract the interpreter name: #!/usr/bin/env python3 → python3
-        String interpreter = firstLine.contains("/env ")
+        return firstLine.contains("/env ")
             ? firstLine.substring(firstLine.indexOf("/env ") + 5).trim().split("\\s")[0]
             : firstLine.substring(firstLine.lastIndexOf('/') + 1).trim().split("\\s")[0];
-        String langId = SHEBANG_LANG_MAP.get(interpreter);
-        return langId != null ? com.intellij.lang.LanguageUtil.findRegisteredLanguage(langId) : null;
+    }
+
+    /**
+     * Resolves the shebang interpreter to a language ID via {@link #SHEBANG_LANG_MAP}.
+     *
+     * @return the language ID string (e.g. "Python", "Shell Script"), or {@code null}
+     */
+    @Nullable
+    static String resolveShebangLanguageId(@NotNull String text) {
+        String interpreter = resolveShebangInterpreter(text);
+        return interpreter != null ? SHEBANG_LANG_MAP.get(interpreter) : null;
     }
 
     @Nullable
     private static com.intellij.lang.Language detectViaPatterns(@NotNull String text) {
+        String langId = detectLanguageIdViaPatterns(text);
+        return langId != null ? com.intellij.lang.LanguageUtil.findRegisteredLanguage(langId) : null;
+    }
+
+    /**
+     * Detects a language ID from content patterns (JSON, XML, HTML, YAML, SQL, Java/Kotlin,
+     * Python, Go, Rust). Returns the ID string suitable for
+     * {@link com.intellij.lang.LanguageUtil#findRegisteredLanguage(String)}.
+     *
+     * @return language ID (e.g. "JSON", "JAVA", "Python") or {@code null}
+     */
+    @Nullable
+    static String detectLanguageIdViaPatterns(@NotNull String text) {
         String trimmed = text.stripLeading();
         String first512 = trimmed.substring(0, Math.min(trimmed.length(), 512));
 
-        com.intellij.lang.Language result = detectMarkupLanguage(trimmed, first512);
+        String result = detectMarkupLanguageId(trimmed, first512);
         if (result != null) return result;
 
         String upper = first512.toUpperCase(java.util.Locale.ROOT);
-        result = detectSqlOrJavaFamily(upper, first512);
+        result = detectSqlOrJavaFamilyId(upper, first512);
         if (result != null) return result;
 
-        return detectScriptingLanguages(first512);
+        return detectScriptingLanguageId(first512);
     }
 
     @Nullable
-    private static com.intellij.lang.Language detectMarkupLanguage(@NotNull String trimmed, @NotNull String first512) {
+    static String detectMarkupLanguageId(@NotNull String trimmed, @NotNull String first512) {
         if ((trimmed.startsWith("{") || trimmed.startsWith("[")) && first512.contains("\"")) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("JSON");
+            return "JSON";
         }
         if (trimmed.startsWith("<?xml") || trimmed.startsWith("<!DOCTYPE")) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("XML");
+            return "XML";
         }
         if (trimmed.startsWith("<html") || trimmed.startsWith("<!doctype html")) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("HTML");
+            return "HTML";
         }
         if (trimmed.startsWith("---")) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("yaml");
+            return "yaml";
         }
         return null;
     }
 
     @Nullable
-    private static com.intellij.lang.Language detectSqlOrJavaFamily(@NotNull String upper, @NotNull String first512) {
+    static String detectSqlOrJavaFamilyId(@NotNull String upper, @NotNull String first512) {
         if (upper.startsWith("SELECT ") || upper.startsWith("INSERT ") || upper.startsWith("CREATE TABLE")
             || upper.startsWith("ALTER TABLE") || upper.startsWith("DROP ")) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("SQL");
+            return "SQL";
         }
         if (first512.startsWith("package ") && first512.contains(";")) {
             return first512.contains("fun ") || first512.contains("val ")
-                ? com.intellij.lang.LanguageUtil.findRegisteredLanguage("kotlin")
-                : com.intellij.lang.LanguageUtil.findRegisteredLanguage("JAVA");
+                ? "kotlin" : "JAVA";
         }
         return null;
     }
 
     @Nullable
-    private static com.intellij.lang.Language detectScriptingLanguages(@NotNull String first512) {
+    static String detectScriptingLanguageId(@NotNull String first512) {
         if ((first512.contains("def ") && first512.contains(":"))
             || first512.startsWith("import ") && !first512.contains("{") && !first512.contains("from '")) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage(LANG_PYTHON);
+            return LANG_PYTHON;
         }
         if (first512.contains("fun ") && first512.contains("{") && !first512.contains(";")) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("kotlin");
+            return "kotlin";
         }
         if (first512.startsWith("package main") || (first512.contains("func ") && first512.contains("{"))) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("go");
+            return "go";
         }
         if (first512.contains("fn ") && (first512.contains("let ") || first512.contains("pub "))) {
-            return com.intellij.lang.LanguageUtil.findRegisteredLanguage("Rust");
+            return "Rust";
         }
         return null;
     }

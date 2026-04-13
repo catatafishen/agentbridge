@@ -13,7 +13,7 @@ import javax.swing.JComponent
  */
 object InspectionResultRenderer : ToolResultRenderer {
 
-    private val FINDING_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^]]+)]\s+(.+)$""")
+    val FINDING_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^]]+)]\s+(.+)$""")
     private val SUMMARY_PATTERN = Regex("""Found\s+(\d+)\s+(?:total\s+)?(?:problems?|compilation errors?)""")
     private val SUCCESS_PATTERN = Regex("""^No\s+(?:compilation errors|inspection problems)""")
 
@@ -40,7 +40,7 @@ object InspectionResultRenderer : ToolResultRenderer {
         return panel
     }
 
-    private data class Finding(
+    data class Finding(
         val path: String,
         val line: Int,
         val severity: String,
@@ -48,7 +48,7 @@ object InspectionResultRenderer : ToolResultRenderer {
         val description: String
     )
 
-    private fun parseFinding(match: MatchResult): Finding {
+    fun parseFinding(match: MatchResult): Finding {
         val bracketContent = match.groupValues[3]
         val slashIdx = bracketContent.indexOf('/')
         return if (slashIdx >= 0) {
@@ -127,7 +127,7 @@ object InspectionResultRenderer : ToolResultRenderer {
         else -> ToolRenderers.MUTED_COLOR
     }
 
-    private fun abbreviateSeverity(severity: String): String = when (severity.uppercase()) {
+    fun abbreviateSeverity(severity: String): String = when (severity.uppercase()) {
         "ERROR", "GENERIC_SERVER_ERROR_OR_WARNING" -> "E"
         "WARNING" -> "W"
         "WEAK_WARNING", "LIKE_UNUSED_SYMBOL" -> "w"

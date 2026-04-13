@@ -15,19 +15,19 @@ import javax.swing.JComponent
  */
 object SimpleStatusRenderer : ToolResultRenderer {
 
-    private val DELETE_FILE = Regex("""^Deleted file:\s+(.+)""")
-    private val UNDO = Regex("""^Undid (\d+) action\(s\) on (.+?):\s*(.*)""")
-    private val FORMAT_CODE = Regex("""^Code formatted:\s+(.+)""")
-    private val OPTIMIZE = Regex("""^Imports optimized:\s+(.+)""")
-    private val DICTIONARY = Regex("""^Added '(.+)' to project dictionary""")
-    private val SUPPRESS = Regex("""^Suppressed '(.+)' at line (\d+) in (.+)""")
-    private val OPENED = Regex("""^Opened (.+?)(?:\s+\(line (\d+)\))?$""")
-    private val THEME = Regex("""^Theme set to:\s+(.+)""")
-    private val MARK_DIR = Regex("""^Directory (.+) marked as (.+)""")
-    private val DOWNLOAD = Regex("""^Sources downloaded""")
-    private val RELOAD = Regex("""^(?:File (.+)|Project root) reloaded from disk""")
-    private val GENERIC_SUCCESS = Regex("""^✓\s+(.+)""")
-    private val ERROR = Regex("""^Error:\s+(.+)""", RegexOption.DOT_MATCHES_ALL)
+    val DELETE_FILE = Regex("""^Deleted file:\s+(.+)""")
+    val UNDO = Regex("""^Undid (\d+) action\(s\) on (.+?):\s*(.*)""")
+    val FORMAT_CODE = Regex("""^Code formatted:\s+(.+)""")
+    val OPTIMIZE = Regex("""^Imports optimized:\s+(.+)""")
+    val DICTIONARY = Regex("""^Added '(.+)' to project dictionary""")
+    val SUPPRESS = Regex("""^Suppressed '(.+)' at line (\d+) in (.+)""")
+    val OPENED = Regex("""^Opened (.+?)(?:\s+\(line (\d+)\))?$""")
+    val THEME = Regex("""^Theme set to:\s+(.+)""")
+    val MARK_DIR = Regex("""^Directory (.+) marked as (.+)""")
+    val DOWNLOAD = Regex("""^Sources downloaded""")
+    val RELOAD = Regex("""^(?:File (.+)|Project root) reloaded from disk""")
+    val GENERIC_SUCCESS = Regex("""^✓\s+(.+)""")
+    val ERROR = Regex("""^Error:\s+(.+)""", RegexOption.DOT_MATCHES_ALL)
 
     override fun render(output: String): JComponent? {
         val text = output.trimEnd()
