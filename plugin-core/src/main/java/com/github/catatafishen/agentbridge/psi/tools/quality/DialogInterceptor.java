@@ -24,7 +24,9 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 final class DialogInterceptor {
 
-    /** Snapshot of the options exposed by a dialog. */
+    /**
+     * Snapshot of the options exposed by a dialog.
+     */
     record DialogInfo(
         List<String> radioButtons,
         List<String> checkBoxes,
@@ -94,7 +96,7 @@ final class DialogInterceptor {
 
     // ── Private helpers ──────────────────────────────────────
 
-    private static DialogInfo extractInfo(Dialog dialog) {
+    static DialogInfo extractInfo(Dialog dialog) {
         List<String> radios = new ArrayList<>();
         List<String> checks = new ArrayList<>();
         List<String> inputs = new ArrayList<>();
@@ -103,9 +105,9 @@ final class DialogInterceptor {
         return new DialogInfo(radios, checks, inputs, buttons);
     }
 
-    private static void collectComponents(Container container,
-                                          List<String> radios, List<String> checks,
-                                          List<String> inputs, List<String> buttons) {
+    static void collectComponents(Container container,
+                                  List<String> radios, List<String> checks,
+                                  List<String> inputs, List<String> buttons) {
         for (Component comp : container.getComponents()) {
             if (comp instanceof JRadioButton rb && !rb.getText().isBlank()) {
                 radios.add(rb.getText());
@@ -128,7 +130,7 @@ final class DialogInterceptor {
      * Selects the first radio button or checkbox whose text equals {@code optionText}
      * (case-insensitive) anywhere in the component tree. Returns {@code true} on success.
      */
-    private static boolean selectOption(Container container, String optionText) {
+    static boolean selectOption(Container container, String optionText) {
         for (Component comp : container.getComponents()) {
             if (comp instanceof JRadioButton rb && optionText.equalsIgnoreCase(rb.getText())) {
                 rb.doClick();
@@ -149,7 +151,7 @@ final class DialogInterceptor {
      * Finds and clicks the primary confirm button (OK / Refactor / Apply / Run / Yes).
      * Skips disabled buttons.
      */
-    private static void clickConfirmButton(Container container) {
+    static void clickConfirmButton(Container container) {
         for (Component comp : container.getComponents()) {
             if (comp instanceof JButton btn && btn.isEnabled()) {
                 String text = btn.getText();

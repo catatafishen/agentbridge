@@ -171,8 +171,8 @@ public final class GetActionOptionsTool extends QualityTool {
         return ACTION_PREFIX + actionName + "' makes the following changes (no dialog — use apply_action to apply):\n\n" + diff;
     }
 
-    private String formatDialogOptions(String actionName, String pathStr, int line,
-                                       DialogInterceptor.DialogInfo info) {
+    static String formatDialogOptions(String actionName, String pathStr, int line,
+                                      DialogInterceptor.DialogInfo info) {
         StringBuilder sb = new StringBuilder();
         sb.append(ACTION_PREFIX).append(actionName).append("' at ").append(pathStr).append(':').append(line)
             .append(" shows a dialog with the following options:\n");
@@ -221,19 +221,4 @@ public final class GetActionOptionsTool extends QualityTool {
         }
     }
 
-    /**
-     * Resolves the 0-based caret column from either a symbol name or an explicit column.
-     * Falls back to column 0 (start of line) if neither is provided.
-     */
-    private static int resolveColumn(Document doc, int targetLine,
-                                     @Nullable String symbol, @Nullable Integer targetCol) {
-        if (symbol != null && !symbol.isBlank()) {
-            int lineStart = doc.getLineStartOffset(targetLine - 1);
-            int lineEnd = doc.getLineEndOffset(targetLine - 1);
-            String lineText = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, lineEnd));
-            int idx = lineText.indexOf(symbol);
-            if (idx >= 0) return idx;
-        }
-        return targetCol != null ? Math.max(0, targetCol - 1) : 0;
-    }
 }

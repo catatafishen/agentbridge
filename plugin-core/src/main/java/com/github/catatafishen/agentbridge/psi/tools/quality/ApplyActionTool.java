@@ -237,8 +237,8 @@ public final class ApplyActionTool extends QualityTool {
     private record ActionContext(IntentionAction action, Editor editor, PsiFile psiFile, Document doc) {
     }
 
-    private String formatApplyResult(String actionName, String pathStr, int line,
-                                     String diff, boolean applied) {
+    static String formatApplyResult(String actionName, String pathStr, int line,
+                                    String diff, boolean applied) {
         if (diff.isEmpty()) {
             return (applied ? "Applied" : "Selected option for") + " action: " + actionName
                 + "\n  File: " + pathStr + LINE_LABEL + line + "\n  (no file changes)";
@@ -295,18 +295,4 @@ public final class ApplyActionTool extends QualityTool {
         return names;
     }
 
-    /**
-     * Resolves the 0-based caret column from a symbol name, an explicit column, or defaults to 0.
-     */
-    private static int resolveColumn(Document doc, int targetLine,
-                                     @Nullable String symbol, @Nullable Integer targetCol) {
-        if (symbol != null && !symbol.isBlank()) {
-            int lineStart = doc.getLineStartOffset(targetLine - 1);
-            int lineEnd = doc.getLineEndOffset(targetLine - 1);
-            String lineText = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, lineEnd));
-            int idx = lineText.indexOf(symbol);
-            if (idx >= 0) return idx;
-        }
-        return targetCol != null ? Math.max(0, targetCol - 1) : 0;
-    }
 }

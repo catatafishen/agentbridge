@@ -96,7 +96,7 @@ public final class GetCoverageTool extends TestingTool {
     }
 
     @SuppressWarnings("java:S3518") // division by zero is prevented by Math.max(1, ...)
-    private String parseJacocoXml(Path xmlPath, String fileFilter) {
+    static String parseJacocoXml(Path xmlPath, String fileFilter) {
         try {
             var dbf = DocumentBuilderFactory.newInstance();
             //noinspection HttpUrlsUsage - XML feature URI, not an actual URL
@@ -135,7 +135,7 @@ public final class GetCoverageTool extends TestingTool {
     }
 
     @SuppressWarnings("java:S3518") // division by zero is prevented by Math.max(1, ...)
-    private CoverageData processClassCoverage(org.w3c.dom.Element cls) {
+    static CoverageData processClassCoverage(org.w3c.dom.Element cls) {
         var counters = cls.getElementsByTagName("counter");
         for (int k = 0; k < counters.getLength(); k++) {
             var counter = counters.item(k);
@@ -150,6 +150,6 @@ public final class GetCoverageTool extends TestingTool {
         return null;
     }
 
-    private record CoverageData(int covered, int total, double percentage) {
+    record CoverageData(int covered, int total, double percentage) {
     }
 }

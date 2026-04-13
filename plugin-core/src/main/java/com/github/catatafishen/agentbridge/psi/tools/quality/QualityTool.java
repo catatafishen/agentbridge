@@ -48,6 +48,22 @@ public abstract class QualityTool extends Tool {
         super(project);
     }
 
+    /**
+     * Resolves the 0-based caret column from a symbol name, an explicit column, or defaults to 0.
+     * Shared by {@link ApplyActionTool} and {@link GetActionOptionsTool}.
+     */
+    static int resolveColumn(Document doc, int targetLine,
+                             @Nullable String symbol, @Nullable Integer targetCol) {
+        if (symbol != null && !symbol.isBlank()) {
+            int lineStart = doc.getLineStartOffset(targetLine - 1);
+            int lineEnd = doc.getLineEndOffset(targetLine - 1);
+            String lineText = doc.getText(new com.intellij.openapi.util.TextRange(lineStart, lineEnd));
+            int idx = lineText.indexOf(symbol);
+            if (idx >= 0) return idx;
+        }
+        return targetCol != null ? Math.max(0, targetCol - 1) : 0;
+    }
+
     @Override
     public @NotNull ToolRegistry.Category category() {
         return ToolRegistry.Category.CODE_QUALITY;
