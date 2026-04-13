@@ -140,13 +140,7 @@ public final class GenericSettings {
 
     @NotNull
     public ToolPermission getToolPermission(@NotNull String toolId) {
-        String stored = getProperties().getValue("tool.perm." + toolId);
-        if (stored == null) return ToolPermission.ALLOW;
-        try {
-            return ToolPermission.valueOf(stored);
-        } catch (IllegalArgumentException e) {
-            return ToolPermission.ALLOW;
-        }
+        return parseToolPermission(getProperties().getValue("tool.perm." + toolId), ToolPermission.ALLOW);
     }
 
     public void setToolPermission(@NotNull String toolId, @NotNull ToolPermission perm) {
@@ -155,13 +149,7 @@ public final class GenericSettings {
 
     @NotNull
     public ToolPermission getToolPermissionInsideProject(@NotNull String toolId) {
-        String stored = getProperties().getValue(TOOL_PERM_IN_PREFIX + toolId);
-        if (stored == null) return getToolPermission(toolId);
-        try {
-            return ToolPermission.valueOf(stored);
-        } catch (IllegalArgumentException e) {
-            return getToolPermission(toolId);
-        }
+        return parseToolPermission(getProperties().getValue(TOOL_PERM_IN_PREFIX + toolId), getToolPermission(toolId));
     }
 
     public void setToolPermissionInsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
@@ -170,13 +158,7 @@ public final class GenericSettings {
 
     @NotNull
     public ToolPermission getToolPermissionOutsideProject(@NotNull String toolId) {
-        String stored = getProperties().getValue(TOOL_PERM_OUT_PREFIX + toolId);
-        if (stored == null) return getToolPermission(toolId);
-        try {
-            return ToolPermission.valueOf(stored);
-        } catch (IllegalArgumentException e) {
-            return getToolPermission(toolId);
-        }
+        return parseToolPermission(getProperties().getValue(TOOL_PERM_OUT_PREFIX + toolId), getToolPermission(toolId));
     }
 
     public void setToolPermissionOutsideProject(@NotNull String toolId, @NotNull ToolPermission perm) {
@@ -187,14 +169,36 @@ public final class GenericSettings {
     public ToolPermission resolveEffectivePermission(@NotNull String toolId, boolean isInsideProject,
                                                      @NotNull ToolRegistry registry) {
         ToolPermission top = getToolPermission(toolId);
-        if (top != ToolPermission.ALLOW) return top;
-
         ToolDefinition entry = registry.findById(toolId);
-        if (entry == null || !entry.supportsPathSubPermissions()) return top;
+        boolean supportsSubPerms = entry != null && entry.supportsPathSubPermissions();
+        return resolveEffective(top, supportsSubPerms, isInsideProject,
+            getToolPermissionInsideProject(toolId), getToolPermissionOutsideProject(toolId));
+    }
 
-        return isInsideProject
-            ? getToolPermissionInsideProject(toolId)
-            : getToolPermissionOutsideProject(toolId);
+    /**
+     * Parses a stored ToolPermission string. Returns defaultValue if null or invalid.
+     * Pure function — no IDE dependency.
+     */
+    static ToolPermission parseToolPermission(@Nullable String stored, @NotNull ToolPermission defaultValue) {
+        if (stored == null) return defaultValue;
+        try {
+            return ToolPermission.valueOf(stored);
+        } catch (IllegalArgumentException e) {
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Resolves the effective permission considering top-level, sub-permission support, and location.
+     * Pure function — no IDE dependency.
+     */
+    static ToolPermission resolveEffective(@NotNull ToolPermission top, boolean supportsSubPerms,
+                                           boolean isInsideProject,
+                                           @NotNull ToolPermission insidePerm,
+                                           @NotNull ToolPermission outsidePerm) {
+        if (top != ToolPermission.ALLOW) return top;
+        if (!supportsSubPerms) return top;
+        return isInsideProject ? insidePerm : outsidePerm;
     }
 
     public void clearToolSubPermissions(@NotNull String toolId) {
@@ -239,7 +243,11 @@ public final class GenericSettings {
     }
 
     public double getMonthlyCost() {
-        String val = getProperties().getValue(key("monthlyCost"));
+        return parseDoubleSafe(getProperties().getValue(key("monthlyCost")));
+    }
+
+    /** Parses a double from a nullable string, returning 0.0 on null or parse failure. Pure function. */
+    static double parseDoubleSafe(@Nullable String val) {
         if (val == null) return 0.0;
         try {
             return Double.parseDouble(val);

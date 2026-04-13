@@ -536,10 +536,163 @@ class AcpClientTest {
         }
     }
 
+    // ── parseToolCallArguments (protected instance) ───────────────────────
+
+    @Nested
+    class ParseToolCallArguments {
+
+        private final AcpClient client = Mockito.mock(AcpClient.class, Mockito.CALLS_REAL_METHODS);
+
+        @Test
+        void argumentsKeyWithJsonObjectReturnsIt() {
+            JsonObject args = new JsonObject();
+            args.addProperty("tool", "read_file");
+            JsonObject params = new JsonObject();
+            params.add("arguments", args);
+
+            JsonObject result = client.parseToolCallArguments(params);
+
+            assertNotNull(result);
+            assertEquals("read_file", result.get("tool").getAsString());
+            assertSame(args, result);
+        }
+
+        @Test
+        void argumentsKeyWithStringReturnsNull() {
+            JsonObject params = new JsonObject();
+            params.addProperty("arguments", "not-an-object");
+
+            assertNull(client.parseToolCallArguments(params));
+        }
+
+        @Test
+        void noArgumentsKeyReturnsNull() {
+            JsonObject params = new JsonObject();
+            params.addProperty("other", "value");
+
+            assertNull(client.parseToolCallArguments(params));
+        }
+
+        @Test
+        void emptyParamsReturnsNull() {
+            assertNull(client.parseToolCallArguments(new JsonObject()));
+        }
+    }
+
     // ── extractSubAgentType (protected instance) ────────────────────────
 
-    // extractSubAgentType is a protected instance method on abstract AcpClient.
-    // Tested indirectly through concrete client tests.
+    @Nested
+    class ExtractSubAgentType {
+
+        private final AcpClient client = Mockito.mock(AcpClient.class, Mockito.CALLS_REAL_METHODS);
+
+        @Test
+        void agentTypeInParams() {
+            JsonObject params = new JsonObject();
+            params.addProperty("agentType", "copilot");
+
+            assertEquals("copilot", client.extractSubAgentType(params, "title", null));
+        }
+
+        @Test
+        void agentUnderscoreTypeInParams() {
+            JsonObject params = new JsonObject();
+            params.addProperty("agent_type", "claude");
+
+            assertEquals("claude", client.extractSubAgentType(params, "title", null));
+        }
+
+        @Test
+        void subagentTypeInParams() {
+            JsonObject params = new JsonObject();
+            params.addProperty("subagent_type", "gemini");
+
+            assertEquals("gemini", client.extractSubAgentType(params, "title", null));
+        }
+
+        @Test
+        void agentTypeInArgumentsObj() {
+            JsonObject params = new JsonObject();
+            JsonObject argsObj = new JsonObject();
+            argsObj.addProperty("agentType", "copilot");
+
+            assertEquals("copilot", client.extractSubAgentType(params, "title", argsObj));
+        }
+
+        @Test
+        void agentUnderscoreTypeInArgumentsObj() {
+            JsonObject params = new JsonObject();
+            JsonObject argsObj = new JsonObject();
+            argsObj.addProperty("agent_type", "claude");
+
+            assertEquals("claude", client.extractSubAgentType(params, "title", argsObj));
+        }
+
+        @Test
+        void subagentTypeInArgumentsObj() {
+            JsonObject params = new JsonObject();
+            JsonObject argsObj = new JsonObject();
+            argsObj.addProperty("subagent_type", "gemini");
+
+            assertEquals("gemini", client.extractSubAgentType(params, "title", argsObj));
+        }
+
+        @Test
+        void paramsTakesPriorityOverArgumentsObj() {
+            JsonObject params = new JsonObject();
+            params.addProperty("agentType", "from-params");
+            JsonObject argsObj = new JsonObject();
+            argsObj.addProperty("agentType", "from-args");
+
+            assertEquals("from-params", client.extractSubAgentType(params, "title", argsObj));
+        }
+
+        @Test
+        void paramsKeyOrderPriorityAgentTypeThenAgentUnderscoreThenSubagent() {
+            JsonObject params = new JsonObject();
+            params.addProperty("agentType", "first");
+            params.addProperty("agent_type", "second");
+            params.addProperty("subagent_type", "third");
+
+            assertEquals("first", client.extractSubAgentType(params, "title", null));
+        }
+
+        @Test
+        void noMatchingKeyReturnsNull() {
+            JsonObject params = new JsonObject();
+            params.addProperty("other", "value");
+            JsonObject argsObj = new JsonObject();
+            argsObj.addProperty("unrelated", "data");
+
+            assertNull(client.extractSubAgentType(params, "title", argsObj));
+        }
+
+        @Test
+        void nullArgumentsObjDoesNotCrash() {
+            JsonObject params = new JsonObject();
+            params.addProperty("unrelated", "data");
+
+            assertNull(client.extractSubAgentType(params, "title", null));
+        }
+
+        @Test
+        void nonPrimitiveAgentTypeIgnored() {
+            JsonObject params = new JsonObject();
+            params.add("agentType", new JsonObject());
+
+            assertNull(client.extractSubAgentType(params, "title", null));
+        }
+
+        @Test
+        void fallsThroughToArgumentsWhenParamsHasNoMatch() {
+            JsonObject params = new JsonObject();
+            params.addProperty("unrelated", "data");
+            JsonObject argsObj = new JsonObject();
+            argsObj.addProperty("agent_type", "from-args");
+
+            assertEquals("from-args", client.extractSubAgentType(params, "title", argsObj));
+        }
+    }
 
     // ── Helpers ──────────────────────────────────────────────────────────
 

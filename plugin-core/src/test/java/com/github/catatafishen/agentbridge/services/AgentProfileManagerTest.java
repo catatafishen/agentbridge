@@ -2,8 +2,11 @@ package com.github.catatafishen.agentbridge.services;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -157,5 +160,180 @@ class AgentProfileManagerTest {
         int original = profiles.size();
         profiles.clear();
         assertEquals(original, manager.getAllProfiles().size(), "getAllProfiles should return a new list each time");
+    }
+
+    // ── Private helper: nullToEmpty ──────────────────────────────────────────
+
+    @Nested
+    @DisplayName("nullToEmpty (private static)")
+    class NullToEmptyTest {
+
+        private Method nullToEmptyMethod;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            nullToEmptyMethod = AgentProfileManager.class.getDeclaredMethod("nullToEmpty", String.class);
+            nullToEmptyMethod.setAccessible(true);
+        }
+
+        @Test
+        @DisplayName("null → empty string")
+        void nullReturnsEmpty() throws Exception {
+            assertEquals("", nullToEmptyMethod.invoke(null, (Object) null));
+        }
+
+        @Test
+        @DisplayName("empty string → empty string")
+        void emptyReturnsEmpty() throws Exception {
+            assertEquals("", nullToEmptyMethod.invoke(null, ""));
+        }
+
+        @Test
+        @DisplayName("non-empty string → same string")
+        void nonEmptyReturnsSame() throws Exception {
+            assertEquals("hello", nullToEmptyMethod.invoke(null, "hello"));
+        }
+    }
+
+    // ── Private helper: hasUserData ──────────────────────────────────────────
+
+    @Nested
+    @DisplayName("hasUserData (private static)")
+    class HasUserDataTest {
+
+        private Method hasUserDataMethod;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            hasUserDataMethod = AgentProfileManager.class.getDeclaredMethod(
+                "hasUserData", AgentProfileManager.ProfileOverride.class);
+            hasUserDataMethod.setAccessible(true);
+        }
+
+        private boolean invoke(AgentProfileManager.ProfileOverride o) throws Exception {
+            return (boolean) hasUserDataMethod.invoke(null, o);
+        }
+
+        @Test
+        @DisplayName("all fields empty → false")
+        void allEmptyReturnsFalse() throws Exception {
+            AgentProfileManager.ProfileOverride o = new AgentProfileManager.ProfileOverride();
+            assertFalse(invoke(o));
+        }
+
+        @Test
+        @DisplayName("only customBinaryPath set → true")
+        void customBinaryPathReturnsTrue() throws Exception {
+            AgentProfileManager.ProfileOverride o = new AgentProfileManager.ProfileOverride();
+            o.customBinaryPath = "/usr/bin/agent";
+            assertTrue(invoke(o));
+        }
+
+        @Test
+        @DisplayName("only prependInstructionsTo set → true")
+        void prependInstructionsToReturnsTrue() throws Exception {
+            AgentProfileManager.ProfileOverride o = new AgentProfileManager.ProfileOverride();
+            o.prependInstructionsTo = "CLAUDE.md";
+            assertTrue(invoke(o));
+        }
+
+        @Test
+        @DisplayName("only customCliModels set → true")
+        void customCliModelsReturnsTrue() throws Exception {
+            AgentProfileManager.ProfileOverride o = new AgentProfileManager.ProfileOverride();
+            o.customCliModels = List.of("claude-opus-4-6");
+            assertTrue(invoke(o));
+        }
+    }
+
+    // ── Private helper: toDelta ──────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("toDelta (private static)")
+    class ToDeltaTest {
+
+        private Method toDeltaMethod;
+
+        @BeforeEach
+        void setUp() throws Exception {
+            toDeltaMethod = AgentProfileManager.class.getDeclaredMethod(
+                "toDelta", AgentProfile.class, AgentProfile.class);
+            toDeltaMethod.setAccessible(true);
+        }
+
+        private AgentProfileManager.ProfileOverride invoke(AgentProfile current, AgentProfile defaults) throws Exception {
+            return (AgentProfileManager.ProfileOverride) toDeltaMethod.invoke(null, current, defaults);
+        }
+
+        private AgentProfile makeProfile(String id, String binaryPath, String instructions, List<String> models) {
+            AgentProfile p = new AgentProfile();
+            p.setId(id);
+            p.setCustomBinaryPath(binaryPath != null ? binaryPath : "");
+            p.setPrependInstructionsTo(instructions);
+            p.setCustomCliModels(models != null ? models : new ArrayList<>());
+            return p;
+        }
+
+        @Test
+        @DisplayName("identical profiles → all override fields empty")
+        void identicalProfilesProduceEmptyDelta() throws Exception {
+            AgentProfile a = makeProfile("test", "/usr/bin/agent", "CLAUDE.md", List.of("model-a"));
+            AgentProfile b = makeProfile("test", "/usr/bin/agent", "CLAUDE.md", List.of("model-a"));
+            AgentProfileManager.ProfileOverride delta = invoke(a, b);
+
+            assertEquals("test", delta.profileId);
+            assertEquals("", delta.customBinaryPath);
+            assertEquals("", delta.prependInstructionsTo);
+            assertTrue(delta.customCliModels.isEmpty());
+        }
+
+        @Test
+        @DisplayName("different customBinaryPath → override has the path")
+        void differentBinaryPath() throws Exception {
+            AgentProfile current = makeProfile("test", "/custom/bin", null, new ArrayList<>());
+            AgentProfile defaults = makeProfile("test", "", null, new ArrayList<>());
+            AgentProfileManager.ProfileOverride delta = invoke(current, defaults);
+
+            assertEquals("/custom/bin", delta.customBinaryPath);
+            assertEquals("", delta.prependInstructionsTo);
+            assertTrue(delta.customCliModels.isEmpty());
+        }
+
+        @Test
+        @DisplayName("different prependInstructionsTo → override has it")
+        void differentPrependInstructions() throws Exception {
+            AgentProfile current = makeProfile("test", "", "AGENTS.md", new ArrayList<>());
+            AgentProfile defaults = makeProfile("test", "", "CLAUDE.md", new ArrayList<>());
+            AgentProfileManager.ProfileOverride delta = invoke(current, defaults);
+
+            assertEquals("", delta.customBinaryPath);
+            assertEquals("AGENTS.md", delta.prependInstructionsTo);
+            assertTrue(delta.customCliModels.isEmpty());
+        }
+
+        @Test
+        @DisplayName("different customCliModels → override has the list")
+        void differentCustomCliModels() throws Exception {
+            AgentProfile current = makeProfile("test", "", null, List.of("model-x", "model-y"));
+            AgentProfile defaults = makeProfile("test", "", null, new ArrayList<>());
+            AgentProfileManager.ProfileOverride delta = invoke(current, defaults);
+
+            assertEquals("", delta.customBinaryPath);
+            assertEquals("", delta.prependInstructionsTo);
+            assertEquals(List.of("model-x", "model-y"), delta.customCliModels);
+        }
+
+        @Test
+        @DisplayName("all fields different → all override fields populated")
+        void allFieldsDifferent() throws Exception {
+            AgentProfile current = makeProfile("test", "/my/agent", "MY.md", List.of("m1"));
+            AgentProfile defaults = makeProfile("test", "/default/agent", "DEFAULT.md", List.of("d1"));
+            AgentProfileManager.ProfileOverride delta = invoke(current, defaults);
+
+            assertEquals("/my/agent", delta.customBinaryPath);
+            assertEquals("MY.md", delta.prependInstructionsTo);
+            assertEquals(List.of("m1"), delta.customCliModels);
+        }
+
     }
 }

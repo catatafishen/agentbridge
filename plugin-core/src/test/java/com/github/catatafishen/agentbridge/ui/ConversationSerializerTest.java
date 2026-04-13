@@ -364,4 +364,128 @@ class ConversationSerializerTest {
         assertNotNull(text.getEntryId());
         assertFalse(text.getEntryId().isEmpty());
     }
+
+    // ── Edge case: ToolCall mcpHandled without pluginTool key ───────────
+
+    @Test
+    void fromJson_toolMcpHandledSetsPluginToolToTitle() {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("type", "tool");
+        obj.addProperty("title", "read_file");
+        obj.addProperty("mcpHandled", true);
+
+        EntryData.ToolCall tool = (EntryData.ToolCall) ConversationSerializer.INSTANCE.fromJson(obj);
+        // pluginTool falls back to the title when mcpHandled=true
+        assertEquals("read_file", tool.getPluginTool());
+    }
+
+    @Test
+    void fromJson_toolMcpHandledNoTitleGivesEmptyPluginTool() {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("type", "tool");
+        obj.addProperty("mcpHandled", true);
+
+        EntryData.ToolCall tool = (EntryData.ToolCall) ConversationSerializer.INSTANCE.fromJson(obj);
+        // pluginTool falls back to "" when mcpHandled=true but title is missing
+        assertEquals("", tool.getPluginTool());
+    }
+
+    @Test
+    void fromJson_toolMcpHandledFalsePluginToolIsNull() {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("type", "tool");
+        obj.addProperty("title", "read_file");
+        obj.addProperty("mcpHandled", false);
+
+        EntryData.ToolCall tool = (EntryData.ToolCall) ConversationSerializer.INSTANCE.fromJson(obj);
+        // pluginTool is null when mcpHandled is false and pluginTool key is absent
+        assertNull(tool.getPluginTool());
+    }
+
+    // ── Edge case: SubAgent with empty prompt/result/status ─────────────
+
+    @Test
+    void fromJson_subagentEmptyStringsCoercedToNull() {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("type", "subagent");
+        obj.addProperty("agentType", "explore");
+        obj.addProperty("prompt", "");
+        obj.addProperty("result", "");
+        obj.addProperty("status", "");
+
+        EntryData.SubAgent sa = (EntryData.SubAgent) ConversationSerializer.INSTANCE.fromJson(obj);
+        // ifEmpty { null } coerces empty strings to null
+        assertNull(sa.getPrompt(), "empty prompt should be coerced to null");
+        assertNull(sa.getResult(), "empty result should be coerced to null");
+        // empty status becomes null, then ?: "completed" kicks in
+        assertEquals("completed", sa.getStatus(), "empty status should fall back to 'completed'");
+    }
+
+    // ── Edge case: TurnStats with zero/missing fields ───────────────────
+
+    @Test
+    void fromJson_turnStatsAllDefaults() {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("type", "turnStats");
+
+        EntryData.TurnStats ts = (EntryData.TurnStats) ConversationSerializer.INSTANCE.fromJson(obj);
+        assertEquals("", ts.getTurnId());
+        assertEquals(0, ts.getDurationMs());
+        assertEquals(0, ts.getInputTokens());
+        assertEquals(0, ts.getOutputTokens());
+        assertEquals(0.0, ts.getCostUsd(), 0.0);
+        assertEquals(0, ts.getToolCallCount());
+        assertEquals(0, ts.getLinesAdded());
+        assertEquals(0, ts.getLinesRemoved());
+        assertEquals("", ts.getModel());
+        assertEquals("", ts.getMultiplier());
+        assertEquals(0, ts.getTotalDurationMs());
+        assertEquals(0, ts.getTotalInputTokens());
+        assertEquals(0, ts.getTotalOutputTokens());
+        assertEquals(0.0, ts.getTotalCostUsd(), 0.0);
+        assertEquals(0, ts.getTotalToolCalls());
+        assertEquals(0, ts.getTotalLinesAdded());
+        assertEquals(0, ts.getTotalLinesRemoved());
+    }
+
+    // ── Edge case: ContextFiles with malformed entry ────────────────────
+
+    @Test
+    void fromJson_contextFilesMissingNameAndPath() {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("type", "context");
+
+        JsonArray files = new JsonArray();
+        JsonObject malformed = new JsonObject();
+        malformed.addProperty("other", "value");
+        files.add(malformed);
+        obj.add("files", files);
+
+        EntryData.ContextFiles ctx = (EntryData.ContextFiles) ConversationSerializer.INSTANCE.fromJson(obj);
+        assertEquals(1, ctx.getFiles().size());
+        // orEmpty() coerces null name/path to empty strings
+        assertEquals("", ctx.getFiles().get(0).getName());
+        assertEquals("", ctx.getFiles().get(0).getPath());
+    }
+
+    @Test
+    void fromJson_contextFilesEmptyArray() {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("type", "context");
+        obj.add("files", new JsonArray());
+
+        EntryData.ContextFiles ctx = (EntryData.ContextFiles) ConversationSerializer.INSTANCE.fromJson(obj);
+        assertNotNull(ctx.getFiles());
+        assertTrue(ctx.getFiles().isEmpty());
+    }
+
+    @Test
+    void fromJson_contextFilesNoFilesKey() {
+        JsonObject obj = new JsonObject();
+        obj.addProperty("type", "context");
+
+        EntryData.ContextFiles ctx = (EntryData.ContextFiles) ConversationSerializer.INSTANCE.fromJson(obj);
+        assertNotNull(ctx.getFiles());
+        assertTrue(ctx.getFiles().isEmpty());
+    }
 }

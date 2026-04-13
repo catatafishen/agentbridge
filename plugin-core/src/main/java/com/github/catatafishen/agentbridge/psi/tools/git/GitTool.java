@@ -42,9 +42,9 @@ public abstract class GitTool extends Tool {
         "revert", "stash", "switch", "tag"
     );
 
-    private static final Pattern FULL_HASH_PATTERN =
+    static final Pattern FULL_HASH_PATTERN =
         Pattern.compile("\\b[0-9a-f]{40}\\b");
-    private static final Pattern COMMIT_LINE_PATTERN =
+    static final Pattern COMMIT_LINE_PATTERN =
         Pattern.compile("^commit ([0-9a-f]{40})$", Pattern.MULTILINE);
 
     protected static final long FETCH_THROTTLE_MS = 60_000;
@@ -153,7 +153,17 @@ public abstract class GitTool extends Tool {
             return;
         }
 
-        int staged = 0, modified = 0, untracked = 0;
+        ctx.append("Working tree: ").append(formatPorcelainStatus(porcelain)).append('\n');
+    }
+
+    /**
+     * Parses git {@code status --porcelain} output into a human-readable summary.
+     * Pure function — no IDE dependency.
+     */
+    static String formatPorcelainStatus(String porcelain) {
+        int staged = 0;
+        int modified = 0;
+        int untracked = 0;
         for (String line : porcelain.split("\n")) {
             if (line.length() < 2) continue;
             char index = line.charAt(0);
@@ -170,17 +180,40 @@ public abstract class GitTool extends Tool {
         if (staged > 0) parts.add(staged + " staged");
         if (modified > 0) parts.add(modified + " modified");
         if (untracked > 0) parts.add(untracked + " untracked");
-        ctx.append("Working tree: ").append(String.join(", ", parts)).append('\n');
+        return String.join(", ", parts);
     }
 
     private void appendStashCount(StringBuilder ctx) {
         String stashList = runGitQuiet("stash", "list");
         if (stashList == null || stashList.isEmpty()) return;
-        long count = stashList.chars().filter(c -> c == '\n').count();
-        if (!stashList.endsWith("\n")) count++;
+        long count = countStashEntries(stashList);
         if (count > 0) {
             ctx.append("Stash: ").append(count).append(" entr").append(count == 1 ? "y" : "ies").append('\n');
         }
+    }
+
+    /**
+     * Counts the number of stash entries from {@code git stash list} output. Pure function.
+     */
+    static long countStashEntries(String stashList) {
+        long count = stashList.chars().filter(c -> c == '\n').count();
+        if (!stashList.endsWith("\n")) count++;
+        return count;
+    }
+
+    /**
+     * Extracts the first full 40-character commit hash from git output.
+     * Tries {@code commit <hash>} lines first, falls back to standalone hex patterns.
+     * Pure function — no IDE dependency.
+     */
+    @Nullable
+    static String extractFirstCommitHash(@Nullable String gitOutput) {
+        if (gitOutput == null || gitOutput.isEmpty()) return null;
+        var m = COMMIT_LINE_PATTERN.matcher(gitOutput);
+        if (m.find()) return m.group(1);
+        var m2 = FULL_HASH_PATTERN.matcher(gitOutput);
+        if (m2.find()) return m2.group();
+        return null;
     }
 
     /**
@@ -382,16 +415,7 @@ public abstract class GitTool extends Tool {
     protected void showFirstCommitInLog(String gitOutput) {
         if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
         if (gitOutput == null || gitOutput.isEmpty()) return;
-        String hash = null;
-        var m = COMMIT_LINE_PATTERN.matcher(gitOutput);
-        if (m.find()) {
-            hash = m.group(1);
-        } else {
-            var m2 = FULL_HASH_PATTERN.matcher(gitOutput);
-            if (m2.find()) {
-                hash = m2.group();
-            }
-        }
+        String hash = extractFirstCommitHash(gitOutput);
         if (hash == null) return;
         String finalHash = hash;
         EdtUtil.invokeLater(() -> {
