@@ -43,7 +43,8 @@ public final class ToolCallStatisticsService implements Disposable {
     private Connection connection;
     private Runnable disconnectHandle;
 
-    private volatile boolean initialized;
+    private volatile boolean initAttempted;
+    private volatile boolean warnedConnectionNull;
 
     public ToolCallStatisticsService(@NotNull Project project) {
         this.project = project;
@@ -62,9 +63,10 @@ public final class ToolCallStatisticsService implements Disposable {
      * Called lazily on first access via {@code getInstance()}.
      *
      * @throws RuntimeException if initialization fails (JDBC driver not found,
-     *                          database cannot be created, or subscription fails). The caller
-     *                          must not set {@code initialized = true} unless this method
-     *                          completes without exception.
+     *                          database cannot be created, or subscription fails).
+     *                          The caller sets {@code initAttempted = true} regardless of
+     *                          success/failure to prevent retry loops — the service stays
+     *                          inert (connection == null) until the IDE is restarted.
      */
     public void initialize() {
         try {
@@ -145,8 +147,12 @@ public final class ToolCallStatisticsService implements Disposable {
 
     public synchronized void recordCall(@NotNull ToolCallRecord callRecord) {
         if (connection == null) {
-            LOG.warn("ToolCallStatisticsService: dropping tool call '" + callRecord.toolName()
-                + "' — database connection is not available (initialization may have failed)");
+            if (!warnedConnectionNull) {
+                warnedConnectionNull = true;
+                LOG.warn("ToolCallStatisticsService: dropping tool call '" + callRecord.toolName()
+                    + "' — database connection is not available (initialization may have failed). "
+                    + "Subsequent dropped calls will not be logged.");
+            }
             return;
         }
         try {
@@ -452,17 +458,16 @@ public final class ToolCallStatisticsService implements Disposable {
 
     public static ToolCallStatisticsService getInstance(@NotNull Project project) {
         ToolCallStatisticsService service = PlatformApiCompat.getService(project, ToolCallStatisticsService.class);
-        if (!service.initialized) {
+        if (!service.initAttempted) {
             synchronized (service) {
-                if (!service.initialized) {
+                if (!service.initAttempted) {
+                    service.initAttempted = true;
                     try {
                         service.initialize();
-                        service.initialized = true;
                         triggerBackfillIfNeeded(service, project);
                     } catch (RuntimeException e) {
                         LOG.error("ToolCallStatisticsService initialization failed — "
                             + "tool call recording will be disabled until restart", e);
-                        service.initialized = true;
                     }
                 }
             }

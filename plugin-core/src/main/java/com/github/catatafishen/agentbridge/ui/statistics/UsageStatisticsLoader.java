@@ -15,6 +15,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -113,7 +114,7 @@ final class UsageStatisticsLoader {
     private static void collectTurnStats(Path jsonlPath, String sessionAgentId,
                                          LocalDate startDate, LocalDate endDate,
                                          Map<DayAgentKey, Accumulator> accumulators) {
-        try (BufferedReader reader = Files.newBufferedReader(jsonlPath)) {
+        try (BufferedReader reader = Files.newBufferedReader(jsonlPath, StandardCharsets.UTF_8)) {
             String lastSeenTimestamp = null;
             String line;
             while ((line = reader.readLine()) != null) {

@@ -106,7 +106,7 @@ public final class ToolCallStatisticsBackfill {
         int skipped = 0;
         int errors = 0;
 
-        try (BufferedReader reader = Files.newBufferedReader(jsonlPath)) {
+        try (BufferedReader reader = Files.newBufferedReader(jsonlPath, StandardCharsets.UTF_8)) {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (!line.contains("\"type\":\"tool\"")) continue;

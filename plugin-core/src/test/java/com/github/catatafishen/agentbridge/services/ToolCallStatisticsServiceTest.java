@@ -246,8 +246,8 @@ class ToolCallStatisticsServiceTest {
 
         var errors = service.queryRecentErrors(null, "opencode", 10);
         assertEquals(1, errors.size());
-        assertEquals("tool_b", errors.get(0).toolName());
-        assertEquals("opencode", errors.get(0).clientId());
+        assertEquals("tool_b", errors.getFirst().toolName());
+        assertEquals("opencode", errors.getFirst().clientId());
     }
 
     @Test
@@ -269,6 +269,79 @@ class ToolCallStatisticsServiceTest {
         service2.initializeWithConnection(conn2);
         // Second init on same connection — migration should be idempotent
         service2.initializeWithConnection(conn2);
+        // Verify DB is still functional after double-init
+        service2.recordCall(new ToolCallRecord("test", null, 0, 0, 0, true, null, "copilot", Instant.now()));
+        assertEquals(1, service2.getRecordCount());
         service2.dispose();
+    }
+
+    @Test
+    void hasRecordAtFindsExistingRecord() {
+        Instant ts = Instant.parse("2026-01-15T10:30:00Z");
+        service.recordCall(new ToolCallRecord("read_file", "FILE", 100, 200, 10, true, null, "copilot", ts));
+
+        assertTrue(service.hasRecordAt(ts, "read_file"));
+    }
+
+    @Test
+    void hasRecordAtReturnsFalseForNonExistent() {
+        Instant ts = Instant.parse("2026-01-15T10:30:00Z");
+        service.recordCall(new ToolCallRecord("read_file", "FILE", 100, 200, 10, true, null, "copilot", ts));
+
+        assertFalse(service.hasRecordAt(ts, "write_file"));
+        assertFalse(service.hasRecordAt(Instant.parse("2026-01-16T10:30:00Z"), "read_file"));
+    }
+
+    @Test
+    void getRecordCountReturnsCorrectCount() {
+        assertEquals(0, service.getRecordCount());
+
+        Instant ts = Instant.now();
+        service.recordCall(new ToolCallRecord("a", null, 0, 0, 0, true, null, "copilot", ts));
+        assertEquals(1, service.getRecordCount());
+
+        service.recordCall(new ToolCallRecord("b", null, 0, 0, 0, true, null, "copilot", ts.plusSeconds(1)));
+        assertEquals(2, service.getRecordCount());
+    }
+
+    @Test
+    void recordCallWithNullConnectionDoesNotThrow() {
+        // Create a service without initializing a connection
+        var uninitService = new ToolCallStatisticsService();
+        // Should not throw — just silently drops the call
+        uninitService.recordCall(new ToolCallRecord("test", null, 0, 0, 0, true, null, "copilot", Instant.now()));
+        // Verify getRecordCount also handles null connection
+        assertEquals(0, uninitService.getRecordCount());
+    }
+
+    @Test
+    void hasRecordAtWithNullConnectionReturnsFalse() {
+        var uninitService = new ToolCallStatisticsService();
+        assertFalse(uninitService.hasRecordAt(Instant.now(), "anything"));
+    }
+
+    @Test
+    void getRecordCountWithNullConnectionReturnsZero() {
+        var uninitService = new ToolCallStatisticsService();
+        assertEquals(0, uninitService.getRecordCount());
+    }
+
+    @Test
+    void queryMethodsWithNullConnectionReturnEmpty() {
+        var uninitService = new ToolCallStatisticsService();
+        assertTrue(uninitService.queryAggregates(null, null).isEmpty());
+        assertTrue(uninitService.querySummary(null, null).isEmpty());
+        assertTrue(uninitService.getDistinctClients().isEmpty());
+        assertTrue(uninitService.queryRecentErrors(null, null, 10).isEmpty());
+    }
+
+    @Test
+    void isDbMovedDetectsSqliteReadonlyDbmoved() {
+        assertTrue(ToolCallStatisticsService.isDbMoved(
+            new SQLException("[SQLITE_READONLY_DBMOVED] database file moved or deleted")));
+        assertFalse(ToolCallStatisticsService.isDbMoved(
+            new SQLException("some other error")));
+        assertFalse(ToolCallStatisticsService.isDbMoved(
+            new SQLException((String) null)));
     }
 }
