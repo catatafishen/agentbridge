@@ -114,7 +114,7 @@ store with temporal validity tracking.
 │  2. Quality filter (skip < 200 chars, skip pure tool output)    │
 │  3. Classify: decisions / preferences / milestones / problems   │
 │  4. Detect room (topic) via keyword scoring (RoomDetector)      │
-│  5. Generate embeddings (ONNX Runtime + all-MiniLM-L6-v2)      │
+│  5. Generate embeddings (pure-Java BERT + all-MiniLM-L6-v2)    │
 │  6. Store in Lucene index + update knowledge graph              │
 └───────┬────────────────────────────────────────────────────────┘
         │
@@ -196,7 +196,7 @@ store with temporal validity tracking.
 ~/.agentbridge/
   models/
     all-MiniLM-L6-v2/
-      model.onnx            ← Downloaded on first use (~90MB)
+      model.safetensors      ← Downloaded on first use (~90MB)
       vocab.txt             ← WordPiece vocabulary (~232KB)
 ```
 
@@ -220,7 +220,7 @@ plugin-core/src/main/java/com/github/catatafishen/agentbridge/
 
     embedding/
       Embedder.java                  ← Functional interface for embedding injection
-      EmbeddingService.java          ← ONNX Runtime session management + inference
+      EmbeddingService.java          ← Pure-Java BERT inference + model management
       WordPieceTokenizer.java        ← Java tokenizer (vocab.txt → token IDs)
       ModelDownloader.java           ← Download model on first use with progress
 
@@ -271,7 +271,7 @@ plugin-core/src/test/java/com/github/catatafishen/agentbridge/memory/
   BackfillMinerPlatformTest.java         ← Full doBackfill() path with replaced services (7 tests)
 
   embedding/
-    TestEmbeddingFactory.java            ← Test EmbeddingService factory (bypasses ONNX Runtime)
+    TestEmbeddingFactory.java            ← Test EmbeddingService factory (bypasses model loading)
     EmbeddingServiceTest.java            ← meanPool, l2Normalize, embed, embedBatch (24 tests)
     WordPieceTokenizerTest.java          ← Tokenization, sub-words, truncation, padding (13 tests)
 
@@ -333,20 +333,20 @@ Initialization order (in `ensureInitialized()`):
 
 1. `WriteAheadLog` → `.agent-work/memory/wal/`
 2. `MemoryStore` (Lucene) → `.agent-work/memory/lucene-index/`
-3. `EmbeddingService` → loads ONNX model (downloads on first use)
+3. `EmbeddingService` → loads BERT model (downloads safetensors on first use)
 4. `KnowledgeGraph` (SQLite) → `.agent-work/memory/knowledge.sqlite3`
 
-Implements `Disposable` — closes Lucene index, ONNX session, and SQLite connection
+Implements `Disposable` — closes Lucene index, BERT resources, and SQLite connection
 on project close.
 
 ### EmbeddingService
 
-Manages ONNX Runtime inference for text → 384-dim float vector conversion.
+Manages pure-Java BERT inference for text → 384-dim float vector conversion.
 
-Pipeline: text → `WordPieceTokenizer` → token IDs → ONNX Runtime → raw output →
+Pipeline: text → `WordPieceTokenizer` → token IDs → `BertInferenceEngine` → raw output →
 `meanPool()` → `l2Normalize()` → embedding vector.
 
-`ModelDownloader` handles first-use download of the ONNX model and vocabulary file
+`ModelDownloader` handles first-use download of the safetensors model and vocabulary file
 from Hugging Face, with progress reporting and cancellation support.
 
 ### TurnMiner Pipeline
@@ -413,14 +413,14 @@ SQLite-backed triple store with temporal validity:
 Coverage is measured via JaCoCo against instrumented classes (IntelliJ's `instrumentCode`
 task applies `@NotNull` bytecode checks that change class hashes).
 
-| Package   | Line Coverage | Notes                                                                  |
-|-----------|---------------|------------------------------------------------------------------------|
-| store     | 96.2%         | Full Lucene index lifecycle, search, dedup                             |
-| wal       | 90.5%         | Append, read, rotation                                                 |
-| kg        | 90.1%         | CRUD, temporal queries, timeline, stats                                |
-| layers    | 90.1%         | All 4 layers including rendering and filtering                         |
-| mining    | 86.3%         | Remaining gaps are project-service-dependent private methods           |
-| embedding | 56.1%         | ONNX Runtime inference and model download are untestable without model |
+| Package   | Line Coverage | Notes                                                               |
+|-----------|---------------|---------------------------------------------------------------------|
+| store     | 96.2%         | Full Lucene index lifecycle, search, dedup                          |
+| wal       | 90.5%         | Append, read, rotation                                              |
+| kg        | 90.1%         | CRUD, temporal queries, timeline, stats                             |
+| layers    | 90.1%         | All 4 layers including rendering and filtering                      |
+| mining    | 86.3%         | Remaining gaps are project-service-dependent private methods        |
+| embedding | 56.1%         | BERT inference and model download are untestable without model file |
 
 ### Testing Strategy
 
@@ -436,7 +436,7 @@ with real IntelliJ project instances and replaced services via `ServiceContainer
 Testability is achieved without mocking frameworks through:
 
 - `Embedder` functional interface for embedding injection
-- `InferenceFunction` functional interface for ONNX inference injection
+- `InferenceFunction` functional interface for BERT inference injection
 - `EntryLoader` / `MineFunction` functional interfaces for backfill dependency injection
 - Package-private test constructors on `MemoryService` and `EmbeddingService`
 - Extracted execution methods (`executePipeline()`, `executeBackfill()`) with explicit dependencies
@@ -445,14 +445,11 @@ Testability is achieved without mocking frameworks through:
 
 ## Risks & Mitigations
 
-### 1. ONNX Runtime Size (~60MB)
+### 1. Model Download Size (~90MB)
 
-The ONNX Runtime JAR includes native libraries for all platforms, increasing plugin
-download size.
-
-**Mitigation**: The model file (~90MB) is downloaded separately on first use, not
-bundled with the plugin. Platform-specific classifier JARs could reduce the JAR size
-further if needed.
+The all-MiniLM-L6-v2 safetensors model is downloaded on first use, not bundled with the
+plugin. The pure-Java BERT inference engine eliminates the ~39MB ONNX Runtime native
+dependency that was previously required.
 
 ### 2. IntelliJ Lucene Version Changes
 

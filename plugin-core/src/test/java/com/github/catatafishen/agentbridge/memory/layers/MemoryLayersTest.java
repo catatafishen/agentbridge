@@ -67,7 +67,7 @@ class MemoryLayersTest {
     @Test
     void essentialRendersDrawers() throws IOException {
         addDrawer("d1", WING, "coding", "decision", "Decided to use Lucene for vector search");
-        addDrawer("d2", WING, "coding", "technical", "Implemented embedding service with ONNX Runtime");
+        addDrawer("d2", WING, "coding", "technical", "Implemented embedding service with pure-Java BERT");
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store);
         String result = layer.render(WING, null);
@@ -77,7 +77,7 @@ class MemoryLayersTest {
         assertTrue(result.contains("[decision]"));
         assertTrue(result.contains("[technical]"));
         assertTrue(result.contains("Lucene"));
-        assertTrue(result.contains("ONNX"));
+        assertTrue(result.contains("BERT"));
     }
 
     @Test
@@ -246,7 +246,7 @@ class MemoryLayersTest {
     @Test
     void deepSearchEmbedderFailureReturnsEmpty() {
         Embedder failing = text -> {
-            throw new RuntimeException("ONNX crashed");
+            throw new RuntimeException("Embedding engine crashed");
         };
         DeepSearchLayer layer = new DeepSearchLayer(store, failing);
         String result = layer.render(WING, "some query");

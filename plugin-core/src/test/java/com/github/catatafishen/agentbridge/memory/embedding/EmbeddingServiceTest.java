@@ -171,7 +171,7 @@ class EmbeddingServiceTest {
         WordPieceTokenizer tokenizer = new WordPieceTokenizer(vocabPath, 16);
 
         EmbeddingService service = new EmbeddingService(tokenizer, input -> {
-            throw new RuntimeException("ONNX crash");
+            throw new RuntimeException("Inference engine crash");
         });
 
         assertThrows(RuntimeException.class, () -> service.embed("hello"));

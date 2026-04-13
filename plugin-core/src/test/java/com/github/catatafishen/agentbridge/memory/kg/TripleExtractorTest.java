@@ -52,10 +52,10 @@ class TripleExtractorTest {
 
     @Test
     void dependencyPattern() {
-        String text = "The plugin depends on ONNX Runtime for inference.";
+        String text = "The plugin depends on Lucene for vector search.";
         List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
 
-        assertContainsTriple(triples, "depends-on", "ONNX Runtime");
+        assertContainsTriple(triples, "depends-on", "Lucene");
     }
 
     @Test
@@ -92,7 +92,7 @@ class TripleExtractorTest {
 
     @Test
     void multipleTriples() {
-        String text = "We use Lucene for vector search. The project depends on ONNX Runtime for embeddings. "
+        String text = "We use Lucene for vector search. The project depends on Gradle for builds. "
             + "We decided to use SQLite for the knowledge graph.";
         List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
 
@@ -230,7 +230,7 @@ class TripleExtractorTest {
     @Test
     void acceptsObjectsWithSpecificTerms() {
         assertTrue(TripleExtractor.isQualityObject("Gradle"));
-        assertTrue(TripleExtractor.isQualityObject("ONNX Runtime"));
+        assertTrue(TripleExtractor.isQualityObject("safetensors model"));
         assertTrue(TripleExtractor.isQualityObject("write-ahead log"));
         assertTrue(TripleExtractor.isQualityObject("the plugin classloader"));
     }
@@ -275,11 +275,11 @@ class TripleExtractorTest {
 
     @Test
     void sentenceSplittingPreservesMultiplePatterns() {
-        String text = "We use Lucene for search.\nThe project depends on ONNX Runtime for inference.";
+        String text = "We use Lucene for search.\nThe project depends on Gradle for builds.";
         List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
 
         assertContainsTriple(triples, "uses", "Lucene");
-        assertContainsTriple(triples, "depends-on", "ONNX Runtime");
+        assertContainsTriple(triples, "depends-on", "Gradle");
     }
 
     // ── Deduplication tests ───────────────────────────────────────────────
@@ -323,7 +323,7 @@ class TripleExtractorTest {
     // ── Helper ────────────────────────────────────────────────────────────
 
     private static void assertContainsTriple(List<TripleExtractor.ExtractedTriple> triples,
-                                              String predicate, String objectSubstring) {
+                                             String predicate, String objectSubstring) {
         boolean found = triples.stream().anyMatch(t ->
             t.predicate().equals(predicate) && t.object().contains(objectSubstring));
         assertTrue(found, "Expected triple with predicate='" + predicate

@@ -174,7 +174,7 @@ class TurnMinerTest {
     @Test
     void embedderExceptionHandledGracefully() {
         Embedder failingEmbedder = text -> {
-            throw new RuntimeException("ONNX crash");
+            throw new RuntimeException("Embedding engine crash");
         };
         List<EntryData> entries = List.of(
             prompt("How should we structure the caching layer for our application?"),
