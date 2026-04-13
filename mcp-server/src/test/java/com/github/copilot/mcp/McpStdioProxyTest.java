@@ -4,10 +4,150 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("McpStdioProxy")
 class McpStdioProxyTest {
+
+    // ── buildMcpUrl ─────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("buildMcpUrl")
+    class BuildMcpUrl {
+
+        @Test
+        @DisplayName("builds correct MCP URL for typical port")
+        void buildsCorrectUrl() {
+            assertEquals("http://127.0.0.1:8080/mcp", McpStdioProxy.buildMcpUrl(8080));
+        }
+
+        @Test
+        @DisplayName("builds correct MCP URL for port 0")
+        void buildsUrlForPortZero() {
+            assertEquals("http://127.0.0.1:0/mcp", McpStdioProxy.buildMcpUrl(0));
+        }
+
+        @Test
+        @DisplayName("builds correct MCP URL for high port number")
+        void buildsUrlForHighPort() {
+            assertEquals("http://127.0.0.1:65535/mcp", McpStdioProxy.buildMcpUrl(65535));
+        }
+    }
+
+    // ── buildHealthUrl ──────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("buildHealthUrl")
+    class BuildHealthUrl {
+
+        @Test
+        @DisplayName("builds correct health URL for typical port")
+        void buildsCorrectUrl() {
+            assertEquals("http://127.0.0.1:3000/health", McpStdioProxy.buildHealthUrl(3000));
+        }
+
+        @Test
+        @DisplayName("builds correct health URL for port 0")
+        void buildsUrlForPortZero() {
+            assertEquals("http://127.0.0.1:0/health", McpStdioProxy.buildHealthUrl(0));
+        }
+
+        @Test
+        @DisplayName("MCP and health URLs share same host and port")
+        void mcpAndHealthUrlsShareHostPort() {
+            String mcp = McpStdioProxy.buildMcpUrl(9090);
+            String health = McpStdioProxy.buildHealthUrl(9090);
+            // Both start with the same host:port prefix
+            String prefix = "http://127.0.0.1:9090";
+            assertTrue(mcp.startsWith(prefix), "MCP URL should start with " + prefix);
+            assertTrue(health.startsWith(prefix), "health URL should start with " + prefix);
+            // But have different paths
+            assertNotEquals(mcp, health);
+        }
+    }
+
+    // ── isBlankLine ─────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("isBlankLine")
+    class IsBlankLine {
+
+        @Test
+        @DisplayName("returns true for null")
+        void returnsTrueForNull() {
+            assertTrue(McpStdioProxy.isBlankLine(null));
+        }
+
+        @Test
+        @DisplayName("returns true for empty string")
+        void returnsTrueForEmpty() {
+            assertTrue(McpStdioProxy.isBlankLine(""));
+        }
+
+        @Test
+        @DisplayName("returns false for non-empty string")
+        void returnsFalseForNonEmpty() {
+            assertFalse(McpStdioProxy.isBlankLine("{\"jsonrpc\":\"2.0\"}"));
+        }
+
+        @Test
+        @DisplayName("returns false for whitespace-only string (caller trims before calling)")
+        void returnsFalseForWhitespaceOnly() {
+            // The main loop trims before calling isBlankLine, so whitespace-only
+            // strings would already be trimmed to empty. But if called directly
+            // with whitespace, it returns false since it only checks isEmpty().
+            assertFalse(McpStdioProxy.isBlankLine("  "));
+        }
+
+        @Test
+        @DisplayName("returns false for single character")
+        void returnsFalseForSingleChar() {
+            assertFalse(McpStdioProxy.isBlankLine("x"));
+        }
+    }
+
+    // ── shouldForwardResponse ───────────────────────────────────────────
+
+    @Nested
+    @DisplayName("shouldForwardResponse")
+    class ShouldForwardResponse {
+
+        @Test
+        @DisplayName("returns false for null (notification / HTTP 202)")
+        void returnsFalseForNull() {
+            assertFalse(McpStdioProxy.shouldForwardResponse(null));
+        }
+
+        @Test
+        @DisplayName("returns false for empty string")
+        void returnsFalseForEmpty() {
+            assertFalse(McpStdioProxy.shouldForwardResponse(""));
+        }
+
+        @Test
+        @DisplayName("returns true for valid JSON-RPC response")
+        void returnsTrueForValidResponse() {
+            assertTrue(McpStdioProxy.shouldForwardResponse(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}"));
+        }
+
+        @Test
+        @DisplayName("returns true for error response")
+        void returnsTrueForErrorResponse() {
+            assertTrue(McpStdioProxy.shouldForwardResponse(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32603,\"message\":\"fail\"}}"));
+        }
+
+        @Test
+        @DisplayName("returns true for whitespace-only string")
+        void returnsTrueForWhitespace() {
+            // Whitespace is not empty, so it would be forwarded
+            assertTrue(McpStdioProxy.shouldForwardResponse("  "));
+        }
+    }
 
     // ── parsePort ───────────────────────────────────────────────────────
 

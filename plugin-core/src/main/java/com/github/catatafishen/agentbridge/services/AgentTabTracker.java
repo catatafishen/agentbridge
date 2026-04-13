@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.services;
 
-import com.intellij.execution.ui.RunContentManager;
 import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.ui.RunContentDescriptor;
+import com.intellij.execution.ui.RunContentManager;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
@@ -77,12 +77,29 @@ public final class AgentTabTracker implements Disposable {
         });
     }
 
-    private void closeTab(TabRef ref, boolean closeRunningTerminals) {
-        if ("Terminal".equals(ref.toolWindowId) && !closeRunningTerminals) {
-            return;
+    /**
+     * Determines whether a tab should be skipped during cleanup.
+     *
+     * <p>A tab should be skipped if:
+     * <ul>
+     *   <li>It is a Terminal tab and {@code closeRunningTerminals} is false.</li>
+     *   <li>It is a Run tab and its process is still active.</li>
+     * </ul>
+     *
+     * <p>Pure predicate — no I/O, no IntelliJ API dependency.</p>
+     */
+    static boolean shouldSkipClose(String toolWindowId, boolean closeRunningTerminals,
+                                   boolean isProcessActive) {
+        if ("Terminal".equals(toolWindowId) && !closeRunningTerminals) {
+            return true;
         }
+        return "Run".equals(toolWindowId) && isProcessActive;
+    }
 
-        if ("Run".equals(ref.toolWindowId) && isRunProcessStillActive(ref.tabName)) {
+    private void closeTab(TabRef ref, boolean closeRunningTerminals) {
+        boolean processActive = "Run".equals(ref.toolWindowId)
+            && isRunProcessStillActive(ref.tabName);
+        if (shouldSkipClose(ref.toolWindowId, closeRunningTerminals, processActive)) {
             return;
         }
 

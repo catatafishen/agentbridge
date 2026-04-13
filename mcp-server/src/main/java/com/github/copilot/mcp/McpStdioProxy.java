@@ -38,7 +38,7 @@ public class McpStdioProxy {
             System.exit(1);
         }
 
-        String mcpUrl = "http://127.0.0.1:" + port + "/mcp";
+        String mcpUrl = buildMcpUrl(port);
         LOG.log(Level.INFO, "MCP stdio proxy starting, forwarding to {0}", mcpUrl);
 
         waitForServer(port);
@@ -49,7 +49,7 @@ public class McpStdioProxy {
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
-                if (line.isEmpty()) continue;
+                if (isBlankLine(line)) continue;
 
                 processMessage(mcpUrl, line);
             }
@@ -62,7 +62,7 @@ public class McpStdioProxy {
     private static void processMessage(String mcpUrl, String line) {
         try {
             String response = forwardToServer(mcpUrl, line);
-            if (response != null && !response.isEmpty()) {
+            if (shouldForwardResponse(response)) {
                 System.out.write(response.getBytes(StandardCharsets.UTF_8));
                 System.out.write('\n');
                 System.out.flush();
@@ -86,8 +86,42 @@ public class McpStdioProxy {
         return -1;
     }
 
+    /**
+     * Builds the MCP endpoint URL for a given port.
+     * Pure function — no I/O.
+     */
+    static String buildMcpUrl(int port) {
+        return "http://127.0.0.1:" + port + "/mcp";
+    }
+
+    /**
+     * Builds the health-check endpoint URL for a given port.
+     * Pure function — no I/O.
+     */
+    static String buildHealthUrl(int port) {
+        return "http://127.0.0.1:" + port + "/health";
+    }
+
+    /**
+     * Returns {@code true} if a line (after trimming) is blank and should be
+     * skipped in the message-reading loop.
+     * Pure function — no I/O.
+     */
+    static boolean isBlankLine(String line) {
+        return line == null || line.isEmpty();
+    }
+
+    /**
+     * Returns {@code true} if the server response should be forwarded to stdout.
+     * Notifications (HTTP 202) produce a null response; those are not forwarded.
+     * Pure function — no I/O.
+     */
+    static boolean shouldForwardResponse(String response) {
+        return response != null && !response.isEmpty();
+    }
+
     private static void waitForServer(int port) {
-        String healthUrl = "http://127.0.0.1:" + port + "/health";
+        String healthUrl = buildHealthUrl(port);
         for (int i = 0; i < MAX_RETRIES; i++) {
             try {
                 HttpURLConnection conn = (HttpURLConnection) URI.create(healthUrl).toURL().openConnection();

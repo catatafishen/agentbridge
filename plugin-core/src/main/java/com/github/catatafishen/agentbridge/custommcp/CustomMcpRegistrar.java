@@ -7,7 +7,6 @@ import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -63,28 +62,56 @@ public final class CustomMcpRegistrar implements Disposable {
         CustomMcpSettings settings = CustomMcpSettings.getInstance(project);
         List<CustomMcpServerConfig> servers = settings.getServers();
 
-        Set<String> desiredServerIds = new HashSet<>();
-        for (CustomMcpServerConfig server : servers) {
-            if (server.isEnabled() && !server.getUrl().isBlank()) {
-                desiredServerIds.add(server.getId());
-            }
-        }
+        Set<String> desiredServerIds = collectActiveServerIds(servers);
 
         // Unregister tools for servers no longer in the active set
-        List<String> toRemove = new ArrayList<>();
-        for (String serverId : registeredByServer.keySet()) {
-            if (!desiredServerIds.contains(serverId)) {
-                unregisterServerTools(bridge, serverId);
-                toRemove.add(serverId);
-            }
+        Set<String> toRemove = computeServersToRemove(registeredByServer.keySet(), desiredServerIds);
+        for (String serverId : toRemove) {
+            unregisterServerTools(bridge, serverId);
+            registeredByServer.remove(serverId);
         }
-        toRemove.forEach(registeredByServer::remove);
 
         // Connect to each enabled server and register its tools
         for (CustomMcpServerConfig server : servers) {
             if (!server.isEnabled() || server.getUrl().isBlank()) continue;
             connectAndRegister(bridge, server);
         }
+    }
+
+    // ── Extracted pure-logic helpers (package-private for testing) ──────
+
+    /**
+     * Collects server IDs that should be active: enabled with a non-blank URL.
+     */
+    static Set<String> collectActiveServerIds(List<CustomMcpServerConfig> servers) {
+        Set<String> ids = new HashSet<>();
+        for (CustomMcpServerConfig server : servers) {
+            if (server.isEnabled() && !server.getUrl().isBlank()) {
+                ids.add(server.getId());
+            }
+        }
+        return ids;
+    }
+
+    /**
+     * Computes which server IDs should be removed: present in current but not in desired.
+     */
+    static Set<String> computeServersToRemove(Set<String> currentServerIds, Set<String> desiredServerIds) {
+        Set<String> toRemove = new HashSet<>();
+        for (String serverId : currentServerIds) {
+            if (!desiredServerIds.contains(serverId)) {
+                toRemove.add(serverId);
+            }
+        }
+        return toRemove;
+    }
+
+    /**
+     * Formats a connection-failure warning message for logging.
+     */
+    static String formatConnectionError(String serverName, String serverUrl, String errorMessage) {
+        return "Failed to connect to custom MCP server '" + serverName
+            + "' at " + serverUrl + ": " + errorMessage;
     }
 
     /**
@@ -142,8 +169,7 @@ public final class CustomMcpRegistrar implements Disposable {
 
         } catch (Exception e) {
             client.close();
-            LOG.warn("Failed to connect to custom MCP server '" + server.getName()
-                + "' at " + server.getUrl() + ": " + e.getMessage());
+            LOG.warn(formatConnectionError(server.getName(), server.getUrl(), e.getMessage()));
         }
     }
 

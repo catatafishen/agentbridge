@@ -70,6 +70,17 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     }
 
     /**
+     * Parsed result of an MCP {@code initialize} response, containing the server's
+     * reported protocol version and identity.
+     */
+    public record InitializeInfo(
+        @NotNull String protocolVersion,
+        @NotNull String serverName,
+        @NotNull String serverVersion
+    ) {
+    }
+
+    /**
      * Returns the current session ID, or {@code null} if no session is active.
      * Visible for testing only.
      */
@@ -102,9 +113,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
 
         // Per spec: InitializeRequest MUST NOT include a session ID
         JsonObject response = sendRequestInternal("initialize", params, false, false);
-        if (response.has("error")) {
-            throw new IOException("MCP initialize failed: " + errorMessage(response));
-        }
+        parseInitializeResult(response);
     }
 
     /**
@@ -116,26 +125,7 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     @NotNull
     public List<ToolInfo> listTools() throws IOException {
         JsonObject response = sendRequest("tools/list", new JsonObject());
-        if (response.has("error")) {
-            throw new IOException("MCP tools/list failed: " + errorMessage(response));
-        }
-
-        List<ToolInfo> tools = new ArrayList<>();
-        if (!response.has("result")) return tools;
-
-        JsonObject result = response.getAsJsonObject("result");
-        if (!result.has("tools")) return tools;
-
-        for (JsonElement element : result.getAsJsonArray("tools")) {
-            JsonObject toolObj = element.getAsJsonObject();
-            String name = toolObj.has("name") ? toolObj.get("name").getAsString() : "";
-            String desc = toolObj.has("description") ? toolObj.get("description").getAsString() : "";
-            JsonObject schema = toolObj.has("inputSchema") ? toolObj.getAsJsonObject("inputSchema") : null;
-            if (!name.isEmpty()) {
-                tools.add(new ToolInfo(name, desc, schema));
-            }
-        }
-        return tools;
+        return parseToolList(response);
     }
 
     /**
@@ -326,6 +316,60 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
             reinitLock.unlock();
         }
         return sendRequestInternal(method, params, true, true);
+    }
+
+    /**
+     * Parses the JSON-RPC response to an {@code initialize} request.
+     * Returns the server's reported protocol version and identity.
+     *
+     * @throws IOException if the response contains a JSON-RPC error
+     */
+    @VisibleForTesting
+    @NotNull
+    static InitializeInfo parseInitializeResult(@NotNull JsonObject response) throws IOException {
+        if (response.has("error")) {
+            throw new IOException("MCP initialize failed: " + errorMessage(response));
+        }
+        JsonObject result = response.has("result") ? response.getAsJsonObject("result") : new JsonObject();
+        String protocolVersion = result.has("protocolVersion") ? result.get("protocolVersion").getAsString() : "";
+        String serverName = "";
+        String serverVersion = "";
+        if (result.has("serverInfo") && result.get("serverInfo").isJsonObject()) {
+            JsonObject serverInfo = result.getAsJsonObject("serverInfo");
+            serverName = serverInfo.has("name") ? serverInfo.get("name").getAsString() : "";
+            serverVersion = serverInfo.has("version") ? serverInfo.get("version").getAsString() : "";
+        }
+        return new InitializeInfo(protocolVersion, serverName, serverVersion);
+    }
+
+    /**
+     * Parses a {@code tools/list} JSON-RPC response into a list of tool definitions.
+     * Tools with empty or missing names are skipped.
+     *
+     * @throws IOException if the response contains a JSON-RPC error
+     */
+    @VisibleForTesting
+    @NotNull
+    static List<ToolInfo> parseToolList(@NotNull JsonObject response) throws IOException {
+        if (response.has("error")) {
+            throw new IOException("MCP tools/list failed: " + errorMessage(response));
+        }
+        List<ToolInfo> tools = new ArrayList<>();
+        if (!response.has("result")) return tools;
+
+        JsonObject result = response.getAsJsonObject("result");
+        if (!result.has("tools")) return tools;
+
+        for (JsonElement element : result.getAsJsonArray("tools")) {
+            JsonObject toolObj = element.getAsJsonObject();
+            String name = toolObj.has("name") ? toolObj.get("name").getAsString() : "";
+            String desc = toolObj.has("description") ? toolObj.get("description").getAsString() : "";
+            JsonObject schema = toolObj.has("inputSchema") ? toolObj.getAsJsonObject("inputSchema") : null;
+            if (!name.isEmpty()) {
+                tools.add(new ToolInfo(name, desc, schema));
+            }
+        }
+        return tools;
     }
 
     /**
