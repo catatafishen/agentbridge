@@ -586,6 +586,56 @@ class KiroClientExporterTest {
             "kind must contain 'Mcp' for agentbridge tools");
     }
 
+    // ── parseResultContent tests ───────────────────────────────────────────
+
+    @Test
+    void parseResultContent_validJsonObject_parsedCorrectly() {
+        String json = "{\"type\":\"text\",\"text\":\"hello\"}";
+        JsonObject result = KiroClientExporter.parseResultContent(json);
+        assertEquals("text", result.get("type").getAsString());
+        assertEquals("hello", result.get("text").getAsString());
+    }
+
+    @Test
+    void parseResultContent_invalidJson_wrappedAsTextContentBlock() {
+        String plainText = "some plain text result";
+        JsonObject result = KiroClientExporter.parseResultContent(plainText);
+        assertTrue(result.has("content"), "Fallback wrapper must have 'content' array");
+        JsonArray content = result.getAsJsonArray("content");
+        assertEquals(1, content.size());
+        JsonObject textItem = content.get(0).getAsJsonObject();
+        assertEquals("text", textItem.get("type").getAsString());
+        assertEquals(plainText, textItem.get("text").getAsString());
+    }
+
+    @Test
+    void parseResultContent_emptyString_wrappedAsTextContentBlock() {
+        JsonObject result = KiroClientExporter.parseResultContent("");
+        assertTrue(result.has("content"), "Empty string should be wrapped");
+        JsonArray content = result.getAsJsonArray("content");
+        assertEquals(1, content.size());
+        assertEquals("", content.get(0).getAsJsonObject().get("text").getAsString());
+    }
+
+    @Test
+    void parseResultContent_jsonArray_wrappedAsTextContentBlock() {
+        // A JSON array is valid JSON but not a JsonObject, so getAsJsonObject() throws
+        String jsonArray = "[1, 2, 3]";
+        JsonObject result = KiroClientExporter.parseResultContent(jsonArray);
+        assertTrue(result.has("content"), "JSON array should be wrapped as text");
+        JsonArray content = result.getAsJsonArray("content");
+        assertEquals(1, content.size());
+        assertEquals(jsonArray, content.get(0).getAsJsonObject().get("text").getAsString());
+    }
+
+    @Test
+    void parseResultContent_nestedJsonObject_parsedCorrectly() {
+        String json = "{\"outer\":{\"inner\":\"value\"}}";
+        JsonObject result = KiroClientExporter.parseResultContent(json);
+        assertTrue(result.has("outer"));
+        assertEquals("value", result.getAsJsonObject("outer").get("inner").getAsString());
+    }
+
     private static EntryData.Prompt userPrompt(String text) {
         return new EntryData.Prompt(text);
     }

@@ -169,7 +169,7 @@ public final class ToolCallStatisticsService implements Disposable {
         }
     }
 
-    private static boolean isDbMoved(@NotNull SQLException e) {
+    static boolean isDbMoved(@NotNull SQLException e) {
         return e.getMessage() != null && e.getMessage().contains("SQLITE_READONLY_DBMOVED");
     }
 
@@ -221,7 +221,7 @@ public final class ToolCallStatisticsService implements Disposable {
     /**
      * Appends optional WHERE-clause filters and returns the bound parameter values.
      */
-    private static List<String> appendFilters(StringBuilder sql, @Nullable String since, @Nullable String clientId) {
+    static List<String> appendFilters(StringBuilder sql, @Nullable String since, @Nullable String clientId) {
         List<String> params = new ArrayList<>();
         if (since != null) {
             sql.append(" AND timestamp >= ?");

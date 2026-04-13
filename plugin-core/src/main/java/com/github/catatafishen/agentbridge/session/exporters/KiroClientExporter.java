@@ -550,7 +550,7 @@ public final class KiroClientExporter {
     }
 
     @NotNull
-    private static JsonObject parseResultContent(@NotNull String resultStr) {
+    static JsonObject parseResultContent(@NotNull String resultStr) {
         try {
             return JsonParser.parseString(resultStr).getAsJsonObject();
         } catch (Exception e) {

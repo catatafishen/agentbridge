@@ -130,6 +130,19 @@ public final class AnthropicClientExporter {
         return merged;
     }
 
+    /**
+     * Parses an ISO-8601 timestamp to epoch millis.
+     * Returns {@code 0} if the string is empty or unparseable.
+     */
+    static long parseTimestamp(@NotNull String isoTimestamp) {
+        if (isoTimestamp.isEmpty()) return 0;
+        try {
+            return Instant.parse(isoTimestamp).toEpochMilli();
+        } catch (java.time.format.DateTimeParseException e) {
+            return 0;
+        }
+    }
+
     // ------------------------------------------------------------------
     // Inner types
     // ------------------------------------------------------------------
@@ -244,12 +257,7 @@ public final class AnthropicClientExporter {
         }
 
         private static long parseTimestamp(@NotNull String isoTimestamp) {
-            if (isoTimestamp.isEmpty()) return 0;
-            try {
-                return Instant.parse(isoTimestamp).toEpochMilli();
-            } catch (java.time.format.DateTimeParseException e) {
-                return 0;
-            }
+            return AnthropicClientExporter.parseTimestamp(isoTimestamp);
         }
 
         @NotNull

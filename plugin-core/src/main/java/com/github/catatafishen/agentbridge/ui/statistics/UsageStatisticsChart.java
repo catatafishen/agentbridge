@@ -162,6 +162,10 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
     }
 
     private long extractMetricValue(UsageStatisticsData.DailyAgentStats stats) {
+        return extractMetricValue(metric, stats);
+    }
+
+    static long extractMetricValue(UsageStatisticsData.Metric metric, UsageStatisticsData.DailyAgentStats stats) {
         return switch (metric) {
             case PREMIUM_REQUESTS -> Math.round(stats.premiumRequests());
             case TURNS -> stats.turns();
@@ -172,10 +176,10 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         };
     }
 
-    private record DataPoint(long x, long y, LocalDate date) {
+    record DataPoint(long x, long y, LocalDate date) {
     }
 
-    private record DataSeries(String agentId, JBColor color, List<DataPoint> points) {
+    record DataSeries(String agentId, JBColor color, List<DataPoint> points) {
     }
 
     /**
@@ -200,35 +204,11 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         }
 
         private void computeMinMax() {
-            boolean first = true;
-            long xLo = 0, xHi = 0, yLo = 0, yHi = 0;
-            for (DataSeries series : seriesList) {
-                for (DataPoint pt : series.points) {
-                    if (first) {
-                        xLo = xHi = pt.x;
-                        yLo = yHi = pt.y;
-                        first = false;
-                    } else {
-                        xLo = Math.min(xLo, pt.x);
-                        xHi = Math.max(xHi, pt.x);
-                        yLo = Math.min(yLo, pt.y);
-                        yHi = Math.max(yHi, pt.y);
-                    }
-                }
-            }
-            xMin = xLo;
-            xMax = xHi;
-            // Always include zero on the Y axis so fills are grounded at the baseline
-            yMin = Math.min(0, yLo);
-            yMax = Math.max(0, yHi);
-            // Pad top/bottom by 10% so peaks aren't clipped against the border
-            if (yMax > yMin) {
-                long padding = (yMax - yMin) / 10;
-                yMax += padding;
-                if (yMin < 0) yMin -= padding;
-            } else {
-                yMax = yMin + 1;
-            }
+            double[] bounds = UsageStatisticsChart.computeMinMax(seriesList);
+            xMin = (long) bounds[0];
+            xMax = (long) bounds[1];
+            yMin = (long) bounds[2];
+            yMax = (long) bounds[3];
         }
 
         @Override
@@ -267,7 +247,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
             int plotRight = plotLeft + plotW;
 
             // Y-axis grid lines
-            int yTicks = computeNiceTickCount(plotH);
+            int yTicks = UsageStatisticsChart.computeNiceTickCount(plotH, JBUI.scale(40));
             if (yTicks > 0 && yMax > yMin) {
                 for (int i = 0; i <= yTicks; i++) {
                     long yVal = yMin + (yMax - yMin) * i / yTicks;
@@ -387,12 +367,45 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
                 .sorted()
                 .collect(Collectors.toList());
         }
+    }
 
-        private static int computeNiceTickCount(int plotH) {
-            int minSpacing = JBUI.scale(40);
-            int maxTicks = Math.max(1, plotH / minSpacing);
-            return Math.min(maxTicks, 5);
+    static double[] computeMinMax(List<DataSeries> allSeries) {
+        boolean first = true;
+        long xLo = 0, xHi = 0, yLo = 0, yHi = 0;
+        for (DataSeries series : allSeries) {
+            for (DataPoint pt : series.points) {
+                if (first) {
+                    xLo = xHi = pt.x;
+                    yLo = yHi = pt.y;
+                    first = false;
+                } else {
+                    xLo = Math.min(xLo, pt.x);
+                    xHi = Math.max(xHi, pt.x);
+                    yLo = Math.min(yLo, pt.y);
+                    yHi = Math.max(yHi, pt.y);
+                }
+            }
         }
+        long xMin = xLo;
+        long xMax = xHi;
+        // Always include zero on the Y axis so fills are grounded at the baseline
+        long yMin = Math.min(0, yLo);
+        long yMax = Math.max(0, yHi);
+        // Pad top/bottom by 10% so peaks aren't clipped against the border
+        if (yMax > yMin) {
+            long padding = (yMax - yMin) / 10;
+            yMax += padding;
+            if (yMin < 0) yMin -= padding;
+        } else {
+            yMax = yMin + 1;
+        }
+        return new double[]{xMin, xMax, yMin, yMax};
+    }
+
+    static int computeNiceTickCount(int plotH, int scaledMinSpacing) {
+        if (scaledMinSpacing <= 0) return 1;
+        int maxTicks = Math.max(1, plotH / scaledMinSpacing);
+        return Math.min(maxTicks, 5);
     }
 
     private static String formatCompact(long value) {

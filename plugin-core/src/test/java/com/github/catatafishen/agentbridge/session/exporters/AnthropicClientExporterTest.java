@@ -313,6 +313,42 @@ class AnthropicClientExporterTest {
             "Null result should be exported as empty string in tool_result");
     }
 
+    // ── parseTimestamp tests ───────────────────────────────────────────────
+
+    @Test
+    void parseTimestamp_validIsoTimestamp_returnsCorrectEpochMillis() {
+        // 2024-01-15T10:30:00Z → known epoch millis
+        long expected = Instant.parse("2024-01-15T10:30:00Z").toEpochMilli();
+        assertEquals(expected, AnthropicClientExporter.parseTimestamp("2024-01-15T10:30:00Z"));
+    }
+
+    @Test
+    void parseTimestamp_validTimestampWithMillis_returnsCorrectEpochMillis() {
+        long expected = Instant.parse("2024-06-01T12:00:00.123Z").toEpochMilli();
+        assertEquals(expected, AnthropicClientExporter.parseTimestamp("2024-06-01T12:00:00.123Z"));
+    }
+
+    @Test
+    void parseTimestamp_invalidString_returnsZero() {
+        assertEquals(0, AnthropicClientExporter.parseTimestamp("not-a-timestamp"));
+    }
+
+    @Test
+    void parseTimestamp_emptyString_returnsZero() {
+        assertEquals(0, AnthropicClientExporter.parseTimestamp(""));
+    }
+
+    @Test
+    void parseTimestamp_partialDate_returnsZero() {
+        // "2024-01-15" is a valid date but not a valid Instant (no time component)
+        assertEquals(0, AnthropicClientExporter.parseTimestamp("2024-01-15"));
+    }
+
+    @Test
+    void parseTimestamp_epochZeroTimestamp_returnsZeroMillis() {
+        assertEquals(0, AnthropicClientExporter.parseTimestamp("1970-01-01T00:00:00Z"));
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static EntryData.Text text(String content) {
