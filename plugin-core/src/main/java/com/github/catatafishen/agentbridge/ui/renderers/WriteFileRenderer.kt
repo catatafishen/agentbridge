@@ -23,13 +23,13 @@ import javax.swing.text.StyleContext
  */
 object WriteFileRenderer : ArgumentAwareRenderer {
 
-    private val WRITTEN = Regex("""^Written:\s+(.+?)\s+\((\d+)\s+chars\)""")
-    private val CREATED = Regex("""^Created:\s+(.+)$""")
-    private val EDITED_CHARS = Regex("""^Edited:\s+(.+?)\s+\(replaced\s+(\d+)\s+chars\s+with\s+(\d+)\s+chars\)""")
-    private val EDITED_LINES =
+    val WRITTEN = Regex("""^Written:\s+(.+?)\s+\((\d+)\s+chars\)""")
+    val CREATED = Regex("""^Created:\s+(.+)$""")
+    val EDITED_CHARS = Regex("""^Edited:\s+(.+?)\s+\(replaced\s+(\d+)\s+chars\s+with\s+(\d+)\s+chars\)""")
+    val EDITED_LINES =
         Regex("""^Edited:\s+(.+?)\s+\(replaced\s+lines\s+(\d+)-(\d+)\s+\((\d+)\s+lines?\)\s+with\s+(\d+)\s+chars\)""")
-    private val CONTEXT_LINE = Regex("""^(\d+): (.*)$""")
-    private val SYNTAX_WARNING = Regex("""WARNING:.*$""", RegexOption.DOT_MATCHES_ALL)
+    val CONTEXT_LINE = Regex("""^(\d+): (.*)$""")
+    val SYNTAX_WARNING = Regex("""WARNING:.*$""", RegexOption.DOT_MATCHES_ALL)
 
     private val ADD_BG = JBColor(Color(0xE6, 0xFF, 0xEC), Color(0x1B, 0x3A, 0x22))
     private val DEL_BG = JBColor(Color(0xFF, 0xEB, 0xE9), Color(0x3D, 0x1F, 0x1F))
@@ -52,9 +52,9 @@ object WriteFileRenderer : ArgumentAwareRenderer {
         }
     }
 
-    private data class DiffContent(val oldStr: String, val newStr: String)
+    data class DiffContent(val oldStr: String, val newStr: String)
 
-    private fun extractDiff(arguments: String?): DiffContent? {
+    fun extractDiff(arguments: String?): DiffContent? {
         if (arguments.isNullOrBlank()) return null
         return try {
             val json = JsonParser.parseString(arguments).asJsonObject

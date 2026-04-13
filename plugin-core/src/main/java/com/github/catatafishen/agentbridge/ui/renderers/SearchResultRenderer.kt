@@ -11,10 +11,10 @@ import javax.swing.JComponent
  */
 object SearchResultRenderer : ToolResultRenderer {
 
-    private val LINE_REF_PATTERN = Regex("""^(.+?):(\d+):\s+(.+)$""")
-    private val LOCATION_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^]]+)]\s+(.+)$""")
-    private val COUNT_HEADER = Regex("""^(\d+)\s+(matches|results?|references?|symbols?)\b""", RegexOption.IGNORE_CASE)
-    private val NO_MATCHES = Regex("""^No\s+(matches|results|references|symbols)\s+found""", RegexOption.IGNORE_CASE)
+    val LINE_REF_PATTERN = Regex("""^(.+?):(\d+):\s+(.+)$""")
+    val LOCATION_PATTERN = Regex("""^(.+?):(\d+)\s+\[([^]]+)]\s+(.+)$""")
+    val COUNT_HEADER = Regex("""^(\d+)\s+(matches|results?|references?|symbols?)\b""", RegexOption.IGNORE_CASE)
+    val NO_MATCHES = Regex("""^No\s+(matches|results|references|symbols)\s+found""", RegexOption.IGNORE_CASE)
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()

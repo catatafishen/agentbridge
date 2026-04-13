@@ -13,7 +13,7 @@ import javax.swing.JComponent
  */
 object BuildResultRenderer : ToolResultRenderer {
 
-    private val COUNTS_PATTERN = Regex("""\((\d+) errors?,\s*(\d+) warnings?,\s*([\d.]+)s\)""")
+    val COUNTS_PATTERN = Regex("""\((\d+) errors?,\s*(\d+) warnings?,\s*([\d.]+)s\)""")
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()

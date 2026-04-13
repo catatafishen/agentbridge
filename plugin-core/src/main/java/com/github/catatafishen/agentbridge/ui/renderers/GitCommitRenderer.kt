@@ -13,11 +13,11 @@ import javax.swing.JComponent
  */
 object GitCommitRenderer : ToolResultRenderer {
 
-    private val HEADER_PATTERN = Regex("""\[(\S+)\s+([a-f0-9]+)]\s+(.+)""")
-    private val SUMMARY_PATTERN = Regex("""\d+ files? changed.*""")
-    private val CREATE_PATTERN = Regex("""create mode \d+ (.+)""")
-    private val DELETE_PATTERN = Regex("""delete mode \d+ (.+)""")
-    private val RENAME_PATTERN = Regex("""rename (.+) => (.+) \((\d+)%\)""")
+    val HEADER_PATTERN = Regex("""\[(\S+)\s+([a-f0-9]+)]\s+(.+)""")
+    val SUMMARY_PATTERN = Regex("""\d+ files? changed.*""")
+    val CREATE_PATTERN = Regex("""create mode \d+ (.+)""")
+    val DELETE_PATTERN = Regex("""delete mode \d+ (.+)""")
+    val RENAME_PATTERN = Regex("""rename (.+) => (.+) \((\d+)%\)""")
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
