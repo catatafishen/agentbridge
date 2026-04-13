@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -241,6 +243,21 @@ class EmbeddingServiceTest {
         assertFalse(service.isReady() && !ModelDownloader.isModelAvailable());
     }
 
+    @Test
+    void disposeClosesOpenSafetensorsReader(@TempDir Path tempDir) throws IOException {
+        Path vocabPath = writeMinimalVocab(tempDir);
+        WordPieceTokenizer tokenizer = new WordPieceTokenizer(vocabPath, 16);
+        SafetensorsReader reader = new SafetensorsReader(writeMinimalSafetensors(tempDir));
+
+        EmbeddingService service = new EmbeddingService(tokenizer,
+            input -> new float[EmbeddingService.EMBEDDING_DIM], reader);
+        assertTrue(service.isReady());
+
+        service.dispose();
+
+        assertFalse(service.isReady(), "isReady must be false after dispose");
+    }
+
     // --- ModelDownloader path methods ---
 
     @Test
@@ -373,5 +390,21 @@ class EmbeddingServiceTest {
         Path path = dir.resolve("vocab.txt");
         Files.write(path, vocab, StandardCharsets.UTF_8);
         return path;
+    }
+
+    /**
+     * Creates a minimal valid safetensors file (one float32 tensor named "x")
+     * for use in tests that need a {@link SafetensorsReader} without caring about content.
+     */
+    private static Path writeMinimalSafetensors(Path dir) throws IOException {
+        String json = "{\"x\":{\"dtype\":\"F32\",\"shape\":[1],\"data_offsets\":[0,4]}}";
+        byte[] header = json.getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.allocate(8 + header.length + 4).order(ByteOrder.LITTLE_ENDIAN);
+        buf.putLong(header.length);
+        buf.put(header);
+        buf.putFloat(1.0f);
+        Path file = dir.resolve("test.safetensors");
+        Files.write(file, buf.array());
+        return file;
     }
 }

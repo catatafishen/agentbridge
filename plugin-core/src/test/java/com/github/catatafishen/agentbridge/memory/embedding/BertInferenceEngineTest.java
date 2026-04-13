@@ -3,9 +3,10 @@ package com.github.catatafishen.agentbridge.memory.embedding;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.Mockito.mock;
 
 /**
  * Tests for the package-private primitive operations in {@link BertInferenceEngine}:
@@ -20,9 +21,10 @@ class BertInferenceEngineTest {
 
     @BeforeAll
     static void setUp() {
-        // The primitive ops under test never access the weights field,
-        // so a mock is sufficient to satisfy the @NotNull constructor parameter.
-        engine = new BertInferenceEngine(mock(BertWeights.class));
+        // Use the test constructor to create a minimal-but-real BertWeights.
+        // The primitive ops under test (layerNorm, linear, etc.) access the weights
+        // fields at most incidentally — they receive all inputs as explicit parameters.
+        engine = new BertInferenceEngine(makeTestWeights(1));
     }
 
     // ---- layerNorm --------------------------------------------------------------
@@ -243,6 +245,48 @@ class BertInferenceEngineTest {
         assertEquals(0.0f, mean, 1e-4f, "feedForward output mean should be ≈ 0 after LayerNorm");
     }
 
+    // ---- run() end-to-end -------------------------------------------------------
+
+    @Test
+    void runProducesCorrectShapeEmbedding() {
+        // Create BertWeights with minimal arrays — only enough for token IDs [2, 3, 4].
+        // The zero-weights produce deterministic math without NaN.
+        BertWeights weights = makeTestWeights(3);
+        BertInferenceEngine eng = new BertInferenceEngine(weights);
+
+        // [CLS]=2, hello=4, [SEP]=3 — token IDs within the small word-embedding table
+        WordPieceTokenizer.TokenizedInput input = new WordPieceTokenizer.TokenizedInput(
+            new long[]{2, 4, 3},
+            new long[]{1, 1, 1},
+            new long[]{0, 0, 0}
+        );
+
+        float[] result = eng.run(input);
+
+        assertEquals(BertWeights.HIDDEN_DIM, result.length, "embedding must be 384-dimensional");
+        for (float v : result) {
+            assertFalse(Float.isNaN(v), "embedding must not contain NaN");
+        }
+    }
+
+    @Test
+    void layerWeightsParameterCountMatchesLayerDimensions() {
+        BertWeights.LayerWeights layer = makeZeroLayer();
+        long count = layer.parameterCount();
+
+        // 4 × [H×H] matrices + 4 × H biases + 2 × H LN params + 2 × [I×H] FF matrices + I+H biases + 2 × H LN
+        // = 4*147456 + 6*384 + 2*589824 + 1536 + 3*384 = 1,774,464
+        long expected = 4L * BertWeights.HIDDEN_DIM * BertWeights.HIDDEN_DIM  // Q, K, V, att-out weights
+            + 4L * BertWeights.HIDDEN_DIM                                       // Q, K, V, att-out biases
+            + 2L * BertWeights.HIDDEN_DIM                                       // att-LN gamma + beta
+            + (long) BertWeights.INTERMEDIATE_DIM * BertWeights.HIDDEN_DIM     // intermediate weight
+            + BertWeights.INTERMEDIATE_DIM                                       // intermediate bias
+            + (long) BertWeights.HIDDEN_DIM * BertWeights.INTERMEDIATE_DIM     // output weight
+            + BertWeights.HIDDEN_DIM                                             // output bias
+            + 2L * BertWeights.HIDDEN_DIM;                                      // output LN gamma + beta
+        assertEquals(expected, count);
+    }
+
     // ---- Helpers ----------------------------------------------------------------
 
     private static float[][] makeHidden(int seqLen) {
@@ -288,5 +332,26 @@ class BertInferenceEngineTest {
                 assertFalse(Float.isNaN(v), "NaN found at row " + i);
             }
         }
+    }
+
+    /**
+     * Builds a {@link BertWeights} with the minimum embedding tables needed to handle
+     * {@code seqLen} tokens using IDs [2..seqLen+1]. All weights are zero; layer-norm
+     * gamma is 1 and beta is 0, so outputs are deterministic and never NaN.
+     */
+    private static BertWeights makeTestWeights(int seqLen) {
+        int h = BertWeights.HIDDEN_DIM;
+        int vocabRows = seqLen + 3; // token IDs 0..seqLen+2
+        float[] wordEmb = new float[vocabRows * h];
+        float[] posEmb = new float[(seqLen + 1) * h];
+        float[] typeEmb = new float[2 * h];
+        float[] lnGamma = new float[h];
+        Arrays.fill(lnGamma, 1.0f);
+        float[] lnBeta = new float[h];
+        BertWeights.LayerWeights[] layers = new BertWeights.LayerWeights[6];
+        for (int i = 0; i < 6; i++) {
+            layers[i] = makeZeroLayer();
+        }
+        return new BertWeights(wordEmb, posEmb, typeEmb, lnGamma, lnBeta, layers);
     }
 }

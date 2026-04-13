@@ -117,6 +117,25 @@ public final class BertWeights {
     }
 
     /**
+     * Package-private for testing — constructs BertWeights from pre-built arrays,
+     * bypassing SafetensorsReader. Arrays are not validated for size.
+     */
+    BertWeights(
+        float[] wordEmbeddings,
+        float[] positionEmbeddings,
+        float[] tokenTypeEmbeddings,
+        float[] embeddingLayerNormWeight,
+        float[] embeddingLayerNormBias,
+        LayerWeights[] layers) {
+        this.wordEmbeddings = wordEmbeddings;
+        this.positionEmbeddings = positionEmbeddings;
+        this.tokenTypeEmbeddings = tokenTypeEmbeddings;
+        this.embeddingLayerNormWeight = embeddingLayerNormWeight;
+        this.embeddingLayerNormBias = embeddingLayerNormBias;
+        this.layers = layers;
+    }
+
+    /**
      * Loads all 101 tensors of the all-MiniLM-L6-v2 model from a safetensors file.
      *
      * @param reader an open {@link SafetensorsReader} positioned on the model file
