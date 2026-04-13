@@ -1,11 +1,13 @@
 package com.github.catatafishen.agentbridge.ui.statistics;
 
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -143,50 +145,65 @@ class UsageStatisticsLoaderTest {
     @DisplayName("extractDate")
     class ExtractDate {
 
+        private static final String VALID_TS = "2024-06-15T10:30:00Z";
+        private static final String VALID_FALLBACK = "2024-03-20T08:00:00Z";
+
         @Test
-        void fromTimestamp() throws Exception {
+        @DisplayName("JSON with valid ISO timestamp → correct LocalDate")
+        void jsonWithValidTimestamp() throws Exception {
             JsonObject obj = new JsonObject();
-            String ts = "2024-06-15T10:30:00Z";
-            obj.addProperty("timestamp", ts);
-            LocalDate expected = Instant.parse(ts).atZone(ZoneId.systemDefault()).toLocalDate();
+            obj.addProperty("timestamp", VALID_TS);
+
+            LocalDate expected = Instant.parse(VALID_TS)
+                .atZone(ZoneId.systemDefault()).toLocalDate();
             assertEquals(expected, invokeExtractDate(obj, null));
         }
 
         @Test
-        void fallbackWhenNoTimestamp() throws Exception {
+        @DisplayName("JSON without timestamp field + valid fallback → date from fallback")
+        void noTimestampFieldUsesFallback() throws Exception {
             JsonObject obj = new JsonObject();
-            String fallback = "2024-06-15T10:30:00Z";
-            LocalDate expected = Instant.parse(fallback).atZone(ZoneId.systemDefault()).toLocalDate();
-            assertEquals(expected, invokeExtractDate(obj, fallback));
+
+            LocalDate expected = Instant.parse(VALID_FALLBACK)
+                .atZone(ZoneId.systemDefault()).toLocalDate();
+            assertEquals(expected, invokeExtractDate(obj, VALID_FALLBACK));
         }
 
         @Test
-        void emptyTimestampUsesFallback() throws Exception {
+        @DisplayName("both absent → returns null")
+        void bothAbsentReturnsNull() throws Exception {
             JsonObject obj = new JsonObject();
-            obj.addProperty("timestamp", "");
-            String fallback = "2024-01-01T00:00:00Z";
-            LocalDate expected = Instant.parse(fallback).atZone(ZoneId.systemDefault()).toLocalDate();
-            assertEquals(expected, invokeExtractDate(obj, fallback));
+            assertNull(invokeExtractDate(obj, null));
         }
 
         @Test
-        void noTimestampNoFallback() throws Exception {
-            assertNull(invokeExtractDate(new JsonObject(), null));
-        }
-
-        @Test
-        void badTimestampNoFallback() throws Exception {
+        @DisplayName("invalid timestamp format → returns null")
+        void invalidTimestampReturnsNull() throws Exception {
             JsonObject obj = new JsonObject();
             obj.addProperty("timestamp", "not-a-date");
             assertNull(invokeExtractDate(obj, null));
         }
 
         @Test
-        void badTimestampWithFallback() throws Exception {
+        @DisplayName("empty timestamp string in JSON → falls back to fallback")
+        void emptyTimestampFallsBack() throws Exception {
             JsonObject obj = new JsonObject();
-            obj.addProperty("timestamp", "not-a-date");
-            // Invalid timestamp returns null; fallback only used when timestamp key is absent
-            assertNull(invokeExtractDate(obj, "2024-03-20T12:00:00Z"));
+            obj.addProperty("timestamp", "");
+
+            LocalDate expected = Instant.parse(VALID_FALLBACK)
+                .atZone(ZoneId.systemDefault()).toLocalDate();
+            assertEquals(expected, invokeExtractDate(obj, VALID_FALLBACK));
+        }
+
+        @Test
+        @DisplayName("JSON with null timestamp value → throws (JsonNull.getAsString() unsupported)")
+        void nullTimestampValueThrows() {
+            JsonObject obj = new JsonObject();
+            obj.add("timestamp", JsonNull.INSTANCE);
+
+            InvocationTargetException ex = assertThrows(InvocationTargetException.class,
+                () -> invokeExtractDate(obj, VALID_FALLBACK));
+            assertInstanceOf(UnsupportedOperationException.class, ex.getCause());
         }
     }
 

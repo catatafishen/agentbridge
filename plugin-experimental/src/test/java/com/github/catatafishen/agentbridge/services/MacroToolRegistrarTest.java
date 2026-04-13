@@ -1,65 +1,77 @@
 package com.github.catatafishen.agentbridge.services;
 
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Unit tests for {@link MacroToolRegistrar} static helper methods.
- * These tests are pure unit tests — no IntelliJ platform context required.
+ * Unit tests for {@link MacroToolRegistrar#sanitizeToolName(String)}.
+ * Pure unit tests — no IntelliJ platform context required.
  */
 class MacroToolRegistrarTest {
 
-    // ── sanitizeToolName ──────────────────────────────────────────────────────
+    @Nested
+    class SanitizeToolName {
 
-    @Test
-    void sanitize_simpleAsciiName_addsMacroPrefix() {
-        assertEquals("macro_my_macro", MacroToolRegistrar.sanitizeToolName("My Macro"));
-    }
+        @Test
+        void simpleName_addsMacroPrefix() {
+            assertEquals("macro_hello", MacroToolRegistrar.sanitizeToolName("hello"));
+        }
 
-    @Test
-    void sanitize_alreadyLowercase_addsPrefix() {
-        assertEquals("macro_clean_build", MacroToolRegistrar.sanitizeToolName("clean_build"));
-    }
+        @Test
+        void mixedCase_isLowercased() {
+            assertEquals("macro_helloworld", MacroToolRegistrar.sanitizeToolName("HelloWorld"));
+        }
 
-    @Test
-    void sanitize_specialCharsReplacedWithUnderscore() {
-        assertEquals("macro_run_test_suite", MacroToolRegistrar.sanitizeToolName("Run/Test Suite!"));
-    }
+        @Test
+        void specialChars_replacedWithUnderscore() {
+            assertEquals("macro_run_test_suite", MacroToolRegistrar.sanitizeToolName("run/test!suite"));
+        }
 
-    @Test
-    void sanitize_consecutiveSpecialCharsCollapsed() {
-        // "Format & Lint!!" → lowercase → replace non-alphanumeric sequences → strip trailing _
-        assertEquals("macro_format_lint", MacroToolRegistrar.sanitizeToolName("Format & Lint!!"));
-    }
+        @Test
+        void consecutiveUnderscores_collapsed() {
+            assertEquals("macro_a_b", MacroToolRegistrar.sanitizeToolName("a___b"));
+        }
 
-    @Test
-    void sanitize_leadingAndTrailingSpecialCharsStripped() {
-        assertEquals("macro_hello_world", MacroToolRegistrar.sanitizeToolName("__hello__world__"));
-    }
+        @Test
+        void leadingAndTrailingUnderscores_stripped() {
+            assertEquals("macro_hello", MacroToolRegistrar.sanitizeToolName("_hello_"));
+        }
 
-    @Test
-    void sanitize_emptyName_producesUnnamed() {
-        assertEquals("macro_unnamed", MacroToolRegistrar.sanitizeToolName(""));
-    }
+        @Test
+        void emptyString_producesMacroUnnamed() {
+            assertEquals("macro_unnamed", MacroToolRegistrar.sanitizeToolName(""));
+        }
 
-    @Test
-    void sanitize_onlySpecialChars_producesUnnamed() {
-        assertEquals("macro_unnamed", MacroToolRegistrar.sanitizeToolName("!!!"));
-    }
+        @Test
+        void allSpecialChars_producesMacroUnnamed() {
+            assertEquals("macro_unnamed", MacroToolRegistrar.sanitizeToolName("!!!@@@###"));
+        }
 
-    @Test
-    void sanitize_unicodeCharsReplaced() {
-        assertEquals("macro_caf", MacroToolRegistrar.sanitizeToolName("café"));
-    }
+        @Test
+        void numbersPreserved() {
+            assertEquals("macro_test123", MacroToolRegistrar.sanitizeToolName("test123"));
+        }
 
-    @Test
-    void sanitize_numberOnly_isPreserved() {
-        assertEquals("macro_42", MacroToolRegistrar.sanitizeToolName("42"));
-    }
+        @Test
+        void numericOnly_preserved() {
+            assertEquals("macro_42", MacroToolRegistrar.sanitizeToolName("42"));
+        }
 
-    @Test
-    void sanitize_mixedCaseWithNumbers() {
-        assertEquals("macro_refactor_v2", MacroToolRegistrar.sanitizeToolName("Refactor V2"));
+        @Test
+        void mixedCaseWithNumbers_lowercasedAndPrefixed() {
+            assertEquals("macro_refactor_v2", MacroToolRegistrar.sanitizeToolName("Refactor V2"));
+        }
+
+        @Test
+        void spacesReplacedAndCollapsed() {
+            assertEquals("macro_my_macro", MacroToolRegistrar.sanitizeToolName("My Macro"));
+        }
+
+        @Test
+        void unicodeCharsReplaced() {
+            assertEquals("macro_caf", MacroToolRegistrar.sanitizeToolName("café"));
+        }
     }
 }

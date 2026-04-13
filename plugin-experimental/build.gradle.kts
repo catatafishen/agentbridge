@@ -41,7 +41,7 @@ dependencies {
 
     testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
     testImplementation("junit:junit:${providers.gradleProperty("junit4Version").get()}")
-    testRuntimeOnly(project(":plugin-core"))
+    testImplementation(project(":plugin-core"))
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:${providers.gradleProperty("junitVersion").get()}")
 }
