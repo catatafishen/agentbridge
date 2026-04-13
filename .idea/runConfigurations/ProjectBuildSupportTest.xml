@@ -1,9 +1,0 @@
-<component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="ProjectBuildSupportTest" type="JUnit" factoryName="JUnit">
-    <option name="MAIN_CLASS_NAME" value="com.github.catatafishen.agentbridge.psi.java.ProjectBuildSupportTest" />
-    <option name="TEST_OBJECT" value="class" />
-    <method v="2">
-      <option name="Make" enabled="true" />
-    </method>
-  </configuration>
-</component>

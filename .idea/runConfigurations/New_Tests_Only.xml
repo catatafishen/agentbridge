@@ -1,9 +1,0 @@
-<component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="New Tests Only" type="JUnit" factoryName="JUnit">
-    <option name="MAIN_CLASS_NAME" value="com.github.catatafishen.agentbridge.psi.tools.testing.GetCoverageToolStaticMethodsTest" />
-    <option name="TEST_OBJECT" value="class" />
-    <method v="2">
-      <option name="Make" enabled="true" />
-    </method>
-  </configuration>
-</component>

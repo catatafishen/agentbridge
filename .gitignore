@@ -18,6 +18,10 @@ build/
 .idea/sonarlint/
 .idea/.idea/
 .idea/runConfigurations/Issue_Fixer__poll_GitHub_.xml
+# Auto-generated test runner configs (created when running individual tests from IDE)
+.idea/runConfigurations/Gradle_*.xml
+.idea/runConfigurations/Gradle__*.xml
+.idea/runConfigurations/*Test*.xml
 *.iml
 *.iws
 out/
@@ -96,3 +100,6 @@ plugin-experimental/bin
 integration-tests/bin
 mcp-server/bin
 .junie/
+
+# Plugin runtime database (tool usage stats, machine-specific)
+.agentbridge/
