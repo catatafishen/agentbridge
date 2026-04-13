@@ -343,6 +343,27 @@ public abstract class FileTool extends Tool {
     // ── Constructor ───────────────────────────────────────────────────────────
 
     /**
+     * Parses a single line of git porcelain status output into a human-readable annotation.
+     * The first char is the index (staging area) status, the second is the work-tree status.
+     * Pure function — no IDE or git dependency.
+     */
+    static String parseGitPorcelainLine(@NotNull String porcelainLine) {
+        if (porcelainLine.isEmpty()) return " [git: clean]";
+        if (porcelainLine.length() < 2) return " [git: " + porcelainLine.trim() + "]";
+        // Parse porcelain format: XY filename
+        // X = index state, Y = work-tree state
+        char indexState = porcelainLine.charAt(0);
+        char workTreeState = porcelainLine.charAt(1);
+        if (indexState == '?' && workTreeState == '?') return " [git: untracked]";
+        if (indexState == 'A') return " [git: new file, staged]";
+        if (indexState != ' ' && workTreeState == ' ') return " [git: staged]";
+        if (indexState == ' ' && workTreeState == 'M') return " [git: modified, not staged]";
+        if (indexState == 'M' && workTreeState == 'M') return " [git: partially staged]";
+        if (workTreeState == 'D') return " [git: deleted]";
+        return " [git: " + porcelainLine.substring(0, 2).trim() + "]";
+    }
+
+    /**
      * Returns a short git status annotation for a file, e.g. "[git: modified, not staged]".
      * Runs a single git command via ProcessBuilder. Returns empty string on any error
      * or if the file is not in a git repo.
@@ -362,18 +383,7 @@ public abstract class FileTool extends Tool {
                 p.destroyForcibly();
                 return "";
             }
-            if (output.isEmpty()) return " [git: clean]";
-            // Parse porcelain format: XY filename
-            // X = index state, Y = work-tree state
-            char indexState = output.charAt(0);
-            char workTreeState = output.charAt(1);
-            if (indexState == '?' && workTreeState == '?') return " [git: untracked]";
-            if (indexState == 'A') return " [git: new file, staged]";
-            if (indexState != ' ' && workTreeState == ' ') return " [git: staged]";
-            if (indexState == ' ' && workTreeState == 'M') return " [git: modified, not staged]";
-            if (indexState == 'M' && workTreeState == 'M') return " [git: partially staged]";
-            if (workTreeState == 'D') return " [git: deleted]";
-            return " [git: " + output.substring(0, 2).trim() + "]";
+            return parseGitPorcelainLine(output);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "";

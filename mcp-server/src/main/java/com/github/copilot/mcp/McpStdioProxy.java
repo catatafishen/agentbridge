@@ -73,7 +73,7 @@ public class McpStdioProxy {
         }
     }
 
-    private static int parsePort(String[] args) {
+    static int parsePort(String[] args) {
         for (int i = 0; i < args.length - 1; i++) {
             if ("--port".equals(args[i])) {
                 try {
@@ -148,37 +148,50 @@ public class McpStdioProxy {
      * an error response back to stdout.
      */
     @SuppressWarnings("java:S106")
-    private static void writeErrorResponse(String originalMessage, String errorMessage) {
+    static void writeErrorResponse(String originalMessage, String errorMessage) {
         try {
-            // Simple extraction without full JSON parsing (Gson may not be needed)
-            String id = "null";
-            int idIdx = originalMessage.indexOf("\"id\"");
-            if (idIdx >= 0) {
-                int colon = originalMessage.indexOf(':', idIdx);
-                if (colon >= 0) {
-                    int start = colon + 1;
-                    while (start < originalMessage.length()
-                        && Character.isWhitespace(originalMessage.charAt(start))) {
-                        start++;
-                    }
-                    int end = start;
-                    while (end < originalMessage.length()
-                        && originalMessage.charAt(end) != ','
-                        && originalMessage.charAt(end) != '}') {
-                        end++;
-                    }
-                    id = originalMessage.substring(start, end).trim();
-                }
-            }
-
-            String response = "{\"jsonrpc\":\"2.0\",\"id\":" + id
-                + ",\"error\":{\"code\":-32603,\"message\":\""
-                + errorMessage.replace("\"", "'") + "\"}}";
+            String response = buildErrorResponse(originalMessage, errorMessage);
             System.out.write(response.getBytes(StandardCharsets.UTF_8));
             System.out.write('\n');
             System.out.flush();
         } catch (IOException e) {
             LOG.log(Level.SEVERE, "Failed to write error response", e);
         }
+    }
+
+    /**
+     * Builds a JSON-RPC error response by extracting the request id from the original message.
+     * Pure function — no I/O.
+     */
+    static String buildErrorResponse(String originalMessage, String errorMessage) {
+        String id = extractJsonRpcId(originalMessage);
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id
+            + ",\"error\":{\"code\":-32603,\"message\":\""
+            + errorMessage.replace("\"", "'") + "\"}}";
+    }
+
+    /**
+     * Extracts the JSON-RPC "id" value from a raw JSON message without full parsing.
+     * Returns "null" if not found.
+     * Pure function — no I/O.
+     */
+    static String extractJsonRpcId(String message) {
+        int idIdx = message.indexOf("\"id\"");
+        if (idIdx < 0) return "null";
+
+        int colon = message.indexOf(':', idIdx);
+        if (colon < 0) return "null";
+
+        int start = colon + 1;
+        while (start < message.length() && Character.isWhitespace(message.charAt(start))) {
+            start++;
+        }
+        int end = start;
+        while (end < message.length()
+            && message.charAt(end) != ','
+            && message.charAt(end) != '}') {
+            end++;
+        }
+        return message.substring(start, end).trim();
     }
 }

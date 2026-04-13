@@ -526,6 +526,107 @@ class ToolUtilsTest {
     }
 
     @Nested
+    @DisplayName("doesNotMatchGlob — pre-compiled pattern and backslash normalization")
+    class DoesNotMatchGlobCompiled {
+        @Test
+        void preCompiledPatternWorks() {
+            java.util.regex.Pattern compiled = ToolUtils.compileGlob("*.java");
+            assertFalse(ToolUtils.doesNotMatchGlob("Foo.java", "*.java", compiled));
+            assertTrue(ToolUtils.doesNotMatchGlob("Foo.kt", "*.java", compiled));
+        }
+
+        @Test
+        void nullCompiledFallsBackToInternalCompilation() {
+            // When compiled is null, the 3-arg method recompiles the glob internally
+            assertFalse(ToolUtils.doesNotMatchGlob("Foo.java", "*.java", null));
+            assertTrue(ToolUtils.doesNotMatchGlob("Foo.kt", "*.java", null));
+        }
+
+        @Test
+        void backslashPathNormalizedToForwardSlash() {
+            // Windows-style path should be normalized before matching
+            assertFalse(ToolUtils.doesNotMatchGlob("src\\main\\Foo.java", "src/**/*.java"));
+        }
+
+        @Test
+        void backslashInSimpleGlobMatchesFilename() {
+            // Even with backslash separators, filename-only glob should still match
+            assertFalse(ToolUtils.doesNotMatchGlob("src\\main\\Foo.java", "*.java"));
+        }
+
+        @Test
+        void preCompiledWithPathPattern() {
+            java.util.regex.Pattern compiled = ToolUtils.compileGlob("src/**/*.java");
+            assertFalse(ToolUtils.doesNotMatchGlob("src/main/Foo.java", "src/**/*.java", compiled));
+            assertTrue(ToolUtils.doesNotMatchGlob("test/main/Foo.java", "src/**/*.java", compiled));
+        }
+
+        @Test
+        void backslashPathWithPreCompiledPattern() {
+            java.util.regex.Pattern compiled = ToolUtils.compileGlob("src/**/*.java");
+            // Backslash path should still match when normalized
+            assertFalse(ToolUtils.doesNotMatchGlob("src\\main\\Foo.java", "src/**/*.java", compiled));
+        }
+    }
+
+    @Nested
+    @DisplayName("relativize — additional edge cases")
+    class RelativizeEdgeCases {
+        @Test
+        void sameBaseAndFilePath() {
+            // File IS the base directory — no slash after base means no match
+            assertEquals("/home/user/project",
+                ToolUtils.relativize("/home/user/project", "/home/user/project"));
+        }
+
+        @Test
+        void emptyBasePath() {
+            // Empty base + "/" prefix → file starts with "/" so it matches "/"
+            assertEquals("foo.java",
+                ToolUtils.relativize("", "/foo.java"));
+        }
+
+        @Test
+        void bothEmpty() {
+            // Empty base "" + "/" → file "" doesn't start with "/" → returns original
+            assertEquals("", ToolUtils.relativize("", ""));
+        }
+
+        @Test
+        void fileDirectlyUnderBase() {
+            assertEquals("file.txt",
+                ToolUtils.relativize("/base", "/base/file.txt"));
+        }
+
+        @Test
+        void trailingSlashOnBaseDoesNotMatch() {
+            // Base "/base/" + "/" → "/base//" which file doesn't start with
+            assertEquals("/base/file.txt",
+                ToolUtils.relativize("/base/", "/base/file.txt"));
+        }
+    }
+
+    @Nested
+    @DisplayName("formatFileTimestamp — additional edge cases")
+    class FormatFileTimestampEdgeCases {
+        @Test
+        void negativeEpochStillFormatsDate() {
+            // Negative epoch ms (before 1970) should still produce a yyyy-MM-dd string
+            String result = ToolUtils.formatFileTimestamp(-1);
+            assertTrue(result.matches("\\d{4}-\\d{2}-\\d{2}"),
+                "Expected yyyy-MM-dd but got: " + result);
+        }
+
+        @Test
+        void farFutureEpochFormatsDate() {
+            // Year 2100+
+            String result = ToolUtils.formatFileTimestamp(4_102_444_800_000L);
+            assertTrue(result.matches("\\d{4}-\\d{2}-\\d{2}"),
+                "Expected yyyy-MM-dd but got: " + result);
+        }
+    }
+
+    @Nested
     @DisplayName("truncateOutput — edge cases")
     class TruncateOutputEdgeCases {
         @Test

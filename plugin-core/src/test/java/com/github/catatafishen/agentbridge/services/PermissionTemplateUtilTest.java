@@ -4,7 +4,9 @@ import com.google.gson.JsonObject;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("PermissionTemplateUtil")
 class PermissionTemplateUtilTest {
@@ -127,5 +129,60 @@ class PermissionTemplateUtilTest {
     @DisplayName("preserves plain text with no placeholders")
     void preservesPlainText() {
         assertEquals("Just text", PermissionTemplateUtil.stripPlaceholders("Just text"));
+    }
+
+    // ── substituteArgs — additional edge cases ───────────────────────────────
+
+    @Test
+    @DisplayName("JSON object value formatted as toString()")
+    void jsonObjectValueFormattedAsToString() {
+        JsonObject args = new JsonObject();
+        JsonObject nested = new JsonObject();
+        nested.addProperty("key", "value");
+        args.add("obj", nested);
+        String result = PermissionTemplateUtil.substituteArgs("data={obj}", args);
+        assertEquals("data={\"key\":\"value\"}", result);
+    }
+
+    @Test
+    @DisplayName("empty JSON array value substitutes as empty string")
+    void emptyArraySubstitutesEmpty() {
+        JsonObject args = new JsonObject();
+        args.add("list", new com.google.gson.JsonArray());
+        String result = PermissionTemplateUtil.substituteArgs("items={list}", args);
+        assertEquals("items=", result);
+    }
+
+    @Test
+    @DisplayName("array with non-primitive elements uses toString()")
+    void arrayWithNonPrimitiveUsesToString() {
+        JsonObject args = new JsonObject();
+        com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+        JsonObject obj = new JsonObject();
+        obj.addProperty("id", 1);
+        arr.add(obj);
+        arr.add("plain");
+        args.add("items", arr);
+        String result = PermissionTemplateUtil.substituteArgs("{items}", args);
+        assertEquals("{\"id\":1}, plain", result);
+    }
+
+    @Test
+    @DisplayName("no args provided — template returned as-is")
+    void noArgsReturnsTemplateAsIs() {
+        String result = PermissionTemplateUtil.substituteArgs("Hello {world}", new JsonObject());
+        assertEquals("Hello {world}", result);
+    }
+
+    @Test
+    @DisplayName("61-char value is truncated")
+    void oneCharOverBoundaryTruncated() {
+        JsonObject args = new JsonObject();
+        String over = "c".repeat(61);
+        args.addProperty("v", over);
+        String result = PermissionTemplateUtil.substituteArgs("{v}", args);
+        assertEquals(58, result.length(), "should be 57 chars + ellipsis character");
+        assertTrue(result.endsWith("…"));
+        assertTrue(result.startsWith("ccc"));
     }
 }

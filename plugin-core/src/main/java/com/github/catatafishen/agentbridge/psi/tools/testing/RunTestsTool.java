@@ -470,13 +470,8 @@ public final class RunTestsTool extends TestingTool {
         if (!handler.waitFor(120_000)) return ERROR_TESTS_TIMED_OUT + configName;
 
         int exitCode = handler.getExitCode() != null ? handler.getExitCode() : -1;
-        String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
-            + " — " + configName;
-
         String testOutput = collectTestRunOutput(configName);
-        return testOutput.isEmpty()
-            ? summary + RESULTS_IN_RUNNER_PANEL
-            : summary + "\n" + testOutput;
+        return formatTestSummary(exitCode, configName, testOutput);
     }
 
     private String awaitGradleTestExecution(String configName,
@@ -512,10 +507,8 @@ public final class RunTestsTool extends TestingTool {
             if (!xmlResults.isEmpty()) return xmlResults;
         }
 
-        String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
-            + " — " + configName;
         String testOutput = collectTestRunOutput(configName);
-        return testOutput.isEmpty() ? summary : summary + "\n" + testOutput;
+        return formatTestSummary(exitCode, configName, testOutput);
     }
 
     // ── JUnit config helpers ─────────────────────────────────
@@ -585,17 +578,45 @@ public final class RunTestsTool extends TestingTool {
         try {
             var getPackageName = psiFile.getClass().getMethod("getPackageName");
             String pkg = (String) getPackageName.invoke(psiFile);
-            return pkg != null && !pkg.isEmpty() ? pkg + "." + simpleName : simpleName;
+            return buildFqn(pkg, simpleName);
         } catch (NoSuchMethodException e) {
-            String text = psiFile.getText();
-            var matcher = java.util.regex.Pattern.compile("^package\\s+([\\w.]+)").matcher(text);
-            if (matcher.find()) {
-                return matcher.group(1) + "." + simpleName;
-            }
-            return simpleName;
+            return extractFqnFromSourceText(psiFile.getText(), simpleName);
         } catch (Exception e) {
             return simpleName;
         }
+    }
+
+    /**
+     * Builds a fully-qualified class name from package and simple name.
+     * Pure function — no IDE dependency.
+     */
+    static String buildFqn(@Nullable String packageName, @NotNull String simpleName) {
+        return packageName != null && !packageName.isEmpty() ? packageName + "." + simpleName : simpleName;
+    }
+
+    /**
+     * Extracts the FQN from raw source text by parsing the {@code package} declaration via regex.
+     * Fallback for when PSI reflection fails.
+     * Pure function — no IDE dependency.
+     */
+    static String extractFqnFromSourceText(@NotNull String sourceText, @NotNull String simpleName) {
+        var matcher = java.util.regex.Pattern.compile("^package\\s+([\\w.]+)").matcher(sourceText);
+        if (matcher.find()) {
+            return matcher.group(1) + "." + simpleName;
+        }
+        return simpleName;
+    }
+
+    /**
+     * Formats a test execution summary from exit code, config name, and test output.
+     * Pure function — no IDE dependency.
+     */
+    static String formatTestSummary(int exitCode, @NotNull String configName, @NotNull String testOutput) {
+        String summary = (exitCode == 0 ? TESTS_PASSED : TESTS_FAILED_PREFIX + exitCode + ")")
+            + " — " + configName;
+        return testOutput.isEmpty()
+            ? summary + RESULTS_IN_RUNNER_PANEL
+            : summary + "\n" + testOutput;
     }
 
     private String collectTestRunOutput(String configName) {

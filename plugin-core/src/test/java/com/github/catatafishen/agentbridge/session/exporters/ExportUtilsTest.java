@@ -7,6 +7,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import java.io.File;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -161,5 +162,64 @@ class ExportUtilsTest {
         File dir = ExportUtils.sessionsDir("/nonexistent/path");
         // just verifies no exception thrown and returns a File
         assertTrue(dir.getPath().contains(".agent-work"));
+    }
+
+    // ── sanitizeToolName — additional edge cases ─────────────────────────────
+
+    @Test
+    void unicodeCharactersReplacedWithUnderscores() {
+        // Unicode chars (em-dash, smart quotes, emoji) should all be replaced
+        String result = ExportUtils.sanitizeToolName("tool\u2014name");
+        assertTrue(result.matches("[a-zA-Z0-9_-]+"),
+            "result must match [a-zA-Z0-9_-]+: " + result);
+    }
+
+    @Test
+    void multipleConsecutiveSpecialCharsCollapsed() {
+        // "a!!!b" → "a___b" → collapse 3+ → "a__b"
+        assertEquals("a__b", ExportUtils.sanitizeToolName("a!!!b"));
+    }
+
+    @Test
+    void truncationThenTrailingUnderscoreStripped() {
+        // Name that after truncation to 200 ends with an underscore
+        String base = "a".repeat(199) + "!"; // 200 chars → last char becomes "_"
+        String result = ExportUtils.sanitizeToolName(base);
+        // After sanitize: "aaa...a_" (200 chars), then trailing underscore stripped → 199 chars
+        assertFalse(result.endsWith("_"), "trailing underscore should be stripped: " + result);
+        assertTrue(result.length() <= 200);
+    }
+
+    @Test
+    void onlySpecialCharsLongerProducesUnknownTool() {
+        // "!!!" → "___" → collapse → "__" → strip leading → "" → strip trailing already empty → unknown_tool
+        assertEquals("unknown_tool", ExportUtils.sanitizeToolName("!!!"));
+    }
+
+    @Test
+    void dashesPreservedInMiddle() {
+        assertEquals("a-b-c", ExportUtils.sanitizeToolName("a-b-c"));
+    }
+
+    // ── normalizeToolNameForCodex — additional edge cases ────────────────────
+
+    @Test
+    void codexWithEmptyInputAddsPrefix() {
+        String result = ExportUtils.normalizeToolNameForCodex("");
+        assertEquals("agentbridge_unknown_tool", result);
+    }
+
+    @Test
+    void codexWithOnlyPrefixAddsBack() {
+        // "agentbridge-" with no base → sanitize("") → "unknown_tool"
+        assertEquals("agentbridge_unknown_tool",
+            ExportUtils.normalizeToolNameForCodex("agentbridge-"));
+    }
+
+    @Test
+    void codexHandlesDoublePrefix() {
+        // Only the first prefix is stripped
+        assertEquals("agentbridge_agentbridge-read_file",
+            ExportUtils.normalizeToolNameForCodex("agentbridge-agentbridge-read_file"));
     }
 }
