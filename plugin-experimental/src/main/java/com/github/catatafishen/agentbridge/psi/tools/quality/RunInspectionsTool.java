@@ -174,8 +174,11 @@ public final class RunInspectionsTool extends QualityTool {
 
     // ── Inspection analysis pipeline ─────────────────────────
 
-    private String formatInspectionPage(List<String> allProblems, int filesWithProblems,
-                                        String profileName, int offset, int limit) {
+    /**
+     * Formats a page of inspection results with a summary header and pagination info.
+     */
+    static String formatInspectionPage(List<String> allProblems, int filesWithProblems,
+                                       String profileName, int offset, int limit) {
         int total = allProblems.size();
         if (total == 0) {
             return "No inspection problems found (cached result).";
@@ -303,8 +306,8 @@ public final class RunInspectionsTool extends QualityTool {
     private record InspectionPageParams(String profileName, int offset, int limit) {
     }
 
-    private record InspectionContext(String basePath, Set<String> filesSet,
-                                     Map<String, Integer> severityRank, int requiredRank) {
+    record InspectionContext(String basePath, Set<String> filesSet,
+                             Map<String, Integer> severityRank, int requiredRank) {
     }
 
     // ── Problem collection ───────────────────────────────────
@@ -446,7 +449,11 @@ public final class RunInspectionsTool extends QualityTool {
         return new int[]{skippedNoDescription, skippedNoFile};
     }
 
-    private boolean shouldFilterBySeverity(org.jdom.Element element, InspectionContext context) {
+    /**
+     * Checks whether the element's severity is below the required minimum rank.
+     * Returns {@code true} if the element should be filtered out (excluded).
+     */
+    static boolean shouldFilterBySeverity(org.jdom.Element element, InspectionContext context) {
         if (context.requiredRank() <= 0) return false;
         String severity = extractSeverityFromElement(element);
         int rank = context.severityRank().getOrDefault(severity.toUpperCase(), 0);
@@ -455,8 +462,13 @@ public final class RunInspectionsTool extends QualityTool {
 
     // ── Formatting helpers ───────────────────────────────────
 
-    private String formatExportedElement(org.jdom.Element element, String toolId,
-                                         String basePath, Set<String> filesSet) {
+    /**
+     * Formats a JDOM element (exported from IntelliJ's inspection engine) into a human-readable
+     * finding string. Returns {@code null} if the element has no description, or an empty string
+     * if it has no file reference.
+     */
+    static String formatExportedElement(org.jdom.Element element, String toolId,
+                                        String basePath, Set<String> filesSet) {
         String description = element.getChildText("description");
         if (description == null || description.isEmpty()) return null;
 
@@ -469,7 +481,7 @@ public final class RunInspectionsTool extends QualityTool {
         } else if (filePath.startsWith("file://")) {
             filePath = filePath.substring(7);
             if (basePath != null) {
-                filePath = relativize(basePath, filePath);
+                filePath = ToolUtils.relativize(basePath, filePath);
             }
         }
         filesSet.add(filePath);
@@ -490,7 +502,11 @@ public final class RunInspectionsTool extends QualityTool {
         return String.format(FORMAT_FINDING, filePath, line, severity, toolId, description);
     }
 
-    private String extractSeverityFromElement(org.jdom.Element element) {
+    /**
+     * Extracts the severity string from a JDOM element's {@code problem_class} child.
+     * Falls back to "WARNING" if no severity attribute is found.
+     */
+    static String extractSeverityFromElement(org.jdom.Element element) {
         var problemClass = element.getChild("problem_class");
         if (problemClass != null) {
             String severity = problemClass.getAttributeValue("severity");

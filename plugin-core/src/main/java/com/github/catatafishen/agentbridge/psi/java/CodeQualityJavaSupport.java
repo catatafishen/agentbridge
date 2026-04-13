@@ -23,6 +23,19 @@ public class CodeQualityJavaSupport {
 
     private static final String LABEL_SUPPRESS_INSPECTION = "Suppress Inspection";
 
+    /**
+     * Extracts leading whitespace (spaces and tabs) from a line of text.
+     * Pure function — no IDE dependencies.
+     */
+    static String extractLeadingWhitespace(String lineText) {
+        StringBuilder indent = new StringBuilder();
+        for (char c : lineText.toCharArray()) {
+            if (c == ' ' || c == '\t') indent.append(c);
+            else break;
+        }
+        return indent.toString();
+    }
+
     private CodeQualityJavaSupport() {
     }
 
@@ -36,9 +49,9 @@ public class CodeQualityJavaSupport {
         var current = element;
         while (current != null) {
             if (current instanceof PsiMethod ||
-                    current instanceof PsiField ||
-                    current instanceof PsiClass ||
-                    current instanceof PsiLocalVariable) {
+                current instanceof PsiField ||
+                current instanceof PsiClass ||
+                current instanceof PsiLocalVariable) {
                 return current;
             }
             if (current instanceof PsiStatement) {
@@ -56,12 +69,8 @@ public class CodeQualityJavaSupport {
         int lineStart = document.getLineStartOffset(targetLine);
 
         String lineText = document.getText(
-                new TextRange(lineStart, document.getLineEndOffset(targetLine)));
-        StringBuilder indent = new StringBuilder();
-        for (char c : lineText.toCharArray()) {
-            if (c == ' ' || c == '\t') indent.append(c);
-            else break;
-        }
+            new TextRange(lineStart, document.getLineEndOffset(targetLine)));
+        String indent = extractLeadingWhitespace(lineText);
 
         if (target instanceof PsiModifierListOwner modListOwner) {
             var modList = modListOwner.getModifierList();
@@ -75,10 +84,10 @@ public class CodeQualityJavaSupport {
 
         String annotation = indent + "@SuppressWarnings(\"" + inspectionId + "\")\n";
         WriteAction.run(() ->
-                com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
-                    document.insertString(lineStart, annotation);
-                    PsiDocumentManager.getInstance(project).commitDocument(document);
-                }, LABEL_SUPPRESS_INSPECTION, null)
+            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
+                document.insertString(lineStart, annotation);
+                PsiDocumentManager.getInstance(project).commitDocument(document);
+            }, LABEL_SUPPRESS_INSPECTION, null)
         );
 
         return "Added @SuppressWarnings(\"" + inspectionId + "\") at line " + (targetLine + 1);
@@ -92,21 +101,21 @@ public class CodeQualityJavaSupport {
         }
 
         WriteAction.run(() ->
-                com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
-                    var value = annotation.findAttributeValue("value");
-                    if (value != null) {
-                        if (value instanceof PsiArrayInitializerMemberValue) {
-                            int endBrace = value.getTextRange().getEndOffset() - 1;
-                            document.insertString(endBrace, ", \"" + inspectionId + "\"");
-                        } else {
-                            var range = value.getTextRange();
-                            String existing = document.getText(range);
-                            document.replaceString(range.getStartOffset(), range.getEndOffset(),
-                                    "{" + existing + ", \"" + inspectionId + "\"}");
-                        }
-                        PsiDocumentManager.getInstance(project).commitDocument(document);
+            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(project, () -> {
+                var value = annotation.findAttributeValue("value");
+                if (value != null) {
+                    if (value instanceof PsiArrayInitializerMemberValue) {
+                        int endBrace = value.getTextRange().getEndOffset() - 1;
+                        document.insertString(endBrace, ", \"" + inspectionId + "\"");
+                    } else {
+                        var range = value.getTextRange();
+                        String existing = document.getText(range);
+                        document.replaceString(range.getStartOffset(), range.getEndOffset(),
+                            "{" + existing + ", \"" + inspectionId + "\"}");
                     }
-                }, LABEL_SUPPRESS_INSPECTION, null)
+                    PsiDocumentManager.getInstance(project).commitDocument(document);
+                }
+            }, LABEL_SUPPRESS_INSPECTION, null)
         );
 
         return "Added '" + inspectionId + "' to existing @SuppressWarnings annotation";

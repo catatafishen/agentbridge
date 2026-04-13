@@ -68,6 +68,20 @@ public final class AgentScratchTracker implements PersistentStateComponent<Agent
     }
 
     /**
+     * Returns paths whose creation timestamp is older than the cutoff.
+     * Pure function — no IDE dependencies.
+     */
+    static List<String> findExpiredEntries(Map<String, Long> trackedFiles, long cutoffMillis) {
+        List<String> expired = new ArrayList<>();
+        for (Map.Entry<String, Long> entry : trackedFiles.entrySet()) {
+            if (entry.getValue() < cutoffMillis) {
+                expired.add(entry.getKey());
+            }
+        }
+        return expired;
+    }
+
+    /**
      * Deletes tracked scratch files older than the configured retention period.
      * Files that no longer exist on disk are silently removed from tracking.
      */
@@ -76,13 +90,7 @@ public final class AgentScratchTracker implements PersistentStateComponent<Agent
         if (retentionHours <= 0) return;
 
         long cutoffMillis = System.currentTimeMillis() - (retentionHours * MILLIS_PER_HOUR);
-        List<String> toRemove = new ArrayList<>();
-
-        for (Map.Entry<String, Long> entry : state.trackedFiles.entrySet()) {
-            if (entry.getValue() < cutoffMillis) {
-                toRemove.add(entry.getKey());
-            }
-        }
+        List<String> toRemove = findExpiredEntries(state.trackedFiles, cutoffMillis);
 
         for (String path : toRemove) {
             state.trackedFiles.remove(path);

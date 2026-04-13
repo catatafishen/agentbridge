@@ -95,11 +95,12 @@ public class ProjectBuildSupport {
         });
     }
 
-    private static String formatBuildResult(boolean aborted, int errorCount, int warningCount,
-                                            CompileContext context, long startTime) {
-        long elapsed = System.currentTimeMillis() - startTime;
+    /**
+     * Formats the build status header line with error/warning counts and elapsed time.
+     * Pure function — no IDE dependencies.
+     */
+    static String formatBuildHeader(boolean aborted, int errorCount, int warningCount, long elapsedMs) {
         StringBuilder sb = new StringBuilder();
-
         if (aborted) {
             sb.append("Build aborted.\n");
         } else if (errorCount == 0) {
@@ -108,7 +109,14 @@ public class ProjectBuildSupport {
             sb.append("✗ Build failed");
         }
         sb.append(String.format(" (%d errors, %d warnings, %.1fs)%n",
-            errorCount, warningCount, elapsed / 1000.0));
+            errorCount, warningCount, elapsedMs / 1000.0));
+        return sb.toString();
+    }
+
+    private static String formatBuildResult(boolean aborted, int errorCount, int warningCount,
+                                            CompileContext context, long startTime) {
+        long elapsed = System.currentTimeMillis() - startTime;
+        StringBuilder sb = new StringBuilder(formatBuildHeader(aborted, errorCount, warningCount, elapsed));
 
         appendCompilerMessages(sb, context, CompilerMessageCategory.ERROR, "ERROR", Integer.MAX_VALUE);
         appendCompilerMessages(sb, context, CompilerMessageCategory.WARNING, "WARN", 20);
