@@ -12,8 +12,8 @@ import javax.swing.JComponent
  */
 object GitBranchRenderer : ToolResultRenderer {
 
-    private val BRANCH_LINE = Regex("""^([* ])\s+(\S+)\s+([a-f0-9]+)\s+(.*)$""")
-    private val REMOTE_PREFIX = Regex("""^remotes?/""")
+    val BRANCH_LINE = Regex("""^([* ])\s+(\S+)\s+([a-f0-9]+)\s+(.*)$""")
+    val REMOTE_PREFIX = Regex("""^remotes?/""")
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -29,7 +29,7 @@ object GitBranchRenderer : ToolResultRenderer {
         return panel
     }
 
-    private data class Branch(
+    data class Branch(
         val name: String,
         val hash: String,
         val message: String,
@@ -37,7 +37,7 @@ object GitBranchRenderer : ToolResultRenderer {
         val isRemote: Boolean,
     )
 
-    private fun parseBranch(line: String): Branch? {
+    fun parseBranch(line: String): Branch? {
         val match = BRANCH_LINE.find(line) ?: return null
         val marker = match.groupValues[1]
         val name = match.groupValues[2]

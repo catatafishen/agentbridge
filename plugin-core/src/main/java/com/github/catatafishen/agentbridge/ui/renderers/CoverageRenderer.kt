@@ -11,7 +11,7 @@ import javax.swing.JComponent
  */
 object CoverageRenderer : ToolResultRenderer {
 
-    private val COVERAGE_LINE = Regex("""^(.+?):\s+([\d.]+)%\s+covered\s+\((\d+)\s*/\s*(\d+)\s+lines\)""")
+    val COVERAGE_LINE = Regex("""^(.+?):\s+([\d.]+)%\s+covered\s+\((\d+)\s*/\s*(\d+)\s+lines\)""")
 
     override fun render(output: String): JComponent? {
         val lines = output.lines()

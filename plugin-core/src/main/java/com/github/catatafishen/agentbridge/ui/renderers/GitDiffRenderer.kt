@@ -10,9 +10,9 @@ import javax.swing.JComponent
  */
 object GitDiffRenderer : ToolResultRenderer {
 
-    private val STAT_SUMMARY = Regex("""\s*\d+ files? changed.*""")
-    private val STAT_FILE = Regex("""^\s*(.+?)\s*\|\s*(\d+)\s*([+\-]*)\s*$""")
-    private val DIFF_GIT = Regex("""^diff --git a/(.+) b/(.+)""")
+    val STAT_SUMMARY = Regex("""\s*\d+ files? changed.*""")
+    val STAT_FILE = Regex("""^\s*(.+?)\s*\|\s*(\d+)\s*([+\-]*)\s*$""")
+    val DIFF_GIT = Regex("""^diff --git a/(.+) b/(.+)""")
 
     override fun render(output: String): JComponent? {
         val lines = output.trimEnd().lines()
@@ -111,7 +111,7 @@ object GitDiffRenderer : ToolResultRenderer {
         panel.add(section)
     }
 
-    private fun isMetaLine(line: String): Boolean =
+    fun isMetaLine(line: String): Boolean =
         line.startsWith("---") || line.startsWith("+++") ||
             line.startsWith("index ") || line.startsWith("new file") ||
             line.startsWith("deleted file") || line.startsWith("similarity") ||

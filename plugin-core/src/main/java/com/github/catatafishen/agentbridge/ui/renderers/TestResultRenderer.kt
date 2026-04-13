@@ -12,7 +12,7 @@ import javax.swing.JComponent
  */
 object TestResultRenderer : ToolResultRenderer {
 
-    private val SUMMARY_PATTERN = Regex(
+    val SUMMARY_PATTERN = Regex(
         """Test Results:\s*(\d+)\s+tests?,\s*(\d+)\s+passed,\s*(\d+)\s+failed,\s*(\d+)\s+errors?,\s*(\d+)\s+skipped\s*\(([\d.]+)s\)"""
     )
 

@@ -14,7 +14,7 @@ import javax.swing.JComponent
  */
 object GitBlameRenderer : ToolResultRenderer {
 
-    private val BLAME_LINE = Regex(
+    val BLAME_LINE = Regex(
         """^([a-f0-9]+)\s+\((.+?)\s+(\d{4}-\d{2}-\d{2})\s+[\d:]+\s+[+-]\d{4}\s+(\d+)\)\s?(.*)$"""
     )
 
@@ -74,7 +74,7 @@ object GitBlameRenderer : ToolResultRenderer {
         return legendRow
     }
 
-    private data class BlameEntry(
+    data class BlameEntry(
         val hash: String,
         val author: String,
         val date: String,
@@ -82,7 +82,7 @@ object GitBlameRenderer : ToolResultRenderer {
         val content: String
     )
 
-    private fun parseBlameLine(line: String): BlameEntry? {
+    fun parseBlameLine(line: String): BlameEntry? {
         val match = BLAME_LINE.matchEntire(line) ?: return null
         return BlameEntry(
             match.groupValues[1],
@@ -93,6 +93,6 @@ object GitBlameRenderer : ToolResultRenderer {
         )
     }
 
-    private fun abbreviateAuthor(name: String): String =
+    fun abbreviateAuthor(name: String): String =
         if (name.length <= 12) name else name.take(10) + "…"
 }

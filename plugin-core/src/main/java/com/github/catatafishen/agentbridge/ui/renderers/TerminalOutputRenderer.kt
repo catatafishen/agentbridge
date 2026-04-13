@@ -16,11 +16,11 @@ import javax.swing.JComponent
  */
 object TerminalOutputRenderer : ToolResultRenderer {
 
-    private val TAB_HEADER = Regex("""^Tab:\s*(.+)""")
-    private val TOTAL_LENGTH = Regex("""^Total length:\s*(\d+)\s*chars""")
-    private val TERMINAL_OUTPUT = Regex("""^Terminal '(.+?)' output:""")
-    private val TERMINAL_RUNNING = Regex("""^Running in terminal '(.+?)':\s*(.*)""")
-    private val TERMINAL_SENT = Regex("""^Sent to terminal '(.+?)':\s*(.*)""")
+    val TAB_HEADER = Regex("""^Tab:\s*(.+)""")
+    val TOTAL_LENGTH = Regex("""^Total length:\s*(\d+)\s*chars""")
+    val TERMINAL_OUTPUT = Regex("""^Terminal '(.+?)' output:""")
+    val TERMINAL_RUNNING = Regex("""^Running in terminal '(.+?)':\s*(.*)""")
+    val TERMINAL_SENT = Regex("""^Sent to terminal '(.+?)':\s*(.*)""")
 
     override fun render(output: String): JComponent? {
         val text = output.trimEnd()
