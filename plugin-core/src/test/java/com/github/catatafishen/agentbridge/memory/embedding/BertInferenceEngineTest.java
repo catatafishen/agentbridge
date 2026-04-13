@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -56,7 +57,7 @@ class BertInferenceEngineTest {
         assertEquals(-2.0f * invStd, x[0], 1e-5f);
         assertEquals(-1.0f * invStd, x[1], 1e-5f);
         assertEquals(0.0f, x[2], 1e-5f);
-        assertEquals(1.0f * invStd, x[3], 1e-5f);
+        assertEquals(invStd, x[3], 1e-5f);
         assertEquals(2.0f * invStd, x[4], 1e-5f);
     }
 
@@ -165,5 +166,127 @@ class BertInferenceEngineTest {
         assertEquals(expected, x[0], 1e-6f);
         assertEquals(expected, x[1], 1e-6f);
         assertEquals(expected, x[2], 1e-6f);
+    }
+
+    // ---- selfAttention ----------------------------------------------------------
+
+    @Test
+    void selfAttentionWithAllRealTokensRunsWithoutNaN() {
+        int seqLen = 2;
+        float[][] hidden = makeHidden(seqLen);
+        BertWeights.LayerWeights layer = makeZeroLayer();
+        long[] mask = {1L, 1L};
+
+        engine.selfAttention(hidden, seqLen, layer, mask);
+
+        assertEquals(seqLen, hidden.length);
+        assertEquals(BertWeights.HIDDEN_DIM, hidden[0].length);
+        assertNoNaN(hidden, seqLen);
+    }
+
+    @Test
+    void selfAttentionWithPaddingMaskRunsWithoutNaN() {
+        // The third token has attentionMask = 0, so its score gets MASK_VALUE (-10000)
+        // added before softmax, effectively masking it from attending.
+        int seqLen = 3;
+        float[][] hidden = makeHidden(seqLen);
+        BertWeights.LayerWeights layer = makeZeroLayer();
+        long[] mask = {1L, 1L, 0L};
+
+        engine.selfAttention(hidden, seqLen, layer, mask);
+
+        assertNoNaN(hidden, seqLen);
+    }
+
+    @Test
+    void selfAttentionPreservesShapeForSingleToken() {
+        int seqLen = 1;
+        float[][] hidden = makeHidden(seqLen);
+        BertWeights.LayerWeights layer = makeZeroLayer();
+        long[] mask = {1L};
+
+        engine.selfAttention(hidden, seqLen, layer, mask);
+
+        assertEquals(1, hidden.length);
+        assertEquals(BertWeights.HIDDEN_DIM, hidden[0].length);
+        assertNoNaN(hidden, seqLen);
+    }
+
+    // ---- feedForward ------------------------------------------------------------
+
+    @Test
+    void feedForwardRunsWithoutNaN() {
+        int seqLen = 2;
+        float[][] hidden = makeHidden(seqLen);
+        BertWeights.LayerWeights layer = makeZeroLayer();
+
+        engine.feedForward(hidden, seqLen, layer);
+
+        assertEquals(seqLen, hidden.length);
+        assertEquals(BertWeights.HIDDEN_DIM, hidden[0].length);
+        assertNoNaN(hidden, seqLen);
+    }
+
+    @Test
+    void feedForwardOutputHasMeanNearZero() {
+        // With all-zero FFN weight matrices, the output is layerNorm(residual),
+        // so the mean of the output over the hidden dimension should be ≈ 0.
+        int seqLen = 1;
+        float[][] hidden = makeHidden(seqLen);
+        BertWeights.LayerWeights layer = makeZeroLayer();
+
+        engine.feedForward(hidden, seqLen, layer);
+
+        float mean = 0.0f;
+        for (float v : hidden[0]) mean += v;
+        mean /= BertWeights.HIDDEN_DIM;
+        assertEquals(0.0f, mean, 1e-4f, "feedForward output mean should be ≈ 0 after LayerNorm");
+    }
+
+    // ---- Helpers ----------------------------------------------------------------
+
+    private static float[][] makeHidden(int seqLen) {
+        float[][] h = new float[seqLen][BertWeights.HIDDEN_DIM];
+        for (int i = 0; i < seqLen; i++) {
+            for (int j = 0; j < BertWeights.HIDDEN_DIM; j++) {
+                h[i][j] = (i + 1) * 0.001f + j * 0.0001f;
+            }
+        }
+        return h;
+    }
+
+    /**
+     * Builds a {@link BertWeights.LayerWeights} with all-zero weight matrices
+     * and identity layer-norm parameters (gamma=1, beta=0).
+     * Suitable for testing that the computation paths run without arithmetic errors.
+     */
+    private static BertWeights.LayerWeights makeZeroLayer() {
+        int h = BertWeights.HIDDEN_DIM;
+        int inter = BertWeights.INTERMEDIATE_DIM;
+        float[] onesH = new float[h];
+        java.util.Arrays.fill(onesH, 1.0f);
+        float[] zerosH = new float[h];
+        float[] zerosHH = new float[h * h];
+        float[] zerosInter = new float[inter];
+        float[] zerosInterH = new float[inter * h];
+        float[] zerosHInter = new float[h * inter];
+        return new BertWeights.LayerWeights(
+            zerosHH, zerosH,         // query W, B
+            zerosHH, zerosH,         // key W, B
+            zerosHH, zerosH,         // value W, B
+            zerosHH, zerosH,         // attention output W, B
+            onesH, zerosH,           // attention LN gamma, beta
+            zerosInterH, zerosInter, // intermediate W, B
+            zerosHInter, zerosH,     // output W, B
+            onesH, zerosH            // output LN gamma, beta
+        );
+    }
+
+    private static void assertNoNaN(float[][] matrix, int seqLen) {
+        for (int i = 0; i < seqLen; i++) {
+            for (float v : matrix[i]) {
+                assertFalse(Float.isNaN(v), "NaN found at row " + i);
+            }
+        }
     }
 }
