@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -15,6 +16,8 @@ import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -326,5 +329,40 @@ class ToolCallStatisticsBackfillTest {
         Files.createDirectories(sessionsDir);
         Files.writeString(sessionsDir.resolve(sessionId + ".jsonl"),
             String.join("\n", entries) + "\n");
+    }
+
+    @Test
+    @DisplayName("BackfillResult.toString() includes inserted, skipped, and errors counts")
+    void backfillResultToStringIncludesAllFields() {
+        ToolCallStatisticsBackfill.BackfillResult result =
+            new ToolCallStatisticsBackfill.BackfillResult(5, 3, 1);
+        assertEquals("BackfillResult{inserted=5, skipped=3, errors=1}", result.toString());
+    }
+
+    @Test
+    @DisplayName("JSONL path that is a directory triggers IOException path (logs warning, returns zeros)")
+    void backfillSessionJsonlIsDirectoryIsHandledGracefully() throws IOException {
+        String basePath = tempDir.toString();
+        createSessionIndex(basePath, "dir-session", "GitHub Copilot");
+
+        // Create a directory at the JSONL path — Files.newBufferedReader will throw IOException
+        Path sessionsDir = Path.of(basePath, ".agent-work", "sessions");
+        Files.createDirectories(sessionsDir.resolve("dir-session.jsonl"));
+
+        ToolCallStatisticsBackfill.BackfillResult result =
+            ToolCallStatisticsBackfill.backfill(service, basePath);
+
+        assertEquals(0, result.inserted());
+        assertEquals(0, result.errors());
+        assertEquals(0, service.getRecordCount());
+    }
+
+    @Test
+    @DisplayName("private constructor enforces utility-class pattern")
+    void constructorThrowsUtilityClassException() throws Exception {
+        var constructor = ToolCallStatisticsBackfill.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        var ex = assertThrows(InvocationTargetException.class, constructor::newInstance);
+        assertInstanceOf(IllegalStateException.class, ex.getCause());
     }
 }
