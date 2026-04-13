@@ -41,7 +41,7 @@ public final class MemoryService implements Disposable {
 
     /**
      * Package-private constructor for testing — pre-initializes with provided components,
-     * bypassing {@link #ensureInitialized()} and ONNX Runtime dependency.
+     * bypassing {@link #ensureInitialized()} and model weight loading.
      *
      * <p>Use with {@code ServiceContainerUtil.replaceService()} in platform tests to inject
      * a controllable MemoryService into the project's service container.

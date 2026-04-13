@@ -48,8 +48,8 @@ public final class WordPieceTokenizer {
     private final int maxSeqLength;
 
     /**
-     * @param vocabPath     path to the vocab.txt file
-     * @param maxSeqLength  maximum sequence length (256 for all-MiniLM-L6-v2)
+     * @param vocabPath    path to the vocab.txt file
+     * @param maxSeqLength maximum sequence length (256 for all-MiniLM-L6-v2)
      */
     public WordPieceTokenizer(@NotNull Path vocabPath, int maxSeqLength) throws IOException {
         this.maxSeqLength = maxSeqLength;
@@ -61,7 +61,7 @@ public final class WordPieceTokenizer {
     }
 
     /**
-     * Tokenize text into ONNX-ready tensors.
+     * Tokenize text into inference-ready tensors.
      *
      * @return TokenizedInput with input_ids, attention_mask, and token_type_ids
      */
@@ -179,7 +179,7 @@ public final class WordPieceTokenizer {
     }
 
     /**
-     * Tokenized output ready for ONNX Runtime inference.
+     * Tokenized output ready for BERT inference.
      */
     public record TokenizedInput(long[] inputIds, long[] attentionMask, long[] tokenTypeIds) {
         public int sequenceLength() {

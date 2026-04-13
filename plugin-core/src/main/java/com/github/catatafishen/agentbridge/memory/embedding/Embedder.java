@@ -15,7 +15,7 @@ public interface Embedder {
      *
      * @param text the text to embed
      * @return float array of dimension {@link EmbeddingService#EMBEDDING_DIM}
-     * @throws Exception if embedding fails (I/O, ONNX inference, etc.)
+     * @throws Exception if embedding fails (I/O, inference, etc.)
      */
     float[] embed(@NotNull String text) throws Exception;
 }

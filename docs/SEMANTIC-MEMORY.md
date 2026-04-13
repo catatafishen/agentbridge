@@ -31,29 +31,29 @@ dependencies.
 
 ## What Was Adapted from MemPalace
 
-| MemPalace Concept | Our Implementation |
-|---|---|
-| ChromaDB vector store | **Apache Lucene** KNN vector search (bundled in IntelliJ) |
-| sentence-transformers embeddings | **ONNX Runtime Java** + all-MiniLM-L6-v2 model |
-| Palace → Wings → Rooms → Drawers | Same hierarchy, stored in Lucene documents with metadata fields |
-| 4-layer memory stack (L0–L3) | Same design: identity file + essential story + on-demand + deep search |
-| `convo_miner.py` exchange chunking | `ExchangeChunker` — extracts Q+A pairs from `EntryData.Prompt` + `EntryData.Text` |
+| MemPalace Concept                     | Our Implementation                                                                                     |
+|---------------------------------------|--------------------------------------------------------------------------------------------------------|
+| ChromaDB vector store                 | **Apache Lucene** KNN vector search (bundled in IntelliJ)                                              |
+| sentence-transformers embeddings      | **Pure-Java BERT inference** with all-MiniLM-L6-v2 safetensors model                                   |
+| Palace → Wings → Rooms → Drawers      | Same hierarchy, stored in Lucene documents with metadata fields                                        |
+| 4-layer memory stack (L0–L3)          | Same design: identity file + essential story + on-demand + deep search                                 |
+| `convo_miner.py` exchange chunking    | `ExchangeChunker` — extracts Q+A pairs from `EntryData.Prompt` + `EntryData.Text`                      |
 | `general_extractor.py` classification | `MemoryClassifier` — 5-type regex extraction (decisions, preferences, milestones, problems, technical) |
-| Knowledge graph (SQLite triples) | `KnowledgeGraph` — SQLite with temporal validity (`valid_from`, `valid_until`) |
-| MCP tools (19 tools) | 9 MCP tools in our existing tool infrastructure |
-| Write-ahead log (JSONL audit) | `WriteAheadLog` — JSONL WAL for all write operations |
-| `config.py` (env > file > defaults) | `MemorySettings` — `PersistentStateComponent` with IDE settings UI |
+| Knowledge graph (SQLite triples)      | `KnowledgeGraph` — SQLite with temporal validity (`valid_from`, `valid_until`)                         |
+| MCP tools (19 tools)                  | 9 MCP tools in our existing tool infrastructure                                                        |
+| Write-ahead log (JSONL audit)         | `WriteAheadLog` — JSONL WAL for all write operations                                                   |
+| `config.py` (env > file > defaults)   | `MemorySettings` — `PersistentStateComponent` with IDE settings UI                                     |
 
 ### Not Implemented
 
-| MemPalace Feature | Reason |
-|---|---|
-| AAAK dialect (lossy compression) | Experimental in MemPalace (84.2% vs 96.6% R@5). Raw mode is better. |
-| People map | Personal assistant feature, not relevant for coding agents |
-| Emotional memory type | Replaced with "technical" — more useful for coding context |
-| Palace graph traversal / tunnels | Advanced feature — can add later if needed |
-| Shell hooks for auto-save | Replaced with MCP-native approach (see [Future Work](#future-work)) |
-| Diary tools | Per-agent diary write/read — deferred (see [Future Work](#future-work)) |
+| MemPalace Feature                | Reason                                                                  |
+|----------------------------------|-------------------------------------------------------------------------|
+| AAAK dialect (lossy compression) | Experimental in MemPalace (84.2% vs 96.6% R@5). Raw mode is better.     |
+| People map                       | Personal assistant feature, not relevant for coding agents              |
+| Emotional memory type            | Replaced with "technical" — more useful for coding context              |
+| Palace graph traversal / tunnels | Advanced feature — can add later if needed                              |
+| Shell hooks for auto-save        | Replaced with MCP-native approach (see [Future Work](#future-work))     |
+| Diary tools                      | Per-agent diary write/read — deferred (see [Future Work](#future-work)) |
 
 ---
 
@@ -68,25 +68,26 @@ IntelliJ bundles Lucene with full KNN vector support. No additional dependency n
 - `VectorSimilarityFunction.COSINE` — cosine similarity scoring
 - Combined queries: pre-filter by metadata (wing/room/type), then KNN
 
-### ONNX Runtime Java — Embedding Inference
+### Pure-Java BERT Inference — Embedding Engine
 
-| Property | Value |
-|---|---|
-| Maven artifact | `com.microsoft.onnxruntime:onnxruntime:1.24.3` |
-| Size | ~60MB (includes native libs for Linux, macOS, Windows) |
-| Inference speed | <100ms per sentence on CPU |
+| Property        | Value                                                           |
+|-----------------|-----------------------------------------------------------------|
+| Architecture    | 6-layer BERT transformer (384-dim, 12 heads, ~22.7M parameters) |
+| Implementation  | Hardcoded forward pass — no native dependencies                 |
+| Inference speed | ~80–300ms per sentence on CPU                                   |
+| Weight format   | [safetensors](https://huggingface.co/docs/safetensors/index)    |
 
 ### all-MiniLM-L6-v2 — Embedding Model
 
-| Property | Value |
-|---|---|
-| Source | [sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) |
-| Format | ONNX (exported via Hugging Face Optimum) |
-| Size | ~90MB (downloaded on first use) |
-| Dimensions | 384 |
-| License | Apache 2.0 |
-| Tokenizer | WordPiece with `vocab.txt` (~232KB) |
-| Storage | `~/.agentbridge/models/all-MiniLM-L6-v2/` (shared across projects) |
+| Property   | Value                                                                                                   |
+|------------|---------------------------------------------------------------------------------------------------------|
+| Source     | [sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) |
+| Format     | safetensors (weights with PyTorch naming)                                                               |
+| Size       | ~91MB (downloaded on first use)                                                                         |
+| Dimensions | 384                                                                                                     |
+| License    | Apache 2.0                                                                                              |
+| Tokenizer  | WordPiece with `vocab.txt` (~232KB)                                                                     |
+| Storage    | `~/.agentbridge/models/all-MiniLM-L6-v2/` (shared across projects)                                      |
 
 ### SQLite — Knowledge Graph
 
@@ -310,6 +311,7 @@ plugin-core/src/test/java/com/github/catatafishen/agentbridge/memory/
 `MemorySettings` is a `PersistentStateComponent<State>` registered as a project service.
 
 Key settings:
+
 - `enabled` (default: `false`) — master toggle
 - `wing` (default: auto-detected from project name) — the "wing" label for this project
 - `maxDrawersPerTurn` (default: `10`) — cap on memories stored per conversation turn
@@ -328,6 +330,7 @@ It uses **lazy double-checked-locking initialization** — components are create
 first access, not at project open.
 
 Initialization order (in `ensureInitialized()`):
+
 1. `WriteAheadLog` → `.agent-work/memory/wal/`
 2. `MemoryStore` (Lucene) → `.agent-work/memory/lucene-index/`
 3. `EmbeddingService` → loads ONNX model (downloads on first use)
@@ -368,12 +371,12 @@ gracefully (logs and continues).
 
 ### Memory Stack (4 Layers)
 
-| Layer | Class | Purpose | Token Budget |
-|---|---|---|---|
-| L0 | `IdentityLayer` | Read `identity.txt` (user-written project description) | ~100-200 |
-| L1 | `EssentialStoryLayer` | Top drawers from Lucene, grouped by room | ~400-700 |
-| L2 | `OnDemandLayer` | Wing/room filtered retrieval on demand | Variable |
-| L3 | `DeepSearchLayer` | Full semantic search across all drawers | Variable |
+| Layer | Class                 | Purpose                                                | Token Budget |
+|-------|-----------------------|--------------------------------------------------------|--------------|
+| L0    | `IdentityLayer`       | Read `identity.txt` (user-written project description) | ~100-200     |
+| L1    | `EssentialStoryLayer` | Top drawers from Lucene, grouped by room               | ~400-700     |
+| L2    | `OnDemandLayer`       | Wing/room filtered retrieval on demand                 | Variable     |
+| L3    | `DeepSearchLayer`     | Full semantic search across all drawers                | Variable     |
 
 L0+L1 are used for wake-up context (`memory_wake_up` tool). L2 is for targeted
 recall (`memory_recall`). L3 is for comprehensive search (`memory_search`).
@@ -391,17 +394,17 @@ SQLite-backed triple store with temporal validity:
 
 9 tools registered conditionally via `MemoryToolFactory` (only when memory is enabled):
 
-| Tool | Type | Description |
-|---|---|---|
-| `memory_search` | Read | Semantic search with optional wing/room/type filters |
-| `memory_status` | Read | Drawer count, wing/room breakdown, storage stats |
-| `memory_wake_up` | Read | L0+L1 context for session start (~600-900 tokens) |
-| `memory_recall` | Read | L2 on-demand retrieval with wing/room filters |
-| `memory_store` | Write | File content into a specific wing/room |
-| `memory_kg_query` | Read | Knowledge graph entity lookup with temporal filter |
-| `memory_kg_timeline` | Read | Chronological fact history for an entity |
-| `memory_kg_add` | Write | Add a knowledge graph triple |
-| `memory_kg_invalidate` | Write | Mark a fact as no longer true |
+| Tool                   | Type  | Description                                          |
+|------------------------|-------|------------------------------------------------------|
+| `memory_search`        | Read  | Semantic search with optional wing/room/type filters |
+| `memory_status`        | Read  | Drawer count, wing/room breakdown, storage stats     |
+| `memory_wake_up`       | Read  | L0+L1 context for session start (~600-900 tokens)    |
+| `memory_recall`        | Read  | L2 on-demand retrieval with wing/room filters        |
+| `memory_store`         | Write | File content into a specific wing/room               |
+| `memory_kg_query`      | Read  | Knowledge graph entity lookup with temporal filter   |
+| `memory_kg_timeline`   | Read  | Chronological fact history for an entity             |
+| `memory_kg_add`        | Write | Add a knowledge graph triple                         |
+| `memory_kg_invalidate` | Write | Mark a fact as no longer true                        |
 
 ---
 
@@ -410,14 +413,14 @@ SQLite-backed triple store with temporal validity:
 Coverage is measured via JaCoCo against instrumented classes (IntelliJ's `instrumentCode`
 task applies `@NotNull` bytecode checks that change class hashes).
 
-| Package | Line Coverage | Notes |
-|---|---|---|
-| store | 96.2% | Full Lucene index lifecycle, search, dedup |
-| wal | 90.5% | Append, read, rotation |
-| kg | 90.1% | CRUD, temporal queries, timeline, stats |
-| layers | 90.1% | All 4 layers including rendering and filtering |
-| mining | 86.3% | Remaining gaps are project-service-dependent private methods |
-| embedding | 56.1% | ONNX Runtime inference and model download are untestable without model |
+| Package   | Line Coverage | Notes                                                                  |
+|-----------|---------------|------------------------------------------------------------------------|
+| store     | 96.2%         | Full Lucene index lifecycle, search, dedup                             |
+| wal       | 90.5%         | Append, read, rotation                                                 |
+| kg        | 90.1%         | CRUD, temporal queries, timeline, stats                                |
+| layers    | 90.1%         | All 4 layers including rendering and filtering                         |
+| mining    | 86.3%         | Remaining gaps are project-service-dependent private methods           |
+| embedding | 56.1%         | ONNX Runtime inference and model download are untestable without model |
 
 ### Testing Strategy
 
@@ -431,6 +434,7 @@ service registration, settings persistence, `TurnMiner.doMine()` and `BackfillMi
 with real IntelliJ project instances and replaced services via `ServiceContainerUtil.replaceService()`.
 
 Testability is achieved without mocking frameworks through:
+
 - `Embedder` functional interface for embedding injection
 - `InferenceFunction` functional interface for ONNX inference injection
 - `EntryLoader` / `MineFunction` functional interfaces for backfill dependency injection
@@ -530,12 +534,12 @@ by milla-jovovich, licensed under the [MIT License](https://opensource.org/licen
 
 The following components are translated from MemPalace's Python implementation:
 
-| Our Component | MemPalace Source | Adaptation |
-|---|---|---|
-| `ExchangeChunker` | `convo_miner.py` `chunk_exchanges()` | Java port, adapted for `EntryData` model |
-| `MemoryClassifier` | `general_extractor.py` | Java port, "emotional" → "technical" for coding context |
-| `RoomDetector` | `convo_miner.py` `detect_convo_room()` | Java port, same keyword sets |
-| `MemoryStack` | `layers.py` `MemoryStack` | Java port, Lucene instead of ChromaDB |
-| `KnowledgeGraph` | `knowledge_graph.py` | Java port, same SQLite schema |
-| `QualityFilter` | `convo_miner.py` quality checks | Java port, extended with tool output detection |
-| `WriteAheadLog` | MemPalace audit trail pattern | Java port, JSONL format |
+| Our Component      | MemPalace Source                       | Adaptation                                              |
+|--------------------|----------------------------------------|---------------------------------------------------------|
+| `ExchangeChunker`  | `convo_miner.py` `chunk_exchanges()`   | Java port, adapted for `EntryData` model                |
+| `MemoryClassifier` | `general_extractor.py`                 | Java port, "emotional" → "technical" for coding context |
+| `RoomDetector`     | `convo_miner.py` `detect_convo_room()` | Java port, same keyword sets                            |
+| `MemoryStack`      | `layers.py` `MemoryStack`              | Java port, Lucene instead of ChromaDB                   |
+| `KnowledgeGraph`   | `knowledge_graph.py`                   | Java port, same SQLite schema                           |
+| `QualityFilter`    | `convo_miner.py` quality checks        | Java port, extended with tool output detection          |
+| `WriteAheadLog`    | MemPalace audit trail pattern          | Java port, JSONL format                                 |

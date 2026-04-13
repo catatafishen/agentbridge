@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Tests for {@link EmbeddingService} math utilities, {@link ModelDownloader} path methods,
  * and testable service operations (embed, embedBatch, isReady, dispose).
- * ONNX inference requires the downloaded model and is tested via integration tests.
+ * Inference requires the downloaded model and is tested via integration tests.
  */
 class EmbeddingServiceTest {
 
@@ -252,10 +252,31 @@ class EmbeddingServiceTest {
     }
 
     @Test
-    void modelPathEndsWithOnnx() {
+    void modelPathEndsWithSafetensors() {
         Path path = ModelDownloader.getModelPath();
-        assertEquals("model.onnx", path.getFileName().toString());
+        assertEquals("model.safetensors", path.getFileName().toString());
         assertTrue(path.startsWith(ModelDownloader.getModelDirectory()));
+    }
+
+    @Test
+    void migrateLegacyModelDeletesOnnxFile(@TempDir Path tempDir) throws IOException {
+        Path legacyModel = tempDir.resolve("model.onnx");
+        Files.writeString(legacyModel, "fake onnx content");
+        assertTrue(Files.exists(legacyModel));
+
+        ModelDownloader.migrateLegacyModel(tempDir);
+
+        assertFalse(Files.exists(legacyModel));
+    }
+
+    @Test
+    void migrateLegacyModelNoOpWhenNoOnnxFile(@TempDir Path tempDir) throws IOException {
+        Path otherFile = tempDir.resolve("vocab.txt");
+        Files.writeString(otherFile, "fake vocab");
+
+        ModelDownloader.migrateLegacyModel(tempDir);
+
+        assertTrue(Files.exists(otherFile));
     }
 
     @Test

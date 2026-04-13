@@ -7,7 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * Factory for creating test {@link EmbeddingService} instances that bypass ONNX Runtime.
+ * Factory for creating test {@link EmbeddingService} instances that bypass model loading.
  *
  * <p>Must live in the {@code embedding} package to access the package-private
  * test constructor and {@link EmbeddingService.InferenceFunction}.
