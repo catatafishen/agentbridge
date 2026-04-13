@@ -251,6 +251,19 @@ class ChatToolWindowContent(
         // after a disconnect would leave currentAgent stale.
         conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
         if (::promptOrchestrator.isInitialized) resetSessionState()
+
+        // Register remote URL listener before loadModelsAsync triggers acpClient.start().
+        if (agentManager.isRemoteMode) {
+            agentManager.setRemoteUrlListener { url ->
+                agentManager.setRemoteUrlListener(null)
+                ApplicationManager.getApplication().invokeLater {
+                    showRemoteSessionUrl(url)
+                }
+            }
+        } else {
+            agentManager.setRemoteUrlListener(null)
+        }
+
         // Stay on connect panel while spinner shows "Connecting…"
         // loadModelsAsync triggers agent.start() via getClient() — wait for it to complete
         loadModelsAsync(
@@ -270,6 +283,10 @@ class ChatToolWindowContent(
                 )
             }
         )
+    }
+
+    private fun showRemoteSessionUrl(url: String) {
+        RemoteSessionPanel(project, url).show()
     }
 
     private fun promptPlaceholder(): String {

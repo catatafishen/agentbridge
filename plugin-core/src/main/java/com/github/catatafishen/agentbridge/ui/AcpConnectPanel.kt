@@ -98,6 +98,21 @@ class AcpConnectPanel(
     private val sessionCombo = ComboBox<SessionChoice>()
     private val connectButton = JButton("Connect")
     private val acpAutoConnectCheckbox = JBCheckBox("Auto-connect on startup")
+
+    /**
+     * Checkbox to enable Copilot remote control mode — visible only when the Copilot profile is
+     * selected. When checked, the CLI is launched with {@code --remote} and a QR code dialog
+     * appears once the session URL is emitted to stderr.
+     */
+    private val remoteSessionCheckbox = JBCheckBox("Remote control (share session)").apply {
+        isOpaque = false
+        font = JBUI.Fonts.smallFont()
+        foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
+        alignmentX = LEFT_ALIGNMENT
+        toolTipText =
+            "Launch Copilot in remote mode — scan the QR code to control this session from GitHub web or mobile"
+        isVisible = false
+    }
     private val acpHintLabel = JBLabel("Start the tool server above first").apply {
         foreground = JBUI.CurrentTheme.ContextHelp.FOREGROUND
         font = JBUI.Fonts.smallFont()
@@ -304,6 +319,9 @@ class AcpConnectPanel(
             addActionListener { agentManager.isAutoConnect = isSelected }
         }
         section.add(acpAutoConnectCheckbox)
+
+        remoteSessionCheckbox.addActionListener { agentManager.setRemoteMode(remoteSessionCheckbox.isSelected) }
+        section.add(remoteSessionCheckbox)
         section.add(Box.createVerticalStrut(JBUI.scale(8)))
 
         // Status banner
@@ -335,6 +353,14 @@ class AcpConnectPanel(
         }
         profileCombo.alignmentX = LEFT_ALIGNMENT
         profileCombo.maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(32))
+        profileCombo.addActionListener {
+            val isCopilot = (profileCombo.selectedItem as? AgentProfile)?.id == AgentProfileManager.COPILOT_PROFILE_ID
+            remoteSessionCheckbox.isVisible = isCopilot
+            if (!isCopilot) {
+                remoteSessionCheckbox.isSelected = false
+                agentManager.setRemoteMode(false)
+            }
+        }
         return profileCombo
     }
 

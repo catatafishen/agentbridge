@@ -25,6 +25,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * GitHub Copilot ACP client.
@@ -113,10 +116,45 @@ public final class CopilotClient extends AcpClient {
      */
     private final java.util.Set<String> misusedBuiltInTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /**
+     * When true, adds {@code --remote} to the CLI launch command.
+     */
+    private boolean remoteMode = false;
+
+    /**
+     * Called with the remote session URL once the CLI prints it to stderr.
+     * Only fires when {@link #remoteMode} is true.
+     */
+    private @Nullable Consumer<String> remoteUrlListener = null;
+
+    /**
+     * Matches a GitHub remote session URL in a line of CLI stderr output.
+     * The CLI prints the URL after stripping ANSI escape codes.
+     */
+    private static final Pattern REMOTE_URL_PATTERN =
+        Pattern.compile("https://github\\.com/[^\\s\"']+");
+
     // ─── Lifecycle ───────────────────────────────────
 
     public CopilotClient(Project project) {
         super(project);
+    }
+
+    /**
+     * Enables remote control mode: adds {@code --remote} to the CLI launch command and
+     * activates URL extraction from stderr so a remote session link can be surfaced to the user.
+     * Must be called before {@link #start()}.
+     */
+    public void setRemoteMode(boolean remote) {
+        this.remoteMode = remote;
+    }
+
+    /**
+     * Registers a one-shot listener that will be called with the remote session URL once
+     * the CLI prints it to stderr. Only fires when {@link #remoteMode} is {@code true}.
+     */
+    public void setRemoteUrlListener(@Nullable Consumer<String> listener) {
+        this.remoteUrlListener = listener;
     }
 
     @Override
@@ -149,7 +187,7 @@ public final class CopilotClient extends AcpClient {
     }
 
     @Override
-    public @Nullable String defaultAgentSlug() {
+    public @org.jetbrains.annotations.NotNull String defaultAgentSlug() {
         return DEFAULT_AGENT_SLUG;
     }
 
@@ -184,6 +222,10 @@ public final class CopilotClient extends AcpClient {
             "--no-auto-update",
             "--excluded-tools", EXCLUDED_BUILTIN_TOOLS
         ));
+        if (remoteMode) {
+            // Insert --remote right after the binary name so the CLI launches a shared session.
+            cmd.add(1, "--remote");
+        }
         if (agentSlug != null && !agentSlug.isEmpty()) {
             cmd.add("--agent");
             cmd.add(agentSlug);
@@ -208,6 +250,29 @@ public final class CopilotClient extends AcpClient {
     @Override
     protected boolean supportsSessionResumption() {
         return false;
+    }
+
+    /**
+     * Overrides the default stderr handler to scan for remote session URLs when
+     * {@link #remoteMode} is enabled. Strips ANSI escape codes before matching.
+     * Fires {@link #remoteUrlListener} (at most once) when a GitHub URL is found.
+     */
+    @Override
+    protected void registerHandlers() {
+        super.registerHandlers();
+        if (!remoteMode) return;
+        transport.onStderr(line -> {
+            LOG.warn("[copilot stderr] " + line);
+            String stripped = line.replaceAll("\u001B\\[[;\\d]*[A-Za-z]", "");
+            Matcher m = REMOTE_URL_PATTERN.matcher(stripped);
+            if (m.find()) {
+                Consumer<String> cb = remoteUrlListener;
+                if (cb != null) {
+                    remoteUrlListener = null; // fire-once
+                    cb.accept(m.group());
+                }
+            }
+        });
     }
 
     @Override
@@ -442,7 +507,7 @@ public final class CopilotClient extends AcpClient {
         return buildAgentDefinition(
             "Intellij-Default",
             "Full-featured IntelliJ coding assistant with access to all IDE tools",
-            merge(allMcpToolIds(), WEB_TOOLS),
+            merge(allMcpToolIds()),
             """
                 You are a coding assistant with full access to IntelliJ IDEA tools.
 
@@ -462,7 +527,7 @@ public final class CopilotClient extends AcpClient {
         return buildAgentDefinition(
             "Intellij-Explore",
             "Read-only IntelliJ code explorer for analysing and understanding a codebase",
-            merge(exploreMcpToolIds(), WEB_TOOLS),
+            merge(exploreMcpToolIds()),
             """
                 You are a read-only code analysis assistant. Your role is to explore, search,
                 and explain the codebase — not to make any changes.
@@ -482,7 +547,7 @@ public final class CopilotClient extends AcpClient {
         return buildAgentDefinition(
             "Intellij-Edit",
             "Focused IntelliJ code editing assistant — makes targeted changes and validates them",
-            merge(editMcpToolIds(), WEB_TOOLS),
+            merge(editMcpToolIds()),
             """
                 You are a precise code editing assistant. Make targeted, minimal changes
                 and verify them with build_project or run_tests after each edit.
@@ -511,13 +576,13 @@ public final class CopilotClient extends AcpClient {
         return sb.toString();
     }
 
-    private static List<String> merge(List<String> mcpTools, List<String> builtinTools) {
+    private static List<String> merge(List<String> mcpTools) {
         // MCP tools use agentbridge/ prefix; built-in Copilot tools have no prefix
         List<String> result = new java.util.ArrayList<>();
         for (String tool : mcpTools) {
             result.add("agentbridge/" + tool);
         }
-        result.addAll(builtinTools);
+        result.addAll(WEB_TOOLS);
         return result;
     }
 
