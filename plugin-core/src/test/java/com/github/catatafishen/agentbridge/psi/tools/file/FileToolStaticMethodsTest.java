@@ -3,7 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.file;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Tests for pure static methods in {@link FileTool}.
@@ -83,6 +83,51 @@ class FileToolStaticMethodsTest {
         void newFileModifiedSinceStaging() {
             // A in index is matched first, regardless of work-tree state
             assertEquals(" [git: new file, staged]", FileTool.parseGitPorcelainLine("AM file.txt"));
+        }
+    }
+
+    @Nested
+    class ResolveLabel {
+
+        @Test
+        void agentLabelWins() {
+            assertEquals("ui-reviewer", FileTool.resolveLabel("ui-reviewer", "gpt-4"));
+        }
+
+        @Test
+        void modelFallbackWhenAgentNull() {
+            assertEquals("gpt-4", FileTool.resolveLabel(null, "gpt-4"));
+        }
+
+        @Test
+        void modelFallbackWhenAgentEmpty() {
+            assertEquals("claude-sonnet-4.5", FileTool.resolveLabel("", "claude-sonnet-4.5"));
+        }
+
+        @Test
+        void defaultFallbackWhenBothNull() {
+            assertEquals("Agent", FileTool.resolveLabel(null, null));
+        }
+
+        @Test
+        void defaultFallbackWhenBothEmpty() {
+            assertEquals("Agent", FileTool.resolveLabel("", ""));
+        }
+
+        @Test
+        void agentLabelTrimmedSpacesNotStripped() {
+            // The method checks isEmpty(), not isBlank() — a space-only agent label is returned as-is
+            assertEquals(" ", FileTool.resolveLabel(" ", "gpt-4"));
+        }
+
+        @Test
+        void modelWithNullAgent() {
+            assertEquals("o1-preview", FileTool.resolveLabel(null, "o1-preview"));
+        }
+
+        @Test
+        void emptyModelNullAgent() {
+            assertEquals("Agent", FileTool.resolveLabel(null, ""));
         }
     }
 }

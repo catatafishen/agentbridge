@@ -211,6 +211,31 @@ final class McpSseTransport {
         }
     }
 
+    /**
+     * Formats an SSE event frame. Package-private for testing.
+     *
+     * @param event the event type (e.g. "endpoint", "message")
+     * @param data  the event data payload
+     * @return SSE-formatted string: {@code "event: <event>\ndata: <data>\n\n"}
+     */
+    static String formatSseEvent(String event, String data) {
+        return "event: " + event + "\ndata: " + data + "\n\n";
+    }
+
+    /**
+     * Returns the SSE keep-alive comment frame. Package-private for testing.
+     */
+    static String formatSseKeepAlive() {
+        return ": keepalive\n\n";
+    }
+
+    /**
+     * Builds a simple JSON error response string. Package-private for testing.
+     */
+    static String buildJsonErrorResponse(String message) {
+        return "{\"error\":\"" + message.replace("\"", "'") + "\"}";
+    }
+
     private static String parseSessionId(String query) {
         if (query == null) return null;
         for (String param : query.split("&")) {
@@ -223,7 +248,7 @@ final class McpSseTransport {
     }
 
     private static void sendJsonError(HttpExchange exchange, int statusCode, String message) throws IOException {
-        byte[] body = ("{\"error\":\"" + message.replace("\"", "'") + "\"}").getBytes(StandardCharsets.UTF_8);
+        byte[] body = buildJsonErrorResponse(message).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
         exchange.sendResponseHeaders(statusCode, body.length);
         exchange.getResponseBody().write(body);

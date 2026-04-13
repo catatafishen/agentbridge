@@ -46,7 +46,7 @@ final class SseSession {
         if (closed.get()) {
             throw new IOException("SSE session is closed: " + sessionId);
         }
-        String frame = "event: " + event + "\ndata: " + data + "\n\n";
+        String frame = McpSseTransport.formatSseEvent(event, data);
         outputStream.write(frame.getBytes(StandardCharsets.UTF_8));
         outputStream.flush();
     }
@@ -56,7 +56,7 @@ final class SseSession {
      */
     synchronized void sendKeepAlive() throws IOException {
         if (closed.get()) return;
-        outputStream.write(": keepalive\n\n".getBytes(StandardCharsets.UTF_8));
+        outputStream.write(McpSseTransport.formatSseKeepAlive().getBytes(StandardCharsets.UTF_8));
         outputStream.flush();
     }
 

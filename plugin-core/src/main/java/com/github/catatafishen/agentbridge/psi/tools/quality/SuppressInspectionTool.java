@@ -158,7 +158,7 @@ public final class SuppressInspectionTool extends QualityTool {
             }
         }
 
-        String annotation = info.indent() + "@Suppress(\"" + inspectionId + "\")\n";
+        String annotation = buildKotlinSuppressAnnotation(info.indent(), inspectionId);
         WriteAction.run(() ->
             CommandProcessor.getInstance().executeCommand(project, () -> {
                 document.insertString(info.lineStart(), annotation);
@@ -166,19 +166,19 @@ public final class SuppressInspectionTool extends QualityTool {
             }, LABEL_SUPPRESS_INSPECTION, null)
         );
 
-        return "Added @Suppress(\"" + inspectionId + "\") at line " + (info.targetLine() + 1);
+        return formatAnnotationResult(inspectionId, info.targetLine() + 1);
     }
 
     private String suppressWithComment(PsiElement target, String inspectionId, Document document) {
         LineInfo info = getLineInfo(target, document);
-        String comment = info.indent() + "//noinspection " + inspectionId + "\n";
+        String comment = buildSuppressComment(info.indent(), inspectionId);
         WriteAction.run(() ->
             CommandProcessor.getInstance().executeCommand(project, () -> {
                 document.insertString(info.lineStart(), comment);
                 PsiDocumentManager.getInstance(project).commitDocument(document);
             }, LABEL_SUPPRESS_INSPECTION, null)
         );
-        return "Added //noinspection " + inspectionId + " comment at line " + (info.targetLine() + 1);
+        return formatCommentResult(inspectionId, info.targetLine() + 1);
     }
 
     private record LineInfo(int targetLine, int lineStart, String indent) {
@@ -189,11 +189,54 @@ public final class SuppressInspectionTool extends QualityTool {
         int targetLine = document.getLineNumber(targetOffset);
         int lineStart = document.getLineStartOffset(targetLine);
         String lineText = document.getText(new TextRange(lineStart, document.getLineEndOffset(targetLine)));
+        return new LineInfo(targetLine, lineStart, extractIndent(lineText));
+    }
+
+    // ── Testable pure-logic helpers ──────────────────────────
+
+    /**
+     * Extracts leading whitespace (spaces and tabs) from a line of text.
+     */
+    static String extractIndent(String lineText) {
         StringBuilder indent = new StringBuilder();
         for (char c : lineText.toCharArray()) {
             if (c == ' ' || c == '\t') indent.append(c);
             else break;
         }
-        return new LineInfo(targetLine, lineStart, indent.toString());
+        return indent.toString();
+    }
+
+    /**
+     * Builds the {@code //noinspection} comment text to insert before a line.
+     */
+    static String buildSuppressComment(String indent, String inspectionId) {
+        return indent + "//noinspection " + inspectionId + "\n";
+    }
+
+    /**
+     * Builds the {@code @Suppress} annotation text to insert before a Kotlin element.
+     */
+    static String buildKotlinSuppressAnnotation(String indent, String inspectionId) {
+        return indent + "@Suppress(\"" + inspectionId + "\")\n";
+    }
+
+    /**
+     * Formats the result message after inserting a {@code //noinspection} comment.
+     *
+     * @param inspectionId the suppressed inspection ID
+     * @param oneBasedLine the 1-based line number where the comment was added
+     */
+    static String formatCommentResult(String inspectionId, int oneBasedLine) {
+        return "Added //noinspection " + inspectionId + " comment at line " + oneBasedLine;
+    }
+
+    /**
+     * Formats the result message after inserting a {@code @Suppress} annotation.
+     *
+     * @param inspectionId the suppressed inspection ID
+     * @param oneBasedLine the 1-based line number where the annotation was added
+     */
+    static String formatAnnotationResult(String inspectionId, int oneBasedLine) {
+        return "Added @Suppress(\"" + inspectionId + "\") at line " + oneBasedLine;
     }
 }

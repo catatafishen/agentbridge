@@ -188,14 +188,11 @@ public final class RunConfigurationService {
         disconnect.run();
 
         if (!finished) {
-            return "Run configuration '" + name + "' did not complete within " + waitSeconds + "s. "
-                + "Use read_run_output with tab_name='" + name + "' to see current output.";
+            return formatRunTimeoutMessage(name, waitSeconds);
         }
 
         int exitCode = exitCodeRef.get();
-        String status = exitCode == 0 ? "PASSED" : "FAILED (exit code " + exitCode + ")";
-        return "Run configuration '" + name + "' " + status + ". "
-            + "Use read_run_output with tab_name='" + name + "' to see full output.";
+        return formatRunCompletionMessage(name, exitCode);
     }
 
     public String createRunConfiguration(JsonObject args) throws Exception {
@@ -267,7 +264,7 @@ public final class RunConfigurationService {
         String basePath = project.getBasePath();
         if (basePath == null) return "Error: project base path is not available";
 
-        String filename = name.replaceAll("[^a-zA-Z0-9._-]", "_") + ".xml";
+        String filename = sanitizeConfigFileName(name);
         java.io.File runConfigsDir = new java.io.File(basePath, ".idea/runConfigurations");
         java.io.File xmlFile = new java.io.File(runConfigsDir, filename);
 
@@ -562,18 +559,7 @@ public final class RunConfigurationService {
     private void applyEnvVars(RunConfiguration config, JsonObject envObj, List<String> changes) {
         try {
             Map<String, String> envs = getConfigEnvVars(config);
-
-            // Merge new values (null value removes the key)
-            for (var entry : envObj.entrySet()) {
-                if (entry.getValue().isJsonNull()) {
-                    envs.remove(entry.getKey());
-                    changes.add("removed env " + entry.getKey());
-                } else {
-                    envs.put(entry.getKey(), entry.getValue().getAsString());
-                    changes.add("env " + entry.getKey());
-                }
-            }
-
+            mergeEnvVars(envs, envObj, changes);
             setConfigEnvVars(config, envs);
         } catch (Exception e) {
             changes.add("env vars (failed: " + e.getMessage() + ")");
@@ -605,5 +591,49 @@ public final class RunConfigurationService {
         } catch (Exception ignored) {
             // Reflection method may not exist on this config type
         }
+    }
+
+    // ── Testable pure-logic helpers ──────────────────────────
+
+    /**
+     * Sanitizes a run-configuration name into a safe filename for
+     * {@code .idea/runConfigurations/}.
+     */
+    static String sanitizeConfigFileName(String name) {
+        return name.replaceAll("[^a-zA-Z0-9._-]", "_") + ".xml";
+    }
+
+    /**
+     * Merges environment variable overrides from a {@link JsonObject} into an existing map.
+     * A {@code null} JSON value removes the key; any other value sets it.
+     * Change descriptions are appended to {@code changes}.
+     */
+    static void mergeEnvVars(Map<String, String> envs, JsonObject envObj, List<String> changes) {
+        for (var entry : envObj.entrySet()) {
+            if (entry.getValue().isJsonNull()) {
+                envs.remove(entry.getKey());
+                changes.add("removed env " + entry.getKey());
+            } else {
+                envs.put(entry.getKey(), entry.getValue().getAsString());
+                changes.add("env " + entry.getKey());
+            }
+        }
+    }
+
+    /**
+     * Formats the message returned when a run configuration completes.
+     */
+    static String formatRunCompletionMessage(String name, int exitCode) {
+        String status = exitCode == 0 ? "PASSED" : "FAILED (exit code " + exitCode + ")";
+        return "Run configuration '" + name + "' " + status + ". "
+            + "Use read_run_output with tab_name='" + name + "' to see full output.";
+    }
+
+    /**
+     * Formats the message returned when a run configuration times out.
+     */
+    static String formatRunTimeoutMessage(String name, int waitSeconds) {
+        return "Run configuration '" + name + "' did not complete within " + waitSeconds + "s. "
+            + "Use read_run_output with tab_name='" + name + "' to see current output.";
     }
 }

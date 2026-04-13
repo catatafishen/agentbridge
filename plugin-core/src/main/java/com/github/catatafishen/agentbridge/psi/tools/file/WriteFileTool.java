@@ -393,7 +393,7 @@ public class WriteFileTool extends FileTool {
         return new int[]{idx, matchLen};
     }
 
-    private static int indexOf(String text, String target, boolean caseSensitive) {
+    static int indexOf(String text, String target, boolean caseSensitive) {
         if (caseSensitive) return text.indexOf(target);
         return text.toLowerCase().indexOf(target.toLowerCase());
     }

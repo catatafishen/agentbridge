@@ -248,12 +248,19 @@ public final class McpHttpServer implements Disposable, McpServerControl {
         }
     }
 
+    /**
+     * Builds a health-check JSON response string. Package-private for testing.
+     */
+    static String buildHealthResponse(boolean serverRunning, String transportName, String projectName) {
+        return "{\"status\":\"" + (serverRunning ? "ok" : "stopped") + "\","
+            + "\"transport\":\"" + transportName + "\","
+            + "\"project\":\"" + projectName.replace("\"", "'") + "\"}";
+    }
+
     private void handleHealth(HttpExchange exchange) throws IOException {
         exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         String transport = activeTransportMode != null ? activeTransportMode.name() : "none";
-        String json = "{\"status\":\"" + (running ? "ok" : "stopped") + "\","
-            + "\"transport\":\"" + transport + "\","
-            + "\"project\":\"" + (project.getName().replace("\"", "'")) + "\"}";
+        String json = buildHealthResponse(running, transport, project.getName());
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
         exchange.sendResponseHeaders(200, bytes.length);
@@ -267,16 +274,24 @@ public final class McpHttpServer implements Disposable, McpServerControl {
     }
 
     /**
-     * Sends a JSON-RPC error response. Uses Gson for proper JSON escaping.
+     * Builds a JSON-RPC error response string. Uses Gson for proper JSON escaping.
+     * Package-private for testing.
      */
-    private static void sendJsonRpcError(HttpExchange exchange, int httpStatus, int rpcCode, String message) throws IOException {
+    static String buildJsonRpcErrorResponse(int rpcCode, String message) {
         com.google.gson.JsonObject error = new com.google.gson.JsonObject();
         error.addProperty("code", rpcCode);
         error.addProperty("message", message);
         com.google.gson.JsonObject resp = new com.google.gson.JsonObject();
         resp.addProperty("jsonrpc", "2.0");
         resp.add("error", error);
-        byte[] bytes = resp.toString().getBytes(StandardCharsets.UTF_8);
+        return resp.toString();
+    }
+
+    /**
+     * Sends a JSON-RPC error response over the HTTP exchange.
+     */
+    private static void sendJsonRpcError(HttpExchange exchange, int httpStatus, int rpcCode, String message) throws IOException {
+        byte[] bytes = buildJsonRpcErrorResponse(rpcCode, message).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(CONTENT_TYPE, APPLICATION_JSON);
         exchange.sendResponseHeaders(httpStatus, bytes.length);
         exchange.getResponseBody().write(bytes);

@@ -141,10 +141,16 @@ public abstract class FileTool extends Tool {
      */
     public static String agentLabel(Project project) {
         ToolLayerSettings settings = ToolLayerSettings.getInstance(project);
-        String agent = settings.getActiveAgentLabel();
-        if (agent != null && !agent.isEmpty()) return agent;
-        String model = settings.getSelectedModel();
-        return (model != null && !model.isEmpty()) ? model : "Agent";
+        return resolveLabel(settings.getActiveAgentLabel(), settings.getSelectedModel());
+    }
+
+    /**
+     * Pure logic: picks the best label from an (agentLabel, modelName) pair.
+     * Returns agentLabel if non-blank, else modelName if non-blank, else "Agent".
+     */
+    static String resolveLabel(String agentLabel, String modelName) {
+        if (agentLabel != null && !agentLabel.isEmpty()) return agentLabel;
+        return (modelName != null && !modelName.isEmpty()) ? modelName : "Agent";
     }
 
     // ── Follow file / editor highlighting ─────────────────────────────────────
