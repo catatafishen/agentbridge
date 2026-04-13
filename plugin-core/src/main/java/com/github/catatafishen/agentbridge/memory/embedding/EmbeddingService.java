@@ -41,9 +41,18 @@ public final class EmbeddingService implements Disposable, Embedder {
      * bypassing model download and weight loading.
      */
     EmbeddingService(WordPieceTokenizer tokenizer, InferenceFunction inference) {
+        this(tokenizer, inference, null);
+    }
+
+    /**
+     * Package-private for testing — pre-initializes with tokenizer, inference function, and an
+     * already-open safetensors reader (so {@link #dispose()} can be exercised in tests).
+     */
+    EmbeddingService(WordPieceTokenizer tokenizer, InferenceFunction inference, SafetensorsReader safetensorsReader) {
         this.project = null;
         this.tokenizer = tokenizer;
         this.inference = inference;
+        this.safetensorsReader = safetensorsReader;
         this.initialized = true;
     }
 
