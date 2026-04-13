@@ -1,16 +1,22 @@
 package com.github.catatafishen.agentbridge.agent.codex;
 
+import com.github.catatafishen.agentbridge.bridge.TransportType;
+import com.github.catatafishen.agentbridge.services.AgentProfile;
+import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonPrimitive;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CodexAppServerClientTest {
 
@@ -165,5 +171,85 @@ class CodexAppServerClientTest {
         Method m = CodexAppServerClient.class.getDeclaredMethod("safeGetInt", JsonObject.class, String.class);
         m.setAccessible(true);
         return (int) m.invoke(null, obj, field);
+    }
+
+    private static boolean invokeIsMcpToolApprovalQuestion(String questionId) throws Exception {
+        Method m = CodexAppServerClient.class.getDeclaredMethod("isMcpToolApprovalQuestion", String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, questionId);
+    }
+
+    // ── createDefaultProfile (public static) ────────────────────────────
+
+    @Nested
+    class CreateDefaultProfile {
+
+        private final AgentProfile profile = CodexAppServerClient.createDefaultProfile();
+
+        @Test
+        void returnsNonNullProfile() {
+            assertNotNull(profile);
+        }
+
+        @Test
+        void profileIdIsCodex() {
+            assertEquals("codex", profile.getId());
+        }
+
+        @Test
+        void displayNameIsSet() {
+            assertEquals("Codex", profile.getDisplayName());
+        }
+
+        @Test
+        void transportTypeIsCodexAppServer() {
+            assertEquals(TransportType.CODEX_APP_SERVER, profile.getTransportType());
+        }
+
+        @Test
+        void binaryNameIsSet() {
+            assertEquals("codex", profile.getBinaryName());
+        }
+
+        @Test
+        void mcpMethodIsNone() {
+            assertEquals(McpInjectionMethod.NONE, profile.getMcpMethod());
+        }
+
+        @Test
+        void allRequiredFieldsAreNonNull() {
+            assertNotNull(profile.getId(), "id");
+            assertNotNull(profile.getDisplayName(), "displayName");
+            assertNotNull(profile.getTransportType(), "transportType");
+            assertNotNull(profile.getBinaryName(), "binaryName");
+            assertNotNull(profile.getMcpMethod(), "mcpMethod");
+            assertNotNull(profile.getDescription(), "description");
+            assertNotNull(profile.getAlternateNames(), "alternateNames");
+            assertNotNull(profile.getInstallHint(), "installHint");
+            assertNotNull(profile.getInstallUrl(), "installUrl");
+            assertNotNull(profile.getAcpArgs(), "acpArgs");
+            assertNotNull(profile.getPermissionInjectionMethod(), "permissionInjectionMethod");
+        }
+    }
+
+    // ── isMcpToolApprovalQuestion (private static) ──────────────────────
+
+    @Nested
+    class IsMcpToolApprovalQuestion {
+
+        @Test
+        void matchingPrefix_returnsTrue() throws Exception {
+            assertTrue(invokeIsMcpToolApprovalQuestion("mcp_tool_call_approval_abc123"));
+        }
+
+        @Test
+        void nonMatchingString_returnsFalse() throws Exception {
+            assertFalse(invokeIsMcpToolApprovalQuestion("some_other_question_id"));
+        }
+
+        @Test
+        void emptyString_returnsFalse() throws Exception {
+            assertFalse(invokeIsMcpToolApprovalQuestion(""));
+        }
     }
 }
