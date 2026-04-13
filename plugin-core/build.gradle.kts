@@ -456,27 +456,21 @@ tasks {
             "**/ui/ChatToolWindow*",           // ChatToolWindowFactory, ChatToolWindowContent
             "**/ui/ChatConsolePanel*",         // JCEF chat panel
             "**/ui/ChatPanelApi*",             // Chat panel API interface (Swing-dependent)
-            "**/ui/ChatTheme*",               // JBColor theme constants
-            "**/ui/ThemeColor*",              // JBColor wrappers
-            "**/ui/ToolKindColors*",          // JBColor tool-kind palette
-            "**/ui/ToolCallPopup*",           // Swing popup
-            "**/ui/AgentIconProvider*",       // Icon loading (needs IDE runtime)
-            "**/ui/FileNavigator*",           // VFS navigation (needs Project)
-            "**/ui/PromptOrchestrator*",      // Prompt orchestration (needs Project + services)
-            "**/ui/PromptContextManager*",    // Context management (needs Project)
-            "**/ui/ConversationReplayer*",    // Replay (needs Project)
-            "**/ui/PromptShortcut*",          // AnAction + Swing
-            "**/ui/ContextChipRenderer*",     // Swing renderer
-            "**/ui/ContextItemData*",         // Data class with Swing dependencies
-            "**/ui/AuthLoginService*",        // OAuth flow (needs IDE runtime)
-            "**/ui/AuthTerminalHelper*",      // Terminal auth (needs IDE runtime)
-            "**/ui/BillingManager*",          // Billing API (needs HTTP client + IDE)
-            "**/ui/CopilotBillingClient*",    // Billing HTTP client
-            "**/ui/PasteToScratchHandler*",   // Editor paste handler (needs IDE runtime)
-            "**/ui/renderers/**",             // All Swing renderers
-            "**/ui/statistics/*Chart*",       // Swing chart component
-            "**/ui/statistics/*Panel*",       // Swing statistics panel
-            "**/ui/statistics/*Dialog*",      // Swing statistics dialog
+            "**/ui/ToolCallPopup*",            // Swing popup
+            "**/ui/AgentIconProvider*",        // Icon loading (needs IDE runtime)
+            "**/ui/PromptOrchestrator*",       // Prompt orchestration (needs Project + services)
+            "**/ui/PromptContextManager*",     // Context management (needs Project)
+            "**/ui/PromptShortcut*",           // AnAction + Swing
+            "**/ui/ContextChipRenderer*",      // Swing renderer
+            "**/ui/ContextItemData*",          // Data class with Swing dependencies
+            "**/ui/AuthLoginService*",         // OAuth flow (needs IDE runtime)
+            "**/ui/AuthTerminalHelper*",       // Terminal auth (needs IDE runtime)
+            "**/ui/BillingManager*",           // Billing API (needs HTTP client + IDE)
+            "**/ui/CopilotBillingClient*",     // Billing HTTP client
+            "**/ui/PasteToScratchHandler*",    // Editor paste handler (needs IDE runtime)
+            "**/ui/renderers/**",              // All Swing renderers
+            "**/ui/statistics/*Panel*",        // Swing statistics panel
+            "**/ui/statistics/*Dialog*",       // Swing statistics dialog
         )
         val otherExcludes = listOf(
             "**/actions/**",                   // AnAction subclasses (need ActionManager)
@@ -488,21 +482,8 @@ tasks {
             // ── Raw I/O infrastructure (socket/HTTP/subprocess) ───────────────────────
             // These are excluded because they're thin wrappers around OS/network I/O.
             // Protocol logic (parsing, state machines) should be extracted and tested.
-            "**/services/McpHttpServer*",      // Raw HTTP server (Javalin wrapper)
-            "**/services/McpSseTransport*",    // SSE transport (raw I/O)
-            "**/acp/client/AgentProcessRegistry*", // OS-process lifecycle (ProcessBuilder wrapper)
-            "**/bridge/ChatWebServer*",        // Embedded web server (Javalin wrapper)
-            "**/psi/RunConfigurationService*", // IDE run framework wrapper
-            // ── External-process integrations ─────────────────────────────────────────
-            "**/psi/SonarQubeIntegration*",    // Runs external SonarQube process
             "**/psi/QodanaAnalyzer*",          // Runs external Qodana process
-            "**/psi/SonarRuleDescriptions*",   // Fetches Sonar rule data via HTTP
         )
-        // TODO: The following are DIFFICULT to test but NOT impossible. Exclusions hide
-        // missing test coverage. Extract testable logic or add integration tests:
-        //   - AcpClient* (protocol clients) — extract protocol logic, mock I/O
-        //   - *Client (agent clients) — extract request/response logic, mock HTTP
-        //   - SessionSwitchService — extract state machine, mock dependencies
         val allExcludes = uiExcludes + otherExcludes
 
         val instrumentedClasses = fileTree("${layout.buildDirectory.get()}/instrumented/instrumentCode") {

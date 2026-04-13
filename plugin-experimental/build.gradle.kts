@@ -4,6 +4,7 @@ plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.3.10"
     id("org.jetbrains.intellij.platform") version "2.14.0"
+    jacoco
 }
 
 repositories {
@@ -179,5 +180,14 @@ tasks {
 
     test {
         useJUnitPlatform()
+        finalizedBy(tasks.named("jacocoTestReport"))
+    }
+}
+
+tasks.named<JacocoReport>("jacocoTestReport") {
+    dependsOn(tasks.named("test"))
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
     }
 }

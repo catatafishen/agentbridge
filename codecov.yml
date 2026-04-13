@@ -1,5 +1,5 @@
 codecov:
-  require_ci_to_pass: yes
+  require_ci_to_pass: true
 
 coverage:
   status:
@@ -23,4 +23,8 @@ flags:
   mcp-server:
     paths:
       - mcp-server/src/main/
+    carryforward: true
+  plugin-experimental:
+    paths:
+      - plugin-experimental/src/main/
     carryforward: true

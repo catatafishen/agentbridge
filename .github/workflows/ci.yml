@@ -74,6 +74,19 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+      - name: Run plugin-experimental tests
+        run: ./gradlew :plugin-experimental:test :plugin-experimental:jacocoTestReport --no-daemon --quiet --build-cache
+
+      - name: Upload plugin-experimental coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2  # v6.0.0
+        with:
+          files: plugin-experimental/build/reports/jacoco/test/jacocoTestReport.xml
+          flags: plugin-experimental
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
   build-and-test:
     name: Build, Test & Verify
     runs-on: ubuntu-latest
