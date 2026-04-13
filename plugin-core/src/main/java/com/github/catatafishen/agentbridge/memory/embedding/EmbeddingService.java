@@ -1,20 +1,14 @@
 package com.github.catatafishen.agentbridge.memory.embedding;
 
-import ai.onnxruntime.OnnxTensor;
-import ai.onnxruntime.OrtEnvironment;
-import ai.onnxruntime.OrtException;
-import ai.onnxruntime.OrtSession;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
-import java.nio.LongBuffer;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 public final class EmbeddingService implements Disposable, Embedder {
 
@@ -24,15 +18,14 @@ public final class EmbeddingService implements Disposable, Embedder {
     private static final int MAX_SEQ_LENGTH = 256;
 
     private final Project project;
-    private volatile OrtEnvironment env;
-    private volatile OrtSession session;
     private volatile WordPieceTokenizer tokenizer;
     private volatile InferenceFunction inference;
+    private volatile SafetensorsReader safetensorsReader;
     private volatile boolean initialized;
     private final Object initLock = new Object();
 
     /**
-     * Runs ONNX inference on tokenized input, returning a 384-dim embedding.
+     * Runs inference on tokenized input, returning a 384-dim embedding.
      */
     @FunctionalInterface
     interface InferenceFunction {
@@ -45,7 +38,7 @@ public final class EmbeddingService implements Disposable, Embedder {
 
     /**
      * Package-private for testing — pre-initializes with a custom tokenizer and inference function,
-     * bypassing ONNX Runtime and model download.
+     * bypassing model download and weight loading.
      */
     EmbeddingService(WordPieceTokenizer tokenizer, InferenceFunction inference) {
         this.project = null;
@@ -56,10 +49,10 @@ public final class EmbeddingService implements Disposable, Embedder {
 
     /**
      * Produce a 384-dimensional embedding for the given text.
-     * Initializes the ONNX session on first call (downloads model if needed).
+     * Initializes the inference engine on first call (downloads model if needed).
      *
      * @throws IOException if the model cannot be downloaded
-     * @throws Exception   if ONNX inference fails
+     * @throws Exception   if inference fails
      */
     @Override
     public float[] embed(@NotNull String text) throws Exception {
@@ -101,52 +94,21 @@ public final class EmbeddingService implements Disposable, Embedder {
             Path vocabPath = ModelDownloader.getVocabPath();
             Path modelPath = ModelDownloader.getModelPath();
 
+            tokenizer = new WordPieceTokenizer(vocabPath, MAX_SEQ_LENGTH);
+            SafetensorsReader localReader = new SafetensorsReader(modelPath);
+            boolean success = false;
             try {
-                tokenizer = new WordPieceTokenizer(vocabPath, MAX_SEQ_LENGTH);
-                env = OrtEnvironment.getEnvironment();
-                OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
-                opts.setIntraOpNumThreads(1);
-                session = env.createSession(modelPath.toString(), opts);
-                inference = this::runOnnxInference;
+                BertWeights weights = new BertWeights(localReader);
+                inference = new BertInferenceEngine(weights);
+                safetensorsReader = localReader;
                 initialized = true;
-                LOG.info("EmbeddingService initialized with model from " + modelPath);
-            } catch (OrtException e) {
-                throw new IOException("Failed to initialize ONNX Runtime session", e);
+                success = true;
+                LOG.info("EmbeddingService initialized with pure-Java BERT inference from " + modelPath);
+            } finally {
+                if (!success) {
+                    localReader.close();
+                }
             }
-        }
-    }
-
-    /**
-     * Run inference on a single tokenized input via ONNX Runtime.
-     * Performs mean pooling over token embeddings, then L2-normalizes the result.
-     */
-    private float[] runOnnxInference(@NotNull WordPieceTokenizer.TokenizedInput input) throws OrtException {
-        int seqLen = input.sequenceLength();
-
-        OnnxTensor inputIds = OnnxTensor.createTensor(env,
-            LongBuffer.wrap(input.inputIds()), new long[]{1, seqLen});
-        OnnxTensor attentionMask = OnnxTensor.createTensor(env,
-            LongBuffer.wrap(input.attentionMask()), new long[]{1, seqLen});
-        OnnxTensor tokenTypeIds = OnnxTensor.createTensor(env,
-            LongBuffer.wrap(input.tokenTypeIds()), new long[]{1, seqLen});
-
-        try (OrtSession.Result result = session.run(Map.of(
-            "input_ids", inputIds,
-            "attention_mask", attentionMask,
-            "token_type_ids", tokenTypeIds
-        ))) {
-            // Output shape: [1, seq_len, 384] — token-level embeddings
-            float[][][] tokenEmbeddings = (float[][][]) result.get(0).getValue();
-
-            // Mean pooling: average over non-padding tokens
-            float[] pooled = meanPool(tokenEmbeddings[0], input.attentionMask());
-
-            // L2 normalize
-            return l2Normalize(pooled);
-        } finally {
-            inputIds.close();
-            attentionMask.close();
-            tokenTypeIds.close();
         }
     }
 
@@ -195,17 +157,13 @@ public final class EmbeddingService implements Disposable, Embedder {
 
     @Override
     public void dispose() {
-        try {
-            if (session != null) {
-                session.close();
-                session = null;
+        if (safetensorsReader != null) {
+            try {
+                safetensorsReader.close();
+            } catch (IOException e) {
+                LOG.warn("Error closing SafetensorsReader", e);
             }
-            if (env != null) {
-                env.close();
-                env = null;
-            }
-        } catch (OrtException e) {
-            LOG.warn("Error closing ONNX Runtime session", e);
+            safetensorsReader = null;
         }
         initialized = false;
     }

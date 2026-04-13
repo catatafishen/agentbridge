@@ -4,7 +4,10 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for static path computation methods in {@link ModelDownloader}.
@@ -22,9 +25,9 @@ class ModelDownloaderTest {
     }
 
     @Test
-    void modelPathEndsWithModelOnnx() {
+    void modelPathEndsWithSafetensors() {
         Path path = ModelDownloader.getModelPath();
-        assertEquals("model.onnx", path.getFileName().toString());
+        assertEquals("model.safetensors", path.getFileName().toString());
         assertTrue(path.startsWith(ModelDownloader.getModelDirectory()));
     }
 

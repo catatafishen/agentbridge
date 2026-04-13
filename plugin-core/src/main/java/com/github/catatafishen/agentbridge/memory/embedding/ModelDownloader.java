@@ -17,14 +17,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.util.concurrent.CompletableFuture;
 
 /**
- * Downloads the all-MiniLM-L6-v2 ONNX model and vocabulary on first use.
+ * Downloads the all-MiniLM-L6-v2 model weights and vocabulary on first use.
  * Files are stored globally at {@code ~/.agentbridge/models/all-MiniLM-L6-v2/}
  * so they're shared across all projects.
  *
  * <p>Downloads with a progress indicator in the IDE status bar.
+ *
+ * <p>Migration: if the legacy {@code model.onnx} file exists (from plugin versions
+ * before the switch to pure-Java inference), it is deleted automatically.
  */
 public final class ModelDownloader {
 
@@ -33,10 +35,12 @@ public final class ModelDownloader {
     private static final String MODEL_DIR_NAME = "all-MiniLM-L6-v2";
 
     /**
-     * Hugging Face ONNX model URL (exported via Optimum).
+     * Hugging Face safetensors model URL.
+     * Safetensors stores weights with their original PyTorch names,
+     * making loading trivial compared to the ONNX graph format.
      */
     private static final String MODEL_URL =
-        "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx";
+        "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/model.safetensors";
 
     /**
      * Vocabulary file URL.
@@ -44,9 +48,12 @@ public final class ModelDownloader {
     private static final String VOCAB_URL =
         "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt";
 
+    private static final String LEGACY_MODEL_FILENAME = "model.onnx";
+
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
 
-    private ModelDownloader() {}
+    private ModelDownloader() {
+    }
 
     /**
      * Returns the model directory. Creates it if it doesn't exist.
@@ -57,10 +64,10 @@ public final class ModelDownloader {
     }
 
     /**
-     * Returns the path to the ONNX model file.
+     * Returns the path to the safetensors model file.
      */
     public static @NotNull Path getModelPath() {
-        return getModelDirectory().resolve("model.onnx");
+        return getModelDirectory().resolve("model.safetensors");
     }
 
     /**
@@ -81,13 +88,16 @@ public final class ModelDownloader {
      * Ensure the model is downloaded. If missing, downloads with a progress indicator.
      * Blocks until the download completes or fails.
      *
+     * <p>Also migrates from the legacy {@code model.onnx} format if present:
+     * deletes the old file since it is no longer used.
+     *
      * @param project the current project (for progress display)
      * @throws IOException if the download fails
      */
     public static void ensureModelAvailable(@NotNull Project project) throws IOException {
-        if (isModelAvailable()) return;
+        migrateLegacyModel(getModelDirectory());
 
-        CompletableFuture<IOException> result = new CompletableFuture<>();
+        if (isModelAvailable()) return;
 
         ProgressManager.getInstance().run(new Task.WithResult<Void, IOException>(
             project, "Downloading Embedding Model", true
@@ -105,7 +115,7 @@ public final class ModelDownloader {
                     }
 
                     if (!Files.exists(getModelPath())) {
-                        indicator.setText("Downloading all-MiniLM-L6-v2 ONNX model (~90 MB)...");
+                        indicator.setText("Downloading all-MiniLM-L6-v2 model (~91 MB)...");
                         downloadFile(MODEL_URL, getModelPath(), indicator, 0.05, 1.0);
                     }
 
@@ -121,6 +131,24 @@ public final class ModelDownloader {
         });
     }
 
+    /**
+     * Deletes the legacy {@code model.onnx} file if it exists in the given directory.
+     * Called automatically by {@link #ensureModelAvailable} during migration
+     * from ONNX Runtime to pure-Java inference.
+     *
+     * @param modelDir the directory to check for the legacy model file
+     */
+    static void migrateLegacyModel(@NotNull Path modelDir) {
+        Path legacyModel = modelDir.resolve(LEGACY_MODEL_FILENAME);
+        try {
+            if (Files.deleteIfExists(legacyModel)) {
+                LOG.info("Deleted legacy ONNX model file: " + legacyModel);
+            }
+        } catch (IOException e) {
+            LOG.warn("Failed to delete legacy ONNX model: " + legacyModel, e);
+        }
+    }
+
     private static void downloadFile(
         @NotNull String url,
         @NotNull Path target,
@@ -129,11 +157,10 @@ public final class ModelDownloader {
         double fractionEnd
     ) throws IOException {
         Path tempFile = target.resolveSibling(target.getFileName() + ".tmp");
-        try {
-            HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(CONNECT_TIMEOUT)
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+        try (HttpClient client = HttpClient.newBuilder()
+            .connectTimeout(CONNECT_TIMEOUT)
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build()) {
 
             HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -146,15 +173,13 @@ public final class ModelDownloader {
             }
 
             long contentLength = response.headers().firstValueAsLong("content-length").orElse(-1);
-            try (InputStream in = response.body()) {
+            try (InputStream in = response.body();
+                 java.io.OutputStream out = Files.newOutputStream(tempFile)) {
                 long downloaded = 0;
                 byte[] buffer = new byte[65536];
-                var out = Files.newOutputStream(tempFile);
                 int read;
                 while ((read = in.read(buffer)) != -1) {
                     if (indicator.isCanceled()) {
-                        out.close();
-                        Files.deleteIfExists(tempFile);
                         throw new IOException("Download cancelled by user");
                     }
                     out.write(buffer, 0, read);
@@ -164,7 +189,6 @@ public final class ModelDownloader {
                         indicator.setFraction(fractionStart + progress * (fractionEnd - fractionStart));
                     }
                 }
-                out.close();
             }
 
             Files.move(tempFile, target, StandardCopyOption.REPLACE_EXISTING);

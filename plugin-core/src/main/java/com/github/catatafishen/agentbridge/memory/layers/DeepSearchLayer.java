@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * L3 — Deep Search layer. Full semantic KNN search using embeddings.
- * This is the most expensive layer, requiring ONNX inference for the query.
+ * This is the most expensive layer, requiring inference for the query.
  *
  * <p><b>Attribution:</b> deep search concept from MemPalace's layers.py (MIT License).
  */
