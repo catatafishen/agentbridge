@@ -83,10 +83,24 @@ public final class ActiveAgentManager implements Disposable {
      */
     private @Nullable java.util.function.Consumer<String> pendingRemoteErrorListener = null;
 
+    /**
+     * Provides access to the project-scoped {@link PropertiesComponent}.
+     * Extracted to a field so tests can substitute a stub without mocking the final class.
+     */
+    @NotNull java.util.function.Supplier<PropertiesComponent> propertiesProvider;
+
     public ActiveAgentManager(@NotNull Project project) {
         this.project = project;
-        this.remoteModeNextStart = PropertiesComponent.getInstance(project).getBoolean(KEY_REMOTE_MODE, false);
+        this.propertiesProvider = () -> PropertiesComponent.getInstance(project);
+        this.remoteModeNextStart = propertiesProvider.get().getBoolean(KEY_REMOTE_MODE, false);
         LOG.info("ActiveAgentManager initialised for project: " + project.getName());
+    }
+
+    /**
+     * Returns the project-scoped {@link PropertiesComponent}. Package-private for testing.
+     */
+    @NotNull PropertiesComponent projectProperties() {
+        return propertiesProvider.get();
     }
 
     @NotNull
@@ -103,7 +117,7 @@ public final class ActiveAgentManager implements Disposable {
      */
     public synchronized void setRemoteMode(boolean remote) {
         this.remoteModeNextStart = remote;
-        PropertiesComponent.getInstance(project).setValue(KEY_REMOTE_MODE, remote, false);
+        projectProperties().setValue(KEY_REMOTE_MODE, remote, false);
     }
 
     /**

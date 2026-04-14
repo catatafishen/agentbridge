@@ -2,7 +2,6 @@ package com.github.catatafishen.agentbridge.acp.client;
 
 import com.github.catatafishen.agentbridge.acp.transport.JsonRpcTransport;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -212,8 +211,7 @@ class CopilotClientRemoteModeTest {
 
     @Test
     void buildCommand_withRemoteMode_insertsRemoteFlagAtPosition1() throws Exception {
-        CopilotClient client = allocateClient();
-        Mockito.doReturn(null).when(client).getResumeSessionId();
+        TestCopilotClient client = allocateTestClient();
         client.setRemoteMode(true);
 
         List<String> cmd = invokeBuildCommand(client);
@@ -225,8 +223,7 @@ class CopilotClientRemoteModeTest {
 
     @Test
     void buildCommand_withoutRemoteMode_noRemoteFlag() throws Exception {
-        CopilotClient client = allocateClient();
-        Mockito.doReturn(null).when(client).getResumeSessionId();
+        TestCopilotClient client = allocateTestClient();
 
         List<String> cmd = invokeBuildCommand(client);
 
@@ -237,8 +234,8 @@ class CopilotClientRemoteModeTest {
 
     @Test
     void buildCommand_withResumeId_appendsResumeFlag() throws Exception {
-        CopilotClient client = allocateClient();
-        Mockito.doReturn("session-abc-123").when(client).getResumeSessionId();
+        TestCopilotClient client = allocateTestClient();
+        client.stubbedResumeId = "session-abc-123";
 
         List<String> cmd = invokeBuildCommand(client);
 
@@ -247,8 +244,7 @@ class CopilotClientRemoteModeTest {
 
     @Test
     void buildCommand_withoutResumeId_noResumeFlag() throws Exception {
-        CopilotClient client = allocateClient();
-        Mockito.doReturn(null).when(client).getResumeSessionId();
+        TestCopilotClient client = allocateTestClient();
 
         List<String> cmd = invokeBuildCommand(client);
 
@@ -271,10 +267,15 @@ class CopilotClientRemoteModeTest {
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
+    @SuppressWarnings("unchecked")
     private static CopilotClient allocateClient() throws Exception {
-        CopilotClient client = Mockito.mock(CopilotClient.class, Mockito.CALLS_REAL_METHODS);
-        Field transportField = com.github.catatafishen.agentbridge.acp.client.AcpClient.class
-            .getDeclaredField("transport");
+        java.lang.reflect.Constructor<?> objDefCtor = Object.class.getDeclaredConstructor();
+        java.lang.reflect.Constructor<CopilotClient> serCtor =
+            (java.lang.reflect.Constructor<CopilotClient>)
+                sun.reflect.ReflectionFactory.getReflectionFactory()
+                    .newConstructorForSerialization(CopilotClient.class, objDefCtor);
+        CopilotClient client = serCtor.newInstance();
+        Field transportField = AcpClient.class.getDeclaredField("transport");
         transportField.setAccessible(true);
         transportField.set(client, new JsonRpcTransport());
         return client;
@@ -397,6 +398,36 @@ class CopilotClientRemoteModeTest {
         handler.accept("https://github.com/github/copilot/remote/abc");
         assertNotNull(urlReceived.get());
         assertNull(errorReceived.get(), "URL line must not fire error listener");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static TestCopilotClient allocateTestClient() throws Exception {
+        java.lang.reflect.Constructor<?> objDefCtor = Object.class.getDeclaredConstructor();
+        java.lang.reflect.Constructor<TestCopilotClient> serCtor =
+            (java.lang.reflect.Constructor<TestCopilotClient>)
+                sun.reflect.ReflectionFactory.getReflectionFactory()
+                    .newConstructorForSerialization(TestCopilotClient.class, objDefCtor);
+        TestCopilotClient client = serCtor.newInstance();
+        Field transportField = AcpClient.class.getDeclaredField("transport");
+        transportField.setAccessible(true);
+        transportField.set(client, new JsonRpcTransport());
+        return client;
+    }
+
+    /** Subclass of {@link CopilotClient} that replaces the platform-dependent resume-id lookup. */
+    static class TestCopilotClient extends CopilotClient {
+
+        // Never called — instances are allocated via ReflectionFactory.newConstructorForSerialization
+        TestCopilotClient() {
+            super(null);
+        }
+
+        @org.jetbrains.annotations.Nullable String stubbedResumeId;
+
+        @Override
+        @org.jetbrains.annotations.Nullable String getResumeSessionId() {
+            return stubbedResumeId;
+        }
     }
 }
 

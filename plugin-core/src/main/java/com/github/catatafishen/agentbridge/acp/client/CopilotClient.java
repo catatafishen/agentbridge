@@ -44,7 +44,7 @@ import java.util.regex.Pattern;
  * fixed upstream. Built-in tools are auto-approved but tracked; a corrective "reprimand" is
  * prepended to the next user message to redirect the model toward MCP alternatives.
  */
-public final class CopilotClient extends AcpClient {
+public class CopilotClient extends AcpClient {
 
     private static final com.intellij.openapi.diagnostic.Logger LOG =
         com.intellij.openapi.diagnostic.Logger.getInstance(CopilotClient.class);
