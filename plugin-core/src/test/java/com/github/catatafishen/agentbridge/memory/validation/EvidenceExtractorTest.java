@@ -144,4 +144,22 @@ class EvidenceExtractorTest {
         List<String> refs = EvidenceExtractor.extract(text);
         assertTrue(refs.size() >= 3, "Should find FQNs + file refs: " + refs);
     }
+
+    @Test
+    void extract_toolResultFormat_capturesFilePath() {
+        String toolFragment = "[tool:read_file file:src/main/java/UserService.java]";
+        List<String> refs = EvidenceExtractor.extract(toolFragment);
+        assertTrue(refs.contains("src/main/java/UserService.java"),
+            "Tool result file path should be captured: " + refs);
+    }
+
+    @Test
+    void extract_searchToolResult_capturesFileRefs() {
+        String searchResult = "[search_text result: " +
+            "plugin-core/src/main/java/com/example/Foo.java:42 match found\n" +
+            "plugin-core/src/test/java/com/example/FooTest.java:10 test match]";
+        List<String> refs = EvidenceExtractor.extract(searchResult);
+        assertTrue(refs.stream().anyMatch(r -> r.contains("Foo.java")),
+            "Search result file:line refs should be captured: " + refs);
+    }
 }

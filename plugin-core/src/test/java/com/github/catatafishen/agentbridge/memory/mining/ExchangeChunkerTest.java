@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -136,6 +137,54 @@ class ExchangeChunkerTest {
         List<ExchangeChunker.Exchange> result = ExchangeChunker.chunk(entries);
         assertEquals(1, result.size());
         assertEquals("I found and fixed the issue.", result.get(0).response());
+    }
+
+    @Test
+    void toolCall_withFilePath_addsEvidenceToResponse() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("read_file");
+        tc.setFilePath("src/main/java/Foo.java");
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Show me Foo"),
+            tc,
+            new EntryData.Text("Here is the file content.")
+        );
+
+        List<ExchangeChunker.Exchange> result = ExchangeChunker.chunk(entries);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).response().contains("src/main/java/Foo.java"),
+            "Tool file path should appear in response: " + result.get(0).response());
+    }
+
+    @Test
+    void toolCall_searchTool_includesResultFragment() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("search_text");
+        tc.setResult("Found 3 matches:\nplugin-core/src/main/java/Bar.java:42 match");
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Find Bar"),
+            tc,
+            new EntryData.Text("Found it.")
+        );
+
+        List<ExchangeChunker.Exchange> result = ExchangeChunker.chunk(entries);
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).response().contains("Bar.java"),
+            "Search tool result should appear in response: " + result.get(0).response());
+    }
+
+    @Test
+    void toolCall_nonSearchTool_excludesResult() {
+        EntryData.ToolCall tc = new EntryData.ToolCall("write_file");
+        tc.setResult("File written successfully to /tmp/test.txt");
+        List<EntryData> entries = List.of(
+            new EntryData.Prompt("Write the file"),
+            tc,
+            new EntryData.Text("Done.")
+        );
+
+        List<ExchangeChunker.Exchange> result = ExchangeChunker.chunk(entries);
+        assertEquals(1, result.size());
+        assertFalse(result.get(0).response().contains("written successfully"),
+            "Non-search tool result should NOT appear: " + result.get(0).response());
     }
 
     // --- extractCommitHashes() tests ---

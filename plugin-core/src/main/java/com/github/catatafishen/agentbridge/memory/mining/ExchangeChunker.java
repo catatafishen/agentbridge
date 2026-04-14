@@ -53,6 +53,7 @@ public final class ExchangeChunker {
                 appendResponseText(text.getRaw(), currentResponse);
             } else if (entry instanceof EntryData.ToolCall tc && currentPrompt != null) {
                 extractCommitHashes(tc, currentCommits);
+                appendToolResultEvidence(tc, currentResponse);
             }
         }
 
@@ -92,6 +93,37 @@ public final class ExchangeChunker {
         while (matcher.find()) {
             out.add(matcher.group(1));
         }
+    }
+
+    /**
+     * Append evidence-relevant fragments from a tool call result.
+     * Includes the file path reference (if available) and the tool name context,
+     * but NOT the full result text (which can be very large for file reads/diffs).
+     * The {@link com.github.catatafishen.agentbridge.memory.validation.EvidenceExtractor}
+     * will pick up file paths and FQN patterns from these fragments.
+     */
+    static void appendToolResultEvidence(EntryData.ToolCall tc, StringBuilder response) {
+        String filePath = tc.getFilePath();
+        if (filePath != null && !filePath.isEmpty()) {
+            appendResponseText("[tool:" + tc.getTitle() + " file:" + filePath + "]", response);
+        }
+
+        String result = tc.getResult();
+        if (result == null || result.isEmpty()) return;
+
+        // For search/list tools, the result contains file paths worth capturing.
+        // Limit to first 500 chars to avoid bloating the combined text.
+        String toolName = tc.getTitle();
+        if (isEvidenceRichTool(toolName)) {
+            String fragment = result.length() > 500 ? result.substring(0, 500) : result;
+            appendResponseText("[" + toolName + " result: " + fragment + "]", response);
+        }
+    }
+
+    private static boolean isEvidenceRichTool(String toolName) {
+        return toolName.contains("search") || toolName.contains("find")
+            || toolName.contains("list") || toolName.contains("grep")
+            || toolName.contains("glob") || toolName.contains("outline");
     }
 
     /**
