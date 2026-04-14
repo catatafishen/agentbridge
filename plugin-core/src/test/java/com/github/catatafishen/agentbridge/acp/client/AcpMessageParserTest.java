@@ -638,6 +638,32 @@ class AcpMessageParserTest {
         assertEquals("", AcpMessageParser.getStringOrEmpty(obj, "key"));
     }
 
+    // ── FAILED with no result or error → synthesised fallback ────────────────
+
+    @Test
+    void failedToolCallUpdate_noResultOrError_synthesisesFallbackError() {
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "call_denied");
+        params.addProperty("status", "failed");
+        // No result, no error — simulates a CLI-level tool denial
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertNull(tcu.result());
+        assertEquals("Tool call was denied or failed without error details.", tcu.error());
+    }
+
+    @Test
+    void failedToolCallUpdate_withError_doesNotOverride() {
+        // When an error is already present, the new branch must NOT overwrite it.
+        JsonObject params = updateParams("tool_call_update");
+        params.addProperty("toolCallId", "call_err");
+        params.addProperty("status", "failed");
+        params.addProperty("error", "binary not found");
+
+        var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
+        assertEquals("binary not found", tcu.error());
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private JsonObject updateParams(String sessionUpdateType) {

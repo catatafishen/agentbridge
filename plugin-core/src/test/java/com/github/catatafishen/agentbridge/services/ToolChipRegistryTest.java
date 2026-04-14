@@ -543,4 +543,71 @@ class ToolChipRegistryTest {
             assertNull(registry.findChipIdByClientId("not-registered"));
         }
     }
+
+    // ── storeMcpResult / getStoredPluginResult ────────────────────────────────
+
+    @Nested
+    @DisplayName("storeMcpResult / getStoredPluginResult")
+    class StoreMcpResult {
+
+        @Test
+        @DisplayName("stored result is retrievable by chipId")
+        void storedResult_isRetrievableByChipId() {
+            JsonObject args = new JsonObject();
+            args.addProperty("file", "Foo.java");
+            String chipId = ToolChipRegistry.computeBaseHash(args);
+            registry.registerMcp("read_file", args);
+
+            registry.storeMcpResult("read_file", args, "File content here");
+
+            assertEquals("File content here", registry.getStoredPluginResult(chipId));
+        }
+
+        @Test
+        @DisplayName("no stored result returns null")
+        void noStoredResult_returnsNull() {
+            assertNull(registry.getStoredPluginResult("nonexistent-chip"));
+        }
+
+        @Test
+        @DisplayName("storeMcpResult with unregistered tool is a no-op")
+        void unregisteredTool_isNoOp() {
+            JsonObject args = new JsonObject();
+            args.addProperty("x", 1);
+            String chipId = ToolChipRegistry.computeBaseHash(args);
+
+            registry.storeMcpResult("unknown_tool", args, "result");
+
+            assertNull(registry.getStoredPluginResult(chipId));
+        }
+
+        @Test
+        @DisplayName("stored result is cleared when turn is cleared")
+        void storedResult_clearedAfterClearTurn() {
+            JsonObject args = new JsonObject();
+            args.addProperty("x", 1);
+            String chipId = ToolChipRegistry.computeBaseHash(args);
+            registry.registerMcp("write_file", args);
+            registry.storeMcpResult("write_file", args, "Written successfully");
+            assertEquals("Written successfully", registry.getStoredPluginResult(chipId));
+
+            registry.clearTurn();
+
+            assertNull(registry.getStoredPluginResult(chipId));
+        }
+
+        @Test
+        @DisplayName("latest storeMcpResult call wins when chip matches multiple times")
+        void latestResult_overwrites_previous() {
+            JsonObject args = new JsonObject();
+            args.addProperty("file", "Bar.java");
+            String chipId = ToolChipRegistry.computeBaseHash(args);
+            registry.registerMcp("read_file", args);
+
+            registry.storeMcpResult("read_file", args, "First result");
+            registry.storeMcpResult("read_file", args, "Updated result");
+
+            assertEquals("Updated result", registry.getStoredPluginResult(chipId));
+        }
+    }
 }
