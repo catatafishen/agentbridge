@@ -411,8 +411,12 @@ class UsageStatisticsLoaderTest {
 
             assertEquals(1, result.size());
             UsageStatisticsData.DailyAgentStats daily = (UsageStatisticsData.DailyAgentStats) result.getFirst();
-            assertEquals("claude-cli", daily.agentId());
-            assertEquals("Claude Code", agentDisplayNames.get("claude-cli"));
+            // Session-level agent is always used for attribution, not entry-level agent fields
+            assertEquals("fallback-agent", daily.agentId());
+            // The date should come from the preceding entry's timestamp (the fallback)
+            assertEquals(java.time.LocalDate.of(2024, 6, 15), daily.date());
+            assertTrue(agentIds.isEmpty());
+            assertTrue(agentDisplayNames.isEmpty());
         }
     }
 
