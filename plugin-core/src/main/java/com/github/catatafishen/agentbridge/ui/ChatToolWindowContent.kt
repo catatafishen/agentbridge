@@ -780,21 +780,27 @@ class ChatToolWindowContent(
         if (!isSending) return
         val rawText = promptTextArea.text.trim()
         if (rawText.isEmpty()) return
+
+        // Resolve file reference ORCs to plain text names before clearing the editor —
+        // nudges don't support context attachments, so inline chips become backtick-wrapped names.
+        val contextItems = contextManager.collectInlineContextItems()
+        val text = contextManager.replaceOrcsWithTextRefs(rawText, contextItems)
+
         promptTextArea.text = ""
 
         val existingId = pendingNudgeId
         if (existingId != null) {
-            pendingNudgeText = (pendingNudgeText ?: "") + "\n\n" + rawText
+            pendingNudgeText = (pendingNudgeText ?: "") + "\n\n" + text
             consolePanel.showNudgeBubble(existingId, pendingNudgeText!!)
         } else {
             val id = System.currentTimeMillis().toString()
             pendingNudgeId = id
-            pendingNudgeText = rawText
-            consolePanel.showNudgeBubble(id, rawText)
+            pendingNudgeText = text
+            consolePanel.showNudgeBubble(id, text)
         }
 
         val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setPendingNudge(rawText)
+        psiBridge.setPendingNudge(text)
         val resolveId = pendingNudgeId!!
         psiBridge.setOnNudgeConsumed {
             val capturedText = pendingNudgeText
