@@ -230,28 +230,21 @@ public final class ActiveAgentManager implements Disposable {
         return acpClient;
     }
 
-    /**
-     * Checks authentication without starting the agent process.
-     * Uses {@link AbstractAgentClient#checkAuthentication()} if the client is running,
-     * or a lightweight pre-start check otherwise.
-     *
-     * <p><b>Important:</b> this method must never call {@link #getClient()}, which starts the
-     * agent. Starting the agent triggers session resumption, which shows "session resume not
-     * available" notifications. This method is called from {@code AuthSetupBanner} polling
-     * (every 30–60 s) and must remain side-effect-free.
-     *
-     * @return {@code null} if authenticated (or unknown), or a human-readable error message
-     */
     @Nullable
     public String checkAuthentication() {
         if (started && acpClient != null && acpClient.isHealthy()) {
             return acpClient.checkAuthentication();
         }
-        // Client not running — check credentials without launching the process.
-        // Codex has a synchronous credential check that doesn't require a running process.
-        // All other agent types cannot be checked without starting — return null so the banner
-        // stays hidden; auth errors will surface naturally when the user starts the agent.
-        String agentId = getActiveProfileId();
+        return resolvePreStartAuth(getActiveProfileId());
+    }
+
+    /**
+     * Returns an auth error for pre-start credential checks, or {@code null} when no check is
+     * possible without a running process. Only Codex has a synchronous credential check; all other
+     * agent types defer auth errors until the agent is actually started.
+     * <p>Static and package-private so it can be exercised in unit tests without a live platform.
+     */
+    static @Nullable String resolvePreStartAuth(@Nullable String agentId) {
         if (CodexAppServerClient.PROFILE_ID.equals(agentId)) {
             return CodexAppServerClient.checkCredentials();
         }

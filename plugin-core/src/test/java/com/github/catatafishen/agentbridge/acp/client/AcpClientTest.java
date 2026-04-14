@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.acp.client;
 
 import com.github.catatafishen.agentbridge.acp.model.NewSessionResponse;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
+import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonNull;
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.List;
@@ -954,6 +956,40 @@ class AcpClientTest {
             // 'sh' is universally available on Unix systems
             String result = AcpClient.tryResolveBareName("sh");
             assertTrue(result.contains("/"), "expected 'sh' to be resolved to an absolute path, got: " + result);
+        }
+    }
+
+    // ── checkAuthentication (instance method) ────────────────────────────────
+
+    @Nested
+    class CheckAuthentication {
+
+        @Test
+        void returnsNullWhenSessionAlreadyCreated() throws Exception {
+            AcpClient client = Mockito.mock(AcpClient.class, Mockito.CALLS_REAL_METHODS);
+            Mockito.doReturn(true).when(client).isHealthy();
+            Field field = AcpClient.class.getDeclaredField("currentSessionId");
+            field.setAccessible(true);
+            field.set(client, "existing-session");
+
+            assertNull(client.checkAuthentication());
+        }
+    }
+
+    // ── createSession — load-session failure path ─────────────────────────────
+
+    @Nested
+    class CreateSessionLoadFails {
+
+        @Test
+        void persistsNullResumeIdWhenLoadSessionFails() {
+            AcpClient client = Mockito.mock(AcpClient.class, Mockito.CALLS_REAL_METHODS);
+            // Stub loadResumeSessionId so the resume path is entered (requestedResumeId != null).
+            // loadSession() then throws (agent doesn't advertise the loadSession capability),
+            // which drives execution into the catch block covering persistResumeSessionId(null).
+            Mockito.doReturn("stale-resume-id").when(client).loadResumeSessionId();
+
+            assertThrows(AgentSessionException.class, () -> client.createSession("/test/cwd"));
         }
     }
 

@@ -8,6 +8,7 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ActiveAgentManagerTest {
 
@@ -231,6 +232,28 @@ class ActiveAgentManagerTest {
         @Test
         void maxToolCallsPerTurn() {
             assertEquals(0, ActiveAgentManager.DEFAULT_MAX_TOOL_CALLS_PER_TURN);
+        }
+    }
+
+    // ── resolvePreStartAuth ──────────────────────────────────────────────────
+
+    @Nested
+    class ResolvePreStartAuth {
+
+        @Test
+        void nonCodexAgentReturnsNull() {
+            // Non-Codex agents cannot be auth-checked without a running process
+            assertNull(ActiveAgentManager.resolvePreStartAuth("copilot"));
+        }
+
+        @Test
+        void kiroAgentReturnsNull() {
+            assertNull(ActiveAgentManager.resolvePreStartAuth("kiro"));
+        }
+
+        @Test
+        void nullAgentIdReturnsNull() {
+            assertNull(ActiveAgentManager.resolvePreStartAuth(null));
         }
     }
 }

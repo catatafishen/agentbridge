@@ -323,13 +323,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         }
         try {
             // Snapshot the current session before it starts so the user can revert to it.
-            if (ActiveAgentManager.getInstance(project).isBranchSessionAtStartup()) {
-                try {
-                    SessionStoreV2.getInstance(project).branchCurrentSession(cwd);
-                } catch (Exception e) {
-                    LOG.warn("Failed to branch session at startup — continuing without snapshot", e);
-                }
-            }
+            tryBranchSessionAtStartup(cwd);
             beforeCreateSession(cwd);
             requestedResumeId = loadResumeSessionId();
 
@@ -625,7 +619,11 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     // ── Session resumption helpers ───────────────────────────────────────────
 
-    private @Nullable String loadResumeSessionId() {
+    /**
+     * Reads the resume session ID from settings. Returns {@code null} on failure or when unset.
+     * Package-private so tests can stub it without a live platform.
+     */
+    @Nullable String loadResumeSessionId() {
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
             return manager.getSettings().getResumeSessionId();
@@ -800,6 +798,25 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     protected void beforeCreateSession(String cwd) throws Exception {
         // default: no-op
+    }
+
+    /**
+     * Snapshots the current session before a new one starts, if the setting is enabled.
+     * Failures are logged and swallowed — a missing snapshot must never abort session creation.
+     * Package-private so the branch guard can be exercised in unit tests without a live platform.
+     */
+    void tryBranchSessionAtStartup(String cwd) {
+        try {
+            if (ActiveAgentManager.getInstance(project).isBranchSessionAtStartup()) {
+                try {
+                    SessionStoreV2.getInstance(project).branchCurrentSession(cwd);
+                } catch (Exception e) {
+                    LOG.warn("Failed to branch session at startup — continuing without snapshot", e);
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Branch-at-startup check failed — continuing without snapshot", e);
+        }
     }
 
     @Override
