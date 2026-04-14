@@ -1,0 +1,76 @@
+name: Publish to JetBrains Marketplace
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'GitHub release tag to publish (e.g. v1.52.0)'
+        required: true
+        type: string
+      channel:
+        description: 'Marketplace channel (leave as "stable" for production releases)'
+        required: true
+        type: choice
+        options:
+          - stable
+          - eap
+          - beta
+        default: stable
+
+permissions: read-all
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  publish:
+    name: Upload ${{ inputs.tag }} to JetBrains Marketplace
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2.17.0
+        with:
+          egress-policy: audit
+
+      - name: Download plugin ZIP from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "agentbridge-*.zip" \
+            --dir release-artifacts
+          ls -la release-artifacts/
+
+      - name: Upload to JetBrains Marketplace
+        env:
+          JETBRAINS_TOKEN: ${{ secrets.JETBRAINS_MARKETPLACE_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+        run: |
+          PLUGIN_ZIP=$(ls release-artifacts/agentbridge-*.zip | head -1)
+          echo "Uploading: $PLUGIN_ZIP to channel '${CHANNEL}'"
+
+          CURL_ARGS=(
+            --header "Authorization: Bearer $JETBRAINS_TOKEN"
+            -F "xmlId=com.github.catatafishen.ideagentforcopilot"
+            -F "file=@$PLUGIN_ZIP"
+          )
+          # The stable channel is the default — only pass channel for non-stable uploads
+          if [ "$CHANNEL" != "stable" ]; then
+            CURL_ARGS+=(-F "channel=$CHANNEL")
+          fi
+
+          HTTP_STATUS=$(curl -s -o response.txt -w "%{http_code}" "${CURL_ARGS[@]}" \
+            https://plugins.jetbrains.com/plugin/uploadPlugin)
+
+          echo "--- Marketplace response ---"
+          cat response.txt
+          echo ""
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "Upload failed with HTTP status $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Successfully published $PLUGIN_ZIP to the JetBrains Marketplace"
