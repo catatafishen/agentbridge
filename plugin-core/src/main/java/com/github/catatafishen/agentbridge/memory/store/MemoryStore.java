@@ -10,6 +10,7 @@ import org.apache.lucene.document.KnnFloatVectorField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
+import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
@@ -120,36 +121,13 @@ public final class MemoryStore implements Disposable {
         }
     }
 
-    /**
-     * Add a drawer to the index with a pre-computed embedding.
-     * Skips duplicates if content with similarity > 0.9 already exists.
-     *
-     * @return the drawer ID, or null if skipped as duplicate
-     */
     public @Nullable String addDrawer(@NotNull DrawerDocument drawer, float @NotNull [] embedding) throws IOException {
         if (isDuplicate(embedding)) {
             LOG.debug("Skipping duplicate drawer: " + drawer.id());
             return null;
         }
 
-        Document doc = new Document();
-        doc.add(new StringField(FLD_ID, drawer.id(), Field.Store.YES));
-        doc.add(new TextField(FLD_CONTENT, drawer.content(), Field.Store.YES));
-        doc.add(new KnnFloatVectorField(FLD_EMBEDDING, embedding, VectorSimilarityFunction.COSINE));
-        doc.add(new StringField(FLD_WING, drawer.wing(), Field.Store.YES));
-        doc.add(new StringField(FLD_ROOM, drawer.room(), Field.Store.YES));
-        doc.add(new StringField(FLD_MEMORY_TYPE, drawer.memoryType(), Field.Store.YES));
-        doc.add(new StringField(FLD_SOURCE_SESSION, drawer.sourceSession(), Field.Store.YES));
-        doc.add(new StringField(FLD_SOURCE_FILE, drawer.sourceFile(), Field.Store.YES));
-        doc.add(new StringField(FLD_AGENT, drawer.agent(), Field.Store.YES));
-        doc.add(new StringField(FLD_FILED_AT, drawer.filedAt().toString(), Field.Store.YES));
-        doc.add(new StringField(FLD_ADDED_BY, drawer.addedBy(), Field.Store.YES));
-        doc.add(new StringField(FLD_SOURCE_TURN_INDEX, drawer.sourceTurnIndex(), Field.Store.YES));
-        doc.add(new StringField(FLD_SOURCE_COMMITS, drawer.sourceCommits(), Field.Store.YES));
-        doc.add(new StoredField(FLD_EVIDENCE, drawer.evidence()));
-        doc.add(new StringField(FLD_VERIFICATION_STATE, drawer.verificationState(), Field.Store.YES));
-        String verifiedAt = drawer.lastVerifiedAt() != null ? drawer.lastVerifiedAt().toString() : "";
-        doc.add(new StringField(FLD_LAST_VERIFIED_AT, verifiedAt, Field.Store.YES));
+        Document doc = buildLuceneDocument(drawer, embedding);
 
         // WAL before write
         JsonObject walPayload = new JsonObject();
@@ -358,6 +336,118 @@ public final class MemoryStore implements Disposable {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    public void updateVerificationState(@NotNull String drawerId, @NotNull String newState) throws IOException {
+        IndexWriter w = writer;
+        if (w == null) throw new IOException("MemoryStore not initialized");
+
+        Term idTerm = new Term(FLD_ID, drawerId);
+        try (DirectoryReader reader = DirectoryReader.open(w)) {
+            IndexSearcher searcher = new IndexSearcher(reader);
+            TermQuery query = new TermQuery(idTerm);
+            TopDocs docs = searcher.search(query, 1);
+            if (docs.totalHits.value() == 0) {
+                throw new IOException("Drawer not found: " + drawerId);
+            }
+
+            int docId = docs.scoreDocs[0].doc;
+            Document oldDoc = searcher.storedFields().document(docId);
+            DrawerDocument drawer = documentToDrawer(oldDoc);
+
+            // Read the embedding vector from the KNN vector index
+            float[] vector = readVectorFromIndex(reader, docId);
+
+            DrawerDocument updated = DrawerDocument.builder()
+                .id(drawer.id())
+                .wing(drawer.wing())
+                .room(drawer.room())
+                .content(drawer.content())
+                .memoryType(drawer.memoryType())
+                .sourceSession(drawer.sourceSession())
+                .sourceFile(drawer.sourceFile())
+                .agent(drawer.agent())
+                .filedAt(drawer.filedAt())
+                .addedBy(drawer.addedBy())
+                .sourceTurnIndex(drawer.sourceTurnIndex())
+                .sourceCommits(drawer.sourceCommits())
+                .evidence(drawer.evidence())
+                .verificationState(newState)
+                .lastVerifiedAt(Instant.now())
+                .build();
+
+            w.deleteDocuments(idTerm);
+            Document newDoc = buildLuceneDocument(updated, vector);
+            w.addDocument(newDoc);
+            w.commit();
+
+            if (searcherManager != null) {
+                searcherManager.maybeRefresh();
+            }
+        }
+    }
+
+    private static float @Nullable [] readVectorFromIndex(@NotNull DirectoryReader reader, int docId) throws IOException {
+        for (var leafCtx : reader.leaves()) {
+            int localDocId = docId - leafCtx.docBase;
+            if (localDocId < 0 || localDocId >= leafCtx.reader().maxDoc()) continue;
+            var vectorValues = leafCtx.reader().getFloatVectorValues(FLD_EMBEDDING);
+            if (vectorValues == null) continue;
+            try {
+                float[] vec = vectorValues.vectorValue(localDocId);
+                return vec.clone();
+            } catch (Exception e) {
+                // Document may not have a vector — return null
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Find all drawers whose evidence field contains the given file path or reference.
+     *
+     * @param reference a file path, FQN, or file:line reference to search for
+     * @return drawers whose evidence JSON contains the reference string
+     */
+    public @NotNull List<DrawerDocument> findByEvidence(@NotNull String reference) throws IOException {
+        IndexWriter w = writer;
+        if (w == null) throw new IOException("MemoryStore not initialized");
+
+        List<DrawerDocument> results = new ArrayList<>();
+        try (DirectoryReader reader = DirectoryReader.open(w)) {
+            for (int i = 0; i < reader.maxDoc(); i++) {
+                Document doc = reader.storedFields().document(i);
+                String evidence = getString(doc, FLD_EVIDENCE);
+                if (evidence.contains(reference)) {
+                    results.add(documentToDrawer(doc));
+                }
+            }
+        }
+        return results;
+    }
+
+    private Document buildLuceneDocument(@NotNull DrawerDocument drawer, float @Nullable [] vector) {
+        Document doc = new Document();
+        doc.add(new StringField(FLD_ID, drawer.id(), Field.Store.YES));
+        doc.add(new TextField(FLD_CONTENT, drawer.content(), Field.Store.YES));
+        doc.add(new StringField(FLD_WING, drawer.wing(), Field.Store.YES));
+        doc.add(new StringField(FLD_ROOM, drawer.room(), Field.Store.YES));
+        doc.add(new StringField(FLD_MEMORY_TYPE, drawer.memoryType(), Field.Store.YES));
+        doc.add(new StringField(FLD_SOURCE_SESSION, drawer.sourceSession(), Field.Store.YES));
+        doc.add(new StringField(FLD_SOURCE_FILE, drawer.sourceFile(), Field.Store.YES));
+        doc.add(new StringField(FLD_AGENT, drawer.agent(), Field.Store.YES));
+        doc.add(new StringField(FLD_FILED_AT, drawer.filedAt().toString(), Field.Store.YES));
+        doc.add(new StringField(FLD_ADDED_BY, drawer.addedBy(), Field.Store.YES));
+        doc.add(new StringField(FLD_SOURCE_TURN_INDEX, drawer.sourceTurnIndex(), Field.Store.YES));
+        doc.add(new StringField(FLD_SOURCE_COMMITS, drawer.sourceCommits(), Field.Store.YES));
+        doc.add(new StoredField(FLD_EVIDENCE, drawer.evidence()));
+        doc.add(new StringField(FLD_VERIFICATION_STATE, drawer.verificationState(), Field.Store.YES));
+        String verifiedAt = drawer.lastVerifiedAt() != null ? drawer.lastVerifiedAt().toString() : "";
+        doc.add(new StringField(FLD_LAST_VERIFIED_AT, verifiedAt, Field.Store.YES));
+        if (vector != null) {
+            doc.add(new KnnFloatVectorField(FLD_EMBEDDING, vector, VectorSimilarityFunction.COSINE));
+        }
+        return doc;
     }
 
     @Override
