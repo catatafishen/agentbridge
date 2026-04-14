@@ -4,7 +4,7 @@ import com.code_intelligence.jazzer.api.FuzzedDataProvider;
 import com.github.catatafishen.agentbridge.services.AgentIdMapper;
 
 /**
- * Jazzer fuzz target for the MCP protocol message parsing pipeline.
+ * Jazzer fuzz target for {@link AgentIdMapper}.
  *
  * <p>Tests that {@link AgentIdMapper#toAgentId(String)} handles arbitrary agent display names
  * without throwing uncaught exceptions, producing null, or entering infinite loops.
@@ -15,17 +15,16 @@ import com.github.catatafishen.agentbridge.services.AgentIdMapper;
  * which detects the {@code com.code_intelligence.jazzer.api.FuzzedDataProvider} import.
  *
  * <p>To run: {@code java -jar jazzer.jar --cp=<test-classpath>
- * --target_class=com.github.catatafishen.agentbridge.fuzz.McpProtocolHandlerFuzz}
+ * --target_class=com.github.catatafishen.agentbridge.fuzz.AgentIdMapperFuzz}
  */
-public class McpProtocolHandlerFuzz {
+public class AgentIdMapperFuzz {
 
     public static void fuzzerTestOneInput(FuzzedDataProvider data) {
         String agentName = data.consumeRemainingAsString();
-        // toAgentId must return a non-null, non-empty ID for any input including
-        // null, empty string, extremely long strings, and unicode edge cases.
+        // toAgentId is @NotNull — only check for unexpected empty results.
         String result = AgentIdMapper.toAgentId(agentName);
-        if (result == null || result.isEmpty()) {
-            throw new AssertionError("toAgentId returned null or empty for: " + agentName);
+        if (result.isEmpty()) {
+            throw new AssertionError("toAgentId returned empty for: " + agentName);
         }
     }
 }
