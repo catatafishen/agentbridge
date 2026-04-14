@@ -15,8 +15,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -301,10 +303,8 @@ class UsageStatisticsLoaderTest {
         @Test
         void turnStatsWithoutOwnTimestampUsesPrecedingEntryTimestamp(@TempDir Path tempDir) throws Exception {
             Path jsonlPath = tempDir.resolve("session.jsonl");
-            // A text entry with a timestamp provides the lastSeenTimestamp fallback
             String textLine = "{\"type\":\"text\",\"content\":\"hello\","
                 + "\"timestamp\":\"2024-06-15T10:00:00Z\",\"entryId\":\"e1\"}";
-            // TurnStats with no timestamp field: must use the fallback from the preceding line
             String turnStatsNoTs = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":5000,"
                 + "\"inputTokens\":100,\"outputTokens\":200,\"toolCallCount\":3,"
                 + "\"linesAdded\":10,\"linesRemoved\":5,\"multiplier\":\"1x\","
@@ -312,7 +312,9 @@ class UsageStatisticsLoaderTest {
             Files.writeString(jsonlPath, textLine + "\n" + turnStatsNoTs + "\n");
 
             Map<Object, Object> accumulators = new LinkedHashMap<>();
-            invokeCollectTurnStats(jsonlPath, "copilot", accumulators);
+            LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+            Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+            invokeCollectTurnStats(jsonlPath, "copilot", accumulators, agentIds, agentDisplayNames);
 
             assertEquals(1, accumulators.size(),
                 "TurnStats without its own timestamp should use the preceding entry's timestamp as fallback");
@@ -321,7 +323,6 @@ class UsageStatisticsLoaderTest {
         @Test
         void turnStatsWithNoResolvableTimestampIsSkipped(@TempDir Path tempDir) throws Exception {
             Path jsonlPath = tempDir.resolve("session.jsonl");
-            // Single TurnStats with no timestamp and no preceding line to provide a fallback
             String turnStatsNoTs = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":5000,"
                 + "\"inputTokens\":100,\"outputTokens\":200,\"toolCallCount\":3,"
                 + "\"linesAdded\":10,\"linesRemoved\":5,\"multiplier\":\"1x\","
@@ -329,10 +330,89 @@ class UsageStatisticsLoaderTest {
             Files.writeString(jsonlPath, turnStatsNoTs + "\n");
 
             Map<Object, Object> accumulators = new LinkedHashMap<>();
-            invokeCollectTurnStats(jsonlPath, "copilot", accumulators);
+            LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+            Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+            invokeCollectTurnStats(jsonlPath, "copilot", accumulators, agentIds, agentDisplayNames);
 
             assertTrue(accumulators.isEmpty(),
                 "TurnStats with no resolvable timestamp should be skipped");
+        }
+
+        @Test
+        void malformedAgentMetadata_keepsFallbackAgentAndContinues(@TempDir Path tempDir) throws Exception {
+            Path jsonlPath = tempDir.resolve("malformed-agent.jsonl");
+            String badAgent = "{\"type\":\"text\",\"agent\":\"GitHub Copilot\"";
+            String stats = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":1000,"
+                + "\"inputTokens\":10,\"outputTokens\":20,\"toolCallCount\":1,"
+                + "\"linesAdded\":1,\"linesRemoved\":0,\"multiplier\":\"1x\","
+                + "\"timestamp\":\"2024-06-15T10:00:00Z\",\"entryId\":\"e1\"}";
+            Files.writeString(jsonlPath, badAgent + "\n" + stats + "\n");
+
+            Map<Object, Object> accumulators = new LinkedHashMap<>();
+            LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+            Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+            invokeCollectTurnStats(jsonlPath, "fallback-agent", accumulators, agentIds, agentDisplayNames);
+
+            Method buildMethod = UsageStatisticsLoader.class.getDeclaredMethod("buildDailyStats", Map.class);
+            buildMethod.setAccessible(true);
+            List<?> result = (List<?>) buildMethod.invoke(null, accumulators);
+
+            assertEquals(1, result.size());
+            UsageStatisticsData.DailyAgentStats daily = (UsageStatisticsData.DailyAgentStats) result.getFirst();
+            assertEquals("fallback-agent", daily.agentId());
+            assertTrue(agentIds.isEmpty());
+            assertTrue(agentDisplayNames.isEmpty());
+        }
+
+        @Test
+        void emptyAgentMetadata_doesNotReplaceFallbackAgent(@TempDir Path tempDir) throws Exception {
+            Path jsonlPath = tempDir.resolve("empty-agent.jsonl");
+            String emptyAgent = "{\"type\":\"text\",\"agent\":\"\",\"entryId\":\"e1\"}";
+            String stats = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":1000,"
+                + "\"inputTokens\":10,\"outputTokens\":20,\"toolCallCount\":1,"
+                + "\"linesAdded\":1,\"linesRemoved\":0,\"multiplier\":\"1x\","
+                + "\"timestamp\":\"2024-06-15T10:00:00Z\",\"entryId\":\"e2\"}";
+            Files.writeString(jsonlPath, emptyAgent + "\n" + stats + "\n");
+
+            Map<Object, Object> accumulators = new LinkedHashMap<>();
+            LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+            Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+            invokeCollectTurnStats(jsonlPath, "fallback-agent", accumulators, agentIds, agentDisplayNames);
+
+            Method buildMethod = UsageStatisticsLoader.class.getDeclaredMethod("buildDailyStats", Map.class);
+            buildMethod.setAccessible(true);
+            List<?> result = (List<?>) buildMethod.invoke(null, accumulators);
+
+            assertEquals(1, result.size());
+            UsageStatisticsData.DailyAgentStats daily = (UsageStatisticsData.DailyAgentStats) result.getFirst();
+            assertEquals("fallback-agent", daily.agentId());
+            assertTrue(agentIds.isEmpty());
+            assertTrue(agentDisplayNames.isEmpty());
+        }
+
+        @Test
+        void turnStatsWithoutTimestamp_usesLastSeenTimestampFallback(@TempDir Path tempDir) throws Exception {
+            Path jsonlPath = tempDir.resolve("fallback-ts.jsonl");
+            String metadata = "{\"type\":\"text\",\"timestamp\":\"2024-06-15T09:30:00Z\","
+                + "\"agent\":\"Claude Code\",\"entryId\":\"e1\"}";
+            String stats = "{\"type\":\"turnStats\",\"turnId\":\"t1\",\"durationMs\":1000,"
+                + "\"inputTokens\":10,\"outputTokens\":20,\"toolCallCount\":1,"
+                + "\"linesAdded\":1,\"linesRemoved\":0,\"multiplier\":\"1x\",\"entryId\":\"e2\"}";
+            Files.writeString(jsonlPath, metadata + "\n" + stats + "\n");
+
+            Map<Object, Object> accumulators = new LinkedHashMap<>();
+            LinkedHashSet<String> agentIds = new LinkedHashSet<>();
+            Map<String, String> agentDisplayNames = new LinkedHashMap<>();
+            invokeCollectTurnStats(jsonlPath, "fallback-agent", accumulators, agentIds, agentDisplayNames);
+
+            Method buildMethod = UsageStatisticsLoader.class.getDeclaredMethod("buildDailyStats", Map.class);
+            buildMethod.setAccessible(true);
+            List<?> result = (List<?>) buildMethod.invoke(null, accumulators);
+
+            assertEquals(1, result.size());
+            UsageStatisticsData.DailyAgentStats daily = (UsageStatisticsData.DailyAgentStats) result.getFirst();
+            assertEquals("claude-cli", daily.agentId());
+            assertEquals("Claude Code", agentDisplayNames.get("claude-cli"));
         }
     }
 
@@ -381,6 +461,13 @@ class UsageStatisticsLoaderTest {
 
     private static void invokeCollectTurnStats(Path jsonlPath, String agentId,
                                                Map<Object, Object> accumulators) throws Exception {
+        invokeCollectTurnStats(jsonlPath, agentId, accumulators, new LinkedHashSet<>(), new LinkedHashMap<>());
+    }
+
+    private static void invokeCollectTurnStats(Path jsonlPath, String agentId,
+                                               Map<Object, Object> accumulators,
+                                               @SuppressWarnings("unused") Set<String> ignoredAgentIds,
+                                               @SuppressWarnings("unused") Map<String, String> ignoredAgentDisplayNames) throws Exception {
         Method m = UsageStatisticsLoader.class.getDeclaredMethod(
             "collectTurnStats", List.class, String.class, LocalDate.class, LocalDate.class, Map.class);
         m.setAccessible(true);

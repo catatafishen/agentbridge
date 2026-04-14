@@ -1,11 +1,16 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.intellij.openapi.project.Project;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import java.sql.SQLException;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for package-private static helper methods in {@link ToolCallStatisticsService}.
@@ -110,5 +115,28 @@ class ToolCallStatisticsServiceStaticMethodsTest {
     void isDbMoved_partialMatch_returnsFalse() {
         SQLException ex = new SQLException("SQLITE_READONLY");
         assertFalse(ToolCallStatisticsService.isDbMoved(ex));
+    }
+
+    @Test
+    void initialize_nullBasePath_doesNotThrowAndLeavesQueriesEmpty() {
+        Project project = Mockito.mock(Project.class);
+        Mockito.when(project.getBasePath()).thenReturn(null);
+
+        ToolCallStatisticsService service = new ToolCallStatisticsService(project);
+
+        assertDoesNotThrow(service::initialize);
+        assertTrue(service.queryAggregates(null, null).isEmpty());
+        assertTrue(service.getDistinctClients().isEmpty());
+        assertTrue(service.querySummary(null, null).isEmpty());
+    }
+
+    @Test
+    void recordCall_withoutInitializedConnection_isNoOp() {
+        Project project = Mockito.mock(Project.class);
+        ToolCallStatisticsService service = new ToolCallStatisticsService(project);
+
+        assertDoesNotThrow(() -> service.recordCall(new ToolCallRecord(
+            "read_file", "FILE", 10, 20, 30, true, null, "copilot", java.time.Instant.now())));
+        assertTrue(service.queryAggregates(null, null).isEmpty());
     }
 }

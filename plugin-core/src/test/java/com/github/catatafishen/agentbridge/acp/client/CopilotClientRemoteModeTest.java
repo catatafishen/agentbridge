@@ -1,9 +1,8 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
+import com.github.catatafishen.agentbridge.acp.transport.JsonRpcTransport;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-
-import com.github.catatafishen.agentbridge.acp.transport.JsonRpcTransport;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -13,7 +12,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CopilotClientRemoteModeTest {
 
@@ -99,7 +104,8 @@ class CopilotClientRemoteModeTest {
     @Test
     void setRemoteUrlListener_registersListener() throws Exception {
         CopilotClient client = allocateClient();
-        Consumer<String> listener = url -> {};
+        Consumer<String> listener = url -> {
+        };
         client.setRemoteUrlListener(listener);
         assertSame(listener, getListenerField(client));
     }
@@ -107,7 +113,8 @@ class CopilotClientRemoteModeTest {
     @Test
     void setRemoteUrlListener_null_clearsListener() throws Exception {
         CopilotClient client = allocateClient();
-        client.setRemoteUrlListener(url -> {});
+        client.setRemoteUrlListener(url -> {
+        });
         client.setRemoteUrlListener(null);
         assertNull(getListenerField(client));
     }
@@ -246,6 +253,20 @@ class CopilotClientRemoteModeTest {
         List<String> cmd = invokeBuildCommand(client);
 
         assertFalse(cmd.stream().anyMatch(s -> s.startsWith("--resume=")));
+    }
+
+    @Test
+    void defaultAgentSlug_returnsIntellijDefault() throws Exception {
+        CopilotClient client = allocateClient();
+        assertEquals("intellij-default", client.defaultAgentSlug());
+    }
+
+    @Test
+    void supportsSessionResumption_returnsFalse() throws Exception {
+        CopilotClient client = allocateClient();
+        Method m = CopilotClient.class.getDeclaredMethod("supportsSessionResumption");
+        m.setAccessible(true);
+        assertFalse((boolean) m.invoke(client));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
