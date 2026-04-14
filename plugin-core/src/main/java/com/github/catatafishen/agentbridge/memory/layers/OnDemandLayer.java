@@ -63,7 +63,13 @@ public final class OnDemandLayer implements MemoryStack {
 
             for (DrawerDocument.SearchResult result : results) {
                 DrawerDocument d = result.drawer();
-                sb.append("- [").append(d.memoryType()).append("] ")
+                sb.append("- ");
+                if (DrawerDocument.STATE_VERIFIED.equals(d.verificationState())) {
+                    sb.append("✓ ");
+                } else if (DrawerDocument.STATE_STALE.equals(d.verificationState())) {
+                    sb.append("⚠ ");
+                }
+                sb.append("[").append(d.memoryType()).append("] ")
                     .append(d.room()).append(": ")
                     .append(truncate(d.content(), 300))
                     .append('\n');

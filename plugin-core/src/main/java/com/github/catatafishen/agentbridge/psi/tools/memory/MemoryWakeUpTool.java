@@ -74,33 +74,42 @@ public final class MemoryWakeUpTool extends Tool {
         String wing = memoryService.getEffectiveWing();
         List<DrawerDocument> topDrawers = store.getTopDrawers(wing, MAX_DRAWERS);
 
-        if (topDrawers.isEmpty()) {
+        // Skip stale memories — wake-up context should be reliable
+        List<DrawerDocument> reliable = topDrawers.stream()
+            .filter(d -> !DrawerDocument.STATE_STALE.equals(d.verificationState()))
+            .toList();
+
+        if (reliable.isEmpty()) {
             return "No memories stored yet for wing '" + wing + "'.";
         }
 
-        // Group by room
         Map<String, List<DrawerDocument>> byRoom = new LinkedHashMap<>();
-        for (DrawerDocument d : topDrawers) {
+        for (DrawerDocument d : reliable) {
             byRoom.computeIfAbsent(d.room(), k -> new java.util.ArrayList<>()).add(d);
         }
 
         StringBuilder sb = new StringBuilder();
         sb.append("## Memory — ").append(wing).append("\n\n");
-
         for (var entry : byRoom.entrySet()) {
-            sb.append("### ").append(entry.getKey()).append('\n');
-            for (DrawerDocument d : entry.getValue()) {
-                String snippet = d.content().length() > SNIPPET_LENGTH
-                    ? d.content().substring(0, SNIPPET_LENGTH) + "…"
-                    : d.content();
-                sb.append("- [").append(d.memoryType()).append("] ")
-                    .append(snippet.replace('\n', ' ')).append('\n');
-                if (sb.length() > MAX_CHARS) break;
-            }
-            sb.append('\n');
+            appendRoomSection(sb, entry.getKey(), entry.getValue());
             if (sb.length() > MAX_CHARS) break;
         }
-
         return sb.toString().trim();
+    }
+
+    private static void appendRoomSection(StringBuilder sb, String room, List<DrawerDocument> drawers) {
+        sb.append("### ").append(room).append('\n');
+        for (DrawerDocument d : drawers) {
+            String snippet = d.content().length() > SNIPPET_LENGTH
+                ? d.content().substring(0, SNIPPET_LENGTH) + "…"
+                : d.content();
+            sb.append("- ");
+            if (DrawerDocument.STATE_VERIFIED.equals(d.verificationState())) {
+                sb.append("✓ ");
+            }
+            sb.append("[").append(d.memoryType()).append("] ")
+                .append(snippet.replace('\n', ' ')).append('\n');
+        }
+        sb.append('\n');
     }
 }

@@ -98,6 +98,10 @@ public final class MemoryKgQueryTool extends Tool {
             if (t.validFrom() != null) {
                 sb.append(" (from: ").append(t.validFrom()).append(')');
             }
+            String evidence = t.evidence();
+            if (!evidence.isEmpty() && !"[]".equals(evidence)) {
+                sb.append("\n  Evidence: ").append(evidence);
+            }
             sb.append('\n');
         }
         return sb.toString().trim();

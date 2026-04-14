@@ -41,8 +41,9 @@ public final class MemorySearchTool extends Tool {
 
     @Override
     public @NotNull String description() {
-        return "Semantic search across the memory store. Returns drawers ranked by relevance. "
-            + "Supports optional wing, room, and memory_type filters. "
+        return "Semantic search across the memory store. Returns drawers ranked by relevance "
+            + "with verification status (verified/unverified/stale) and evidence links. "
+            + "Supports optional wing, room, memory_type, and state filters. "
             + "Use for recalling past decisions, solutions, preferences, and technical context.";
     }
 
@@ -68,6 +69,7 @@ public final class MemorySearchTool extends Tool {
             Param.optional("wing", TYPE_STRING, "Filter by palace wing (project name)"),
             Param.optional("room", TYPE_STRING, "Filter by room (topic category)"),
             Param.optional(PARAM_MEMORY_TYPE, TYPE_STRING, "Filter by type: context, decision, problem, solution"),
+            Param.optional("state", TYPE_STRING, "Filter by verification state: verified, unverified, stale"),
             Param.optional(PARAM_LIMIT, TYPE_INTEGER, "Max results to return (default: 10)")
         );
     }
@@ -78,6 +80,7 @@ public final class MemorySearchTool extends Tool {
         String wing = args.has("wing") ? args.get("wing").getAsString() : null;
         String room = args.has("room") ? args.get("room").getAsString() : null;
         String memoryType = args.has(PARAM_MEMORY_TYPE) ? args.get(PARAM_MEMORY_TYPE).getAsString() : null;
+        String stateFilter = args.has("state") ? args.get("state").getAsString() : null;
         int limit = args.has(PARAM_LIMIT) ? args.get(PARAM_LIMIT).getAsInt() : 10;
 
         MemoryService memoryService = MemoryService.getInstance(project);
@@ -96,6 +99,12 @@ public final class MemorySearchTool extends Tool {
             .limit(limit)
             .build();
         List<DrawerDocument.SearchResult> results = store.search(query, queryEmbedding);
+
+        if (stateFilter != null) {
+            results = results.stream()
+                .filter(r -> stateFilter.equals(r.drawer().verificationState()))
+                .toList();
+        }
 
         if (results.isEmpty()) {
             return "No matching memories found for: " + queryText;
@@ -118,10 +127,19 @@ public final class MemorySearchTool extends Tool {
         return sb.toString().trim();
     }
 
-    /**
-     * Append source traceability lines (session/turn, commits) if available.
-     */
     static void appendSourceReference(StringBuilder sb, DrawerDocument d) {
+        String state = d.verificationState();
+        if (!state.isEmpty() && !DrawerDocument.STATE_UNVERIFIED.equals(state)) {
+            sb.append("Status: ").append(state);
+            if (d.lastVerifiedAt() != null) {
+                sb.append(" (verified: ").append(d.lastVerifiedAt()).append(')');
+            }
+            sb.append('\n');
+        }
+        String evidence = d.evidence();
+        if (!evidence.isEmpty() && !"[]".equals(evidence)) {
+            sb.append("Evidence: ").append(evidence).append('\n');
+        }
         String turn = d.sourceTurnIndex();
         String session = d.sourceSession();
         if (!turn.isEmpty() && !session.isEmpty()) {

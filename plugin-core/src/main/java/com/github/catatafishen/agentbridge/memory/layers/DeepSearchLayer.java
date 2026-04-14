@@ -63,8 +63,13 @@ public final class DeepSearchLayer implements MemoryStack {
             sb.append("Semantic matches for: *").append(query).append("*\n\n");
             for (DrawerDocument.SearchResult result : results) {
                 DrawerDocument d = result.drawer();
-                sb.append("- [").append(String.format("%.2f", result.score())).append("] ")
-                    .append("[").append(d.memoryType()).append("] ")
+                sb.append("- [").append(String.format("%.2f", result.score())).append("] ");
+                if (DrawerDocument.STATE_VERIFIED.equals(d.verificationState())) {
+                    sb.append("✓ ");
+                } else if (DrawerDocument.STATE_STALE.equals(d.verificationState())) {
+                    sb.append("⚠ ");
+                }
+                sb.append("[").append(d.memoryType()).append("] ")
                     .append(d.room()).append(": ")
                     .append(truncate(d.content(), 300))
                     .append('\n');
