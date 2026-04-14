@@ -347,6 +347,13 @@ public final class PsiBridgeService implements Disposable {
             }
             // Append pending nudge (user guidance injected on next tool call)
             result = appendNudgeToResult(result, consumePendingNudge());
+            // Detect error results returned as strings (not exceptions).
+            // Tools like git_branch return "Error: ..." without throwing, so success/errorMessage
+            // must be updated here to match what McpProtocolHandler reports via isError.
+            if (result.startsWith("Error")) {
+                success = false;
+                errorMessage = result;
+            }
             outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
             return result;
         } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
