@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -55,34 +56,33 @@ class CopilotClientTest {
 
     @Test
     void merge_addsPrefixToMcpTools() throws Exception {
-        List<String> result = invokeMerge(
-            List.of("read_file", "search_text"),
-            List.of("bash", "view")
-        );
-        assertEquals(4, result.size());
-        assertEquals("agentbridge/read_file", result.get(0));
-        assertEquals("agentbridge/search_text", result.get(1));
-        assertEquals("bash", result.get(2));
-        assertEquals("view", result.get(3));
+        List<String> result = invokeMerge(List.of("read_file", "search_text"));
+        assertTrue(result.contains("agentbridge/read_file"));
+        assertTrue(result.contains("agentbridge/search_text"));
+        assertEquals(0, result.indexOf("agentbridge/read_file"));
+        assertEquals(1, result.indexOf("agentbridge/search_text"));
     }
 
     @Test
-    void merge_emptyLists() throws Exception {
-        assertTrue(invokeMerge(List.of(), List.of()).isEmpty());
+    void merge_emptyMcpTools_returnsOnlyWebTools() throws Exception {
+        List<String> result = invokeMerge(List.of());
+        assertTrue(result.contains("web_fetch"));
+        assertTrue(result.contains("web_search"));
+        assertFalse(result.stream().anyMatch(t -> t.startsWith("agentbridge/")));
     }
 
     @Test
     void merge_onlyMcpTools() throws Exception {
-        List<String> result = invokeMerge(List.of("git_status"), List.of());
-        assertEquals(1, result.size());
-        assertEquals("agentbridge/git_status", result.get(0));
+        List<String> result = invokeMerge(List.of("git_status"));
+        assertTrue(result.contains("agentbridge/git_status"));
+        assertTrue(result.contains("web_fetch"));
     }
 
     @Test
-    void merge_onlyBuiltinTools() throws Exception {
-        List<String> result = invokeMerge(List.of(), List.of("bash"));
-        assertEquals(1, result.size());
-        assertEquals("bash", result.get(0));
+    void merge_alwaysIncludesWebTools() throws Exception {
+        List<String> result = invokeMerge(List.of("read_file"));
+        assertTrue(result.contains("web_fetch"));
+        assertTrue(result.contains("web_search"));
     }
 
     // ── mcpAlternative (private static) ─────────────────────────────────
@@ -163,10 +163,10 @@ class CopilotClientTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static List<String> invokeMerge(List<String> mcpTools, List<String> builtinTools) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("merge", List.class, List.class);
+    private static List<String> invokeMerge(List<String> mcpTools) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("merge", List.class);
         m.setAccessible(true);
-        return (List<String>) m.invoke(null, mcpTools, builtinTools);
+        return (List<String>) m.invoke(null, mcpTools);
     }
 
     private static String invokeMcpAlternative(String builtInTool) throws Exception {
