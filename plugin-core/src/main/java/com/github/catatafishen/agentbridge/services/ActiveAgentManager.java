@@ -69,6 +69,12 @@ public final class ActiveAgentManager implements Disposable {
      */
     private @Nullable java.util.function.Consumer<String> pendingRemoteUrlListener = null;
 
+    /**
+     * Error listener to attach to the next {@link CopilotClient} when remote mode is active.
+     * Called if the CLI outputs a "remote sessions not enabled" error to stderr; cleared after firing.
+     */
+    private @Nullable java.util.function.Consumer<String> pendingRemoteErrorListener = null;
+
     public ActiveAgentManager(@NotNull Project project) {
         this.project = project;
         LOG.info("ActiveAgentManager initialised for project: " + project.getName());
@@ -107,13 +113,26 @@ public final class ActiveAgentManager implements Disposable {
         this.pendingRemoteUrlListener = listener;
     }
 
+    /**
+     * Registers a listener that will be called with the error message if the CLI reports
+     * that remote sessions are not enabled for this repository. Set to {@code null} to clear.
+     * Cleared after firing (fire-once semantics managed by {@link CopilotClient}).
+     */
+    public synchronized void setRemoteErrorListener(@Nullable java.util.function.Consumer<String> listener) {
+        this.pendingRemoteErrorListener = listener;
+    }
+
     void configureCopilotClientForStart(@NotNull CopilotClient copilotClient) {
         if (remoteModeNextStart) {
             copilotClient.setRemoteMode(true);
         }
-        java.util.function.Consumer<String> listener = pendingRemoteUrlListener;
-        if (listener != null) {
-            copilotClient.setRemoteUrlListener(listener);
+        java.util.function.Consumer<String> urlListener = pendingRemoteUrlListener;
+        if (urlListener != null) {
+            copilotClient.setRemoteUrlListener(urlListener);
+        }
+        java.util.function.Consumer<String> errorListener = pendingRemoteErrorListener;
+        if (errorListener != null) {
+            copilotClient.setRemoteErrorListener(errorListener);
         }
     }
 

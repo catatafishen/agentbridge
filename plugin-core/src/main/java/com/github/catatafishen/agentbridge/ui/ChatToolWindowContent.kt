@@ -261,8 +261,15 @@ class ChatToolWindowContent(
                     statusBanner?.showRemoteSessionUrl(url)
                 }
             }
+            agentManager.setRemoteErrorListener { message ->
+                agentManager.setRemoteErrorListener(null)
+                ApplicationManager.getApplication().invokeLater {
+                    statusBanner?.showError(message)
+                }
+            }
         } else {
             agentManager.setRemoteUrlListener(null)
+            agentManager.setRemoteErrorListener(null)
         }
 
         // Stay on connect panel while spinner shows "Connecting…"

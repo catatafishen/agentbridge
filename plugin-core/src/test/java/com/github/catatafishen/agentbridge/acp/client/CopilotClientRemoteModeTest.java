@@ -319,4 +319,84 @@ class CopilotClientRemoteModeTest {
         stderrField.setAccessible(true);
         return (Consumer<String>) stderrField.get(transport);
     }
+
+    // ── extractRemoteNotEnabledError ────────────────────────────────────
+
+    @Test
+    void extractRemoteNotEnabledError_plainLine_returnsMessage() {
+        String line = "Remote sessions are not enabled for this repository. Contact your organization administrator to enable remote sessions.";
+        assertNotNull(CopilotClient.extractRemoteNotEnabledError(line));
+    }
+
+    @Test
+    void extractRemoteNotEnabledError_withBangPrefix_returnsStrippedMessage() {
+        String line = "! Remote sessions are not enabled for this repository. Contact your organization administrator to enable remote sessions.";
+        String result = CopilotClient.extractRemoteNotEnabledError(line);
+        assertNotNull(result);
+        assertFalse(result.startsWith("!"), "Leading '!' should be stripped");
+    }
+
+    @Test
+    void extractRemoteNotEnabledError_withAnsiCodes_returnsMessage() {
+        String line = "\u001B[31m! Remote sessions are not enabled for this repository.\u001B[0m";
+        assertNotNull(CopilotClient.extractRemoteNotEnabledError(line));
+    }
+
+    @Test
+    void extractRemoteNotEnabledError_unrelatedLine_returnsNull() {
+        assertNull(CopilotClient.extractRemoteNotEnabledError("Initialising agent..."));
+        assertNull(CopilotClient.extractRemoteNotEnabledError("https://github.com/copilot/remote/abc"));
+        assertNull(CopilotClient.extractRemoteNotEnabledError(""));
+    }
+
+    // ── stderr handler fires error listener ────────────────────────────────
+
+    @Test
+    void registerHandlers_stderrHandler_firesErrorListenerOnNotEnabled() throws Exception {
+        CopilotClient client = allocateClient();
+        client.setRemoteMode(true);
+        AtomicReference<String> received = new AtomicReference<>();
+        client.setRemoteErrorListener(received::set);
+
+        invokeRegisterHandlers(client);
+        Consumer<String> handler = getStderrHandler(client);
+        assertNotNull(handler);
+
+        handler.accept("! Remote sessions are not enabled for this repository. Contact your organization administrator to enable remote sessions.");
+        assertNotNull(received.get());
+        assertFalse(received.get().startsWith("!"), "Leading decoration should be stripped");
+    }
+
+    @Test
+    void registerHandlers_stderrHandler_errorListenerFiresOnce() throws Exception {
+        CopilotClient client = allocateClient();
+        client.setRemoteMode(true);
+        AtomicInteger count = new AtomicInteger();
+        client.setRemoteErrorListener(msg -> count.incrementAndGet());
+
+        invokeRegisterHandlers(client);
+        Consumer<String> handler = getStderrHandler(client);
+
+        handler.accept("! Remote sessions are not enabled for this repository.");
+        handler.accept("! Remote sessions are not enabled for this repository.");
+        assertEquals(1, count.get(), "Error listener must fire exactly once");
+    }
+
+    @Test
+    void registerHandlers_stderrHandler_urlDoesNotFireErrorListener() throws Exception {
+        CopilotClient client = allocateClient();
+        client.setRemoteMode(true);
+        AtomicReference<String> errorReceived = new AtomicReference<>();
+        AtomicReference<String> urlReceived = new AtomicReference<>();
+        client.setRemoteErrorListener(errorReceived::set);
+        client.setRemoteUrlListener(urlReceived::set);
+
+        invokeRegisterHandlers(client);
+        Consumer<String> handler = getStderrHandler(client);
+
+        handler.accept("https://github.com/github/copilot/remote/abc");
+        assertNotNull(urlReceived.get());
+        assertNull(errorReceived.get(), "URL line must not fire error listener");
+    }
 }
+

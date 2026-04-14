@@ -128,11 +128,24 @@ public final class CopilotClient extends AcpClient {
     private @Nullable Consumer<String> remoteUrlListener = null;
 
     /**
+     * Called with the error message when the CLI reports that remote sessions are not
+     * enabled for this repository. Only fires when {@link #remoteMode} is true.
+     */
+    private @Nullable Consumer<String> remoteErrorListener = null;
+
+    /**
      * Matches a GitHub remote session URL in a line of CLI stderr output.
      * The CLI prints the URL after stripping ANSI escape codes.
      */
     private static final Pattern REMOTE_URL_PATTERN =
         Pattern.compile("https://github\\.com/[^\\s\"']+");
+
+    /**
+     * Matches the "remote sessions not enabled" error line emitted by the CLI to stderr.
+     * Matched case-insensitively after ANSI stripping.
+     */
+    private static final Pattern REMOTE_NOT_ENABLED_PATTERN =
+        Pattern.compile("(?i)remote sessions are not enabled");
 
     // ─── Lifecycle ───────────────────────────────────
 
@@ -155,6 +168,15 @@ public final class CopilotClient extends AcpClient {
      */
     public void setRemoteUrlListener(@Nullable Consumer<String> listener) {
         this.remoteUrlListener = listener;
+    }
+
+    /**
+     * Registers a one-shot listener that will be called with the error message when the CLI
+     * reports that remote sessions are not enabled. Only fires when {@link #remoteMode} is
+     * {@code true}.
+     */
+    public void setRemoteErrorListener(@Nullable Consumer<String> listener) {
+        this.remoteErrorListener = listener;
     }
 
     @Override
@@ -260,9 +282,10 @@ public final class CopilotClient extends AcpClient {
     }
 
     /**
-     * Overrides the default stderr handler to scan for remote session URLs when
-     * {@link #remoteMode} is enabled. Strips ANSI escape codes before matching.
-     * Fires {@link #remoteUrlListener} (at most once) when a GitHub URL is found.
+     * Overrides the default stderr handler to scan for remote session URLs and "not enabled"
+     * errors when {@link #remoteMode} is enabled. Strips ANSI escape codes before matching.
+     * Fires {@link #remoteUrlListener} or {@link #remoteErrorListener} (at most once each)
+     * when a matching line is found.
      */
     @Override
     protected void registerHandlers() {
@@ -277,6 +300,15 @@ public final class CopilotClient extends AcpClient {
                     remoteUrlListener = null; // fire-once
                     cb.accept(url);
                 }
+                return;
+            }
+            String error = extractRemoteNotEnabledError(line);
+            if (error != null) {
+                Consumer<String> cb = remoteErrorListener;
+                if (cb != null) {
+                    remoteErrorListener = null; // fire-once
+                    cb.accept(error);
+                }
             }
         });
     }
@@ -289,6 +321,20 @@ public final class CopilotClient extends AcpClient {
         String stripped = line.replaceAll("\u001B\\[[;\\d]*[A-Za-z]", "");
         Matcher m = REMOTE_URL_PATTERN.matcher(stripped);
         return m.find() ? m.group() : null;
+    }
+
+    /**
+     * Strips ANSI escape sequences from {@code line} and returns the error message if the line
+     * indicates that remote sessions are not enabled, or {@code null} otherwise.
+     */
+    static @Nullable String extractRemoteNotEnabledError(@org.jetbrains.annotations.NotNull String line) {
+        String stripped = line.replaceAll("\u001B\\[[;\\d]*[A-Za-z]", "").trim();
+        // Strip leading CLI decoration characters (e.g. "! ", "► ")
+        String cleaned = stripped.replaceAll("^[!►●\\s]+", "").trim();
+        if (REMOTE_NOT_ENABLED_PATTERN.matcher(cleaned).find()) {
+            return cleaned;
+        }
+        return null;
     }
 
     @Override

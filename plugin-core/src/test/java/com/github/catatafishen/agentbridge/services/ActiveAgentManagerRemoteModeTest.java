@@ -122,4 +122,47 @@ class ActiveAgentManagerRemoteModeTest {
         Mockito.verify(copilotClient).setRemoteMode(true);
         Mockito.verify(copilotClient, Mockito.never()).setRemoteUrlListener(Mockito.any());
     }
+
+    @Test
+    void setRemoteErrorListener_storesListener() throws Exception {
+        Consumer<String> listener = msg -> {
+        };
+        manager.setRemoteErrorListener(listener);
+        var field = ActiveAgentManager.class.getDeclaredField("pendingRemoteErrorListener");
+        field.setAccessible(true);
+        assertSame(listener, field.get(manager));
+    }
+
+    @Test
+    void setRemoteErrorListener_null_clearsListener() throws Exception {
+        manager.setRemoteErrorListener(msg -> {
+        });
+        manager.setRemoteErrorListener(null);
+        var field = ActiveAgentManager.class.getDeclaredField("pendingRemoteErrorListener");
+        field.setAccessible(true);
+        assertNull(field.get(manager));
+    }
+
+    @Test
+    void configureCopilotClientForStart_remoteModeEnabled_setsErrorListener() {
+        CopilotClient copilotClient = Mockito.mock(CopilotClient.class);
+        Consumer<String> listener = msg -> {
+        };
+        manager.setRemoteMode(true);
+        manager.setRemoteErrorListener(listener);
+
+        manager.configureCopilotClientForStart(copilotClient);
+
+        Mockito.verify(copilotClient).setRemoteErrorListener(listener);
+    }
+
+    @Test
+    void configureCopilotClientForStart_noErrorListener_doesNotCallSetRemoteErrorListener() {
+        CopilotClient copilotClient = Mockito.mock(CopilotClient.class);
+        manager.setRemoteMode(true);
+
+        manager.configureCopilotClientForStart(copilotClient);
+
+        Mockito.verify(copilotClient, Mockito.never()).setRemoteErrorListener(Mockito.any());
+    }
 }
