@@ -54,8 +54,10 @@ chat turn → ExchangeChunker → QualityFilter → MemoryClassifier
                                      ▼
               **SymbolValidator** (PSI)  ◄── triggered by:
                       │                      - file changes (BulkFileListener)
-                      │                      - explicit memory_validate / memory_refresh
+                      │                      - retrieval (validate-on-read for unverified drawers)
+                      │                      - post-mining (background validation after store)
                       │                      - refactors (RefactoringEventListener)
+                      │                      - explicit memory_refresh (MCP tool, P2)
                       ▼
               **MemoryValidator** → update verificationState
 ```
@@ -69,8 +71,7 @@ chat turn → ExchangeChunker → QualityFilter → MemoryClassifier
 | `MemoryValidator` | `memory/validation/MemoryValidator.java` | Orchestrate validation, update states |
 | `MemoryStalenessTrigger` | `memory/validation/MemoryStalenessTrigger.java` | BulkFileListener → mark affected memories stale |
 | `MemoryRefactorListener` | `memory/validation/MemoryRefactorListener.java` | RefactoringEventListener → update KG triples |
-| `MemoryValidateTool` | `psi/tools/memory/MemoryValidateTool.java` | MCP tool: validate memories against PSI |
-| `MemoryRefreshTool` | `psi/tools/memory/MemoryRefreshTool.java` | MCP tool: re-scan and update memories for a topic |
+| `MemoryRefreshTool` | `psi/tools/memory/MemoryRefreshTool.java` | MCP tool (P2): force re-scan of a topic |
 
 ---
 
@@ -246,26 +247,43 @@ Without it, every rename would mark memories as stale.
 
 ---
 
-## New MCP Tools
+## Validation Triggers
 
-### `memory_validate`
+Validation is **internal to the plugin** — the agent never has to ask whether a memory
+is valid. Memories arrive pre-validated in search results.
 
-Validate specific memories or all memories for a topic against the live codebase.
+### Trigger 1: Post-Mining (background)
 
-```json
-{
-  "drawer_id": "optional — validate a specific drawer",
-  "room": "optional — validate all drawers in a room",
-  "wing": "optional — default: current project wing"
-}
-```
+After `TurnMiner` stores a drawer and `EvidenceExtractor` attaches refs, queue a
+background `MemoryValidator.validate()` call. By the time the memory is retrieved in
+a future session, it's already checked. Non-blocking — runs on
+`AppExecutorUtil.getAppExecutorService()`.
 
-**Returns**: validation summary with per-drawer state transitions.
+### Trigger 2: Validate-on-Read (opportunistic)
 
-### `memory_refresh`
+When `MemoryStore.search()` returns drawers with `verificationState = "unverified"`
+that have non-empty `evidence`, validate them inline before returning results.
+This is cheap (<10ms per drawer) and ensures the agent always sees current states.
 
-Re-scan a topic: re-extract evidence from existing drawers, re-validate, update states.
-More thorough than `memory_validate` — also discovers new evidence refs in existing text.
+Drawers with no evidence stay `unverified` forever — that's fine, they just don't
+get the verified boost in ranking.
+
+### Trigger 3: File Change (reactive)
+
+`MemoryStalenessTrigger` (BulkFileListener) detects file modifications and downgrades
+affected `verified` memories to `stale`. See [Staleness Detection](#staleness-detection).
+
+### Trigger 4: Refactor (proactive)
+
+`MemoryRefactorListener` (RefactoringEventListener) updates KG triple subjects/objects
+and evidence FQNs when symbols are renamed or moved. This **preserves** the `verified`
+state — the only trigger that can do so through a rename.
+
+### MCP Tool: `memory_refresh` (P2, optional)
+
+One MCP tool is worth keeping for a specific scenario: the agent just made sweeping
+changes (large refactor, dependency swap, architecture change) and wants to proactively
+re-scan a topic rather than wait for individual file-change triggers to catch up.
 
 ```json
 {
@@ -275,6 +293,17 @@ More thorough than `memory_validate` — also discovers new evidence refs in exi
 ```
 
 **Returns**: refreshed drawer count, new evidence found, state transitions.
+
+This is a "flush the cache" operation, not a normal workflow step. Most agents will
+never call it — the automatic triggers handle the common cases.
+
+### Dropped: `memory_validate` MCP Tool
+
+Originally proposed as an agent-callable validation tool. Dropped because:
+- If the agent has to call `memory_validate` before trusting a memory, the system
+  failed at its job
+- Validate-on-read handles the same case transparently
+- The agent should see `verified`/`stale` in results, not perform validation itself
 
 ---
 
@@ -331,15 +360,15 @@ Each phase is independently mergeable and useful. One branch per phase.
 
 ### Phase 2: Symbol Validation
 
-**Goal**: Validate evidence against live codebase via PSI.
+**Goal**: Validate evidence against live codebase via PSI. Validation is internal —
+triggered by post-mining and validate-on-read, not agent-callable.
 
 | Action | File | Details |
 |---|---|---|
 | Create | `SymbolValidator.java` | PSI ReadAction FQN/file resolution |
 | Create | `MemoryValidator.java` | Orchestrate validation, update state |
-| Create | `MemoryValidateTool.java` | MCP tool for explicit validation |
-| Create | `MemoryRefreshTool.java` | MCP tool for topic refresh |
-| Register | `MemoryToolFactory.java` | Add new tools |
+| Wire | `TurnMiner.java` | Queue background validation after evidence extraction |
+| Wire | `MemoryStore.java` | Validate-on-read for unverified drawers with evidence |
 | Add | `MemoryStore.java` | `updateVerificationState()` method |
 | Add | `KnowledgeGraph.java` | `updateEvidence()` method |
 | Test | `SymbolValidatorTest.java` | Mock PSI, test resolution |

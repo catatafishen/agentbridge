@@ -532,8 +532,17 @@ by code evidence":
 
 | Tool | Description |
 |---|---|
-| `memory_validate` | Validate specific memories or a topic — checks evidence against PSI |
-| `memory_refresh` | Re-scan a topic's memories, update states, extract fresh evidence |
+| `memory_refresh` | P2 — force re-scan of a topic after sweeping changes (most validation is automatic) |
+
+### Validation Triggers
+
+Validation is **internal to the plugin** — agents never call a validate tool. Four
+triggers keep memories current automatically:
+
+1. **Post-mining** — background validation after evidence extraction
+2. **Validate-on-read** — unverified drawers with evidence are checked at retrieval
+3. **File changes** — `BulkFileListener` downgrades affected memories to `stale`
+4. **Refactors** — `RefactoringEventListener` updates KG triples on rename/move
 
 ### Design Decisions
 
