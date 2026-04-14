@@ -15,6 +15,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -258,6 +259,215 @@ class MemoryStoreTest {
             .content("Content for " + id + " unique-" + System.nanoTime())
             .build();
         store.addDrawer(doc, embedding);
+    }
+
+    // ── findByEvidence ────────────────────────────────────────────────────
+
+    @Test
+    void findByEvidence_returnsDrawerWhoseEvidenceContainsRef() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("ev-1")
+            .wing("proj")
+            .room("codebase")
+            .content("Uses the auth service with unique token " + System.nanoTime())
+            .evidence("[\"com.example.AuthService\",\"AuthService.java:42\"]")
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        List<DrawerDocument> found = store.findByEvidence("com.example.AuthService");
+        assertEquals(1, found.size());
+        assertEquals("ev-1", found.get(0).id());
+    }
+
+    @Test
+    void findByEvidence_partialSubstringMatch_returnsDrawer() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("ev-2")
+            .wing("proj")
+            .room("codebase")
+            .content("Some content " + System.nanoTime())
+            .evidence("[\"src/main/java/UserService.java\"]")
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        // Partial substring "UserService.java" should match
+        List<DrawerDocument> found = store.findByEvidence("UserService.java");
+        assertEquals(1, found.size());
+        assertEquals("ev-2", found.get(0).id());
+    }
+
+    @Test
+    void findByEvidence_noMatchingDrawers_returnsEmpty() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("ev-3")
+            .wing("proj")
+            .room("codebase")
+            .content("Some content " + System.nanoTime())
+            .evidence("[\"com.example.OtherService\"]")
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        List<DrawerDocument> found = store.findByEvidence("com.example.MissingClass");
+        assertTrue(found.isEmpty());
+    }
+
+    @Test
+    void findByEvidence_emptyStore_returnsEmpty() throws IOException {
+        List<DrawerDocument> found = store.findByEvidence("anything");
+        assertTrue(found.isEmpty());
+    }
+
+    @Test
+    void findByEvidence_evidenceStoredAndRetrieved() throws IOException {
+        String evidenceJson = "[\"com.example.Foo\",\"Bar.java:10\"]";
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("ev-4")
+            .wing("proj")
+            .room("codebase")
+            .content("Evidence retrieval test " + System.nanoTime())
+            .evidence(evidenceJson)
+            .verificationState(DrawerDocument.STATE_VERIFIED)
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        List<DrawerDocument> found = store.findByEvidence("com.example.Foo");
+        assertEquals(1, found.size());
+        assertEquals(evidenceJson, found.get(0).evidence());
+        assertEquals(DrawerDocument.STATE_VERIFIED, found.get(0).verificationState());
+    }
+
+    // ── updateEvidenceRef ─────────────────────────────────────────────────
+
+    @Test
+    void updateEvidenceRef_updatesMatchingDrawers() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("upd-1")
+            .wing("proj")
+            .room("codebase")
+            .content("Refactor test " + System.nanoTime())
+            .evidence("[\"com.example.OldService\"]")
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        int updated = store.updateEvidenceRef("com.example.OldService", "com.example.NewService");
+        assertEquals(1, updated);
+
+        // Verify the evidence was updated
+        List<DrawerDocument> found = store.findByEvidence("com.example.NewService");
+        assertEquals(1, found.size());
+        assertTrue(found.get(0).evidence().contains("com.example.NewService"));
+        assertFalse(found.get(0).evidence().contains("com.example.OldService"));
+    }
+
+    @Test
+    void updateEvidenceRef_noMatch_returnsZero() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("upd-2")
+            .wing("proj")
+            .room("codebase")
+            .content("No match test " + System.nanoTime())
+            .evidence("[\"com.example.SomeService\"]")
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        int updated = store.updateEvidenceRef("com.example.MissingClass", "com.example.NewClass");
+        assertEquals(0, updated);
+    }
+
+    @Test
+    void updateEvidenceRef_marksUpdatedDrawerAsStale() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("upd-3")
+            .wing("proj")
+            .room("codebase")
+            .content("Stale test " + System.nanoTime())
+            .evidence("[\"com.example.Original\"]")
+            .verificationState(DrawerDocument.STATE_VERIFIED)
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        store.updateEvidenceRef("com.example.Original", "com.example.Renamed");
+
+        List<DrawerDocument> found = store.findByEvidence("com.example.Renamed");
+        assertEquals(1, found.size());
+        assertEquals(DrawerDocument.STATE_STALE, found.get(0).verificationState());
+    }
+
+    @Test
+    void updateEvidenceRef_emptyStore_returnsZero() throws IOException {
+        int updated = store.updateEvidenceRef("com.example.Foo", "com.example.Bar");
+        assertEquals(0, updated);
+    }
+
+    // ── updateVerificationState ───────────────────────────────────────────
+
+    @Test
+    void updateVerificationState_changesStateToVerified() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("vs-1")
+            .wing("proj")
+            .room("codebase")
+            .content("Verification state test " + System.nanoTime())
+            .evidence("[\"com.example.Foo\"]")
+            .verificationState(DrawerDocument.STATE_UNVERIFIED)
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        store.updateVerificationState("vs-1", DrawerDocument.STATE_VERIFIED);
+
+        // Retrieve and verify
+        MemoryQuery q = MemoryQuery.filter().wing("proj").room("codebase").build();
+        List<DrawerDocument.SearchResult> results = store.search(q, null);
+        DrawerDocument retrieved = results.stream()
+            .filter(r -> "vs-1".equals(r.drawer().id()))
+            .findFirst()
+            .orElseThrow()
+            .drawer();
+        assertEquals(DrawerDocument.STATE_VERIFIED, retrieved.verificationState());
+    }
+
+    @Test
+    void updateVerificationState_changesStateToStale() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("vs-2")
+            .wing("proj")
+            .room("tech")
+            .content("Stale state test " + System.nanoTime())
+            .evidence("[\"com.example.Bar\"]")
+            .verificationState(DrawerDocument.STATE_VERIFIED)
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        store.updateVerificationState("vs-2", DrawerDocument.STATE_STALE);
+
+        MemoryQuery q = MemoryQuery.filter().wing("proj").room("tech").build();
+        List<DrawerDocument.SearchResult> results = store.search(q, null);
+        DrawerDocument retrieved = results.stream()
+            .filter(r -> "vs-2".equals(r.drawer().id()))
+            .findFirst()
+            .orElseThrow()
+            .drawer();
+        assertEquals(DrawerDocument.STATE_STALE, retrieved.verificationState());
+    }
+
+    @Test
+    void updateVerificationState_setsLastVerifiedAt() throws IOException {
+        DrawerDocument doc = DrawerDocument.builder()
+            .id("vs-3")
+            .wing("proj")
+            .room("general")
+            .content("LastVerifiedAt test " + System.nanoTime())
+            .evidence("[\"com.example.Baz\"]")
+            .build();
+        store.addDrawer(doc, randomEmbedding());
+
+        assertNull(doc.lastVerifiedAt()); // not set before update
+
+        store.updateVerificationState("vs-3", DrawerDocument.STATE_VERIFIED);
+
+        List<DrawerDocument> found = store.findByEvidence("com.example.Baz");
+        assertEquals(1, found.size());
+        assertNotNull(found.get(0).lastVerifiedAt());
     }
 
     /**
