@@ -10,7 +10,7 @@ import org.jetbrains.annotations.Nullable;
 public final class GitBranchTool extends GitTool {
 
     private static final String CMD_BRANCH = "branch";
-    private static final String CMD_SWITCH = "switch";
+    private static final String CMD_CHECKOUT = "checkout";
     private static final String PARAM_ACTION = "action";
     private static final String PARAM_NAME = "name";
     private static final String PARAM_BASE = "base";
@@ -75,19 +75,20 @@ public final class GitBranchTool extends GitTool {
                 String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
                     ? args.get(PARAM_BASE).getAsString()
                     : null;
-                // Use `git switch -c` to create and switch atomically
+                // Use `git checkout -b` — `git switch -c` is not supported by Git4Idea's
+                // command mapping (it maps "switch" → CHECKOUT, turning -c into an invalid flag)
                 String result = base != null
-                    ? runGit(CMD_SWITCH, "-c", name, base)
-                    : runGit(CMD_SWITCH, "-c", name);
+                    ? runGit(CMD_CHECKOUT, "-b", name, base)
+                    : runGit(CMD_CHECKOUT, "-b", name);
                 if (result.startsWith("Error")) yield result;
                 yield "Created and switched to branch '" + name + "'\n" + getBranchContext();
             }
-            case CMD_SWITCH, "checkout" -> {
+            case "switch", CMD_CHECKOUT -> {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'switch'";
-                String result = runGit(CMD_SWITCH, name);
+                String result = runGit(CMD_CHECKOUT, name);
                 if (result.startsWith("Error")) yield result;
-                yield result + getBranchContext();
+                yield "Switched to branch '" + name + "'\n" + getBranchContext();
             }
             case "delete" -> {
                 String name = requireName(args);

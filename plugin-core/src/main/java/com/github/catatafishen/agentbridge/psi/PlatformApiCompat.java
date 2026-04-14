@@ -637,7 +637,6 @@ public final class PlatformApiCompat {
         java.util.Map.entry("show", git4idea.commands.GitCommand.SHOW),
         java.util.Map.entry("stash", git4idea.commands.GitCommand.STASH),
         java.util.Map.entry("status", git4idea.commands.GitCommand.STATUS),
-        java.util.Map.entry("switch", git4idea.commands.GitCommand.CHECKOUT),
         java.util.Map.entry("tag", git4idea.commands.GitCommand.TAG)
     );
 
