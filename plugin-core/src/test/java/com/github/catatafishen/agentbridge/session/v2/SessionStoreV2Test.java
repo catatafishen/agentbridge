@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -1627,6 +1628,59 @@ class SessionStoreV2Test {
             assertEquals(1, branchEntries.size());
             assertInstanceOf(EntryData.Prompt.class, branchEntries.get(0));
             assertEquals(promptText, ((EntryData.Prompt) branchEntries.get(0)).getText());
+        }
+
+        // ── appendSessionsIndex agent-preservation ────────────────────────────
+
+        @Test
+        @DisplayName("agent is not overwritten on subsequent appendEntries calls")
+        void appendSessionsIndex_agentPreservedOnSubsequentAppend() {
+            SessionStoreV2 store = newStore();
+            store.setCurrentAgent("agent-one");
+
+            store.appendEntries(tempDir.toString(),
+                List.of(new EntryData.Prompt("First prompt", "2024-01-01T00:00:00Z", null, "p1", "p1")));
+            String sessionId = store.getCurrentSessionId(tempDir.toString());
+
+            // Switch to a different agent and append more entries.
+            store.setCurrentAgent("agent-two");
+            store.appendEntries(tempDir.toString(),
+                List.of(new EntryData.Prompt("Second prompt", "2024-01-01T00:01:00Z", null, "p2", "p2")));
+
+            Optional<SessionStoreV2.SessionRecord> rec = store.listSessions(tempDir.toString())
+                .stream().filter(r -> r.id().equals(sessionId)).findFirst();
+            assertTrue(rec.isPresent(), "session should be in the index");
+            assertEquals("agent-one", rec.get().agent(),
+                "original agent must not be overwritten by subsequent appends");
+        }
+
+        @Test
+        @DisplayName("agent is set from index record when field was previously absent")
+        void appendSessionsIndex_agentSetWhenMissingFromExistingRecord() throws IOException {
+            SessionStoreV2 store = newStore();
+            store.setCurrentAgent("original-agent");
+
+            // Bootstrap the sessions directory and current-session-id file.
+            store.appendEntries(tempDir.toString(),
+                List.of(new EntryData.Prompt("Seed", "2024-01-01T00:00:00Z", null, "p1", "p1")));
+            String sessionId = store.getCurrentSessionId(tempDir.toString());
+
+            // Rewrite the sessions index without the "agent" field to simulate an old record.
+            Path indexFile = sessionsDir().resolve("sessions-index.json");
+            String indexJson = Files.readString(indexFile);
+            String withoutAgent = indexJson.replaceAll(",?\"agent\":\"[^\"]*\"", "");
+            Files.writeString(indexFile, withoutAgent, StandardCharsets.UTF_8);
+
+            // Appending entries should set the agent on the now-agent-less record.
+            store.setCurrentAgent("backfill-agent");
+            store.appendEntries(tempDir.toString(),
+                List.of(new EntryData.Prompt("Follow-up", "2024-01-01T00:02:00Z", null, "p3", "p3")));
+
+            Optional<SessionStoreV2.SessionRecord> rec = store.listSessions(tempDir.toString())
+                .stream().filter(r -> r.id().equals(sessionId)).findFirst();
+            assertTrue(rec.isPresent(), "session should still be in the index");
+            assertEquals("backfill-agent", rec.get().agent(),
+                "agent should be set when the existing record had no agent field");
         }
     }
 }
