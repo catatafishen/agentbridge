@@ -455,7 +455,12 @@ public final class SessionStoreV2 implements Disposable {
         for (JsonObject rec : records) {
             if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
                 rec.addProperty(KEY_UPDATED_AT, now);
-                rec.addProperty(KEY_AGENT, agentName);
+                // Never overwrite agent — keep the original agent from session creation.
+                // Overwriting here causes the statistics chart to attribute all turns in
+                // this session to the last-used agent instead of the original one.
+                if (!rec.has(KEY_AGENT)) {
+                    rec.addProperty(KEY_AGENT, agentName);
+                }
                 if (additionalTurns > 0) {
                     int current = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
                     rec.addProperty(KEY_TURN_COUNT, current + additionalTurns);

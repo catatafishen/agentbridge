@@ -1533,6 +1533,25 @@ class SessionStoreV2Test {
                 "session name should remain from the very first prompt");
         }
 
+        @Test
+        @DisplayName("appendEntries does not overwrite agent after switching to a different agent")
+        void appendEntries_preservesOriginalAgent() {
+            SessionStoreV2 store = newStore(); // currentAgent = "test-agent"
+
+            store.appendEntries(tempDir.toString(),
+                List.of(new EntryData.Prompt("Hello", "2024-01-01T00:00:00Z", null, "p1", "p1")));
+
+            // Simulate switching to a different agent mid-session
+            store.setCurrentAgent("different-agent");
+            store.appendEntries(tempDir.toString(),
+                List.of(new EntryData.Text("Reply", "2024-01-01T00:00:01Z", "different-agent", "gpt-4", "t1")));
+
+            List<SessionStoreV2.SessionRecord> sessions = store.listSessions(tempDir.toString());
+            assertEquals(1, sessions.size());
+            assertEquals("test-agent", sessions.get(0).agent(),
+                "session agent should remain from the first append, not be overwritten by the current agent");
+        }
+
         // ── branchCurrentSession ──────────────────────────────────────────────
 
         @Test
