@@ -174,6 +174,8 @@ public final class EmbeddingService implements Disposable, Embedder {
             }
             safetensorsReader = null;
         }
+        tokenizer = null;
+        inference = null;
         initialized = false;
     }
 }
