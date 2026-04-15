@@ -1922,8 +1922,12 @@ class ChatToolWindowContent(
         val entries = chatConsolePanel.getEntries()
         if (entries.isEmpty()) return
 
+        val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
+        tracker.startTurnMining()
+
         val miner = com.github.catatafishen.agentbridge.memory.mining.TurnMiner(project)
         miner.mineTurn(entries, sessionId, agentName)
+            .whenComplete { _, _ -> tracker.stop() }
     }
 
     private fun restoreConversation(onComplete: () -> Unit = {}) {
@@ -2142,9 +2146,12 @@ class ChatToolWindowContent(
         if (settings.isEnabled && settings.isAutoMineOnSessionArchive) {
             val entries = chatConsolePanel.getEntries()
             if (entries.isNotEmpty()) {
+                val tracker = com.github.catatafishen.agentbridge.memory.mining.MiningTracker.getInstance(project)
+                tracker.startTurnMining()
                 val sessionId = conversationStore.getCurrentSessionId(project.basePath)
                 val miner = com.github.catatafishen.agentbridge.memory.mining.TurnMiner(project)
                 miner.mineTurn(entries, sessionId, agentManager.activeProfile.displayName)
+                    .whenComplete { _, _ -> tracker.stop() }
             }
         }
         conversationStore.archive(project.basePath)

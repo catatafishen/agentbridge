@@ -134,6 +134,13 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
       serviceImplementation="com.github.catatafishen.agentbridge.memory.MemorySettings"/>
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.memory.MemoryService"/>
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.memory.mining.MiningTracker"/>
+
+    <!-- Memory mining status bar indicator -->
+    <statusBarWidgetFactory
+      id="AgentBridge.MemoryMining"
+      implementation="com.github.catatafishen.agentbridge.memory.mining.MiningStatusBarWidgetFactory"/>
 
     <!-- Custom external MCP server proxy -->
     <projectService
