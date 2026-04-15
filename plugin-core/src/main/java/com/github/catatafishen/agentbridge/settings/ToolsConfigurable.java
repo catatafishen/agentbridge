@@ -63,11 +63,10 @@ public final class ToolsConfigurable implements Configurable {
         toolsPanel.setLayout(new BoxLayout(toolsPanel, BoxLayout.Y_AXIS));
         toolsPanel.setBorder(JBUI.Borders.empty(8));
 
-        // Tool counter and limit hint
+        // Tool counter — bold via HTML, prominent at the top
         counterLabel = new JBLabel();
-        counterLabel.setFont(JBUI.Fonts.label());
         counterLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        counterLabel.setBorder(JBUI.Borders.empty(0, 0, 6, 0));
+        counterLabel.setBorder(JBUI.Borders.empty(0, 0, 4, 0));
         toolsPanel.add(counterLabel);
 
         JBLabel limitHint = new JBLabel(
@@ -77,9 +76,11 @@ public final class ToolsConfigurable implements Configurable {
         limitHint.setForeground(UIUtil.getContextHelpForeground());
         limitHint.setBorder(JBUI.Borders.empty(0, 0, 6, 0));
         limitHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        limitHint.setPreferredSize(new Dimension(1, limitHint.getPreferredSize().height));
+        limitHint.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         toolsPanel.add(limitHint);
 
-        // Global enable/disable row at top
+        // Global enable/disable row — max height pinned to prevent vertical stretch
         JButton enableAllBtn = new JButton("Enable All");
         JButton disableAllBtn = new JButton("Disable All");
         enableAllBtn.addActionListener(e -> {
@@ -99,6 +100,7 @@ public final class ToolsConfigurable implements Configurable {
         topRow.add(disableAllBtn);
         topRow.add(Box.createHorizontalGlue());
         topRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        topRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, topRow.getPreferredSize().height));
         toolsPanel.add(topRow);
 
         // Tool list grouped by category
@@ -180,8 +182,9 @@ public final class ToolsConfigurable implements Configurable {
         int enabled = countEnabled();
         int max = McpToolFilter.MAX_TOOLS;
         boolean overLimit = enabled > max;
-        counterLabel.setText(enabled + " / " + max + " tools enabled"
-            + (overLimit ? "  ⚠ over limit!" : ""));
+        String text = "<html><b>" + enabled + " / " + max + " tools enabled</b>"
+            + (overLimit ? "  ⚠ over limit!" : "") + "</html>";
+        counterLabel.setText(text);
         counterLabel.setForeground(overLimit
             ? UIUtil.getErrorForeground()
             : UIUtil.getLabelForeground());
