@@ -45,10 +45,14 @@ public final class SearchTextTool extends NavigationTool {
                                  int startOffset, int endOffset) {
     }
 
+    /** Hard cap on total output bytes — prevents 50+ MB responses from broad searches. */
+    private static final int MAX_OUTPUT_BYTES = 256 * 1024; // 256 KB
+
     private record SearchParams(Pattern pattern, String basePath, String filePattern,
                                 Pattern compiledFileGlob,
                                 List<String> results, @Nullable List<MatchPosition> positions,
-                                AtomicInteger skippedLarge, int maxResults, int contextLines) {
+                                AtomicInteger skippedLarge, int maxResults, int contextLines,
+                                AtomicInteger totalOutputBytes) {
     }
 
     public SearchTextTool(Project project) {
@@ -132,8 +136,9 @@ public final class SearchTextTool extends NavigationTool {
         List<String> results = new ArrayList<>();
         List<MatchPosition> positions = followAgent ? new ArrayList<>() : null;
         AtomicInteger skippedLarge = new AtomicInteger(0);
+        AtomicInteger totalOutputBytes = new AtomicInteger(0);
         var compiledFileGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
-        var params = new SearchParams(pattern, basePath, filePattern, compiledFileGlob, results, positions, skippedLarge, maxResults, contextLines);
+        var params = new SearchParams(pattern, basePath, filePattern, compiledFileGlob, results, positions, skippedLarge, maxResults, contextLines, totalOutputBytes);
         ProjectFileIndex.getInstance(project).iterateContent(vf -> processFile(vf, params));
 
         if (positions != null && !positions.isEmpty()) {
@@ -150,6 +155,9 @@ public final class SearchTextTool extends NavigationTool {
         }
         if (skippedLarge.get() > 0) {
             sb.append("\n(").append(skippedLarge.get()).append(" file(s) >1 MB skipped)");
+        }
+        if (totalOutputBytes.get() >= MAX_OUTPUT_BYTES) {
+            sb.append("\n(output truncated at 256 KB — use a more specific query or file_pattern to narrow results)");
         }
         return sb.toString();
     }
@@ -187,27 +195,31 @@ public final class SearchTextTool extends NavigationTool {
         // does not need to call PsiManager on the EDT.
         com.intellij.psi.PsiFile psiFile = p.positions() != null
             ? PsiManager.getInstance(project).findFile(vf) : null;
-        searchFileForPattern(vf, psiFile, p.pattern(), relPath, p.results(), p.positions(), p.maxResults(), p.contextLines());
-        return p.results().size() < p.maxResults();
+        searchFileForPattern(vf, psiFile, p.pattern(), relPath, p.results(), p.positions(), p.maxResults(), p.contextLines(), p.totalOutputBytes());
+        return p.results().size() < p.maxResults() && p.totalOutputBytes().get() < MAX_OUTPUT_BYTES;
     }
 
     private static void searchFileForPattern(VirtualFile vf, @Nullable com.intellij.psi.PsiFile psiFile,
                                              Pattern pattern,
                                              String relPath, List<String> results,
                                              @Nullable List<MatchPosition> positions,
-                                             int maxResults, int contextLines) {
+                                             int maxResults, int contextLines,
+                                             AtomicInteger totalOutputBytes) {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return;
         String text = doc.getText();
         Matcher matcher = pattern.matcher(text);
-        while (matcher.find() && results.size() < maxResults) {
+        while (matcher.find() && results.size() < maxResults && totalOutputBytes.get() < MAX_OUTPUT_BYTES) {
             int matchLine = doc.getLineNumber(matcher.start()) + 1;
             String lineText = ToolUtils.getLineText(doc, matchLine - 1);
+            String entry;
             if (contextLines <= 0) {
-                results.add(String.format(FORMAT_LINE_REF, relPath, matchLine, lineText));
+                entry = String.format(FORMAT_LINE_REF, relPath, matchLine, lineText);
             } else {
-                results.add(buildMatchWithContext(doc, relPath, matchLine, lineText, contextLines));
+                entry = buildMatchWithContext(doc, relPath, matchLine, lineText, contextLines);
             }
+            results.add(entry);
+            totalOutputBytes.addAndGet(entry.length());
             if (positions != null) {
                 positions.add(new MatchPosition(vf, psiFile, matcher.start(), matcher.end()));
             }
