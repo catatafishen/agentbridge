@@ -28,6 +28,11 @@ public class MiningTracker implements Disposable {
         this.project = project;
     }
 
+    /** Package-private no-arg constructor for test doubles that override {@link #fireChanged}. */
+    MiningTracker() {
+        this.project = null;
+    }
+
     public static MiningTracker getInstance(@NotNull Project project) {
         return PlatformApiCompat.getService(project, MiningTracker.class);
     }

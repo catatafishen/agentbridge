@@ -106,13 +106,8 @@ class MiningTrackerTest {
      * Lightweight test double that bypasses MessageBus and project dependency.
      * Overrides {@link MiningTracker#fireChanged} to use a simple listener list.
      */
-    @SuppressWarnings("NullableProblems") // null project is acceptable in this test double
     private static final class TestTracker extends MiningTracker {
         private final List<MiningTracker.Listener> listeners = new ArrayList<>();
-
-        TestTracker() {
-            super(null); // project not used by state logic
-        }
 
         void addTestListener(MiningTracker.Listener listener) {
             listeners.add(listener);
