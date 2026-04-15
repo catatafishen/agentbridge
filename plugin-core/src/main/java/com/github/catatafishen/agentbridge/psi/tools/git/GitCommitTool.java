@@ -71,8 +71,7 @@ public final class GitCommitTool extends GitTool {
             return "Error: 'message' parameter is required";
         }
 
-        // Default to staging everything (all: true) unless explicitly disabled
-        boolean commitAll = !args.has("all") || args.get("all").getAsBoolean();
+        boolean commitAll = resolveCommitAll(args);
 
         if (commitAll) {
             // Stage all changes including new untracked files (equivalent to git add -A)
@@ -135,6 +134,13 @@ public final class GitCommitTool extends GitTool {
         }
 
         return result + getBranchContext();
+    }
+
+    /**
+     * Resolves the "all" parameter: defaults to true (stage everything) unless explicitly set to false.
+     */
+    static boolean resolveCommitAll(JsonObject args) {
+        return !args.has("all") || args.get("all").getAsBoolean();
     }
 
     @Override
