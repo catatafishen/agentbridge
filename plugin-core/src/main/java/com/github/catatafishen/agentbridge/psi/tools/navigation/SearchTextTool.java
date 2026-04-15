@@ -45,7 +45,9 @@ public final class SearchTextTool extends NavigationTool {
                                  int startOffset, int endOffset) {
     }
 
-    /** Hard cap on total output bytes — prevents 50+ MB responses from broad searches. */
+    /**
+     * Hard cap on total output bytes — prevents 50+ MB responses from broad searches.
+     */
     private static final int MAX_OUTPUT_BYTES = 256 * 1024; // 256 KB
 
     private record SearchParams(Pattern pattern, String basePath, String filePattern,

@@ -518,7 +518,8 @@ public class WriteFileTool extends FileTool {
             if (psiFile == null) return "";
 
             List<String> errors = new ArrayList<>();
-            collectPsiErrors(psiFile, doc, errors);
+            int[] nodeCount = {0};
+            collectPsiErrors(psiFile, doc, errors, nodeCount);
 
             if (errors.isEmpty()) return "";
             int count = Math.min(errors.size(), 5);
@@ -531,14 +532,18 @@ public class WriteFileTool extends FileTool {
         }
     }
 
+    private static final int MAX_PSI_NODES = 10_000;
+
     private static void collectPsiErrors(com.intellij.psi.PsiElement element, Document doc,
-                                         List<String> errors) {
+                                         List<String> errors, int[] nodeCount) {
+        if (nodeCount[0]++ >= MAX_PSI_NODES) return;
         if (element instanceof PsiErrorElement err) {
             int line = doc != null ? doc.getLineNumber(err.getTextOffset()) + 1 : -1;
             errors.add("  Line " + line + ": " + err.getErrorDescription());
         }
         for (var child = element.getFirstChild(); child != null; child = child.getNextSibling()) {
-            collectPsiErrors(child, doc, errors);
+            if (nodeCount[0] >= MAX_PSI_NODES) break;
+            collectPsiErrors(child, doc, errors, nodeCount);
         }
     }
 
