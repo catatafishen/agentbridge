@@ -498,11 +498,14 @@ public class GitToolsTest extends BasePlatformTestCase {
      */
     public void testGitCommitNothingStagedReturnsError() throws Exception {
         GitCommitTool tool = new GitCommitTool(getProject());
-        String result = tool.execute(args("message", "test: must not be committed"));
+        // Explicit all: false — the default (all: true) would run 'git add -A' which
+        // picks up IntelliJ project files created by BasePlatformTestCase, making the
+        // commit succeed instead of hitting the "nothing staged" error path.
+        String result = tool.execute(args("message", "test: must not be committed", "all", "false"));
 
         assertNotNull(result);
-        // With all: true (default), the tool stages everything first, then detects
-        // nothing was staged. The error prefix is "Error: nothing to commit."
+        // With all: false, the tool skips 'git add -A' and checks staged changes directly.
+        // Nothing is staged after setUp, so the error prefix is "Error: nothing to commit."
         assertTrue("Expected 'nothing to commit' error, got: " + result,
             result.startsWith("Error: nothing to commit."));
         // Must not surface a raw Java exception
@@ -516,7 +519,8 @@ public class GitToolsTest extends BasePlatformTestCase {
      */
     public void testGitCommitNothingStagedErrorContainsHint() throws Exception {
         GitCommitTool tool = new GitCommitTool(getProject());
-        String result = tool.execute(args("message", "test: must not be committed"));
+        // Explicit all: false — see testGitCommitNothingStagedReturnsError for explanation.
+        String result = tool.execute(args("message", "test: must not be committed", "all", "false"));
 
         assertNotNull(result);
         assertTrue("Expected 'nothing to commit' error", result.startsWith("Error: nothing to commit."));
