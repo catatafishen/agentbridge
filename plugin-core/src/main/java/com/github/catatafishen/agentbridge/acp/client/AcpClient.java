@@ -1137,7 +1137,8 @@ public abstract class AcpClient extends AbstractAgentClient {
         String binaryName = command.getFirst();
 
         // Already an absolute or relative path — no resolution needed
-        if (binaryName.startsWith("/") || binaryName.startsWith("./")) return command;
+        if (binaryName.startsWith("/") || binaryName.startsWith("./")
+            || (binaryName.length() > 1 && binaryName.charAt(1) == ':')) return command;
 
         // Use AgentBinaryResolver — the same resolution logic used by the settings page.
         // This ensures binary detection is consistent between settings and connect.
