@@ -409,6 +409,16 @@ public final class RunTestsTool extends TestingTool {
             data.getClass().getField("PATTERNS").set(data,
                 new java.util.LinkedHashSet<>(matchingClasses));
 
+            Module fallbackModule = resolveModuleFallback();
+            if (fallbackModule != null) {
+                try {
+                    var setModule = config.getClass().getMethod("setModule", Module.class);
+                    setModule.invoke(config, fallbackModule);
+                } catch (NoSuchMethodException ignored) {
+                    // Method not available in this version
+                }
+            }
+
             String configError = checkRunConfiguration(config);
             if (configError != null) {
                 launchFuture.complete(configError);
@@ -620,6 +630,27 @@ public final class RunTestsTool extends TestingTool {
 
     // ── JUnit config helpers ─────────────────────────────────
 
+    /**
+     * Falls back to find a suitable module when class resolution didn't provide one.
+     * For single-module projects, returns the only module. For multi-module projects,
+     * returns the first module with a non-empty test scope.
+     */
+    @Nullable
+    private Module resolveModuleFallback() {
+        var moduleManager = com.intellij.openapi.module.ModuleManager.getInstance(project);
+        Module[] modules = moduleManager.getModules();
+        if (modules.length == 0) return null;
+        if (modules.length == 1) return modules[0];
+
+        for (Module mod : modules) {
+            var scope = mod.getModuleScope(true);
+            if (!scope.equals(GlobalSearchScope.EMPTY_SCOPE)) {
+                return mod;
+            }
+        }
+        return modules[0];
+    }
+
     private String launchJUnitConfig(
         ConfigurationType junitType,
         String resolvedClass, String resolvedMethod, Module resolvedModule,
@@ -653,8 +684,8 @@ public final class RunTestsTool extends TestingTool {
 
     @SuppressWarnings("java:S3011")
     // reflection on JUnit config fields is required since API is not available at compile time
-    private static void configureJUnitTestData(RunConfiguration config, String resolvedClass,
-                                               String resolvedMethod, Module resolvedModule) throws Exception {
+    private void configureJUnitTestData(RunConfiguration config, String resolvedClass,
+                                        String resolvedMethod, Module resolvedModule) throws Exception {
         var getData = config.getClass().getMethod("getPersistentData");
         Object data = getData.invoke(config);
         data.getClass().getField("MAIN_CLASS_NAME").set(data, resolvedClass);
@@ -665,10 +696,11 @@ public final class RunTestsTool extends TestingTool {
             data.getClass().getField(FIELD_TEST_OBJECT).set(data, TEST_TYPE_CLASS);
         }
 
-        if (resolvedModule != null) {
+        Module moduleToSet = resolvedModule != null ? resolvedModule : resolveModuleFallback();
+        if (moduleToSet != null) {
             try {
                 var setModule = config.getClass().getMethod("setModule", Module.class);
-                setModule.invoke(config, resolvedModule);
+                setModule.invoke(config, moduleToSet);
             } catch (NoSuchMethodException ignored) {
                 // Method not available in this version
             }
