@@ -114,7 +114,7 @@ private String buildProject(JsonObject args) {
 
 ## Tool × IDE Availability Matrix
 
-### Tools Available Everywhere (30 tools)
+### Tools Available Everywhere (32 tools)
 
 These use only `com.intellij.modules.platform` APIs:
 
@@ -126,7 +126,7 @@ These use only `com.intellij.modules.platform` APIs:
 | `search_symbols` / `get_file_outline`                                              | CodeNavigationTools |
 | `find_references` / `list_project_files` / `search_text`                           | CodeNavigationTools |
 | `refactor` / `go_to_declaration` / `get_documentation` / `get_symbol_info`         | RefactoringTools    |
-| `get_call_hierarchy`                                                               | RefactoringTools    |
+| `get_call_hierarchy` / `get_type_hierarchy` / `find_implementations`               | RefactoringTools    |
 | `get_problems` / `get_highlights` / `get_compilation_errors`                       | CodeQualityTools    |
 | `run_inspections` / `apply_quickfix`                                               | CodeQualityTools    |
 | `suppress_inspection` / `add_to_dictionary`                                        | CodeQualityTools    |
@@ -143,23 +143,23 @@ These use only `com.intellij.modules.platform` APIs:
 | `run_command` / `http_request`                                                     | InfrastructureTools |
 | `read_ide_log` / `get_notifications` / `read_run_output`                           | InfrastructureTools |
 
-### Java-Only Tools (4 tools)
+### Java-Only Tools (2 tools)
 
 Only registered when `com.intellij.modules.java` is present (IntelliJ IDEA):
 
-| Tool                   | Handler             | Java Support Class          | Fallback for Agents                                           |
-|------------------------|---------------------|-----------------------------|---------------------------------------------------------------|
-| `build_project`        | ProjectTools        | `ProjectBuildSupport`       | Use `run_command` (e.g., `npm run build`, `cargo build`)      |
-| `get_class_outline`    | CodeNavigationTools | `CodeNavigationJavaSupport` | Use `get_file_outline` (works for all languages)              |
-| `get_type_hierarchy`   | RefactoringTools    | `RefactoringJavaSupport`    | Use `search_symbols` + manual navigation                      |
-| `find_implementations` | RefactoringTools    | `RefactoringJavaSupport`    | Use `search_symbols` to find subtypes/implementations by name |
+| Tool                | Handler             | Java Support Class          | Fallback for Agents                                      |
+|---------------------|---------------------|-----------------------------|----------------------------------------------------------|
+| `build_project`     | ProjectTools        | `ProjectBuildSupport`       | Use `run_command` (e.g., `npm run build`, `cargo build`) |
+| `get_class_outline` | CodeNavigationTools | `CodeNavigationJavaSupport` | Use `get_file_outline` (works for all languages)         |
 
 > **Previously Java-only, now available everywhere:**
-> `get_call_hierarchy` was ungated in this refactor — it now uses `PsiNameIdentifierOwner` +
-> `ReferencesSearch` (both base-platform APIs) so it works for Python, Go, TypeScript, and any
-> language with PSI support.
-> `edit_project_structure` was incorrectly gated — it uses `com.intellij.openapi.roots.*` and
+> `get_call_hierarchy` — uses `PsiNameIdentifierOwner` + `ReferencesSearch` (base-platform);
+> works for Python, Go, TypeScript, and any language with PSI support.
+> `edit_project_structure` — was incorrectly gated; uses `com.intellij.openapi.roots.*` and
 > `com.intellij.openapi.projectRoots.*`, which are base-platform APIs available in all IDEs.
+> `find_implementations` and `get_type_hierarchy` (subtypes direction) — when `file`+`line` are
+> provided, uses platform-level `DefinitionsScopedSearch` which works for any language.
+> Supertypes direction and symbol-only lookup remain Java-only.
 
 ### Java-Enhanced Tools (1 tool)
 

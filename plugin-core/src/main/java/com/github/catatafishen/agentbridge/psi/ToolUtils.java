@@ -281,6 +281,40 @@ public final class ToolUtils {
     }
 
     /**
+     * Finds the first {@link com.intellij.psi.PsiNameIdentifierOwner} with the given name whose
+     * text offset falls within the line bounds described by {@code ctx}.
+     * <p>
+     * Shared between {@link CallHierarchySupport} and {@code TypeHierarchySupport} to avoid
+     * duplicating the PSI visitor pattern.
+     *
+     * @param ctx  line context from {@link #resolveLineContext}
+     * @param name symbol name to match
+     * @return the first matching element, or {@code null}
+     */
+    @Nullable
+    public static com.intellij.psi.PsiNameIdentifierOwner findNamedElement(
+        @NotNull LineContext ctx,
+        @NotNull String name) {
+        com.intellij.psi.PsiNameIdentifierOwner[] found = {null};
+        ctx.psiFile().accept(new com.intellij.psi.PsiRecursiveElementWalkingVisitor() {
+            @Override
+            public void visitElement(@NotNull com.intellij.psi.PsiElement element) {
+                if (element instanceof com.intellij.psi.PsiNameIdentifierOwner owner
+                    && name.equals(owner.getName())) {
+                    int offset = owner.getTextOffset();
+                    if (offset >= ctx.lineStart() && offset <= ctx.lineEnd()) {
+                        found[0] = owner;
+                        stopWalking();
+                        return;
+                    }
+                }
+                super.visitElement(element);
+            }
+        });
+        return found[0];
+    }
+
+    /**
      * Holds a resolved PSI file and the character offsets bounding a specific source line.
      *
      * @param psiFile   the PSI file
