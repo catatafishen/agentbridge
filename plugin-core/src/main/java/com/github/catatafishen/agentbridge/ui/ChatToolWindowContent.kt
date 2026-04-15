@@ -1537,6 +1537,10 @@ class ChatToolWindowContent(
             autoScrollEnabled = false
             ActivityTracker.getInstance().inc()
         }
+        chatConsolePanel.onAutoScrollEnabled = {
+            autoScrollEnabled = true
+            ActivityTracker.getInstance().inc()
+        }
         consolePanel.onQuickReply = { text ->
             ApplicationManager.getApplication().invokeLater {
                 if (!consolePanel.consumePendingAskUserResponse(text)) {

@@ -88,7 +88,10 @@ function updateScrollFab(): void {
 
 scrollFab.addEventListener('click', () => {
     unreadCount = 0;
-    scrollToBottom();
+    // Re-enable autoscroll and scroll to bottom via the ChatContainer setter
+    (chatEl as unknown as { autoScroll: boolean }).autoScroll = true;
+    atBottom = true;
+    updateScrollFab();
 });
 
 chatEl.addEventListener('scroll', () => {

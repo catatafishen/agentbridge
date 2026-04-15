@@ -28,6 +28,8 @@ export interface WebBridge {
     cancelNudge(id: string): Promise<Response>;
 
     autoScrollDisabled?(): void;
+
+    autoScrollEnabled?(): void;
 }
 
 declare global {
