@@ -21,6 +21,7 @@ jobs:
   release:
     name: Version, Tag & Build
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
       id-token: write

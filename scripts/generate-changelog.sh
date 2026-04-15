@@ -3,6 +3,11 @@
 # generate-changelog.sh — Generate plugin.xml <change-notes> HTML from git
 # commits, optionally summarised by an LLM.
 #
+# Changelog baseline:
+#   Uses the 'marketplace-latest' tag (updated by publish-marketplace.yml)
+#   to include all commits since the last JetBrains Marketplace publish.
+#   Falls back to the latest v* tag if no marketplace tag exists yet.
+#
 # Usage:
 #   scripts/generate-changelog.sh [VERSION]
 #
@@ -22,16 +27,24 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-# ── Commits since last tag ─────────────────────────────────────────────────
-LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1)
-if [[ -z "$LATEST_TAG" ]]; then
+# ── Commits since last marketplace publish ─────────────────────────────────
+# Use the 'marketplace-latest' tag (set by publish-marketplace.yml after each
+# successful upload) so the changelog covers everything since the last version
+# that actually reached the JetBrains Marketplace — not just since the last
+# GitHub release.  Falls back to the latest v* tag if no marketplace tag exists.
+BASELINE_TAG=$(git tag --list 'marketplace-latest' | head -n1)
+if [[ -z "$BASELINE_TAG" ]]; then
+  BASELINE_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+fi
+
+if [[ -z "$BASELINE_TAG" ]]; then
   COMMITS=$(git log --pretty=format:"%s" HEAD)
 else
-  COMMITS=$(git log --pretty=format:"%s" "${LATEST_TAG}..HEAD")
+  COMMITS=$(git log --pretty=format:"%s" "${BASELINE_TAG}..HEAD")
 fi
 
 if [[ -z "$COMMITS" ]]; then
-  echo "No commits since ${LATEST_TAG:-initial}" >&2
+  echo "No commits since ${BASELINE_TAG:-initial}" >&2
   COMMITS="General improvements and bug fixes"
 fi
 
