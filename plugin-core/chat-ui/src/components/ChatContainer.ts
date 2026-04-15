@@ -29,13 +29,15 @@ export default class ChatContainer extends HTMLElement {
         // Using wheel (not scroll) eliminates the programmatic-vs-manual race condition.
         this._onWheel = () => {
             if (this._autoScroll) {
+                // First wheel event while auto-scrolling: disable and skip the
+                // bottom check — the scroll delta hasn't been applied yet, so
+                // _isAtBottom() would still return true and immediately re-enable.
                 this._autoScroll = false;
                 globalThis._bridge?.autoScrollDisabled?.();
+                return;
             }
-            // Re-check on the next frame (after the browser applies the scroll delta).
-            // Unlike a debounced timer, this fires once per wheel event and isn't
-            // reset by subsequent events — so autoscroll re-enables on the first
-            // frame where the viewport is at bottom.
+            // Subsequent wheel events (autoscroll already off): check on the next
+            // frame whether the user has scrolled back to the bottom.
             if (!this._wheelRAF) {
                 this._wheelRAF = requestAnimationFrame(() => {
                     this._wheelRAF = null;
