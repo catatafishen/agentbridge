@@ -84,6 +84,57 @@ as an experimental tool.
 
 See [FEATURES.md](FEATURES.md) for the complete tool reference.
 
+## IDE Compatibility
+
+All 120+ tools work across every JetBrains IDE, with a few exceptions for
+IDE-specific capabilities:
+
+### Java-only tools (require `com.intellij.modules.java`)
+
+Available in **IntelliJ IDEA** (Ultimate and Community). Not available in WebStorm,
+PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover, or Rider.
+
+| Tool | Why Java-only |
+|------|---------------|
+| `build_project` | Triggers JPS incremental build |
+| `edit_project_structure` | Manages Java-style module dependencies, SDKs, JARs |
+| `get_class_outline` | Resolves fully-qualified Java/Kotlin class names |
+| `get_type_hierarchy` | Requires Java class hierarchy resolution |
+| `find_implementations` | Requires Java interface/class hierarchy |
+| `get_call_hierarchy` | Requires Java method resolution |
+
+### Rider-disabled tools
+
+Disabled in **Rider** because C#/C++ PSI lives in the ReSharper backend,
+not the IntelliJ frontend. These tools depend on fine-grained PSI or
+JUnit infrastructure that Rider doesn't provide.
+
+| Tool | Why disabled |
+|------|-------------|
+| `search_symbols` | `classifyElement()` fails on Rider's coarse PSI stubs |
+| `replace_symbol_body` | PSI symbol resolution too coarse for structural edits |
+| `insert_before_symbol` | PSI symbol resolution too coarse for structural edits |
+| `insert_after_symbol` | PSI symbol resolution too coarse for structural edits |
+| `list_tests` | Scans for Java `@Test` annotations (not applicable to NUnit/xUnit) |
+| `run_tests` | Creates JUnit run configurations (not applicable to Rider test runner) |
+
+### Conditional tools (all IDEs)
+
+| Tool(s) | Condition |
+|---------|-----------|
+| `database_list_sources`, `database_list_tables`, `database_get_schema` | Database plugin installed (bundled with Ultimate editions) |
+| `run_sonarqube_analysis`, `get_sonar_rule_description` | SonarQube for IDE plugin installed |
+| `run_qodana` | Qodana plugin installed |
+| `memory_*` (9 tools) | Memory feature enabled in AgentBridge settings |
+
+### Summary
+
+| IDE | Tools available |
+|-----|-----------------|
+| **IntelliJ IDEA** | All 120+ |
+| **WebStorm, PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover** | ~114 (no Java-only tools) |
+| **Rider** | ~108 (no Java-only + no Rider-disabled tools) |
+
 ## Architecture
 
 ```mermaid
