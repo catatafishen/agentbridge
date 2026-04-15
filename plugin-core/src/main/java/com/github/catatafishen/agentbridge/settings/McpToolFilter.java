@@ -16,6 +16,13 @@ import java.util.Set;
 public final class McpToolFilter {
 
     /**
+     * Maximum number of tools that may be enabled simultaneously. MCP clients
+     * such as Claude Desktop and Copilot CLI enforce a 128-tool limit; exceeding
+     * it causes connection failures or silent tool drops.
+     */
+    public static final int MAX_TOOLS = 128;
+
+    /**
      * Tools that are always hidden — they require the Copilot chat panel.
      */
     private static final Set<String> ALWAYS_HIDDEN = Set.of(

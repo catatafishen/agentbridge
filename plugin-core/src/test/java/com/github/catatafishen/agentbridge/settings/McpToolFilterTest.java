@@ -3,7 +3,9 @@ package com.github.catatafishen.agentbridge.settings;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @DisplayName("McpToolFilter")
 class McpToolFilterTest {
@@ -77,5 +79,13 @@ class McpToolFilterTest {
             assertFalse(McpToolFilter.isAlwaysHidden(toolId),
                 toolId + " should not be in both always-hidden and DEFAULT_DISABLED");
         }
+    }
+
+    // ── MAX_TOOLS constant ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("MAX_TOOLS is 128")
+    void maxToolsIs128() {
+        assertEquals(128, McpToolFilter.MAX_TOOLS);
     }
 }

@@ -38,6 +38,7 @@ public final class ToolsConfigurable implements Configurable {
      */
     private final Map<ToolRegistry.Category, List<JBCheckBox>> categoryCheckboxes = new LinkedHashMap<>();
 
+    private @Nullable JBLabel counterLabel;
     private @Nullable ThemeColorComboBox readColorCombo;
     private @Nullable ThemeColorComboBox searchColorCombo;
     private @Nullable ThemeColorComboBox editColorCombo;
@@ -62,11 +63,30 @@ public final class ToolsConfigurable implements Configurable {
         toolsPanel.setLayout(new BoxLayout(toolsPanel, BoxLayout.Y_AXIS));
         toolsPanel.setBorder(JBUI.Borders.empty(8));
 
+        // Tool counter and limit hint
+        counterLabel = new JBLabel();
+        counterLabel.setFont(JBUI.Fonts.label());
+        counterLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        counterLabel.setBorder(JBUI.Borders.empty(0, 0, 6, 0));
+        toolsPanel.add(counterLabel);
+
+        JBLabel limitHint = new JBLabel(
+            "<html>MCP clients enforce a <b>" + McpToolFilter.MAX_TOOLS
+                + "-tool limit</b>. Only enable tools you intend to use.</html>");
+        limitHint.setFont(JBUI.Fonts.smallFont());
+        limitHint.setForeground(UIUtil.getContextHelpForeground());
+        limitHint.setBorder(JBUI.Borders.empty(0, 0, 6, 0));
+        limitHint.setAlignmentX(Component.LEFT_ALIGNMENT);
+        toolsPanel.add(limitHint);
+
         // Global enable/disable row at top
         JButton enableAllBtn = new JButton("Enable All");
         JButton disableAllBtn = new JButton("Disable All");
-        enableAllBtn.addActionListener(e -> toolCheckboxes.values().forEach(cb -> cb.setSelected(true)));
-        disableAllBtn.addActionListener(e -> toolCheckboxes.values().forEach(cb -> cb.setSelected(false)));
+        enableAllBtn.addActionListener(e -> enableUpToMax(toolCheckboxes.values()));
+        disableAllBtn.addActionListener(e -> {
+            toolCheckboxes.values().forEach(cb -> cb.setSelected(false));
+            updateCounter();
+        });
 
         JBPanel<?> topRow = new JBPanel<>();
         topRow.setLayout(new BoxLayout(topRow, BoxLayout.X_AXIS));
@@ -103,6 +123,7 @@ public final class ToolsConfigurable implements Configurable {
 
             JBCheckBox cb = new JBCheckBox(tool.displayName(), settings.isToolEnabled(tool.id()));
             cb.setBorder(JBUI.Borders.empty(1, 0, 0, 0));
+            cb.addItemListener(e -> onCheckboxToggled(cb));
             toolCheckboxes.put(tool.id(), cb);
             categoryCheckboxes.computeIfAbsent(tool.category(), k -> new ArrayList<>()).add(cb);
             toolRow.add(cb);
@@ -142,7 +163,52 @@ public final class ToolsConfigurable implements Configurable {
 
         JBPanel<?> wrapper = new JBPanel<>(new BorderLayout());
         wrapper.add(scrollPane, BorderLayout.CENTER);
+
+        updateCounter();
         return wrapper;
+    }
+
+    private int countEnabled() {
+        return (int) toolCheckboxes.values().stream().filter(JBCheckBox::isSelected).count();
+    }
+
+    private void updateCounter() {
+        if (counterLabel == null) return;
+        int enabled = countEnabled();
+        int max = McpToolFilter.MAX_TOOLS;
+        boolean overLimit = enabled > max;
+        counterLabel.setText(enabled + " / " + max + " tools enabled"
+            + (overLimit ? "  ⚠ over limit!" : ""));
+        counterLabel.setForeground(overLimit
+            ? UIUtil.getErrorForeground()
+            : UIUtil.getLabelForeground());
+    }
+
+    /**
+     * Called when a tool checkbox is toggled. If enabling would exceed the limit,
+     * revert the selection.
+     */
+    private void onCheckboxToggled(JBCheckBox cb) {
+        if (cb.isSelected() && countEnabled() > McpToolFilter.MAX_TOOLS) {
+            cb.setSelected(false);
+            return;
+        }
+        updateCounter();
+    }
+
+    /**
+     * Enables checkboxes in iteration order until the global limit is reached.
+     * Already-enabled checkboxes count towards the limit but are not toggled off.
+     */
+    private void enableUpToMax(java.util.Collection<JBCheckBox> checkboxes) {
+        int enabled = countEnabled();
+        for (JBCheckBox cb : checkboxes) {
+            if (cb.isSelected()) continue;
+            if (enabled >= McpToolFilter.MAX_TOOLS) break;
+            cb.setSelected(true);
+            enabled++;
+        }
+        updateCounter();
     }
 
     /**
@@ -163,11 +229,14 @@ public final class ToolsConfigurable implements Configurable {
 
         sectionEnableBtn.addActionListener(e -> {
             List<JBCheckBox> cbs = categoryCheckboxes.get(category);
-            if (cbs != null) cbs.forEach(cb -> cb.setSelected(true));
+            if (cbs != null) enableUpToMax(cbs);
         });
         sectionDisableBtn.addActionListener(e -> {
             List<JBCheckBox> cbs = categoryCheckboxes.get(category);
-            if (cbs != null) cbs.forEach(cb -> cb.setSelected(false));
+            if (cbs != null) {
+                cbs.forEach(cb -> cb.setSelected(false));
+                updateCounter();
+            }
         });
 
         JBPanel<?> btnRow = new JBPanel<>();
@@ -294,10 +363,12 @@ public final class ToolsConfigurable implements Configurable {
             editColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindEditColorKey()));
         if (executeColorCombo != null)
             executeColorCombo.setSelectedThemeColor(ThemeColor.fromKey(settings.getKindExecuteColorKey()));
+        updateCounter();
     }
 
     @Override
     public void disposeUIResources() {
+        counterLabel = null;
         readColorCombo = null;
         searchColorCombo = null;
         editColorCombo = null;

@@ -15,8 +15,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonParser;
+import com.google.gson.JsonPrimitive;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -198,6 +198,12 @@ public final class McpProtocolHandler {
         McpServerSettings settings = McpServerSettings.getInstance(project);
         settings.ensureDefaultsApplied();
         List<ToolDefinition> enabledTools = McpToolFilter.getEnabledTools(settings, project);
+        if (enabledTools.size() > McpToolFilter.MAX_TOOLS) {
+            LOG.warn("Enabled tool count (" + enabledTools.size()
+                + ") exceeds MCP client limit (" + McpToolFilter.MAX_TOOLS
+                + "); truncating to first " + McpToolFilter.MAX_TOOLS + " tools");
+            enabledTools = enabledTools.subList(0, McpToolFilter.MAX_TOOLS);
+        }
 
         JsonArray tools = new JsonArray();
         for (ToolDefinition entry : enabledTools) {
