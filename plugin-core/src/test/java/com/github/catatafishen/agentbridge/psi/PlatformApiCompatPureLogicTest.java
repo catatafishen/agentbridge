@@ -218,4 +218,44 @@ class PlatformApiCompatPureLogicTest {
             assertEquals("Plugin v", PlatformApiCompat.formatPluginVersionInfo("Plugin", ""));
         }
     }
+
+    // ── IDE_GIT_COMMAND_MAP ─────────────────────────────────────
+
+    @Nested
+    class IdeGitCommandMap {
+
+        @SuppressWarnings("unchecked")
+        private static java.util.Map<String, Object> getMap() throws ReflectiveOperationException {
+            var field = PlatformApiCompat.class.getDeclaredField("IDE_GIT_COMMAND_MAP");
+            field.setAccessible(true);
+            return (java.util.Map<String, Object>) field.get(null);
+        }
+
+        @Test
+        void containsLsFiles() throws ReflectiveOperationException {
+            var map = getMap();
+            org.junit.jupiter.api.Assertions.assertNotNull(map.get("ls-files"),
+                "IDE_GIT_COMMAND_MAP should map 'ls-files'");
+        }
+
+        @Test
+        void containsRevList() throws ReflectiveOperationException {
+            var map = getMap();
+            org.junit.jupiter.api.Assertions.assertNotNull(map.get("rev-list"),
+                "IDE_GIT_COMMAND_MAP should map 'rev-list'");
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+            "add", "blame", "branch", "checkout", "cherry-pick", "commit",
+            "config", "diff", "fetch", "log", "merge", "pull", "push",
+            "rebase", "remote", "ls-files", "reset", "restore", "rev-list",
+            "rev-parse", "revert", "show", "stash", "status", "tag"
+        })
+        void containsAllExpectedCommands(String command) throws ReflectiveOperationException {
+            var map = getMap();
+            org.junit.jupiter.api.Assertions.assertNotNull(map.get(command),
+                "IDE_GIT_COMMAND_MAP should map '" + command + "'");
+        }
+    }
 }
