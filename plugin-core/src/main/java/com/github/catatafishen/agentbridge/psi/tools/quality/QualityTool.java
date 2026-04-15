@@ -186,6 +186,8 @@ public abstract class QualityTool extends Tool {
      * Actions that return {@code false} (e.g. refactoring-based fixes) manage their own
      * write lock internally and must NOT be wrapped in a {@link com.intellij.openapi.command.WriteCommandAction},
      * because they start progress/read-actions internally which would deadlock inside a write action.
+     * However, they still need a command scope for undo tracking — without it, any document
+     * modification triggers "Must not change document outside command" assertions.
      *
      * <p><b>Why extracted:</b> Both {@code ApplyActionTool} and {@code GetActionOptionsTool}
      * invoke intentions and must use the same invocation contract.
@@ -196,7 +198,8 @@ public abstract class QualityTool extends Tool {
             com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(
                 project, actionName, null, () -> action.invoke(project, editor, psiFile));
         } else {
-            action.invoke(project, editor, psiFile);
+            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                project, () -> action.invoke(project, editor, psiFile), actionName, null);
         }
     }
 
