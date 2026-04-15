@@ -8,6 +8,8 @@ import com.github.catatafishen.agentbridge.ui.renderers.TestResultRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.execution.ExecutionManager;
 import com.intellij.execution.RunManager;
+import com.intellij.execution.RunnerAndConfigurationSettings;
+import com.intellij.execution.actions.ConfigurationContext;
 import com.intellij.execution.configurations.ConfigurationType;
 import com.intellij.execution.configurations.RunConfiguration;
 import com.intellij.execution.executors.DefaultRunExecutor;
@@ -19,8 +21,13 @@ import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.util.Computable;
+import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
+import com.intellij.psi.PsiNamedElement;
+import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.PsiSearchHelper;
+import com.intellij.psi.search.UsageSearchContext;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -32,7 +39,9 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Runs tests by class, method, or wildcard pattern.
- * Uses IntelliJ's built-in JUnit runner when possible; falls back to Gradle for unresolvable targets.
+ * <p>
+ * Uses IntelliJ's {@link ConfigurationContext} for framework-agnostic test detection,
+ * falling back to JUnit-specific configuration and Gradle for unresolvable targets.
  */
 @SuppressWarnings("java:S112") // generic exceptions are caught at the JSON-RPC dispatch level
 public final class RunTestsTool extends TestingTool {
@@ -72,7 +81,9 @@ public final class RunTestsTool extends TestingTool {
 
     @Override
     public @NotNull String description() {
-        return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner; falls back to Gradle for unresolvable targets. " +
+        return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner — " +
+            "auto-detects the test framework (JUnit, TestNG, pytest, etc.) via ConfigurationContext. " +
+            "Falls back to Gradle for unresolvable targets. " +
             "Returns pass/fail counts and failure details. Use list_tests to discover available test targets.";
     }
 
@@ -121,6 +132,11 @@ public final class RunTestsTool extends TestingTool {
             return runTestsViaGradleConfig(target, module);
         }
 
+        // Framework-agnostic: resolve the target to a PSI element and use ConfigurationContext
+        // to auto-detect the right test framework (JUnit, TestNG, pytest, etc.)
+        String contextResult = tryRunViaConfigurationContext(target);
+        if (contextResult != null) return contextResult;
+
         String junitResult = tryRunJUnitNatively(target);
         if (junitResult != null) return junitResult;
 
@@ -152,7 +168,98 @@ public final class RunTestsTool extends TestingTool {
         return null;
     }
 
-    private String runTestConfigAndWait(com.intellij.execution.RunnerAndConfigurationSettings settings) throws Exception {
+    // ── Framework-agnostic runner via ConfigurationContext ────
+
+    /**
+     * Resolves the target to a PSI element and uses IntelliJ's {@link ConfigurationContext}
+     * to auto-detect the correct test framework (JUnit, TestNG, pytest, etc.).
+     * Returns null if the target cannot be resolved or no framework matches.
+     */
+    private String tryRunViaConfigurationContext(String target) {
+        try {
+            PsiElement testElement = resolveTestPsiElement(target);
+            if (testElement == null) return null;
+
+            ConfigurationContext context = new ConfigurationContext(testElement);
+            var configs = context.createConfigurationsFromContext();
+            if (configs == null || configs.isEmpty()) return null;
+
+            RunnerAndConfigurationSettings settings = configs.getFirst().getConfigurationSettings();
+            settings.setTemporary(true);
+            RunManager.getInstance(project).addConfiguration(settings);
+            return runTestConfigAndWait(settings);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn("tryRunViaConfigurationContext interrupted", e);
+            return null;
+        } catch (Exception e) {
+            LOG.warn("tryRunViaConfigurationContext failed, falling through to other runners", e);
+            return null;
+        }
+    }
+
+    /**
+     * Resolves a test target string (e.g., "MyTest.testFoo" or "MyTest") to the corresponding
+     * PSI element in the project. Searches for the class by name, then optionally finds the
+     * specified method within it.
+     */
+    private PsiElement resolveTestPsiElement(String target) {
+        return ApplicationManager.getApplication().runReadAction((Computable<PsiElement>) () -> {
+            String[] parsed = parseTestTarget(target);
+            String testClass = parsed[0];
+            String testMethod = parsed[1];
+            String searchName = testClass.contains(".")
+                ? testClass.substring(testClass.lastIndexOf('.') + 1) : testClass;
+
+            AtomicReference<PsiElement> result = new AtomicReference<>();
+            PsiSearchHelper.getInstance(project).processElementsWithWord(
+                (element, offset) -> matchTestElement(element, searchName, testMethod, result),
+                GlobalSearchScope.projectScope(project),
+                searchName,
+                UsageSearchContext.IN_CODE,
+                true
+            );
+            return result.get();
+        });
+    }
+
+    /**
+     * Checks if a PSI element matches the searched test class name, and optionally resolves
+     * a method within it. Returns false (stop iteration) when a match is found.
+     */
+    private static boolean matchTestElement(PsiElement element, String searchName, String testMethod,
+                                            AtomicReference<PsiElement> result) {
+        if (!ToolUtils.ELEMENT_TYPE_CLASS.equals(ToolUtils.classifyElement(element))) return true;
+        if (!(element instanceof PsiNamedElement named) || !searchName.equals(named.getName())) return true;
+
+        if (testMethod != null) {
+            PsiElement method = findMethodByName(element, testMethod);
+            if (method != null) {
+                result.set(method);
+                return false;
+            }
+        } else {
+            result.set(element);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Walks the children of a class element to find a method with the given name.
+     */
+    private static PsiElement findMethodByName(PsiElement classElement, String methodName) {
+        for (PsiElement child : classElement.getChildren()) {
+            if (child instanceof PsiNamedElement named
+                && methodName.equals(named.getName())
+                && ToolUtils.ELEMENT_TYPE_METHOD.equals(ToolUtils.classifyElement(child))) {
+                return child;
+            }
+        }
+        return null;
+    }
+
+    private String runTestConfigAndWait(RunnerAndConfigurationSettings settings) throws Exception {
         String configName = settings.getName();
 
         CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
@@ -274,8 +381,9 @@ public final class RunTestsTool extends TestingTool {
         if (!fileIndex.isInTestSourceContent(vf)) return true;
         if (vf.isDirectory()) return true;
         String name = vf.getName();
-        if (!name.endsWith(ToolUtils.JAVA_EXTENSION) && !name.endsWith(".kt")) return true;
-        String simpleName = name.substring(0, name.lastIndexOf('.'));
+        int dotIdx = name.lastIndexOf('.');
+        if (dotIdx <= 0) return true;
+        String simpleName = name.substring(0, dotIdx);
         if (ToolUtils.doesNotMatchGlob(simpleName, target, compiledGlob)) return true;
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return true;
