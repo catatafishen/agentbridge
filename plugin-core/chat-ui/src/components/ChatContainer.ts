@@ -10,7 +10,7 @@ export default class ChatContainer extends HTMLElement {
     private _copyObs!: MutationObserver;
     private _prevScrollTop = 0;
     private _onScroll: (() => void) | null = null;
-    private _onWheel: (() => void) | null = null;
+    private _onWheel: ((e: WheelEvent) => void) | null = null;
     private _wheelRAF: number | null = null;
     private _resizeObs: ResizeObserver | null = null;
 
@@ -27,17 +27,17 @@ export default class ChatContainer extends HTMLElement {
 
         // Wheel events are user-initiated — never fired by programmatic scrollTop changes.
         // Using wheel (not scroll) eliminates the programmatic-vs-manual race condition.
-        this._onWheel = () => {
+        this._onWheel = (e: WheelEvent) => {
             if (this._autoScroll) {
-                // First wheel event while auto-scrolling: disable and skip the
-                // bottom check — the scroll delta hasn't been applied yet, so
-                // _isAtBottom() would still return true and immediately re-enable.
-                this._autoScroll = false;
-                globalThis._bridge?.autoScrollDisabled?.();
+                // Only disable on upward scroll — the user wants to read earlier content.
+                // Scrolling down while already at bottom keeps autoscroll on (no-op).
+                if (e.deltaY < 0) {
+                    this._autoScroll = false;
+                    globalThis._bridge?.autoScrollDisabled?.();
+                }
                 return;
             }
-            // Subsequent wheel events (autoscroll already off): check on the next
-            // frame whether the user has scrolled back to the bottom.
+            // Autoscroll is off: check if user scrolled back to the bottom.
             if (!this._wheelRAF) {
                 this._wheelRAF = requestAnimationFrame(() => {
                     this._wheelRAF = null;
