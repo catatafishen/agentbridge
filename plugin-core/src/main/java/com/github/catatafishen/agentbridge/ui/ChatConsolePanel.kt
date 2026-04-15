@@ -250,6 +250,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             fallbackArea = null
 
             PlatformApiCompat.subscribeLafChanges(this) { updateThemeColors() }
+            setupMonitorChangeListener()
         } else {
             browser = null; openFileQuery = null
             fallbackArea = JBTextArea().apply { isEditable = false; lineWrap = true; wrapStyleWord = true }
@@ -1266,6 +1267,40 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         executeJs("document.documentElement.style.cssText='$vars'")
         val panelBg = JBUI.CurrentTheme.ToolWindow.background()
         browser?.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")
+    }
+
+    /**
+     * Detects when the parent window moves to a different monitor by watching for
+     * [java.awt.GraphicsConfiguration] reference changes. On monitor switch:
+     * 1. Recalculates CSS font/color vars so sizes match the new display's DPI.
+     * 2. Notifies JCEF's OSR renderer via [org.cef.browser.CefBrowser.wasResized] to
+     *    recreate its backing surface — without this the browser freezes and JS updates
+     *    stop being painted, even though the JS engine is still running.
+     */
+    private fun setupMonitorChangeListener() {
+        val b = browser ?: return
+        var lastGc: java.awt.GraphicsConfiguration? = null
+        b.component.addHierarchyBoundsListener(object : java.awt.event.HierarchyBoundsListener {
+            override fun ancestorMoved(e: java.awt.event.HierarchyEvent?) = checkGc()
+            override fun ancestorResized(e: java.awt.event.HierarchyEvent?) = checkGc()
+            private fun checkGc() {
+                val gc = b.component.graphicsConfiguration ?: return
+                if (gc !== lastGc) {
+                    lastGc = gc
+                    onMonitorChanged()
+                }
+            }
+        })
+    }
+
+    private fun onMonitorChanged() {
+        updateThemeColors()
+        val b = browser ?: return
+        if (!browserReady) return
+        b.cefBrowser.wasResized(
+            b.component.width.coerceAtLeast(1),
+            b.component.height.coerceAtLeast(1)
+        )
     }
 
     // ── Permission requests ────────────────────────────────────────
