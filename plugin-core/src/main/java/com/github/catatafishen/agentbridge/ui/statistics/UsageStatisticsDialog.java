@@ -20,6 +20,7 @@ public class UsageStatisticsDialog extends DialogWrapper {
     public UsageStatisticsDialog(@NotNull Project project) {
         super(project, false);
         this.project = project;
+        setModal(false);
         setTitle("Usage Statistics");
         setOKButtonText("Close");
         init();
