@@ -281,8 +281,13 @@ public final class ToolUtils {
     }
 
     /**
-     * Finds the first {@link com.intellij.psi.PsiNameIdentifierOwner} with the given name whose
-     * text offset falls within the line bounds described by {@code ctx}.
+     * Walks the PSI tree looking for a {@link com.intellij.psi.PsiNameIdentifierOwner} whose
+     * {@link com.intellij.psi.PsiNameIdentifierOwner#getName() name} equals {@code name} and whose
+     * text range overlaps the line bounds described by {@code ctx}.
+     * <p>
+     * Uses the element's full text range (not just the name identifier offset) so that
+     * methods with annotations or multi-line signatures are found regardless of which line
+     * the caller specifies — the annotation line, the signature line, or any line in the body.
      * <p>
      * Shared between {@link CallHierarchySupport} and {@code TypeHierarchySupport} to avoid
      * duplicating the PSI visitor pattern.
@@ -301,8 +306,8 @@ public final class ToolUtils {
             public void visitElement(@NotNull com.intellij.psi.PsiElement element) {
                 if (element instanceof com.intellij.psi.PsiNameIdentifierOwner owner
                     && name.equals(owner.getName())) {
-                    int offset = owner.getTextOffset();
-                    if (offset >= ctx.lineStart() && offset <= ctx.lineEnd()) {
+                    com.intellij.openapi.util.TextRange range = owner.getTextRange();
+                    if (range.getStartOffset() <= ctx.lineEnd() && range.getEndOffset() >= ctx.lineStart()) {
                         found[0] = owner;
                         stopWalking();
                         return;
