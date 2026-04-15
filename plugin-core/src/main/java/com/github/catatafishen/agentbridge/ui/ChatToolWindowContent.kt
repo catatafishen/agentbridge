@@ -760,8 +760,8 @@ class ChatToolWindowContent(
             override fun getMinimumSize(): Dimension = promptTextArea.minimumSize
         }
         inputContainer.isOpaque = false
-        inputContainer.add(promptTextArea)
-        inputContainer.add(shortcutHintPanel) // added last = higher z-order, painted on top
+        inputContainer.add(shortcutHintPanel) // index 0 = lowest z-order index = painted last = on top
+        inputContainer.add(promptTextArea)    // index 1 = behind, visible through transparent shortcutHintPanel
 
         row.border = JBUI.Borders.empty()
         row.add(inputContainer, BorderLayout.CENTER)
