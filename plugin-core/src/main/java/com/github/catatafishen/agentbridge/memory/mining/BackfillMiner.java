@@ -52,12 +52,10 @@ public final class BackfillMiner {
         List<EntryData> load(String sessionId);
     }
 
-    /**
-     * Mines a list of entries for a session, returning the result synchronously.
-     */
     @FunctionalInterface
     interface MineFunction {
-        TurnMiner.MineResult mine(List<EntryData> entries, String sessionId, String agent);
+        TurnMiner.MineResult mine(List<EntryData> entries, String sessionId, String agent,
+                                  Consumer<String> exchangeProgress);
     }
 
     private BackfillResult doBackfill(Consumer<String> progressCallback) {
@@ -73,16 +71,13 @@ public final class BackfillMiner {
 
         TurnMiner miner = new TurnMiner(project);
         EntryLoader loader = sessionId -> sessionStore.loadEntriesBySessionId(basePath, sessionId);
-        MineFunction mineFn = (entries, sid, agent) -> miner.mineTurn(entries, sid, agent).join();
+        MineFunction mineFn = miner::mineTurnSync;
 
         BackfillResult result = executeBackfill(sessions, loader, mineFn, progressCallback);
         MemorySettings.getInstance(project).setBackfillCompleted(true);
         return result;
     }
 
-    /**
-     * Package-private for testing — runs the backfill iteration with explicit dependencies.
-     */
     BackfillResult executeBackfill(List<SessionStoreV2.SessionRecord> sessions,
                                    EntryLoader entryLoader,
                                    MineFunction miner,
@@ -108,7 +103,11 @@ public final class BackfillMiner {
                 List<EntryData> entries = entryLoader.load(session.id());
                 if (entries == null || entries.isEmpty()) continue;
 
-                TurnMiner.MineResult result = miner.mine(entries, session.id(), session.agent());
+                int sessionNum = processedSessions;
+                TurnMiner.MineResult result = miner.mine(entries, session.id(), session.agent(),
+                    exchangeDetail -> progressCallback.accept(
+                        "Mining session " + sessionNum + " of " + totalSessions
+                            + " (" + exchangeDetail + "): " + sessionLabel));
                 totalStored += result.stored();
                 totalFiltered += result.filtered();
                 totalDuplicates += result.duplicates();
