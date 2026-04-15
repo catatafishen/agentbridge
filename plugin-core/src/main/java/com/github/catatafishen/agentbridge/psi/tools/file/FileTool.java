@@ -215,10 +215,13 @@ public abstract class FileTool extends Tool {
     /**
      * Selects the given file in the Project View tree without requesting focus.
      * Throttled to avoid excessive tree navigation during rapid file access.
+     * Skipped entirely when the chat prompt has focus to prevent any focus side-effects
+     * from showing a previously hidden tool window.
      */
     private static void selectInProjectView(Project project, VirtualFile vf) {
         long now = System.currentTimeMillis();
         if (now - lastProjectViewSelectMs < PROJECT_VIEW_COOLDOWN_MS) return;
+        if (PsiBridgeService.isChatToolWindowActive(project)) return;
         lastProjectViewSelectMs = now;
 
         try {

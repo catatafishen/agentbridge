@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.ui.renderers.GitCommitRenderer;
 import com.google.gson.JsonObject;
@@ -91,12 +92,17 @@ public final class GitCommitTool extends GitTool {
             return hint.toString();
         }
 
-        // Open VCS tool window in follow mode
+        // Show VCS tool window in follow mode without stealing focus from chat prompt
         if (ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
             EdtUtil.invokeLater(() -> {
                 var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
                     .getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
-                if (tw != null) tw.activate(null);
+                if (tw == null) return;
+                if (PsiBridgeService.isChatToolWindowActive(project)) {
+                    tw.show();
+                } else {
+                    tw.activate(null);
+                }
             });
         }
 

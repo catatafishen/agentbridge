@@ -382,6 +382,8 @@ public abstract class GitTool extends Tool {
 
     /**
      * After a successful commit, open the Git Log tab and navigate to HEAD.
+     * Uses {@code tw.show()} instead of {@code tw.activate()} when the chat prompt has focus,
+     * preventing keystroke leaks to the VCS tool window.
      */
     protected void showNewCommitInLog() {
         if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
@@ -392,10 +394,14 @@ public abstract class GitTool extends Tool {
                 if (fullHash.length() != 40) return;
 
                 EdtUtil.invokeLater(() -> {
-                    if (!PsiBridgeService.isChatToolWindowActive(project)) {
-                        var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
-                        var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
-                        if (tw != null) tw.activate(null);
+                    var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
+                    var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
+                    if (tw != null) {
+                        if (PsiBridgeService.isChatToolWindowActive(project)) {
+                            tw.show();
+                        } else {
+                            tw.activate(null);
+                        }
                     }
 
                     PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash);

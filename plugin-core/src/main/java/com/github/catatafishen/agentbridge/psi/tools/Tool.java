@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
@@ -193,11 +194,14 @@ public abstract class Tool implements ToolDefinition {
             }
         });
 
+        // Don't activate (focus) the Run panel when the chat prompt has focus
+        boolean activateRunPanel = !PsiBridgeService.isChatToolWindowActive(project);
+
         EdtUtil.invokeLater(() -> {
             try {
                 new RunContentExecutor(project, processHandler)
                     .withTitle(title)
-                    .withActivateToolWindow(true)
+                    .withActivateToolWindow(activateRunPanel)
                     .run();
             } catch (Exception e) {
                 // RunContentExecutor.run() may have already called startNotify() before
