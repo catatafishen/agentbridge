@@ -28,6 +28,13 @@ public final class ToolUtils {
     public static final String ELEMENT_TYPE_FUNCTION = "function";
     public static final String ELEMENT_TYPE_METHOD = "method";
 
+    // PSI class name substrings used for generic multi-language classification
+    private static final String PSI_PATTERN_CLASS = "Class";
+    private static final String PSI_PATTERN_INTERFACE = "Interface";
+    private static final String PSI_PATTERN_FUNCTION = "Function";
+    private static final String PSI_PATTERN_METHOD = "Method";
+    private static final String PSI_PATTERN_FIELD = "Field";
+
     private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.util.Optional<java.lang.reflect.Method>> IS_INTERFACE_CACHE =
         new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.util.Optional<java.lang.reflect.Method>> IS_ENUM_CACHE =
@@ -51,11 +58,8 @@ public final class ToolUtils {
         String kotlinType = classifyKotlinElement(cls, element);
         if (kotlinType != null) return kotlinType;
 
-        // Generic patterns
-        if (cls.contains("Interface") && !cls.contains("Reference")) return ELEMENT_TYPE_INTERFACE;
-        if (cls.contains("Enum") && cls.contains("Class")) return ELEMENT_TYPE_CLASS;
-
-        return null;
+        // Other languages (Python, JS/TS, Go, C/C++, PHP, Ruby, Rust, C#)
+        return classifyGenericElement(cls);
     }
 
     static String classifyJavaClass(PsiElement element) {
@@ -95,29 +99,100 @@ public final class ToolUtils {
     }
 
     static String classifyKotlinClass(PsiElement element) {
-        try {
-            java.lang.reflect.Method isInterface = IS_INTERFACE_CACHE.computeIfAbsent(
-                element.getClass(), c -> {
-                    try {
-                        return java.util.Optional.of(c.getMethod("isInterface"));
-                    } catch (NoSuchMethodException e) {
-                        return java.util.Optional.empty();
-                    }
-                }).orElse(null);
-            if (isInterface != null && (boolean) isInterface.invoke(element)) return ELEMENT_TYPE_INTERFACE;
-            java.lang.reflect.Method isEnum = IS_ENUM_CACHE.computeIfAbsent(
-                element.getClass(), c -> {
-                    try {
-                        return java.util.Optional.of(c.getMethod("isEnum"));
-                    } catch (NoSuchMethodException e) {
-                        return java.util.Optional.empty();
-                    }
-                }).orElse(null);
-            if (isEnum != null && (boolean) isEnum.invoke(element)) return ELEMENT_TYPE_ENUM;
-        } catch (java.lang.reflect.InvocationTargetException | IllegalAccessException ignored) {
-            // Reflection invocation failed for this Kotlin class variant
-        }
-        return ELEMENT_TYPE_CLASS;
+        // Kotlin PSI classes (KtClass, KtObjectDeclaration) support the same isInterface()/isEnum()
+        // methods as Java's PsiClass — delegate to the shared reflection-based classifier
+        return classifyJavaClass(element);
+    }
+
+    /**
+     * Classifies PSI elements from non-Java/Kotlin languages by matching PSI class names.
+     * Covers Python, JavaScript/TypeScript, Go, C/C++, PHP, Ruby, Rust, and C#.
+     * PSI class simple names follow language-specific patterns (e.g. PyClass, JSFunction,
+     * GoTypeSpec) — we match on known prefixes for efficiency and fall back to generic
+     * patterns for unrecognized languages.
+     */
+    static String classifyGenericElement(String cls) {
+        if (cls.startsWith("Py")) return classifyPythonElement(cls);
+        if (cls.startsWith("JS") || cls.startsWith("TypeScript") || cls.startsWith("ES6"))
+            return classifyJsElement(cls);
+        if (cls.startsWith("Go")) return classifyGoElement(cls);
+        if (cls.startsWith("OC")) return classifyCppElement(cls);
+        if (cls.startsWith("Php") || cls.startsWith("php")) return classifyPhpElement(cls);
+        if (cls.startsWith("RClass") || cls.startsWith("RModule") || cls.startsWith("RMethod"))
+            return classifyRubyElement(cls);
+        if (cls.startsWith("Rs")) return classifyRustElement(cls);
+        if (cls.startsWith("CSharp")) return classifyCSharpElement(cls);
+
+        // Generic fallback for unrecognized languages
+        if (cls.contains(PSI_PATTERN_INTERFACE) && !cls.contains("Reference")) return ELEMENT_TYPE_INTERFACE;
+        if (cls.contains("Enum") && cls.contains(PSI_PATTERN_CLASS)) return ELEMENT_TYPE_CLASS;
+
+        return null;
+    }
+
+    static String classifyPythonElement(String cls) {
+        if (cls.contains(PSI_PATTERN_CLASS)) return ELEMENT_TYPE_CLASS;
+        if (cls.contains(PSI_PATTERN_FUNCTION)) return ELEMENT_TYPE_FUNCTION;
+        if ("PyTargetExpressionImpl".equals(cls)) return ELEMENT_TYPE_FIELD;
+        return null;
+    }
+
+    static String classifyJsElement(String cls) {
+        if (cls.contains(PSI_PATTERN_CLASS)) return ELEMENT_TYPE_CLASS;
+        if (cls.contains(PSI_PATTERN_INTERFACE)) return ELEMENT_TYPE_INTERFACE;
+        if (cls.contains("Enum") && !cls.contains("Literal")) return ELEMENT_TYPE_ENUM;
+        if (cls.contains(PSI_PATTERN_FUNCTION)) return ELEMENT_TYPE_FUNCTION;
+        if (cls.contains("Variable") || cls.contains("Property") || cls.contains(PSI_PATTERN_FIELD))
+            return ELEMENT_TYPE_FIELD;
+        return null;
+    }
+
+    static String classifyGoElement(String cls) {
+        if (cls.contains("TypeSpec")) return ELEMENT_TYPE_CLASS;
+        if (cls.contains(PSI_PATTERN_FUNCTION) || cls.contains(PSI_PATTERN_METHOD)) return ELEMENT_TYPE_FUNCTION;
+        if (cls.contains("VarDef") || cls.contains("ConstDef") || cls.contains("FieldDef"))
+            return ELEMENT_TYPE_FIELD;
+        return null;
+    }
+
+    static String classifyCppElement(String cls) {
+        if (cls.contains("Structlike")) return ELEMENT_TYPE_CLASS;
+        if (cls.contains("FunctionDef")) return ELEMENT_TYPE_FUNCTION;
+        if (cls.contains("Declarator") || cls.contains("FieldDecl")) return ELEMENT_TYPE_FIELD;
+        return null;
+    }
+
+    static String classifyPhpElement(String cls) {
+        if (cls.contains(PSI_PATTERN_CLASS)) return ELEMENT_TYPE_CLASS;
+        if (cls.contains(PSI_PATTERN_METHOD)) return ELEMENT_TYPE_METHOD;
+        if (cls.contains(PSI_PATTERN_FUNCTION)) return ELEMENT_TYPE_FUNCTION;
+        if (cls.contains(PSI_PATTERN_FIELD)) return ELEMENT_TYPE_FIELD;
+        return null;
+    }
+
+    static String classifyRubyElement(String cls) {
+        if (cls.startsWith("RClass")) return ELEMENT_TYPE_CLASS;
+        if (cls.startsWith("RModule")) return ELEMENT_TYPE_CLASS;
+        if (cls.startsWith("RMethod")) return ELEMENT_TYPE_METHOD;
+        return null;
+    }
+
+    static String classifyRustElement(String cls) {
+        if (cls.contains("StructItem") || cls.contains("ImplItem")) return ELEMENT_TYPE_CLASS;
+        if (cls.contains("EnumItem")) return ELEMENT_TYPE_ENUM;
+        if (cls.contains("TraitItem")) return ELEMENT_TYPE_INTERFACE;
+        if (cls.contains(PSI_PATTERN_FUNCTION)) return ELEMENT_TYPE_FUNCTION;
+        if (cls.contains("FieldDecl") || cls.contains("ConstItem")) return ELEMENT_TYPE_FIELD;
+        return null;
+    }
+
+    static String classifyCSharpElement(String cls) {
+        if (cls.contains(PSI_PATTERN_CLASS) || cls.contains("Struct")) return ELEMENT_TYPE_CLASS;
+        if (cls.contains(PSI_PATTERN_INTERFACE)) return ELEMENT_TYPE_INTERFACE;
+        if (cls.contains("Enum") && cls.contains("Decl")) return ELEMENT_TYPE_ENUM;
+        if (cls.contains(PSI_PATTERN_METHOD)) return ELEMENT_TYPE_METHOD;
+        if (cls.contains("Property") || cls.contains(PSI_PATTERN_FIELD)) return ELEMENT_TYPE_FIELD;
+        return null;
     }
 
     public static VirtualFile resolveVirtualFile(Project project, String path) {

@@ -648,4 +648,99 @@ class ToolUtilsTest {
             assertTrue(result.contains("Use offset="), "Should indicate more content available");
         }
     }
+
+    @Nested
+    @DisplayName("classifyGenericElement — multi-language PSI classification")
+    class ClassifyGenericElementTest {
+
+        @ParameterizedTest
+        @CsvSource({
+            // Python
+            "PyClassImpl, class",
+            "PyFunctionImpl, function",
+            "PyTargetExpressionImpl, field",
+            "PyDecoratorImpl,",
+            // JavaScript
+            "JSClassImpl, class",
+            "JSFunctionImpl, function",
+            "JSVariable, field",
+            "JSProperty, field",
+            "JSLiteralExpression,",
+            // TypeScript
+            "TypeScriptClassImpl, class",
+            "TypeScriptInterfaceImpl, interface",
+            "TypeScriptEnumImpl, enum",
+            "TypeScriptFunctionImpl, function",
+            "TypeScriptVariable, field",
+            // ES6
+            "ES6ClassImpl, class",
+            // Go
+            "GoTypeSpec, class",
+            "GoFunctionDeclaration, function",
+            "GoMethodDeclaration, function",
+            "GoVarDefinition, field",
+            "GoConstDefinition, field",
+            "GoFieldDefinition, field",
+            "GoPackageClause,",
+            // C/C++
+            "OCStructlike, class",
+            "OCFunctionDefinition, function",
+            "OCDeclarator, field",
+            "OCFieldDeclaration, field",
+            "OCInclude,",
+            // PHP
+            "PhpClassImpl, class",
+            "PhpMethodImpl, method",
+            "PhpFunctionImpl, function",
+            "PhpFieldImpl, field",
+            // Ruby
+            "RClassImpl, class",
+            "RModuleImpl, class",
+            "RMethodImpl, method",
+            // Rust
+            "RsStructItem, class",
+            "RsImplItem, class",
+            "RsEnumItem, enum",
+            "RsTraitItem, interface",
+            "RsFunction, function",
+            "RsFieldDecl, field",
+            "RsConstItem, field",
+            // C#
+            "CSharpClassDeclaration, class",
+            "CSharpStructDeclaration, class",
+            "CSharpInterfaceDeclaration, interface",
+            "CSharpEnumDeclaration, enum",
+            "CSharpMethodDeclaration, method",
+            "CSharpPropertyDeclaration, field",
+            "CSharpFieldDeclaration, field",
+            // Generic fallback
+            "SomeInterfaceDeclaration, interface",
+            // Unknown — should return null
+            "PsiWhiteSpaceImpl,",
+            "PsiCommentImpl,"
+        })
+        void classifiesByPsiClassName(String className, String expectedType) {
+            String result = ToolUtils.classifyGenericElement(className);
+            if (expectedType == null || expectedType.isEmpty()) {
+                assertNull(result, "Expected null for " + className);
+            } else {
+                assertEquals(expectedType, result, "Wrong type for " + className);
+            }
+        }
+
+        @Test
+        void pythonClassImplReturnsClass() {
+            assertEquals("class", ToolUtils.classifyGenericElement("PyClassImpl"));
+        }
+
+        @Test
+        void jsEnumLiteralNotClassifiedAsEnum() {
+            assertNull(ToolUtils.classifyGenericElement("JSEnumLiteralExpression"));
+        }
+
+        @Test
+        void unknownPrefixReturnsNull() {
+            assertNull(ToolUtils.classifyGenericElement("XyzUnknownElement"));
+        }
+    }
 }

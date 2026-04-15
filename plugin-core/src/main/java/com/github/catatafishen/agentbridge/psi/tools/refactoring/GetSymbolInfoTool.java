@@ -131,6 +131,7 @@ public final class GetSymbolInfoTool extends RefactoringTool {
     private static PsiNamedElement findNamedAncestor(@Nullable PsiElement element) {
         PsiElement current = element;
         for (int depth = 0; depth < 10 && current != null; depth++) {
+            if (current instanceof PsiFile) return null;
             if (current instanceof PsiNamedElement named && named.getName() != null) return named;
             current = current.getParent();
         }

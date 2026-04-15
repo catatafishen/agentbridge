@@ -97,9 +97,10 @@ public final class SearchSymbolsTool extends NavigationTool {
         String basePath = project.getBasePath();
         int[] fileCount = {0};
 
-        ProjectFileIndex.getInstance(project).iterateContent(vf -> {
-            if (vf.isDirectory() || (!vf.getName().endsWith(ToolUtils.JAVA_EXTENSION) && !vf.getName().endsWith(".kt")))
-                return true;
+        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+        fileIndex.iterateContent(vf -> {
+            if (vf.isDirectory() || vf.getFileType().isBinary()) return true;
+            if (!fileIndex.isInSourceContent(vf)) return true;
             fileCount[0]++;
             PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
             if (psiFile == null) return true;
