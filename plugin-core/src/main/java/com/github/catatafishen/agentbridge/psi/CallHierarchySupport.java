@@ -4,7 +4,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiNameIdentifierOwner;
 import com.intellij.psi.PsiNamedElement;
-import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import com.intellij.psi.PsiReference;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.searches.ReferencesSearch;
@@ -62,23 +61,7 @@ public class CallHierarchySupport {
                                                                         @NotNull String elementName) {
         ToolUtils.LineContext ctx = ToolUtils.resolveLineContext(project, filePath, line);
         if (ctx == null) return null;
-
-        PsiNameIdentifierOwner[] found = {null};
-        ctx.psiFile().accept(new PsiRecursiveElementWalkingVisitor() {
-            @Override
-            public void visitElement(@NotNull PsiElement element) {
-                if (element instanceof PsiNameIdentifierOwner owner && elementName.equals(owner.getName())) {
-                    int offset = owner.getTextOffset();
-                    if (offset >= ctx.lineStart() && offset <= ctx.lineEnd()) {
-                        found[0] = owner;
-                        stopWalking();
-                        return;
-                    }
-                }
-                super.visitElement(element);
-            }
-        });
-        return found[0];
+        return ToolUtils.findNamedElement(ctx, elementName);
     }
 
     private static void appendCallerInfo(@NotNull StringBuilder sb, @NotNull PsiReference ref,

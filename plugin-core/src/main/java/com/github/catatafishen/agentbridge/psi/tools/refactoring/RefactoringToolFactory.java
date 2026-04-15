@@ -21,10 +21,8 @@ public final class RefactoringToolFactory {
         var tools = new ArrayList<Tool>();
         tools.add(new RefactorTool(project));
         tools.add(new GoToDeclarationTool(project));
-        if (hasJava) {
-            tools.add(new GetTypeHierarchyTool(project));
-            tools.add(new FindImplementationsTool(project));
-        }
+        tools.add(new GetTypeHierarchyTool(project, hasJava));
+        tools.add(new FindImplementationsTool(project, hasJava));
         tools.add(new GetCallHierarchyTool(project));
         tools.add(new GetDocumentationTool(project));
         tools.add(new GetSymbolInfoTool(project));
