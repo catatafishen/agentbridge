@@ -2,7 +2,6 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.keymap.KeymapUtil
-import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.util.ui.JBUI
@@ -100,7 +99,7 @@ class PromptShortcutHintPanel(private val onClose: () -> Unit) : JBPanel<JBPanel
     private fun createRow(): JPanel {
         val row = JPanel(FlowLayout(FlowLayout.CENTER, JBUI.scale(2), 0))
         row.isOpaque = false
-        row.alignmentX = Component.CENTER_ALIGNMENT
+        row.alignmentX = CENTER_ALIGNMENT
         return row
     }
 
@@ -127,35 +126,5 @@ class PromptShortcutHintPanel(private val onClose: () -> Unit) : JBPanel<JBPanel
             foreground = UIUtil.getContextHelpForeground()
             border = JBUI.Borders.empty(0, 2)
         })
-    }
-
-    /**
-     * Small label rendered with a rounded-rect border and subtle background,
-     * mimicking a physical keyboard key cap.
-     */
-    private class KeyBadge(text: String) : JBLabel(text) {
-
-        init {
-            font = JBUI.Fonts.miniFont()
-            foreground = UIUtil.getLabelForeground()
-            border = JBUI.Borders.empty(1, 4, 1, 4)
-            isOpaque = false
-        }
-
-        override fun paintComponent(g: Graphics) {
-            val g2 = g as Graphics2D
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            val arc = JBUI.scale(4)
-            g2.color = KEY_BACKGROUND
-            g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
-            g2.color = KEY_BORDER
-            g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
-            super.paintComponent(g)
-        }
-
-        companion object {
-            private val KEY_BACKGROUND = JBColor(0xF0F0F0, 0x3C3F41)
-            private val KEY_BORDER = JBColor(0xC8C8C8, 0x5E6060)
-        }
     }
 }

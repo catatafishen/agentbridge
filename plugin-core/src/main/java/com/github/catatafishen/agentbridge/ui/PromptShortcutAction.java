@@ -24,6 +24,7 @@ public final class PromptShortcutAction extends AnAction {
     public static final String NEW_LINE_ID = "AgentBridge.Prompt.NewLine";
     public static final String STOP_AND_SEND_ID = "AgentBridge.Prompt.StopAndSend";
     public static final String QUEUE_ID = "AgentBridge.Prompt.Queue";
+    public static final String SHOW_SHORTCUTS_ID = "AgentBridge.Prompt.ShowShortcuts";
 
     /**
      * Returns the shortcut set for the given action ID from the active keymap,

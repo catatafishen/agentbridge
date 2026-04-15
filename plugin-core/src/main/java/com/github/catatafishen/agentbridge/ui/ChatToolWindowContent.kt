@@ -1596,6 +1596,7 @@ class ChatToolWindowContent(
         registerShiftEnterNewLine(editor, contentComponent)
         registerCtrlEnterNudge(contentComponent)
         registerCtrlShiftEnterQueue(contentComponent)
+        registerShowShortcutsPopup(contentComponent)
         registerPasteIntercept(editor, contentComponent)
         registerTriggerCharDetection(editor)
     }
@@ -1664,6 +1665,21 @@ class ChatToolWindowContent(
                 KeyStroke.getKeyStroke(
                     java.awt.event.KeyEvent.VK_ENTER,
                     java.awt.event.InputEvent.CTRL_DOWN_MASK or java.awt.event.InputEvent.SHIFT_DOWN_MASK
+                )
+            ),
+            contentComponent
+        )
+    }
+
+    private fun registerShowShortcutsPopup(contentComponent: JComponent) {
+        object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) = ShortcutCheatSheetPopup.show(promptTextArea)
+        }.registerCustomShortcutSet(
+            PromptShortcutAction.resolveShortcutSet(
+                PromptShortcutAction.SHOW_SHORTCUTS_ID,
+                KeyStroke.getKeyStroke(
+                    java.awt.event.KeyEvent.VK_SLASH,
+                    java.awt.event.InputEvent.CTRL_DOWN_MASK
                 )
             ),
             contentComponent

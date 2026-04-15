@@ -303,5 +303,11 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
             description="Queue the prompt to be sent after the agent finishes current work">
       <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift ENTER"/>
     </action>
+    <action id="AgentBridge.Prompt.ShowShortcuts"
+            class="com.github.catatafishen.agentbridge.ui.PromptShortcutAction"
+            text="Show Keyboard Shortcuts"
+            description="Show all available chat prompt keyboard shortcuts">
+      <keyboard-shortcut keymap="$default" first-keystroke="ctrl SLASH"/>
+    </action>
   </actions>
 </idea-plugin>
