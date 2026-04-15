@@ -6,8 +6,7 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.actions.ReformatCodeProcessor;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -64,13 +63,11 @@ public abstract class EditingTool extends Tool {
     protected void formatInline(VirtualFile vf) {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return;
-        WriteAction.run(() ->
-            CommandProcessor.getInstance().executeCommand(project, () -> {
-                PsiDocumentManager.getInstance(project).commitAllDocuments();
-                new ReformatCodeProcessor(psiFile, false).run();
-                PsiDocumentManager.getInstance(project).commitAllDocuments();
-            }, "Auto-Format (Symbol Edit)", null)
-        );
+        WriteCommandAction.runWriteCommandAction(project, "Auto-Format (Symbol Edit)", null, () -> {
+            PsiDocumentManager.getInstance(project).commitAllDocuments();
+            new ReformatCodeProcessor(psiFile, false).run();
+            PsiDocumentManager.getInstance(project).commitAllDocuments();
+        });
         // Defer import optimization to end of turn so imports added by earlier
         // edits in the same response are not stripped before later edits use them.
         com.github.catatafishen.agentbridge.psi.tools.file.FileTool.queueAutoFormat(project, vf.getPath());

@@ -9,7 +9,7 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor;
 import com.intellij.codeInsight.actions.ReformatCodeProcessor;
 import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.EditorCustomElementRenderer;
@@ -110,16 +110,14 @@ public abstract class FileTool extends Tool {
             PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
             if (psiFile == null) return;
             Document doc = psiFile.getViewProvider().getDocument();
-            WriteAction.run(() ->
-                CommandProcessor.getInstance().executeCommand(project, () -> {
-                    if (doc != null)
-                        PsiDocumentManager.getInstance(project).commitDocument(doc);
-                    new OptimizeImportsProcessor(project, psiFile).run();
-                    new ReformatCodeProcessor(psiFile, false).run();
-                    if (doc != null)
-                        PsiDocumentManager.getInstance(project).commitDocument(doc);
-                }, "Auto-Format (Deferred)", null)
-            );
+            WriteCommandAction.runWriteCommandAction(project, "Auto-Format (Deferred)", null, () -> {
+                if (doc != null)
+                    PsiDocumentManager.getInstance(project).commitDocument(doc);
+                new OptimizeImportsProcessor(project, psiFile).run();
+                new ReformatCodeProcessor(psiFile, false).run();
+                if (doc != null)
+                    PsiDocumentManager.getInstance(project).commitDocument(doc);
+            });
             LOG.info("Deferred auto-format: " + pathStr);
         } catch (Exception e) {
             LOG.warn("Deferred auto-format failed for " + pathStr + ": " + e.getMessage());

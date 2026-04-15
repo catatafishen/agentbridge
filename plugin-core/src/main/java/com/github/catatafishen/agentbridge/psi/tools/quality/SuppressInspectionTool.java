@@ -5,8 +5,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.project.Project;
@@ -159,12 +158,10 @@ public final class SuppressInspectionTool extends QualityTool {
         }
 
         String annotation = buildKotlinSuppressAnnotation(info.indent(), inspectionId);
-        WriteAction.run(() ->
-            CommandProcessor.getInstance().executeCommand(project, () -> {
-                document.insertString(info.lineStart(), annotation);
-                PsiDocumentManager.getInstance(project).commitDocument(document);
-            }, LABEL_SUPPRESS_INSPECTION, null)
-        );
+        WriteCommandAction.runWriteCommandAction(project, LABEL_SUPPRESS_INSPECTION, null, () -> {
+            document.insertString(info.lineStart(), annotation);
+            PsiDocumentManager.getInstance(project).commitDocument(document);
+        });
 
         return formatAnnotationResult(inspectionId, info.targetLine() + 1);
     }
@@ -172,12 +169,10 @@ public final class SuppressInspectionTool extends QualityTool {
     private String suppressWithComment(PsiElement target, String inspectionId, Document document) {
         LineInfo info = getLineInfo(target, document);
         String comment = buildSuppressComment(info.indent(), inspectionId);
-        WriteAction.run(() ->
-            CommandProcessor.getInstance().executeCommand(project, () -> {
-                document.insertString(info.lineStart(), comment);
-                PsiDocumentManager.getInstance(project).commitDocument(document);
-            }, LABEL_SUPPRESS_INSPECTION, null)
-        );
+        WriteCommandAction.runWriteCommandAction(project, LABEL_SUPPRESS_INSPECTION, null, () -> {
+            document.insertString(info.lineStart(), comment);
+            PsiDocumentManager.getInstance(project).commitDocument(document);
+        });
         return formatCommentResult(inspectionId, info.targetLine() + 1);
     }
 

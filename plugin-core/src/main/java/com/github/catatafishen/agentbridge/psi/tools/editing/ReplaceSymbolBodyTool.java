@@ -7,8 +7,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.ReplaceSymbolRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -116,11 +115,9 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
                 final int fEnd = endOffset;
                 final String fNew = normalized;
 
-                WriteAction.run(() ->
-                    CommandProcessor.getInstance().executeCommand(
-                        project, () -> doc.replaceString(fStart, fEnd, fNew),
-                        "Replace Symbol Body", null)
-                );
+                WriteCommandAction.runWriteCommandAction(
+                    project, "Replace Symbol Body", null,
+                    () -> doc.replaceString(fStart, fEnd, fNew));
 
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
                 formatInline(vf);

@@ -3,8 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.quality;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
@@ -61,12 +60,10 @@ public final class OptimizeImportsTool extends QualityTool {
             try {
                 FilePair pair = resolveFilePair(pathStr, resultFuture);
                 if (pair == null) return;
-                WriteAction.run(() ->
-                    CommandProcessor.getInstance().executeCommand(project, () -> {
-                        PsiDocumentManager.getInstance(project).commitAllDocuments();
-                        new com.intellij.codeInsight.actions.OptimizeImportsProcessor(project, pair.psiFile()).run();
-                    }, "Optimize Imports", null)
-                );
+                WriteCommandAction.runWriteCommandAction(project, "Optimize Imports", null, () -> {
+                    PsiDocumentManager.getInstance(project).commitAllDocuments();
+                    new com.intellij.codeInsight.actions.OptimizeImportsProcessor(project, pair.psiFile()).run();
+                });
                 String relPath = project.getBasePath() != null
                     ? relativize(project.getBasePath(), pair.vf().getPath()) : pathStr;
                 resultFuture.complete("Imports optimized: " + relPath);

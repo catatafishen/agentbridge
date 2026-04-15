@@ -4,8 +4,7 @@ import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiDocumentManager;
 import org.jetbrains.annotations.NotNull;
@@ -63,12 +62,10 @@ public final class FormatCodeTool extends QualityTool {
             try {
                 FilePair pair = resolveFilePair(pathStr, resultFuture);
                 if (pair == null) return;
-                WriteAction.run(() ->
-                    CommandProcessor.getInstance().executeCommand(project, () -> {
-                        PsiDocumentManager.getInstance(project).commitAllDocuments();
-                        new com.intellij.codeInsight.actions.ReformatCodeProcessor(pair.psiFile(), false).run();
-                    }, "Reformat Code", null)
-                );
+                WriteCommandAction.runWriteCommandAction(project, "Reformat Code", null, () -> {
+                    PsiDocumentManager.getInstance(project).commitAllDocuments();
+                    new com.intellij.codeInsight.actions.ReformatCodeProcessor(pair.psiFile(), false).run();
+                });
                 String relPath = project.getBasePath() != null
                     ? relativize(project.getBasePath(), pair.vf().getPath()) : pathStr;
                 resultFuture.complete("Code formatted: " + relPath);

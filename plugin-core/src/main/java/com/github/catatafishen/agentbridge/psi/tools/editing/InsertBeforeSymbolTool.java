@@ -7,8 +7,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.ReplaceSymbolRenderer;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
@@ -113,11 +112,9 @@ public final class InsertBeforeSymbolTool extends EditingTool {
                 final String fContent = normalized;
                 final int fOffset = offset;
 
-                WriteAction.run(() ->
-                    CommandProcessor.getInstance().executeCommand(
-                        project, () -> doc.insertString(fOffset, fContent),
-                        "Insert Before Symbol", null)
-                );
+                WriteCommandAction.runWriteCommandAction(
+                    project, "Insert Before Symbol", null,
+                    () -> doc.insertString(fOffset, fContent));
 
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
                 formatInline(vf);

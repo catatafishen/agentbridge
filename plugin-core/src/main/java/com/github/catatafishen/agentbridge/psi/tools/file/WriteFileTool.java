@@ -7,7 +7,7 @@ import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.WriteFileRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.WriteAction;
-import com.intellij.openapi.command.CommandProcessor;
+import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -172,10 +172,8 @@ public class WriteFileTool extends FileTool {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc != null) {
             String oldContent = doc.getText();
-            WriteAction.run(() ->
-                CommandProcessor.getInstance().executeCommand(
-                    project, () -> doc.setText(newContent), "Write File", null)
-            );
+            WriteCommandAction.runWriteCommandAction(
+                project, "Write File", null, () -> doc.setText(newContent));
             FileDocumentManager.getInstance().saveDocument(doc);
             int[] diff = CodeChangeTracker.diffLines(oldContent, newContent);
             CodeChangeTracker.recordChange(diff[0], diff[1]);
@@ -281,11 +279,9 @@ public class WriteFileTool extends FileTool {
         }
         final int finalIdx = idx;
         final int finalLen = matchLen;
-        WriteAction.run(() ->
-            CommandProcessor.getInstance().executeCommand(
-                project, () -> doc.replaceString(finalIdx, finalIdx + finalLen, normalizedNew),
-                "Edit File", null)
-        );
+        WriteCommandAction.runWriteCommandAction(
+            project, "Edit File", null,
+            () -> doc.replaceString(finalIdx, finalIdx + finalLen, normalizedNew));
         FileDocumentManager.getInstance().saveDocument(doc);
         CodeChangeTracker.recordChange(CodeChangeTracker.countLines(normalizedNew), CodeChangeTracker.countLines(normalizedOld));
         String syntaxWarning = checkSyntaxErrors(doc, pathStr);
@@ -343,11 +339,9 @@ public class WriteFileTool extends FileTool {
         final int fEnd = endOffset;
         final String fNew = newStr;
         int replacedLines = endLine - startLine + 1;
-        WriteAction.run(() ->
-            CommandProcessor.getInstance().executeCommand(
-                project, () -> doc.replaceString(fStart, fEnd, fNew),
-                "Edit File (Line Range)", null)
-        );
+        WriteCommandAction.runWriteCommandAction(
+            project, "Edit File (Line Range)", null,
+            () -> doc.replaceString(fStart, fEnd, fNew));
         FileDocumentManager.getInstance().saveDocument(doc);
         CodeChangeTracker.recordChange(CodeChangeTracker.countLines(fNew), replacedLines);
         String syntaxWarning = checkSyntaxErrors(doc, pathStr);
@@ -432,14 +426,12 @@ public class WriteFileTool extends FileTool {
                 closestMatchHint(text, normalizedOld));
             return;
         }
-        WriteAction.run(() ->
-            CommandProcessor.getInstance().executeCommand(project, () -> {
-                for (int i = positions.size() - 1; i >= 0; i--) {
-                    int start = positions.get(i);
-                    doc.replaceString(start, start + normalizedOld.length(), normalizedNew);
-                }
-            }, "Edit File", null)
-        );
+        WriteCommandAction.runWriteCommandAction(project, "Edit File", null, () -> {
+            for (int i = positions.size() - 1; i >= 0; i--) {
+                int start = positions.get(i);
+                doc.replaceString(start, start + normalizedOld.length(), normalizedNew);
+            }
+        });
         FileDocumentManager.getInstance().saveDocument(doc);
         CodeChangeTracker.recordChange(
             positions.size() * CodeChangeTracker.countLines(normalizedNew),
@@ -493,13 +485,11 @@ public class WriteFileTool extends FileTool {
     private void formatFileSync(VirtualFile vf) {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return;
-        WriteAction.run(() ->
-            CommandProcessor.getInstance().executeCommand(project, () -> {
-                PsiDocumentManager.getInstance(project).commitAllDocuments();
-                new com.intellij.codeInsight.actions.ReformatCodeProcessor(psiFile, false).run();
-                PsiDocumentManager.getInstance(project).commitAllDocuments();
-            }, "Pre-Format for Edit", null)
-        );
+        WriteCommandAction.runWriteCommandAction(project, "Pre-Format for Edit", null, () -> {
+            PsiDocumentManager.getInstance(project).commitAllDocuments();
+            new com.intellij.codeInsight.actions.ReformatCodeProcessor(psiFile, false).run();
+            PsiDocumentManager.getInstance(project).commitAllDocuments();
+        });
     }
 
     /**
