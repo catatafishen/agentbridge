@@ -68,8 +68,8 @@ dependencies {
         }"
     )  // Required by IntelliJ test framework
     testImplementation("org.mockito:mockito-core:${providers.gradleProperty("mockitoVersion").get()}")
-    // Jazzer API stubs — presence of the import satisfies OpenSSF Scorecard fuzzing check;
-    // actual fuzz runs use the full Jazzer engine invoked separately (not during `gradle test`).
+    // Jazzer API — provides FuzzedDataProvider for fuzz targets in src/test/.../fuzz/.
+    // Actual fuzzing runs use the full Jazzer engine via the CI fuzz workflow.
     testImplementation("com.code-intelligence:jazzer-api:${providers.gradleProperty("jazzerVersion").get()}")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testRuntimeOnly("org.junit.vintage:junit-vintage-engine:${providers.gradleProperty("junitVersion").get()}")
@@ -545,5 +545,14 @@ tasks {
             "-Didea.suppressed.plugins.id=",             // Don't suppress any plugins
             "-Didea.plugin.in.sandbox.mode=true"         // Sandbox mode
         )
+    }
+}
+
+tasks.register("printFuzzClasspath") {
+    description = "Print the test runtime classpath for standalone Jazzer fuzz runs"
+    group = "verification"
+    dependsOn("testClasses")
+    doLast {
+        println(sourceSets.test.get().runtimeClasspath.asPath)
     }
 }

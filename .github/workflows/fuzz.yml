@@ -1,0 +1,99 @@
+name: Fuzz Testing
+
+on:
+  schedule:
+    - cron: '0 4 * * 6'  # Weekly on Saturday at 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: 'Fuzz duration per target (seconds)'
+        required: false
+        default: '120'
+
+permissions: read-all
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  fuzz:
+    name: Jazzer Fuzz Targets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2.17.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        with:
+          cache-disabled: true
+
+      - name: Build test classpath
+        run: ./gradlew :plugin-core:testClasses --no-daemon --quiet
+
+      - name: Download Jazzer
+        env:
+          JAZZER_VERSION: '0.22.0'
+        run: |
+          curl -sSfL -o jazzer.tar.gz \
+            "https://github.com/CodeIntelligenceTesting/jazzer/releases/download/v${JAZZER_VERSION}/jazzer-linux.tar.gz"
+          mkdir -p jazzer-bin
+          tar xzf jazzer.tar.gz -C jazzer-bin
+          echo "$PWD/jazzer-bin" >> "$GITHUB_PATH"
+
+      - name: Resolve test classpath
+        id: classpath
+        run: |
+          CP=$(./gradlew :plugin-core:printFuzzClasspath --no-daemon -q | tail -1)
+          echo "cp=$CP" >> "$GITHUB_OUTPUT"
+
+      - name: Run Jazzer fuzz targets
+        env:
+          FUZZ_CLASSPATH: ${{ steps.classpath.outputs.cp }}
+          FUZZ_DURATION: ${{ inputs.duration || '120' }}
+        run: |
+          TARGETS=(
+            com.github.catatafishen.agentbridge.fuzz.AgentIdMapperFuzz
+            com.github.catatafishen.agentbridge.fuzz.MarkdownRendererFuzz
+          )
+          FAILED=0
+
+          for target in "${TARGETS[@]}"; do
+            echo "::group::Fuzzing $target (${FUZZ_DURATION}s)"
+            # Jazzer returns non-zero if it finds a crash within the time limit.
+            # timeout returns 124 on expiry, which is a clean exit (no crash found).
+            if timeout "${FUZZ_DURATION}" jazzer \
+                --cp="$FUZZ_CLASSPATH" \
+                --target_class="$target" \
+                --keep_going=5 2>&1; then
+              echo "✅ $target: no issues found"
+            else
+              EXIT=$?
+              if [ "$EXIT" -eq 124 ]; then
+                echo "✅ $target: clean (timeout, no crashes)"
+              else
+                echo "❌ $target: Jazzer found an issue (exit $EXIT)"
+                FAILED=1
+              fi
+            fi
+            echo "::endgroup::"
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::One or more fuzz targets found issues"
+            exit 1
+          fi
