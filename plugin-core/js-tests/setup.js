@@ -21,6 +21,10 @@ globalThis._bridge = {
     },
     showToolPopup: () => {
     },
+    autoScrollDisabled: () => {
+    },
+    autoScrollEnabled: () => {
+    },
 };
 
 // Import the chat-ui entry point — registers custom elements + exposes ChatController
