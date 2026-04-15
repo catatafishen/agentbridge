@@ -386,7 +386,9 @@ function processEvent(ev: SseEvent, replaying: boolean): void {
         }
     }
     if (ev.seq && ev.seq > lastSeq) lastSeq = ev.seq;
-    if (!replaying && atBottom) requestAnimationFrame(scrollToBottom);
+    // Scrolling is handled by ChatContainer's MutationObserver (scrollIfNeeded)
+    // which respects the _autoScroll flag. No explicit scrollToBottom() here —
+    // doing so would bypass _autoScroll and fight user scroll attempts.
 }
 
 // ── SSE ─────────────────────────────────────────────────────────────────────

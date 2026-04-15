@@ -11,7 +11,7 @@ export default class ChatContainer extends HTMLElement {
     private _prevScrollTop = 0;
     private _onScroll: (() => void) | null = null;
     private _onWheel: (() => void) | null = null;
-    private _wheelTimer: ReturnType<typeof setTimeout> | null = null;
+    private _wheelRAF: number | null = null;
     private _resizeObs: ResizeObserver | null = null;
 
     connectedCallback(): void {
@@ -32,14 +32,19 @@ export default class ChatContainer extends HTMLElement {
                 this._autoScroll = false;
                 globalThis._bridge?.autoScrollDisabled?.();
             }
-            // After the wheel-initiated scroll settles, re-enable if at bottom.
-            if (this._wheelTimer) clearTimeout(this._wheelTimer);
-            this._wheelTimer = setTimeout(() => {
-                if (!this._autoScroll && this._isAtBottom()) {
-                    this._autoScroll = true;
-                    globalThis._bridge?.autoScrollEnabled?.();
-                }
-            }, 150);
+            // Re-check on the next frame (after the browser applies the scroll delta).
+            // Unlike a debounced timer, this fires once per wheel event and isn't
+            // reset by subsequent events — so autoscroll re-enables on the first
+            // frame where the viewport is at bottom.
+            if (!this._wheelRAF) {
+                this._wheelRAF = requestAnimationFrame(() => {
+                    this._wheelRAF = null;
+                    if (!this._autoScroll && this._isAtBottom()) {
+                        this._autoScroll = true;
+                        globalThis._bridge?.autoScrollEnabled?.();
+                    }
+                });
+            }
         };
         this.addEventListener('wheel', this._onWheel, {passive: true});
 
@@ -205,9 +210,9 @@ export default class ChatContainer extends HTMLElement {
         this._resizeObs?.disconnect();
         if (this._onScroll) this.removeEventListener('scroll', this._onScroll);
         if (this._onWheel) this.removeEventListener('wheel', this._onWheel);
-        if (this._wheelTimer) {
-            clearTimeout(this._wheelTimer);
-            this._wheelTimer = null;
+        if (this._wheelRAF) {
+            cancelAnimationFrame(this._wheelRAF);
+            this._wheelRAF = null;
         }
         if (this._scrollRAF) {
             cancelAnimationFrame(this._scrollRAF);
