@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.memory;
 
 import com.github.catatafishen.agentbridge.memory.mining.BackfillMiner;
+import com.github.catatafishen.agentbridge.memory.mining.MiningTracker;
 import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
@@ -205,22 +206,28 @@ public final class MemorySettingsConfigurable implements Configurable {
                 indicator.setIndeterminate(false);
                 indicator.setFraction(0);
 
+                MiningTracker tracker = MiningTracker.getInstance(project);
+                tracker.startBackfill();
+
                 BackfillMiner backfillMiner = new BackfillMiner(project);
                 try {
                     backfillMiner.runSync(
                         text -> {
                             indicator.setText(text);
+                            tracker.reportProgress(text);
                             ApplicationManager.getApplication().invokeLater(() ->
                                 backfillStatusLabel.setText(text));
                         },
                         indicator::setFraction,
                         indicator::isCanceled);
+                    tracker.stop();
                     ApplicationManager.getApplication().invokeLater(() -> {
                         miningInProgress = false;
                         backfillButton.setEnabled(enabledCheckBox.isSelected());
                         updateBackfillStatus();
                     });
                 } catch (Exception e) {
+                    tracker.stop();
                     ApplicationManager.getApplication().invokeLater(() -> {
                         miningInProgress = false;
                         backfillButton.setEnabled(enabledCheckBox.isSelected());
