@@ -134,41 +134,67 @@ public final class BertWeights {
     }
 
     /**
-     * Loads all 101 tensors of the all-MiniLM-L6-v2 model from a safetensors file.
+     * Auto-detects the tensor name prefix by probing the reader for a known tensor.
+     *
+     * <p>PyTorch checkpoints use {@code "bert."} prefix (e.g., {@code bert.embeddings.*}),
+     * while HuggingFace safetensors exports omit it (e.g., {@code embeddings.*}).
+     *
+     * @return {@code "bert."} or {@code ""} depending on the model file
+     * @throws IOException if neither prefix resolves to a valid tensor
+     */
+    private static String detectPrefix(@NotNull SafetensorsReader reader) throws IOException {
+        String probeTensor = "embeddings.word_embeddings.weight";
+        if (reader.hasTensor("bert." + probeTensor)) {
+            return "bert.";
+        }
+        if (reader.hasTensor(probeTensor)) {
+            return "";
+        }
+        throw new IOException("Cannot detect tensor prefix: neither 'bert." + probeTensor
+            + "' nor '" + probeTensor + "' found in safetensors metadata");
+    }
+
+    /**
+     * Loads all tensors of the all-MiniLM-L6-v2 model from a safetensors file.
+     *
+     * <p>Supports both PyTorch-style naming ({@code bert.embeddings.*}) and
+     * HuggingFace safetensors naming ({@code embeddings.*}). The prefix is
+     * auto-detected from the first tensor.
      *
      * @param reader an open {@link SafetensorsReader} positioned on the model file
      * @throws IOException if any tensor cannot be read from the file
      */
     public BertWeights(@NotNull SafetensorsReader reader) throws IOException {
+        String prefix = detectPrefix(reader);
+
         // ---- Embeddings ---------------------------------------------------------
-        // sentence-transformers/all-MiniLM-L6-v2 safetensors omit the "bert." prefix
-        wordEmbeddings = reader.loadTensor("embeddings.word_embeddings.weight");
-        positionEmbeddings = reader.loadTensor("embeddings.position_embeddings.weight");
-        tokenTypeEmbeddings = reader.loadTensor("embeddings.token_type_embeddings.weight");
-        embeddingLayerNormWeight = reader.loadTensor("embeddings.LayerNorm.weight");
-        embeddingLayerNormBias = reader.loadTensor("embeddings.LayerNorm.bias");
+        wordEmbeddings = reader.loadTensor(prefix + "embeddings.word_embeddings.weight");
+        positionEmbeddings = reader.loadTensor(prefix + "embeddings.position_embeddings.weight");
+        tokenTypeEmbeddings = reader.loadTensor(prefix + "embeddings.token_type_embeddings.weight");
+        embeddingLayerNormWeight = reader.loadTensor(prefix + "embeddings.LayerNorm.weight");
+        embeddingLayerNormBias = reader.loadTensor(prefix + "embeddings.LayerNorm.bias");
 
         // ---- Encoder layers -----------------------------------------------------
         layers = new LayerWeights[NUM_LAYERS];
         for (int i = 0; i < NUM_LAYERS; i++) {
-            String prefix = "encoder.layer." + i + ".";
+            String layerPrefix = prefix + "encoder.layer." + i + ".";
             layers[i] = new LayerWeights(
-                reader.loadTensor(prefix + "attention.self.query.weight"),
-                reader.loadTensor(prefix + "attention.self.query.bias"),
-                reader.loadTensor(prefix + "attention.self.key.weight"),
-                reader.loadTensor(prefix + "attention.self.key.bias"),
-                reader.loadTensor(prefix + "attention.self.value.weight"),
-                reader.loadTensor(prefix + "attention.self.value.bias"),
-                reader.loadTensor(prefix + "attention.output.dense.weight"),
-                reader.loadTensor(prefix + "attention.output.dense.bias"),
-                reader.loadTensor(prefix + "attention.output.LayerNorm.weight"),
-                reader.loadTensor(prefix + "attention.output.LayerNorm.bias"),
-                reader.loadTensor(prefix + "intermediate.dense.weight"),
-                reader.loadTensor(prefix + "intermediate.dense.bias"),
-                reader.loadTensor(prefix + "output.dense.weight"),
-                reader.loadTensor(prefix + "output.dense.bias"),
-                reader.loadTensor(prefix + "output.LayerNorm.weight"),
-                reader.loadTensor(prefix + "output.LayerNorm.bias")
+                reader.loadTensor(layerPrefix + "attention.self.query.weight"),
+                reader.loadTensor(layerPrefix + "attention.self.query.bias"),
+                reader.loadTensor(layerPrefix + "attention.self.key.weight"),
+                reader.loadTensor(layerPrefix + "attention.self.key.bias"),
+                reader.loadTensor(layerPrefix + "attention.self.value.weight"),
+                reader.loadTensor(layerPrefix + "attention.self.value.bias"),
+                reader.loadTensor(layerPrefix + "attention.output.dense.weight"),
+                reader.loadTensor(layerPrefix + "attention.output.dense.bias"),
+                reader.loadTensor(layerPrefix + "attention.output.LayerNorm.weight"),
+                reader.loadTensor(layerPrefix + "attention.output.LayerNorm.bias"),
+                reader.loadTensor(layerPrefix + "intermediate.dense.weight"),
+                reader.loadTensor(layerPrefix + "intermediate.dense.bias"),
+                reader.loadTensor(layerPrefix + "output.dense.weight"),
+                reader.loadTensor(layerPrefix + "output.dense.bias"),
+                reader.loadTensor(layerPrefix + "output.LayerNorm.weight"),
+                reader.loadTensor(layerPrefix + "output.LayerNorm.bias")
             );
         }
 
@@ -181,6 +207,8 @@ public final class BertWeights {
         for (LayerWeights layer : layers) {
             totalParams += layer.parameterCount();
         }
-        LOG.info("Loaded BertWeights: " + totalParams + " parameters from 101 tensors");
+        int tensorCount = 5 + NUM_LAYERS * 16;
+        LOG.info("Loaded BertWeights: " + totalParams + " parameters from " + tensorCount
+            + " tensors (prefix: " + (prefix.isEmpty() ? "<none>" : "'" + prefix + "'") + ")");
     }
 }
