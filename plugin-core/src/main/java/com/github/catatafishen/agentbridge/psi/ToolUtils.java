@@ -562,26 +562,11 @@ public final class ToolUtils {
         // Block direct Gradle compile tasks — should use build_project (IntelliJ incremental compiler)
         if (isGradleCompileCommand(cmd)) return "compile";
 
+        // Block build/check tasks that implicitly run tests — should use build_project or run_tests
+        if (isBuildCommand(cmd)) return "test";
+
         // Block test commands — should use run_tests
-        // Explicit test tasks
-        if (cmd.matches(".*(gradlew|gradle|mvn|npm|yarn|pnpm|pytest|jest|mocha|go) test.*") ||
-            cmd.matches(".*\\./gradlew.*test.*") ||
-            cmd.matches(".*python.*-m.*pytest.*") ||
-            cmd.matches(".*cargo test.*") ||
-            cmd.matches(".*dotnet test.*") ||
-            // Bare pytest with args (pytest alone is caught by the first pattern via "pytest test")
-            cmd.matches("pytest\\s+.*") ||
-            // npx/bunx/pnpx wrappers for test runners
-            cmd.matches(".*(npx|bunx|pnpx)\\s+(jest|vitest|mocha|ava|tap|jasmine).*") ||
-            // Gradle build/check tasks (implicitly run tests)
-            cmd.matches(".*(gradlew|gradle)\\s+(build|check)(\\s.*|$)") ||
-            cmd.matches(".*\\./gradlew\\s+(build|check)(\\s.*|$)") ||
-            // Maven lifecycle phases that include tests
-            cmd.matches(".*mvn\\s+(verify|package|install|deploy)(\\s.*|$)") ||
-            // npm/yarn/pnpm run test
-            cmd.matches(".*(npm|yarn|pnpm)\\s+run\\s+test.*")) {
-            return "test";
-        }
+        if (isTestCommand(cmd)) return "test";
 
         return null;
     }
@@ -592,28 +577,126 @@ public final class ToolUtils {
         return isGradleCmd && hasCompileTask;
     }
 
+    private static boolean isTestCommand(String cmd) {
+        return cmd.matches(".*(gradlew|gradle|mvn|npm|yarn|pnpm|pytest|jest|mocha|go) test.*") ||
+            cmd.matches(".*\\./gradlew.*test.*") ||
+            cmd.matches(".*python.*-m.*pytest.*") ||
+            cmd.matches(".*cargo test.*") ||
+            cmd.matches(".*dotnet test.*") ||
+            cmd.matches("pytest\\s+.*") ||
+            cmd.matches(".*(npx|bunx|pnpx)\\s+(jest|vitest|mocha|ava|tap|jasmine).*") ||
+            cmd.matches(".*(npm|yarn|pnpm)\\s+run\\s+test.*") ||
+            // Bare test runner invocations (jest, vitest, mocha, etc.)
+            cmd.matches("(jest|vitest|mocha|ava|tap|jasmine)(\\s.*|$)");
+    }
+
+    private static boolean isBuildCommand(String cmd) {
+        return cmd.matches(".*(gradlew|gradle)\\s+(build|check)(\\s.*|$)") ||
+            cmd.matches(".*\\./gradlew\\s+(build|check)(\\s.*|$)") ||
+            cmd.matches(".*mvn\\s+(verify|package|install|deploy)(\\s.*|$)");
+    }
+
+    /**
+     * Detects hard-block abuse patterns for {@code run_in_terminal}.
+     * Only blocks commands that cause IDE state desync (git, sed).
+     * For commands with better MCP alternatives (grep, cat, find), use
+     * {@link #getTerminalReprimand(String)} to append a warning instead.
+     */
+    public static @Nullable String detectTerminalAbuseType(@NotNull String command) {
+        String cmd = command.toLowerCase().trim();
+        if (cmd.startsWith("git ") || cmd.equals("git")) return "git";
+        if (cmd.startsWith("sed ")) return "sed";
+        return null;
+    }
+
+    /**
+     * Returns a warning message for terminal commands that have better MCP tool alternatives.
+     * Unlike {@link #detectTerminalAbuseType(String)}, this does NOT block execution — the
+     * command runs normally but the warning is prepended to the output to nudge the agent
+     * toward the purpose-built tool.
+     *
+     * @return a warning string to prepend to output, or null if no reprimand needed
+     */
+    public static @Nullable String getTerminalReprimand(@NotNull String command) {
+        String cmd = command.toLowerCase().trim();
+
+        // grep/rg/ag — prefer search_text or search_symbols
+        if (cmd.startsWith("grep ") || cmd.startsWith("rg ") || cmd.startsWith("ag ") ||
+            cmd.contains("| grep ") || cmd.contains("| rg ") || cmd.contains("| ag ")) {
+            return "⚠️ Prefer search_text or search_symbols over shell grep — "
+                + "they search live editor buffers and support semantic lookup.";
+        }
+
+        // cat/head/tail/less/more — prefer read_file
+        if (cmd.matches("(cat|head|tail|less|more) .*")) {
+            return "⚠️ Prefer read_file over shell cat/head/tail — "
+                + "it reads live editor buffers, not stale disk content.";
+        }
+
+        // find — prefer list_project_files / list_directory_tree
+        if (cmd.matches("find \\S+.*-name.*") || cmd.matches("find \\S+.*-type.*") ||
+            cmd.startsWith("find .") || cmd.startsWith("find /")) {
+            return "⚠️ Prefer list_project_files or list_directory_tree over shell find — "
+                + "they respect project structure and exclusions.";
+        }
+
+        // ls/dir/tree — prefer list_project_files / list_directory_tree
+        if (cmd.startsWith("ls ") || cmd.equals("ls") ||
+            cmd.startsWith("dir ") || cmd.equals("dir") ||
+            cmd.startsWith("tree ") || cmd.equals("tree")) {
+            return "⚠️ Prefer list_project_files or list_directory_tree over shell ls/tree — "
+                + "they respect project structure and exclusions.";
+        }
+
+        // test commands — prefer run_tests
+        if (isTestCommand(cmd)) {
+            return "⚠️ Prefer run_tests over shell test commands — "
+                + "it provides structured pass/fail results with IntelliJ test runner integration.";
+        }
+
+        // compile/build commands — prefer build_project
+        if (isGradleCompileCommand(cmd) || isBuildCommand(cmd)) {
+            return "⚠️ Prefer build_project over shell compile/build commands — "
+                + "it uses IntelliJ's incremental compiler with structured error reporting.";
+        }
+
+        return null;
+    }
+
     /**
      * Map abuse type to a human-readable error message for MCP tool responses.
+     *
+     * @param abuseType the detected abuse category
+     * @param toolName  the tool that detected the abuse (e.g. "run_command", "run_in_terminal")
      */
-    public static String getCommandAbuseMessage(String abuseType) {
+    public static String getCommandAbuseMessage(String abuseType, String toolName) {
         return switch (abuseType) {
-            case "git" -> "Error: git commands are not allowed via run_command (causes IntelliJ buffer desync). "
+            case "git" -> "Error: git commands are not allowed via " + toolName + " (causes IntelliJ buffer desync). "
                 + "Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, "
                 + "git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, "
                 + "git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset.";
-            case "cat" -> "Error: cat/head/tail/less/more are not allowed via run_command (reads stale disk files). "
-                + "Use intellij_read_file to read live editor buffers instead.";
-            case "sed" -> "Error: sed is not allowed via run_command (bypasses IntelliJ editor buffers). "
+            case "cat" ->
+                "Error: cat/head/tail/less/more are not allowed via " + toolName + " (reads stale disk files). "
+                    + "Use intellij_read_file to read live editor buffers instead.";
+            case "sed" -> "Error: sed is not allowed via " + toolName + " (bypasses IntelliJ editor buffers). "
                 + "Use edit_text with old_str/new_str for file editing instead.";
-            case "grep" -> "Error: grep/rg commands are not allowed via run_command (searches stale disk files). "
+            case "grep" -> "Error: grep/rg commands are not allowed via " + toolName + " (searches stale disk files). "
                 + "Use search_text or search_symbols to search live editor buffers instead.";
-            case "find" -> "Error: find commands are not allowed via run_command. "
+            case "find" -> "Error: find commands are not allowed via " + toolName + ". "
                 + "Use list_project_files to find files instead.";
-            case "compile" -> "Error: Gradle compile tasks are not allowed via run_command. "
+            case "compile" -> "Error: Gradle compile tasks are not allowed via " + toolName + ". "
                 + "Use build_project to compile via IntelliJ's incremental compiler instead.";
-            case "test" -> "Error: test commands are not allowed via run_command (including build/check/verify " +
+            case "test" -> "Error: test commands are not allowed via " + toolName + " (including build/check/verify " +
                 "which implicitly run tests). Use run_tests to run tests with proper IntelliJ integration instead.";
-            default -> "Error: this command is not allowed via run_command. Use dedicated IntelliJ tools instead.";
+            default -> "Error: this command is not allowed via " + toolName + ". Use dedicated IntelliJ tools instead.";
         };
+    }
+
+    /**
+     * Map abuse type to a human-readable error message for MCP tool responses.
+     * Uses "run_command" as the default tool name for backward compatibility.
+     */
+    public static String getCommandAbuseMessage(String abuseType) {
+        return getCommandAbuseMessage(abuseType, "run_command");
     }
 }

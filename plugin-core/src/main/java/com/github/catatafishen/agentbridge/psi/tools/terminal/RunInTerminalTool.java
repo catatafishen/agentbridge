@@ -70,7 +70,7 @@ public final class RunInTerminalTool extends TerminalTool {
         if (!(toolCall instanceof JsonObject jsonToolCall)) return null;
         String command = extractCommand(jsonToolCall);
         if (command == null) return null;
-        return ToolUtils.detectCommandAbuseType(command);
+        return ToolUtils.detectTerminalAbuseType(command);
     }
 
     private static @Nullable String extractCommand(@NotNull JsonObject toolCall) {
@@ -90,8 +90,11 @@ public final class RunInTerminalTool extends TerminalTool {
         String command = args.get(JSON_COMMAND).getAsString();
 
         // Runtime guard: reject abuse patterns even if the pre-check was skipped
-        String abuseType = ToolUtils.detectCommandAbuseType(command);
-        if (abuseType != null) return ToolUtils.getCommandAbuseMessage(abuseType);
+        String abuseType = ToolUtils.detectTerminalAbuseType(command);
+        if (abuseType != null) return ToolUtils.getCommandAbuseMessage(abuseType, "run_in_terminal");
+
+        // Soft reprimand: command runs but output is prefixed with a nudge toward the better tool
+        String reprimand = ToolUtils.getTerminalReprimand(command);
 
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
         boolean newTab = args.has(JSON_NEW_TAB) && args.get(JSON_NEW_TAB).getAsBoolean();
@@ -123,7 +126,8 @@ public final class RunInTerminalTool extends TerminalTool {
         });
 
         try {
-            return resultFuture.get(10, TimeUnit.SECONDS);
+            String result = resultFuture.get(10, TimeUnit.SECONDS);
+            return reprimand != null ? reprimand + "\n\n" + result : result;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Terminal opened (response timed out, but command was likely sent).";
