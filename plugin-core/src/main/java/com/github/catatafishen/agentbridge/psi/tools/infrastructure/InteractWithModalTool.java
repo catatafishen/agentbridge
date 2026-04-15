@@ -167,7 +167,7 @@ public final class InteractWithModalTool extends InfrastructureTool {
     private static boolean doClick(Container container, String buttonText) {
         for (Component comp : container.getComponents()) {
             if (comp instanceof JButton btn && btn.isEnabled()
-                && buttonText.equalsIgnoreCase(btn.getText())) {
+                && btn.getText() != null && buttonText.equalsIgnoreCase(btn.getText())) {
                 btn.doClick();
                 return true;
             }
@@ -186,7 +186,7 @@ public final class InteractWithModalTool extends InfrastructureTool {
 
     private static void collectButtons(Container container, List<String> result) {
         for (Component comp : container.getComponents()) {
-            if (comp instanceof JButton btn && btn.isEnabled() && !btn.getText().isBlank()) {
+            if (comp instanceof JButton btn && btn.isEnabled() && btn.getText() != null && !btn.getText().isBlank()) {
                 result.add(btn.getText());
             }
             if (comp instanceof Container c) {
@@ -199,13 +199,13 @@ public final class InteractWithModalTool extends InfrastructureTool {
                                           List<String> labels, List<String> radioButtons,
                                           List<String> checkBoxes, List<String> buttons) {
         for (Component comp : container.getComponents()) {
-            if (comp instanceof JRadioButton rb && !rb.getText().isBlank()) {
+            if (comp instanceof JRadioButton rb && rb.getText() != null && !rb.getText().isBlank()) {
                 radioButtons.add(rb.getText());
-            } else if (comp instanceof JCheckBox cb && !cb.getText().isBlank()) {
+            } else if (comp instanceof JCheckBox cb && cb.getText() != null && !cb.getText().isBlank()) {
                 checkBoxes.add(cb.getText());
-            } else if (comp instanceof JButton btn && !btn.getText().isBlank()) {
+            } else if (comp instanceof JButton btn && btn.getText() != null && !btn.getText().isBlank()) {
                 buttons.add(btn.getText());
-            } else if (comp instanceof JLabel lbl && !lbl.getText().isBlank() && lbl.getIcon() == null) {
+            } else if (comp instanceof JLabel lbl && lbl.getText() != null && !lbl.getText().isBlank() && lbl.getIcon() == null) {
                 labels.add(lbl.getText());
             }
             if (comp instanceof Container c) {
