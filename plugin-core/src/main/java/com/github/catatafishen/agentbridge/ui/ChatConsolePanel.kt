@@ -36,6 +36,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override var onStatusMessage: ((type: String, message: String) -> Unit)? = null
     var onCancelNudge: ((String) -> Unit)? = null
     var onCancelQueuedMessage: ((id: String, text: String) -> Unit)? = null
+    var onAutoScrollDisabled: (() -> Unit)? = null
 
     // ── Data model (same types as V1 for serialization compat) ─────
     private val entries = mutableListOf<EntryData>()
@@ -90,6 +91,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     private var showToolPopupBridgeJs = ""
     private var cancelNudgeBridgeJs = ""
     private var cancelQueuedMessageBridgeJs = ""
+    private var autoScrollDisabledBridgeJs = ""
 
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
@@ -207,6 +209,11 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             }
             Disposer.register(this, cancelQueuedMessageQuery)
             cancelQueuedMessageBridgeJs = cancelQueuedMessageQuery.inject("JSON.stringify({id: id, text: text})")
+
+            val autoScrollDisabledQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            autoScrollDisabledQuery.addHandler { onAutoScrollDisabled?.invoke(); null }
+            Disposer.register(this, autoScrollDisabledQuery)
+            autoScrollDisabledBridgeJs = autoScrollDisabledQuery.inject("''")
 
             add(browser.component, BorderLayout.CENTER)
 
@@ -1631,7 +1638,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 openScratch: function(lang, content) { $openScratchBridgeJs },
                 showToolPopup: function(id) { $showToolPopupBridgeJs },
                 cancelNudge: function(id) { $cancelNudgeBridgeJs },
-                cancelQueuedMessage: function(id, text) { $cancelQueuedMessageBridgeJs }
+                cancelQueuedMessage: function(id, text) { $cancelQueuedMessageBridgeJs },
+                autoScrollDisabled: function() { $autoScrollDisabledBridgeJs }
             };
         """.trimIndent()
         val css = loadResource("/chat/chat.css")

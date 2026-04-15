@@ -1,7 +1,6 @@
 export default class ChatContainer extends HTMLElement {
     private _init = false;
     private _autoScroll = true;
-    private _autoScrollLocked = false; // true when user explicitly disabled via toggle
     private _restoring = false; // true while initial history batch is being inserted
     private _messages!: HTMLDivElement;
     private _workingIndicator!: HTMLElement;
@@ -32,18 +31,16 @@ export default class ChatContainer extends HTMLElement {
                 this._prevScrollTop = this.scrollTop;
                 return;
             }
-            const atBottom = this.scrollTop + this.clientHeight >= this.scrollHeight - 40;
-            if (atBottom && !this._autoScrollLocked) {
-                this._autoScroll = true;
-            } else if (this.scrollTop < this._prevScrollTop) {
-                // User intentionally scrolled up — disable auto-scroll
+            // Any manual scroll disables auto-scroll — the button is the only way to re-enable
+            if (this._autoScroll) {
                 this._autoScroll = false;
-                // Trigger load-more when scrolled near the top.
-                if (this.scrollTop <= 30) {
-                    const lm = this._messages.querySelector<HTMLElement>('load-more:not([loading])');
-                    if (lm) {
-                        lm.click();
-                    }
+                globalThis._bridge?.autoScrollDisabled?.();
+            }
+            // Trigger load-more when scrolled near the top while scrolling up
+            if (this.scrollTop < this._prevScrollTop && this.scrollTop <= 30) {
+                const lm = this._messages.querySelector<HTMLElement>('load-more:not([loading])');
+                if (lm) {
+                    lm.click();
                 }
             }
             this._prevScrollTop = this.scrollTop;
@@ -161,7 +158,6 @@ export default class ChatContainer extends HTMLElement {
     }
 
     set autoScroll(enabled: boolean) {
-        this._autoScrollLocked = !enabled;
         this._autoScroll = enabled;
         if (enabled) {
             this._programmaticScroll = true;

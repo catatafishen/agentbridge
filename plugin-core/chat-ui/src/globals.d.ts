@@ -10,14 +10,24 @@ import type ChatControllerType from './ChatController';
 /** Extended bridge for the web app — adds methods not needed by the in-IDE panel. */
 export interface WebBridge {
     openFile(href: string): void;
+
     openUrl(href: string): void;
+
     setCursor(cursor: string): void;
+
     loadMore(): Promise<Response>;
+
     quickReply(text: string): Promise<Response>;
+
     permissionResponse(data: string): void;
+
     openScratch(): void;
+
     showToolPopup(): void;
+
     cancelNudge(id: string): Promise<Response>;
+
+    autoScrollDisabled?(): void;
 }
 
 declare global {
