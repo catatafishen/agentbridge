@@ -107,7 +107,10 @@ PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover, or Rider.
 
 Disabled in **Rider** because C#/C++ PSI lives in the ReSharper backend,
 not the IntelliJ frontend. These tools depend on fine-grained PSI or
-JUnit infrastructure that Rider doesn't provide.
+test framework infrastructure that Rider doesn't expose to the IntelliJ layer.
+
+> Thanks to Reddit user [VirusPanin](https://www.reddit.com/user/VirusPanin/)
+> for discovering these limitations by testing AgentBridge in Rider with C++ code.
 
 | Tool | Why disabled |
 |------|-------------|
@@ -115,8 +118,8 @@ JUnit infrastructure that Rider doesn't provide.
 | `replace_symbol_body` | PSI symbol resolution too coarse for structural edits |
 | `insert_before_symbol` | PSI symbol resolution too coarse for structural edits |
 | `insert_after_symbol` | PSI symbol resolution too coarse for structural edits |
-| `list_tests` | Scans for Java `@Test` annotations (not applicable to NUnit/xUnit) |
-| `run_tests` | Creates JUnit run configurations (not applicable to Rider test runner) |
+| `list_tests` | IntelliJ `TestFramework` extensions don't cover Rider's NUnit/xUnit backend |
+| `run_tests` | `ConfigurationContext` can't resolve Rider test runners from the frontend PSI |
 
 ### Conditional tools (all IDEs)
 
