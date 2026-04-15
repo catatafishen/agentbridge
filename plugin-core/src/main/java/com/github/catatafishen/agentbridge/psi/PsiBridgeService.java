@@ -365,6 +365,12 @@ public final class PsiBridgeService implements Disposable {
             if (writeRegistered) writeBatchCoordinator.unregisterWrite();
             ToolChipRegistry.getInstance(project).storeMcpResult(toolName, arguments, errorMessage);
             return errorMessage;
+        } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
+            // ProcessCanceledException must not be swallowed — signals IDE shutdown or project disposal.
+            // Let it propagate so McpProtocolHandler can respond with an error and the MCP thread
+            // terminates cleanly rather than silently masking the cancellation.
+            if (writeRegistered) writeBatchCoordinator.unregisterWrite();
+            throw e;
         } catch (Exception e) {
             LOG.warn("Tool call error: " + toolName, e);
             success = false;

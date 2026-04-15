@@ -6,11 +6,11 @@ import com.github.catatafishen.agentbridge.services.AgentTabTracker;
 import com.github.catatafishen.agentbridge.ui.renderers.SearchResultRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
-import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.usageView.UsageInfo;
@@ -118,10 +118,14 @@ public final class SearchTextTool extends NavigationTool {
         boolean followAgent = ActiveAgentManager.getFollowAgentFiles(project);
 
         showSearchFeedback("Searching text: " + query);
-        // Cast required: disambiguates Computable<T> vs ThrowableComputable<T,E> overloads.
-        // The IDE falsely reports this as redundant; Gradle fails without it.
-        Computable<String> action = () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults, contextLines, followAgent);
-        String result = ApplicationManager.getApplication().runReadAction(action);
+        // NonBlockingReadAction: iterating all project files can hold the read lock for several
+        // seconds on large projects. runReadAction() would block ALL write actions (EDT, indexing,
+        // daemon analysis) for the entire duration and cause "IDE not responding" freezes.
+        // executeSynchronously() yields to write actions when they need to run, then restarts the
+        // search (performSearch creates fresh collections, so restart is safe).
+        String result = ReadAction.nonBlocking(
+            () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults, contextLines, followAgent)
+        ).executeSynchronously();
         showSearchFeedback("Text search complete: " + query);
         return result;
     }
