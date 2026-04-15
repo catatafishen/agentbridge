@@ -8,7 +8,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link BackfillMiner} — backfill iteration logic and result aggregation.
@@ -70,7 +72,7 @@ class BackfillMinerTest {
         );
 
         List<String> progress = new ArrayList<>();
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) ->
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) ->
             new TurnMiner.MineResult(2, 1, 0, 3);
         BackfillMiner.EntryLoader loader = sessionId -> List.of(
             prompt("How to fix the auth bug?"),
@@ -99,7 +101,7 @@ class BackfillMinerTest {
             session("s3", "copilot", "Refactor DB")
         );
 
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) ->
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) ->
             new TurnMiner.MineResult(1, 0, 0, 1);
         BackfillMiner.EntryLoader loader = sessionId -> List.of(
             prompt("Some prompt text about the task at hand"),
@@ -124,7 +126,7 @@ class BackfillMinerTest {
             session("s2", "copilot", "Empty session")
         );
 
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) ->
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) ->
             new TurnMiner.MineResult(1, 0, 0, 1);
         BackfillMiner.EntryLoader loader = sessionId ->
             "s1".equals(sessionId) ? List.of(
@@ -147,7 +149,7 @@ class BackfillMinerTest {
             session("s1", "copilot", "Null entries")
         );
 
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) ->
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) ->
             new TurnMiner.MineResult(1, 0, 0, 1);
         BackfillMiner.EntryLoader loader = sessionId -> null;
 
@@ -168,7 +170,7 @@ class BackfillMinerTest {
             session("s3", "copilot", "Good session 2")
         );
 
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) -> {
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) -> {
             if ("s2".equals(sessionId)) throw new RuntimeException("Mining failed");
             return new TurnMiner.MineResult(1, 0, 0, 1);
         };
@@ -193,7 +195,7 @@ class BackfillMinerTest {
             session("s2", "copilot", "Session 2")
         );
 
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) -> {
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) -> {
             if ("s1".equals(sessionId)) return new TurnMiner.MineResult(3, 2, 1, 6);
             return new TurnMiner.MineResult(2, 1, 0, 3);
         };
@@ -220,7 +222,7 @@ class BackfillMinerTest {
         );
 
         List<String> progress = new ArrayList<>();
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) ->
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) ->
             new TurnMiner.MineResult(0, 0, 0, 0);
         BackfillMiner.EntryLoader loader = sessionId -> Collections.emptyList();
 
@@ -238,7 +240,7 @@ class BackfillMinerTest {
         );
 
         List<String> progress = new ArrayList<>();
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) ->
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) ->
             new TurnMiner.MineResult(5, 2, 1, 8);
         BackfillMiner.EntryLoader loader = sessionId -> List.of(
             prompt("Question"), response("Answer with sufficient length for the test.")
@@ -261,7 +263,7 @@ class BackfillMinerTest {
             session("s2", "copilot", "Session 2")
         );
 
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) ->
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) ->
             new TurnMiner.MineResult(1, 0, 0, 1);
         BackfillMiner.EntryLoader loader = sessionId -> {
             if ("s1".equals(sessionId)) throw new RuntimeException("IO error");
@@ -281,6 +283,33 @@ class BackfillMinerTest {
     }
 
     @Test
+    void executeBackfillReportsExchangeProgress() {
+        List<SessionStoreV2.SessionRecord> sessions = List.of(
+            session("s1", "copilot", "Fix auth")
+        );
+
+        List<String> progress = new ArrayList<>();
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) -> {
+            exchangeProgress.accept("embedding 1/2");
+            exchangeProgress.accept("embedding 2/2");
+            return new TurnMiner.MineResult(2, 0, 0, 2);
+        };
+        BackfillMiner.EntryLoader loader = sessionId -> List.of(
+            prompt("How to fix auth?"),
+            response("Check token validation and error handling in the auth flow.")
+        );
+
+        BackfillMiner backfillMiner = new BackfillMiner();
+        backfillMiner.executeBackfill(sessions, loader, miner, progress::add);
+
+        // Session-level progress
+        assertTrue(progress.stream().anyMatch(p -> p.contains("Mining session 1 of 1: Fix auth")));
+        // Exchange-level progress
+        assertTrue(progress.stream().anyMatch(p -> p.contains("(embedding 1/2)")));
+        assertTrue(progress.stream().anyMatch(p -> p.contains("(embedding 2/2)")));
+    }
+
+    @Test
     void executeBackfillShortSessionIdTruncation() {
         // Session ID shorter than 8 chars, empty name → should truncate correctly
         List<SessionStoreV2.SessionRecord> sessions = List.of(
@@ -288,7 +317,7 @@ class BackfillMinerTest {
         );
 
         List<String> progress = new ArrayList<>();
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent) ->
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) ->
             new TurnMiner.MineResult(0, 0, 0, 0);
         BackfillMiner.EntryLoader loader = sessionId -> Collections.emptyList();
 

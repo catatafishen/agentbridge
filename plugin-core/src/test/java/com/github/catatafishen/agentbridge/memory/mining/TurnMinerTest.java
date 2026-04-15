@@ -172,6 +172,28 @@ class TurnMinerTest {
     }
 
     @Test
+    void exchangeProgressCallbackFires() {
+        List<EntryData> entries = List.of(
+            prompt("How should we handle authentication in the microservices architecture?"),
+            response("Use OAuth 2.0 with a centralized auth server. " +
+                "Each service validates tokens independently via JWT verification."),
+            prompt("What about the database design for the user management service?"),
+            response("Use PostgreSQL with proper indexing on email and username columns. " +
+                "Implement soft deletes for GDPR compliance and audit trail.")
+        );
+
+        List<String> progressMessages = new java.util.ArrayList<>();
+        TurnMiner miner = new TurnMiner();
+        miner.executePipeline(
+            entries, SESSION_ID, AGENT, store, fakeEmbedder, filter, 10, WING, null,
+            progressMessages::add);
+
+        assertEquals(2, progressMessages.size());
+        assertEquals("embedding 1/2", progressMessages.get(0));
+        assertEquals("embedding 2/2", progressMessages.get(1));
+    }
+
+    @Test
     void embedderExceptionHandledGracefully() {
         Embedder failingEmbedder = text -> {
             throw new RuntimeException("Embedding engine crash");
