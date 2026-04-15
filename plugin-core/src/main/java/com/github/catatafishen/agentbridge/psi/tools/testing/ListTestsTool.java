@@ -15,6 +15,7 @@ import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
+import com.intellij.testIntegration.TestFramework;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -22,6 +23,10 @@ import java.util.List;
 
 /**
  * Lists test classes and methods in the project.
+ * <p>
+ * Uses IntelliJ's {@link TestFramework} extension point for framework-agnostic
+ * test detection — works with JUnit, TestNG, pytest, and any other framework
+ * that registers a {@code TestFramework} implementation.
  */
 public final class ListTestsTool extends TestingTool {
 
@@ -44,6 +49,7 @@ public final class ListTestsTool extends TestingTool {
     @Override
     public @NotNull String description() {
         return "List test classes and methods in the project. Returns fully-qualified test names with file paths and line numbers. " +
+            "Uses IntelliJ's test framework detection — works with JUnit, TestNG, pytest, and any other framework the IDE recognizes. " +
             "Use file_pattern to filter (e.g., '*IntegrationTest*'). Use run_tests to execute discovered tests.";
     }
 
@@ -78,10 +84,11 @@ public final class ListTestsTool extends TestingTool {
             String basePath = project.getBasePath();
             ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
             var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
+            var frameworks = TestFramework.EXTENSION_NAME.getExtensionList();
 
             fileIndex.iterateContent(vf -> {
                 if (isTestSourceFile(vf, filePattern, compiledGlob, fileIndex)) {
-                    collectTestMethodsFromFile(vf, basePath, tests);
+                    collectTestMethodsFromFile(vf, basePath, tests, frameworks);
                 }
                 return tests.size() < 500;
             });
@@ -93,13 +100,12 @@ public final class ListTestsTool extends TestingTool {
 
     private boolean isTestSourceFile(VirtualFile vf, String filePattern, java.util.regex.Pattern compiledGlob, ProjectFileIndex fileIndex) {
         if (vf.isDirectory()) return false;
-        String name = vf.getName();
-        if (!name.endsWith(ToolUtils.JAVA_EXTENSION) && !name.endsWith(".kt")) return false;
-        if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(name, filePattern, compiledGlob)) return false;
-        return fileIndex.isInTestSourceContent(vf);
+        if (!fileIndex.isInTestSourceContent(vf)) return false;
+        return filePattern.isEmpty() || !ToolUtils.doesNotMatchGlob(vf.getName(), filePattern, compiledGlob);
     }
 
-    private void collectTestMethodsFromFile(VirtualFile vf, String basePath, List<String> tests) {
+    private void collectTestMethodsFromFile(VirtualFile vf, String basePath, List<String> tests,
+                                            List<TestFramework> frameworks) {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return;
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
@@ -113,7 +119,7 @@ public final class ListTestsTool extends TestingTool {
                 }
                 String type = ToolUtils.classifyElement(element);
                 if ((ToolUtils.ELEMENT_TYPE_METHOD.equals(type) || ToolUtils.ELEMENT_TYPE_FUNCTION.equals(type))
-                    && hasTestAnnotation(element)) {
+                    && isTestElement(element, frameworks)) {
                     String methodName = named.getName();
                     String className = getContainingClassName(element);
                     String relPath = basePath != null ? relativize(basePath, vf.getPath()) : vf.getPath();
@@ -125,46 +131,18 @@ public final class ListTestsTool extends TestingTool {
         });
     }
 
-    private boolean hasTestAnnotation(PsiElement element) {
-        return hasTestAnnotationViaReflection(element) || hasTestAnnotationViaText(element);
-    }
-
-    private boolean hasTestAnnotationViaReflection(PsiElement element) {
-        try {
-            var getModifierList = element.getClass().getMethod("getModifierList");
-            Object modList = getModifierList.invoke(element);
-            if (modList != null) {
-                var getAnnotations = modList.getClass().getMethod("getAnnotations");
-                Object[] annotations = (Object[]) getAnnotations.invoke(modList);
-                for (Object anno : annotations) {
-                    var getQualifiedName = anno.getClass().getMethod("getQualifiedName");
-                    String qname = (String) getQualifiedName.invoke(anno);
-                    if (qname != null && (qname.endsWith(".Test")
-                        || qname.endsWith(".ParameterizedTest")
-                        || qname.endsWith(".RepeatedTest"))) {
-                        return true;
-                    }
-                }
+    /**
+     * Checks if a PSI element is a test method using IntelliJ's registered test frameworks.
+     * Iterates all {@link TestFramework} extensions (JUnit, TestNG, pytest, etc.) and returns
+     * true if any framework recognizes the element as a test method.
+     */
+    private static boolean isTestElement(PsiElement element, List<TestFramework> frameworks) {
+        for (TestFramework framework : frameworks) {
+            try {
+                if (framework.isTestMethod(element)) return true;
+            } catch (Exception ignored) {
+                // Framework may not support this element type — skip silently
             }
-        } catch (Exception ignored) {
-            // Reflection may not work for all element types
-        }
-        return false;
-    }
-
-    private boolean hasTestAnnotationViaText(PsiElement element) {
-        PsiElement prev = element.getPrevSibling();
-        int depth = 0;
-        while (prev != null && depth < 5) {
-            if (prev instanceof PsiNamedElement && ToolUtils.classifyElement(prev) != null) break;
-            String text = prev.getText().trim();
-            if (text.startsWith("@Test") || text.startsWith("@ParameterizedTest")
-                || text.startsWith("@RepeatedTest")
-                || text.startsWith("@org.junit")) {
-                return true;
-            }
-            prev = prev.getPrevSibling();
-            depth++;
         }
         return false;
     }
@@ -178,6 +156,18 @@ public final class ListTestsTool extends TestingTool {
             }
             parent = parent.getParent();
         }
-        return "UnknownClass";
+        return vf(element);
+    }
+
+    /**
+     * Fallback for test elements not inside a class (e.g., top-level Python test functions,
+     * Go test functions). Returns the containing file name without extension.
+     */
+    private static String vf(PsiElement element) {
+        PsiFile file = element.getContainingFile();
+        if (file == null) return "UnknownFile";
+        String name = file.getName();
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
     }
 }
