@@ -11,6 +11,7 @@ export default class ChatContainer extends HTMLElement {
     private _prevScrollTop = 0;
     private _onScroll: (() => void) | null = null;
     private _onWheel: (() => void) | null = null;
+    private _wheelTimer: ReturnType<typeof setTimeout> | null = null;
     private _resizeObs: ResizeObserver | null = null;
 
     connectedCallback(): void {
@@ -31,6 +32,14 @@ export default class ChatContainer extends HTMLElement {
                 this._autoScroll = false;
                 globalThis._bridge?.autoScrollDisabled?.();
             }
+            // After the wheel-initiated scroll settles, re-enable if at bottom.
+            if (this._wheelTimer) clearTimeout(this._wheelTimer);
+            this._wheelTimer = setTimeout(() => {
+                if (!this._autoScroll && this._isAtBottom()) {
+                    this._autoScroll = true;
+                    globalThis._bridge?.autoScrollEnabled?.();
+                }
+            }, 150);
         };
         this.addEventListener('wheel', this._onWheel, {passive: true});
 
@@ -168,6 +177,10 @@ export default class ChatContainer extends HTMLElement {
         }
     }
 
+    private _isAtBottom(): boolean {
+        return this.scrollHeight - this.scrollTop - this.clientHeight < 30;
+    }
+
     forceScroll(): void {
         this.scrollTop = this.scrollHeight;
     }
@@ -192,6 +205,10 @@ export default class ChatContainer extends HTMLElement {
         this._resizeObs?.disconnect();
         if (this._onScroll) this.removeEventListener('scroll', this._onScroll);
         if (this._onWheel) this.removeEventListener('wheel', this._onWheel);
+        if (this._wheelTimer) {
+            clearTimeout(this._wheelTimer);
+            this._wheelTimer = null;
+        }
         if (this._scrollRAF) {
             cancelAnimationFrame(this._scrollRAF);
             this._scrollRAF = null;
