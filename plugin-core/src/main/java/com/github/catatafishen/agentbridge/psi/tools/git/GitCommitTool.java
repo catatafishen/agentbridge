@@ -79,17 +79,21 @@ public final class GitCommitTool extends GitTool {
             runGit("add", "-A");
         }
 
-        // Pre-commit check: verify there are staged changes
-        String staged = runGitQuiet("diff", "--cached", "--name-only");
-        if (staged != null && staged.isEmpty()) {
-            String unstaged = runGitQuiet("diff", "--name-only");
-            StringBuilder hint = new StringBuilder("Error: nothing to commit.");
-            if (unstaged != null && !unstaged.isEmpty()) {
-                hint.append(" There are unstaged changes not picked up by --all (e.g. ignored files).");
-            } else {
-                hint.append(" The working tree is clean.");
+        boolean isAmend = resolveAmend(args);
+
+        // Pre-commit check: verify there are staged changes (skip for amend — message-only amends are valid)
+        if (!isAmend) {
+            String staged = runGitQuiet("diff", "--cached", "--name-only");
+            if (staged != null && staged.isEmpty()) {
+                String unstaged = runGitQuiet("diff", "--name-only");
+                StringBuilder hint = new StringBuilder("Error: nothing to commit.");
+                if (unstaged != null && !unstaged.isEmpty()) {
+                    hint.append(" There are unstaged changes not picked up by --all (e.g. ignored files).");
+                } else {
+                    hint.append(" The working tree is clean.");
+                }
+                return hint.toString();
             }
-            return hint.toString();
         }
 
         // Show VCS tool window in follow mode without stealing focus from chat prompt
@@ -109,7 +113,7 @@ public final class GitCommitTool extends GitTool {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("commit");
 
-        if (args.has(PARAM_AMEND) && args.get(PARAM_AMEND).getAsBoolean()) {
+        if (isAmend) {
             cmdArgs.add("--amend");
         }
 
@@ -140,6 +144,13 @@ public final class GitCommitTool extends GitTool {
         }
 
         return result + getBranchContext();
+    }
+
+    /**
+     * Resolves the "amend" parameter: defaults to false unless explicitly set to true.
+     */
+    static boolean resolveAmend(JsonObject args) {
+        return args.has(PARAM_AMEND) && args.get(PARAM_AMEND).getAsBoolean();
     }
 
     /**

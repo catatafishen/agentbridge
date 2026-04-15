@@ -15,6 +15,42 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GitCommitToolStaticMethodsTest {
 
     @Nested
+    @DisplayName("resolveAmend")
+    class ResolveAmend {
+
+        @Test
+        @DisplayName("defaults to false when 'amend' param is absent")
+        void defaultsToFalse() {
+            assertFalse(GitCommitTool.resolveAmend(new JsonObject()));
+        }
+
+        @Test
+        @DisplayName("returns true when 'amend' is explicitly true")
+        void explicitlyTrue() {
+            JsonObject args = new JsonObject();
+            args.addProperty("amend", true);
+            assertTrue(GitCommitTool.resolveAmend(args));
+        }
+
+        @Test
+        @DisplayName("returns false when 'amend' is explicitly false")
+        void explicitlyFalse() {
+            JsonObject args = new JsonObject();
+            args.addProperty("amend", false);
+            assertFalse(GitCommitTool.resolveAmend(args));
+        }
+
+        @Test
+        @DisplayName("other args don't affect amend result")
+        void otherArgsIgnored() {
+            JsonObject args = new JsonObject();
+            args.addProperty("message", "test commit");
+            args.addProperty("all", true);
+            assertFalse(GitCommitTool.resolveAmend(args));
+        }
+    }
+
+    @Nested
     @DisplayName("resolveCommitAll")
     class ResolveCommitAll {
 
