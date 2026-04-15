@@ -24,8 +24,8 @@ public final class RefactoringToolFactory {
         if (hasJava) {
             tools.add(new GetTypeHierarchyTool(project));
             tools.add(new FindImplementationsTool(project));
-            tools.add(new GetCallHierarchyTool(project));
         }
+        tools.add(new GetCallHierarchyTool(project));
         tools.add(new GetDocumentationTool(project));
         tools.add(new GetSymbolInfoTool(project));
         return List.copyOf(tools);

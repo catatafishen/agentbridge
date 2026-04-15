@@ -5,6 +5,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Shared utility methods and constants extracted from PsiBridgeService
@@ -227,6 +229,65 @@ public final class ToolUtils {
         String base = basePath.replace('\\', '/');
         String file = filePath.replace('\\', '/');
         return file.startsWith(base + "/") ? file.substring(base.length() + 1) : file;
+    }
+
+    /**
+     * Appends {@code " (relative/path/to/file:lineNumber)"} to {@code sb} for the given PSI element.
+     * Skips JAR-internal paths (no location to navigate to) and null paths.
+     *
+     * @param sb       string being built
+     * @param element  PSI element whose source location to append
+     * @param basePath project base path for relativizing the file path, or {@code null} to skip
+     */
+    public static void appendFileLocation(@NotNull StringBuilder sb, @NotNull PsiElement element,
+                                          @Nullable String basePath) {
+        com.intellij.psi.PsiFile file = element.getContainingFile();
+        if (file == null || file.getVirtualFile() == null || basePath == null) return;
+        String path = file.getVirtualFile().getPath();
+        if (path.contains(".jar!")) return;
+        sb.append(" (").append(relativize(basePath, path));
+        Document doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
+            .getDocument(file.getVirtualFile());
+        if (doc != null) {
+            int lineNum = doc.getLineNumber(element.getTextOffset()) + 1;
+            sb.append(":").append(lineNum);
+        }
+        sb.append(")");
+    }
+
+    /**
+     * Resolves the {@link com.intellij.psi.PsiFile} and line offset range for the given file path + line number.
+     * Returns {@code null} if the file cannot be found, parsed, or the line is out of bounds.
+     * <p>
+     * Used to locate PSI elements at a specific source location in a language-agnostic way,
+     * without requiring Java-specific APIs.
+     *
+     * @param project  current project
+     * @param filePath absolute or project-relative path to the file
+     * @param line     1-based line number
+     * @return a {@link LineContext} with the PSI file and offset range, or {@code null}
+     */
+    @Nullable
+    public static LineContext resolveLineContext(@NotNull Project project,
+                                                 @NotNull String filePath,
+                                                 int line) {
+        VirtualFile vf = resolveVirtualFile(project, filePath);
+        if (vf == null) return null;
+        com.intellij.psi.PsiFile psiFile = com.intellij.psi.PsiManager.getInstance(project).findFile(vf);
+        if (psiFile == null) return null;
+        Document document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
+        if (document == null || line < 1 || line > document.getLineCount()) return null;
+        return new LineContext(psiFile, document.getLineStartOffset(line - 1), document.getLineEndOffset(line - 1));
+    }
+
+    /**
+     * Holds a resolved PSI file and the character offsets bounding a specific source line.
+     *
+     * @param psiFile   the PSI file
+     * @param lineStart offset of the first character on the line (inclusive)
+     * @param lineEnd   offset of the last character on the line (inclusive)
+     */
+    public record LineContext(@NotNull com.intellij.psi.PsiFile psiFile, int lineStart, int lineEnd) {
     }
 
     public static String getLineText(Document doc, int lineIndex) {

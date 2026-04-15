@@ -32,7 +32,7 @@ public final class GetCallHierarchyTool extends RefactoringTool {
 
     @Override
     public @NotNull String description() {
-        return "Find all callers of a method with file paths and line numbers";
+        return "Find all callers of a function, method, or named element with file paths and line numbers";
     }
 
     @Override
@@ -48,9 +48,9 @@ public final class GetCallHierarchyTool extends RefactoringTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required(PARAM_SYMBOL, TYPE_STRING, "Method name to find callers for"),
-            Param.required("file", TYPE_STRING, "Path to the file containing the method definition"),
-            Param.required("line", TYPE_INTEGER, "Line number where the method is defined")
+            Param.required(PARAM_SYMBOL, TYPE_STRING, "Function, method, or named element to find callers for"),
+            Param.required("file", TYPE_STRING, "Path to the file containing the definition"),
+            Param.required("line", TYPE_INTEGER, "Line number where the definition is located")
         );
     }
 
@@ -64,13 +64,13 @@ public final class GetCallHierarchyTool extends RefactoringTool {
         if (!args.has(PARAM_SYMBOL) || !args.has("file") || !args.has("line")) {
             return "Error: 'symbol', 'file', and 'line' parameters are required";
         }
-        String methodName = args.get(PARAM_SYMBOL).getAsString();
+        String elementName = args.get(PARAM_SYMBOL).getAsString();
         String filePath = args.get("file").getAsString();
         int line = args.get("line").getAsInt();
 
-        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () ->
-            com.github.catatafishen.agentbridge.psi.java.RefactoringJavaSupport
-                .getCallHierarchy(project, methodName, filePath, line)
+        String result = ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) () -> com.github.catatafishen.agentbridge.psi.CallHierarchySupport
+                .getCallHierarchy(project, elementName, filePath, line)
         );
         return ToolUtils.truncateOutput(result);
     }

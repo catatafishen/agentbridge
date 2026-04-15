@@ -10,7 +10,7 @@ import java.util.List;
 
 /**
  * Factory producing all individual project tool instances.
- * Conditionally includes Java-specific tools based on plugin availability.
+ * Conditionally includes Java-specific tools (e.g., {@link BuildProjectTool}) based on plugin availability.
  */
 public final class ProjectToolFactory {
 
@@ -29,9 +29,7 @@ public final class ProjectToolFactory {
         tools.add(new GetIndexingStatusTool(project));
         tools.add(new DownloadSourcesTool(project));
         tools.add(new MarkDirectoryTool(project));
-        if (hasJava) {
-            tools.add(new EditProjectStructureTool(project));
-        }
+        tools.add(new EditProjectStructureTool(project));
         tools.add(new ListRunConfigurationsTool(project, runConfigService));
         tools.add(new RunConfigurationTool(project, runConfigService));
         tools.add(new CreateRunConfigurationTool(project, runConfigService));
