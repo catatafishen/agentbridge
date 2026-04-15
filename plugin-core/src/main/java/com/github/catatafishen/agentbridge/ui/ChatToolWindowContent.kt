@@ -1530,7 +1530,10 @@ class ChatToolWindowContent(
             psiBridge.removeQueuedMessage(text)
             ApplicationManager.getApplication().invokeLater { consolePanel.removeQueuedMessage(id) }
         }
-        chatConsolePanel.onAutoScrollDisabled = { autoScrollEnabled = false }
+        chatConsolePanel.onAutoScrollDisabled = {
+            autoScrollEnabled = false
+            ActivityTracker.getInstance().inc()
+        }
         consolePanel.onQuickReply = { text ->
             ApplicationManager.getApplication().invokeLater {
                 if (!consolePanel.consumePendingAskUserResponse(text)) {
