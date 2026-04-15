@@ -47,6 +47,9 @@ jobs:
           ls -la release-artifacts/
 
       - name: Extract and display changelog
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          CHANNEL: ${{ inputs.channel }}
         run: |
           PLUGIN_ZIP=$(ls release-artifacts/agentbridge-*.zip | head -1)
           echo "Plugin ZIP: $PLUGIN_ZIP"
@@ -61,7 +64,7 @@ jobs:
               | sed '/^$/d')
           fi
 
-          echo "### 📋 Changelog for ${{ inputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### 📋 Changelog for $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           if [[ -n "${CHANGE_NOTES:-}" ]]; then
             echo "$CHANGE_NOTES" >> "$GITHUB_STEP_SUMMARY"
@@ -70,7 +73,7 @@ jobs:
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "---" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Channel:** \`${{ inputs.channel }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Channel:** \`$CHANNEL\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "> ✅ Review the changelog above, then approve the **publish** environment to upload." >> "$GITHUB_STEP_SUMMARY"
 
@@ -81,12 +84,17 @@ jobs:
     runs-on: ubuntu-latest
     environment: marketplace
     permissions:
-      contents: read
+      contents: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@f808768d1510423e83855289c910610ca9b43176  # v2.17.0
         with:
           egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
 
       - name: Download plugin ZIP from GitHub Release
         env:
@@ -129,3 +137,17 @@ jobs:
             exit 1
           fi
           echo "Successfully published $PLUGIN_ZIP to the JetBrains Marketplace"
+
+      - name: Update marketplace-latest tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh auth setup-git
+          # Move the marketplace-latest tag to the commit of the published release.
+          # This tag is used by generate-changelog.sh to determine which commits
+          # have not yet been published to the marketplace.
+          TARGET_SHA=$(git rev-list -n1 "$RELEASE_TAG")
+          git tag -f marketplace-latest "$TARGET_SHA"
+          git push origin marketplace-latest --force
+          echo "Updated marketplace-latest → $TARGET_SHA ($RELEASE_TAG)"
