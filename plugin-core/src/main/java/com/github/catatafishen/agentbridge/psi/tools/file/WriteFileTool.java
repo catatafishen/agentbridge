@@ -217,12 +217,13 @@ public class WriteFileTool extends FileTool {
             resultFuture.complete("Error creating file: " + e.getMessage());
             return;
         }
-        // VFS refresh after file is on disk — no write lock held during I/O
+        // VFS refresh must run on EDT with write lock — dispatch even if called from background thread.
+        // EdtUtil.invokeAndWait() is safe here: it detects if already on EDT and runs directly.
         String finalFullPath = fullPath;
-        WriteAction.run(() -> {
+        EdtUtil.invokeAndWait(() -> WriteAction.run(() -> {
             LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
             CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
-        });
+        }));
         resultFuture.complete("Created: " + pathStr);
     }
 
