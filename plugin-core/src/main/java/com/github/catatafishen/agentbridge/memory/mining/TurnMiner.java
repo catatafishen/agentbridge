@@ -19,7 +19,6 @@ import org.jetbrains.annotations.Nullable;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Consumer;
 
 /**
  * Orchestrates the mining pipeline: extracts Q+A pairs from conversation entries,
@@ -47,32 +46,46 @@ public final class TurnMiner {
         this.project = project;
     }
 
+    /**
+     * Mine a completed turn's entries into the memory store.
+     * Returns a future that completes with the mining result.
+     *
+     * @param entries   conversation entries for this turn
+     * @param sessionId current session ID
+     * @param agentName name of the active agent
+     * @return future completing with mine result
+     */
     public CompletableFuture<MineResult> mineTurn(@NotNull List<EntryData> entries,
                                                   @NotNull String sessionId,
                                                   @NotNull String agentName) {
         return CompletableFuture.supplyAsync(
-            () -> doMine(entries, sessionId, agentName, ignored -> {
-            }),
+            () -> doMine(entries, sessionId, agentName, null),
             AppExecutorUtil.getAppExecutorService()
         );
     }
 
     /**
-     * Mine a turn synchronously with exchange-level progress reporting.
-     * Used by {@link BackfillMiner} to report finer-grained progress during batch mining.
-     *
-     * @param exchangeProgress receives strings like {@code "embedding 2/8"} before each
-     *                         embedding computation
+     * Listener for per-exchange progress during mining.
+     * Used by {@link BackfillMiner} to report granular progress.
      */
-    public MineResult mineTurnSync(@NotNull List<EntryData> entries,
-                                   @NotNull String sessionId,
-                                   @NotNull String agentName,
-                                   @NotNull Consumer<String> exchangeProgress) {
+    @FunctionalInterface
+    interface ExchangeProgressListener {
+        void onExchange(int current, int total);
+    }
+
+    /**
+     * Mine a turn synchronously, with per-exchange progress reporting.
+     * For use by {@link BackfillMiner} which already runs on a background thread.
+     */
+    MineResult mineTurnSync(@NotNull List<EntryData> entries,
+                            @NotNull String sessionId,
+                            @NotNull String agentName,
+                            @Nullable ExchangeProgressListener exchangeProgress) {
         return doMine(entries, sessionId, agentName, exchangeProgress);
     }
 
     private MineResult doMine(List<EntryData> entries, String sessionId, String agentName,
-                              Consumer<String> exchangeProgress) {
+                              @Nullable ExchangeProgressListener exchangeProgress) {
         MemoryService memoryService = MemoryService.getInstance(project);
         MemoryStore store = memoryService.getStore();
         Embedder embedding = memoryService.getEmbeddingService();
@@ -86,8 +99,7 @@ public final class TurnMiner {
         QualityFilter filter = new QualityFilter(project);
         KnowledgeGraph kg = memoryService.getKnowledgeGraph();
 
-        return executePipeline(entries, sessionId, agentName, store, embedding, filter,
-            maxDrawers, wing, kg, exchangeProgress);
+        return executePipeline(entries, sessionId, agentName, store, embedding, filter, maxDrawers, wing, kg, exchangeProgress);
     }
 
     /**
@@ -96,27 +108,13 @@ public final class TurnMiner {
     MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
                                MemoryStore store, Embedder embedder, QualityFilter filter,
                                int maxDrawers, String wing) {
-        return executePipeline(entries, sessionId, agentName, store, embedder, filter, maxDrawers, wing, null);
+        return executePipeline(entries, sessionId, agentName, store, embedder, filter, maxDrawers, wing, null, null);
     }
 
-    MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
-                               MemoryStore store, Embedder embedder, QualityFilter filter,
-                               int maxDrawers, String wing, @Nullable KnowledgeGraph kg) {
-        return executePipeline(entries, sessionId, agentName, store, embedder, filter,
-            maxDrawers, wing, kg, ignored -> {
-            });
-    }
-
-    /**
-     * Full pipeline with exchange-level progress reporting.
-     *
-     * @param exchangeProgress receives strings like {@code "embedding 2/8"} before each
-     *                         embedding computation, allowing callers to show sub-session progress
-     */
     MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
                                MemoryStore store, Embedder embedder, QualityFilter filter,
                                int maxDrawers, String wing, @Nullable KnowledgeGraph kg,
-                               @NotNull Consumer<String> exchangeProgress) {
+                               @Nullable ExchangeProgressListener exchangeProgress) {
         List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
         if (exchanges.isEmpty()) {
             return MineResult.EMPTY;
@@ -125,12 +123,13 @@ public final class TurnMiner {
         int stored = 0;
         int filtered = 0;
         int duplicates = 0;
-        int totalExchanges = exchanges.size();
 
-        for (int i = 0; i < totalExchanges; i++) {
+        for (int i = 0; i < exchanges.size(); i++) {
             if (stored >= maxDrawers) break;
 
-            exchangeProgress.accept("embedding " + (i + 1) + "/" + totalExchanges);
+            if (exchangeProgress != null) {
+                exchangeProgress.onExchange(i + 1, exchanges.size());
+            }
 
             ExchangeChunker.Exchange exchange = exchanges.get(i);
             int turnIndex = i + 1;
@@ -142,8 +141,8 @@ public final class TurnMiner {
         }
 
         LOG.info("TurnMiner: stored=" + stored + " filtered=" + filtered
-            + " duplicates=" + duplicates + " exchanges=" + totalExchanges);
-        return new MineResult(stored, filtered, duplicates, totalExchanges);
+            + " duplicates=" + duplicates + " exchanges=" + exchanges.size());
+        return new MineResult(stored, filtered, duplicates, exchanges.size());
     }
 
     private record MineExchangeResult(int stored, int filtered, int duplicates) {

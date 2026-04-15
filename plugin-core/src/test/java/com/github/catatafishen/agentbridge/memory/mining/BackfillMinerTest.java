@@ -9,6 +9,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -249,7 +250,7 @@ class BackfillMinerTest {
         BackfillMiner backfillMiner = new BackfillMiner();
         backfillMiner.executeBackfill(sessions, loader, miner, progress::add);
 
-        String summary = progress.get(progress.size() - 1);
+        String summary = progress.getLast();
         assertTrue(summary.contains("Backfill complete"));
         assertTrue(summary.contains("5 memories stored"));
         assertTrue(summary.contains("1 duplicates"));
@@ -283,33 +284,6 @@ class BackfillMinerTest {
     }
 
     @Test
-    void executeBackfillReportsExchangeProgress() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
-            session("s1", "copilot", "Fix auth")
-        );
-
-        List<String> progress = new ArrayList<>();
-        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) -> {
-            exchangeProgress.accept("embedding 1/2");
-            exchangeProgress.accept("embedding 2/2");
-            return new TurnMiner.MineResult(2, 0, 0, 2);
-        };
-        BackfillMiner.EntryLoader loader = sessionId -> List.of(
-            prompt("How to fix auth?"),
-            response("Check token validation and error handling in the auth flow.")
-        );
-
-        BackfillMiner backfillMiner = new BackfillMiner();
-        backfillMiner.executeBackfill(sessions, loader, miner, progress::add);
-
-        // Session-level progress
-        assertTrue(progress.stream().anyMatch(p -> p.contains("Mining session 1 of 1: Fix auth")));
-        // Exchange-level progress
-        assertTrue(progress.stream().anyMatch(p -> p.contains("(embedding 1/2)")));
-        assertTrue(progress.stream().anyMatch(p -> p.contains("(embedding 2/2)")));
-    }
-
-    @Test
     void executeBackfillShortSessionIdTruncation() {
         // Session ID shorter than 8 chars, empty name → should truncate correctly
         List<SessionStoreV2.SessionRecord> sessions = List.of(
@@ -326,6 +300,76 @@ class BackfillMinerTest {
 
         // Math.min(8, 2) = 2, so "ab" is the label
         assertTrue(progress.get(1).contains("ab"));
+    }
+
+    @Test
+    void executeBackfillRespectsCancel() {
+        List<SessionStoreV2.SessionRecord> sessions = List.of(
+            session("s1", "copilot", "Session 1"),
+            session("s2", "copilot", "Session 2"),
+            session("s3", "copilot", "Session 3")
+        );
+
+        int[] callCount = {0};
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) -> {
+            callCount[0]++;
+            return new TurnMiner.MineResult(1, 0, 0, 1);
+        };
+        BackfillMiner.EntryLoader loader = sessionId -> List.of(
+            prompt("Question"), response("Answer with enough detail for testing purposes.")
+        );
+
+        // Cancel after first session is processed
+        boolean[] cancelled = {false};
+        List<String> progress = new ArrayList<>();
+        List<Double> fractions = new ArrayList<>();
+        BackfillMiner backfillMiner = new BackfillMiner();
+        BackfillMiner.BackfillResult result = backfillMiner.executeBackfill(
+            sessions, loader,
+            (entries, sessionId, agent, exchangeProgress) -> {
+                TurnMiner.MineResult r = miner.mine(entries, sessionId, agent, exchangeProgress);
+                cancelled[0] = true; // cancel after first mine
+                return r;
+            },
+            progress::add, fractions::add, () -> cancelled[0]);
+
+        // Only 1 session was mined before cancellation stopped the loop
+        assertEquals(1, callCount[0]);
+        assertEquals(1, result.stored());
+        assertTrue(progress.stream().anyMatch(p -> p.contains("cancelled")));
+    }
+
+    @Test
+    void executeBackfillReportsExchangeProgress() {
+        List<SessionStoreV2.SessionRecord> sessions = List.of(
+            session("s1", "copilot", "Session 1")
+        );
+
+        List<String> progress = new ArrayList<>();
+        List<Double> fractions = new ArrayList<>();
+        BackfillMiner.MineFunction miner = (entries, sessionId, agent, exchangeProgress) -> {
+            // Simulate 3 exchanges with progress callbacks
+            if (exchangeProgress != null) {
+                exchangeProgress.onExchange(1, 3);
+                exchangeProgress.onExchange(2, 3);
+                exchangeProgress.onExchange(3, 3);
+            }
+            return new TurnMiner.MineResult(3, 0, 0, 3);
+        };
+        BackfillMiner.EntryLoader loader = sessionId -> List.of(
+            prompt("Question"), response("Answer with enough detail for testing purposes.")
+        );
+
+        BackfillMiner backfillMiner = new BackfillMiner();
+        backfillMiner.executeBackfill(sessions, loader, miner,
+            progress::add, fractions::add, () -> false);
+
+        // Should contain exchange-level progress messages
+        assertTrue(progress.stream().anyMatch(p -> p.contains("exchange 1 of 3")));
+        assertTrue(progress.stream().anyMatch(p -> p.contains("exchange 3 of 3")));
+        // Fraction should advance within session
+        assertFalse(fractions.isEmpty());
+        assertEquals(1.0, fractions.getLast());
     }
 
     // --- Helpers ---

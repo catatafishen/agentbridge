@@ -16,7 +16,6 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-import java.util.List;
 
 public final class MemorySettingsConfigurable implements Configurable {
 
@@ -30,6 +29,7 @@ public final class MemorySettingsConfigurable implements Configurable {
     private JTextField palaceWingField;
     private JButton backfillButton;
     private JLabel backfillStatusLabel;
+    private volatile boolean miningInProgress;
 
     private JLabel minChunkLabel;
     private JLabel maxDrawersLabel;
@@ -160,11 +160,14 @@ public final class MemorySettingsConfigurable implements Configurable {
         maxDrawersPerTurnSpinner.setEnabled(enabled);
         palaceWingLabel.setEnabled(enabled);
         palaceWingField.setEnabled(enabled);
-        backfillButton.setEnabled(enabled);
+        // Backfill requires persisted settings — enabled only after Apply
+        boolean persisted = MemorySettings.getInstance(project).isEnabled();
+        backfillButton.setEnabled(persisted);
         backfillStatusLabel.setEnabled(enabled);
     }
 
     private void updateBackfillStatus() {
+        if (miningInProgress) return;
         MemorySettings settings = MemorySettings.getInstance(project);
         if (settings.isBackfillCompleted()) {
             backfillStatusLabel.setText("✓ History has been mined into memory.");
@@ -191,6 +194,8 @@ public final class MemorySettingsConfigurable implements Configurable {
             return;
         }
 
+        settings.setBackfillCompleted(false);
+        miningInProgress = true;
         backfillButton.setEnabled(false);
         backfillStatusLabel.setText("Starting backfill…");
 
@@ -200,131 +205,30 @@ public final class MemorySettingsConfigurable implements Configurable {
                 indicator.setIndeterminate(false);
                 indicator.setFraction(0);
 
-                SessionStoreV2 sessionStore = SessionStoreV2.getInstance(project);
-                List<SessionStoreV2.SessionRecord> sessions = sessionStore.listSessions(project.getBasePath());
-                int total = sessions.size();
-
                 BackfillMiner backfillMiner = new BackfillMiner(project);
-                backfillMiner.run(progress -> {
-                    double fraction = parseFraction(progress, total);
-                    if (fraction >= 0) {
-                        indicator.setFraction(fraction);
-                    }
-                    String exchangeDetail = parseExchangeDetail(progress);
-                    if (exchangeDetail != null) {
-                        indicator.setText(stripExchangeDetail(progress));
-                        indicator.setText2(exchangeDetail);
-                    } else {
-                        indicator.setText(progress);
-                        indicator.setText2("");
-                    }
-                    ApplicationManager.getApplication().invokeLater(() ->
-                        backfillStatusLabel.setText(progress));
-                }).whenComplete((result, error) ->
+                try {
+                    backfillMiner.runSync(
+                        text -> {
+                            indicator.setText(text);
+                            ApplicationManager.getApplication().invokeLater(() ->
+                                backfillStatusLabel.setText(text));
+                        },
+                        indicator::setFraction,
+                        indicator::isCanceled);
                     ApplicationManager.getApplication().invokeLater(() -> {
+                        miningInProgress = false;
                         backfillButton.setEnabled(enabledCheckBox.isSelected());
-                        if (error != null) {
-                            backfillStatusLabel.setText("Backfill failed: " + error.getMessage());
-                        } else {
-                            updateBackfillStatus();
-                        }
-                    })
-                );
+                        updateBackfillStatus();
+                    });
+                } catch (Exception e) {
+                    ApplicationManager.getApplication().invokeLater(() -> {
+                        miningInProgress = false;
+                        backfillButton.setEnabled(enabledCheckBox.isSelected());
+                        backfillStatusLabel.setText("Backfill failed: " + e.getMessage());
+                    });
+                }
             }
         });
-    }
-
-    /**
-     * Parse a progress string into a fraction (0.0–1.0) for the progress bar.
-     * Handles both session-level ("Mining session 3 of 16: label") and
-     * exchange-level ("Mining session 3 of 16 (embedding 2/8): label") formats.
-     *
-     * @return fraction in [0.0, 1.0], or -1 if the string doesn't match
-     */
-    static double parseFraction(String progress, int totalSessions) {
-        if (totalSessions <= 0 || !progress.startsWith("Mining session ")) return -1;
-
-        int session = parseSessionNumber(progress);
-        if (session < 1) return -1;
-
-        double exchangeFraction = parseExchangeFraction(progress);
-        return (session - 1 + exchangeFraction) / totalSessions;
-    }
-
-    private static int parseSessionNumber(String progress) {
-        int ofIndex = progress.indexOf(" of ");
-        if (ofIndex < 0) return -1;
-        try {
-            return Integer.parseInt(progress.substring("Mining session ".length(), ofIndex));
-        } catch (NumberFormatException e) {
-            return -1;
-        }
-    }
-
-    /**
-     * Extract the exchange fraction from a progress string containing "(phase N/M)".
-     * Returns 0.0 if no exchange detail is present (session-start message).
-     */
-    private static double parseExchangeFraction(String progress) {
-        int parenOpen = progress.indexOf('(');
-        int parenClose = progress.indexOf(')', parenOpen + 1);
-        if (parenOpen < 0 || parenClose < 0) return 0.0;
-
-        String detail = progress.substring(parenOpen + 1, parenClose);
-        int slashIdx = detail.indexOf('/');
-        if (slashIdx < 0) return 0.0;
-
-        String afterPhase = detail.contains(" ") ? detail.substring(detail.lastIndexOf(' ') + 1) : detail;
-        int slashInAfter = afterPhase.indexOf('/');
-        if (slashInAfter < 0) return 0.0;
-
-        try {
-            int current = Integer.parseInt(afterPhase.substring(0, slashInAfter));
-            int total = Integer.parseInt(afterPhase.substring(slashInAfter + 1));
-            return total > 0 ? (double) current / total : 0.0;
-        } catch (NumberFormatException e) {
-            return 0.0;
-        }
-    }
-
-    /**
-     * Extract a human-readable exchange detail string for indicator.setText2().
-     * Input: "Mining session 3 of 16 (embedding 2/8): Fix auth bug"
-     * Output: "Embedding exchange 2 of 8"
-     *
-     * @return detail string, or null if no exchange detail is present
-     */
-    static String parseExchangeDetail(String progress) {
-        int parenOpen = progress.indexOf('(');
-        int parenClose = progress.indexOf(')', parenOpen + 1);
-        if (parenOpen < 0 || parenClose < 0) return null;
-
-        String detail = progress.substring(parenOpen + 1, parenClose);
-        int spaceIdx = detail.indexOf(' ');
-        if (spaceIdx < 0) return null;
-
-        String phase = detail.substring(0, spaceIdx);
-        String fraction = detail.substring(spaceIdx + 1);
-        int slashIdx = fraction.indexOf('/');
-        if (slashIdx < 0) return null;
-
-        String current = fraction.substring(0, slashIdx);
-        String total = fraction.substring(slashIdx + 1);
-        String capitalizedPhase = Character.toUpperCase(phase.charAt(0)) + phase.substring(1);
-        return capitalizedPhase + " exchange " + current + " of " + total;
-    }
-
-    /**
-     * Strip the exchange detail "(phase N/M)" from a progress string for indicator.setText().
-     * Input: "Mining session 3 of 16 (embedding 2/8): Fix auth bug"
-     * Output: "Mining session 3 of 16: Fix auth bug"
-     */
-    static String stripExchangeDetail(String progress) {
-        int parenOpen = progress.indexOf('(');
-        int parenClose = progress.indexOf(')', parenOpen + 1);
-        if (parenOpen < 0 || parenClose < 0) return progress;
-        return progress.substring(0, parenOpen).stripTrailing()
-            + progress.substring(parenClose + 1);
     }
 
     @Override
@@ -348,6 +252,9 @@ public final class MemorySettingsConfigurable implements Configurable {
         settings.setMinChunkLength((int) minChunkLengthSpinner.getValue());
         settings.setMaxDrawersPerTurn((int) maxDrawersPerTurnSpinner.getValue());
         settings.setPalaceWing(palaceWingField.getText().trim());
+
+        // Refresh backfill button now that settings are persisted
+        updateSubOptionsEnabled();
 
         // Offer backfill when memory is first enabled
         if (wasDisabled && settings.isEnabled() && !settings.isBackfillCompleted()) {
