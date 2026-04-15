@@ -36,9 +36,11 @@ public final class GitCommitTool extends GitTool {
 
     @Override
     public @NotNull String description() {
-        return "Commit staged changes with a message. Returns the commit result along with "
-            + "branch context: current branch, tracking status, ahead/behind counts, "
-            + "total commits on the branch, and remaining uncommitted changes.";
+        return "Commit staged changes with a message. By default stages ALL changes first "
+            + "(modified, deleted, and new untracked files) — equivalent to 'git add -A && git commit'. "
+            + "Set all: false to commit only what is already staged. "
+            + "Returns the commit result with the list of committed files, branch, tracking status, "
+            + "ahead/behind counts, total commits on the branch, and remaining uncommitted changes.";
     }
 
     @Override
@@ -57,7 +59,7 @@ public final class GitCommitTool extends GitTool {
             Param.required(PARAM_MESSAGE, TYPE_STRING, "Commit message (use conventional commit format)"),
             Param.optional(PARAM_AMEND, TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"),
             Param.optional(PARAM_AUTHOR, TYPE_STRING, "Override the commit author (e.g. 'Name <email@example.com>')"),
-            Param.optional("all", TYPE_BOOLEAN, "If true, automatically stage all modified and deleted files")
+            Param.optional("all", TYPE_BOOLEAN, "Stage all changes (modified, deleted, and new untracked files) before committing. Default: true. Set false to commit only already-staged changes.")
         );
     }
 
@@ -69,25 +71,25 @@ public final class GitCommitTool extends GitTool {
             return "Error: 'message' parameter is required";
         }
 
-        boolean commitAll = args.has("all") && args.get("all").getAsBoolean();
+        // Default to staging everything (all: true) unless explicitly disabled
+        boolean commitAll = !args.has("all") || args.get("all").getAsBoolean();
 
-        // Pre-commit check: verify there are staged changes (unless --all is used)
-        if (!commitAll) {
-            String staged = runGitQuiet("diff", "--cached", "--name-only");
-            if (staged != null && staged.isEmpty()) {
-                String unstaged = runGitQuiet("diff", "--name-only");
-                String untracked = runGitQuiet("ls-files", "--others", "--exclude-standard");
-                StringBuilder hint = new StringBuilder("Error: nothing staged for commit.");
-                if (unstaged != null && !unstaged.isEmpty()) {
-                    hint.append(" There are unstaged changes — use git_stage first,")
-                        .append(" or pass all: true to auto-stage modified files.");
-                } else if (untracked != null && !untracked.isEmpty()) {
-                    hint.append(" There are untracked files — use git_stage to add them first.");
-                } else {
-                    hint.append(" The working tree is clean — there is nothing to commit.");
-                }
-                return hint.toString();
+        if (commitAll) {
+            // Stage all changes including new untracked files (equivalent to git add -A)
+            runGit("add", "-A");
+        }
+
+        // Pre-commit check: verify there are staged changes
+        String staged = runGitQuiet("diff", "--cached", "--name-only");
+        if (staged != null && staged.isEmpty()) {
+            String unstaged = runGitQuiet("diff", "--name-only");
+            StringBuilder hint = new StringBuilder("Error: nothing to commit.");
+            if (unstaged != null && !unstaged.isEmpty()) {
+                hint.append(" There are unstaged changes not picked up by --all (e.g. ignored files).");
+            } else {
+                hint.append(" The working tree is clean.");
             }
+            return hint.toString();
         }
 
         // Open VCS tool window in follow mode
@@ -106,10 +108,6 @@ public final class GitCommitTool extends GitTool {
             cmdArgs.add("--amend");
         }
 
-        if (commitAll) {
-            cmdArgs.add("--all");
-        }
-
         if (args.has(PARAM_AUTHOR) && !args.get(PARAM_AUTHOR).getAsString().isEmpty()) {
             cmdArgs.add("--author");
             cmdArgs.add(args.get(PARAM_AUTHOR).getAsString());
@@ -122,6 +120,12 @@ public final class GitCommitTool extends GitTool {
         showNewCommitInLog();
 
         if (result.startsWith("Error")) return result;
+
+        // Append committed file list so agent can verify what was included
+        String fileStats = runGitQuiet("show", "--stat", "--format=", "HEAD");
+        if (fileStats != null && !fileStats.isBlank()) {
+            result += "\n\nCommitted files:\n" + fileStats.trim();
+        }
 
         // Warn if committing directly to default branch
         String branch = runGitQuiet("rev-parse", "--abbrev-ref", "HEAD");
