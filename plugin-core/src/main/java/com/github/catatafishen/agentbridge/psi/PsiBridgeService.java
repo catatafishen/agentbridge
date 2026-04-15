@@ -65,6 +65,19 @@ public final class PsiBridgeService implements Disposable {
         Topic.create("PsiBridgeService.FocusRestore", FocusRestoreListener.class);
 
     private static final Set<String> SYNC_TOOL_CATEGORIES = Set.of("FILE", "EDITING", "REFACTOR", "GIT");
+
+    /**
+     * Tools disabled in Rider because they depend on detailed PSI (which lives in
+     * the ReSharper backend) or on JUnit-specific test infrastructure.
+     */
+    private static final Set<String> RIDER_DISABLED_TOOLS = Set.of(
+        "search_symbols",       // classifyElement() fails on Rider's coarse PSI stubs
+        "list_tests",           // scans for Java @Test annotations
+        "run_tests",            // creates JUnit run configurations
+        "replace_symbol_body",  // PSI symbol resolution too coarse
+        "insert_before_symbol", // PSI symbol resolution too coarse
+        "insert_after_symbol"   // PSI symbol resolution too coarse
+    );
     private final Map<String, ReentrantLock> toolLocks = new ConcurrentHashMap<>();
     private final java.util.concurrent.Semaphore writeToolSemaphore = new java.util.concurrent.Semaphore(1);
     private final WriteBatchCoordinator writeBatchCoordinator = new WriteBatchCoordinator(writeToolSemaphore);
@@ -101,6 +114,7 @@ public final class PsiBridgeService implements Disposable {
 
         // Register OO-style individual tool classes
         boolean hasJava = PlatformApiCompat.isPluginInstalled("com.intellij.modules.java");
+        boolean isRider = PlatformApiCompat.isPluginInstalled("com.intellij.modules.rider");
         var allTools = new java.util.ArrayList<com.github.catatafishen.agentbridge.psi.tools.Tool>();
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.git.GitToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.file.FileToolFactory.create(project));
@@ -116,6 +130,14 @@ public final class PsiBridgeService implements Disposable {
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.debug.DebugToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.database.DatabaseToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.memory.MemoryToolFactory.create(project));
+
+        // Rider's C#/C++ PSI lives in the ReSharper backend, not the IntelliJ frontend.
+        // Symbol-based tools depend on detailed PSI that Rider doesn't provide, and testing
+        // tools are JUnit-specific. Disable them to avoid confusing agents with broken tools.
+        if (isRider) {
+            allTools.removeIf(tool -> RIDER_DISABLED_TOOLS.contains(tool.id()));
+        }
+
         registry.registerAll(allTools);
     }
 
