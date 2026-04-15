@@ -120,18 +120,20 @@ class ChatToolWindowContent(
     /**
      * Subscribes to focus restore events published by PsiBridgeService after tool calls complete.
      * Restores keyboard focus to the chat input after files are opened in follow mode.
+     *
+     * Uses a short delay (150ms) to ensure the restore fires AFTER any secondary focus changes
+     * triggered by tool window activations, navigate() calls, or showDiff() events that
+     * may themselves use invokeLater internally.
      */
     private fun subscribeToFocusRestoreEvents() {
+        val alarm = com.intellij.util.Alarm(com.intellij.util.Alarm.ThreadToUse.SWING_THREAD, project)
         val connection = project.messageBus.connect()
         connection.subscribe(
             com.github.catatafishen.agentbridge.psi.PsiBridgeService.FOCUS_RESTORE_TOPIC,
             com.github.catatafishen.agentbridge.psi.PsiBridgeService.FocusRestoreListener {
-                // Only triggered when chat was active before tool call, so just request focus
-                // Must run on EDT since EditorTextField.requestFocusInWindow() requires it
                 if (::promptTextArea.isInitialized) {
-                    ApplicationManager.getApplication().invokeLater {
-                        promptTextArea.requestFocusInWindow()
-                    }
+                    alarm.cancelAllRequests()
+                    alarm.addRequest({ promptTextArea.requestFocusInWindow() }, 150)
                 }
             }
         )

@@ -445,24 +445,41 @@ public final class PsiBridgeService implements Disposable {
     /**
      * Checks if the AgentBridge chat tool window is currently active (has focus).
      * <p>
-     * Thread-safe: reads a volatile cache that is refreshed asynchronously on the EDT.
-     * The cached value may lag by one tool call — acceptable for focus-restoration heuristics.
+     * Thread-safe: on the EDT the check is performed synchronously (no stale cache).
+     * Off the EDT, a blocking {@code invokeLater} with a short timeout is used so callers
+     * get a fresh value rather than one that may lag by several tool calls.
      */
     public static boolean isChatToolWindowActive(@NotNull Project project) {
         PsiBridgeService service = getInstance(project);
         if (service == null) return false;
-        // Refresh cache asynchronously — result available for the next caller
-        ApplicationManager.getApplication().invokeLater(() -> {
+
+        var app = ApplicationManager.getApplication();
+        if (app.isDispatchThread()) {
+            refreshChatToolWindowCache(project, service);
+        } else {
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            app.invokeLater(() -> {
+                refreshChatToolWindowCache(project, service);
+                latch.countDown();
+            });
             try {
-                com.intellij.openapi.wm.ToolWindowManager twm =
-                    com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
-                com.intellij.openapi.wm.ToolWindow tw = twm.getToolWindow("AgentBridge");
-                service.chatToolWindowActiveCache = tw != null && tw.isActive();
-            } catch (Exception e) {
-                LOG.debug("Failed to refresh chat tool window state", e);
+                latch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
             }
-        });
+        }
         return service.chatToolWindowActiveCache;
+    }
+
+    private static void refreshChatToolWindowCache(@NotNull Project project, @NotNull PsiBridgeService service) {
+        try {
+            com.intellij.openapi.wm.ToolWindowManager twm =
+                com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
+            com.intellij.openapi.wm.ToolWindow tw = twm.getToolWindow("AgentBridge");
+            service.chatToolWindowActiveCache = tw != null && tw.isActive();
+        } catch (Exception e) {
+            LOG.debug("Failed to refresh chat tool window state", e);
+        }
     }
 
     /**

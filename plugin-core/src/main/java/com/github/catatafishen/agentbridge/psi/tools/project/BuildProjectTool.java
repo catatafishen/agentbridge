@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.project;
 
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.ui.renderers.BuildResultRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -73,11 +74,16 @@ public final class BuildProjectTool extends ProjectTool {
 
         String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
 
-        // Open Build tool window in follow mode
+        // Show Build tool window in follow mode without stealing focus from chat prompt
         if (com.github.catatafishen.agentbridge.psi.ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
             com.github.catatafishen.agentbridge.psi.EdtUtil.invokeLater(() -> {
                 var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project).getToolWindow("Build");
-                if (tw != null) tw.activate(null);
+                if (tw == null) return;
+                if (PsiBridgeService.isChatToolWindowActive(project)) {
+                    tw.show();
+                } else {
+                    tw.activate(null);
+                }
             });
         }
 

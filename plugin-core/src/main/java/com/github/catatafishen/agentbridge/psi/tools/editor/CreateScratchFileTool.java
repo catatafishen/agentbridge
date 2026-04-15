@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.editor;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.services.AgentScratchTracker;
@@ -117,7 +118,8 @@ public final class CreateScratchFileTool extends EditorTool {
             );
 
             if (resultFile[0] != null) {
-                boolean focusScratch = ToolLayerSettings.getInstance(project).getFollowAgentFiles();
+                boolean focusScratch = ToolLayerSettings.getInstance(project).getFollowAgentFiles()
+                    && !PsiBridgeService.isChatToolWindowActive(project);
                 FileEditorManager.getInstance(project).openFile(resultFile[0], focusScratch);
                 AgentScratchTracker.getInstance(project).trackScratchFile(resultFile[0].getPath());
             }
