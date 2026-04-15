@@ -380,6 +380,78 @@ class TripleExtractorTest {
 
     // ── Helper ────────────────────────────────────────────────────────────
 
+    // ── Negation guard tests ──────────────────────────────────────────────
+
+    @Test
+    void negation_neverUse_skipsTriple() {
+        String text = "Never use eval() in production code.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertTrue(triples.isEmpty(),
+            "Negated usage should not produce a triple: " + triples);
+    }
+
+    @Test
+    void negation_dontUse_skipsTriple() {
+        String text = "Don't use global variables for configuration.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertTrue(triples.isEmpty(),
+            "Negated usage should not produce a triple: " + triples);
+    }
+
+    @Test
+    void negation_shouldNotDepend_skipsTriple() {
+        String text = "The module should not depend on external services.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertTrue(triples.isEmpty(),
+            "Negated dependency should not produce a triple: " + triples);
+    }
+
+    @Test
+    void negation_avoid_skipsTriple() {
+        String text = "Avoid using deprecated APIs in the codebase.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertTrue(triples.isEmpty(),
+            "Avoidance should not produce a 'uses' triple: " + triples);
+    }
+
+    // ── Object trimming tests ─────────────────────────────────────────────
+
+    @Test
+    void objectTrimming_clauseBoundary_stopsAtBy() {
+        String text = "I fixed the classloader issue by loading the driver explicitly.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertContainsTriple(triples, "resolved", "classloader issue");
+        assertFalse(triples.getFirst().object().contains("loading"),
+            "Object should not extend past 'by' clause: " + triples.getFirst().object());
+    }
+
+    @Test
+    void objectTrimming_clauseBoundary_stopsAtInstead() {
+        String text = "I chose PostgreSQL instead of MySQL for the database.";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        assertContainsTriple(triples, "decided", "PostgreSQL");
+        assertFalse(triples.getFirst().object().contains("MySQL"),
+            "Object should not extend past 'instead': " + triples.getFirst().object());
+    }
+
+    @Test
+    void objectTrimming_trailingPreposition_removed() {
+        String text = "We decided to use Gradle for";
+        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+
+        // "Gradle for" should trim trailing "for"
+        if (!triples.isEmpty()) {
+            assertFalse(triples.getFirst().object().endsWith("for"),
+                "Trailing preposition should be trimmed: " + triples.getFirst().object());
+        }
+    }
+
     private static void assertContainsTriple(List<TripleExtractor.ExtractedTriple> triples,
                                              String predicate, String objectSubstring) {
         boolean found = triples.stream().anyMatch(t ->

@@ -48,7 +48,7 @@ class EssentialStoryLayerTest {
 
     @Test
     void renderWithEmptyDrawersReturnsEmpty() throws IOException {
-        when(store.getTopDrawers(eq(WING), anyInt())).thenReturn(Collections.emptyList());
+        when(store.getTopDrawersDiverse(eq(WING), anyInt())).thenReturn(Collections.emptyList());
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store);
         String result = layer.render(WING, null);
@@ -67,7 +67,7 @@ class EssentialStoryLayerTest {
             .filedAt(Instant.parse("2024-01-15T10:30:00Z"))
             .build();
 
-        when(store.getTopDrawers(eq(WING), anyInt())).thenReturn(List.of(drawer));
+        when(store.getTopDrawersDiverse(eq(WING), anyInt())).thenReturn(List.of(drawer));
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store);
         String result = layer.render(WING, null);
@@ -91,7 +91,7 @@ class EssentialStoryLayerTest {
             .filedAt(Instant.now())
             .build();
 
-        when(store.getTopDrawers(eq(WING), anyInt())).thenReturn(List.of(drawer));
+        when(store.getTopDrawersDiverse(eq(WING), anyInt())).thenReturn(List.of(drawer));
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store);
         String result = layer.render(WING, null);
@@ -112,7 +112,7 @@ class EssentialStoryLayerTest {
             .filedAt(Instant.now())
             .build();
 
-        when(store.getTopDrawers(eq(WING), anyInt())).thenReturn(List.of(drawer));
+        when(store.getTopDrawersDiverse(eq(WING), anyInt())).thenReturn(List.of(drawer));
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store);
         String result = layer.render(WING, null);
@@ -131,7 +131,7 @@ class EssentialStoryLayerTest {
             .filedAt(Instant.now())
             .build();
 
-        when(store.getTopDrawers(eq(WING), anyInt())).thenReturn(List.of(drawer));
+        when(store.getTopDrawersDiverse(eq(WING), anyInt())).thenReturn(List.of(drawer));
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store);
         String withQuery = layer.render(WING, "some search query");
@@ -142,7 +142,7 @@ class EssentialStoryLayerTest {
 
     @Test
     void renderWhenStoreThrowsIOExceptionReturnsEmpty() throws IOException {
-        when(store.getTopDrawers(anyString(), anyInt())).thenThrow(new IOException("disk failure"));
+        when(store.getTopDrawersDiverse(anyString(), anyInt())).thenThrow(new IOException("disk failure"));
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store);
         String result = layer.render(WING, null);
@@ -153,11 +153,11 @@ class EssentialStoryLayerTest {
     @Test
     void customMaxDrawersLimitIsPassedToStore() throws IOException {
         int customLimit = 5;
-        when(store.getTopDrawers(eq(WING), eq(customLimit))).thenReturn(Collections.emptyList());
+        when(store.getTopDrawersDiverse(eq(WING), eq(customLimit))).thenReturn(Collections.emptyList());
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store, customLimit);
         layer.render(WING, null);
 
-        verify(store).getTopDrawers(WING, customLimit);
+        verify(store).getTopDrawersDiverse(WING, customLimit);
     }
 }

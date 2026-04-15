@@ -74,10 +74,13 @@ public final class ExchangeChunker {
 
     private static void appendResponseText(String raw, StringBuilder response) {
         if (!raw.isBlank()) {
-            if (!response.isEmpty()) {
-                response.append('\n');
+            String filtered = NarrationFilter.filter(raw);
+            if (!filtered.isEmpty()) {
+                if (!response.isEmpty()) {
+                    response.append('\n');
+                }
+                response.append(filtered);
             }
-            response.append(raw);
         }
     }
 
@@ -97,33 +100,17 @@ public final class ExchangeChunker {
 
     /**
      * Append evidence-relevant fragments from a tool call result.
-     * Includes the file path reference (if available) and the tool name context,
-     * but NOT the full result text (which can be very large for file reads/diffs).
+     * Only includes the file path reference — NOT the full result text.
+     * Raw tool output is noisy (search results, file listings, diffs) and
+     * degrades embedding quality and triple extraction.
      * The {@link com.github.catatafishen.agentbridge.memory.validation.EvidenceExtractor}
-     * will pick up file paths and FQN patterns from these fragments.
+     * picks up file paths and FQN patterns from these fragments.
      */
     static void appendToolResultEvidence(EntryData.ToolCall tc, StringBuilder response) {
         String filePath = tc.getFilePath();
         if (filePath != null && !filePath.isEmpty()) {
             appendResponseText("[tool:" + tc.getTitle() + " file:" + filePath + "]", response);
         }
-
-        String result = tc.getResult();
-        if (result == null || result.isEmpty()) return;
-
-        // For search/list tools, the result contains file paths worth capturing.
-        // Limit to first 500 chars to avoid bloating the combined text.
-        String toolName = tc.getTitle();
-        if (isEvidenceRichTool(toolName)) {
-            String fragment = result.length() > 500 ? result.substring(0, 500) : result;
-            appendResponseText("[" + toolName + " result: " + fragment + "]", response);
-        }
-    }
-
-    private static boolean isEvidenceRichTool(String toolName) {
-        return toolName.contains("search") || toolName.contains("find")
-            || toolName.contains("list") || toolName.contains("grep")
-            || toolName.contains("glob") || toolName.contains("outline");
     }
 
     /**
@@ -143,10 +130,13 @@ public final class ExchangeChunker {
         @NotNull List<String> commitHashes
     ) {
         /**
-         * Get the combined text (prompt + response) for classification and embedding.
+         * Get the preprocessed text for classification and embedding.
+         * Uses response-first ordering with markdown stripped.
+         *
+         * @see TextPreprocessor#forEmbedding(String, String)
          */
         public @NotNull String combinedText() {
-            return prompt + "\n\n" + response;
+            return TextPreprocessor.forEmbedding(prompt, response);
         }
     }
 }

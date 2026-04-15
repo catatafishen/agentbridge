@@ -45,7 +45,7 @@ public final class EssentialStoryLayer implements MemoryStack {
     @Override
     public @NotNull String render(@NotNull String wing, @Nullable String query) {
         try {
-            List<DrawerDocument> drawers = store.getTopDrawers(wing, maxDrawers);
+            List<DrawerDocument> drawers = store.getTopDrawersDiverse(wing, maxDrawers);
             if (drawers.isEmpty()) return "";
 
             StringBuilder sb = new StringBuilder("## Essential Story\n\n");

@@ -22,6 +22,12 @@ import java.util.regex.Pattern;
  */
 public final class MemoryClassifier {
 
+    /**
+     * Minimum weighted score required to confidently classify a type.
+     * A single marker match (score 1) is too ambiguous — falls back to general.
+     */
+    private static final int MIN_CONFIDENCE = 2;
+
     private static final Map<String, List<Pattern>> TYPE_MARKERS = buildTypeMarkers();
 
     private MemoryClassifier() {
@@ -29,6 +35,9 @@ public final class MemoryClassifier {
 
     /**
      * Classify the combined prompt + response text into a memory type.
+     * Requires at least {@code MIN_CONFIDENCE} marker matches to classify;
+     * otherwise falls back to "general". Multi-word patterns score higher
+     * (weight 2) than single-word patterns (weight 1) since they're more specific.
      *
      * @param text combined text of the exchange chunk
      * @return one of the DrawerDocument.TYPE_* constants
@@ -43,7 +52,10 @@ public final class MemoryClassifier {
             int score = 0;
             for (Pattern pattern : entry.getValue()) {
                 if (pattern.matcher(lowerText).find()) {
-                    score++;
+                    // Multi-word patterns are more diagnostic → higher weight
+                    String patternStr = pattern.pattern();
+                    boolean isMultiWord = patternStr.contains(" ") || patternStr.contains("\\s");
+                    score += isMultiWord ? 2 : 1;
                 }
             }
             if (score > bestScore) {
@@ -52,7 +64,7 @@ public final class MemoryClassifier {
             }
         }
 
-        return bestType;
+        return bestScore >= MIN_CONFIDENCE ? bestType : DrawerDocument.TYPE_GENERAL;
     }
 
     private static Map<String, List<Pattern>> buildTypeMarkers() {

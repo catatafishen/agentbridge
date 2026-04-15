@@ -249,6 +249,47 @@ public final class MemoryStore implements Disposable {
     }
 
     /**
+     * Get top N drawers with per-room diversity, ensuring wake-up context
+     * spans multiple topic areas rather than being dominated by the most
+     * recent session's room.
+     *
+     * <p>Strategy: fetches recent drawers, groups by room, then round-robin
+     * selects from each room to fill the quota. This guarantees at least one
+     * drawer per room (when available) before any room gets a second.
+     *
+     * @param wing       project wing
+     * @param maxDrawers maximum drawers to return
+     * @return drawers with room diversity, most recent first within each room
+     */
+    public List<DrawerDocument> getTopDrawersDiverse(@NotNull String wing, int maxDrawers) throws IOException {
+        // Fetch a larger pool to have enough diversity candidates
+        List<DrawerDocument> pool = getTopDrawers(wing, maxDrawers * 3);
+        if (pool.size() <= maxDrawers) return pool;
+
+        // Group by room, preserving recency order within each group
+        java.util.LinkedHashMap<String, List<DrawerDocument>> byRoom = new java.util.LinkedHashMap<>();
+        for (DrawerDocument d : pool) {
+            byRoom.computeIfAbsent(d.room(), k -> new ArrayList<>()).add(d);
+        }
+
+        // Round-robin across rooms
+        List<DrawerDocument> result = new ArrayList<>(maxDrawers);
+        int round = 0;
+        while (result.size() < maxDrawers) {
+            boolean added = false;
+            for (List<DrawerDocument> roomDrawers : byRoom.values()) {
+                if (round < roomDrawers.size() && result.size() < maxDrawers) {
+                    result.add(roomDrawers.get(round));
+                    added = true;
+                }
+            }
+            if (!added) break;
+            round++;
+        }
+        return result;
+    }
+
+    /**
      * Get total number of drawers in the index.
      */
     public int getDrawerCount() throws IOException {

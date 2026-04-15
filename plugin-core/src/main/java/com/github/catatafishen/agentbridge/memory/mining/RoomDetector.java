@@ -21,6 +21,12 @@ import java.util.Map;
 public final class RoomDetector {
 
     /**
+     * Minimum weighted score required to confidently assign a room.
+     * A single keyword match (score 1) is too ambiguous — falls back to general.
+     */
+    private static final int MIN_CONFIDENCE = 2;
+
+    /**
      * Keywords per room. Each match adds 1 to that room's score.
      */
     private static final Map<String, List<String>> ROOM_KEYWORDS = buildRoomKeywords();
@@ -30,6 +36,9 @@ public final class RoomDetector {
 
     /**
      * Detect the best-fit room for the given text.
+     * Requires at least {@code MIN_CONFIDENCE} keyword matches to classify;
+     * otherwise falls back to "general". Multi-word phrases score higher
+     * (weight 2) than single-word matches (weight 1) since they're more specific.
      *
      * @param text combined prompt + response text
      * @return room name (lowercase, suitable for use as DrawerDocument.room)
@@ -44,7 +53,8 @@ public final class RoomDetector {
             int score = 0;
             for (String keyword : entry.getValue()) {
                 if (lowerText.contains(keyword)) {
-                    score++;
+                    // Multi-word phrases are more specific → higher weight
+                    score += keyword.contains(" ") ? 2 : 1;
                 }
             }
             if (score > bestScore) {
@@ -53,7 +63,7 @@ public final class RoomDetector {
             }
         }
 
-        return bestRoom;
+        return bestScore >= MIN_CONFIDENCE ? bestRoom : DrawerDocument.ROOM_GENERAL;
     }
 
     private static Map<String, List<String>> buildRoomKeywords() {

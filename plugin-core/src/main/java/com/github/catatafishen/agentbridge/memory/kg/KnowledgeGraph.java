@@ -62,12 +62,18 @@ public final class KnowledgeGraph implements Disposable {
 
     /**
      * Add a triple to the knowledge graph.
+     * Skips insertion if an identical valid triple (same subject, predicate, object)
+     * already exists, preventing cross-run duplication.
      *
-     * @return the auto-generated triple ID
+     * @return the auto-generated triple ID, or -1 if skipped as duplicate
      */
     public long addTriple(@NotNull KgTriple triple) throws IOException {
+        if (existsValidTriple(triple.subject(), triple.predicate(), triple.object())) {
+            return -1;
+        }
+
         String sql = """
-            INSERT INTO triples (subject, predicate, object, valid_from, valid_until, source_closet, created_at, evidence)
+            INSERT INTO triples (subject, predicate, object, valid_from, valid_until, source_drawer, created_at, evidence)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """;
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
@@ -98,6 +104,28 @@ public final class KnowledgeGraph implements Disposable {
     }
 
     /**
+     * Check if an identical valid triple already exists (same subject, predicate, object,
+     * and not invalidated). Used to prevent cross-run duplication when re-mining.
+     */
+    private boolean existsValidTriple(@NotNull String subject, @NotNull String predicate,
+                                      @NotNull String object) throws IOException {
+        String sql = """
+            SELECT COUNT(*) FROM triples
+            WHERE subject = ? AND predicate = ? AND object = ? AND valid_until IS NULL
+            """;
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, subject);
+            stmt.setString(2, predicate);
+            stmt.setString(3, object);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.getInt(1) > 0;
+            }
+        } catch (SQLException e) {
+            throw new IOException("Failed to check for existing triple", e);
+        }
+    }
+
+    /**
      * Query triples matching the given filters. All parameters are optional.
      * Only returns currently valid triples (valid_until is NULL or in the future).
      */
@@ -106,7 +134,7 @@ public final class KnowledgeGraph implements Disposable {
                                          @Nullable String object,
                                          int limit) throws IOException {
         StringBuilder sql = new StringBuilder(
-            "SELECT id, subject, predicate, object, valid_from, valid_until, source_closet, created_at, evidence FROM triples WHERE 1=1");
+            "SELECT id, subject, predicate, object, valid_from, valid_until, source_drawer, created_at, evidence FROM triples WHERE 1=1");
         List<Object> params = new ArrayList<>();
 
         if (subject != null && !subject.isEmpty()) {
@@ -207,7 +235,7 @@ public final class KnowledgeGraph implements Disposable {
      */
     public @NotNull List<KgTriple> getTimeline(@NotNull String subject, int limit) throws IOException {
         String sql = """
-            SELECT id, subject, predicate, object, valid_from, valid_until, source_closet, created_at, evidence
+            SELECT id, subject, predicate, object, valid_from, valid_until, source_drawer, created_at, evidence
             FROM triples WHERE subject = ?
             ORDER BY created_at DESC LIMIT ?
             """;
@@ -239,7 +267,7 @@ public final class KnowledgeGraph implements Disposable {
                     object      TEXT NOT NULL,
                     valid_from  TEXT,
                     valid_until TEXT,
-                    source_closet TEXT,
+                    source_drawer TEXT,
                     created_at  TEXT NOT NULL
                 )
                 """);
@@ -251,18 +279,31 @@ public final class KnowledgeGraph implements Disposable {
     }
 
     private static void migrateSchema(@NotNull java.sql.Statement stmt) throws SQLException {
+        boolean hasEvidence = false;
+        boolean hasSourceCloset = false;
+        boolean hasSourceDrawer = false;
+
         try (ResultSet rs = stmt.executeQuery("PRAGMA table_info(triples)")) {
-            boolean hasEvidence = false;
             while (rs.next()) {
-                if ("evidence".equals(rs.getString("name"))) {
-                    hasEvidence = true;
-                    break;
-                }
-            }
-            if (!hasEvidence) {
-                stmt.executeUpdate("ALTER TABLE triples ADD COLUMN evidence TEXT DEFAULT ''");
+                String colName = rs.getString("name");
+                if ("evidence".equals(colName)) hasEvidence = true;
+                if ("source_closet".equals(colName)) hasSourceCloset = true;
+                if ("source_drawer".equals(colName)) hasSourceDrawer = true;
             }
         }
+
+        if (!hasEvidence) {
+            stmt.executeUpdate("ALTER TABLE triples ADD COLUMN evidence TEXT DEFAULT ''");
+        }
+
+        // Rename legacy "source_closet" column to "source_drawer" (MemPalace terminology → ours)
+        if (hasSourceCloset && !hasSourceDrawer) {
+            stmt.executeUpdate("ALTER TABLE triples RENAME COLUMN source_closet TO source_drawer");
+        }
+
+        // Compound index for dedup lookups and common query patterns
+        stmt.executeUpdate(
+            "CREATE INDEX IF NOT EXISTS idx_spo_valid ON triples(subject, predicate, object, valid_until)");
     }
 
     private @NotNull List<KgTriple> executeQuery(@NotNull String sql, @NotNull List<Object> params) throws IOException {
@@ -297,7 +338,7 @@ public final class KnowledgeGraph implements Disposable {
             .object(rs.getString("object"))
             .validFrom(parseNullableInstant(rs.getString("valid_from")))
             .validUntil(parseNullableInstant(rs.getString("valid_until")))
-            .sourceDrawer(rs.getString("source_closet"))
+            .sourceDrawer(rs.getString("source_drawer"))
             .createdAt(Instant.parse(rs.getString("created_at")))
             .evidence(getNullableString(rs, "evidence"))
             .build();

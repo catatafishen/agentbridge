@@ -72,7 +72,7 @@ public final class MemoryWakeUpTool extends Tool {
         }
 
         String wing = memoryService.getEffectiveWing();
-        List<DrawerDocument> topDrawers = store.getTopDrawers(wing, MAX_DRAWERS);
+        List<DrawerDocument> topDrawers = store.getTopDrawersDiverse(wing, MAX_DRAWERS);
 
         // Skip stale memories — wake-up context should be reliable
         List<DrawerDocument> reliable = topDrawers.stream()

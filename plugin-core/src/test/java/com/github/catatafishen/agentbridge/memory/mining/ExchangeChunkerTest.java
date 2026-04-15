@@ -156,9 +156,10 @@ class ExchangeChunkerTest {
     }
 
     @Test
-    void toolCall_searchTool_includesResultFragment() {
+    void toolCall_searchTool_includesFilePathOnly() {
         EntryData.ToolCall tc = new EntryData.ToolCall("search_text");
         tc.setResult("Found 3 matches:\nplugin-core/src/main/java/Bar.java:42 match");
+        tc.setFilePath("plugin-core/src/main/java/Bar.java");
         List<EntryData> entries = List.of(
             new EntryData.Prompt("Find Bar"),
             tc,
@@ -168,7 +169,9 @@ class ExchangeChunkerTest {
         List<ExchangeChunker.Exchange> result = ExchangeChunker.chunk(entries);
         assertEquals(1, result.size());
         assertTrue(result.get(0).response().contains("Bar.java"),
-            "Search tool result should appear in response: " + result.get(0).response());
+            "File path should appear in response: " + result.get(0).response());
+        assertFalse(result.get(0).response().contains("Found 3 matches"),
+            "Raw tool result text should NOT appear: " + result.get(0).response());
     }
 
     @Test
@@ -234,10 +237,14 @@ class ExchangeChunkerTest {
     // --- Exchange.combinedText() ---
 
     @Test
-    void combinedText_format() {
+    void combinedText_responseFirst() {
         ExchangeChunker.Exchange ex = new ExchangeChunker.Exchange(
             "my prompt", "my response", "", "", List.of());
 
-        assertEquals("my prompt\n\nmy response", ex.combinedText());
+        String combined = ex.combinedText();
+        assertTrue(combined.startsWith("my response"),
+            "Response should come first for embedding quality: " + combined);
+        assertTrue(combined.contains("my prompt"),
+            "Prompt should still be included: " + combined);
     }
 }

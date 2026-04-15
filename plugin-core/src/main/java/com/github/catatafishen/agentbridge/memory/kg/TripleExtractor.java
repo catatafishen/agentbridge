@@ -28,7 +28,7 @@ public final class TripleExtractor {
     private static final int MAX_OBJECT_LENGTH = 120;
     private static final int MAX_TRIPLES_PER_TEXT = 8;
     private static final int MIN_OBJECT_LENGTH = 3;
-    private static final int MAX_OBJECT_WORDS = 10;
+    private static final int MAX_OBJECT_WORDS = 8;
 
     private static final List<ExtractionRule> RULES = buildRules();
 
@@ -53,6 +53,26 @@ public final class TripleExtractor {
 
     private TripleExtractor() {
     }
+
+    /**
+     * Negation words that appear before a verb phrase and invert its meaning.
+     * When detected within 4 words before the pattern match, the triple is
+     * skipped entirely (e.g., "Never use eval()" should not produce
+     * {@code (project, uses, eval())}).
+     */
+    private static final Pattern NEGATION_PATTERN = Pattern.compile(
+        "\\b(never|don't|do not|doesn't|does not|should not|shouldn't|"
+            + "avoid|stop using|must not|mustn't|cannot|can't|won't|will not)\\b",
+        Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Trailing words that weaken an extracted object and should be trimmed.
+     * E.g., "JWT for authentication and" → "JWT for authentication".
+     */
+    private static final Set<String> TRAILING_TRIM_WORDS = Set.of(
+        "and", "or", "but", "so", "then", "because", "since", "when",
+        "where", "which", "that", "to", "for", "with", "from", "by",
+        "as", "at", "on", "in", "of");
 
     /**
      * Extract structured triples from exchange text.
@@ -93,38 +113,11 @@ public final class TripleExtractor {
     }
 
     /**
-     * Strip markdown formatting and tool-call fragments from text,
-     * preserving the underlying conversational words.
-     * Code blocks are removed entirely (code is not conversational prose).
-     * Bold/italic markers are unwrapped, keeping the emphasized text.
-     * Tool evidence brackets {@code [tool:...]} and {@code [...result:...]}
-     * are removed to prevent false pattern matches on operational metadata.
+     * Strip markdown formatting and tool-call fragments from text.
+     * Delegates to {@link com.github.catatafishen.agentbridge.memory.mining.TextPreprocessor#stripMarkdown(String)}.
      */
     static @NotNull String stripMarkdown(@NotNull String text) {
-        // Remove fenced code blocks entirely (content is code, not prose)
-        String result = text.replaceAll("```[\\s\\S]*?```", " ");
-        // Remove inline code spans
-        result = result.replaceAll("`[^`]+`", " ");
-        // Remove tool evidence brackets: [tool:...], [...result:...]
-        result = result.replaceAll("\\[tool:[^]]*]", " ");
-        result = result.replaceAll("\\[[^]]{0,40} result:[^]]*]", " ");
-        // Unwrap bold/italic — keep the text, remove the markers
-        result = result.replaceAll("\\*{1,3}([^*]+)\\*{1,3}", "$1");
-        result = result.replaceAll("_{1,3}([^_]+)_{1,3}", "$1");
-        // Remove header markers
-        result = result.replaceAll("(?m)^#{1,6}\\s+", "");
-        // Remove bullet/list markers
-        result = result.replaceAll("(?m)^\\s*[-*+]\\s+", "");
-        result = result.replaceAll("(?m)^\\s*\\d+\\.\\s+", "");
-        // Unwrap markdown links: [text](url) → text
-        result = result.replaceAll("\\[([^]]+)]\\([^)]+\\)", "$1");
-        // Remove bare URLs
-        result = result.replaceAll("https?://\\S+", "");
-        // Remove blockquote markers
-        result = result.replaceAll("(?m)^>+\\s*", "");
-        // Normalize runs of horizontal whitespace (preserve newlines for splitting)
-        result = result.replaceAll("[ \\t]+", " ");
-        return result.strip();
+        return com.github.catatafishen.agentbridge.memory.mining.TextPreprocessor.stripMarkdown(text);
     }
 
     /**
@@ -191,6 +184,10 @@ public final class TripleExtractor {
         Matcher matcher = rule.pattern.matcher(sentence);
         if (!matcher.find()) return null;
 
+        // Negation guard: check if the sentence contains negation before the match
+        String prefix = sentence.substring(0, matcher.start());
+        if (hasNegation(prefix) || hasNegation(sentence)) return null;
+
         String rawObject = matcher.group(rule.objectGroup).strip();
         String object = cleanObject(rawObject);
         if (!isQualityObject(object)) return null;
@@ -202,6 +199,14 @@ public final class TripleExtractor {
 
         if (isDuplicate(existing, rule.predicate, object)) return null;
         return new ExtractedTriple(subject, rule.predicate, object, drawerId);
+    }
+
+    /**
+     * Check whether a text fragment contains negation that would invert the
+     * meaning of an extraction rule match (e.g. "don't use eval").
+     */
+    private static boolean hasNegation(@NotNull String text) {
+        return NEGATION_PATTERN.matcher(text).find();
     }
 
     private static boolean isDuplicate(@NotNull List<ExtractedTriple> existing,
@@ -222,7 +227,30 @@ public final class TripleExtractor {
                 cleaned = cleaned.substring(0, MAX_OBJECT_LENGTH);
             }
         }
+        cleaned = trimTrailingWeakWords(cleaned);
         return cleaned;
+    }
+
+    /**
+     * Remove trailing prepositions and conjunctions from an extracted object.
+     * These are captured by the greedy regex but add no semantic value.
+     * E.g., "JWT for authentication and" → "JWT for authentication".
+     */
+    private static @NotNull String trimTrailingWeakWords(@NotNull String text) {
+        String result = text;
+        boolean trimmed = true;
+        while (trimmed) {
+            trimmed = false;
+            int lastSpace = result.lastIndexOf(' ');
+            if (lastSpace > 0) {
+                String lastWord = result.substring(lastSpace + 1).toLowerCase();
+                if (TRAILING_TRIM_WORDS.contains(lastWord)) {
+                    result = result.substring(0, lastSpace).strip();
+                    trimmed = true;
+                }
+            }
+        }
+        return result;
     }
 
     private static @NotNull String cleanSubject(@NotNull String raw) {
@@ -238,8 +266,10 @@ public final class TripleExtractor {
     }
 
     private static List<ExtractionRule> buildRules() {
-        // Object terminator: sentence-ending punctuation or end of string
-        String end = "(?=[.,;!?\\n]|$)";
+        // Object terminator: sentence-ending punctuation, clause boundary, or end of string.
+        // Clause boundaries ("by", "instead", "because", etc.) prevent over-capturing
+        // subordinate clauses as part of the object.
+        String end = "(?=[.,;!?\\n]|\\s+(?:by|because|since|when|instead|rather|although|while|so that)\\b|$)";
         List<ExtractionRule> rules = new ArrayList<>();
 
         // Decision: "decided to use X", "chose X", "went with X"
