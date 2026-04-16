@@ -24,14 +24,14 @@ or generating diffs in isolation.
 
 ## Supported Agents
 
-| Agent | Protocol | Authentication |
-|---|---|---|
-| **GitHub Copilot** | ACP (stdin/stdout) | OAuth sign-in |
-| **Claude Code** (`claude` CLI) | Stream JSON (stdin/stdout) | Anthropic auth |
-| **Codex** (`codex app-server`) | ACP (stdin/stdout) | Device-auth sign-in |
-| **Kiro** | ACP (stdin/stdout) | Amazon auth |
-| **Junie** | ACP (stdin/stdout) | JetBrains auth |
-| **OpenCode** | ACP (stdin/stdout) | Configurable (multi-provider) |
+| Agent                          | Protocol                   | Authentication                |
+|--------------------------------|----------------------------|-------------------------------|
+| **GitHub Copilot**             | ACP (stdin/stdout)         | OAuth sign-in                 |
+| **Claude Code** (`claude` CLI) | Stream JSON (stdin/stdout) | Anthropic auth                |
+| **Codex** (`codex app-server`) | ACP (stdin/stdout)         | Device-auth sign-in           |
+| **Kiro**                       | ACP (stdin/stdout)         | Amazon auth                   |
+| **Junie**                      | ACP (stdin/stdout)         | JetBrains auth                |
+| **OpenCode**                   | ACP (stdin/stdout)         | Configurable (multi-provider) |
 
 Switch between agents with one click. Each agent has its own connection settings,
 tool permissions, and custom instructions.
@@ -94,14 +94,14 @@ IDE-specific capabilities:
 Available in **IntelliJ IDEA** (Ultimate and Community). Not available in WebStorm,
 PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover, or Rider.
 
-| Tool | Why Java-only |
-|------|---------------|
-| `build_project` | Triggers JPS incremental build |
+| Tool                     | Why Java-only                                      |
+|--------------------------|----------------------------------------------------|
+| `build_project`          | Triggers JPS incremental build                     |
 | `edit_project_structure` | Manages Java-style module dependencies, SDKs, JARs |
-| `get_class_outline` | Resolves fully-qualified Java/Kotlin class names |
-| `get_type_hierarchy` | Requires Java class hierarchy resolution |
-| `find_implementations` | Requires Java interface/class hierarchy |
-| `get_call_hierarchy` | Requires Java method resolution |
+| `get_class_outline`      | Resolves fully-qualified Java/Kotlin class names   |
+| `get_type_hierarchy`     | Requires Java class hierarchy resolution           |
+| `find_implementations`   | Requires Java interface/class hierarchy            |
+| `get_call_hierarchy`     | Requires Java method resolution                    |
 
 ### Rider-disabled tools
 
@@ -112,31 +112,31 @@ test framework infrastructure that Rider doesn't expose to the IntelliJ layer.
 > Thanks to Reddit user [VirusPanin](https://www.reddit.com/user/VirusPanin/)
 > for discovering these limitations by testing AgentBridge in Rider with C++ code.
 
-| Tool | Why disabled |
-|------|-------------|
-| `search_symbols` | `classifyElement()` fails on Rider's coarse PSI stubs |
-| `replace_symbol_body` | PSI symbol resolution too coarse for structural edits |
-| `insert_before_symbol` | PSI symbol resolution too coarse for structural edits |
-| `insert_after_symbol` | PSI symbol resolution too coarse for structural edits |
-| `list_tests` | IntelliJ `TestFramework` extensions don't cover Rider's NUnit/xUnit backend |
-| `run_tests` | `ConfigurationContext` can't resolve Rider test runners from the frontend PSI |
+| Tool                   | Why disabled                                                                  |
+|------------------------|-------------------------------------------------------------------------------|
+| `search_symbols`       | `classifyElement()` fails on Rider's coarse PSI stubs                         |
+| `replace_symbol_body`  | PSI symbol resolution too coarse for structural edits                         |
+| `insert_before_symbol` | PSI symbol resolution too coarse for structural edits                         |
+| `insert_after_symbol`  | PSI symbol resolution too coarse for structural edits                         |
+| `list_tests`           | IntelliJ `TestFramework` extensions don't cover Rider's NUnit/xUnit backend   |
+| `run_tests`            | `ConfigurationContext` can't resolve Rider test runners from the frontend PSI |
 
 ### Conditional tools (all IDEs)
 
-| Tool(s) | Condition |
-|---------|-----------|
+| Tool(s)                                                                | Condition                                                  |
+|------------------------------------------------------------------------|------------------------------------------------------------|
 | `database_list_sources`, `database_list_tables`, `database_get_schema` | Database plugin installed (bundled with Ultimate editions) |
-| `run_sonarqube_analysis`, `get_sonar_rule_description` | SonarQube for IDE plugin installed |
-| `run_qodana` | Qodana plugin installed |
-| `memory_*` (9 tools) | Memory feature enabled in AgentBridge settings |
+| `run_sonarqube_analysis`, `get_sonar_rule_description`                 | SonarQube for IDE plugin installed                         |
+| `run_qodana`                                                           | Qodana plugin installed                                    |
+| `memory_*` (9 tools)                                                   | Memory feature enabled in AgentBridge settings             |
 
 ### Summary
 
-| IDE | Tools available |
-|-----|-----------------|
-| **IntelliJ IDEA** | All 120+ |
-| **WebStorm, PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover** | ~114 (no Java-only tools) |
-| **Rider** | ~108 (no Java-only + no Rider-disabled tools) |
+| IDE                                                                 | Tools available                               |
+|---------------------------------------------------------------------|-----------------------------------------------|
+| **IntelliJ IDEA**                                                   | All 120+                                      |
+| **WebStorm, PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover** | ~114 (no Java-only tools)                     |
+| **Rider**                                                           | ~108 (no Java-only + no Rider-disabled tools) |
 
 ## Architecture
 
@@ -162,11 +162,11 @@ graph TD
         AAM --> clients
     end
 
-    AC <-->|"stdin/stdout — JSON-RPC 2.0"| CLI["Agent CLI"]
-    CC <-->|"stdin/stdout — stream-json"| CCLI["Claude Code CLI"]
-    XC <-->|"stdin/stdout — JSON-RPC 2.0"| CDEX["Codex app-server"]
-    CLI -->|"stdio"| MCP["MCP Server (bundled JAR)"]
-    MCP -->|"HTTP"| PSI
+    AC <-->|" stdin/stdout — JSON-RPC 2.0 "| CLI["Agent CLI"]
+    CC <-->|" stdin/stdout — stream-json "| CCLI["Claude Code CLI"]
+    XC <-->|" stdin/stdout — JSON-RPC 2.0 "| CDEX["Codex app-server"]
+    CLI -->|" stdio "| MCP["MCP Server (bundled JAR)"]
+    MCP -->|" HTTP "| PSI
 ```
 
 **Three layers:**
@@ -229,6 +229,65 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for the full development guide.
 ./gradlew test
 ```
 
+## Releases & Updates
+
+### How versioning works
+
+Every merge to `master` triggers an automated release. The CI pipeline analyzes
+[conventional commit](https://www.conventionalcommits.org/) messages to determine the
+version bump:
+
+| Commit prefix                      | Bump                        | Example                |
+|------------------------------------|-----------------------------|------------------------|
+| `feat:`                            | Minor (`1.52.0` → `1.53.0`) | New tool or capability |
+| `fix:`, `refactor:`, `docs:`, etc. | Patch (`1.53.0` → `1.53.1`) | Bug fix, cleanup       |
+| `feat!:` or `BREAKING CHANGE`      | Major (`1.53.1` → `2.0.0`)  | Breaking change        |
+
+Each release produces a signed ZIP artifact on the
+[GitHub Releases](https://github.com/catatafishen/agentbridge/releases) page with
+provenance attestation.
+
+### Standard vs Experimental builds
+
+Each release builds **two** plugin ZIPs:
+
+- **`agentbridge-<version>.zip`** — the standard build, suitable for the JetBrains Marketplace.
+- **`agentbridge-experimental-<version>.zip`** — includes additional tools that use internal
+  JetBrains APIs or experimental designs. This build is **not published to the Marketplace**
+  because internal APIs are unsupported, may break across IDE versions, and are flagged during
+  Marketplace review.
+
+### JetBrains Marketplace
+
+The Marketplace is the recommended installation channel — your IDE checks for updates
+automatically.
+
+Marketplace submissions require a **review by JetBrains** (typically a few business days),
+so not every incremental release is pushed there. Instead, we publish to the Marketplace
+periodically and tag that commit as `marketplace-latest`. Each subsequent GitHub release
+accumulates a changelog of all changes since the last Marketplace publish, so users can
+see exactly what's new.
+
+### Getting updates before the Marketplace
+
+If you want to test a specific fix or feature that hasn't reached the Marketplace yet:
+
+1. Go to [GitHub Releases](https://github.com/catatafishen/agentbridge/releases) and
+   download the `agentbridge-<version>.zip` for the version you want.
+2. In your JetBrains IDE: **Settings → Plugins → ⚙ → Install Plugin from Disk** →
+   select the downloaded ZIP.
+3. Restart the IDE.
+
+When the next Marketplace update arrives, it will overwrite the manually installed version
+and you'll be back on the automatic update track.
+
+### Tags
+
+| Tag                        | Purpose                                                               |
+|----------------------------|-----------------------------------------------------------------------|
+| `v<major>.<minor>.<patch>` | Every release (created automatically by CI)                           |
+| `marketplace-latest`       | Points to the commit currently published on the JetBrains Marketplace |
+
 ## Project Structure
 
 ```
@@ -241,16 +300,16 @@ agentbridge/
 
 ## Documentation
 
-| Document | Description |
-|---|---|
-| [QUICK-START.md](QUICK-START.md) | Fast setup instructions |
-| [FEATURES.md](FEATURES.md) | Complete MCP tool reference |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Build, deploy, architecture, extending for new agents |
-| [INSTALLATION.md](INSTALLATION.md) | Detailed installation for all platforms |
-| [TESTING.md](TESTING.md) | Test running and coverage |
-| [RELEASE_NOTES.md](RELEASE_NOTES.md) | Current release details |
-| [docs/SESSION-RESUME.md](docs/SESSION-RESUME.md) | Cross-client session migration |
-| [docs/PERMISSIONS.md](docs/PERMISSIONS.md) | Per-agent tool permission architecture |
+| Document                                         | Description                                           |
+|--------------------------------------------------|-------------------------------------------------------|
+| [QUICK-START.md](QUICK-START.md)                 | Fast setup instructions                               |
+| [FEATURES.md](FEATURES.md)                       | Complete MCP tool reference                           |
+| [DEVELOPMENT.md](DEVELOPMENT.md)                 | Build, deploy, architecture, extending for new agents |
+| [INSTALLATION.md](INSTALLATION.md)               | Detailed installation for all platforms               |
+| [TESTING.md](TESTING.md)                         | Test running and coverage                             |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md)             | Current release details                               |
+| [docs/SESSION-RESUME.md](docs/SESSION-RESUME.md) | Cross-client session migration                        |
+| [docs/PERMISSIONS.md](docs/PERMISSIONS.md)       | Per-agent tool permission architecture                |
 
 ## Contributing
 
