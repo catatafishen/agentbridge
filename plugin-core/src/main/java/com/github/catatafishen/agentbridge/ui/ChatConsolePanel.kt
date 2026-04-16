@@ -104,10 +104,17 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     @Volatile
     private var activeAskUserRequestId: String? = null
 
-    // CEF windowless frame rate — high during streaming, low when idle
+    // CEF windowless frame rate — high during streaming, moderate when idle.
+    // 10fps was too aggressive — caused stale-frame tearing during manual scroll.
     private fun setFrameRate(fps: Int) {
         browser?.cefBrowser?.setWindowlessFrameRate(fps)
     }
+
+    // Periodic CEF invalidation during streaming — forces OSR buffer refresh
+    // as a safety net against compositor desync during rapid content changes.
+    private val repaintTimer = javax.swing.Timer(200) {
+        browser?.cefBrowser?.invalidate()
+    }.apply { isRepeats = true }
 
     // ── Swing fallback ─────────────────────────────────────────────
     private val fallbackArea: JBTextArea?
@@ -122,7 +129,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         private const val FAILED_SPAN = "<span style='color:var(--error)'>✖ Failed</span>"
         private const val STREAMING_FRAME_RATE = 60
-        private const val IDLE_FRAME_RATE = 10
+        private const val IDLE_FRAME_RATE = 30
 
         private val GIT_HISTORY_TOOLS = setOf("git_log", "git_show")
     }
@@ -303,6 +310,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun startStreaming() {
         setFrameRate(STREAMING_FRAME_RATE)
+        repaintTimer.start()
+        // Disable smooth scroll during streaming — CSS scroll animations conflict
+        // with rapid programmatic scrollTop changes, causing JCEF OSR tearing.
+        executeJs("document.querySelector('chat-container')?.setStreaming(true, false)")
     }
 
     override fun setCodeChangeStats(linesAdded: Int, linesRemoved: Int) {
@@ -679,6 +690,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
         setFrameRate(IDLE_FRAME_RATE)
+        repaintTimer.stop()
+        val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
+        executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         toolJustCompleted = false
         finalizeCurrentText()
         collapseThinking()
@@ -762,6 +776,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun cancelAllRunning() {
         setFrameRate(IDLE_FRAME_RATE)
+        repaintTimer.stop()
+        val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
+        executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         clearPendingAskUserRequest(null)
         executeJs("ChatController.cancelAllRunning()")
     }
@@ -1060,6 +1077,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun dispose() {
         registry.removeKindStateListener(kindStateListener)
+        repaintTimer.stop()
         instances.remove(project)
     }
 

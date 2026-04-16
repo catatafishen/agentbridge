@@ -92,10 +92,14 @@ export default class ChatContainer extends HTMLElement {
         };
         this.addEventListener('scroll', this._onScroll);
 
-        // When the container or its content resizes, re-anchor to bottom if auto-scrolling
+        // When the container or its content resizes, re-anchor to bottom if auto-scrolling.
+        // Debounced via rAF to avoid synchronous forced-reflow tearing in JCEF OSR.
         this._resizeObs = new ResizeObserver(() => {
-            if (this._autoScroll && !this._restoring) {
-                this.scrollTop = this.scrollHeight;
+            if (this._autoScroll && !this._restoring && !this._scrollRAF) {
+                this._scrollRAF = requestAnimationFrame(() => {
+                    this._scrollRAF = null;
+                    this.scrollIfNeeded();
+                });
             }
         });
         this._resizeObs.observe(this);
@@ -234,6 +238,14 @@ export default class ChatContainer extends HTMLElement {
 
     compensateScroll(targetY: number): void {
         this.scrollTop = targetY;
+    }
+
+    /**
+     * Disable smooth scroll during streaming to prevent CSS animation conflicts
+     * with rapid programmatic scrollTop changes in JCEF OSR.
+     */
+    setStreaming(active: boolean, smoothScrollEnabled: boolean): void {
+        this.style.scrollBehavior = active ? 'auto' : (smoothScrollEnabled ? 'smooth' : 'auto');
     }
 
     disconnectedCallback(): void {
