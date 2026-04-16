@@ -94,14 +94,15 @@ IDE-specific capabilities:
 Available in **IntelliJ IDEA** (Ultimate and Community). Not available in WebStorm,
 PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover, or Rider.
 
-| Tool                     | Why Java-only                                      |
-|--------------------------|----------------------------------------------------|
-| `build_project`          | Triggers JPS incremental build                     |
-| `edit_project_structure` | Manages Java-style module dependencies, SDKs, JARs |
-| `get_class_outline`      | Resolves fully-qualified Java/Kotlin class names   |
-| `get_type_hierarchy`     | Requires Java class hierarchy resolution           |
-| `find_implementations`   | Requires Java interface/class hierarchy            |
-| `get_call_hierarchy`     | Requires Java method resolution                    |
+| Tool                | Why Java-only                                    |
+|---------------------|--------------------------------------------------|
+| `build_project`     | Triggers JPS incremental build                   |
+| `get_class_outline` | Resolves fully-qualified Java/Kotlin class names |
+
+`get_call_hierarchy`, `find_implementations`, `edit_project_structure`, and
+`get_type_hierarchy` (subtypes with `file`+`line`) all work across every IDE using
+platform-level PSI APIs. `get_type_hierarchy` supertypes and symbol-only lookup
+still require Java.
 
 ### Rider-disabled tools
 
@@ -135,8 +136,8 @@ test framework infrastructure that Rider doesn't expose to the IntelliJ layer.
 | IDE                                                                 | Tools available                               |
 |---------------------------------------------------------------------|-----------------------------------------------|
 | **IntelliJ IDEA**                                                   | All 120+                                      |
-| **WebStorm, PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover** | ~114 (no Java-only tools)                     |
-| **Rider**                                                           | ~108 (no Java-only + no Rider-disabled tools) |
+| **WebStorm, PyCharm, GoLand, PhpStorm, RubyMine, CLion, RustRover** | ~118 (no Java-only tools)                     |
+| **Rider**                                                           | ~112 (no Java-only + no Rider-disabled tools) |
 
 ## Architecture
 
