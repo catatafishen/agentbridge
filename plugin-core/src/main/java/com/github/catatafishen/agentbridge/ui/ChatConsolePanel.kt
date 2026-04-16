@@ -1292,68 +1292,30 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         browser?.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")
     }
 
+    private var monitorRecovery: MonitorSwitchRecovery? = null
+
     /**
-     * Detects when the panel moves to a different monitor (or the underlying display
-     * changes) by watching for [java.awt.GraphicsConfiguration] reference changes.
-     *
-     * Two listeners cover complementary scenarios:
-     * - **HierarchyBoundsListener**: fires when the IDE window is dragged between monitors.
-     * - **PropertyChangeListener on "graphicsConfiguration"**: fires when a display is
-     *   connected/disconnected (e.g. closing a MacBook lid), which may not produce
-     *   hierarchy bounds events.
-     *
-     * On monitor switch:
-     * 1. Recalculates CSS font/color vars so sizes match the new display's DPI.
-     * 2. Calls [org.cef.browser.CefBrowser.notifyScreenInfoChanged] so CEF re-queries
-     *    the device scale factor from its render handler.
-     * 3. Once the component is showing at its final size, calls
-     *    [org.cef.browser.CefBrowser.wasResized] to recreate the OSR backing surface.
+     * Manually trigger JCEF monitor-switch recovery. Exposed for the
+     * `AgentBridge: Force JCEF Refresh` diagnostic action — gives users a
+     * recovery path when the panel renders with wrong DPI or freezes on
+     * monitor switch (issue #237), without needing to restart the IDE.
+     */
+    fun forceJcefRefresh() {
+        monitorRecovery?.forceRefresh()
+    }
+
+    /**
+     * Detects when the panel moves to a different monitor (or the underlying
+     * display changes) and forces JCEF's OSR renderer to recover. All logic
+     * lives in [MonitorSwitchRecovery]; see issue #237.
      */
     private fun setupMonitorChangeListener() {
         val b = browser ?: return
-        var lastGc: java.awt.GraphicsConfiguration? = null
-
-        fun checkGc() {
-            val gc = b.component.graphicsConfiguration ?: return
-            if (gc !== lastGc) {
-                lastGc = gc
-                onMonitorChanged()
-            }
-        }
-
-        b.component.addHierarchyBoundsListener(object : java.awt.event.HierarchyBoundsListener {
-            override fun ancestorMoved(e: java.awt.event.HierarchyEvent?) = checkGc()
-            override fun ancestorResized(e: java.awt.event.HierarchyEvent?) = checkGc()
-        })
-
-        b.component.addPropertyChangeListener("graphicsConfiguration") { checkGc() }
-    }
-
-    private fun onMonitorChanged() {
-        updateThemeColors()
-        val b = browser ?: return
-        if (!browserReady) return
-        b.cefBrowser.notifyScreenInfoChanged()
-        refreshOsrWhenStable(b, 0)
-    }
-
-    /**
-     * Waits until the browser component is showing at its final non-zero size, then
-     * forces JCEF's OSR renderer to recreate its backing surface. Retries up to 5 times
-     * with 100 ms delay — closing the MacBook lid can leave the component temporarily
-     * non-showing or 0×0 during the display transition.
-     */
-    private fun refreshOsrWhenStable(b: JBCefBrowser, attempt: Int) {
-        javax.swing.SwingUtilities.invokeLater {
-            val comp = b.component
-            if (comp.isShowing && comp.width > 0 && comp.height > 0) {
-                b.cefBrowser.wasResized(comp.width, comp.height)
-                b.cefBrowser.invalidate()
-            } else if (attempt < 5) {
-                javax.swing.Timer(100) { refreshOsrWhenStable(b, attempt + 1) }
-                    .apply { isRepeats = false; start() }
-            }
-        }
+        monitorRecovery = MonitorSwitchRecovery(
+            browser = b,
+            onRecovered = { updateThemeColors() },
+            parentDisposable = this,
+        ).also { it.install() }
     }
 
     // ── Permission requests ────────────────────────────────────────
