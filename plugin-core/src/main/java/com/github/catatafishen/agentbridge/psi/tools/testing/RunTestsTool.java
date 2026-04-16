@@ -170,21 +170,20 @@ public final class RunTestsTool extends TestingTool {
 
     // ── Framework-agnostic runner via ConfigurationContext ────
 
-    /**
-     * Resolves the target to a PSI element and uses IntelliJ's {@link ConfigurationContext}
-     * to auto-detect the correct test framework (JUnit, TestNG, pytest, etc.).
-     * Returns null if the target cannot be resolved or no framework matches.
-     */
     private String tryRunViaConfigurationContext(String target) {
         try {
             PsiElement testElement = resolveTestPsiElement(target);
             if (testElement == null) return null;
 
-            ConfigurationContext context = new ConfigurationContext(testElement);
-            var configs = context.createConfigurationsFromContext();
-            if (configs == null || configs.isEmpty()) return null;
+            RunnerAndConfigurationSettings settings = ApplicationManager.getApplication()
+                .runReadAction((Computable<RunnerAndConfigurationSettings>) () -> {
+                    ConfigurationContext context = new ConfigurationContext(testElement);
+                    var configs = context.createConfigurationsFromContext();
+                    if (configs == null || configs.isEmpty()) return null;
+                    return configs.getFirst().getConfigurationSettings();
+                });
+            if (settings == null) return null;
 
-            RunnerAndConfigurationSettings settings = configs.getFirst().getConfigurationSettings();
             settings.setTemporary(true);
             RunManager.getInstance(project).addConfiguration(settings);
             return runTestConfigAndWait(settings);
