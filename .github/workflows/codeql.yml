@@ -60,13 +60,14 @@ jobs:
         if: matrix.language == 'java-kotlin'
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
         with:
+          gradle-version: 'wrapper'
           cache-disabled: true
 
       - name: Build for analysis
         if: matrix.language == 'java-kotlin'
         run: |
           npm run build --prefix plugin-core/chat-ui
-          ./gradlew :plugin-core:compileJava :plugin-core:compileKotlin :mcp-server:compileJava --no-daemon --quiet
+          gradle :plugin-core:compileJava :plugin-core:compileKotlin :mcp-server:compileJava --no-daemon --quiet
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@c10b8064de6f491fea524254123dbe5e09572f13  # v4.35.1

@@ -57,6 +57,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
         with:
+          gradle-version: 'wrapper'
           cache-disabled: true
 
       - name: Determine next version
@@ -159,7 +160,7 @@ jobs:
         env:
           PLUGIN_VERSION: ${{ steps.version.outputs.version }}
           CHANGELOG_FILE: build/changelog.html
-        run: ./gradlew :plugin-core:buildPlugin :plugin-experimental:buildPlugin --no-daemon --quiet
+        run: gradle :plugin-core:buildPlugin :plugin-experimental:buildPlugin --no-daemon --quiet
 
       - name: Collect release artifacts
         if: steps.version.outputs.skip != 'true'

@@ -40,10 +40,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
         with:
+          gradle-version: 'wrapper'
           cache-disabled: true
 
       - name: Build test classpath
-        run: ./gradlew :plugin-core:testClasses :mcp-server:testClasses --no-daemon --quiet
+        run: gradle :plugin-core:testClasses :mcp-server:testClasses --no-daemon --quiet
 
       - name: Download Jazzer
         env:
@@ -58,8 +59,8 @@ jobs:
       - name: Resolve test classpath
         id: classpath
         run: |
-          CP_CORE=$(./gradlew :plugin-core:printFuzzClasspath --no-daemon -q | tail -1)
-          CP_MCP=$(./gradlew :mcp-server:printFuzzClasspath --no-daemon -q | tail -1)
+          CP_CORE=$(gradle :plugin-core:printFuzzClasspath --no-daemon -q | tail -1)
+          CP_MCP=$(gradle :mcp-server:printFuzzClasspath --no-daemon -q | tail -1)
           echo "cp=${CP_CORE}:${CP_MCP}" >> "$GITHUB_OUTPUT"
 
       - name: Run Jazzer fuzz targets

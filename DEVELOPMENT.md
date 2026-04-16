@@ -9,6 +9,11 @@
     - **Windows**: `winget install GitHub.Copilot`
     - **Linux**: `sudo npm install -g @anthropic-ai/copilot-cli` or download from GitHub releases
 
+> **Note:** The Gradle wrapper JAR is not checked into the repository. IntelliJ handles Gradle
+> natively (no wrapper needed). For command-line builds, `gradle/actions/setup-gradle` provisions
+> it in CI. To use `./gradlew` locally, run `gradle wrapper` once (requires Gradle installed via
+> [SDKMAN](https://sdkman.io/) or your package manager).
+
 ### Build Plugin
 
 ```bash
