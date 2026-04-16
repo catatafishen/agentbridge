@@ -6,6 +6,7 @@ plugins {
 
 dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:${providers.gradleProperty("junitVersion").get()}")
+    testImplementation("com.code-intelligence:jazzer-api:${providers.gradleProperty("jazzerVersion").get()}")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -23,6 +24,15 @@ tasks.jar {
 tasks.test {
     useJUnitPlatform()
     finalizedBy(tasks.named("jacocoTestReport"))
+}
+
+tasks.register("printFuzzClasspath") {
+    description = "Print the test runtime classpath for standalone Jazzer fuzz runs"
+    group = "verification"
+    dependsOn("testClasses")
+    doLast {
+        println(sourceSets.test.get().runtimeClasspath.asPath)
+    }
 }
 
 tasks.named<JacocoReport>("jacocoTestReport") {

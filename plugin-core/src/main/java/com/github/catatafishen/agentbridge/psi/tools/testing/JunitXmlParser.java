@@ -14,7 +14,7 @@ import java.util.List;
  * Utility class for parsing JUnit XML test reports and test target strings.
  * All methods are stateless and have no IntelliJ dependencies.
  */
-final class JunitXmlParser {
+public final class JunitXmlParser {
 
     private static final String BUILD_DIR = "build";
     private static final String ATTR_MESSAGE = "message";
@@ -106,15 +106,15 @@ final class JunitXmlParser {
 
     // ── Single XML file parsing ──────────────────────────────
 
-    record TestSuiteResult(int tests, int failed, int errors, int skipped,
-                           double time, List<String> failures) {
+    public record TestSuiteResult(int tests, int failed, int errors, int skipped,
+                                  double time, List<String> failures) {
     }
 
     /**
      * Parses a single JUnit XML test suite report file.
      * Returns {@code null} if parsing fails.
      */
-    static TestSuiteResult parseTestSuiteXml(Path xmlFile) {
+    public static TestSuiteResult parseTestSuiteXml(Path xmlFile) {
         try {
             var dbf = DocumentBuilderFactory.newInstance();
             //noinspection HttpUrlsUsage - XML feature URI, not an actual URL

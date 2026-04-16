@@ -43,7 +43,7 @@ jobs:
           cache-disabled: true
 
       - name: Build test classpath
-        run: ./gradlew :plugin-core:testClasses --no-daemon --quiet
+        run: ./gradlew :plugin-core:testClasses :mcp-server:testClasses --no-daemon --quiet
 
       - name: Download Jazzer
         env:
@@ -58,8 +58,9 @@ jobs:
       - name: Resolve test classpath
         id: classpath
         run: |
-          CP=$(./gradlew :plugin-core:printFuzzClasspath --no-daemon -q | tail -1)
-          echo "cp=$CP" >> "$GITHUB_OUTPUT"
+          CP_CORE=$(./gradlew :plugin-core:printFuzzClasspath --no-daemon -q | tail -1)
+          CP_MCP=$(./gradlew :mcp-server:printFuzzClasspath --no-daemon -q | tail -1)
+          echo "cp=${CP_CORE}:${CP_MCP}" >> "$GITHUB_OUTPUT"
 
       - name: Run Jazzer fuzz targets
         env:
@@ -69,6 +70,11 @@ jobs:
           TARGETS=(
             com.github.catatafishen.agentbridge.fuzz.AgentIdMapperFuzz
             com.github.catatafishen.agentbridge.fuzz.MarkdownRendererFuzz
+            com.github.catatafishen.agentbridge.fuzz.TimeArgParserFuzz
+            com.github.catatafishen.agentbridge.fuzz.AbuseDetectorFuzz
+            com.github.catatafishen.agentbridge.fuzz.NewSessionResponseFuzz
+            com.github.catatafishen.agentbridge.fuzz.JunitXmlParserFuzz
+            com.github.copilot.mcp.McpStdioProxyFuzz
           )
           FAILED=0
 
