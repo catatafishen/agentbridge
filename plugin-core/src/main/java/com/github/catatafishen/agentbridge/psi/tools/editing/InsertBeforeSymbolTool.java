@@ -112,6 +112,7 @@ public final class InsertBeforeSymbolTool extends EditingTool {
                 final String fContent = normalized;
                 final int fOffset = offset;
 
+                FileTool.notifyBeforeEdit(project, vf, doc);
                 WriteCommandAction.runWriteCommandAction(
                     project, "Insert Before Symbol", null,
                     () -> doc.insertString(fOffset, fContent));

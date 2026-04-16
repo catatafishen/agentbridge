@@ -115,6 +115,7 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
                 final int fEnd = endOffset;
                 final String fNew = normalized;
 
+                FileTool.notifyBeforeEdit(project, vf, doc);
                 WriteCommandAction.runWriteCommandAction(
                     project, "Replace Symbol Body", null,
                     () -> doc.replaceString(fStart, fEnd, fNew));

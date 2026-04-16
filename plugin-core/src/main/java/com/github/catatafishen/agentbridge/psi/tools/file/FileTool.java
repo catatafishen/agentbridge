@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.codeInsight.actions.OptimizeImportsProcessor;
@@ -164,6 +165,56 @@ public abstract class FileTool extends Tool {
 
     private static final long PROJECT_VIEW_COOLDOWN_MS = 5_000;
     private static volatile long lastProjectViewSelectMs;
+
+    /**
+     * Notifies the {@link AgentEditSession} that a file is about to be modified.
+     * Starts the session (if the review setting is enabled) and captures a before-snapshot.
+     * All file-writing tools should call this before performing mutations.
+     *
+     * @param project the current project
+     * @param vf      the virtual file about to be modified (may be null for new files)
+     * @param doc     the document (used to read current content); may be null
+     */
+    public static void notifyBeforeEdit(Project project, VirtualFile vf, Document doc) {
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        session.ensureStarted();
+        if (vf != null && doc != null) {
+            session.captureBeforeContent(vf, doc.getText());
+        }
+    }
+
+    /**
+     * Notifies the {@link AgentEditSession} that a new file was created.
+     *
+     * @param project the current project
+     * @param path    the path of the newly created file
+     */
+    public static void notifyFileCreated(Project project, String path) {
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        session.ensureStarted();
+        session.registerNewFile(path);
+    }
+
+    /**
+     * Notifies the {@link AgentEditSession} that a file is about to be deleted.
+     *
+     * @param project the current project
+     * @param vf      the file about to be deleted
+     */
+    public static void notifyBeforeDelete(Project project, VirtualFile vf) {
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        session.ensureStarted();
+        if (vf != null && vf.isValid() && !vf.isDirectory()) {
+            try {
+                byte[] bytes = vf.contentsToByteArray();
+                String content = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+                session.captureBeforeContent(vf, content);
+                session.registerDeletedFile(vf.getPath(), content);
+            } catch (Exception e) {
+                LOG.warn("Failed to capture content before delete: " + vf.getPath(), e);
+            }
+        }
+    }
 
     /**
      * Opens the file in the editor if "Follow Agent Files" is enabled.
