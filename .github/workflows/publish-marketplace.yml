@@ -191,7 +191,7 @@ jobs:
           cat response.txt
           echo ""
 
-          if [ "$HTTP_STATUS" != "200" ]; then
+          if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "201" ]; then
             echo "Upload failed with HTTP status $HTTP_STATUS"
             exit 1
           fi
