@@ -90,18 +90,16 @@ val stripSqliteNatives = tasks.register("stripSqliteNatives") {
     group = "build"
     description = "Strip unused native libraries from sqlite-jdbc JAR"
 
-    val sqliteJdbcConfig = configurations.runtimeClasspath.get()
-    val sqliteJar = sqliteJdbcConfig.find { it.name.startsWith("sqlite-jdbc-") }
-        ?: error("sqlite-jdbc not found in runtime classpath")
+    val runtimeClasspath = configurations.named("runtimeClasspath")
+    val outputJar = layout.buildDirectory.file("libs/sqlite-jdbc-stripped.jar")
 
-    val buildDir = layout.buildDirectory.asFile.get()
-    val outputJar = File(buildDir, "libs/sqlite-jdbc-stripped.jar")
-
-    inputs.file(sqliteJar)
+    inputs.files(runtimeClasspath)
     outputs.file(outputJar)
 
     doLast {
-        SqliteJarStripper().strip(sqliteJar, outputJar)
+        val sqliteJar = runtimeClasspath.get().find { it.name.startsWith("sqlite-jdbc-") }
+            ?: error("sqlite-jdbc not found in runtime classpath")
+        SqliteJarStripper().strip(sqliteJar, outputJar.get().asFile)
     }
 }
 
