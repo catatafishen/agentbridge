@@ -78,6 +78,14 @@ public final class PsiBridgeService implements Disposable {
         "insert_before_symbol", // PSI symbol resolution too coarse
         "insert_after_symbol"   // PSI symbol resolution too coarse
     );
+
+    /**
+     * Returns the IDs of tools that are disabled in Rider without resharper-mcp.
+     */
+    public static Set<String> getRiderDisabledToolIds() {
+        return RIDER_DISABLED_TOOLS;
+    }
+
     private final Map<String, ReentrantLock> toolLocks = new ConcurrentHashMap<>();
     private final java.util.concurrent.Semaphore writeToolSemaphore = new java.util.concurrent.Semaphore(1);
     private final WriteBatchCoordinator writeBatchCoordinator = new WriteBatchCoordinator(writeToolSemaphore);
@@ -134,8 +142,18 @@ public final class PsiBridgeService implements Disposable {
         // Rider's C#/C++ PSI lives in the ReSharper backend, not the IntelliJ frontend.
         // Symbol-based tools depend on detailed PSI that Rider doesn't provide, and testing
         // tools are JUnit-specific. Disable them to avoid confusing agents with broken tools.
+        // When resharper-mcp is installed, proxy tools replace the disabled ones where possible.
         if (isRider) {
-            allTools.removeIf(tool -> RIDER_DISABLED_TOOLS.contains(tool.id()));
+            Set<String> remaining = new java.util.HashSet<>(RIDER_DISABLED_TOOLS);
+            if (com.github.catatafishen.agentbridge.psi.tools.rider.ReSharperMcpClient.isAvailable()) {
+                // Replace the standard search_symbols (which uses classifyElement() that fails on
+                // Rider's coarse PSI stubs) with the resharper-mcp proxy implementation.
+                var proxyTool = new com.github.catatafishen.agentbridge.psi.tools.rider.RiderSearchSymbolsProxyTool(project);
+                allTools.removeIf(t -> proxyTool.id().equals(t.id()));
+                allTools.add(proxyTool);
+                remaining.remove(proxyTool.id());
+            }
+            allTools.removeIf(tool -> remaining.contains(tool.id()));
         }
 
         registry.registerAll(allTools);

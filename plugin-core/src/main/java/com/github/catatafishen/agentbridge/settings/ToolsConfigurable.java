@@ -80,6 +80,14 @@ public final class ToolsConfigurable implements Configurable {
         limitHint.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         toolsPanel.add(limitHint);
 
+        // In Rider, some tools are unavailable because they depend on IntelliJ PSI not present
+        // in Rider's JVM frontend. If resharper-mcp is not installed, show an info note.
+        boolean isRider = com.github.catatafishen.agentbridge.psi.PlatformApiCompat.isPluginInstalled(
+            "com.intellij.modules.rider");
+        if (isRider && !com.github.catatafishen.agentbridge.psi.tools.rider.ReSharperMcpClient.isAvailable()) {
+            toolsPanel.add(buildRiderInfoPanel());
+        }
+
         // Global enable/disable row — max height pinned to prevent vertical stretch
         JButton enableAllBtn = new JButton("Enable All");
         JButton disableAllBtn = new JButton("Disable All");
@@ -372,5 +380,23 @@ public final class ToolsConfigurable implements Configurable {
     private static @Nullable String keyOf(ThemeColorComboBox combo) {
         ThemeColor tc = combo.getSelectedThemeColor();
         return tc != null ? tc.name() : null;
+    }
+
+    /**
+     * Builds an info panel shown in Rider when resharper-mcp is not installed.
+     * Lists the tools that are currently disabled and links to the companion plugin.
+     */
+    private static JComponent buildRiderInfoPanel() {
+        String disabledList = String.join(", ",
+            com.github.catatafishen.agentbridge.psi.PsiBridgeService.getRiderDisabledToolIds());
+        JBLabel label = new JBLabel(
+            "<html><b>⚠ Rider:</b> The following tools are unavailable in Rider without the "
+                + "<a href='https://github.com/joshua-light/resharper-mcp'>resharper-mcp</a> "
+                + "companion plugin: <br><i>" + disabledList + "</i></html>");
+        label.setForeground(UIUtil.getContextHelpForeground());
+        label.setAlignmentX(Component.LEFT_ALIGNMENT);
+        label.setBorder(JBUI.Borders.empty(4, 0, 8, 0));
+        label.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        return label;
     }
 }
