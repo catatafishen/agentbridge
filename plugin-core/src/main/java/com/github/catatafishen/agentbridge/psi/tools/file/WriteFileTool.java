@@ -172,6 +172,7 @@ public class WriteFileTool extends FileTool {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc != null) {
             String oldContent = doc.getText();
+            notifyBeforeEdit(project, vf, doc);
             WriteCommandAction.runWriteCommandAction(
                 project, "Write File", null, () -> doc.setText(newContent));
             FileDocumentManager.getInstance().saveDocument(doc);
@@ -222,6 +223,7 @@ public class WriteFileTool extends FileTool {
             LocalFileSystem.getInstance().refreshAndFindFileByPath(finalFullPath);
             CodeChangeTracker.recordChange(CodeChangeTracker.countLines(content), 0);
         }));
+        notifyFileCreated(project, pathStr);
         resultFuture.complete("Created: " + pathStr);
     }
 
@@ -279,6 +281,7 @@ public class WriteFileTool extends FileTool {
         }
         final int finalIdx = idx;
         final int finalLen = matchLen;
+        notifyBeforeEdit(project, vf, doc);
         WriteCommandAction.runWriteCommandAction(
             project, "Edit File", null,
             () -> doc.replaceString(finalIdx, finalIdx + finalLen, normalizedNew));
@@ -339,6 +342,7 @@ public class WriteFileTool extends FileTool {
         final int fEnd = endOffset;
         final String fNew = newStr;
         int replacedLines = endLine - startLine + 1;
+        notifyBeforeEdit(project, vf, doc);
         WriteCommandAction.runWriteCommandAction(
             project, "Edit File (Line Range)", null,
             () -> doc.replaceString(fStart, fEnd, fNew));
@@ -426,6 +430,7 @@ public class WriteFileTool extends FileTool {
                 closestMatchHint(text, normalizedOld));
             return;
         }
+        notifyBeforeEdit(project, vf, doc);
         WriteCommandAction.runWriteCommandAction(project, "Edit File", null, () -> {
             for (int i = positions.size() - 1; i >= 0; i--) {
                 int start = positions.get(i);

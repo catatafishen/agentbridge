@@ -97,6 +97,7 @@ public final class DeleteFileTool extends FileTool {
     }
 
     private void scheduleFileDeletion(VirtualFile vf, String pathStr, CompletableFuture<String> resultFuture) {
+        notifyBeforeDelete(project, vf);
         final DeleteFileTool requestor = this;
         EdtUtil.invokeLater(() ->
             WriteAction.run(() -> {

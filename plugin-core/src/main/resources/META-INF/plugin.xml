@@ -152,6 +152,10 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.ToolCallStatisticsService"/>
 
+    <!-- Agent edit review session (diff tracking, revert-with-nudge) -->
+    <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.psi.review.AgentEditSession"/>
+
     <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
       parentId="tools"

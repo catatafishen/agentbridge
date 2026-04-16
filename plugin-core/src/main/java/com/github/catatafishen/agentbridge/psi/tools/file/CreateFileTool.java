@@ -107,6 +107,7 @@ public final class CreateFileTool extends FileTool {
 
         String result = resultFuture.get(10, TimeUnit.SECONDS);
         CodeChangeTracker.recordChange(lineCount, 0);
+        notifyFileCreated(project, pathStr);
         followFileIfEnabled(project, pathStr, 1, lineCount, HIGHLIGHT_EDIT, agentLabel(project) + " created");
         FileAccessTracker.recordWrite(project, pathStr);
         return result;
