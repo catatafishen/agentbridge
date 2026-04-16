@@ -316,5 +316,9 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
             description="Show all available chat prompt keyboard shortcuts">
       <keyboard-shortcut keymap="$default" first-keystroke="ctrl SLASH"/>
     </action>
+    <action id="AgentBridge.ForceJcefRefresh"
+            class="com.github.catatafishen.agentbridge.ui.ForceJcefRefreshAction"
+            text="AgentBridge: Force JCEF Refresh"
+            description="Diagnostic: force the chat panel to re-query its display scale and rebuild its OSR surface (recovers from monitor-switch freezes; issue #237)"/>
   </actions>
 </idea-plugin>
