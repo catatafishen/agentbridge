@@ -825,7 +825,7 @@ const ChatController = {
         if (existing) {
             const bubble = existing.querySelector('message-bubble');
             if (bubble) {
-                bubble.textContent = (bubble.textContent || '') + '\n\n' + text;
+                bubble.textContent = text;
                 this._container()?.scrollIfNeeded();
             }
             return;
