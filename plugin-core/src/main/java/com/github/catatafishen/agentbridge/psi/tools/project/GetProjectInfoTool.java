@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.project;
 
+import com.github.catatafishen.agentbridge.bridge.McpServerJarLocator;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.ui.renderers.ProjectInfoRenderer;
 import com.google.gson.JsonObject;
@@ -88,7 +89,7 @@ public final class GetProjectInfoTool extends ProjectTool {
             sb.append("IDE: unavailable\n");
         }
         try {
-            String pluginInfo = PlatformApiCompat.getPluginVersionInfo("com.github.catatafishen.agentbridge");
+            String pluginInfo = PlatformApiCompat.getPluginVersionInfo(McpServerJarLocator.PLUGIN_ID);
             if (pluginInfo != null) {
                 sb.append("Plugin: ").append(pluginInfo).append("\n");
             }

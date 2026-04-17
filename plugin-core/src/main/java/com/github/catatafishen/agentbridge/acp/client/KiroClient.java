@@ -283,7 +283,8 @@ public final class KiroClient extends AcpClient {
         // Kiro requires mcpServers in session/new params (field is mandatory)
         JsonObject server = buildMcpStdioServer("agentbridge", mcpPort);
         if (server == null) {
-            throw new IllegalStateException("Cannot configure Kiro MCP server — Java binary or mcp-server.jar not found");
+            throw new IllegalStateException(
+                "Cannot configure Kiro MCP server — " + describeMcpStdioServerFailure());
         }
         JsonArray servers = new JsonArray();
         servers.add(server);

@@ -14,6 +14,11 @@ public final class McpServerJarLocator {
 
     private static final Logger LOG = Logger.getInstance(McpServerJarLocator.class);
 
+    /**
+     * The plugin ID as declared in plugin.xml ({@code <id>}).
+     */
+    public static final String PLUGIN_ID = "com.github.catatafishen.ideagentforcopilot";
+
     private McpServerJarLocator() {
     }
 
@@ -26,8 +31,7 @@ public final class McpServerJarLocator {
     public static String findMcpServerJar() {
         // Strategy 1: Use PlatformApiCompat to find plugin directory
         try {
-            java.nio.file.Path pluginPath = PlatformApiCompat
-                .getPluginPath("com.github.catatafishen.agentbridge");
+            java.nio.file.Path pluginPath = PlatformApiCompat.getPluginPath(PLUGIN_ID);
             if (pluginPath != null) {
                 File libDir = pluginPath.resolve("lib").toFile();
                 File mcpJar = new File(libDir, "mcp-server.jar");

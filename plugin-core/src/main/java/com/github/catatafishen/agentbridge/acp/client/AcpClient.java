@@ -1262,24 +1262,16 @@ public abstract class AcpClient extends AbstractAgentClient {
         return true;
     }
 
-    /**
-     * Builds a JsonObject for a stdio MCP server entry for use in the {@code mcpServers} array
-     * of {@code session/new} params. Uses separate {@code command} (string) and {@code args}
-     * (array) fields as required by Junie and Kiro.
-     *
-     * @return the server entry, or {@code null} if the jar or Java binary cannot be located
-     */
     @Nullable
     protected final JsonObject buildMcpStdioServer(String serverName, int mcpPort) {
-        String javaExe = System.getProperty("os.name", "").toLowerCase().contains("win") ? "java.exe" : "java";
-        String javaPath = System.getProperty("java.home") + File.separator + "bin" + File.separator + javaExe;
-        if (!new File(javaPath).exists()) {
-            LOG.warn("Java binary not found at " + javaPath + " — cannot build stdio MCP server config");
+        String javaPath = resolveJavaBinaryPath();
+        if (javaPath == null) {
+            LOG.warn("Java binary not resolvable from java.home/JAVA_HOME — cannot build stdio MCP server config");
             return null;
         }
         String jarPath = McpServerJarLocator.findMcpServerJar();
         if (jarPath == null) {
-            LOG.warn("mcp-server.jar not found — cannot build stdio MCP server config");
+            LOG.warn("mcp-server.jar not found in plugin lib — cannot build stdio MCP server config");
             return null;
         }
 
@@ -1295,6 +1287,58 @@ public abstract class AcpClient extends AbstractAgentClient {
         server.add("args", args);
         server.add("env", new JsonArray());
         return server;
+    }
+
+    /**
+     * Builds a human-readable diagnostic message describing why {@link #buildMcpStdioServer}
+     * returned {@code null}. Intended for inclusion in exception messages so users see which
+     * dependency is missing instead of the generic "Java binary or mcp-server.jar not found".
+     */
+    protected final @NotNull String describeMcpStdioServerFailure() {
+        StringBuilder sb = new StringBuilder();
+        String javaPath = resolveJavaBinaryPath();
+        if (javaPath == null) {
+            sb.append("Java binary not found (checked java.home=")
+                .append(System.getProperty("java.home"))
+                .append(" and JAVA_HOME=")
+                .append(System.getenv("JAVA_HOME"))
+                .append(")");
+        } else {
+            sb.append("Java binary ok at ").append(javaPath);
+        }
+        sb.append("; ");
+        String jarPath = McpServerJarLocator.findMcpServerJar();
+        if (jarPath == null) {
+            sb.append("mcp-server.jar not found in plugin lib directory (plugin may not be fully installed; try rebuilding or reinstalling)");
+        } else {
+            sb.append("mcp-server.jar ok at ").append(jarPath);
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Resolves the path to a usable {@code java} binary. Tries {@code java.home/bin/java} first
+     * (the JVM running this IDE), then falls back to {@code JAVA_HOME/bin/java}.
+     *
+     * @return absolute path to an existing java executable, or {@code null} if none found
+     */
+    private static @Nullable String resolveJavaBinaryPath() {
+        boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        String javaExe = isWindows ? "java.exe" : "java";
+
+        String javaHome = System.getProperty("java.home");
+        if (javaHome != null && !javaHome.isEmpty()) {
+            File candidate = new File(javaHome + File.separator + "bin" + File.separator + javaExe);
+            if (candidate.exists()) return candidate.getAbsolutePath();
+        }
+
+        String envJavaHome = System.getenv("JAVA_HOME");
+        if (envJavaHome != null && !envJavaHome.isEmpty()) {
+            File candidate = new File(envJavaHome + File.separator + "bin" + File.separator + javaExe);
+            if (candidate.exists()) return candidate.getAbsolutePath();
+        }
+
+        return null;
     }
 
     /**
