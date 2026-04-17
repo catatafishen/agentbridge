@@ -115,18 +115,14 @@ public final class AgentEditSession implements Disposable {
         LOG.info("Agent edit review session started");
     }
 
-    /**
-     * Captures the before-content of a file. Only the first capture per file is retained.
-     * Called from tool hooks before writes and from the {@link DocumentListener} safety net.
-     *
-     * @param vf      the virtual file about to be modified
-     * @param content the current content (before the pending modification)
-     */
     public void captureBeforeContent(@NotNull VirtualFile vf, @NotNull String content) {
         if (!active) return;
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
         if (!isProjectFile(vf)) return;
-        snapshots.putIfAbsent(vf.getPath(), content);
+        String prev = snapshots.putIfAbsent(vf.getPath(), content);
+        if (prev == null) {
+            com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
+        }
     }
 
     /**
@@ -280,6 +276,8 @@ public final class AgentEditSession implements Disposable {
         snapshots.clear();
         deletedFiles.clear();
         newFiles.clear();
+
+        com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
 
         LOG.info("Agent edit review session ended");
     }
