@@ -524,12 +524,15 @@ public class GitToolsTest extends BasePlatformTestCase {
 
         assertNotNull(result);
         assertTrue("Expected 'nothing to commit' error", result.startsWith("Error: nothing to commit."));
-        // The hint appended after the base message must contain a guidance phrase.
+        // The hint appended after the base message must contain actionable guidance.
         // • "The working tree is clean." when no changes exist
-        // • "There are unstaged changes not picked up by --all" for edge cases
+        // • A path listing ("Modified", "Untracked", or "Gitignored") when changes are unstaged
         boolean containsHint =
             result.contains("working tree")
-                || result.contains("unstaged");
+                || result.contains("Modified")
+                || result.contains("Untracked")
+                || result.contains("Gitignored")
+                || result.contains("git_stage");
         assertTrue("Error must include actionable guidance, got: " + result, containsHint);
     }
 

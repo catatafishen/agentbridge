@@ -417,8 +417,9 @@ public final class PsiBridgeService implements Disposable {
             LOG.warn("Tool call error: " + toolName, e);
             success = false;
             if (writeRegistered) writeBatchCoordinator.unregisterWrite();
+            String modalDetail = EdtUtil.describeModalBlocker();
             errorMessage = buildErrorWithModalDetail(
-                "Error: " + e.getMessage(), EdtUtil.describeModalBlocker());
+                formatBaseErrorMessage(e, modalDetail), modalDetail);
             ToolChipRegistry.getInstance(project).storeMcpResult(toolName, arguments, errorMessage);
             return errorMessage;
         } finally {
@@ -760,6 +761,25 @@ public final class PsiBridgeService implements Disposable {
         return highlights != null
             ? writeResult + "\n\n--- Highlights (auto) ---\n" + highlights
             : writeResult;
+    }
+
+    /**
+     * Builds the base error message for an exception, avoiding the ugly {@code "Error: null"}
+     * output when {@link Throwable#getMessage()} is null or blank.
+     * <p>
+     * When a modal dialog is detected as the cause, returns a dedicated message so
+     * the agent knows the call was blocked rather than failing internally. Otherwise
+     * falls back to the exception class simple name.
+     */
+    static String formatBaseErrorMessage(@NotNull Throwable e, @NotNull String modalDetail) {
+        String msg = e.getMessage();
+        if (msg != null && !msg.isBlank() && !"null".equals(msg)) {
+            return "Error: " + msg;
+        }
+        if (!modalDetail.isEmpty()) {
+            return "Error: Operation blocked by modal dialog";
+        }
+        return "Error: " + e.getClass().getSimpleName();
     }
 
     /**

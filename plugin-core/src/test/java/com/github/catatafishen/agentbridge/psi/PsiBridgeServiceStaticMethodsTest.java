@@ -658,6 +658,55 @@ class PsiBridgeServiceStaticMethodsTest {
     }
 
     // ---------------------------------------------------------------
+    // formatBaseErrorMessage
+    // ---------------------------------------------------------------
+    @Nested
+    class FormatBaseErrorMessageTest {
+
+        @Test
+        void nonNullMessageIsPrefixedWithError() {
+            Exception e = new IllegalStateException("boom");
+            assertEquals("Error: boom", PsiBridgeService.formatBaseErrorMessage(e, ""));
+        }
+
+        @Test
+        void nonNullMessageIsPreservedEvenWhenModalPresent() {
+            Exception e = new IllegalStateException("specific failure");
+            assertEquals("Error: specific failure",
+                PsiBridgeService.formatBaseErrorMessage(e, "Modal dialog blocking: 'Settings'"));
+        }
+
+        @Test
+        void nullMessageWithModalDetailReturnsModalError() {
+            Exception e = new NullPointerException();
+            String result = PsiBridgeService.formatBaseErrorMessage(e, "Modal dialog blocking: 'Settings'");
+            assertEquals("Error: Operation blocked by modal dialog", result);
+            assertFalse(result.contains("null"), "Must not contain literal 'null'");
+        }
+
+        @Test
+        void nullMessageWithoutModalFallsBackToExceptionClass() {
+            Exception e = new NullPointerException();
+            assertEquals("Error: NullPointerException",
+                PsiBridgeService.formatBaseErrorMessage(e, ""));
+        }
+
+        @Test
+        void blankMessageIsTreatedAsMissing() {
+            Exception e = new IllegalStateException("   ");
+            assertEquals("Error: IllegalStateException",
+                PsiBridgeService.formatBaseErrorMessage(e, ""));
+        }
+
+        @Test
+        void literalNullStringMessageIsTreatedAsMissing() {
+            Exception e = new IllegalStateException("null");
+            assertEquals("Error: IllegalStateException",
+                PsiBridgeService.formatBaseErrorMessage(e, ""));
+        }
+    }
+
+    // ---------------------------------------------------------------
     // isSyncCategory
     // ---------------------------------------------------------------
     @Nested
