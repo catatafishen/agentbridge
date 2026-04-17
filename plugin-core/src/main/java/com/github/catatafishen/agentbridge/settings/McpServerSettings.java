@@ -127,6 +127,19 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
+     * When true, the plugin runs an agent-edit review session that captures before-snapshots
+     * of files on first modification and renders persistent diff highlights in the editor
+     * until the user ends the session. See {@link com.github.catatafishen.agentbridge.psi.review.AgentEditSession}.
+     */
+    public boolean isReviewAgentEdits() {
+        return myState.reviewAgentEdits;
+    }
+
+    public void setReviewAgentEdits(boolean enabled) {
+        myState.reviewAgentEdits = enabled;
+    }
+
+    /**
      * Applies {@link McpToolFilter#DEFAULT_DISABLED} on first run (before any
      * persisted state exists). Once applied, the flag is persisted so subsequent
      * loads skip this step.
@@ -157,6 +170,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean defaultsApplied = false;
         private boolean smoothScrollEnabled = false;
         private boolean showTurnStats = true;
+        private boolean reviewAgentEdits = true;
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
@@ -224,6 +238,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setShowTurnStats(boolean showTurnStats) {
             this.showTurnStats = showTurnStats;
+        }
+
+        public boolean isReviewAgentEdits() {
+            return reviewAgentEdits;
+        }
+
+        public void setReviewAgentEdits(boolean reviewAgentEdits) {
+            this.reviewAgentEdits = reviewAgentEdits;
         }
 
         public @org.jetbrains.annotations.Nullable String getKindReadColorKey() {

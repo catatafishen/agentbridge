@@ -50,25 +50,37 @@ public final class AgentEditSession implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(AgentEditSession.class);
 
-    /** Skip snapshotting files larger than 5 MB to avoid memory bloat. */
+    /**
+     * Skip snapshotting files larger than 5 MB to avoid memory bloat.
+     */
     private static final long MAX_SNAPSHOT_BYTES = 5L * 1024 * 1024;
 
-    /** UserData key for tracking old path during rename/move events. */
+    /**
+     * UserData key for tracking old path during rename/move events.
+     */
     private static final Key<String> OLD_PATH_KEY = Key.create("AgentEditSession.oldPath");
 
     private final Project project;
     private volatile boolean active;
 
-    /** Before-content snapshots keyed by canonical VFS path. */
+    /**
+     * Before-content snapshots keyed by canonical VFS path.
+     */
     private final Map<String, String> snapshots = new ConcurrentHashMap<>();
 
-    /** Content of files deleted during the session, keyed by path. */
+    /**
+     * Content of files deleted during the session, keyed by path.
+     */
     private final Map<String, String> deletedFiles = new ConcurrentHashMap<>();
 
-    /** Paths of files created during the session. */
+    /**
+     * Paths of files created during the session.
+     */
     private final Set<String> newFiles = ConcurrentHashMap.newKeySet();
 
-    /** Disposable for session-scoped listeners; null when inactive. */
+    /**
+     * Disposable for session-scoped listeners; null when inactive.
+     */
     private Disposable sessionDisposable;
 
     public AgentEditSession(@NotNull Project project) {
@@ -83,13 +95,11 @@ public final class AgentEditSession implements Disposable {
         return active;
     }
 
-    /**
-     * Starts the review session if not already active.
-     * Registers document and VFS listeners to capture external changes as a safety net
-     * (tool hooks are the primary capture path).
-     */
     public synchronized void ensureStarted() {
         if (active) return;
+        if (!com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isReviewAgentEdits()) {
+            return;
+        }
         active = true;
 
         sessionDisposable = Disposer.newDisposable("AgentEditSession");
@@ -168,7 +178,8 @@ public final class AgentEditSession implements Disposable {
      * Computes line-level change ranges between two strings.
      * Package-visible for testing.
      */
-    @SuppressWarnings("RedundantThrows") // Diff.buildChanges throws checked exception in some SDK versions but not others
+    @SuppressWarnings("RedundantThrows")
+    // Diff.buildChanges throws checked exception in some SDK versions but not others
     static @NotNull List<ChangeRange> computeRanges(@NotNull String before, @NotNull String after) {
         String[] beforeLines = Diff.splitLines(before);
         String[] afterLines = Diff.splitLines(after);
@@ -255,12 +266,11 @@ public final class AgentEditSession implements Disposable {
         }
     }
 
-    /**
-     * Ends the review session, cleaning up listeners and clearing all tracked state.
-     */
     public synchronized void endSession() {
         if (!active) return;
         active = false;
+
+        AgentEditHighlighter.getInstance(project).clearAll();
 
         if (sessionDisposable != null) {
             Disposer.dispose(sessionDisposable);
@@ -318,10 +328,6 @@ public final class AgentEditSession implements Disposable {
         }
     }
 
-    /**
-     * Safety-net document listener: captures before-content for files modified
-     * outside of MCP tool hooks (e.g., IntelliJ refactoring, auto-format).
-     */
     private class SessionDocumentListener implements DocumentListener {
 
         @Override
@@ -333,6 +339,19 @@ public final class AgentEditSession implements Disposable {
             if (vf == null || !vf.isValid()) return;
 
             captureBeforeContent(vf, doc.getText());
+        }
+
+        @Override
+        public void documentChanged(@NotNull DocumentEvent event) {
+            if (!active) return;
+
+            Document doc = event.getDocument();
+            VirtualFile vf = FileDocumentManager.getInstance().getFile(doc);
+            if (vf == null || !vf.isValid()) return;
+
+            if (snapshots.containsKey(vf.getPath())) {
+                AgentEditHighlighter.getInstance(project).refreshHighlights(vf);
+            }
         }
     }
 
