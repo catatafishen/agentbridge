@@ -802,6 +802,11 @@ class ChatToolWindowContent(
         inputContainer.add(promptTextArea)    // index 1 = behind, visible through transparent shortcutHintPanel
 
         row.border = JBUI.Borders.empty()
+        // Make the row paint the same background as the editor text field so any space
+        // around the editor (splitter gaps, layout padding) matches the input bg instead
+        // of showing the panel gray.
+        row.isOpaque = true
+        row.background = com.intellij.util.ui.UIUtil.getTextFieldBackground()
         row.add(inputContainer, BorderLayout.CENTER)
 
         return row

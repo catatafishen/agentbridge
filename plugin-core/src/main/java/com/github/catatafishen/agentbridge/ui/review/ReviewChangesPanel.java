@@ -17,6 +17,7 @@ import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.SideBorder;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.table.JBTable;
@@ -60,9 +61,22 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
 
         ActionToolbar toolbar = createToolbar();
         toolbar.setTargetComponent(this);
+        toolbar.getComponent().setBorder(JBUI.Borders.empty());
 
-        add(toolbar.getComponent(), BorderLayout.NORTH);
+        // Match main chat panel: thin gray top border on the panel itself.
+        setBorder(JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0));
+
+        // Toolbar footer styled like the chat input's bottom toolbar:
+        // top gray divider line + 2px bottom padding.
+        JPanel toolbarFooter = new JPanel(new BorderLayout());
+        toolbarFooter.setBorder(JBUI.Borders.compound(
+            new SideBorder(JBColor.border(), SideBorder.TOP),
+            JBUI.Borders.empty(0, 0, 2, 0)
+        ));
+        toolbarFooter.add(toolbar.getComponent(), BorderLayout.CENTER);
+
         add(scrollPane, BorderLayout.CENTER);
+        add(toolbarFooter, BorderLayout.SOUTH);
 
         // Own subscription so the panel refreshes whenever the session state changes.
         // Disposed with the panel by the tool-window content.
@@ -89,7 +103,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         if (hasItems) {
             remove(emptyLabel);
         } else if (emptyLabel.getParent() != this) {
-            add(emptyLabel, BorderLayout.SOUTH);
+            add(emptyLabel, BorderLayout.CENTER);
         }
         revalidate();
         repaint();
@@ -168,7 +182,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     private @NotNull ActionToolbar createToolbar() {
         DefaultActionGroup group = new DefaultActionGroup();
 
-        group.add(new DumbAwareAction("Accept All", "Accept all agent edits", AllIcons.Actions.Commit) {
+        group.add(new DumbAwareAction("Accept All", "Accept all agent edits", AllIcons.Actions.Checked) {
             @Override
             public void actionPerformed(@NotNull AnActionEvent e) {
                 AgentEditSession.getInstance(project).acceptAll();
@@ -322,7 +336,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
             JPanel panel = new JPanel(new GridLayout(1, 2, JBUI.scale(4), 0));
             panel.setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
 
-            JLabel acceptLabel = new JLabel("Accept", AllIcons.Actions.Commit, SwingConstants.CENTER);
+            JLabel acceptLabel = new JLabel("Accept", AllIcons.Actions.Checked, SwingConstants.CENTER);
             acceptLabel.setForeground(new JBColor(new Color(0, 128, 0), new Color(80, 200, 80)));
             acceptLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
