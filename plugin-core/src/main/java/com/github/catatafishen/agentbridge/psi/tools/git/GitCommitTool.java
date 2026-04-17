@@ -74,7 +74,7 @@ public final class GitCommitTool extends GitTool {
         }
 
         String reviewError = AgentEditSession.getInstance(project)
-            .checkReviewPending("git commit");
+            .awaitReviewCompletion("git commit");
         if (reviewError != null) return reviewError;
 
         boolean commitAll = resolveCommitAll(args);

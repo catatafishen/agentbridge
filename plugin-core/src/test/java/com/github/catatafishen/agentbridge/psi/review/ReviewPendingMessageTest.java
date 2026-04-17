@@ -6,18 +6,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Verifies the message wording returned by {@link AgentEditSession#checkReviewPending}
- * when a git tool is gated. The message must explain to the agent that the block is
- * caused by pending review — not a generic timeout — so the agent surfaces actionable
+ * Verifies the timeout error wording returned by {@link AgentEditSession#awaitReviewCompletion}
+ * when a git tool's blocking wait expires. The message must make clear that the block is
+ * caused by unresolved review — not a generic timeout — so the agent surfaces actionable
  * guidance to the user instead of retrying blindly.
  */
 class ReviewPendingMessageTest {
 
     @Test
-    void mentionsPendingReviewAndOperation() {
-        String msg = AgentEditSession.formatReviewPendingError("git commit", 3);
-        assertTrue(msg.startsWith("Error: Review pending"),
-            "Message must be flagged as an Error and mention review pending: " + msg);
+    void mentionsTimeoutAndOperation() {
+        String msg = AgentEditSession.formatReviewTimeoutError("git commit", 3);
+        assertTrue(msg.startsWith("Error: Timed out"),
+            "Message must be flagged as an Error and mention the timeout: " + msg);
         assertTrue(msg.contains("'git commit'"),
             "Message must name the blocked operation: " + msg);
         assertTrue(msg.contains("3 agent-edited files"),
@@ -28,7 +28,7 @@ class ReviewPendingMessageTest {
 
     @Test
     void singularPhrasingForOneFile() {
-        String msg = AgentEditSession.formatReviewPendingError("git merge 'main'", 1);
+        String msg = AgentEditSession.formatReviewTimeoutError("git merge 'main'", 1);
         assertTrue(msg.contains("1 agent-edited file"),
             "Singular form expected: " + msg);
         assertTrue(!msg.contains("1 agent-edited files"),
@@ -37,15 +37,15 @@ class ReviewPendingMessageTest {
 
     @Test
     void includesRetryGuidance() {
-        String msg = AgentEditSession.formatReviewPendingError("git branch switch 'feat/x'", 2);
+        String msg = AgentEditSession.formatReviewTimeoutError("git branch switch 'feat/x'", 2);
         assertTrue(msg.toLowerCase().contains("retry"),
             "Message must tell the agent it can retry after review completion: " + msg);
     }
 
     @Test
     void formatIsDeterministic() {
-        String a = AgentEditSession.formatReviewPendingError("git commit", 5);
-        String b = AgentEditSession.formatReviewPendingError("git commit", 5);
+        String a = AgentEditSession.formatReviewTimeoutError("git commit", 5);
+        String b = AgentEditSession.formatReviewTimeoutError("git commit", 5);
         assertEquals(a, b, "Formatter must be deterministic for the same inputs");
     }
 }

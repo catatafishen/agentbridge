@@ -77,7 +77,7 @@ public final class GitCherryPickTool extends GitTool {
         }
 
         String reviewError = AgentEditSession.getInstance(project)
-            .checkReviewPending("git cherry-pick");
+            .awaitReviewCompletion("git cherry-pick");
         if (reviewError != null) return reviewError;
 
         List<String> cmdArgs = new ArrayList<>();

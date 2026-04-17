@@ -92,7 +92,7 @@ public final class GitPullTool extends GitTool {
         flushAndSave();
 
         String reviewError = AgentEditSession.getInstance(project)
-            .checkReviewPending("git pull");
+            .awaitReviewCompletion("git pull");
         if (reviewError != null) return reviewError;
 
         List<String> cmdArgs = new ArrayList<>();

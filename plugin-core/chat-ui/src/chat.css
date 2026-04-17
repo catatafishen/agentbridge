@@ -192,6 +192,17 @@ chat-container {
     background: var(--user-a18);
 }
 
+/* Flash animation used when the Prompts side-panel navigates to a prompt. */
+.prompt-flash .prompt-bubble {
+    animation: promptFlash 0.9s ease-out;
+}
+
+@keyframes promptFlash {
+    0%   { box-shadow: 0 0 0 0 var(--user-a25); }
+    40%  { box-shadow: 0 0 0 6px var(--user-a25); }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+
 .prompt-ctx-chip {
     color: var(--link);
     text-decoration: none;

@@ -56,7 +56,7 @@ public final class GitRevertTool extends GitTool {
         }
 
         String reviewError = AgentEditSession.getInstance(project)
-            .checkReviewPending("git revert");
+            .awaitReviewCompletion("git revert");
         if (reviewError != null) return reviewError;
 
         List<String> cmdArgs = new ArrayList<>();

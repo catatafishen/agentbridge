@@ -13,6 +13,7 @@ interface UserTurn {
     type: 'user';
     html: string;
     timestamp: string;
+    entryId?: string;
 }
 
 interface AgentTurn {
@@ -121,6 +122,7 @@ export function renderBatchFragment(encodedJson: string): DocumentFragment {
 function _renderUserTurn(turn: UserTurn): HTMLElement {
     const msg = document.createElement('chat-message');
     msg.setAttribute('type', 'user');
+    if (turn.entryId) msg.id = turn.entryId;
 
     const meta = document.createElement('message-meta');
     const ts = document.createElement('span');
