@@ -157,6 +157,8 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
       serviceImplementation="com.github.catatafishen.agentbridge.psi.review.AgentEditSession"/>
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.psi.review.AgentEditHighlighter"/>
+    <editorNotificationProvider
+      implementation="com.github.catatafishen.agentbridge.psi.review.AgentEditNotificationProvider"/>
 
     <!-- Settings: AgentBridge (root) -->
     <projectConfigurable
@@ -326,5 +328,16 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
             class="com.github.catatafishen.agentbridge.ui.ForceJcefRefreshAction"
             text="AgentBridge: Force JCEF Refresh"
             description="Diagnostic: force the chat panel to re-query its display scale and rebuild its OSR surface (recovers from monitor-switch freezes; issue #237)"/>
+    <action id="AgentBridge.Review.RevertAgentEdits"
+            class="com.github.catatafishen.agentbridge.psi.review.RevertAgentEditsAction"
+            text="Revert Agent Edits"
+            description="Restore this file to its state before the current agent review session, optionally sending a reason as a nudge">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+      <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+    </action>
+    <action id="AgentBridge.Review.EndSession"
+            class="com.github.catatafishen.agentbridge.psi.review.EndReviewSessionAction"
+            text="End Agent Review Session"
+            description="Clear all diff highlights and forget agent edit snapshots"/>
   </actions>
 </idea-plugin>
