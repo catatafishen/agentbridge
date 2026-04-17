@@ -22,5 +22,7 @@ public final class ChatToolWindowFactory implements ToolWindowFactory, DumbAware
             content.getComponent(), "", false
         );
         toolWindow.getContentManager().addContent(toolWindowContent);
+        // Eagerly initialize ReviewTabManager so it subscribes to topic events
+        com.github.catatafishen.agentbridge.ui.review.ReviewTabManager.getInstance(project);
     }
 }

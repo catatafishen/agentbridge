@@ -1,7 +1,9 @@
 package com.github.catatafishen.agentbridge.psi.review;
 
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
+import com.github.catatafishen.agentbridge.services.ChatWebServer;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
@@ -12,8 +14,10 @@ import com.intellij.openapi.editor.event.DocumentListener;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
+import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
+import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
 import com.intellij.openapi.vfs.newvfs.BulkFileListener;
@@ -22,6 +26,9 @@ import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent;
 import com.intellij.openapi.vfs.newvfs.events.VFileEvent;
 import com.intellij.openapi.vfs.newvfs.events.VFileMoveEvent;
 import com.intellij.openapi.vfs.newvfs.events.VFilePropertyChangeEvent;
+import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.ui.AppIcon;
+import com.intellij.ui.SystemNotifications;
 import com.intellij.util.diff.Diff;
 import com.intellij.util.diff.FilesTooBigForDiffException;
 import org.jetbrains.annotations.NotNull;
@@ -33,7 +40,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Tracks file state before agent edits during a review session.
@@ -109,6 +119,17 @@ public final class AgentEditSession implements Disposable {
      */
     private Disposable sessionDisposable;
 
+    /**
+     * Timeout for git gating: how long a git tool blocks waiting for review completion.
+     */
+    private static final int REVIEW_TIMEOUT_MINUTES = 5;
+
+    /**
+     * Future completed when all review items are resolved or the session ends.
+     * Git tools that change the worktree await this future before proceeding.
+     */
+    private volatile CompletableFuture<Void> pendingReviewFuture;
+
     public AgentEditSession(@NotNull Project project) {
         this.project = project;
     }
@@ -139,6 +160,7 @@ public final class AgentEditSession implements Disposable {
             .subscribe(VirtualFileManager.VFS_CHANGES, new SessionVfsListener());
 
         LOG.info("Agent edit review session started");
+        fireReviewStateChanged();
     }
 
     /**
@@ -161,6 +183,7 @@ public final class AgentEditSession implements Disposable {
         if (prev == null) {
             LOG.info("Captured before-snapshot for: " + getRelativePath(vf));
             com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
+            fireReviewStateChanged();
         }
     }
 
@@ -280,6 +303,219 @@ public final class AgentEditSession implements Disposable {
     }
 
     /**
+     * Builds a unified list of review items from the session's tracked state.
+     * Each file appears exactly once: as ADDED, MODIFIED, or DELETED.
+     */
+    public @NotNull List<ReviewItem> getReviewItems() {
+        if (!active) return Collections.emptyList();
+        String basePath = project.getBasePath();
+        List<ReviewItem> items = new ArrayList<>();
+
+        for (Map.Entry<String, String> entry : snapshots.entrySet()) {
+            String path = entry.getKey();
+            // Skip files that were subsequently deleted — they'll appear as DELETED
+            if (deletedFiles.containsKey(path)) continue;
+            items.add(new ReviewItem(path, relativize(path, basePath),
+                ReviewItem.Status.MODIFIED, entry.getValue()));
+        }
+        for (String path : newFiles) {
+            items.add(new ReviewItem(path, relativize(path, basePath),
+                ReviewItem.Status.ADDED, null));
+        }
+        for (Map.Entry<String, String> entry : deletedFiles.entrySet()) {
+            String path = entry.getKey();
+            // For deleted files, beforeContent is the original snapshot if available,
+            // otherwise the content captured at deletion time
+            String beforeContent = snapshots.getOrDefault(path, entry.getValue());
+            items.add(new ReviewItem(path, relativize(path, basePath),
+                ReviewItem.Status.DELETED, beforeContent));
+        }
+
+        items.sort((a, b) -> a.relativePath().compareToIgnoreCase(b.relativePath()));
+        return items;
+    }
+
+    /**
+     * Accepts a file's changes — removes it from review tracking.
+     * For MODIFIED: clears the snapshot (keeps current content).
+     * For ADDED: removes from newFiles set (keeps the file).
+     * For DELETED: removes from deletedFiles map (keeps it deleted).
+     */
+    public void acceptFile(@NotNull String path) {
+        if (!active) return;
+        snapshots.remove(path);
+        newFiles.remove(path);
+        deletedFiles.remove(path);
+
+        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+        if (vf != null) {
+            AgentEditHighlighter.getInstance(project).clearForFile(vf);
+            com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
+        }
+        fireReviewStateChanged();
+        completeReviewIfEmpty();
+    }
+
+    /**
+     * Accepts all files — clears all review tracking.
+     */
+    public void acceptAll() {
+        if (!active) return;
+        // Collect paths that need highlight clearing before we wipe the maps
+        Set<String> allPaths = new java.util.HashSet<>(snapshots.keySet());
+        allPaths.addAll(newFiles);
+        // deletedFiles have no open editors to clear
+
+        snapshots.clear();
+        newFiles.clear();
+        deletedFiles.clear();
+
+        AgentEditHighlighter highlighter = AgentEditHighlighter.getInstance(project);
+        for (String path : allPaths) {
+            VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+            if (vf != null) {
+                highlighter.clearForFile(vf);
+            }
+        }
+        com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+        fireReviewStateChanged();
+        completeReviewIfEmpty();
+    }
+
+    /**
+     * Rejects a single file — restores it to pre-session state.
+     * For MODIFIED: restores snapshot content.
+     * For ADDED: deletes the file.
+     * For DELETED: recreates the file with its original content.
+     *
+     * @param path   file path
+     * @param reason optional reason (sent as nudge to agent)
+     */
+    public void rejectFile(@NotNull String path, @Nullable String reason) {
+        if (!active) return;
+
+        String snapshot = snapshots.remove(path);
+        if (snapshot != null && !deletedFiles.containsKey(path)) {
+            // MODIFIED file — restore original content
+            VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+            if (vf != null) {
+                Document doc = FileDocumentManager.getInstance().getDocument(vf);
+                if (doc != null) {
+                    WriteCommandAction.runWriteCommandAction(project, "Reject Agent Edit", null,
+                        () -> doc.setText(snapshot));
+                    FileDocumentManager.getInstance().saveDocument(doc);
+                }
+                AgentEditHighlighter.getInstance(project).clearForFile(vf);
+                com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
+            }
+        } else if (newFiles.remove(path)) {
+            // ADDED file — delete it
+            VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+            if (vf != null) {
+                AgentEditHighlighter.getInstance(project).clearForFile(vf);
+                WriteCommandAction.runWriteCommandAction(project, "Delete Agent-Created File", null, () -> {
+                    try {
+                        vf.delete(this);
+                    } catch (Exception e) {
+                        LOG.warn("Failed to delete agent-created file: " + path, e);
+                    }
+                });
+            }
+        } else {
+            String deletedContent = deletedFiles.remove(path);
+            if (deletedContent != null) {
+                // DELETED file — recreate with original content (use snapshot if available)
+                String content = snapshot != null ? snapshot : deletedContent;
+                snapshots.remove(path); // clean up stale snapshot for deleted file
+                WriteCommandAction.runWriteCommandAction(project, "Restore Deleted File", null, () -> {
+                    try {
+                        java.io.File ioFile = new java.io.File(path);
+                        java.io.File parent = ioFile.getParentFile();
+                        if (parent != null) {
+                            VirtualFile parentVf = LocalFileSystem.getInstance()
+                                .refreshAndFindFileByIoFile(parent);
+                            if (parentVf != null) {
+                                VirtualFile created = parentVf.createChildData(this, ioFile.getName());
+                                created.setBinaryContent(content.getBytes(StandardCharsets.UTF_8));
+                            }
+                        }
+                    } catch (Exception e) {
+                        LOG.warn("Failed to restore deleted file: " + path, e);
+                    }
+                });
+            }
+        }
+
+        if (reason != null && !reason.isBlank()) {
+            VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+            if (vf != null) {
+                sendRevertNudge(vf, reason);
+            }
+        }
+        fireReviewStateChanged();
+        completeReviewIfEmpty();
+    }
+
+    /**
+     * Rejects all files — restores all to pre-session state.
+     *
+     * @param reason optional reason (sent as nudge to agent)
+     */
+    public void rejectAll(@Nullable String reason) {
+        if (!active) return;
+        List<ReviewItem> items = getReviewItems();
+        for (ReviewItem item : items) {
+            // Call individual reject but suppress intermediate topic events
+            rejectFileSilent(item);
+        }
+        if (reason != null && !reason.isBlank()) {
+            String nudge = "[User rejected all agent edits]: " + reason
+                + "\nPlease try a different approach.";
+            PsiBridgeService.getInstance(project).setPendingNudge(nudge);
+        }
+        fireReviewStateChanged();
+        completeReviewIfEmpty();
+    }
+
+    /**
+     * Blocks the calling thread until all review items are resolved or the session ends.
+     * Used by git tools to gate worktree-changing operations.
+     *
+     * @param operation description of the git operation (for logging/notification)
+     * @return null if review completed successfully, or an error message if timed out
+     */
+    public @Nullable String awaitReviewCompletion(@NotNull String operation) {
+        if (!active || !hasChanges()) return null;
+
+        CompletableFuture<Void> future;
+        synchronized (this) {
+            if (!active || !hasChanges()) return null;
+            if (pendingReviewFuture == null) {
+                pendingReviewFuture = new CompletableFuture<>();
+            }
+            future = pendingReviewFuture;
+        }
+
+        LOG.info("Git operation '" + operation + "' waiting for review completion");
+        notifyReviewRequired(operation);
+
+        try {
+            future.get(REVIEW_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+            return null;
+        } catch (TimeoutException e) {
+            return "Error: Review not completed within " + REVIEW_TIMEOUT_MINUTES
+                + " minutes. Please complete the review in the Review panel, then retry '"
+                + operation + "'.";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Error: Review wait interrupted. Please complete the review, then retry '"
+                + operation + "'.";
+        } catch (Exception e) {
+            return "Error: Review wait failed: " + e.getMessage();
+        }
+    }
+
+    /**
      * Reverts a file to its pre-session state.
      *
      * @param vf     the file to revert
@@ -316,7 +552,15 @@ public final class AgentEditSession implements Disposable {
         deletedFiles.clear();
         newFiles.clear();
 
+        // Complete any pending review future so blocked git tools can proceed
+        CompletableFuture<Void> future = pendingReviewFuture;
+        if (future != null) {
+            future.complete(null);
+            pendingReviewFuture = null;
+        }
+
         com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+        fireReviewStateChanged();
 
         LOG.info("Agent edit review session ended");
     }
@@ -345,6 +589,119 @@ public final class AgentEditSession implements Disposable {
             return filePath.substring(basePath.length() + 1);
         }
         return vf.getName();
+    }
+
+    private static @NotNull String relativize(@NotNull String path, @Nullable String basePath) {
+        if (basePath != null && path.startsWith(basePath + "/")) {
+            return path.substring(basePath.length() + 1);
+        }
+        return new java.io.File(path).getName();
+    }
+
+    /**
+     * Rejects a single review item without firing topic events (used in bulk reject).
+     */
+    private void rejectFileSilent(@NotNull ReviewItem item) {
+        String path = item.path();
+        switch (item.status()) {
+            case MODIFIED -> {
+                String snapshot = snapshots.remove(path);
+                if (snapshot != null) {
+                    VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+                    if (vf != null) {
+                        Document doc = FileDocumentManager.getInstance().getDocument(vf);
+                        if (doc != null) {
+                            WriteCommandAction.runWriteCommandAction(project, "Reject Agent Edit", null,
+                                () -> doc.setText(snapshot));
+                            FileDocumentManager.getInstance().saveDocument(doc);
+                        }
+                        AgentEditHighlighter.getInstance(project).clearForFile(vf);
+                    }
+                }
+            }
+            case ADDED -> {
+                newFiles.remove(path);
+                VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+                if (vf != null) {
+                    AgentEditHighlighter.getInstance(project).clearForFile(vf);
+                    WriteCommandAction.runWriteCommandAction(project, "Delete Agent-Created File", null, () -> {
+                        try {
+                            vf.delete(this);
+                        } catch (Exception e) {
+                            LOG.warn("Failed to delete agent-created file: " + path, e);
+                        }
+                    });
+                }
+            }
+            case DELETED -> {
+                String content = deletedFiles.remove(path);
+                String snapshotContent = snapshots.remove(path);
+                String restore = snapshotContent != null ? snapshotContent : content;
+                if (restore != null) {
+                    WriteCommandAction.runWriteCommandAction(project, "Restore Deleted File", null, () -> {
+                        try {
+                            java.io.File ioFile = new java.io.File(path);
+                            java.io.File parent = ioFile.getParentFile();
+                            if (parent != null) {
+                                VirtualFile parentVf = LocalFileSystem.getInstance()
+                                    .refreshAndFindFileByIoFile(parent);
+                                if (parentVf != null) {
+                                    VirtualFile created = parentVf.createChildData(this, ioFile.getName());
+                                    created.setBinaryContent(restore.getBytes(StandardCharsets.UTF_8));
+                                }
+                            }
+                        } catch (Exception e) {
+                            LOG.warn("Failed to restore deleted file: " + path, e);
+                        }
+                    });
+                }
+            }
+        }
+    }
+
+    private void fireReviewStateChanged() {
+        project.getMessageBus().syncPublisher(ReviewSessionTopic.TOPIC).reviewStateChanged();
+    }
+
+    /**
+     * Completes the pending review future if no items remain.
+     */
+    private void completeReviewIfEmpty() {
+        if (hasChanges()) return;
+        synchronized (this) {
+            CompletableFuture<Void> future = pendingReviewFuture;
+            if (future != null) {
+                future.complete(null);
+                pendingReviewFuture = null;
+            }
+        }
+    }
+
+    /**
+     * Sends notifications (IntelliJ balloon + system + web push) when a git operation
+     * is blocked waiting for review completion.
+     */
+    private void notifyReviewRequired(@NotNull String operation) {
+        String title = "Review Required";
+        String body = "'" + operation + "' is waiting for you to review agent edits.";
+
+        ApplicationManager.getApplication().invokeLater(() -> {
+            ToolWindowManager.getInstance(project).notifyByBalloon(
+                "AgentBridge", MessageType.WARNING,
+                "<b>" + title + "</b><br>" + body
+            );
+            // Select the Review tab and activate the tool window
+            com.github.catatafishen.agentbridge.ui.review.ReviewTabManager
+                .getInstance(project).selectReviewTab();
+        });
+
+        SystemNotifications.getInstance().notify("AgentBridge Notifications", title, body);
+        AppIcon.getInstance().requestAttention(project, true);
+
+        ChatWebServer webServer = ChatWebServer.getInstance(project);
+        if (webServer != null) {
+            webServer.pushNotification(title, body);
+        }
     }
 
     /**

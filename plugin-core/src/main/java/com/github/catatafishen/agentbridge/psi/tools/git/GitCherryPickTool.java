@@ -76,6 +76,10 @@ public final class GitCherryPickTool extends GitTool {
             return "Error: 'commits' parameter is required (JSON array of commit SHAs)";
         }
 
+        String reviewError = AgentEditSession.getInstance(project)
+            .awaitReviewCompletion("git cherry-pick");
+        if (reviewError != null) return reviewError;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add(CHERRY_PICK);
 

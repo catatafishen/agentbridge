@@ -71,10 +71,22 @@ public final class GitResetTool extends GitTool {
             addFilePathResetArgs(cmdArgs, args);
         } else {
             addModeResetArgs(cmdArgs, args);
+            // Only gate worktree-changing resets (--hard). Soft/mixed only move HEAD/index.
+            String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";
+            if ("hard".equals(mode)) {
+                String reviewError = AgentEditSession.getInstance(project)
+                    .awaitReviewCompletion("git reset --hard");
+                if (reviewError != null) return reviewError;
+            }
         }
 
         String result = runGit(cmdArgs.toArray(String[]::new));
-        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git reset");
+        if (!result.isBlank() && result.startsWith("Error")) return result;
+        // Invalidate after hard reset (worktree changed)
+        String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";
+        if ("hard".equals(mode)) {
+            AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git reset --hard");
+        }
         return result.isBlank() ? "Reset completed successfully." : result;
     }
 

@@ -91,6 +91,10 @@ public final class GitPullTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
+        String reviewError = AgentEditSession.getInstance(project)
+            .awaitReviewCompletion("git pull");
+        if (reviewError != null) return reviewError;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("pull");
 

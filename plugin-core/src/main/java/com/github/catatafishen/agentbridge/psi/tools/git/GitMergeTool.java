@@ -83,6 +83,10 @@ public final class GitMergeTool extends GitTool {
         // Auto-fetch when merging a remote branch
         String fetchNote = autoFetchForRemoteRef(branchArg);
 
+        String reviewError = AgentEditSession.getInstance(project)
+            .awaitReviewCompletion("git merge '" + branchArg + "'");
+        if (reviewError != null) return reviewError;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("merge");
 

@@ -55,6 +55,10 @@ public final class GitRevertTool extends GitTool {
             return "Error: 'commit' parameter is required";
         }
 
+        String reviewError = AgentEditSession.getInstance(project)
+            .awaitReviewCompletion("git revert");
+        if (reviewError != null) return reviewError;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("revert");
 

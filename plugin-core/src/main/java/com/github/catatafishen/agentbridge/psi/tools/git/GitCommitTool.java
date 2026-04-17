@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.git;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.ui.renderers.GitCommitRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -71,6 +72,10 @@ public final class GitCommitTool extends GitTool {
         if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) {
             return "Error: 'message' parameter is required";
         }
+
+        String reviewError = AgentEditSession.getInstance(project)
+            .awaitReviewCompletion("git commit");
+        if (reviewError != null) return reviewError;
 
         boolean commitAll = resolveCommitAll(args);
 
