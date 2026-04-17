@@ -125,33 +125,27 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        return buildPermissionConfig(resolveDefaultPrimaryAgent());
+        return buildPermissionConfig();
     }
 
     /**
      * Builds the OPENCODE_CONFIG_CONTENT environment variable denying native tools.
+     *
+     * <p>NOTE: We do NOT set {@code "default_agent"} here. OpenCode v1.4.10+ rejects
+     * subagent slugs (like "build", "plan", "explore") as the {@code default_agent} value,
+     * causing {@code session/new} to fail with
+     * {@code "default agent \"build\" is a subagent"}. OpenCode selects its own default
+     * agent internally — the plugin's agent dropdown controls which agent to start via
+     * the session/create flow instead.</p>
      */
     static Map<String, String> buildPermissionConfig() {
-        return buildPermissionConfig(BUILD_AGENT);
-    }
-
-    static Map<String, String> buildPermissionConfig(@Nullable String defaultAgentSlug) {
         JsonObject permission = new JsonObject();
         for (String tool : NATIVE_TOOLS_TO_DENY) {
             permission.addProperty(tool, "deny");
         }
         JsonObject config = new JsonObject();
         config.add("permission", permission);
-        if (defaultAgentSlug != null && !defaultAgentSlug.isBlank()) {
-            config.addProperty("default_agent", defaultAgentSlug);
-        }
         return Map.of("OPENCODE_CONFIG_CONTENT", new Gson().toJson(config));
-    }
-
-    private @Nullable String resolveDefaultPrimaryAgent() {
-        String current = getCurrentAgentSlug();
-        if (PLAN_AGENT.equals(current)) return PLAN_AGENT;
-        return BUILD_AGENT;
     }
 
     @Override

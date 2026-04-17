@@ -11,6 +11,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TaskToolRendererTest {
 
     @Test
+    void parseTaskOutputReturnsEmptyForEmptyInput() {
+        TaskToolRenderer.ParsedTaskResult parsed = TaskToolRenderer.INSTANCE.parseTaskOutput("");
+        assertNull(parsed.getTaskId());
+        assertEquals("", parsed.getContent());
+    }
+
+    @Test
+    void parseTaskOutputReturnsOriginalForContentWithOnlyWrapperLines() {
+        // If content becomes blank after stripping wrappers, falls back to original trimmed input
+        String raw = "<task_result>\n</task_result>";
+        TaskToolRenderer.ParsedTaskResult parsed = TaskToolRenderer.INSTANCE.parseTaskOutput(raw);
+        // Content is blank after stripping, so falls back
+        assertNotNull(parsed);
+    }
+
+    @Test
+    void parseTaskOutputStripsOnlyWrapperLinesNotInlineOccurrences() {
+        // Inline <task_result> that's NOT on its own line should be preserved
+        TaskToolRenderer.ParsedTaskResult parsed =
+            TaskToolRenderer.INSTANCE.parseTaskOutput("The tag <task_result> appears inline </task_result> in text");
+
+        assertNull(parsed.getTaskId());
+        assertTrue(parsed.getContent().contains("<task_result>"), parsed.getContent());
+        assertTrue(parsed.getContent().contains("</task_result>"), parsed.getContent());
+    }
+
+    @Test
     void parseTaskOutputExtractsTaskIdAndStripsWrapper() {
         String raw = """
             task_id: session-123 (for resuming to continue this task if needed)

@@ -120,12 +120,13 @@ class OpenCodeClientStaticMethodsTest {
         }
 
         @Test
-        @DisplayName("config defaults to the native build agent")
-        void defaultAgentIsBuild() {
+        @DisplayName("config does NOT include default_agent (rejected by OpenCode v1.4.10+)")
+        void noDefaultAgent() {
             Map<String, String> result = OpenCodeClient.buildPermissionConfig();
             JsonObject config = new Gson().fromJson(result.get("OPENCODE_CONFIG_CONTENT"), JsonObject.class);
 
-            assertEquals("build", config.get("default_agent").getAsString());
+            assertFalse(config.has("default_agent"),
+                "default_agent must not be set — OpenCode v1.4.10+ rejects subagent slugs");
         }
     }
 

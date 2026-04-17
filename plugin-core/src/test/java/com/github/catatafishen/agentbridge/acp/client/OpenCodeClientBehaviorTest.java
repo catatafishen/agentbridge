@@ -28,22 +28,19 @@ class OpenCodeClientBehaviorTest {
     Path tempDir;
 
     @Test
-    void buildPermissionConfigOmitsDefaultAgentWhenNullOrBlank() {
-        JsonObject nullConfig = GSON.fromJson(
-            OpenCodeClient.buildPermissionConfig(null).get("OPENCODE_CONFIG_CONTENT"),
-            JsonObject.class
-        );
-        JsonObject blankConfig = GSON.fromJson(
-            OpenCodeClient.buildPermissionConfig("   ").get("OPENCODE_CONFIG_CONTENT"),
+    void buildPermissionConfigNeverIncludesDefaultAgent() {
+        // default_agent is intentionally omitted because OpenCode v1.4.10+ rejects
+        // subagent slugs (like "build") as the default_agent value.
+        JsonObject config = GSON.fromJson(
+            OpenCodeClient.buildPermissionConfig().get("OPENCODE_CONFIG_CONTENT"),
             JsonObject.class
         );
 
-        assertFalse(nullConfig.has("default_agent"));
-        assertFalse(blankConfig.has("default_agent"));
+        assertFalse(config.has("default_agent"));
     }
 
     @Test
-    void buildEnvironmentUsesSelectedPlanAgent() throws Exception {
+    void buildEnvironmentNeverIncludesDefaultAgent() throws Exception {
         OpenCodeClient client = new OpenCodeClient(mock(Project.class));
         client.setCurrentAgentSlug("plan");
 
@@ -52,20 +49,26 @@ class OpenCodeClientBehaviorTest {
             JsonObject.class
         );
 
-        assertEquals("plan", config.get("default_agent").getAsString());
+        // Even with a specific agent selected, OPENCODE_CONFIG_CONTENT should not
+        // include default_agent — the plugin controls agent selection via session/create.
+        assertFalse(config.has("default_agent"));
     }
 
     @Test
-    void buildEnvironmentFallsBackToBuildForNonPlanSelection() throws Exception {
+    void buildEnvironmentContainsPermissionDenyEntries() throws Exception {
         OpenCodeClient client = new OpenCodeClient(mock(Project.class));
-        client.setCurrentAgentSlug("custom-agent");
 
         JsonObject config = GSON.fromJson(
             invokeBuildEnvironment(client).get("OPENCODE_CONFIG_CONTENT"),
             JsonObject.class
         );
 
-        assertEquals("build", config.get("default_agent").getAsString());
+        assertTrue(config.has("permission"));
+        JsonObject permission = config.getAsJsonObject("permission");
+        for (String tool : OpenCodeClient.nativeToolsToDeny()) {
+            assertTrue(permission.has(tool), "Missing tool: " + tool);
+            assertEquals("deny", permission.get(tool).getAsString());
+        }
     }
 
     @Test
