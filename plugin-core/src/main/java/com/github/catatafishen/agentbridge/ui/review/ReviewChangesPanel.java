@@ -153,12 +153,12 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         statusCol.setCellRenderer(new StatusCellRenderer());
 
         TableColumn fileCol = table.getColumnModel().getColumn(ReviewTableModel.COL_FILE);
-        fileCol.setPreferredWidth(JBUI.scale(300));
+        fileCol.setPreferredWidth(JBUI.scale(150));
         fileCol.setCellRenderer(new FileCellRenderer());
 
         TableColumn actionsCol = table.getColumnModel().getColumn(ReviewTableModel.COL_ACTIONS);
-        actionsCol.setPreferredWidth(JBUI.scale(210));
-        actionsCol.setMaxWidth(JBUI.scale(240));
+        actionsCol.setPreferredWidth(JBUI.scale(82));
+        actionsCol.setMaxWidth(JBUI.scale(82));
         actionsCol.setCellRenderer(new ActionsCellRenderer());
 
         // Click handler for file navigation and action buttons
@@ -421,7 +421,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
                                                        int row, int column) {
             JPanel panel = new JPanel(new GridLayout(1, 3, JBUI.scale(2), 0));
             panel.setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
-            panel.setBorder(JBUI.Borders.empty(2, 4));
+            panel.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
 
             JButton viewBtn = new JButton(AllIcons.General.InspectionsEye);
             viewBtn.setToolTipText("View file");
