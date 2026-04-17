@@ -197,7 +197,20 @@ public final class ReviewChangesPanel extends JPanel {
             AllIcons.Actions.Cancel) {
             @Override
             public void actionPerformed(@NotNull AnActionEvent e) {
-                AgentEditSession.getInstance(project).endSession();
+                AgentEditSession session = AgentEditSession.getInstance(project);
+                if (session.hasChanges()) {
+                    int result = Messages.showOkCancelDialog(
+                        project,
+                        "You have " + session.getReviewItems().size()
+                            + " unreviewed file(s). End the review session?",
+                        "End Review Session?",
+                        "End Session",
+                        "Cancel",
+                        Messages.getWarningIcon()
+                    );
+                    if (result != Messages.OK) return;
+                }
+                session.endSession();
             }
 
             @Override
@@ -254,10 +267,6 @@ public final class ReviewChangesPanel extends JPanel {
             };
         }
 
-        @Override
-        public boolean isCellEditable(int rowIndex, int columnIndex) {
-            return false;
-        }
     }
 
     private static final class StatusCellRenderer extends DefaultTableCellRenderer {

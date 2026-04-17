@@ -1271,14 +1271,31 @@ class ChatToolWindowContent(
         "Track agent edits and show diff highlights, per-file banners, and revert controls",
         AllIcons.Actions.Diff
     ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.BGT
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun isSelected(e: AnActionEvent): Boolean =
             McpServerSettings.getInstance(project).isReviewAgentEdits
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
-            McpServerSettings.getInstance(project).isReviewAgentEdits = state
-            if (!state) AgentEditSession.getInstance(project).endSession()
+            if (state) {
+                McpServerSettings.getInstance(project).isReviewAgentEdits = true
+                return
+            }
+            val session = AgentEditSession.getInstance(project)
+            if (session.isActive && session.hasChanges()) {
+                val items = session.reviewItems
+                val result = com.intellij.openapi.ui.Messages.showOkCancelDialog(
+                    project,
+                    "You have ${items.size} unreviewed file(s). Disabling Diff Review will discard the review session.",
+                    "Discard Review Session?",
+                    "Discard",
+                    "Cancel",
+                    com.intellij.openapi.ui.Messages.getWarningIcon()
+                )
+                if (result != com.intellij.openapi.ui.Messages.OK) return
+            }
+            McpServerSettings.getInstance(project).isReviewAgentEdits = false
+            session.endSession()
         }
     }
 

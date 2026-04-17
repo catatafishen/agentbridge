@@ -80,5 +80,7 @@ public class NextAgentEditChangeAction extends AnAction {
             editor.getCaretModel().moveToLogicalPosition(new LogicalPosition(line, 0));
             editor.getScrollingModel().scrollToCaret(ScrollType.CENTER);
         }
+        // Refresh the banner so counters update after navigation
+        com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
     }
 }

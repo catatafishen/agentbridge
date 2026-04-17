@@ -15,6 +15,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
+import java.util.List;
 import java.util.function.Function;
 
 /**
@@ -48,7 +49,7 @@ public final class AgentEditNotificationProvider implements EditorNotificationPr
                                                          @NotNull String before) {
         EditorNotificationPanel panel = new EditorNotificationPanel(fileEditor,
             EditorNotificationPanel.Status.Info);
-        panel.setText("Agent edited this file during the current review session.");
+        panel.setText(buildStatusText(project, file));
 
         panel.createActionLabel("Show diff", () -> showDiff(project, file, before));
 
@@ -70,6 +71,42 @@ public final class AgentEditNotificationProvider implements EditorNotificationPr
         });
 
         return panel;
+    }
+
+    /**
+     * Builds the banner text with file and change counters.
+     * Example: "Review: File 3/7 · 5 changes"
+     */
+    private static @NotNull String buildStatusText(@NotNull Project project,
+                                                   @NotNull VirtualFile file) {
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        List<ReviewItem> items = session.getReviewItems();
+
+        // File counter: only count non-DELETED items (deleted files have no editor banner)
+        List<String> bannerPaths = items.stream()
+            .filter(i -> i.status() != ReviewItem.Status.DELETED)
+            .map(ReviewItem::path)
+            .sorted(String.CASE_INSENSITIVE_ORDER)
+            .toList();
+        int fileIndex = bannerPaths.indexOf(file.getPath()) + 1;
+        int fileTotal = bannerPaths.size();
+
+        // Change counter: number of diff ranges in this file
+        List<ChangeRange> ranges = session.computeRanges(file);
+        int changeCount = ranges.size();
+
+        StringBuilder sb = new StringBuilder("Review: ");
+        if (fileTotal > 0) {
+            sb.append("File ").append(Math.max(fileIndex, 1)).append('/').append(fileTotal);
+        }
+        if (changeCount > 0) {
+            if (fileTotal > 0) sb.append(" · ");
+            sb.append(changeCount).append(changeCount == 1 ? " change" : " changes");
+        }
+        if (fileTotal == 0 && changeCount == 0) {
+            sb.append("No outstanding changes");
+        }
+        return sb.toString();
     }
 
     private static void showDiff(@NotNull Project project,
