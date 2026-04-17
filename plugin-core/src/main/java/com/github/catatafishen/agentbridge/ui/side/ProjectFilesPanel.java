@@ -24,18 +24,17 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
  * Tree view of project agent-definition / instruction files.
  * <p>
  * Mirrors the former title-bar "Project Files" dropdown. Sections:
  * <ul>
- *   <li>Shared — TODO.md, AGENTS.md (created on first click if missing)</li>
- *   <li>Copilot CLI — .agent-work/copilot/{agents,skills,instructions}</li>
- *   <li>OpenCode — .agent-work/opencode/agent/*.md</li>
- *   <li>Junie — .agent-work/junie/{guidelines.md, agents/*.md}</li>
- *   <li>Kiro — .agent-work/kiro/{agents/*.json, skills/* /SKILL.md}</li>
+ *   <li>Shared — {@code TODO.md}, {@code AGENTS.md} (created on first click if missing)</li>
+ *   <li>Copilot CLI — {@code .agent-work/copilot/{agents,skills,instructions}}</li>
+ *   <li>OpenCode — {@code .agent-work/opencode/agent/*.md}</li>
+ *   <li>Junie — {@code .agent-work/junie/{guidelines.md, agents/*.md}}</li>
+ *   <li>Kiro — {@code .agent-work/kiro/{agents/*.json, skills/SKILL.md}}</li>
  * </ul>
  * Missing "shared" files render with a dim bulb icon and are created empty on click.
  */
@@ -79,33 +78,31 @@ final class ProjectFilesPanel extends JPanel {
             return;
         }
 
-        addSection("Shared",
+        addSection("Shared", List.of(
             new FileNode(base, "TODO.md", "TODO", true),
             new FileNode(base, "AGENTS.md", "AGENTS", true)
-        );
+        ));
 
-        addGlobSection("Copilot CLI", base,
-            glob(base, ".agent-work/copilot/agents", "*.md"),
-            glob(base, ".agent-work/copilot/skills", "*/SKILL.md"),
-            glob(base, ".agent-work/copilot/instructions", "*.instructions.md")
-        );
+        List<FileNode> copilot = new ArrayList<>();
+        copilot.addAll(glob(base, ".agent-work/copilot/agents", "*.md"));
+        copilot.addAll(glob(base, ".agent-work/copilot/skills", "*/SKILL.md"));
+        copilot.addAll(glob(base, ".agent-work/copilot/instructions", "*.instructions.md"));
+        addSection("Copilot CLI", copilot);
 
-        addGlobSection("OpenCode", base,
-            glob(base, ".agent-work/opencode/agent", "*.md")
-        );
+        addSection("OpenCode", glob(base, ".agent-work/opencode/agent", "*.md"));
 
-        List<FileNode> junieFiles = new ArrayList<>();
+        List<FileNode> junie = new ArrayList<>();
         File junieGuidelines = new File(base, ".agent-work/junie/guidelines.md");
         if (junieGuidelines.exists()) {
-            junieFiles.add(new FileNode(base, ".agent-work/junie/guidelines.md", "guidelines.md", false));
+            junie.add(new FileNode(base, ".agent-work/junie/guidelines.md", "guidelines.md", false));
         }
-        junieFiles.addAll(glob(base, ".agent-work/junie/agents", "*.md"));
-        addGlobSection("Junie", base, junieFiles);
+        junie.addAll(glob(base, ".agent-work/junie/agents", "*.md"));
+        addSection("Junie", junie);
 
-        addGlobSection("Kiro", base,
-            glob(base, ".agent-work/kiro/agents", "*.json"),
-            glob(base, ".agent-work/kiro/skills", "*/SKILL.md")
-        );
+        List<FileNode> kiro = new ArrayList<>();
+        kiro.addAll(glob(base, ".agent-work/kiro/agents", "*.json"));
+        kiro.addAll(glob(base, ".agent-work/kiro/skills", "*/SKILL.md"));
+        addSection("Kiro", kiro);
 
         treeModel.reload();
         for (int i = 0; i < tree.getRowCount(); i++) {
@@ -113,8 +110,8 @@ final class ProjectFilesPanel extends JPanel {
         }
     }
 
-    private void addSection(String title, FileNode... nodes) {
-        if (nodes.length == 0) return;
+    private void addSection(@NotNull String title, @NotNull List<FileNode> nodes) {
+        if (nodes.isEmpty()) return;
         DefaultMutableTreeNode section = new DefaultMutableTreeNode(title);
         for (FileNode fn : nodes) {
             section.add(new DefaultMutableTreeNode(fn));
@@ -122,53 +119,60 @@ final class ProjectFilesPanel extends JPanel {
         root.add(section);
     }
 
-    @SafeVarargs
-    private void addGlobSection(String title, String base, List<FileNode>... buckets) {
-        List<FileNode> combined = new ArrayList<>();
-        for (List<FileNode> bucket : buckets) combined.addAll(bucket);
-        if (combined.isEmpty()) return;
-        DefaultMutableTreeNode section = new DefaultMutableTreeNode(title);
-        for (FileNode fn : combined) {
-            section.add(new DefaultMutableTreeNode(fn));
-        }
-        root.add(section);
-    }
-
-    private void addGlobSection(String title, String base, List<FileNode> bucket) {
-        addGlobSection(title, base, new List[]{bucket});
-    }
-
-    private List<FileNode> glob(String base, String dirPath, String pattern) {
+    /**
+     * Lists files matching a simple glob below {@code base/dirPath}.
+     * <p>
+     * Patterns support a single {@code *} wildcard, and a {@code (star)/fileName}
+     * form to look one level deep (e.g. {@code "(star)/SKILL.md"}).
+     */
+    static @NotNull List<FileNode> glob(@NotNull String base, @NotNull String dirPath, @NotNull String pattern) {
         File dir = new File(base, dirPath);
         if (!dir.exists()) return List.of();
-        List<FileNode> results = new ArrayList<>();
-        if (pattern.contains("/")) {
-            String fileName = pattern.substring(pattern.indexOf('/') + 1);
-            File[] subs = dir.listFiles(File::isDirectory);
-            if (subs != null) {
-                for (File sub : subs) {
-                    File target = new File(sub, fileName);
-                    if (target.isFile()) {
-                        String rel = relativize(base, target);
-                        results.add(new FileNode(base, rel, sub.getName() + "/" + fileName, false));
-                    }
-                }
-            }
-        } else {
-            Pattern rx = Pattern.compile("^" + Pattern.quote(pattern).replace("*", "\\E.*\\Q") + "$");
-            File[] files = dir.listFiles((f, name) -> new File(f, name).isFile() && rx.matcher(name).matches());
-            if (files != null) {
-                for (File f : files) {
-                    String rel = relativize(base, f);
-                    results.add(new FileNode(base, rel, f.getName(), false));
-                }
-            }
-        }
+        List<FileNode> results = pattern.contains("/")
+            ? globNestedFileName(base, dir, pattern.substring(pattern.indexOf('/') + 1))
+            : globFlatPattern(base, dir, pattern);
         results.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
         return results;
     }
 
-    private static String relativize(String base, File file) {
+    private static @NotNull List<FileNode> globNestedFileName(String base, File dir, String fileName) {
+        List<FileNode> results = new ArrayList<>();
+        File[] subs = dir.listFiles(File::isDirectory);
+        if (subs == null) return results;
+        for (File sub : subs) {
+            File target = new File(sub, fileName);
+            if (target.isFile()) {
+                results.add(new FileNode(base, relativize(base, target), sub.getName() + "/" + fileName, false));
+            }
+        }
+        return results;
+    }
+
+    private static @NotNull List<FileNode> globFlatPattern(String base, File dir, String pattern) {
+        List<FileNode> results = new ArrayList<>();
+        String prefix;
+        String suffix;
+        int star = pattern.indexOf('*');
+        if (star < 0) {
+            prefix = pattern;
+            suffix = "";
+        } else {
+            prefix = pattern.substring(0, star);
+            suffix = pattern.substring(star + 1);
+        }
+        File[] files = dir.listFiles((f, name) -> {
+            File candidate = new File(f, name);
+            return candidate.isFile() && name.startsWith(prefix) && name.endsWith(suffix)
+                && name.length() >= prefix.length() + suffix.length();
+        });
+        if (files == null) return results;
+        for (File f : files) {
+            results.add(new FileNode(base, relativize(base, f), f.getName(), false));
+        }
+        return results;
+    }
+
+    static @NotNull String relativize(@NotNull String base, @NotNull File file) {
         return new File(base).toURI().relativize(file.toURI()).getPath();
     }
 
@@ -191,18 +195,23 @@ final class ProjectFilesPanel extends JPanel {
         refresh();
     }
 
-    /** One leaf entry in the tree. */
-    private static final class FileNode {
+    /**
+     * One leaf entry in the tree. {@code exists} is captured at construction time so the
+     * tree renderer does not stat the filesystem on every repaint (would run on the EDT).
+     */
+    static final class FileNode {
         final String base;
         final String relativePath;
         final String label;
         final boolean createIfMissing;
+        final boolean exists;
 
         FileNode(String base, String relativePath, String label, boolean createIfMissing) {
             this.base = base;
             this.relativePath = relativePath;
             this.label = label;
             this.createIfMissing = createIfMissing;
+            this.exists = new File(base, relativePath).exists();
         }
 
         @Override
@@ -210,15 +219,10 @@ final class ProjectFilesPanel extends JPanel {
             return label;
         }
 
-        boolean exists() {
-            return new File(base, relativePath).exists();
-        }
-
         Icon icon() {
-            if (!exists()) return AllIcons.Actions.IntentionBulbGrey;
-            String ext = relativePath.contains(".")
-                ? relativePath.substring(relativePath.lastIndexOf('.') + 1)
-                : "";
+            if (!exists) return AllIcons.Actions.IntentionBulbGrey;
+            int dot = relativePath.lastIndexOf('.');
+            String ext = dot >= 0 ? relativePath.substring(dot + 1) : "";
             Icon icon = FileTypeManager.getInstance().getFileTypeByExtension(ext).getIcon();
             return icon != null ? icon : AllIcons.FileTypes.Text;
         }

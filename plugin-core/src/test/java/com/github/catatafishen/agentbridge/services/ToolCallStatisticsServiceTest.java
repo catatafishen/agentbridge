@@ -370,7 +370,7 @@ class ToolCallStatisticsServiceTest {
         double premiumRequests, String timestamp) {
         return new ToolCallStatisticsService.TurnStatsRecord(
             sessionId, agentId, date, inputTokens, outputTokens, toolCalls,
-            durationMs, linesAdded, linesRemoved, premiumRequests, timestamp);
+            durationMs, linesAdded, linesRemoved, premiumRequests, timestamp, null);
     }
 
     @Test
