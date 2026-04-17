@@ -62,6 +62,7 @@ class ChatToolWindowContent(
     ).also {
         it.secondComponent = mainPanel
         it.setHonorComponentsMinimumSize(false)
+        it.border = com.intellij.ui.SideBorder(JBColor.border(), com.intellij.ui.SideBorder.TOP)
     }
 
     /** Proportion used when expanding the review panel after it was collapsed. */

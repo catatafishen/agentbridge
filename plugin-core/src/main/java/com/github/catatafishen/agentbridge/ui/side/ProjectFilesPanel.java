@@ -8,6 +8,7 @@ import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.ui.treeStructure.Tree;
+import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
@@ -64,7 +65,9 @@ final class ProjectFilesPanel extends JPanel {
             }
         });
 
-        add(new JBScrollPane(tree), BorderLayout.CENTER);
+        JBScrollPane scrollPane = new JBScrollPane(tree);
+        scrollPane.setBorder(JBUI.Borders.empty());
+        add(scrollPane, BorderLayout.CENTER);
         refresh();
     }
 
