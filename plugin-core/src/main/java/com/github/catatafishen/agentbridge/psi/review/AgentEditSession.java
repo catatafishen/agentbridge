@@ -485,12 +485,14 @@ public final class AgentEditSession implements Disposable {
      * <p>On the first call, fires a balloon notification + system notification
      * and expands the Review panel. Subsequent calls only expand the panel.</p>
      *
-     * <p><b>Semaphore yield:</b> this method is called from inside a tool's {@code execute()},
-     * which holds the global write-tool semaphore in {@link PsiBridgeService}. Without yielding,
-     * the 10-minute blocking wait would starve all other tool calls (the agent can't even run
-     * {@code edit_text}). We release the semaphore before blocking and re-acquire it afterward,
-     * so other tools can execute during the review wait. After re-acquiring, we re-check
-     * {@code hasChanges()} to handle the case where new edits arrived during the wait.</p>
+     * <p><b>Lock yield:</b> this method is called from inside a tool's {@code execute()},
+     * which holds two locks: the global write-tool semaphore and the per-tool sync lock
+     * (both managed by {@link PsiBridgeService#callTool}). Without yielding both, a second
+     * call to the same tool from another mcp-http thread deadlocks: the second thread acquires
+     * the semaphore (released here) but then waits for the syncLock, while this thread still
+     * holds the syncLock and waits to re-acquire the semaphore. We release both before blocking
+     * and re-acquire both afterward (semaphore first, then syncLock — matching callTool's
+     * acquisition order) to break the circular dependency.</p>
      *
      * @param operation description of the git operation (for the notification + error)
      * @return null if review completed in time; otherwise a timeout error message
@@ -514,12 +516,14 @@ public final class AgentEditSession implements Disposable {
                 .getInstance(project).expandReviewPanel();
         });
 
-        // Yield the write-tool semaphore while blocking so other MCP tools
-        // (edit_text, read_file, etc.) can still execute during the review wait.
-        // Without this, the blocking future.get() starves all tool calls for up
-        // to REVIEW_WAIT_TIMEOUT_MINUTES, effectively freezing the agent.
-        java.util.concurrent.Semaphore writeSemaphore =
-            PsiBridgeService.getInstance(project).getWriteToolSemaphore();
+        PsiBridgeService psi = PsiBridgeService.getInstance(project);
+        java.util.concurrent.Semaphore writeSemaphore = psi.getWriteToolSemaphore();
+        // Read the syncLock BEFORE releasing anything — it is a ThreadLocal on this thread.
+        java.util.concurrent.locks.ReentrantLock syncLock = psi.getCurrentSyncLock();
+
+        // Release the syncLock first (if any), then the semaphore.
+        // Reversed acquisition order breaks the circular-wait condition.
+        if (syncLock != null) syncLock.unlock();
         writeSemaphore.release();
         try {
             // Re-check after releasing locks: the EDT can call completeReviewIfEmpty() at
@@ -541,10 +545,11 @@ public final class AgentEditSession implements Disposable {
         } catch (java.util.concurrent.ExecutionException e) {
             return "Error: Review wait failed: " + e.getCause();
         } finally {
-            // Re-acquire so callTool's finally block can release it cleanly.
-            // acquireUninterruptibly: we must re-acquire even if the thread was
-            // interrupted during the wait, otherwise callTool would over-release.
+            // Re-acquire in the same order as callTool: semaphore first, then syncLock.
+            // acquireUninterruptibly: we must re-acquire even if the thread was interrupted,
+            // otherwise callTool's finally block would over-release the semaphore.
             writeSemaphore.acquireUninterruptibly();
+            if (syncLock != null) syncLock.lock();
         }
     }
 
