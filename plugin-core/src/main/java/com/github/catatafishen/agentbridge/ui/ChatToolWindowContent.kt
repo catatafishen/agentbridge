@@ -2,12 +2,12 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.acp.model.Model
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
-import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.icons.AllIcons
@@ -610,8 +610,8 @@ class ChatToolWindowContent(
         // (Review panel message-bus, Prompts listener) are disposed when the window is closed.
         val side = com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel)
         side.border = JBUI.Borders.compound(
-            JBUI.Borders.empty(2),
-            com.intellij.ui.RoundedLineBorder(JBColor.border(), JBUI.scale(8))
+            JBUI.Borders.empty(4),
+            com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
         )
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
@@ -619,11 +619,6 @@ class ChatToolWindowContent(
 
         responsePanelContainer = JBPanel<JBPanel<*>>(BorderLayout())
         responsePanelContainer.add(responsePanel, BorderLayout.CENTER)
-        // Rounded border makes the chat area a distinct panel matching the side panel and input row.
-        val chatRoundedBorder = JBUI.Borders.compound(
-            JBUI.Borders.empty(2),
-            com.intellij.ui.RoundedLineBorder(JBColor.border(), JBUI.scale(8))
-        )
         val topPanel = JBPanel<JBPanel<*>>(BorderLayout())
         val northStack = JBPanel<JBPanel<*>>()
         northStack.layout = BoxLayout(northStack, BoxLayout.Y_AXIS)
@@ -659,8 +654,12 @@ class ChatToolWindowContent(
         statusBanner = sb
         northStack.add(sb)
 
-        // Rounded border is static — banners stack above the chat area in the NORTH slot.
-        responsePanelContainer.border = chatRoundedBorder
+        // Rounded border makes the chat area a distinct panel matching the side panel and input row,
+        // styled like the IDE's own tool-window frames.
+        responsePanelContainer.border = JBUI.Borders.compound(
+            JBUI.Borders.empty(4),
+            com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
+        )
 
         consolePanel.onStatusMessage = { type, message ->
             when (type) {
@@ -807,8 +806,8 @@ class ChatToolWindowContent(
         inputContainer.add(promptTextArea)    // index 1 = behind, visible through transparent shortcutHintPanel
 
         row.border = JBUI.Borders.compound(
-            JBUI.Borders.empty(2),
-            com.intellij.ui.RoundedLineBorder(JBColor.border(), JBUI.scale(8))
+            JBUI.Borders.empty(4),
+            com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
         )
         // Make the row paint the same background as the editor text field so any space
         // around the editor (splitter gaps, layout padding) matches the input bg instead
@@ -1360,7 +1359,24 @@ class ChatToolWindowContent(
             rootSplitter.proportion >= 0.01f
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
-            rootSplitter.proportion = if (state) defaultReviewProportion else 0.0f
+            if (state) {
+                // When showing: record the current tool window width (= chat width when side is hidden),
+                // then expand the tool window by the side panel width so the chat area stays the same size.
+                val chatWidth = rootSplitter.width
+                rootSplitter.proportion = defaultReviewProportion
+                if (chatWidth > 0) {
+                    val stretchAmount = (chatWidth * defaultReviewProportion / (1.0 - defaultReviewProportion)).toInt()
+                    (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(stretchAmount)
+                }
+            } else {
+                // When hiding: record the current side panel width, collapse it,
+                // then shrink the tool window by that width to restore the original chat area size.
+                val sideWidth = rootSplitter.firstComponent?.width ?: 0
+                rootSplitter.proportion = 0.0f
+                if (sideWidth > 0) {
+                    (toolWindow as? com.intellij.openapi.wm.ex.ToolWindowEx)?.stretchWidth(-sideWidth)
+                }
+            }
         }
     }
 
