@@ -4,6 +4,10 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.intellij.ide.BrowserUtil
+import com.intellij.ui.HyperlinkLabel
+import com.intellij.ui.components.JBLabel
+import com.intellij.util.ui.JBUI
 import javax.swing.JComponent
 
 object WebSearchRenderer : ToolResultRenderer {
@@ -21,7 +25,12 @@ object WebSearchRenderer : ToolResultRenderer {
                 row.add(ToolRenderers.monoLabel(it))
                 panel.add(row)
             }
-            panel.add(HtmlToolRendererSupport.markdownPane(buildResultsMarkdown(parsed.results)))
+            val displayResults = parsed.results.take(ToolRenderers.MAX_LIST_ENTRIES)
+            displayResults.forEach { panel.add(renderResultSection(it)) }
+            val remaining = parsed.results.size - displayResults.size
+            if (remaining > 0) {
+                ToolRenderers.addTruncationIndicator(panel, remaining, "results")
+            }
         } else {
             panel.add(ToolRenderers.statusHeader(ToolIcons.SEARCH, "Web Search", ToolRenderers.INFO_COLOR))
             parsed.fallbackBody?.takeIf { it.isNotBlank() }?.let { panel.add(HtmlToolRendererSupport.markdownPane(it)) }
@@ -45,7 +54,7 @@ object WebSearchRenderer : ToolResultRenderer {
                 root.isJsonObject -> {
                     val obj = root.asJsonObject
                     val query = firstString(obj, "query", "search", "prompt")
-                    val results = parseResults(firstArray(obj, "results", "items", "entries"))
+                    val results = parseResults(extractResultsArray(obj))
                     if (results.isEmpty()) null else SearchContent(query, results, null)
                 }
 
@@ -56,20 +65,41 @@ object WebSearchRenderer : ToolResultRenderer {
         }
     }
 
-    private fun buildResultsMarkdown(results: List<SearchResult>): String {
-        return results.joinToString("\n\n") { result ->
-            buildString {
-                append("- ")
-                if (!result.url.isNullOrBlank()) {
-                    append("[").append(result.title).append("](").append(result.url).append(")")
-                } else {
-                    append(result.title)
-                }
-                result.snippet?.takeIf { it.isNotBlank() }?.let {
-                    append("\n  ").append(it.trim())
-                }
-            }
+    private fun renderResultSection(result: SearchResult): JComponent {
+        val section = ToolRenderers.listPanel().apply {
+            border = JBUI.Borders.emptyTop(4)
+            alignmentX = JComponent.LEFT_ALIGNMENT
         }
+        val row = ToolRenderers.rowPanel()
+        val normalizedTitle = normalizeInlineText(result.title)
+        val normalizedUrl = result.url?.let(::normalizeInlineText)
+        if (!normalizedUrl.isNullOrBlank()) {
+            row.add(HyperlinkLabel(normalizedTitle).apply {
+                addHyperlinkListener { BrowserUtil.browse(normalizedUrl) }
+            })
+            row.add(ToolRenderers.mutedLabel(normalizedUrl))
+        } else {
+            row.add(JBLabel(normalizedTitle))
+        }
+        section.add(row)
+
+        result.snippet
+            ?.let(::normalizeInlineText)
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { snippet ->
+                section.add(ToolRenderers.mutedLabel(snippet).apply {
+                    alignmentX = JComponent.LEFT_ALIGNMENT
+                    border = JBUI.Borders.emptyLeft(8)
+                })
+            }
+        return section
+    }
+
+    private fun normalizeInlineText(value: String): String {
+        return value.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(" ")
     }
 
     private fun parseResults(resultsArray: JsonArray?): List<SearchResult> {
@@ -83,12 +113,12 @@ object WebSearchRenderer : ToolResultRenderer {
         }
     }
 
-    private fun firstArray(obj: JsonObject, vararg keys: String): JsonArray? {
-        for (key in keys) {
-            val element = obj.get(key) ?: continue
-            if (element.isJsonArray) return element.asJsonArray
-        }
-        return null
+    private fun extractResultsArray(obj: JsonObject): JsonArray? {
+        return listOf("results", "items", "entries")
+            .asSequence()
+            .mapNotNull(obj::get)
+            .firstOrNull { it.isJsonArray }
+            ?.asJsonArray
     }
 
     private fun firstString(obj: JsonObject, vararg keys: String): String? {

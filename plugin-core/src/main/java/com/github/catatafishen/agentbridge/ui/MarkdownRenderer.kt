@@ -41,7 +41,7 @@ object MarkdownRenderer {
         resolveFilePath: (String) -> String? = { null },
         isGitCommit: (String) -> Boolean = { false }
     ): String {
-        val lines = preprocessXmlTags(text).lines()
+        val lines = preprocessXmlTagsOutsideCodeBlocks(text)
         val sb = StringBuilder()
         val state = MarkdownState()
 
@@ -104,6 +104,53 @@ object MarkdownRenderer {
             buildThinkingBlockHtml(match.groupValues[2])
         }
         processed = WRAPPER_TAG_LINE_REGEX.replace(processed, "")
+        return processed
+    }
+
+    private fun preprocessXmlTagsOutsideCodeBlocks(text: String): List<String> {
+        val rawLines = text.lines()
+        val processed = mutableListOf<String>()
+        val segment = mutableListOf<String>()
+        var inFence = false
+        var inImplicit = false
+
+        fun flushSegment() {
+            if (segment.isEmpty()) return
+            processed += preprocessXmlTags(segment.joinToString("\n")).lines()
+            segment.clear()
+        }
+
+        for (line in rawLines) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith("```")) {
+                flushSegment()
+                processed += line
+                inFence = !inFence
+                inImplicit = false
+                continue
+            }
+            if (inFence) {
+                processed += line
+                continue
+            }
+            if (inImplicit) {
+                if (trimmed.isEmpty() || isMajorBlockElement(trimmed)) {
+                    inImplicit = false
+                } else {
+                    processed += line
+                    continue
+                }
+            }
+            if (isCodeLikeLine(trimmed)) {
+                flushSegment()
+                processed += line
+                inImplicit = true
+                continue
+            }
+            segment += line
+        }
+
+        flushSegment()
         return processed
     }
 

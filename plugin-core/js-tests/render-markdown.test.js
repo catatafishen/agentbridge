@@ -27,4 +27,16 @@ describe('renderMarkdown XML tag preprocessing', () => {
         expect(html).toContain('&lt;think&gt;');
         expect(html).not.toContain('<thinking-block>');
     });
+
+    it('does not preprocess think or wrapper tags inside fenced code blocks', () => {
+        const html = renderMarkdown('```md\n<think>Reasoning</think>\n<task_result>\n```');
+        expect(html).toContain('&lt;think&gt;Reasoning&lt;/think&gt;');
+        expect(html).toContain('&lt;task_result&gt;');
+        expect(html).not.toContain('<thinking-block>');
+    });
+
+    it('renders empty think tags with fallback text', () => {
+        const html = renderMarkdown('<think>\r\n\r\n</think>');
+        expect(html).toContain('No reasoning returned');
+    });
 });

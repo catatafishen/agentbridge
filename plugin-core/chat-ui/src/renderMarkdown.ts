@@ -69,6 +69,38 @@ function preprocessXmlTags(text: string): string {
         .replace(WRAPPER_TAG_LINE_PATTERN, '');
 }
 
+function preprocessXmlTagsOutsideCodeFences(text: string): string {
+    const lines = text.split('\n');
+    const processed: string[] = [];
+    const segment: string[] = [];
+    let inCodeFence = false;
+
+    const flushSegment = (): void => {
+        if (segment.length === 0) {
+            return;
+        }
+        processed.push(...preprocessXmlTags(segment.join('\n')).split('\n'));
+        segment.length = 0;
+    };
+
+    for (const line of lines) {
+        if (line.trim().startsWith('```')) {
+            flushSegment();
+            processed.push(line);
+            inCodeFence = !inCodeFence;
+            continue;
+        }
+        if (inCodeFence) {
+            processed.push(line);
+            continue;
+        }
+        segment.push(line);
+    }
+
+    flushSegment();
+    return processed.join('\n');
+}
+
 /**
  * Convert a Markdown string to an HTML string.
  *
@@ -86,7 +118,7 @@ function preprocessXmlTags(text: string): string {
  * blocks, unclosed lists, etc.) by closing all open constructs at the end.
  */
 export function renderMarkdown(text: string): string {
-    const lines = preprocessXmlTags(text).split('\n');
+    const lines = preprocessXmlTagsOutsideCodeFences(text).split('\n');
     const out: string[] = [];
     let inCode = false;
     let inList = false;

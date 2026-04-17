@@ -37,21 +37,43 @@ object WebFetchRenderer : ToolResultRenderer {
         val lines = trimmed.lines()
         var url: String? = null
         var status: String? = null
-        var bodyStart = 0
+        var bodyStart = lines.size
+        var lastHeaderIndex = -1
         for ((index, line) in lines.withIndex()) {
             val trimmedLine = line.trim()
             if (trimmedLine.isEmpty()) {
                 bodyStart = index + 1
                 break
             }
-            when {
-                trimmedLine.startsWith("URL:", ignoreCase = true) -> url = trimmedLine.substringAfter(":").trim()
-                trimmedLine.startsWith("Status:", ignoreCase = true) -> status = trimmedLine.substringAfter(":").trim()
-                url == null && (trimmedLine.startsWith("http://") || trimmedLine.startsWith("https://")) -> url =
-                    trimmedLine
+            val isHeaderLine = when {
+                trimmedLine.startsWith("URL:", ignoreCase = true) -> {
+                    url = trimmedLine.substringAfter(":").trim()
+                    true
+                }
+
+                trimmedLine.startsWith("Status:", ignoreCase = true) -> {
+                    status = trimmedLine.substringAfter(":").trim()
+                    true
+                }
+
+                url == null && (trimmedLine.startsWith("http://") || trimmedLine.startsWith("https://")) -> {
+                    url = trimmedLine
+                    true
+                }
+
+                else -> false
             }
+            if (isHeaderLine) {
+                lastHeaderIndex = index
+                continue
+            }
+            bodyStart = index
+            break
         }
-        val body = lines.drop(bodyStart).joinToString("\n").trim().ifBlank { trimmed }
+        if (bodyStart == lines.size && lastHeaderIndex >= 0) {
+            bodyStart = lastHeaderIndex + 1
+        }
+        val body = lines.drop(bodyStart.coerceAtMost(lines.size)).joinToString("\n").trim().ifBlank { trimmed }
         return FetchContent(url, status, body)
     }
 
