@@ -248,9 +248,81 @@ When bug #556 is eventually fixed for ACP mode, the `.github/agents/` definition
 automatically take effect. Prepare agent definition files with `allowed-tools` restrictions
 so they activate without code changes once the CLI respects them.
 
+## Revalidation: CLI v1.0.31 (Apr 17, 2026)
+
+### Motivation
+
+Check whether CLI 1.0.31 (which added Claude Opus 4.7 support) has fixed any tool-filtering
+mechanism, and whether our bundled agent definitions now take effect in `--acp` mode.
+
+### Method
+
+Reusable ACP probe at `.agent-work/experiments/acp-tool-filter-probe.mjs` — drives
+`initialize` → `session/new` → `session/prompt`, auto-approves permission requests, captures
+the tool list the model reports and any `tool_call` notifications. Run in an isolated cwd so
+nothing else leaks into context. Model defaulted to `claude-sonnet-4.5`; Opus 4.7 spot-checked
+as case 6.
+
+### Test Results (Apr 17, 2026)
+
+All cases ran against Copilot CLI 1.0.31 in `--acp` mode.
+
+| # | Flag / agent                                                                   | Model              | Result                                        |
+|---|--------------------------------------------------------------------------------|--------------------|-----------------------------------------------|
+| 1 | (none, baseline)                                                               | claude-sonnet-4.5  | 34 tools — full built-in set exposed          |
+| 2 | `--excluded-tools view,edit,create,bash,grep,glob,task`                        | claude-sonnet-4.5  | Identical 34-tool list — **flag ignored**     |
+| 3 | `--available-tools web_search,report_intent`                                   | claude-sonnet-4.5  | Identical 34-tool list — **whitelist ignored**|
+| 4 | `--deny-tool view,grep,glob`                                                   | claude-sonnet-4.5  | Identical 34-tool list — **flag ignored**     |
+| 5 | `--agent test-agent` with valid `tools: [web_search, report_intent]` frontmatter| claude-sonnet-4.5 | Identical 34-tool list — **agent `tools:` ignored** |
+| 6 | `--excluded-tools view,edit,create,bash,grep,glob`                             | claude-opus-4.7    | Identical 34-tool list — flag still ignored   |
+
+**Conclusion:** No change vs. v1.0.3 GA. `--excluded-tools`, `--available-tools`, `--deny-tool`,
+and per-agent `tools:` whitelists are all silently no-ops in ACP mode on CLI 1.0.31. Opus 4.7
+sees the same tool list as Sonnet 4.5 — what differs is only the model's willingness to ignore
+in-prompt nudges, not the tool surface.
+
+Evidence: `.agent-work/experiments/bug-556-retest-1.0.31-results.md` (raw probe output).
+
+### Upstream bug status (Apr 17, 2026)
+
+Summary of the GitHub issues we depend on, all still **open** with no merged fix:
+
+| Issue | Title / scope                                                                  | Last activity        | Impact on us |
+|-------|--------------------------------------------------------------------------------|----------------------|--------------|
+| [#556](https://github.com/github/copilot-cli/issues/556)   | ACP mode ignores `--excluded-tools`, `--available-tools`, and per-agent `tools:` | Maintainer assigned; last comment Jan 5 2026 ("will check today" — no follow-up) | Primary — blocks tool filtering entirely |
+| [#1574](https://github.com/github/copilot-cli/issues/1574) | Custom JSON-RPC `tools` in `session/new` params silently ignored                 | Open                 | Cannot filter via the ACP session-create extension |
+| [#1607](https://github.com/github/copilot-cli/issues/1607) | ACP spec has no session-level permission primitive                               | Upstream ACP spec    | Structural — `request_permission` is the only hook we have |
+| [#1969](https://github.com/github/copilot-cli/issues/1969) | No `systemPrompt` in `session/new`                                               | Open                 | Forces us to use `prependInstructionsTo` + MCP `initialize.instructions` |
+| [#2059](https://github.com/github/copilot-cli/issues/2059) | ACP mode ignores most CLI flags (`--model`, `--agent`, etc.)                     | Open                 | Agent-file `tools:` route is therefore also dead |
+
+**Collateral:** Our own `BundledAgentDeployer.deployAgent()` writes an HTML comment before the
+YAML frontmatter, which Copilot's agent loader then rejects as "malformed YAML frontmatter".
+That bug is orthogonal (fixing it does not make #556 work — case 5 above used a correctly-
+formatted file and still failed) but is logged in `.agent-work/clarity-backlog.md` for a
+follow-up.
+
+### Current mitigation
+
+Given none of the CLI filter surfaces work, the only remaining lever is **in-prompt policy**,
+delivered via `plugin-core/src/main/resources/default-startup-instructions.md` through two
+channels:
+
+1. `InstructionsManager.ensureInstructions` splices it into `.github/copilot-instructions.md`
+   (via Copilot's `AgentProfile.prependInstructionsTo`).
+2. `McpProtocolHandler.initialize` returns it in the MCP `instructions` field.
+
+The file was rewritten on Apr 17, 2026 with a hard, explicit tool-policy block tuned for
+aggressive models (Opus 4.7 in particular): lowercase forbidden names exactly as the CLI
+exposes them, and a replacement mapping per capability. `InstructionsManager` was also
+upgraded to splice the block in-place so upgrades refresh existing installs rather than
+stacking duplicate blocks.
+
 ## References
 
 - CLI Bug: https://github.com/github/copilot-cli/issues/556
 - CLI `--deny-tool` flag: discovered in `copilot --help` output, not documented in bug #556
+- Retest evidence: `.agent-work/experiments/bug-556-retest-1.0.31-results.md`
+- Probe script: `.agent-work/experiments/acp-tool-filter-probe.mjs`
+- Related upstream issues: #1574, #1607, #1969, #2059
 - Checkpoint: `.copilot/session-state/.../checkpoints/020-tool-filtering-investigation.md`
 - Checkpoint: `.copilot/session-state/.../checkpoints/021-permission-denial-simplification.md`
