@@ -63,17 +63,19 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         toolbar.setTargetComponent(this);
         toolbar.getComponent().setBorder(JBUI.Borders.empty());
 
-        // Match main chat panel: thin gray top border on the panel itself.
-        setBorder(JBUI.Borders.customLine(JBColor.border(), 1, 0, 0, 0));
-
         // Toolbar footer styled like the chat input's bottom toolbar:
-        // top gray divider line + 2px bottom padding.
+        // top gray divider line + symmetric padding + a minimum height so it lines
+        // up with the chat footer (which is taller due to the ProcessingTimerPanel).
         JPanel toolbarFooter = new JPanel(new BorderLayout());
         toolbarFooter.setBorder(JBUI.Borders.compound(
             new SideBorder(JBColor.border(), SideBorder.TOP),
-            JBUI.Borders.empty(0, 0, 2, 0)
+            JBUI.Borders.empty(2, 0)
         ));
-        toolbarFooter.add(toolbar.getComponent(), BorderLayout.CENTER);
+        JComponent toolbarComponent = toolbar.getComponent();
+        int footerHeight = JBUI.scale(32);
+        toolbarComponent.setPreferredSize(new Dimension(0, footerHeight));
+        toolbarComponent.setMinimumSize(new Dimension(0, footerHeight));
+        toolbarFooter.add(toolbarComponent, BorderLayout.CENTER);
 
         add(scrollPane, BorderLayout.CENTER);
         add(toolbarFooter, BorderLayout.SOUTH);

@@ -75,7 +75,7 @@ public final class GitResetTool extends GitTool {
             String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";
             if ("hard".equals(mode)) {
                 String reviewError = AgentEditSession.getInstance(project)
-                    .checkReviewPending("git reset --hard");
+                    .awaitReviewCompletion("git reset --hard");
                 if (reviewError != null) return reviewError;
             }
         }

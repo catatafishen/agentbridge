@@ -15,6 +15,7 @@
     <option name="kindExecuteColorKey" value="AMBER" />
     <option name="kindReadColorKey" value="GREEN" />
     <option name="port" value="8646" />
+    <option name="reviewAgentEdits" value="true" />
     <option name="smoothScrollEnabled" value="true" />
   </component>
 </project>

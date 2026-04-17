@@ -41,6 +41,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     // ── Data model (same types as V1 for serialization compat) ─────
     private val entries = mutableListOf<EntryData>()
+
+    /** Snapshot of the current entries list — safe to read from any thread as a defensive copy. */
+    fun entriesSnapshot(): List<EntryData> = ArrayList(entries)
     private var currentTextData: EntryData.Text? = null
     private var currentThinkingData: EntryData.Thinking? = null
     private var nextSubAgentColor = 0
@@ -300,6 +303,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         entries.add(EntryData.Prompt(text, ts, ctxRefs, id = currentTurnId))
         val encodedBubble = if (bubbleHtml != null) encodeBase64(bubbleHtml) else ""
         executeJs("ChatController.addUserMessage('${escJs(text)}','${displayTs(ts)}','$encodedBubble','$currentTurnId');ChatController.showWorkingIndicator()")
+        fireEntriesChanged()
         return currentTurnId
     }
 
@@ -307,6 +311,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val idx = entries.indexOfLast { it is EntryData.Prompt && it.id == entryId }
         if (idx >= 0) entries.removeAt(idx)
         executeJs("ChatController.removeUserMessage('$entryId')")
+        fireEntriesChanged()
     }
 
     override fun startStreaming() {
@@ -677,6 +682,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
         executeJs("ChatController.showPlaceholder('${escJs(text)}')")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = text } }
+        fireEntriesChanged()
     }
 
     override fun clear() {
@@ -688,6 +694,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         clearPendingAskUserRequest(null)
         executeJs("ChatController.clear()")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = "" } }
+        fireEntriesChanged()
     }
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
@@ -799,7 +806,45 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     var onLoadMoreRequested: (() -> Unit)? = null
 
+    /**
+     * Listeners notified whenever the entry list changes (prompt added/removed, batch appended,
+     * or conversation replayed). Used by side panels (Prompts tab) to keep their views in sync.
+     * Listeners run on the caller's thread — typically EDT since mutations happen from UI flows.
+     */
+    private val entriesChangeListeners = java.util.concurrent.CopyOnWriteArrayList<Runnable>()
+
+    fun addEntriesChangeListener(listener: Runnable) {
+        entriesChangeListeners.add(listener)
+    }
+
+    fun removeEntriesChangeListener(listener: Runnable) {
+        entriesChangeListeners.remove(listener)
+    }
+
+    private fun fireEntriesChanged() {
+        entriesChangeListeners.forEach { it.run() }
+    }
+
     fun getEntries(): List<EntryData> = entries.toList()
+
+    /**
+     * Scrolls the JCEF chat to the chat-message with the given entry id. No-op if the element
+     * does not exist (e.g. the entry was restored from disk into the deferred history pile).
+     */
+    fun scrollToEntry(entryId: String) {
+        val safe = escJs(entryId)
+        executeJs(
+            """
+            (function(){
+                var el = document.getElementById('$safe');
+                if (!el) return;
+                el.scrollIntoView({behavior:'smooth', block:'center'});
+                el.classList.add('prompt-flash');
+                setTimeout(function(){ el.classList.remove('prompt-flash'); }, 900);
+            })()
+            """.trimIndent()
+        )
+    }
 
     fun showLoadMore(deferredCount: Int) {
         executeJs("ChatController.showLoadMore($deferredCount)")
@@ -824,6 +869,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
             executeJs("ChatController.restoreBatchFinal('${encodeBase64(json)}', $smooth)")
         }
+        fireEntriesChanged()
     }
 
     fun prependEntries(entries: List<EntryData>) {
@@ -833,6 +879,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (json != "[]") {
             executeJs("ChatController.prependBatch('${encodeBase64(json)}')")
         }
+        fireEntriesChanged()
     }
 
     private fun buildRestoredBubbleHtml(text: String, ctxFiles: List<ContextFileRef>): String {
@@ -902,7 +949,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         return mapOf(
             "type" to "user",
             "html" to bubbleHtml,
-            "timestamp" to displayTs(e.timestamp)
+            "timestamp" to displayTs(e.timestamp),
+            "entryId" to e.id.ifEmpty { e.entryId }
         )
     }
 
