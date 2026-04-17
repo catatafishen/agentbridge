@@ -93,6 +93,29 @@ public final class PsiBridgeService implements Disposable {
     private final WriteBatchCoordinator writeBatchCoordinator = new WriteBatchCoordinator(writeToolSemaphore);
 
     /**
+     * Tracks the per-tool sync lock ({@link #toolLocks}) currently held by each mcp-http thread.
+     * Set in {@link #callTool} before {@code syncLock.lock()}, cleared in the finally block.
+     *
+     * <p><b>Why exposed:</b> {@code AgentEditSession.awaitReviewCompletion} must release this
+     * lock (as well as the write semaphore) while blocking for user review, otherwise a second
+     * call to the same tool from another thread can deadlock: the second thread holds the
+     * semaphore and waits for the syncLock, while the first thread holds the syncLock and
+     * waits for the semaphore. A ThreadLocal makes the lock available without coupling
+     * the tool API to lock management.</p>
+     */
+    private final ThreadLocal<ReentrantLock> currentSyncLock = new ThreadLocal<>();
+
+    /**
+     * Returns the per-tool sync lock currently held by the calling thread, or {@code null}
+     * if none is active. Used by {@link com.github.catatafishen.agentbridge.psi.review.AgentEditSession}
+     * to release and re-acquire the lock around the blocking review wait.
+     */
+    @Nullable
+    public ReentrantLock getCurrentSyncLock() {
+        return currentSyncLock.get();
+    }
+
+    /**
      * Returns the global write-tool semaphore.
      *
      * <p><b>Why exposed:</b> {@code AgentEditSession.awaitReviewCompletion} needs to
@@ -362,10 +385,19 @@ public final class PsiBridgeService implements Disposable {
         try (DaemonWaiter daemonWaiter = filePathForHighlights != null
             ? new DaemonWaiter(project, vfForHighlights, preWriteStamp) : null) {
             // Acquire per-tool sync lock if needed, register with chip registry, then execute.
+            // Publish the lock in a ThreadLocal so awaitReviewCompletion() can also release it
+            // while blocking for review — otherwise a second call to the same tool from another
+            // thread can deadlock (second thread holds the semaphore, waits for the syncLock;
+            // first thread holds the syncLock, waits for the semaphore).
             ReentrantLock syncLock = requiresSync
                 ? toolLocks.computeIfAbsent(toolName, k -> new ReentrantLock())
                 : null;
-            if (syncLock != null) syncLock.lock();
+            if (syncLock != null) {
+                syncLock.lock();
+                // Set AFTER locking so the ThreadLocal accurately reflects "lock currently held".
+                // awaitReviewCompletion() reads this to know which lock to yield.
+                currentSyncLock.set(syncLock);
+            }
             String result;
             try {
                 // Register with chip registry BEFORE executing so the chip can transition to "running"
@@ -373,7 +405,14 @@ public final class PsiBridgeService implements Disposable {
                 ToolChipRegistry.getInstance(project).registerMcp(toolName, arguments, def.kind().value(), toolUseId);
                 result = def.execute(arguments, argumentsHash);
             } finally {
-                if (syncLock != null) syncLock.unlock();
+                if (syncLock != null) {
+                    try {
+                        syncLock.unlock();
+                    } finally {
+                        // Remove even if unlock() throws, so the ThreadLocal never leaks.
+                        currentSyncLock.remove();
+                    }
+                }
             }
 
             // Mark this write as complete — no longer "pending" from the coordinator's perspective.
