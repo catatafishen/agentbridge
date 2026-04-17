@@ -8,12 +8,12 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionToolbar;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.actionSystem.ToggleAction;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
-import com.intellij.openapi.actionSystem.ActionUpdateThread;
-import com.intellij.openapi.actionSystem.ToggleAction;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
@@ -64,6 +64,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         configureTable();
 
         JBScrollPane scrollPane = new JBScrollPane(table);
+        scrollPane.setBorder(BorderFactory.createEmptyBorder());
 
         emptyLabel = new JBLabel("", SwingConstants.CENTER);
         emptyLabel.setForeground(JBColor.GRAY);
@@ -374,18 +375,24 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
                         label.setForeground(isSelected ? table.getSelectionForeground()
                             : new JBColor(new Color(0, 128, 0), new Color(80, 200, 80)));
                         label.setIcon(AllIcons.General.Add);
+                        label.setToolTipText("Added");
                     }
                     case "MODIFIED" -> {
                         label.setForeground(isSelected ? table.getSelectionForeground()
                             : new JBColor(new Color(0, 100, 200), new Color(80, 160, 255)));
                         label.setIcon(AllIcons.Actions.Edit);
+                        label.setToolTipText("Modified");
                     }
                     case "DELETED" -> {
                         label.setForeground(isSelected ? table.getSelectionForeground()
                             : new JBColor(new Color(200, 0, 0), new Color(255, 80, 80)));
                         label.setIcon(AllIcons.General.Remove);
+                        label.setToolTipText("Deleted");
                     }
-                    default -> label.setIcon(null);
+                    default -> {
+                        label.setIcon(null);
+                        label.setToolTipText(null);
+                    }
                 }
             }
             return c;
@@ -400,13 +407,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
             Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             if (value instanceof String path && c instanceof JLabel label) {
                 java.nio.file.Path p = java.nio.file.Path.of(path);
-                String filename = p.getFileName() != null ? p.getFileName().toString() : path;
-                String parent = p.getParent() != null ? p.getParent().toString() : "";
-                String parentDisplay = parent.isEmpty() ? "" : parent + "/";
-                String gray = isSelected ? "" : "gray";
-                label.setText("<html><b>" + filename + "</b>"
-                    + (parentDisplay.isEmpty() ? "" : " <font color='" + gray + "'>" + parentDisplay + "</font>")
-                    + "</html>");
+                label.setText(p.getFileName() != null ? p.getFileName().toString() : path);
                 label.setToolTipText(path);
             }
             return c;
@@ -443,6 +444,9 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         private static void styleButton(JButton btn) {
             btn.putClientProperty("JButton.buttonType", "borderless");
             btn.setFocusPainted(false);
+            btn.setContentAreaFilled(false);
+            btn.setBorderPainted(false);
+            btn.setOpaque(false);
             btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         }
     }
