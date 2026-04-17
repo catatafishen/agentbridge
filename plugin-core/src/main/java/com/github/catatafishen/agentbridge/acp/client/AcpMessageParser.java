@@ -172,13 +172,6 @@ class AcpMessageParser {
             arguments = params.get(KEY_RAW_INPUT).getAsJsonObject().toString();
         }
 
-        // When the agent reports failure but provides no error text, synthesise a fallback so the
-        // UI can show something meaningful instead of "Tool X failed with no error details".
-        // This happens when the user denies a tool in the CLI's own permission UI.
-        if (status == SessionUpdate.ToolCallStatus.FAILED && result == null && error == null) {
-            error = "Tool call was denied or failed without error details.";
-        }
-
         return new SessionUpdate.ToolCallUpdate(toolCallId, status, result, error, description, false, null, arguments);
     }
 
