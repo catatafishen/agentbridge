@@ -8,8 +8,8 @@ import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
-import com.intellij.ide.ActivityTracker
 import com.intellij.icons.AllIcons
+import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
 import com.intellij.openapi.actionSystem.ex.CustomComponentAction
@@ -1328,7 +1328,10 @@ class ChatToolWindowContent(
 
             // OpenCode
             val openCodeGroup = DefaultActionGroup()
-            addGlobSection(openCodeGroup, base, ".agent-work/opencode/agent", "*.md")
+            addLabeledGlobSection(openCodeGroup, base, "Project Agents", "*.md", ".opencode/agent", ".opencode/agents")
+            addLabeledGlobSection(openCodeGroup, base, "Skills", "*/SKILL.md", ".opencode/skills")
+            addLabeledGlobSection(openCodeGroup, base, "Commands", "*.md", ".opencode/commands")
+            addLabeledGlobSection(openCodeGroup, base, "Deployed", "*.md", ".agent-work/opencode/agent")
             if (openCodeGroup.childrenCount > 0) {
                 if (group.childrenCount > 0) group.addSeparator()
                 group.addSeparator("OpenCode")
@@ -1406,6 +1409,37 @@ class ChatToolWindowContent(
 
             files.forEach { file ->
                 val relPath = file.relativeTo(java.io.File(base)).path
+                val extension = file.extension
+                val icon = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
+                    .getFileTypeByExtension(extension).icon
+
+                group.add(object : AnAction(file.nameWithoutExtension, "Open ${file.name}", icon) {
+                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+                    override fun actionPerformed(e: AnActionEvent) = openProjectFile(relPath)
+                })
+            }
+        }
+
+        private fun addLabeledGlobSection(
+            group: DefaultActionGroup,
+            base: String,
+            label: String,
+            pattern: String,
+            vararg dirPaths: String
+        ) {
+            val baseDir = java.io.File(base)
+            val files = linkedMapOf<String, java.io.File>()
+            dirPaths.forEach { dirPath ->
+                findMatchingFiles(java.io.File(base, dirPath), pattern).forEach { file ->
+                    val relPath = file.relativeTo(baseDir).path
+                    files.putIfAbsent(relPath, file)
+                }
+            }
+            if (files.isEmpty()) return
+
+            group.addSeparator(label)
+            files.values.sortedBy { it.relativeTo(baseDir).path.lowercase() }.forEach { file ->
+                val relPath = file.relativeTo(baseDir).path
                 val extension = file.extension
                 val icon = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
                     .getFileTypeByExtension(extension).icon

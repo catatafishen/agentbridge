@@ -49,9 +49,19 @@ final class ProjectAgentScanner {
      */
     static @NotNull List<AgentMode> scanProjectAgents(@NotNull Path projectBasePath,
                                                       @NotNull Set<String> builtInSlugs) {
+        return scanAgentDirectories(projectBasePath, builtInSlugs, AGENT_DIRS);
+    }
+
+    /**
+     * Scans the provided relative directories for {@code .md} agent files and returns
+     * an {@link AgentMode} for each one. Earlier directories win on slug collisions.
+     */
+    static @NotNull List<AgentMode> scanAgentDirectories(@NotNull Path projectBasePath,
+                                                         @NotNull Set<String> builtInSlugs,
+                                                         @NotNull String... relativeDirs) {
         Map<String, AgentMode> discovered = new LinkedHashMap<>();
 
-        for (String relDir : AGENT_DIRS) {
+        for (String relDir : relativeDirs) {
             Path dir = projectBasePath.resolve(relDir);
             if (!Files.isDirectory(dir)) continue;
 

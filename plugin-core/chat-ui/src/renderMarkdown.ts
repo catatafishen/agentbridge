@@ -55,6 +55,20 @@ function formatInline(text: string): string {
     return result.join('');
 }
 
+const THINK_TAG_PATTERN = /<(think|thinking)>([\s\S]*?)<\/\1>/gi;
+const WRAPPER_TAG_LINE_PATTERN = /^\s*<\/?(task_result|commentary|example|code)>\s*$/gim;
+
+function buildThinkingBlockHtml(content: string): string {
+    const normalized = content.trim() || 'No reasoning returned';
+    return `<thinking-block><div class="thinking-content">${escHtmlMd(normalized).replaceAll('\r\n', '\n').replaceAll('\r', '\n').replaceAll('\n', '<br>')}</div></thinking-block>`;
+}
+
+function preprocessXmlTags(text: string): string {
+    return text
+        .replace(THINK_TAG_PATTERN, (_match, _tag, content) => buildThinkingBlockHtml(content))
+        .replace(WRAPPER_TAG_LINE_PATTERN, '');
+}
+
 /**
  * Convert a Markdown string to an HTML string.
  *
@@ -72,7 +86,7 @@ function formatInline(text: string): string {
  * blocks, unclosed lists, etc.) by closing all open constructs at the end.
  */
 export function renderMarkdown(text: string): string {
-    const lines = text.split('\n');
+    const lines = preprocessXmlTags(text).split('\n');
     const out: string[] = [];
     let inCode = false;
     let inList = false;
@@ -102,6 +116,12 @@ export function renderMarkdown(text: string): string {
 
     for (const line of lines) {
         const t = line.trim();
+
+        if (t.startsWith('<thinking-block')) {
+            closeAllInline();
+            out.push(t);
+            continue;
+        }
 
         // ── Code fence ─────────────────────────────────────────────
         if (t.startsWith('```')) {
