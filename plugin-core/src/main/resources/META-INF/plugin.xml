@@ -339,5 +339,23 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
             class="com.github.catatafishen.agentbridge.psi.review.EndReviewSessionAction"
             text="End Agent Review Session"
             description="Clear all diff highlights and forget agent edit snapshots"/>
+    <action id="AgentBridge.Review.NextChange"
+            class="com.github.catatafishen.agentbridge.psi.review.NextAgentEditChangeAction"
+            text="Next Agent Edit Change"
+            description="Jump to the next agent-edited change across the review session">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+    </action>
+    <action id="AgentBridge.Review.PreviousChange"
+            class="com.github.catatafishen.agentbridge.psi.review.PreviousAgentEditChangeAction"
+            text="Previous Agent Edit Change"
+            description="Jump to the previous agent-edited change across the review session">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+    </action>
+    <action id="AgentBridge.Review.ShowRangeDiff"
+            class="com.github.catatafishen.agentbridge.psi.review.ShowRangeDiffAction"
+            text="Show Agent Edit Diff Here"
+            description="Open an inline diff popup for the agent-edit change at the caret">
+      <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+    </action>
   </actions>
 </idea-plugin>

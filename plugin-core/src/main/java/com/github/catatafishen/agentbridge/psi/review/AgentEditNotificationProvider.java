@@ -50,9 +50,12 @@ public final class AgentEditNotificationProvider implements EditorNotificationPr
             EditorNotificationPanel.Status.Info);
         panel.setText("Agent edited this file during the current review session.");
 
-        panel.createActionLabel("Show Diff", () -> showDiff(project, file, before));
+        panel.createActionLabel("Show diff", () -> showDiff(project, file, before));
 
-        panel.createActionLabel("Revert\u2026", () -> {
+        panel.createActionLabel("Previous", () -> navigateFromBanner(project, file, fileEditor, false));
+        panel.createActionLabel("Next", () -> navigateFromBanner(project, file, fileEditor, true));
+
+        panel.createActionLabel("Revert…", () -> {
             String relativePath = toRelativePath(project, file);
             RevertReasonDialog dialog = new RevertReasonDialog(project, file, relativePath);
             if (dialog.showAndGet()) {
@@ -79,6 +82,22 @@ public final class AgentEditNotificationProvider implements EditorNotificationPr
             left, right,
             "Before agent edits", "Current");
         DiffManager.getInstance().showDiff(project, request);
+    }
+
+    private static void navigateFromBanner(@NotNull Project project,
+                                           @NotNull VirtualFile file,
+                                           @NotNull FileEditor fileEditor,
+                                           boolean forward) {
+        int caretLine = -1;
+        if (fileEditor instanceof com.intellij.openapi.fileEditor.TextEditor textEditor) {
+            caretLine = textEditor.getEditor().getCaretModel().getLogicalPosition().line;
+        }
+        java.util.NavigableMap<String, java.util.List<ChangeRange>> byPath =
+            ChangeNavigator.collectOrderedChanges(project);
+        java.util.Optional<ChangeNavigator.Location> target = forward
+            ? ChangeNavigator.findNext(byPath, file.getPath(), caretLine)
+            : ChangeNavigator.findPrevious(byPath, file.getPath(), caretLine);
+        target.ifPresent(loc -> NextAgentEditChangeAction.navigate(project, loc));
     }
 
     private static @NotNull String toRelativePath(@NotNull Project project,
