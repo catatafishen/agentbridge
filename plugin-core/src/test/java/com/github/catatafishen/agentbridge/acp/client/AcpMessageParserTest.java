@@ -638,18 +638,18 @@ class AcpMessageParserTest {
         assertEquals("", AcpMessageParser.getStringOrEmpty(obj, "key"));
     }
 
-    // ── FAILED with no result or error → synthesised fallback ────────────────
+    // ── FAILED with no result or error → no synthesised fallback ────────────────
 
     @Test
-    void failedToolCallUpdate_noResultOrError_synthesisesFallbackError() {
+    void failedToolCallUpdate_noResultOrError_errorIsNull() {
         JsonObject params = updateParams("tool_call_update");
         params.addProperty("toolCallId", "call_denied");
         params.addProperty("status", "failed");
-        // No result, no error — simulates a CLI-level tool denial
+        // No result, no error — simulates a CLI-level tool denial; UI handles the null case.
 
         var tcu = (SessionUpdate.ToolCallUpdate) parser.parse(params);
         assertNull(tcu.result());
-        assertEquals("Tool call was denied or failed without error details.", tcu.error());
+        assertNull(tcu.error());
     }
 
     @Test

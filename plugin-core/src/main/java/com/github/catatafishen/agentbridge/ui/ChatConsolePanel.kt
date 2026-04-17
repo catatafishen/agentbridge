@@ -1269,10 +1269,16 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         details: String?
     ): JComponent {
         if (details.isNullOrBlank()) {
-            val label = if (baseName != null) "✖ Tool $baseName failed with no error details." else "✖ Failed"
-            container.add(JBLabel(label).apply {
+            val toolLabel = if (baseName != null) "✖ $baseName — Denied or Failed" else "✖ Denied or Failed"
+            container.add(JBLabel(toolLabel).apply {
                 foreground = ToolRenderers.FAIL_COLOR
-                border = JBUI.Borders.empty(4, 0)
+                font = JBUI.Fonts.label().asBold()
+                border = JBUI.Borders.empty(4, 0, 4, 0)
+                alignmentX = LEFT_ALIGNMENT
+            })
+            container.add(JBLabel("<html><body style='width:450px'>No error details were provided. This typically happens when the tool was denied in the terminal's permission prompt, or when the agent exited before producing output.</body></html>").apply {
+                foreground = com.intellij.util.ui.UIUtil.getContextHelpForeground()
+                border = JBUI.Borders.empty(0, 0, 4, 0)
                 alignmentX = LEFT_ALIGNMENT
             })
             return container
