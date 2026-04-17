@@ -673,28 +673,28 @@ class ChatToolWindowContent(
         topPanel.add(responsePanelContainer, BorderLayout.CENTER)
 
         val inputRow = createInputRow()
+        val controlsRow = createControlsRow()
+        controlsRow.isOpaque = false
+        controlsRow.border = com.intellij.ui.SideBorder(JBColor.border(), com.intellij.ui.SideBorder.TOP)
+
+        val inputSection = JBPanel<JBPanel<*>>(BorderLayout())
+        inputSection.isOpaque = true
+        inputSection.background = com.intellij.util.ui.UIUtil.getTextFieldBackground()
+        inputSection.border = JBUI.Borders.compound(
+            JBUI.Borders.empty(4),
+            com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
+        )
+        inputSection.add(inputRow, BorderLayout.CENTER)
+        inputSection.add(controlsRow, BorderLayout.SOUTH)
+
         val splitter = com.intellij.ui.OnePixelSplitter(true, "AgentBridge.InputSplitter", 0.78f)
         splitter.firstComponent = topPanel
-        splitter.secondComponent = inputRow
+        splitter.secondComponent = inputSection
         panel.add(splitter, BorderLayout.CENTER)
-
-        val fixedFooter = createFixedFooter()
-        panel.add(fixedFooter, BorderLayout.SOUTH)
 
         billing.loadBillingData()
 
         return panel
-    }
-
-    private fun createFixedFooter(): JBPanel<JBPanel<*>> {
-        val footer = JBPanel<JBPanel<*>>()
-        footer.layout = BoxLayout(footer, BoxLayout.Y_AXIS)
-        footer.border = JBUI.Borders.empty(0, 0, 2, 0)
-
-        val controlsRow = createControlsRow()
-        controlsRow.alignmentX = Component.LEFT_ALIGNMENT
-        footer.add(controlsRow)
-        return footer
     }
 
     private fun createInputRow(): JBPanel<JBPanel<*>> {
@@ -806,15 +806,6 @@ class ChatToolWindowContent(
         inputContainer.add(shortcutHintPanel) // index 0 = lowest z-order index = painted last = on top
         inputContainer.add(promptTextArea)    // index 1 = behind, visible through transparent shortcutHintPanel
 
-        row.border = JBUI.Borders.compound(
-            JBUI.Borders.empty(4),
-            com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
-        )
-        // Make the row paint the same background as the editor text field so any space
-        // around the editor (splitter gaps, layout padding) matches the input bg instead
-        // of showing the panel gray.
-        row.isOpaque = true
-        row.background = com.intellij.util.ui.UIUtil.getTextFieldBackground()
         row.add(inputContainer, BorderLayout.CENTER)
 
         return row
@@ -1329,6 +1320,9 @@ class ChatToolWindowContent(
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             if (state) {
                 McpServerSettings.getInstance(project).isReviewAgentEdits = true
+                project.messageBus.syncPublisher(
+                    com.github.catatafishen.agentbridge.psi.review.ReviewSessionTopic.TOPIC
+                ).reviewStateChanged()
                 return
             }
             val session = AgentEditSession.getInstance(project)
@@ -1344,8 +1338,14 @@ class ChatToolWindowContent(
                 )
                 if (result != com.intellij.openapi.ui.Messages.OK) return
             }
+            val wasActive = session.isActive
             McpServerSettings.getInstance(project).isReviewAgentEdits = false
             session.endSession()
+            if (!wasActive) {
+                project.messageBus.syncPublisher(
+                    com.github.catatafishen.agentbridge.psi.review.ReviewSessionTopic.TOPIC
+                ).reviewStateChanged()
+            }
         }
     }
 

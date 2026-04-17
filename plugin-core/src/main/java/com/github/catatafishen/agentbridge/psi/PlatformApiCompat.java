@@ -1269,4 +1269,78 @@ public final class PlatformApiCompat {
         writeActionRunAndWait(() -> ref.set(supplier.get()));
         return ref.get();
     }
+
+    /**
+     * A minimal wrapper around {@code JBTabs} that exposes only the operations needed by
+     * {@link com.github.catatafishen.agentbridge.ui.side.SidePanel}.
+     *
+     * <p><b>Why extracted:</b> {@code JBTabsFactory.createTabs()} returns
+     * {@code com.intellij.ui.tabs.JBTabs}, and both {@code JBTabs} and {@code TabInfo} cause
+     * "Incompatible types" / "cannot apply to" false-positive daemon errors across IntelliJ
+     * 2024.3–2025.2 SDK versions, even though Gradle compiles cleanly. All JBTabs API calls are
+     * confined to this class so daemon errors are isolated to {@code PlatformApiCompat.java}.</p>
+     */
+    public static final class JBTabsPanel {
+
+        private final com.intellij.ui.tabs.JBTabs tabs;
+        private final List<com.intellij.ui.tabs.TabInfo> tabInfos = new ArrayList<>();
+
+        private JBTabsPanel(com.intellij.ui.tabs.JBTabs tabs) {
+            this.tabs = tabs;
+        }
+
+        /**
+         * Returns the Swing component to embed in a parent panel.
+         */
+        public @NotNull JComponent getComponent() {
+            return tabs.getComponent();
+        }
+
+        /**
+         * Appends a tab with the given content panel and label.
+         */
+        public void addTab(@NotNull JComponent content, @NotNull String title) {
+            com.intellij.ui.tabs.TabInfo info = new com.intellij.ui.tabs.TabInfo(content).setText(title);
+            tabInfos.add(info);
+            tabs.addTab(info);
+        }
+
+        /**
+         * Programmatically selects the tab at the given zero-based index.
+         */
+        public void selectTab(int index) {
+            if (index >= 0 && index < tabInfos.size()) {
+                tabs.select(tabInfos.get(index), false);
+            }
+        }
+
+        /**
+         * Registers a tab-selection listener. {@code onTabSelected} receives the zero-based
+         * index of the newly selected tab whenever the selection changes.
+         */
+        public void addSelectionListener(@NotNull java.util.function.IntConsumer onTabSelected,
+                                         @NotNull com.intellij.openapi.Disposable disposable) {
+            tabs.addListener(new com.intellij.ui.tabs.TabsListener() {
+                @Override
+                public void selectionChanged(com.intellij.ui.tabs.TabInfo oldSel,
+                                             com.intellij.ui.tabs.TabInfo newSel) {
+                    if (newSel != null) {
+                        int idx = tabInfos.indexOf(newSel);
+                        if (idx >= 0) onTabSelected.accept(idx);
+                    }
+                }
+            }, disposable);
+        }
+    }
+
+    /**
+     * Creates a {@link JBTabsPanel} backed by {@code JBTabsFactory.createTabs()}.
+     *
+     * <p><b>Why extracted:</b> see {@link JBTabsPanel}.</p>
+     */
+    public static @NotNull JBTabsPanel createJBTabsPanel(@NotNull Project project,
+                                                         @NotNull com.intellij.openapi.Disposable parentDisposable) {
+        com.intellij.ui.tabs.JBTabs tabs = com.intellij.ui.tabs.JBTabsFactory.createTabs(project, parentDisposable);
+        return new JBTabsPanel(tabs);
+    }
 }
