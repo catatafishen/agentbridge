@@ -93,6 +93,22 @@ public final class PsiBridgeService implements Disposable {
     private final WriteBatchCoordinator writeBatchCoordinator = new WriteBatchCoordinator(writeToolSemaphore);
 
     /**
+     * Returns the global write-tool semaphore.
+     *
+     * <p><b>Why exposed:</b> {@code AgentEditSession.awaitReviewCompletion} needs to
+     * temporarily release the semaphore while blocking for user review (up to 10 min).
+     * Without this, the blocking wait starves all other tool calls. The semaphore is
+     * released before the blocking {@code future.get()} and re-acquired afterward,
+     * so the tool execution still finishes under the lock.</p>
+     *
+     * <p><b>Contract:</b> only call {@code release()} on this semaphore from a thread
+     * that currently holds it (inside a tool's {@code execute()}).</p>
+     */
+    public java.util.concurrent.Semaphore getWriteToolSemaphore() {
+        return writeToolSemaphore;
+    }
+
+    /**
      * Cached chat tool window activation state, updated asynchronously via {@code invokeLater}.
      * Read from any thread; written only on the EDT. Using volatile for safe cross-thread reads.
      * The value may lag by one tool call — acceptable for focus-restoration heuristics.
