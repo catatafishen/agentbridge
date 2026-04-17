@@ -2,11 +2,14 @@ package com.github.catatafishen.agentbridge.ui.review;
 
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.psi.review.ReviewItem;
+import com.github.catatafishen.agentbridge.psi.review.ReviewSessionTopic;
 import com.intellij.icons.AllIcons;
+import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionManager;
 import com.intellij.openapi.actionSystem.ActionToolbar;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.actionSystem.DefaultActionGroup;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
@@ -35,7 +38,7 @@ import java.util.List;
  * Shows a table of files with status, and per-file accept/reject actions.
  * Toolbar provides bulk accept-all/reject-all and end-session actions.
  */
-public final class ReviewChangesPanel extends JPanel {
+public final class ReviewChangesPanel extends JPanel implements Disposable {
 
     private final Project project;
     private final ReviewTableModel tableModel;
@@ -61,7 +64,19 @@ public final class ReviewChangesPanel extends JPanel {
         add(toolbar.getComponent(), BorderLayout.NORTH);
         add(scrollPane, BorderLayout.CENTER);
 
+        // Own subscription so the panel refreshes whenever the session state changes.
+        // Disposed with the panel by the tool-window content.
+        project.getMessageBus().connect(this).subscribe(
+            ReviewSessionTopic.TOPIC,
+            () -> ApplicationManager.getApplication().invokeLater(this::refresh)
+        );
+
         refresh();
+    }
+
+    @Override
+    public void dispose() {
+        // Message-bus connection auto-disposes via the Disposer parent link above.
     }
 
     public void refresh() {

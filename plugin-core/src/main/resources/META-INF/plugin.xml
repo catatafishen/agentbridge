@@ -158,7 +158,7 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.psi.review.AgentEditHighlighter"/>
     <projectService
-      serviceImplementation="com.github.catatafishen.agentbridge.ui.review.ReviewTabManager"/>
+      serviceImplementation="com.github.catatafishen.agentbridge.ui.review.ReviewPanelController"/>
     <editorNotificationProvider
       implementation="com.github.catatafishen.agentbridge.psi.review.AgentEditNotificationProvider"/>
 

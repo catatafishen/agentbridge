@@ -51,6 +51,22 @@ class ChatToolWindowContent(
 
     private val cardLayout = CardLayout()
     private val mainPanel = JBPanel<JBPanel<*>>(cardLayout)
+
+    // Splitter wrapping the card layout: review panel on LEFT, chat on RIGHT.
+    // Collapsed by default (proportion 0.0f). The user can drag, double-click, or use
+    // the title-bar toggle to expand.
+    private val reviewPanel = com.github.catatafishen.agentbridge.ui.review
+        .ReviewChangesPanel(project)
+    private val rootSplitter = com.intellij.ui.OnePixelSplitter(
+        /* vertical = */ false, /* proportion = */ 0.0f
+    ).also {
+        it.firstComponent = reviewPanel
+        it.secondComponent = mainPanel
+        it.setHonorComponentsMinimumSize(false)
+    }
+
+    /** Proportion used when expanding the review panel after it was collapsed. */
+    private val defaultReviewProportion = 0.3f
     private val agentManager = ActiveAgentManager.getInstance(project)
     private lateinit var connectPanel: AcpConnectPanel
     private var chatPanel: JComponent? = null
@@ -114,10 +130,30 @@ class ChatToolWindowContent(
 
     init {
         instances[project] = this
+        // Dispose the review panel (which owns a message-bus subscription) when the
+        // tool window content is disposed.
+        com.intellij.openapi.util.Disposer.register(toolWindow.disposable, reviewPanel)
+        registerReviewPanelHandlers()
         setupUI()
         subscribeToFocusRestoreEvents()
         // Initialise the session store's agent name from the currently active profile.
         conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
+    }
+
+    /**
+     * Registers expand/toggle callbacks with {@link ReviewPanelController} so non-UI code
+     * (e.g. AgentEditSession gating notifications) can drive the splitter without reaching
+     * into this class directly.
+     */
+    private fun registerReviewPanelHandlers() {
+        val expand = Runnable {
+            if (rootSplitter.proportion < 0.01f) {
+                rootSplitter.proportion = defaultReviewProportion
+            }
+        }
+        com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
+            .getInstance(project)
+            .registerExpandHandler(expand)
     }
 
     /**
@@ -191,6 +227,7 @@ class ChatToolWindowContent(
             AutoScrollToggleAction(),
             FollowAgentFilesToggleAction(),
             DiffReviewToggleAction(),
+            ReviewPanelToggleAction(),
             Separator.create(),
             ProjectFilesDropdownAction(),
             Separator.create(),
@@ -1299,6 +1336,21 @@ class ChatToolWindowContent(
         }
     }
 
+    private inner class ReviewPanelToggleAction : ToggleAction(
+        "Review Panel",
+        "Show or hide the inline Review Changes panel (shown on the left of the chat)",
+        AllIcons.Actions.PreviewDetails
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun isSelected(e: AnActionEvent): Boolean =
+            rootSplitter.proportion >= 0.01f
+
+        override fun setSelected(e: AnActionEvent, state: Boolean) {
+            rootSplitter.proportion = if (state) defaultReviewProportion else 0.0f
+        }
+    }
+
     @Volatile
     private var autoScrollEnabled = true
 
@@ -2093,7 +2145,7 @@ class ChatToolWindowContent(
         else chatConsolePanel.hideLoadMore()
     }
 
-    fun getComponent(): JComponent = mainPanel
+    fun getComponent(): JComponent = rootSplitter
 
     private fun resetSessionState() {
         promptOrchestrator.currentSessionId = null

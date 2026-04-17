@@ -40,10 +40,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Tracks file state before agent edits during a review session.
@@ -120,15 +117,11 @@ public final class AgentEditSession implements Disposable {
     private Disposable sessionDisposable;
 
     /**
-     * Timeout for git gating: how long a git tool blocks waiting for review completion.
+     * Tracks whether the user has been notified about the currently-pending review state.
+     * Reset when review items are resolved. Prevents notification spam on agent retries
+     * of gated git operations.
      */
-    private static final int REVIEW_TIMEOUT_MINUTES = 5;
-
-    /**
-     * Future completed when all review items are resolved or the session ends.
-     * Git tools that change the worktree await this future before proceeding.
-     */
-    private volatile CompletableFuture<Void> pendingReviewFuture;
+    private volatile boolean reviewNotificationFired;
 
     public AgentEditSession(@NotNull Project project) {
         this.project = project;
@@ -478,41 +471,56 @@ public final class AgentEditSession implements Disposable {
     }
 
     /**
-     * Blocks the calling thread until all review items are resolved or the session ends.
-     * Used by git tools to gate worktree-changing operations.
+     * Non-blocking check: returns an error string if the user has unreviewed agent edits
+     * that must be resolved before the given git operation proceeds; returns null if
+     * the operation may proceed immediately.
+     * <p>
+     * The caller (a git tool) should propagate the error verbatim to the agent so the
+     * agent can either prompt the user or retry later. Blocking here would be wrong —
+     * MCP client-side timeouts (typically &lt; 60s) would fire before the user resolves
+     * the review, leaving the agent with a useless "request timed out" error.
+     * <p>
+     * A balloon + system + web-push notification is sent the first time a review is
+     * required for the current pending batch. Subsequent calls (e.g. agent retries)
+     * do not spam notifications.
      *
-     * @param operation description of the git operation (for logging/notification)
-     * @return null if review completed successfully, or an error message if timed out
+     * @param operation description of the git operation (for notification body + error)
+     * @return null if no review pending; otherwise an actionable error message
      */
-    public @Nullable String awaitReviewCompletion(@NotNull String operation) {
-        if (!active || !hasChanges()) return null;
-
-        CompletableFuture<Void> future;
-        synchronized (this) {
-            if (!active || !hasChanges()) return null;
-            if (pendingReviewFuture == null) {
-                pendingReviewFuture = new CompletableFuture<>();
-            }
-            future = pendingReviewFuture;
-        }
-
-        LOG.info("Git operation '" + operation + "' waiting for review completion");
-        notifyReviewRequired(operation);
-
-        try {
-            future.get(REVIEW_TIMEOUT_MINUTES, TimeUnit.MINUTES);
+    public @Nullable String checkReviewPending(@NotNull String operation) {
+        if (!active || !hasChanges()) {
+            reviewNotificationFired = false;
             return null;
-        } catch (TimeoutException e) {
-            return "Error: Review not completed within " + REVIEW_TIMEOUT_MINUTES
-                + " minutes. Please complete the review in the Review panel, then retry '"
-                + operation + "'.";
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "Error: Review wait interrupted. Please complete the review, then retry '"
-                + operation + "'.";
-        } catch (Exception e) {
-            return "Error: Review wait failed: " + e.getMessage();
         }
+
+        List<ReviewItem> items = getReviewItems();
+        int fileCount = items.size();
+
+        if (!reviewNotificationFired) {
+            reviewNotificationFired = true;
+            notifyReviewRequired(operation);
+        } else {
+            // Still expand the review panel so the user sees what's blocked.
+            ApplicationManager.getApplication().invokeLater(() -> {
+                if (project.isDisposed()) return;
+                com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
+                    .getInstance(project).expandReviewPanel();
+            });
+        }
+
+        return formatReviewPendingError(operation, fileCount);
+    }
+
+    /**
+     * Package-private pure formatter — extracted so unit tests can verify the wording
+     * without needing a {@link Project} or the message bus.
+     */
+    static @NotNull String formatReviewPendingError(@NotNull String operation, int fileCount) {
+        return "Error: Review pending — " + fileCount
+            + (fileCount == 1 ? " agent-edited file" : " agent-edited files")
+            + " waiting for you to accept/reject before '" + operation
+            + "' can run. Open the Review panel (left of chat) to resolve, or end the"
+            + " review session from its toolbar. Retry once the review is empty.";
     }
 
     /**
@@ -551,13 +559,7 @@ public final class AgentEditSession implements Disposable {
         snapshots.clear();
         deletedFiles.clear();
         newFiles.clear();
-
-        // Complete any pending review future so blocked git tools can proceed
-        CompletableFuture<Void> future = pendingReviewFuture;
-        if (future != null) {
-            future.complete(null);
-            pendingReviewFuture = null;
-        }
+        reviewNotificationFired = false;
 
         com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
         fireReviewStateChanged();
@@ -664,17 +666,12 @@ public final class AgentEditSession implements Disposable {
     }
 
     /**
-     * Completes the pending review future if no items remain.
+     * Resets the notification flag when the review batch is fully resolved so a future
+     * agent edit cycle will re-notify when gating fires again.
      */
     private void completeReviewIfEmpty() {
         if (hasChanges()) return;
-        synchronized (this) {
-            CompletableFuture<Void> future = pendingReviewFuture;
-            if (future != null) {
-                future.complete(null);
-                pendingReviewFuture = null;
-            }
-        }
+        reviewNotificationFired = false;
     }
 
     /**
@@ -690,9 +687,9 @@ public final class AgentEditSession implements Disposable {
                 "AgentBridge", MessageType.WARNING,
                 "<b>" + title + "</b><br>" + body
             );
-            // Select the Review tab and activate the tool window
-            com.github.catatafishen.agentbridge.ui.review.ReviewTabManager
-                .getInstance(project).selectReviewTab();
+            // Expand the inline Review panel and activate the tool window
+            com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
+                .getInstance(project).expandReviewPanel();
         });
 
         SystemNotifications.getInstance().notify("AgentBridge Notifications", title, body);

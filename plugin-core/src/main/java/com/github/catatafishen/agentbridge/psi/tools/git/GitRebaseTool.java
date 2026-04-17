@@ -83,7 +83,7 @@ public final class GitRebaseTool extends GitTool {
         if (fetchNote.isEmpty()) fetchNote = autoFetchForRemoteRef(ontoArg);
 
         String reviewError = AgentEditSession.getInstance(project)
-            .awaitReviewCompletion("git rebase");
+            .checkReviewPending("git rebase");
         if (reviewError != null) return reviewError;
 
         String result = runGit(buildRebaseArgs(args).toArray(String[]::new));

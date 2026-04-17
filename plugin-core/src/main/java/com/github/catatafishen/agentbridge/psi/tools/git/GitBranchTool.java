@@ -75,7 +75,7 @@ public final class GitBranchTool extends GitTool {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'create'";
                 String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("branch create '" + name + "'");
+                    .checkReviewPending("branch create '" + name + "'");
                 if (reviewError != null) yield reviewError;
                 String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
                     ? args.get(PARAM_BASE).getAsString()
@@ -89,7 +89,7 @@ public final class GitBranchTool extends GitTool {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'switch'";
                 String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("branch switch '" + name + "'");
+                    .checkReviewPending("branch switch '" + name + "'");
                 if (reviewError != null) yield reviewError;
                 String result = ideSwitch(name);
                 if (result.startsWith("Error")) yield result;

@@ -84,7 +84,7 @@ public final class GitMergeTool extends GitTool {
         String fetchNote = autoFetchForRemoteRef(branchArg);
 
         String reviewError = AgentEditSession.getInstance(project)
-            .awaitReviewCompletion("git merge '" + branchArg + "'");
+            .checkReviewPending("git merge '" + branchArg + "'");
         if (reviewError != null) return reviewError;
 
         List<String> cmdArgs = new ArrayList<>();

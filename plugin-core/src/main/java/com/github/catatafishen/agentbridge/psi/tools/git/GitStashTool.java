@@ -86,7 +86,7 @@ public final class GitStashTool extends GitTool {
             }
             case "pop" -> {
                 String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("stash pop");
+                    .checkReviewPending("stash pop");
                 if (reviewError != null) yield reviewError;
                 String index = stashRef(args);
                 String result = index != null
@@ -97,7 +97,7 @@ public final class GitStashTool extends GitTool {
             }
             case ACTION_APPLY -> {
                 String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("stash apply");
+                    .checkReviewPending("stash apply");
                 if (reviewError != null) yield reviewError;
                 String index = stashRef(args);
                 String result = index != null
