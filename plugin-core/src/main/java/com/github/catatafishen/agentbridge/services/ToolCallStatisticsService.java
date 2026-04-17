@@ -79,8 +79,8 @@ public final class ToolCallStatisticsService implements Disposable {
         }
         String basePath = project.getBasePath();
         if (basePath == null) {
-            LOG.warn("ToolCallStatisticsService: project has no base path, skipping initialization");
-            return;
+            throw new IllegalStateException(
+                "Cannot initialize ToolCallStatisticsService: project has no base path");
         }
         try {
             Path dbDir = Path.of(basePath, ".agentbridge");

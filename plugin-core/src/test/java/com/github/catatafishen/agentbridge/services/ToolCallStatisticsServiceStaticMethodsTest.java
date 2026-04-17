@@ -10,6 +10,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -118,13 +119,13 @@ class ToolCallStatisticsServiceStaticMethodsTest {
     }
 
     @Test
-    void initialize_nullBasePath_doesNotThrowAndLeavesQueriesEmpty() {
+    void initialize_nullBasePath_throwsIllegalStateException() {
         Project project = Mockito.mock(Project.class);
         Mockito.when(project.getBasePath()).thenReturn(null);
 
         ToolCallStatisticsService service = new ToolCallStatisticsService(project);
 
-        assertDoesNotThrow(service::initialize);
+        assertThrows(IllegalStateException.class, service::initialize);
         assertTrue(service.queryAggregates(null, null).isEmpty());
         assertTrue(service.getDistinctClients().isEmpty());
         assertTrue(service.querySummary(null, null).isEmpty());
