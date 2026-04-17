@@ -30,7 +30,7 @@ import java.util.List;
  * <p>
  * Mirrors the former title-bar "Project Files" dropdown. Sections:
  * <ul>
- *   <li>Shared — {@code TODO.md}, {@code AGENTS.md} (created on first click if missing)</li>
+ *   <li>Shared — {@code AGENTS.md} and the agent task-list file, created on first click if missing</li>
  *   <li>Copilot CLI — {@code .agent-work/copilot/{agents,skills,instructions}}</li>
  *   <li>OpenCode — {@code .agent-work/opencode/agent/*.md}</li>
  *   <li>Junie — {@code .agent-work/junie/{guidelines.md, agents/*.md}}</li>

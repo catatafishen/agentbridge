@@ -377,7 +377,7 @@ class AcpConnectPanel(
     private fun refreshSessionCombo() {
         sessionCombo.removeAllItems()
         val sessionStore = SessionStoreV2.getInstance(project)
-        val sessions = sessionStore.listSessions(project.basePath)
+        val sessions = sessionStore.listSessions(project.basePath).toList()
 
         if (sessions.isNotEmpty()) {
             sessionCombo.addItem(SessionChoice.Latest(sessions.first()))
@@ -425,8 +425,8 @@ class AcpConnectPanel(
 
         connection.subscribe(
             PsiBridgeService.TOOL_CALL_TOPIC,
-            PsiBridgeService.ToolCallListener { toolName, durationMs, success, _, _, _, _, _ ->
-                ApplicationManager.getApplication().invokeLater { addToolCallEntry(toolName, durationMs, success) }
+            PsiBridgeService.ToolCallListener { event ->
+                ApplicationManager.getApplication().invokeLater { addToolCallEntry(event.toolName(), event.durationMs(), event.success()) }
             })
     }
 
@@ -668,26 +668,24 @@ class AcpConnectPanel(
             connectButton.isEnabled = true
             connectButton.text = "Connect"
             val profile = agentManager.activeProfile
-            if (authService.isAuthenticationError(message) && profile.isSupportsOAuthSignIn) {
-                // Show auth-specific error with Sign In action
-                statusBanner.showAuthError(
-                    "Not signed in to ${profile.displayName} — click Sign In below.",
-                    onSignIn = { startInlineAuth() },
-                    onRetry = { doConnect() }
-                )
-            } else if (authService.isAuthenticationError(message) && profile.terminalSignInCommand != null) {
-                // Agent with terminal-based sign-in (e.g. codex login --device-auth)
-                val signInCmd = profile.terminalSignInCommand!!
-                statusBanner.showAuthError(
-                    "Not signed in — click Sign In to run '$signInCmd' in a terminal.",
-                    onSignIn = { authService.startTerminalSignIn(signInCmd) },
-                    onRetry = { doConnect() }
-                )
-            } else if (authService.isAuthenticationError(message)) {
-                // Non-OAuth agent — show retry hint
-                statusBanner.showError("$message — check your credentials and click Connect to retry.")
-            } else {
-                statusBanner.showError(message)
+            when {
+                authService.isAuthenticationError(message) && profile.isSupportsOAuthSignIn ->
+                    statusBanner.showAuthError(
+                        "Not signed in to ${profile.displayName} — click Sign In below.",
+                        onSignIn = { startInlineAuth() },
+                        onRetry = { doConnect() }
+                    )
+                authService.isAuthenticationError(message) && profile.terminalSignInCommand != null -> {
+                    val signInCmd = profile.terminalSignInCommand!!
+                    statusBanner.showAuthError(
+                        "Not signed in — click Sign In to run '$signInCmd' in a terminal.",
+                        onSignIn = { authService.startTerminalSignIn(signInCmd) },
+                        onRetry = { doConnect() }
+                    )
+                }
+                authService.isAuthenticationError(message) ->
+                    statusBanner.showError("$message — check your credentials and click Connect to retry.")
+                else -> statusBanner.showError(message)
             }
         }
     }

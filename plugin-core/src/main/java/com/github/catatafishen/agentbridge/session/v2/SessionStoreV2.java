@@ -67,6 +67,14 @@ public final class SessionStoreV2 implements Disposable {
     private static final String KEY_DIRECTORY = "directory";
     private static final String KEY_NAME = "name";
 
+    // Duplicate-literal constants (S1192)
+    private static final String KEY_DENIAL_REASON = "denialReason";
+    private static final String KEY_MODEL = "model";
+    private static final String KEY_FILENAME = "filename";
+    private static final String KEY_STATUS = "status";
+    private static final String KEY_DESCRIPTION = "description";
+    private static final String KEY_RESULT = "result";
+
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
     private final ConversationStore v1Store = new ConversationStore();
@@ -135,17 +143,26 @@ public final class SessionStoreV2 implements Disposable {
         List<JsonObject> records = readIndexRecords(indexFile);
         List<SessionRecord> result = new ArrayList<>();
         for (JsonObject rec : records) {
-            String id = rec.has(KEY_ID) ? rec.get(KEY_ID).getAsString() : null;
-            if (id == null || id.isEmpty()) continue;
-            String agent = rec.has(KEY_AGENT) ? rec.get(KEY_AGENT).getAsString() : "Unknown";
-            String name = rec.has(KEY_NAME) ? rec.get(KEY_NAME).getAsString() : "";
-            long createdAt = rec.has(KEY_CREATED_AT) ? rec.get(KEY_CREATED_AT).getAsLong() : 0;
-            long updatedAt = rec.has(KEY_UPDATED_AT) ? rec.get(KEY_UPDATED_AT).getAsLong() : 0;
-            int turnCount = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
-            result.add(new SessionRecord(id, agent, name, createdAt, updatedAt, turnCount));
+            SessionRecord sr = parseSessionRecord(rec);
+            if (sr != null) result.add(sr);
         }
         result.sort(Comparator.comparingLong(SessionRecord::updatedAt).reversed());
         return result;
+    }
+
+    /**
+     * Parses one index record into a {@link SessionRecord}; returns {@code null} if the id is missing.
+     */
+    @Nullable
+    private static SessionRecord parseSessionRecord(@NotNull JsonObject rec) {
+        String id = rec.has(KEY_ID) ? rec.get(KEY_ID).getAsString() : null;
+        if (id == null || id.isEmpty()) return null;
+        String agent = rec.has(KEY_AGENT) ? rec.get(KEY_AGENT).getAsString() : "Unknown";
+        String name = rec.has(KEY_NAME) ? rec.get(KEY_NAME).getAsString() : "";
+        long createdAt = rec.has(KEY_CREATED_AT) ? rec.get(KEY_CREATED_AT).getAsLong() : 0;
+        long updatedAt = rec.has(KEY_UPDATED_AT) ? rec.get(KEY_UPDATED_AT).getAsLong() : 0;
+        int turnCount = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
+        return new SessionRecord(id, agent, name, createdAt, updatedAt, turnCount);
     }
     // ── Main operations ───────────────────────────────────────────────────────
 
@@ -179,15 +196,6 @@ public final class SessionStoreV2 implements Disposable {
         }
     }
 
-    /**
-     * Creates a read-only snapshot ("branch") of the current session and registers it
-     * in the sessions index with a {@code "(branch)"} label. It appears in the session history
-     * picker so the user can reload it.
-     * <p>
-     * Copies all part files and the active JSONL to the branch ID.
-     *
-     * @param basePath project base path (may be null)
-     */
     public void branchCurrentSession(@Nullable String basePath) {
         File sessionsDir = sessionsDir(basePath);
         File idFile = currentSessionIdFile(basePath);
@@ -212,62 +220,79 @@ public final class SessionStoreV2 implements Disposable {
         }
 
         String branchId = UUID.randomUUID().toString();
-
         try {
-            Files.createDirectories(sessionsDir.toPath());
-
-            // Copy all part files with the new branch ID prefix
-            List<File> partFiles = SessionFileRotation.listPartFiles(sessionsDir, sessionId);
-            for (int i = 0; i < partFiles.size(); i++) {
-                String partName = String.format("%s.part-%03d.jsonl", branchId, i + 1);
-                Files.copy(partFiles.get(i).toPath(), sessionsDir.toPath().resolve(partName));
-            }
-
-            // Copy the active (tail) file
-            File sourceFile = new File(sessionsDir, sessionId + JSONL_EXT);
-            File branchFile = new File(sessionsDir, branchId + JSONL_EXT);
-            if (sourceFile.exists()) {
-                Files.copy(sourceFile.toPath(), branchFile.toPath());
-            }
-
-            File indexFile = new File(sessionsDir, SESSIONS_INDEX);
-            List<JsonObject> records = readIndexRecords(indexFile);
-
-            int turnCount = 0;
-            for (JsonObject rec : records) {
-                if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
-                    if (rec.has(KEY_TURN_COUNT)) turnCount = rec.get(KEY_TURN_COUNT).getAsInt();
-                    break;
-                }
-            }
-
-            long now = System.currentTimeMillis();
-            String timestamp = java.time.Instant.ofEpochMilli(now)
-                .atZone(java.time.ZoneId.systemDefault())
-                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-
-            JsonObject branchRec = new JsonObject();
-            branchRec.addProperty(KEY_ID, branchId);
-            branchRec.addProperty(KEY_AGENT, currentAgent + " (branch " + timestamp + ")");
-            branchRec.addProperty(KEY_DIRECTORY, basePath != null ? basePath : "");
-            branchRec.addProperty(KEY_CREATED_AT, now);
-            branchRec.addProperty(KEY_UPDATED_AT, now);
-            branchRec.addProperty(KEY_JSONL_PATH, branchFile.getName());
-            branchRec.addProperty(KEY_TURN_COUNT, turnCount);
-            branchRec.addProperty("branchedFrom", sessionId);
-            records.add(branchRec);
-
-            JsonArray arr = new JsonArray();
-            records.forEach(arr::add);
-            Files.writeString(indexFile.toPath(), GSON.toJson(arr), StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-
-            int totalFiles = partFiles.size() + (sourceFile.exists() ? 1 : 0);
-            LOG.info("Branched session " + sessionId + " → " + branchId
-                + " at " + timestamp + " (" + totalFiles + " file(s))");
+            performBranchCopy(sessionsDir, sessionId, branchId, basePath);
         } catch (IOException e) {
             LOG.warn("Failed to branch session " + sessionId, e);
         }
+    }
+
+    /**
+     * Carries out the physical file copies and index update for a branch operation.
+     * Separated from {@link #branchCurrentSession} to reduce cognitive complexity.
+     */
+    private void performBranchCopy(
+        @NotNull File sessionsDir,
+        @NotNull String sessionId,
+        @NotNull String branchId,
+        @Nullable String basePath) throws IOException {
+
+        Files.createDirectories(sessionsDir.toPath());
+
+        // Copy all part files with the new branch ID prefix
+        List<File> partFiles = SessionFileRotation.listPartFiles(sessionsDir, sessionId);
+        for (int i = 0; i < partFiles.size(); i++) {
+            String partName = String.format("%s.part-%03d.jsonl", branchId, i + 1);
+            Files.copy(partFiles.get(i).toPath(), sessionsDir.toPath().resolve(partName));
+        }
+
+        // Copy the active (tail) file
+        File sourceFile = new File(sessionsDir, sessionId + JSONL_EXT);
+        File branchFile = new File(sessionsDir, branchId + JSONL_EXT);
+        if (sourceFile.exists()) {
+            Files.copy(sourceFile.toPath(), branchFile.toPath());
+        }
+
+        File indexFile = new File(sessionsDir, SESSIONS_INDEX);
+        List<JsonObject> records = readIndexRecords(indexFile);
+        int turnCount = findTurnCountInIndex(records, sessionId);
+
+        long now = System.currentTimeMillis();
+        String timestamp = java.time.Instant.ofEpochMilli(now)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+
+        JsonObject branchRec = new JsonObject();
+        branchRec.addProperty(KEY_ID, branchId);
+        branchRec.addProperty(KEY_AGENT, currentAgent + " (branch " + timestamp + ")");
+        branchRec.addProperty(KEY_DIRECTORY, basePath != null ? basePath : "");
+        branchRec.addProperty(KEY_CREATED_AT, now);
+        branchRec.addProperty(KEY_UPDATED_AT, now);
+        branchRec.addProperty(KEY_JSONL_PATH, branchFile.getName());
+        branchRec.addProperty(KEY_TURN_COUNT, turnCount);
+        branchRec.addProperty("branchedFrom", sessionId);
+        records.add(branchRec);
+
+        JsonArray arr = new JsonArray();
+        records.forEach(arr::add);
+        Files.writeString(indexFile.toPath(), GSON.toJson(arr), StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+
+        int totalFiles = partFiles.size() + (sourceFile.exists() ? 1 : 0);
+        LOG.info("Branched session " + sessionId + " → " + branchId
+            + " at " + timestamp + " (" + totalFiles + " file(s))");
+    }
+
+    /**
+     * Looks up the stored {@code turnCount} for a session in an already-loaded index records list.
+     */
+    private static int findTurnCountInIndex(@NotNull List<JsonObject> records, @NotNull String sessionId) {
+        for (JsonObject rec : records) {
+            if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
+                return rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
+            }
+        }
+        return 0;
     }
 
     private static final int MAX_SESSION_NAME_LENGTH = 60;
@@ -430,10 +455,6 @@ public final class SessionStoreV2 implements Disposable {
         }
     }
 
-    /**
-     * Reads and parses entries from one or more JSONL files, merging results in order.
-     * Uses buffered line-by-line reading to avoid loading entire files into memory.
-     */
     @Nullable
     private List<EntryData> loadEntriesFromFiles(@NotNull List<Path> files) {
         List<EntryData> allDirectEntries = new ArrayList<>();
@@ -446,18 +467,7 @@ public final class SessionStoreV2 implements Disposable {
                 while ((line = reader.readLine()) != null) {
                     line = line.trim();
                     if (line.isEmpty()) continue;
-                    try {
-                        JsonObject obj = GSON.fromJson(line, JsonObject.class);
-                        if (EntryDataJsonAdapter.isEntryFormat(line)) {
-                            EntryData entry = EntryDataJsonAdapter.deserialize(obj);
-                            if (entry != null) allDirectEntries.add(entry);
-                        } else {
-                            if (obj != null) allLegacyMessages.add(obj);
-                        }
-                    } catch (Exception e) {
-                        skippedLines++;
-                        LOG.warn("Skipping malformed JSONL line: " + line + " (" + e.getMessage() + ")");
-                    }
+                    if (!parseOneJsonlLine(line, allDirectEntries, allLegacyMessages)) skippedLines++;
                 }
             } catch (IOException e) {
                 LOG.warn("Failed to read session file: " + file, e);
@@ -473,6 +483,31 @@ public final class SessionStoreV2 implements Disposable {
         if (!allDirectEntries.isEmpty()) return allDirectEntries;
         if (!allLegacyMessages.isEmpty()) return convertLegacyMessages(allLegacyMessages);
         return null;
+    }
+
+    /**
+     * Parses a single trimmed, non-empty JSONL line into the appropriate collection.
+     * Extracted from {@link #loadEntriesFromFiles} to fix S1141 (nested try).
+     *
+     * @return {@code true} if parsed successfully, {@code false} if the line was malformed
+     */
+    private static boolean parseOneJsonlLine(
+        @NotNull String line,
+        @NotNull List<EntryData> directEntries,
+        @NotNull List<JsonObject> legacyMessages) {
+        try {
+            JsonObject obj = GSON.fromJson(line, JsonObject.class);
+            if (EntryDataJsonAdapter.isEntryFormat(line)) {
+                EntryData entry = EntryDataJsonAdapter.deserialize(obj);
+                if (entry != null) directEntries.add(entry);
+            } else {
+                if (obj != null) legacyMessages.add(obj);
+            }
+            return true;
+        } catch (Exception e) {
+            LOG.warn("Skipping malformed JSONL line: " + line + " (" + e.getMessage() + ")");
+            return false;
+        }
     }
 
     /**
@@ -503,11 +538,6 @@ public final class SessionStoreV2 implements Disposable {
 
     // ── v2 write ──────────────────────────────────────────────────────────────
 
-    /**
-     * Updates the sessions index when appending entries. Increments {@code turnCount} by
-     * {@code additionalTurns} and sets the session name from the first prompt if not yet stored.
-     * Creates a new index entry if one doesn't exist for this session.
-     */
     private void appendSessionsIndex(
         @Nullable String basePath,
         @NotNull String sessionId,
@@ -526,21 +556,7 @@ public final class SessionStoreV2 implements Disposable {
         boolean found = false;
         for (JsonObject rec : records) {
             if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
-                rec.addProperty(KEY_UPDATED_AT, now);
-                // Never overwrite agent — keep the original agent from session creation.
-                // Overwriting here causes the statistics chart to attribute all turns in
-                // this session to the last-used agent instead of the original one.
-                if (!rec.has(KEY_AGENT)) {
-                    rec.addProperty(KEY_AGENT, agentName);
-                }
-                if (additionalTurns > 0) {
-                    int current = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
-                    rec.addProperty(KEY_TURN_COUNT, current + additionalTurns);
-                }
-                // Only set session name from the first prompt; never overwrite an existing name.
-                if (!firstPromptText.isEmpty() && !rec.has(KEY_NAME)) {
-                    rec.addProperty(KEY_NAME, firstPromptText);
-                }
+                updateExistingIndexEntry(rec, now, agentName, additionalTurns, firstPromptText);
                 found = true;
                 break;
             }
@@ -564,13 +580,33 @@ public final class SessionStoreV2 implements Disposable {
             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 
+    /**
+     * Applies an incremental update to an existing index record. Extracted from
+     * {@link #appendSessionsIndex} to reduce cognitive complexity (S3776).
+     */
+    private static void updateExistingIndexEntry(
+        @NotNull JsonObject rec,
+        long now,
+        @NotNull String agentName,
+        int additionalTurns,
+        @NotNull String firstPromptText) {
+        rec.addProperty(KEY_UPDATED_AT, now);
+        // Never overwrite agent — keep the original agent from session creation.
+        if (!rec.has(KEY_AGENT)) {
+            rec.addProperty(KEY_AGENT, agentName);
+        }
+        if (additionalTurns > 0) {
+            int current = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
+            rec.addProperty(KEY_TURN_COUNT, current + additionalTurns);
+        }
+        // Only set session name from the first prompt; never overwrite an existing name.
+        if (!firstPromptText.isEmpty() && !rec.has(KEY_NAME)) {
+            rec.addProperty(KEY_NAME, firstPromptText);
+        }
+    }
+
     // ── v2 read ───────────────────────────────────────────────────────────────
 
-    /**
-     * Parses a JSONL string with auto-detection: lines with {@code "type":} are the new
-     * EntryData format (deserialized directly), lines with {@code "role":} are the old
-     * legacy message format (batch-converted via {@link #convertLegacyMessages}).
-     */
     @Nullable
     static List<EntryData> parseJsonlAutoDetect(@NotNull String content) {
         List<EntryData> directEntries = new ArrayList<>();
@@ -580,20 +616,7 @@ public final class SessionStoreV2 implements Disposable {
         for (String line : content.split("\n")) {
             line = line.trim();
             if (line.isEmpty()) continue;
-            try {
-                JsonObject obj = GSON.fromJson(line, JsonObject.class);
-                if (EntryDataJsonAdapter.isEntryFormat(line)) {
-                    EntryData entry = EntryDataJsonAdapter.deserialize(obj);
-                    if (entry != null) directEntries.add(entry);
-                } else {
-                    if (obj != null) legacyMessages.add(obj);
-                }
-            } catch (Exception e) {
-                skippedLines++;
-                // Include exception message as string (not throwable) so IntelliJ's
-                // TestLoggerInterceptor does not treat WARN+throwable as a test failure.
-                LOG.warn("Skipping malformed JSONL line: " + line + " (" + e.getMessage() + ")");
-            }
+            if (!parseOneJsonlLine(line, directEntries, legacyMessages)) skippedLines++;
         }
 
         if (skippedLines > 0) {
@@ -607,141 +630,161 @@ public final class SessionStoreV2 implements Disposable {
         return null;
     }
 
-    /**
-     * Converts a list of legacy JSONL message objects (with {@code role}, {@code parts},
-     * {@code createdAt}, {@code agent}, {@code model} fields) into the current
-     * {@link EntryData} model.
-     */
     @NotNull
     static List<EntryData> convertLegacyMessages(@NotNull List<JsonObject> messages) {
         List<EntryData> result = new ArrayList<>();
-
         for (JsonObject msg : messages) {
-            String role = msg.has("role") ? msg.get("role").getAsString() : "";
-            long createdAt = msg.has("createdAt") ? msg.get("createdAt").getAsLong() : 0;
-            String agent = msg.has("agent") && !msg.get("agent").isJsonNull() ? msg.get("agent").getAsString() : null;
-            String model = msg.has("model") && !msg.get("model").isJsonNull() ? msg.get("model").getAsString() : null;
+            convertLegacyMessage(msg, result);
+        }
+        return result;
+    }
 
-            String ts = createdAt > 0
-                ? java.time.Instant.ofEpochMilli(createdAt).toString()
-                : "";
+    /**
+     * Parsed header fields from a legacy JSONL message object.
+     * Groups the four fields that are threaded through all part-processing helpers
+     * to keep parameter counts below the S107 threshold of 7.
+     */
+    private record LegacyMsgHeader(
+        @NotNull String role,
+        @NotNull String agent,
+        @NotNull String model,
+        @NotNull String ts) {
+    }
 
-            if (EntryDataJsonAdapter.TYPE_SEPARATOR.equals(role)) {
-                result.add(new EntryData.SessionSeparator(
-                    ts,
-                    agent != null ? agent : ""));
-                continue;
-            }
+    /**
+     * Extracts the {@link LegacyMsgHeader} from a raw legacy message object.
+     */
+    private static LegacyMsgHeader parseLegacyMessageHeader(@NotNull JsonObject msg) {
+        String role = msg.has("role") ? msg.get("role").getAsString() : "";
+        long createdAt = msg.has(KEY_CREATED_AT) ? msg.get(KEY_CREATED_AT).getAsLong() : 0;
+        String agent = msg.has(KEY_AGENT) && !msg.get(KEY_AGENT).isJsonNull()
+            ? msg.get(KEY_AGENT).getAsString() : "";
+        String model = msg.has(KEY_MODEL) && !msg.get(KEY_MODEL).isJsonNull()
+            ? msg.get(KEY_MODEL).getAsString() : "";
+        String ts = createdAt > 0 ? java.time.Instant.ofEpochMilli(createdAt).toString() : "";
+        return new LegacyMsgHeader(role, agent, model, ts);
+    }
 
-            JsonArray partsArray = msg.has("parts") ? msg.getAsJsonArray("parts") : new JsonArray();
-            List<JsonObject> parts = new ArrayList<>();
-            for (int i = 0; i < partsArray.size(); i++) {
-                parts.add(partsArray.get(i).getAsJsonObject());
-            }
-
-            java.util.Set<Integer> consumedFileIndices = new java.util.HashSet<>();
-
-            for (int idx = 0; idx < parts.size(); idx++) {
-                JsonObject part = parts.get(idx);
-                String type = part.has("type") ? part.get("type").getAsString() : "";
-
-                switch (type) {
-                    case EntryDataJsonAdapter.TYPE_TEXT -> {
-                        String text = part.has("text") ? part.get("text").getAsString() : "";
-                        String partTs = readLegacyTimestamp(part, ts);
-                        String partEid = readLegacyEntryId(part);
-                        if ("user".equals(role)) {
-                            List<ContextFileRef> ctxFiles = collectLegacyFileParts(parts, idx + 1, consumedFileIndices);
-                            result.add(new EntryData.Prompt(text, partTs,
-                                ctxFiles.isEmpty() ? null : ctxFiles, "",
-                                partEid));
-                        } else {
-                            result.add(new EntryData.Text(
-                                text,
-                                partTs,
-                                agent != null ? agent : "",
-                                model != null ? model : "",
-                                partEid));
-                        }
-                    }
-                    case "reasoning" -> {
-                        String text = part.has("text") ? part.get("text").getAsString() : "";
-                        String partTs = readLegacyTimestamp(part, ts);
-                        String partEid = readLegacyEntryId(part);
-                        result.add(new EntryData.Thinking(
-                            text,
-                            partTs,
-                            agent != null ? agent : "",
-                            model != null ? model : "",
-                            partEid));
-                    }
-                    case "tool-invocation" -> {
-                        JsonObject inv = part.has("toolInvocation") ? part.getAsJsonObject("toolInvocation") : new JsonObject();
-                        String toolName = inv.has("toolName") ? inv.get("toolName").getAsString() : "";
-                        String args = inv.has("args") && !inv.get("args").isJsonNull() ? inv.get("args").getAsString() : null;
-                        String toolResult = inv.has("result") && !inv.get("result").isJsonNull() ? inv.get("result").getAsString() : null;
-                        boolean autoDenied = inv.has("denialReason");
-                        String denialReason = autoDenied ? inv.get("denialReason").getAsString() : null;
-                        String kind = inv.has("kind") ? inv.get("kind").getAsString() : "other";
-                        String toolStatus = inv.has("status") ? inv.get("status").getAsString() : null;
-                        String toolDescription = inv.has("description") ? inv.get("description").getAsString() : null;
-                        String filePath = inv.has("filePath") ? inv.get("filePath").getAsString() : null;
-                        String pluginTool = inv.has("pluginTool") ? inv.get("pluginTool").getAsString() : null;
-                        if (pluginTool == null && inv.has("mcpHandled") && inv.get("mcpHandled").getAsBoolean()) {
-                            pluginTool = toolName; // best-effort from legacy
-                        }
-                        String partTs = readLegacyTimestamp(part, ts);
-                        String partEid = readLegacyEntryId(part);
-                        result.add(new EntryData.ToolCall(
-                            toolName, args, kind, toolResult, toolStatus, toolDescription, filePath,
-                            autoDenied, denialReason, pluginTool,
-                            partTs, agent != null ? agent : "",
-                            model != null ? model : "", partEid));
-                    }
-                    case EntryDataJsonAdapter.TYPE_SUBAGENT -> {
-                        String agentType = part.has("agentType") ? part.get("agentType").getAsString() : "general-purpose";
-                        String description = part.has("description") ? part.get("description").getAsString() : "";
-                        String prompt = part.has("prompt") ? part.get("prompt").getAsString() : null;
-                        String subResult = part.has("result") ? part.get("result").getAsString() : null;
-                        String status = part.has("status") ? part.get("status").getAsString() : "completed";
-                        int colorIndex = part.has("colorIndex") ? part.get("colorIndex").getAsInt() : 0;
-                        String callId = part.has("callId") ? part.get("callId").getAsString() : null;
-                        boolean autoDenied = part.has("autoDenied") && part.get("autoDenied").getAsBoolean();
-                        String denialReason = part.has("denialReason") ? part.get("denialReason").getAsString() : null;
-                        String partTs = readLegacyTimestamp(part, ts);
-                        String partEid = readLegacyEntryId(part);
-                        result.add(new EntryData.SubAgent(
-                            agentType, description,
-                            (prompt == null || prompt.isEmpty()) ? null : prompt,
-                            (subResult == null || subResult.isEmpty()) ? null : subResult,
-                            (status == null || status.isEmpty()) ? "completed" : status,
-                            colorIndex, callId, autoDenied, denialReason,
-                            partTs, agent != null ? agent : "",
-                            model != null ? model : "", partEid));
-                    }
-                    case EntryDataJsonAdapter.TYPE_STATUS -> {
-                        String icon = part.has("icon") ? part.get("icon").getAsString() : "ℹ";
-                        String message = part.has("message") ? part.get("message").getAsString() : "";
-                        String partEid = readLegacyEntryId(part);
-                        result.add(new EntryData.Status(icon, message, partEid));
-                    }
-                    case "file" -> {
-                        if (consumedFileIndices.contains(idx)) break;
-                        String filename = part.has("filename") ? part.get("filename").getAsString() : "";
-                        String path = part.has("path") ? part.get("path").getAsString() : "";
-                        result.add(new EntryData.ContextFiles(List.of(new FileRef(filename, path))));
-                    }
-                    default -> {
-                        // Unknown part type — skip for forward-compat
-                    }
-                }
-            }
-
-            // No trailing empty Text needed — appendAgentTurn().flushSegment() at loop end
-            // handles tool-only assistant turns correctly.
+    private static void convertLegacyMessage(@NotNull JsonObject msg, @NotNull List<EntryData> result) {
+        LegacyMsgHeader h = parseLegacyMessageHeader(msg);
+        if (EntryDataJsonAdapter.TYPE_SEPARATOR.equals(h.role())) {
+            result.add(new EntryData.SessionSeparator(h.ts(), h.agent()));
+            return;
         }
 
-        return result;
+        JsonArray partsArray = msg.has("parts") ? msg.getAsJsonArray("parts") : new JsonArray();
+        List<JsonObject> parts = new ArrayList<>();
+        for (int i = 0; i < partsArray.size(); i++) {
+            parts.add(partsArray.get(i).getAsJsonObject());
+        }
+
+        java.util.Set<Integer> consumedFileIndices = new java.util.HashSet<>();
+        for (int idx = 0; idx < parts.size(); idx++) {
+            processLegacyPart(parts.get(idx), h, parts, idx, consumedFileIndices, result);
+        }
+    }
+
+    private static void processLegacyPart(
+        @NotNull JsonObject part, @NotNull LegacyMsgHeader h,
+        @NotNull List<JsonObject> parts, int idx,
+        @NotNull java.util.Set<Integer> consumedFileIndices,
+        @NotNull List<EntryData> result) {
+        String type = part.has("type") ? part.get("type").getAsString() : "";
+        switch (type) {
+            case EntryDataJsonAdapter.TYPE_TEXT -> processTextPart(part, h, parts, idx, consumedFileIndices, result);
+            case "reasoning" -> processReasoningPart(part, h, result);
+            case "tool-invocation" -> processToolInvocationPart(part, h, result);
+            case EntryDataJsonAdapter.TYPE_SUBAGENT -> processSubAgentPart(part, h, result);
+            case EntryDataJsonAdapter.TYPE_STATUS -> processStatusPart(part, result);
+            case "file" -> processFilePart(part, idx, consumedFileIndices, result);
+            default -> { /* Unknown part type — skip for forward-compat */ }
+        }
+    }
+
+    private static void processTextPart(
+        @NotNull JsonObject part, @NotNull LegacyMsgHeader h,
+        @NotNull List<JsonObject> parts, int idx,
+        @NotNull java.util.Set<Integer> consumedFileIndices,
+        @NotNull List<EntryData> result) {
+        String text = part.has("text") ? part.get("text").getAsString() : "";
+        String partTs = readLegacyTimestamp(part, h.ts());
+        String partEid = readLegacyEntryId(part);
+        if ("user".equals(h.role())) {
+            List<ContextFileRef> ctxFiles = collectLegacyFileParts(parts, idx + 1, consumedFileIndices);
+            result.add(new EntryData.Prompt(text, partTs, ctxFiles.isEmpty() ? null : ctxFiles, "", partEid));
+        } else {
+            result.add(new EntryData.Text(text, partTs, h.agent(), h.model(), partEid));
+        }
+    }
+
+    private static void processReasoningPart(
+        @NotNull JsonObject part, @NotNull LegacyMsgHeader h, @NotNull List<EntryData> result) {
+        String text = part.has("text") ? part.get("text").getAsString() : "";
+        String partTs = readLegacyTimestamp(part, h.ts());
+        String partEid = readLegacyEntryId(part);
+        result.add(new EntryData.Thinking(text, partTs, h.agent(), h.model(), partEid));
+    }
+
+    private static void processToolInvocationPart(
+        @NotNull JsonObject part, @NotNull LegacyMsgHeader h, @NotNull List<EntryData> result) {
+        JsonObject inv = part.has("toolInvocation") ? part.getAsJsonObject("toolInvocation") : new JsonObject();
+        String toolName = inv.has("toolName") ? inv.get("toolName").getAsString() : "";
+        String args = inv.has("args") && !inv.get("args").isJsonNull() ? inv.get("args").getAsString() : null;
+        String toolResult = inv.has(KEY_RESULT) && !inv.get(KEY_RESULT).isJsonNull()
+            ? inv.get(KEY_RESULT).getAsString() : null;
+        boolean autoDenied = inv.has(KEY_DENIAL_REASON);
+        String denialReason = autoDenied ? inv.get(KEY_DENIAL_REASON).getAsString() : null;
+        String kind = inv.has("kind") ? inv.get("kind").getAsString() : "other";
+        String toolStatus = inv.has(KEY_STATUS) ? inv.get(KEY_STATUS).getAsString() : null;
+        String toolDescription = inv.has(KEY_DESCRIPTION) ? inv.get(KEY_DESCRIPTION).getAsString() : null;
+        String filePath = inv.has("filePath") ? inv.get("filePath").getAsString() : null;
+        String pluginTool = inv.has("pluginTool") ? inv.get("pluginTool").getAsString() : null;
+        if (pluginTool == null && inv.has("mcpHandled") && inv.get("mcpHandled").getAsBoolean()) {
+            pluginTool = toolName; // best-effort from legacy
+        }
+        String partTs = readLegacyTimestamp(part, h.ts());
+        String partEid = readLegacyEntryId(part);
+        result.add(new EntryData.ToolCall(
+            toolName, args, kind, toolResult, toolStatus, toolDescription, filePath,
+            autoDenied, denialReason, pluginTool, partTs, h.agent(), h.model(), partEid));
+    }
+
+    private static void processSubAgentPart(
+        @NotNull JsonObject part, @NotNull LegacyMsgHeader h, @NotNull List<EntryData> result) {
+        String agentType = part.has("agentType") ? part.get("agentType").getAsString() : "general-purpose";
+        String description = part.has(KEY_DESCRIPTION) ? part.get(KEY_DESCRIPTION).getAsString() : "";
+        String prompt = part.has("prompt") ? part.get("prompt").getAsString() : null;
+        String subResult = part.has(KEY_RESULT) ? part.get(KEY_RESULT).getAsString() : null;
+        String status = part.has(KEY_STATUS) ? part.get(KEY_STATUS).getAsString() : "completed";
+        int colorIndex = part.has("colorIndex") ? part.get("colorIndex").getAsInt() : 0;
+        String callId = part.has("callId") ? part.get("callId").getAsString() : null;
+        boolean autoDenied = part.has("autoDenied") && part.get("autoDenied").getAsBoolean();
+        String denialReason = part.has(KEY_DENIAL_REASON) ? part.get(KEY_DENIAL_REASON).getAsString() : null;
+        String partTs = readLegacyTimestamp(part, h.ts());
+        String partEid = readLegacyEntryId(part);
+        result.add(new EntryData.SubAgent(
+            agentType, description,
+            (prompt == null || prompt.isEmpty()) ? null : prompt,
+            (subResult == null || subResult.isEmpty()) ? null : subResult,
+            (status == null || status.isEmpty()) ? "completed" : status,
+            colorIndex, callId, autoDenied, denialReason, partTs, h.agent(), h.model(), partEid));
+    }
+
+    private static void processStatusPart(@NotNull JsonObject part, @NotNull List<EntryData> result) {
+        String icon = part.has("icon") ? part.get("icon").getAsString() : "ℹ";
+        String message = part.has("message") ? part.get("message").getAsString() : "";
+        String partEid = readLegacyEntryId(part);
+        result.add(new EntryData.Status(icon, message, partEid));
+    }
+
+    private static void processFilePart(
+        @NotNull JsonObject part, int idx,
+        @NotNull java.util.Set<Integer> consumedFileIndices,
+        @NotNull List<EntryData> result) {
+        if (consumedFileIndices.contains(idx)) return;
+        String filename = part.has(KEY_FILENAME) ? part.get(KEY_FILENAME).getAsString() : "";
+        String path = part.has("path") ? part.get("path").getAsString() : "";
+        result.add(new EntryData.ContextFiles(List.of(new FileRef(filename, path))));
     }
 
     // ── Legacy conversion helpers ─────────────────────────────────────────────
@@ -777,7 +820,7 @@ public final class SessionStoreV2 implements Disposable {
             JsonObject p = parts.get(i);
             String t = p.has("type") ? p.get("type").getAsString() : "";
             if (!"file".equals(t)) continue;
-            String fn = p.has("filename") ? p.get("filename").getAsString() : "";
+            String fn = p.has(KEY_FILENAME) ? p.get(KEY_FILENAME).getAsString() : "";
             String path = p.has("path") ? p.get("path").getAsString() : "";
             int line = p.has("line") ? p.get("line").getAsInt() : 0;
             files.add(new ContextFileRef(fn, path, line));

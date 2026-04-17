@@ -14,7 +14,7 @@ import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.util.ThrowableComputable;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.util.messages.Topic;
 import org.jetbrains.annotations.NotNull;
@@ -38,12 +38,25 @@ public final class PsiBridgeService implements Disposable {
     private static final Logger LOG = Logger.getInstance(PsiBridgeService.class);
 
     /**
+     * Immutable data holder for a completed MCP tool call, passed to {@link ToolCallListener}.
+     */
+    public record ToolCallEvent(
+        String toolName,
+        long durationMs,
+        boolean success,
+        long inputSizeBytes,
+        long outputSizeBytes,
+        String clientId,
+        @Nullable String category,
+        @Nullable String errorMessage) {
+    }
+
+    /**
      * Listener notified after each MCP tool call completes.
      */
+    @FunctionalInterface
     public interface ToolCallListener {
-        void toolCalled(String toolName, long durationMs, boolean success,
-                        long inputSizeBytes, long outputSizeBytes, String clientId,
-                        @Nullable String category, @Nullable String errorMessage);
+        void toolCalled(ToolCallEvent event);
     }
 
     /**
@@ -189,7 +202,8 @@ public final class PsiBridgeService implements Disposable {
         // tools are JUnit-specific. Disable them to avoid confusing agents with broken tools.
         // When resharper-mcp is installed, proxy tools replace the disabled ones where possible.
         if (isRider) {
-            Set<String> remaining = new java.util.HashSet<>(RIDER_DISABLED_TOOLS);
+            Set<String> remaining = new java.util.HashSet<>();
+            remaining.addAll(RIDER_DISABLED_TOOLS);
             if (com.github.catatafishen.agentbridge.psi.tools.rider.ReSharperMcpClient.isAvailable()) {
                 // Replace the standard search_symbols (which uses classifyElement() that fails on
                 // Rider's coarse PSI stubs) with the resharper-mcp proxy implementation.
@@ -262,10 +276,6 @@ public final class PsiBridgeService implements Disposable {
         return messageQueue.poll();
     }
 
-    public boolean hasQueuedMessages() {
-        return !messageQueue.isEmpty();
-    }
-
     @Nullable
     private String consumePendingNudge() {
         if (nudgesHeld) return null;
@@ -292,209 +302,220 @@ public final class PsiBridgeService implements Disposable {
     }
 
     public String callTool(String toolName, JsonObject arguments) {
-        return callTool(toolName, arguments, null, null);
+        return callTool(toolName, arguments, null);
     }
 
-    public String callTool(String toolName, JsonObject arguments, @Nullable String progressToken) {
-        return callTool(toolName, arguments, progressToken, null);
-    }
-
-    public String callTool(String toolName, JsonObject arguments, @Nullable String progressToken, @Nullable String toolUseId) {
+    public String callTool(String toolName, JsonObject arguments, @Nullable String toolUseId) {
         LOG.info("PSI Bridge: calling " + toolName + " with args: " + arguments);
         long inputSize = arguments != null ? arguments.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
+
         ToolDefinition def = registry.findDefinition(toolName);
         if (def == null || !def.hasExecutionHandler()) {
-            String unknownErr = "Unknown tool: " + toolName;
-            fireToolCallEvent(toolName, System.currentTimeMillis(), false, inputSize, 0, null, unknownErr);
-            return unknownErr;
+            String err = "Unknown tool: " + toolName;
+            fireToolCallEvent(toolName, System.currentTimeMillis(), false, inputSize, 0, null, err);
+            return err;
         }
-        String categoryName = def.category() != null ? def.category().name() : null;
-        long outputSize = 0;
+
+        String categoryName = def.category().name();
         long startMs = System.currentTimeMillis();
-        boolean success = true;
-        String errorMessage = null;
-
-        String argumentsHash = ToolChipRegistry.computeBaseHash(arguments);
-
-        // Track if chat tool window is active before the tool call.
-        // Only restore focus afterward if it was active before (don't steal focus if user switched away).
         boolean chatWasActive = isChatToolWindowActive(project);
-
-        // Determine if this tool requires synchronous execution (file/git/editing tools).
-        boolean requiresSync = isSyncCategory(def.category() != null ? def.category().name() : null);
-
-        // Global write semaphore: serialize PSI-mutating tools to prevent EDT flooding and race
-        // conditions. Multiple concurrent writes each posting lambdas via invokeLater can saturate
-        // the EDT queue and cause the IDE to freeze.
-        // Long-running execution tools (build, test, run-command) override needsWriteLock() = false
-        // so they do not starve PSI-mutating tools for minutes at a time.
-        // Sync-category tools (FILE, EDITING, REFACTOR, GIT) also use per-tool locks for ordering.
+        boolean requiresSync = isSyncCategory(categoryName);
         boolean needsGlobalLock = def.needsWriteLock();
-
-        // Track whether this is a write operation that should participate in batch draining.
-        // Write tools register with WriteBatchCoordinator BEFORE acquiring the semaphore so
-        // earlier writes can see them as "pending" and defer highlight collection.
         boolean isWriteOp = needsGlobalLock && isWriteToolName(toolName);
-        // Tracks whether registerWrite() was called but unregisterWrite() hasn't been yet.
-        // Ensures exactly one unregister per register across all exit paths.
-        boolean writeRegistered = false;
+        java.util.concurrent.atomic.AtomicBoolean writeRegistered = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        ToolCallRequest req = new ToolCallRequest(
+            toolName, def, arguments, toolUseId,
+            inputSize, categoryName, startMs, chatWasActive);
+
+        String preflightError = acquireExecutionContext(req, isWriteOp, needsGlobalLock, writeRegistered);
+        if (preflightError != null) return preflightError;
+
+        return runToolExecution(req, requiresSync, needsGlobalLock, writeRegistered);
+    }
+
+    /**
+     * Bundles all per-call parameters that {@link #acquireExecutionContext} and
+     * {@link #runToolExecution} both need, avoiding long parameter lists.
+     */
+    private record ToolCallRequest(
+        String toolName,
+        ToolDefinition def,
+        JsonObject arguments,
+        @Nullable String toolUseId,
+        long inputSize,
+        @Nullable String categoryName,
+        long startMs,
+        boolean chatWasActive) {
+    }
+
+    /**
+     * Handles the pre-execution phase: write-batch registration, tool permission check, and
+     * global write-lock acquisition. These must happen in order, and <em>outside</em> the main
+     * execution try-block so that a permission prompt (up to 120 s) does not hold the semaphore.
+     *
+     * @param writeRegistered updated to {@code true} when a write is registered so
+     *                        {@link #runToolExecution} can clean it up on any exit path.
+     * @return {@code null} on success, or an error string if setup fails (caller should return it).
+     */
+    @Nullable
+    private String acquireExecutionContext(ToolCallRequest req,
+                                           boolean isWriteOp, boolean needsGlobalLock,
+                                           java.util.concurrent.atomic.AtomicBoolean writeRegistered) {
         if (isWriteOp) {
             writeBatchCoordinator.registerWrite();
-            writeRegistered = true;
+            writeRegistered.set(true);
         }
-
-        // Check permission BEFORE acquiring the global write lock. The permission prompt
-        // may block up to 120 s (waiting for user to respond). Holding the semaphore during
-        // that wait would freeze all other non-readonly tool calls for the full duration.
-        String denied = checkPluginToolPermission(toolName, arguments);
+        String denied = checkPluginToolPermission(req.toolName(), req.arguments());
         if (denied != null) {
-            if (writeRegistered) {
-                writeBatchCoordinator.unregisterWrite();
-                writeRegistered = false;
-            }
-            fireToolCallEvent(toolName, startMs, false, inputSize, 0, categoryName, denied);
+            if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
+            fireToolCallEvent(req.toolName(), req.startMs(), false, req.inputSize(), 0, req.categoryName(), denied);
             return denied;
         }
-
         if (needsGlobalLock) {
-            String lockError = acquireWriteLock(toolName, startMs, inputSize, categoryName);
+            String lockError = acquireWriteLock(req.toolName(), req.startMs(), req.inputSize(), req.categoryName());
             if (lockError != null) {
-                if (writeRegistered) {
-                    writeBatchCoordinator.unregisterWrite();
-                    writeRegistered = false;
-                }
+                if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
                 return lockError;
             }
         }
+        return null;
+    }
 
-        // Track whether we released the semaphore early to drain pending writes.
-        // When true, the finally block must NOT release the semaphore again.
-        boolean semaphoreReleasedEarly = false;
+    /**
+     * Executes the tool inside a {@link DaemonWaiter} try-with-resources, piggybacking
+     * highlights on successful writes, and managing all error/cleanup paths via catch+finally.
+     *
+     * <p>The {@code writeRegistered} flag is shared with {@link #acquireExecutionContext}: it
+     * is set there and cleared here after the write completes. If an exception escapes before
+     * the normal unregister, the {@code finally} block performs the cleanup.</p>
+     */
+    @SuppressWarnings("java:S2139") // intentional re-throw of ProcessCanceledException
+    private String runToolExecution(ToolCallRequest req,
+                                    boolean requiresSync, boolean needsGlobalLock,
+                                    java.util.concurrent.atomic.AtomicBoolean writeRegistered) {
+        boolean success = true;
+        String errorMessage = null;
+        long outputSize = 0;
+        java.util.concurrent.atomic.AtomicBoolean semaphoreReleasedEarly =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
 
-        // Subscribe to daemon events BEFORE the write to avoid the race where
-        // the daemon finishes before we subscribe and we miss the event entirely.
-        // For existing files, we resolve the VirtualFile now and make the waiter file-specific.
-        // For new files (create_file), vfForHighlights is null; the fresh waiter in appendAutoHighlights
-        // will be created after the file exists and will be file-specific.
-        String filePathForHighlights = isWriteToolName(toolName) ? extractFilePath(arguments) : null;
+        String filePathForHighlights = isWriteToolName(req.toolName()) ? extractFilePath(req.arguments()) : null;
         com.intellij.openapi.vfs.VirtualFile vfForHighlights = filePathForHighlights != null
             ? ToolUtils.resolveVirtualFile(project, filePathForHighlights) : null;
-
-        // Record the document stamp NOW (before the write) so DaemonWaiter can reject
-        // any in-flight daemon pass that analyzed the pre-edit document.
         long preWriteStamp = getDocumentStamp(vfForHighlights);
 
-        // try-with-resources ensures the waiter is always disconnected.
-        // appendAutoHighlights may close and re-subscribe internally; disconnect() is idempotent.
         try (DaemonWaiter daemonWaiter = filePathForHighlights != null
             ? new DaemonWaiter(project, vfForHighlights, preWriteStamp) : null) {
-            // Acquire per-tool sync lock if needed, register with chip registry, then execute.
-            // Publish the lock in a ThreadLocal so awaitReviewCompletion() can also release it
-            // while blocking for review — otherwise a second call to the same tool from another
-            // thread can deadlock (second thread holds the semaphore, waits for the syncLock;
-            // first thread holds the syncLock, waits for the semaphore).
-            ReentrantLock syncLock = requiresSync
-                ? toolLocks.computeIfAbsent(toolName, k -> new ReentrantLock())
-                : null;
-            if (syncLock != null) {
-                syncLock.lock();
-                // Set AFTER locking so the ThreadLocal accurately reflects "lock currently held".
-                // awaitReviewCompletion() reads this to know which lock to yield.
-                currentSyncLock.set(syncLock);
-            }
-            String result;
-            try {
-                // Register with chip registry BEFORE executing so the chip can transition to "running"
-                // Pass the resolved kind so the chip can update its color immediately.
-                ToolChipRegistry.getInstance(project).registerMcp(toolName, arguments, def.kind().value(), toolUseId);
-                result = def.execute(arguments, argumentsHash);
-            } finally {
-                if (syncLock != null) {
-                    try {
-                        syncLock.unlock();
-                    } finally {
-                        // Remove even if unlock() throws, so the ThreadLocal never leaks.
-                        currentSyncLock.remove();
-                    }
-                }
-            }
 
-            // Mark this write as complete — no longer "pending" from the coordinator's perspective.
-            if (writeRegistered) {
-                writeBatchCoordinator.unregisterWrite();
-                writeRegistered = false;
-            }
+            String result = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), req.toolUseId(), requiresSync);
+            if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
 
-            // Piggyback highlights after successful write operations.
-            //
-            // WRITE BATCH DRAINING: When multiple write tool calls are queued (e.g., the agent
-            // sends 3 edits in one turn), earlier writes may produce false-positive highlights
-            // if collected immediately — e.g., "unused method" after edit 1 adds a method, even
-            // though edit 2 will call it. To avoid this, we check whether other writes are still
-            // pending. If so, we release the semaphore to let them execute first, then collect
-            // highlights that reflect the final state after all writes.
-            // See WriteBatchCoordinator for full documentation.
-            if (isSuccessfulWrite(toolName, result) && daemonWaiter != null) {
-                if (writeBatchCoordinator.hasPendingWrites()) {
-                    LOG.info("Auto-highlights: deferring for " + filePathForHighlights
-                        + " — draining " + writeBatchCoordinator.getPendingCount() + " pending write(s)");
-                    writeBatchCoordinator.drainPendingWrites();
-                    semaphoreReleasedEarly = true;
-                    result = collectPostDrainHighlights(result, filePathForHighlights, vfForHighlights);
-                } else {
-                    LOG.info("Auto-highlights: piggybacking on write to " + filePathForHighlights);
-                    result = appendAutoHighlights(result, filePathForHighlights, daemonWaiter);
-                }
-            }
-            // Append pending nudge (user guidance injected on next tool call)
+            result = appendHighlightsIfApplicable(
+                req.toolName(), result, daemonWaiter, filePathForHighlights, vfForHighlights, semaphoreReleasedEarly);
             result = appendNudgeToResult(result, consumePendingNudge());
-            // Detect error results returned as strings (not exceptions).
-            // Tools like git_branch return "Error: ..." without throwing, so success/errorMessage
-            // must be updated here to match what McpProtocolHandler reports via isError.
             if (result.startsWith("Error")) {
                 success = false;
                 errorMessage = result;
             }
             outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            // Cache result so the UI can display the actual error even when the ACP
-            // tool_call_update:failed doesn't forward our error text back.
-            ToolChipRegistry.getInstance(project).storeMcpResult(toolName, arguments, result);
+            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), result);
             return result;
         } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
             success = false;
             errorMessage = "Error: IDE is busy, please retry. " + e.getMessage();
-            if (writeRegistered) writeBatchCoordinator.unregisterWrite();
-            ToolChipRegistry.getInstance(project).storeMcpResult(toolName, arguments, errorMessage);
+            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), errorMessage);
             return errorMessage;
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
-            // ProcessCanceledException must not be swallowed — signals IDE shutdown or project disposal.
-            // Let it propagate so McpProtocolHandler can respond with an error and the MCP thread
-            // terminates cleanly rather than silently masking the cancellation.
-            if (writeRegistered) writeBatchCoordinator.unregisterWrite();
+            // Must not be swallowed — signals IDE shutdown or project disposal.
             throw e;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             success = false;
-            if (writeRegistered) writeBatchCoordinator.unregisterWrite();
-            errorMessage = "Error: Tool execution interrupted: " + toolName;
-            ToolChipRegistry.getInstance(project).storeMcpResult(toolName, arguments, errorMessage);
+            errorMessage = "Error: Tool execution interrupted: " + req.toolName();
+            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), errorMessage);
             return errorMessage;
         } catch (Exception e) {
-            LOG.warn("Tool call error: " + toolName, e);
+            LOG.warn("Tool call error: " + req.toolName(), e);
             success = false;
-            if (writeRegistered) writeBatchCoordinator.unregisterWrite();
             String modalDetail = EdtUtil.describeModalBlocker();
             errorMessage = buildErrorWithModalDetail(
                 formatBaseErrorMessage(e, modalDetail), modalDetail);
-            ToolChipRegistry.getInstance(project).storeMcpResult(toolName, arguments, errorMessage);
+            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), errorMessage);
             return errorMessage;
         } finally {
-            if (needsGlobalLock && !semaphoreReleasedEarly) writeToolSemaphore.release();
-            fireToolCallEvent(toolName, startMs, success, inputSize, outputSize, categoryName, errorMessage);
-            if (chatWasActive) {
-                fireFocusRestoreEvent();
+            if (writeRegistered.get()) writeBatchCoordinator.unregisterWrite();
+            if (needsGlobalLock && !semaphoreReleasedEarly.get()) writeToolSemaphore.release();
+            fireToolCallEvent(req.toolName(), req.startMs(), success, req.inputSize(), outputSize, req.categoryName(), errorMessage);
+            if (req.chatWasActive()) fireFocusRestoreEvent();
+        }
+    }
+
+    /**
+     * Acquires the per-tool sync lock (if this is a sync-category tool), registers the chip,
+     * executes the tool, then releases the lock in a finally block.
+     *
+     * <p>The lock is set into {@link #currentSyncLock} so that
+     * {@code AgentEditSession.awaitReviewCompletion} can yield it while blocking for user review,
+     * preventing the deadlock described in {@link #currentSyncLock}.</p>
+     *
+     * @throws Exception any exception from {@link ToolDefinition#execute} — caller handles it
+     */
+    private String executeWithSyncLock(ToolDefinition def, JsonObject arguments,
+                                       String toolName, @Nullable String toolUseId,
+                                       boolean requiresSync) throws Exception {
+        String argumentsHash = ToolChipRegistry.computeBaseHash(arguments);
+        ReentrantLock syncLock = requiresSync
+            ? toolLocks.computeIfAbsent(toolName, k -> new ReentrantLock())
+            : null;
+        if (syncLock != null) {
+            syncLock.lock();
+            // Set AFTER locking so the ThreadLocal accurately reflects "lock currently held".
+            currentSyncLock.set(syncLock);
+        }
+        try {
+            // Register with chip registry BEFORE executing so the chip can transition to "running".
+            ToolChipRegistry.getInstance(project).registerMcp(
+                toolName, arguments, def.kind().value(), toolUseId);
+            return def.execute(arguments, argumentsHash);
+        } finally {
+            if (syncLock != null) {
+                try {
+                    syncLock.unlock();
+                } finally {
+                    // Remove even if unlock() throws, so the ThreadLocal never leaks.
+                    currentSyncLock.remove();
+                }
             }
         }
+    }
+
+    /**
+     * Appends auto-highlights to a write result when appropriate.
+     *
+     * <p>If other writes are still pending, drains them first so the highlights reflect the
+     * final document state. Sets {@code semaphoreReleasedEarly} so the caller's finally block
+     * knows not to release the semaphore a second time.</p>
+     *
+     * @return the (possibly augmented) result string
+     */
+    private String appendHighlightsIfApplicable(
+        String toolName, String result,
+        @Nullable DaemonWaiter daemonWaiter,
+        @Nullable String filePathForHighlights,
+        @Nullable com.intellij.openapi.vfs.VirtualFile vfForHighlights,
+        java.util.concurrent.atomic.AtomicBoolean semaphoreReleasedEarly) throws InterruptedException {
+
+        if (!isSuccessfulWrite(toolName, result) || daemonWaiter == null) return result;
+        if (writeBatchCoordinator.hasPendingWrites()) {
+            LOG.info("Auto-highlights: deferring for " + filePathForHighlights
+                + " — draining " + writeBatchCoordinator.getPendingCount() + " pending write(s)");
+            writeBatchCoordinator.drainPendingWrites();
+            semaphoreReleasedEarly.set(true);
+            return collectPostDrainHighlights(result, filePathForHighlights, vfForHighlights);
+        }
+        LOG.info("Auto-highlights: piggybacking on write to " + filePathForHighlights);
+        return appendAutoHighlights(result, filePathForHighlights, daemonWaiter);
     }
 
     /**
@@ -540,9 +561,10 @@ public final class PsiBridgeService implements Disposable {
         long duration = System.currentTimeMillis() - startTimeMs;
         String clientId = ActiveAgentManager.getInstance(project).getActiveProfileId();
         try {
-            PlatformApiCompat.syncPublisher(project, TOOL_CALL_TOPIC)
-                .toolCalled(toolName, duration, success, inputSizeBytes, outputSizeBytes,
-                    clientId, category, errorMessage);
+            ToolCallEvent event = new ToolCallEvent(
+                toolName, duration, success, inputSizeBytes, outputSizeBytes,
+                clientId, category, errorMessage);
+            PlatformApiCompat.syncPublisher(project, TOOL_CALL_TOPIC).toolCalled(event);
         } catch (Exception e) {
             LOG.debug("Failed to fire tool call event", e);
         }
@@ -578,7 +600,10 @@ public final class PsiBridgeService implements Disposable {
                 latch.countDown();
             });
             try {
-                latch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                boolean completed = latch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (!completed) {
+                    LOG.debug("isChatToolWindowActive: EDT did not refresh cache within 100ms; returning stale value");
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -629,7 +654,6 @@ public final class PsiBridgeService implements Disposable {
         String displayName = entry != null ? entry.displayName() : toolName;
         String reqId = java.util.UUID.randomUUID().toString();
 
-        // Build a structured context JSON for the permission bubble, containing question and args
         String resolvedQuestion = entry != null ? entry.resolvePermissionQuestion(arguments) : null;
         com.google.gson.JsonObject context = new com.google.gson.JsonObject();
         context.addProperty("question", resolvedQuestion != null ? resolvedQuestion
@@ -641,52 +665,16 @@ public final class PsiBridgeService implements Disposable {
             com.github.catatafishen.agentbridge.ui.ChatConsolePanel.Companion.getInstance(project);
 
         com.github.catatafishen.agentbridge.bridge.PermissionResponse response;
-        if (chatPanel != null) {
-            java.util.concurrent.CompletableFuture<com.github.catatafishen.agentbridge.bridge.PermissionResponse> future =
-                new java.util.concurrent.CompletableFuture<>();
-            EdtUtil.invokeLater(() ->
-                chatPanel.showPermissionRequest(reqId, displayName, argsJson, result -> {
-                    future.complete(result);
-                    return kotlin.Unit.INSTANCE;
-                })
-            );
-            try {
-                response = future.get(120, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (java.util.concurrent.TimeoutException e) {
-                LOG.info("PSI Bridge: ASK timed out for " + toolName);
-                return "Error: Permission request timed out for tool '" + toolName + "'.";
-            } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
-                Thread.currentThread().interrupt();
-                return "Error: Permission request interrupted for tool '" + toolName + "'.";
-            }
-        } else {
-            // Fallback: modal dialog when JCEF / chat panel is unavailable.
-            // Must NOT use EdtUtil.invokeAndWait here: the modal detector in EdtUtil.pollUntilDone
-            // detects the dialog it just opened and throws after ~1.5 s, leaving the dialog open
-            // as an orphan. Use invokeLater + CompletableFuture instead so the background thread
-            // waits for the user's actual response without triggering the modal blocker check.
-            String message = "<html><b>Allow: " + StringUtil.escapeXmlEntities(displayName) + "</b><br><br>"
-                + buildArgSummary(arguments != null ? arguments : new com.google.gson.JsonObject()) + "</html>";
-            java.util.concurrent.CompletableFuture<Integer> choiceFuture = new java.util.concurrent.CompletableFuture<>();
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                int choice = Messages.showYesNoDialog(
-                    project, message, "Tool Permission Request",
-                    "Allow", "Deny", Messages.getQuestionIcon()
-                );
-                choiceFuture.complete(choice);
-            }, com.intellij.openapi.application.ModalityState.defaultModalityState());
-            try {
-                int choice = choiceFuture.get(120, java.util.concurrent.TimeUnit.SECONDS);
-                response = choice == Messages.YES
-                    ? com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_ONCE
-                    : com.github.catatafishen.agentbridge.bridge.PermissionResponse.DENY;
-            } catch (java.util.concurrent.TimeoutException e) {
-                LOG.info("PSI Bridge: modal permission timed out for " + toolName);
-                return "Error: Permission request timed out for tool '" + toolName + "'.";
-            } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
-                Thread.currentThread().interrupt();
-                return "Error: Permission request interrupted for tool '" + toolName + "'.";
-            }
+        try {
+            response = chatPanel != null
+                ? askViaChatPanel(displayName, reqId, argsJson, chatPanel)
+                : askViaModalDialog(displayName, arguments);
+        } catch (java.util.concurrent.TimeoutException e) {
+            LOG.info("PSI Bridge: ASK timed out for " + toolName);
+            return "Error: Permission request timed out for tool '" + toolName + "'.";
+        } catch (InterruptedException | java.util.concurrent.ExecutionException e) {
+            Thread.currentThread().interrupt();
+            return "Error: Permission request interrupted for tool '" + toolName + "'.";
         }
 
         return switch (response) {
@@ -710,6 +698,46 @@ public final class PsiBridgeService implements Disposable {
                 yield "Error: Permission denied by user for tool '" + toolName + "'.";
             }
         };
+    }
+
+    @NotNull
+    private com.github.catatafishen.agentbridge.bridge.PermissionResponse askViaChatPanel(
+        String displayName, String reqId, String argsJson,
+        com.github.catatafishen.agentbridge.ui.ChatConsolePanel chatPanel)
+        throws java.util.concurrent.TimeoutException, InterruptedException, java.util.concurrent.ExecutionException {
+        java.util.concurrent.CompletableFuture<com.github.catatafishen.agentbridge.bridge.PermissionResponse> future =
+            new java.util.concurrent.CompletableFuture<>();
+        EdtUtil.invokeLater(() ->
+            chatPanel.showPermissionRequest(reqId, displayName, argsJson, result -> {
+                future.complete(result);
+                return kotlin.Unit.INSTANCE;
+            })
+        );
+        return future.get(120, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    @NotNull
+    private com.github.catatafishen.agentbridge.bridge.PermissionResponse askViaModalDialog(
+        String displayName, @Nullable JsonObject arguments)
+        throws java.util.concurrent.TimeoutException, InterruptedException, java.util.concurrent.ExecutionException {
+        // Must NOT use EdtUtil.invokeAndWait here: the modal detector in EdtUtil.pollUntilDone
+        // detects the dialog it just opened and throws after ~1.5 s, leaving the dialog open
+        // as an orphan. Use invokeLater + CompletableFuture instead so the background thread
+        // waits for the user's actual response without triggering the modal blocker check.
+        String message = "<html><b>Allow: " + StringUtil.escapeXmlEntities(displayName) + "</b><br><br>"
+            + buildArgSummary(arguments != null ? arguments : new com.google.gson.JsonObject()) + "</html>";
+        java.util.concurrent.CompletableFuture<Integer> choiceFuture = new java.util.concurrent.CompletableFuture<>();
+        ApplicationManager.getApplication().invokeLater(() -> {
+            int choice = Messages.showYesNoDialog(
+                project, message, "Tool Permission Request",
+                "Allow", "Deny", Messages.getQuestionIcon()
+            );
+            choiceFuture.complete(choice);
+        }, com.intellij.openapi.application.ModalityState.defaultModalityState());
+        int choice = choiceFuture.get(120, java.util.concurrent.TimeUnit.SECONDS);
+        return choice == Messages.YES
+            ? com.github.catatafishen.agentbridge.bridge.PermissionResponse.ALLOW_ONCE
+            : com.github.catatafishen.agentbridge.bridge.PermissionResponse.DENY;
     }
 
     private ToolPermission resolvePluginPermission(String toolName, JsonObject arguments) {
@@ -882,7 +910,7 @@ public final class PsiBridgeService implements Disposable {
      */
     private static long getDocumentStamp(@Nullable com.intellij.openapi.vfs.VirtualFile vf) {
         if (vf == null) return -1L;
-        return ApplicationManager.getApplication().runReadAction((ThrowableComputable<Long, RuntimeException>) () -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<Long>) () -> {
             com.intellij.openapi.editor.Document doc =
                 com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(vf);
             return doc != null ? doc.getModificationStamp() : -1L;
@@ -975,8 +1003,8 @@ public final class PsiBridgeService implements Disposable {
         @Nullable com.intellij.openapi.vfs.VirtualFile vf,
         String path) {
         boolean alreadyOpen = vf != null
-            && com.intellij.openapi.application.ReadAction.compute(
-            (ThrowableComputable<Boolean, RuntimeException>) () -> com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf));
+            && ApplicationManager.getApplication().runReadAction(
+            (Computable<Boolean>) () -> com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).isFileOpen(vf));
         if (alreadyOpen) return preWriteWaiter;
         // Subscribe a file-specific waiter BEFORE opening so we can't miss the new daemon pass.
         // Use preWriteStamp = -1: the write already happened before this waiter is created, so

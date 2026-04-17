@@ -487,7 +487,7 @@ public final class McpProtocolHandler {
         // Delegate to PsiBridgeService
         try {
             PsiBridgeService bridge = PsiBridgeService.getInstance(project);
-            String resultText = bridge.callTool(toolName, arguments, progressToken, toolUseId);
+            String resultText = bridge.callTool(toolName, arguments, toolUseId);
             resultText = truncateIfNeeded(resultText);
             boolean isError = resultText != null && resultText.startsWith("Error");
             return buildToolResult(msg, resultText, isError);

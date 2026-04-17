@@ -436,93 +436,40 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         val initialStatus = if (reg.isMcpHandled) ChipStatus.RUNNING else ChipStatus.PENDING
         val entryTs = displayTs(entry.timestamp)
-        executeJs("ChatController.upsertToolChip('$currentTurnId','main','${reg.domId}','${escJs(reg.label)}','${reg.paramsJson}','${reg.safeKind}','$initialStatus','$entryTs')")
+        executeJs("ChatController.upsertToolChip('$currentTurnId','main','${reg.domId}','${escJs(reg.label)}','${reg.paramsJson}',{kind:'${reg.safeKind}',status:'$initialStatus',timestamp:'$entryTs'})")
         if (reg.isMcpHandled) {
             executeJs("ChatController.markMcpHandled('${reg.domId}')")
         }
     }
 
-    override fun updateToolCall(
-        id: String,
-        status: String,
-        details: String?,
-        description: String?,
-        kind: String?,
-        autoDenied: Boolean,
-        denialReason: String?,
-        arguments: String?,
-        title: String?
-    ) {
+    override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
         val chipId = registry.findChipIdByClientId(id)
         var did = if (chipId != null) "t-$chipId" else domId(id)
 
-        // Try to re-correlate if we have new arguments and status is running
-        if (arguments != null && status == "running") {
-            try {
-                val argsObj = JsonParser.parseString(arguments).asJsonObject
-                val registration = registry.reregisterWithArgs(id, argsObj)
-                val newChipId = registration.chipId()
-                val newDid = "t-$newChipId"
-
-                if (newDid != did) {
-                    val entry = toolCallEntries.remove(did)
-                    if (entry != null) {
-                        toolCallEntries[newDid] = entry
-                    }
-                    val name = toolCallNames.remove(did)
-                    if (name != null) {
-                        toolCallNames[newDid] = name
-                    }
-
-                    // Remove old chip DOM element
-                    executeJs("ChatController.removeToolChip('$did')")
-
-                    // Create new chip with correct hash-based ID
-                    val cleanTitle = (title ?: name ?: "Tool").trim('\'', '"')
-                    val resolvedKind = kind ?: entry?.kind ?: "other"
-                    val label = toolChipTitle(cleanTitle, arguments)
-                    val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
-                    val paramsJson = if (!hasCustomRenderer) escJs(arguments) else ""
-
-                    executeJs(
-                        "ChatController.upsertToolChip('$currentTurnId','main','$newDid','${escJs(label)}','$paramsJson','${
-                            escJs(
-                                resolvedKind
-                            )
-                        }','running')"
-                    )
-
-                    did = newDid
-                    if (registration.initialState() == ToolChipRegistry.ChipState.RUNNING) {
-                        executeJs("ChatController.markMcpHandled('$did')")
-                        toolCallEntries[did]?.pluginTool = toolCallNames[did]
-                    }
-                    LOG.debug("updateToolCall: re-correlated chip $id: $did -> $newDid")
-                }
-            } catch (e: Exception) {
-                LOG.warn("updateToolCall: failed to re-correlate chip $id", e)
-            }
+        if (update.arguments != null && status == "running") {
+            did = reCorrelateChipIfNeeded(id, update.arguments, did, update.title, update.kind)
         }
 
-        val resultLen = details?.length ?: 0
-        LOG.debug("updateToolCall: id=$id, chipId=$chipId, status=$status, resultLen=$resultLen, hasDesc=${description != null}, denied=$autoDenied")
-        toolCallEntries[did]?.let {
-            // Prefer the actual MCP execution result over what the ACP reported.
-            // Copilot CLI may send tool_call_update:failed with no error text even when our MCP
-            // tool returned a detailed error message. The stored plugin result is more accurate.
-            val storedResult = chipId?.let { cid -> registry.getStoredPluginResult(cid) }
-            it.result = storedResult ?: details
-            it.status = status
-            it.autoDenied = autoDenied
-            it.denialReason = denialReason
-            if (description != null) it.description = description
-            if (kind != null) it.kind = kind
-        }
+        val resultLen = update.details?.length ?: 0
+        LOG.debug("updateToolCall: id=$id, chipId=$chipId, status=$status, resultLen=$resultLen, hasDesc=${update.description != null}, denied=${update.autoDenied}")
+        applyEntryDataUpdate(
+            did,
+            ToolCallStatusData(
+                chipId,
+                update.details,
+                status,
+                update.autoDenied,
+                update.denialReason,
+                update.description,
+                update.kind
+            )
+        )
+
         // For intermediate running state, update DOM immediately
         if (status == "running") {
             executeJs("ChatController.setToolChipState('$did','running')")
-            if (kind != null) {
-                val jsKind = kind.replace("'", "\\'")
+            if (update.kind != null) {
+                val jsKind = update.kind.replace("'", "\\'")
                 executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
             }
             return
@@ -535,8 +482,69 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             else -> registry.completeClientSide(id, true) // "complete", "completed", etc.
         }
 
-        if (autoDenied) {
+        if (update.autoDenied) {
             executeJs("ChatController.setToolChipState('$did','denied')")
+        }
+    }
+
+    /** Re-correlates a tool-chip's DOM id and entry maps when arguments become available at runtime. Returns the updated did. */
+    private fun reCorrelateChipIfNeeded(
+        id: String, arguments: String, currentDid: String, title: String?, kind: String?
+    ): String {
+        return try {
+            val argsObj = JsonParser.parseString(arguments).asJsonObject
+            val registration = registry.reregisterWithArgs(id, argsObj)
+            val newDid = "t-${registration.chipId()}"
+            if (newDid == currentDid) return currentDid
+
+            val entry = toolCallEntries.remove(currentDid)
+            if (entry != null) toolCallEntries[newDid] = entry
+            val name = toolCallNames.remove(currentDid)
+            if (name != null) toolCallNames[newDid] = name
+
+            // Remove old chip DOM element
+            executeJs("ChatController.removeToolChip('$currentDid')")
+
+            // Create new chip with correct hash-based ID
+            val cleanTitle = (title ?: name ?: "Tool").trim('\'', '"')
+            val kindFallback = entry?.kind ?: "other"
+            val resolvedKind = kind ?: kindFallback
+            val label = toolChipTitle(cleanTitle, arguments)
+            val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
+            val paramsJson = if (!hasCustomRenderer) escJs(arguments) else ""
+
+            executeJs("ChatController.upsertToolChip('$currentTurnId','main','$newDid','${escJs(label)}','$paramsJson',{kind:'${escJs(resolvedKind)}',status:'running'})")
+
+            if (registration.initialState() == ToolChipRegistry.ChipState.RUNNING) {
+                executeJs("ChatController.markMcpHandled('$newDid')")
+                toolCallEntries[newDid]?.pluginTool = toolCallNames[newDid]
+            }
+            LOG.debug("updateToolCall: re-correlated chip $id: $currentDid -> $newDid")
+            newDid
+        } catch (e: Exception) {
+            LOG.warn("updateToolCall: failed to re-correlate chip $id", e)
+            currentDid
+        }
+    }
+
+    private data class ToolCallStatusData(
+        val chipId: String?, val details: String?, val status: String,
+        val autoDenied: Boolean, val denialReason: String?, val description: String?, val kind: String?
+    )
+
+    /** Updates the in-memory entry data for a tool-call chip from the latest status report. */
+    private fun applyEntryDataUpdate(did: String, update: ToolCallStatusData) {
+        val storedResult = update.chipId?.let { cid -> registry.getStoredPluginResult(cid) }
+        toolCallEntries[did]?.let {
+            // Prefer the actual MCP execution result over what the ACP reported.
+            // Copilot CLI may send tool_call_update:failed with no error text even when our MCP
+            // tool returned a detailed error message. The stored plugin result is more accurate.
+            it.result = storedResult ?: update.details
+            it.status = update.status
+            it.autoDenied = update.autoDenied
+            it.denialReason = update.denialReason
+            if (update.description != null) it.description = update.description
+            if (update.kind != null) it.kind = update.kind
         }
     }
 
@@ -598,8 +606,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun addSubAgentEntry(
         id: String, agentType: String, description: String, prompt: String?,
-        initialResult: String?, initialStatus: String?, initialDescription: String?,
-        autoDenied: Boolean, denialReason: String?
+        initialState: ChatPanelApi.SubAgentInitialState
     ) {
         maybeStartNewSegment()
         finalizeCurrentText()
@@ -607,12 +614,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         val entry = EntryData.SubAgent(
             agentType, description, prompt,
             colorIndex = colorIndex, callId = id,
-            autoDenied = autoDenied, denialReason = denialReason,
+            autoDenied = initialState.autoDenied, denialReason = initialState.denialReason,
             timestamp = timestamp(), agent = currentAgent
         )
-        if (initialResult != null) {
-            entry.result = initialResult; entry.status = initialStatus
-            if (initialDescription != null) entry.result = "$initialDescription\n\n$initialResult"
+        if (initialState.result != null) {
+            entry.result = initialState.result; entry.status = initialState.status
+            if (initialState.description != null) entry.result = "${initialState.description}\n\n${initialState.result}"
         }
         entries.add(entry)
         val did = domId(id)
@@ -628,9 +635,9 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 )
             }')"
         )
-        if (autoDenied || !initialResult.isNullOrBlank() || initialStatus == "completed" || initialStatus == "failed") {
-            val status = if (autoDenied) "denied" else (initialStatus ?: "completed")
-            renderSubAgentResult(did, status, autoDenied, initialResult)
+        if (initialState.autoDenied || !initialState.result.isNullOrBlank() || initialState.status == "completed" || initialState.status == "failed") {
+            val status = if (initialState.autoDenied) "denied" else (initialState.status ?: "completed")
+            renderSubAgentResult(did, status, initialState.autoDenied, initialState.result)
         }
     }
 
@@ -715,64 +722,46 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             ?.pushNotification("Turn complete", "Agent finished ($toolCallCount tool calls)")
     }
 
-    override fun emitTurnStats(
-        durationMs: Long, inputTokens: Int, outputTokens: Int, costUsd: Double,
-        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String,
-        commitHashes: List<String>
-    ) {
+    override fun emitTurnStats(stats: TurnStatsData) {
         val prev = entries.filterIsInstance<EntryData.TurnStats>().lastOrNull()
         entries.add(
             EntryData.TurnStats(
                 turnId = currentTurnId,
-                durationMs = durationMs,
-                inputTokens = inputTokens.toLong(),
-                outputTokens = outputTokens.toLong(),
-                costUsd = costUsd,
-                toolCallCount = toolCallCount,
-                linesAdded = linesAdded,
-                linesRemoved = linesRemoved,
-                model = model,
-                multiplier = multiplier,
-                totalDurationMs = (prev?.totalDurationMs ?: 0) + durationMs,
-                totalInputTokens = (prev?.totalInputTokens ?: 0) + inputTokens.toLong(),
-                totalOutputTokens = (prev?.totalOutputTokens ?: 0) + outputTokens.toLong(),
-                totalCostUsd = (prev?.totalCostUsd ?: 0.0) + costUsd,
-                totalToolCalls = (prev?.totalToolCalls ?: 0) + toolCallCount,
-                totalLinesAdded = (prev?.totalLinesAdded ?: 0) + linesAdded,
-                totalLinesRemoved = (prev?.totalLinesRemoved ?: 0) + linesRemoved,
+                durationMs = stats.durationMs,
+                inputTokens = stats.inputTokens.toLong(),
+                outputTokens = stats.outputTokens.toLong(),
+                costUsd = stats.costUsd,
+                toolCallCount = stats.toolCallCount,
+                linesAdded = stats.linesAdded,
+                linesRemoved = stats.linesRemoved,
+                model = stats.model,
+                multiplier = stats.multiplier,
+                totalDurationMs = (prev?.totalDurationMs ?: 0) + stats.durationMs,
+                totalInputTokens = (prev?.totalInputTokens ?: 0) + stats.inputTokens.toLong(),
+                totalOutputTokens = (prev?.totalOutputTokens ?: 0) + stats.outputTokens.toLong(),
+                totalCostUsd = (prev?.totalCostUsd ?: 0.0) + stats.costUsd,
+                totalToolCalls = (prev?.totalToolCalls ?: 0) + stats.toolCallCount,
+                totalLinesAdded = (prev?.totalLinesAdded ?: 0) + stats.linesAdded,
+                totalLinesRemoved = (prev?.totalLinesRemoved ?: 0) + stats.linesRemoved,
                 timestamp = java.time.Instant.now().toString(),
-                commitHashes = commitHashes,
+                commitHashes = stats.commitHashes,
             )
         )
-        // Render the turn summary footer in the chat panel
-        val statsJson = buildTurnSummaryJson(
-            durationMs,
-            inputTokens,
-            outputTokens,
-            toolCallCount,
-            linesAdded,
-            linesRemoved,
-            model,
-            multiplier
-        )
+        val statsJson = buildTurnSummaryJson(stats)
         executeJs("ChatController.renderTurnSummary($statsJson)")
         fireEntriesChanged()
     }
 
-    private fun buildTurnSummaryJson(
-        durationMs: Long, inputTokens: Int, outputTokens: Int,
-        toolCallCount: Int, linesAdded: Int, linesRemoved: Int,
-        model: String, multiplier: String
-    ): String {
+    private fun buildTurnSummaryJson(stats: TurnStatsData): String {
         val parts = mutableListOf<String>()
-        parts.add("\"duration\":${durationMs}")
-        parts.add("\"inputTokens\":${inputTokens}")
-        parts.add("\"outputTokens\":${outputTokens}")
-        parts.add("\"tools\":${toolCallCount}")
-        parts.add("\"added\":${linesAdded}")
-        parts.add("\"removed\":${linesRemoved}")
-        parts.add("\"model\":\"${escJs(model)}\"")
-        if (multiplier.isNotEmpty()) parts.add("\"multiplier\":\"${escJs(multiplier)}\"")
+        parts.add("\"duration\":${stats.durationMs}")
+        parts.add("\"inputTokens\":${stats.inputTokens}")
+        parts.add("\"outputTokens\":${stats.outputTokens}")
+        parts.add("\"tools\":${stats.toolCallCount}")
+        parts.add("\"added\":${stats.linesAdded}")
+        parts.add("\"removed\":${stats.linesRemoved}")
+        parts.add("\"model\":\"${escJs(stats.model)}\"")
+        if (stats.multiplier.isNotEmpty()) parts.add("\"multiplier\":\"${escJs(stats.multiplier)}\"")
         return "{${parts.joinToString(",")}}"
     }
 
@@ -1010,27 +999,19 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
         while (i < entries.size) {
             val e = entries[i]
-            if (e is EntryData.Prompt || e is EntryData.Nudge || e is EntryData.SessionSeparator
-                || e is EntryData.Status || e is EntryData.TurnStats
-            ) break
+            if (isAgentTurnEnd(e)) break
             if (e is EntryData.ContextFiles) {
                 i++; continue
             }
-            if (hadToolOrSubagent && (e is EntryData.Text || e is EntryData.Thinking)) flushSegment()
+            if (shouldStartNewSegment(hadToolOrSubagent, e)) flushSegment()
 
             if (currentSegmentEntries.isEmpty()) {
                 currentTimestamp = e.timestamp
-                if (agent.isEmpty()) agent = when (e) {
-                    is EntryData.Text -> e.agent
-                    is EntryData.Thinking -> e.agent
-                    is EntryData.ToolCall -> e.agent
-                    is EntryData.SubAgent -> e.agent
-                    else -> ""
-                }
+                agent = agent.ifEmpty { resolveEntryAgent(e) }
             }
 
             serializeEntry(e)?.let { currentSegmentEntries.add(it) }
-            if (e is EntryData.ToolCall || e is EntryData.SubAgent) hadToolOrSubagent = true
+            if (isToolOrSubagentEntry(e)) hadToolOrSubagent = true
             i++
         }
         flushSegment()
@@ -1041,6 +1022,28 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             "segments" to segments
         )
         return turn to i
+    }
+
+    /** Returns true when the entry signals the end of an agent turn (prompt, nudge, separator, status, or stats). */
+    private fun isAgentTurnEnd(e: EntryData): Boolean =
+        e is EntryData.Prompt || e is EntryData.Nudge || e is EntryData.SessionSeparator
+            || e is EntryData.Status || e is EntryData.TurnStats
+
+    /** Returns true when a new segment should be started: there was a prior tool/subagent call and the next entry is text or thinking. */
+    private fun shouldStartNewSegment(hadToolOrSubagent: Boolean, e: EntryData): Boolean =
+        hadToolOrSubagent && (e is EntryData.Text || e is EntryData.Thinking)
+
+    /** Returns true when [e] is a ToolCall or SubAgent entry (marks that a segment break may follow). */
+    private fun isToolOrSubagentEntry(e: EntryData): Boolean =
+        e is EntryData.ToolCall || e is EntryData.SubAgent
+
+    /** Resolves the agent name from any AgentTurn entry type; returns an empty string for entry types that carry no agent. */
+    private fun resolveEntryAgent(e: EntryData): String = when (e) {
+        is EntryData.Text -> e.agent
+        is EntryData.Thinking -> e.agent
+        is EntryData.ToolCall -> e.agent
+        is EntryData.SubAgent -> e.agent
+        else -> ""
     }
 
     private fun serializeEntry(e: EntryData): Map<String, Any?>? {
@@ -1164,9 +1167,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (browserReady) {
             com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
                 .info("executeJs (ready): $short")
-            browser?.cefBrowser?.let { cef ->
-                cef.executeJavaScript(js, "", 0)
-            }
+            browser?.cefBrowser?.executeJavaScript(js, "", 0)
         } else {
             com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
                 .info("executeJs (queued): $short")
@@ -1218,41 +1219,15 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             return renderFailedToolPanel(container, baseName, details)
         }
 
-        // 3. Determine if we have a real tool result or if we should fallback to showing arguments
-        val finalDetails = if (details.isNullOrBlank() && !arguments.isNullOrBlank()) {
-            // No result but we have arguments? Junie often doesn't stream the raw tool output.
-            // As a fallback, we show the parameters so the user knows what was called.
-            "Parameters: $arguments"
-        } else {
-            details
-        }
+        // 3. Resolve the result to display — fall back to showing arguments when no output was produced
+        val finalDetails = resolveDisplayDetails(details, arguments)
         if (finalDetails.isNullOrBlank()) {
-            val label = when (status) {
-                "running" -> "⏳ Running…"
-                else -> if (baseName != null) "Tool $baseName completed with no output." else "Completed"
-            }
-            container.add(JBLabel(label).apply {
-                foreground = ToolRenderers.MUTED_COLOR
-                border = JBUI.Borders.empty(4, 0)
-                alignmentX = LEFT_ALIGNMENT
-            })
-            return container
+            return buildEmptyResultContainer(container, baseName, status)
         }
 
         // 4. Attempt to use a custom renderer for the result
-        if (baseName != null) {
-            val renderer = ToolRenderers.get(baseName, toolRegistry)
-            LOG.debug("Renderer for $baseName: ${renderer?.javaClass?.simpleName ?: "null"}")
-
-            val rendered = when (renderer) {
-                is ArgumentAwareRenderer -> renderer.render(finalDetails, arguments)
-                else -> renderer?.render(finalDetails)
-            }
-
-            if (rendered != null) {
-                container.add(rendered)
-                return container
-            }
+        if (baseName != null && tryRenderWithCustomRenderer(container, baseName, finalDetails, arguments)) {
+            return container
         }
 
         // 5. Fallback: monospace code or JSON editor; long text gets a scratch-file link
@@ -1264,6 +1239,48 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         container.add(fallbackContent)
 
         return container
+    }
+
+    /**
+     * Returns the result string to display.
+     * Falls back to "Parameters: $arguments" when [details] is blank but arguments are present,
+     * so the user can see what was called even when the agent did not stream raw tool output.
+     */
+    private fun resolveDisplayDetails(details: String?, arguments: String?): String? =
+        if (details.isNullOrBlank() && !arguments.isNullOrBlank()) "Parameters: $arguments" else details
+
+    /** Adds an empty-result notice label to [container] and returns [container]. */
+    private fun buildEmptyResultContainer(container: JBPanel<*>, baseName: String?, status: String?): JComponent {
+        val label = when (status) {
+            "running" -> "⏳ Running…"
+            else -> if (baseName != null) "Tool $baseName completed with no output." else "Completed"
+        }
+        container.add(JBLabel(label).apply {
+            foreground = ToolRenderers.MUTED_COLOR
+            border = JBUI.Borders.empty(4, 0)
+            alignmentX = LEFT_ALIGNMENT
+        })
+        return container
+    }
+
+    /**
+     * Attempts to render [finalDetails] with a registered custom renderer for [baseName].
+     * Adds the rendered component to [container] and returns `true`; returns `false` when no renderer is available.
+     */
+    private fun tryRenderWithCustomRenderer(
+        container: JBPanel<*>, baseName: String, finalDetails: String, arguments: String?
+    ): Boolean {
+        val renderer = ToolRenderers[baseName, toolRegistry]
+        LOG.debug("Renderer for $baseName: ${renderer?.javaClass?.simpleName ?: "null"}")
+        val rendered = when (renderer) {
+            is ArgumentAwareRenderer -> renderer.render(finalDetails, arguments)
+            else -> renderer?.render(finalDetails)
+        }
+        if (rendered != null) {
+            container.add(rendered)
+            return true
+        }
+        return false
     }
 
     private fun renderFailedToolPanel(
@@ -1678,8 +1695,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
         if (baseName == null) return "Tool Call"
         val clean = baseName.trim('\'', '"')
         val toolDef = toolRegistry?.findById(clean)
-        val display = toolDef?.displayName() ?: toolDisplayInfo(clean)?.displayName
-        ?: clean.replaceFirstChar { it.uppercaseChar() }
+        val displayFallback = toolDisplayInfo(clean)?.displayName ?: clean.replaceFirstChar { it.uppercaseChar() }
+        val display = toolDef?.displayName() ?: displayFallback
         val subtitle = formatToolSubtitle(clean, arguments)
         return if (subtitle != null) "$display — $subtitle" else display
     }
@@ -1724,8 +1741,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     private fun renderSubAgentResult(did: String, status: String, autoDenied: Boolean, result: String?) {
         val jsStatus = if (autoDenied) "denied" else status
-        val resultHtml =
-            if (autoDenied) FAILED_SPAN else if (!result.isNullOrBlank()) markdownToHtml(result) else if (status == "completed") "Completed" else FAILED_SPAN
+        val resultHtml = when {
+            autoDenied -> FAILED_SPAN
+            !result.isNullOrBlank() -> markdownToHtml(result)
+            status == "completed" -> "Completed"
+            else -> FAILED_SPAN
+        }
         val encoded = encodeBase64(resultHtml)
         executeJs("ChatController.updateSubAgent('$did','$jsStatus','$encoded')")
     }

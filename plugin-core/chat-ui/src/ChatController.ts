@@ -34,6 +34,26 @@ function _formatTokens(n: number): string {
     return Math.round(n / 1000) + 'k';
 }
 
+/** Build inline diff stats: +N -N spans, or null if both are zero. */
+function _buildDiffSpan(added: number, removed: number): HTMLElement | null {
+    if (added === 0 && removed === 0) return null;
+    const diffEl = document.createElement('span');
+    if (added > 0) {
+        const a = document.createElement('span');
+        a.className = 'diff-add';
+        a.textContent = '+' + added;
+        diffEl.appendChild(a);
+    }
+    if (removed > 0) {
+        if (added > 0) diffEl.appendChild(document.createTextNode('\u2009'));
+        const d = document.createElement('span');
+        d.className = 'diff-del';
+        d.textContent = '\u2212' + removed;
+        diffEl.appendChild(d);
+    }
+    return diffEl;
+}
+
 /** Build a turn-summary-bar element: a horizontal rule with stats centered. */
 function _buildTurnSummaryBar(stats: {
     duration: number; inputTokens: number; outputTokens: number;
@@ -57,23 +77,8 @@ function _buildTurnSummaryBar(stats: {
         parts.push(name);
     }
 
-    if (stats.added > 0 || stats.removed > 0) {
-        const diffEl = document.createElement('span');
-        if (stats.added > 0) {
-            const a = document.createElement('span');
-            a.className = 'diff-add';
-            a.textContent = '+' + stats.added;
-            diffEl.appendChild(a);
-        }
-        if (stats.removed > 0) {
-            if (stats.added > 0) diffEl.appendChild(document.createTextNode('\u2009'));
-            const d = document.createElement('span');
-            d.className = 'diff-del';
-            d.textContent = '\u2212' + stats.removed;
-            diffEl.appendChild(d);
-        }
-        parts.push(diffEl);
-    }
+    const diffEl = _buildDiffSpan(stats.added, stats.removed);
+    if (diffEl) parts.push(diffEl);
 
     if (stats.inputTokens > 0 || stats.outputTokens > 0) {
         parts.push(_formatTokens(stats.inputTokens) + '/' + _formatTokens(stats.outputTokens) + ' tok');
@@ -346,15 +351,15 @@ const ChatController = {
         this._collapseThinkingFor(ctx);
     },
 
-    addToolCall(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string, isExternal?: boolean, initialStatus?: string): void {
-        this.upsertToolChip(turnId, agentId, id, title, paramsJson, kind, initialStatus || 'pending');
+    addToolCall(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string, initialStatus?: string): void {
+        this.upsertToolChip(turnId, agentId, id, title, paramsJson, {kind, status: initialStatus || 'pending'});
     },
 
-    upsertToolChip(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, kind?: string, initialStatus?: string, timestamp?: string): void {
+    upsertToolChip(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, options?: {kind?: string, status?: string, timestamp?: string}): void {
         this._resetWorkingTimer();
         let chip = document.querySelector('[data-chip-for="' + id + '"]') as HTMLElement | null;
         if (!chip) {
-            const ctx = this._ensureMsg(turnId, agentId, timestamp);
+            const ctx = this._ensureMsg(turnId, agentId, options?.timestamp);
             this._collapseThinkingFor(ctx);
             chip = document.createElement('tool-chip');
             chip.dataset.chipFor = id;
@@ -363,7 +368,8 @@ const ChatController = {
             this._container()?.scrollIfNeeded();
         }
         chip.setAttribute('label', title);
-        chip.setAttribute('status', initialStatus || 'pending');
+        chip.setAttribute('status', options?.status || 'pending');
+        const kind = options?.kind;
         if (kind) {
             const currentKind = chip.getAttribute('kind');
             if (!currentKind || currentKind === 'other') {

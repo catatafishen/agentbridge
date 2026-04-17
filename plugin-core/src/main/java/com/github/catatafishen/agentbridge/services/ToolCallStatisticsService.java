@@ -176,10 +176,9 @@ public final class ToolCallStatisticsService implements Disposable {
 
     private void subscribeToToolCallEvents() {
         disconnectHandle = PlatformApiCompat.subscribeToolCallListener(project,
-            (toolName, durationMs, success, inputSizeBytes, outputSizeBytes, clientId, category, errorMessage) ->
-                recordCall(new ToolCallRecord(
-                    toolName, category, inputSizeBytes, outputSizeBytes,
-                    durationMs, success, errorMessage, clientId, Instant.now())));
+            event -> recordCall(new ToolCallRecord(
+                event.toolName(), event.category(), event.inputSizeBytes(), event.outputSizeBytes(),
+                event.durationMs(), event.success(), event.errorMessage(), event.clientId(), Instant.now())));
     }
 
     public synchronized void recordCall(@NotNull ToolCallRecord callRecord) {

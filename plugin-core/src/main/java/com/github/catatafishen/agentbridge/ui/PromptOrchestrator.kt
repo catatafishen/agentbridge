@@ -440,14 +440,18 @@ class PromptOrchestrator(
         val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
         val commitHashes = collectTurnCommits()
         consolePanel().emitTurnStats(
-            turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
-            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
-            commitHashes
+            TurnStatsData(
+                turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
+                turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
+                commitHashes
+            )
         )
 
         recordTurnStatsToSqlite(
-            turnDuration, turnInputTokens, turnOutputTokens,
-            turnToolCallCount, codeChanges[0], codeChanges[1], turnMultiplier, commitHashes
+            TurnStatsParams(
+                turnDuration, turnInputTokens, turnOutputTokens,
+                turnToolCallCount, codeChanges[0], codeChanges[1], turnMultiplier, commitHashes
+            )
         )
 
         val nextMsg = PsiBridgeService.getInstance(project).nextQueuedMessage
@@ -663,16 +667,13 @@ class PromptOrchestrator(
         }
 
         updateToolCallUi(
-            toolCallId,
-            uiStatus,
-            result,
-            description,
-            isSubAgent,
-            isInternal,
-            autoDenied,
-            denialReason,
-            arguments,
-            callType
+            toolCallId, uiStatus,
+            ToolCallUiUpdate(
+                result = result, description = description,
+                isSubAgent = isSubAgent, isInternal = isInternal,
+                autoDenied = autoDenied, denialReason = denialReason,
+                arguments = arguments, title = callType
+            )
         )
 
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
@@ -680,19 +681,15 @@ class PromptOrchestrator(
         }
     }
 
-    private fun updateToolCallUi(
-        toolCallId: String,
-        uiStatus: String,
-        result: String?,
-        description: String?,
-        isSubAgent: Boolean,
-        isInternal: Boolean,
-        autoDenied: Boolean = false,
-        denialReason: String? = null,
-        arguments: String? = null,
-        title: String? = null
-    ) {
-        if (isSubAgent) {
+    private data class ToolCallUiUpdate(
+        val result: String?, val description: String?,
+        val isSubAgent: Boolean, val isInternal: Boolean,
+        val autoDenied: Boolean = false, val denialReason: String? = null,
+        val arguments: String? = null, val title: String? = null
+    )
+
+    private fun updateToolCallUi(toolCallId: String, uiStatus: String, update: ToolCallUiUpdate) {
+        if (update.isSubAgent) {
             if (uiStatus == "running") {
                 // Sub-agent is still in progress — chip is already in running state from addSubAgentEntry;
                 // calling updateSubAgentResult here would prematurely complete the chip in the JS layer.
@@ -709,20 +706,34 @@ class PromptOrchestrator(
                     agentManager.activeProfile.clientCssClass
                 )
             }
-            consolePanel().updateSubAgentResult(toolCallId, uiStatus, result, description, autoDenied, denialReason)
-        } else if (isInternal) {
-            consolePanel().updateSubAgentToolCall(toolCallId, uiStatus, result, description, autoDenied, denialReason)
-        } else {
-            consolePanel().updateToolCall(
+            consolePanel().updateSubAgentResult(
                 toolCallId,
                 uiStatus,
-                result,
-                description,
-                null,
-                autoDenied,
-                denialReason,
-                arguments,
-                title
+                update.result,
+                update.description,
+                update.autoDenied,
+                update.denialReason
+            )
+        } else if (update.isInternal) {
+            consolePanel().updateSubAgentToolCall(
+                toolCallId,
+                uiStatus,
+                update.result,
+                update.description,
+                update.autoDenied,
+                update.denialReason
+            )
+        } else {
+            consolePanel().updateToolCall(
+                toolCallId, uiStatus,
+                ChatPanelApi.ToolCallUpdate(
+                    details = update.result,
+                    description = update.description,
+                    autoDenied = update.autoDenied,
+                    denialReason = update.denialReason,
+                    arguments = update.arguments,
+                    title = update.title
+                )
             )
         }
     }
@@ -732,7 +743,7 @@ class PromptOrchestrator(
             exception = e,
             turnHadContent = turnHadContent,
             isAuthenticationError = { authService.isAuthenticationError(it) },
-            isClientHealthy = agentManager.isClientHealthy(),
+            isClientHealthy = agentManager.isClientHealthy,
         )
 
         if (c.shouldRestorePrompt) {
@@ -795,18 +806,20 @@ class PromptOrchestrator(
         }
     }
 
-    private fun recordTurnStatsToSqlite(
-        durationMs: Long, inputTokens: Int, outputTokens: Int,
-        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, multiplier: String,
-        commitHashes: List<String>
-    ) {
+    private data class TurnStatsParams(
+        val durationMs: Long, val inputTokens: Int, val outputTokens: Int,
+        val toolCallCount: Int, val linesAdded: Int, val linesRemoved: Int,
+        val multiplier: String, val commitHashes: List<String>
+    )
+
+    private fun recordTurnStatsToSqlite(params: TurnStatsParams) {
         val sessionId = currentSessionId ?: return
         val agentId = agentManager.activeProfileId
-        val premiumRequests = parsePremiumMultiplier(multiplier)
+        val premiumRequests = parsePremiumMultiplier(params.multiplier)
         val now = java.time.Instant.now()
         val date = java.time.LocalDate.now().toString()
         val timestamp = now.toString()
-        val commitHashesStr = commitHashes.joinToString(",").ifEmpty { null }
+        val commitHashesStr = params.commitHashes.joinToString(",").ifEmpty { null }
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
@@ -814,8 +827,8 @@ class PromptOrchestrator(
                 service.recordTurnStats(
                     ToolCallStatisticsService.TurnStatsRecord(
                         sessionId, agentId, date,
-                        inputTokens.toLong(), outputTokens.toLong(), toolCallCount,
-                        durationMs, linesAdded, linesRemoved, premiumRequests, timestamp,
+                        params.inputTokens.toLong(), params.outputTokens.toLong(), params.toolCallCount,
+                        params.durationMs, params.linesAdded, params.linesRemoved, premiumRequests, timestamp,
                         commitHashesStr
                     )
                 )

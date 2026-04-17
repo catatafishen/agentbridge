@@ -4,6 +4,12 @@ import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.intellij.openapi.Disposable
 import javax.swing.JComponent
 
+data class TurnStatsData(
+    val durationMs: Long, val inputTokens: Int, val outputTokens: Int, val costUsd: Double,
+    val toolCallCount: Int, val linesAdded: Int, val linesRemoved: Int,
+    val model: String, val multiplier: String, val commitHashes: List<String> = emptyList()
+)
+
 /**
  * Public API for the chat console panel.
  * AgenticCopilotToolWindowContent programs against this interface.
@@ -48,24 +54,31 @@ interface ChatPanelApi : Disposable {
         kind: String? = null
     )
 
-    fun updateToolCall(
-        id: String,
-        status: String,
-        details: String? = null,
-        description: String? = null,
-        kind: String? = null,
-        autoDenied: Boolean = false,
-        denialReason: String? = null,
-        arguments: String? = null,
-        title: String? = null
+    data class ToolCallUpdate(
+        val details: String? = null,
+        val description: String? = null,
+        val kind: String? = null,
+        val autoDenied: Boolean = false,
+        val denialReason: String? = null,
+        val arguments: String? = null,
+        val title: String? = null
     )
+
+    fun updateToolCall(id: String, status: String, update: ToolCallUpdate = ToolCallUpdate())
 
     // ── Sub-agents ─────────────────────────────────────────────────
 
+    data class SubAgentInitialState(
+        val result: String? = null,
+        val status: String? = null,
+        val description: String? = null,
+        val autoDenied: Boolean = false,
+        val denialReason: String? = null
+    )
+
     fun addSubAgentEntry(
         id: String, agentType: String, description: String, prompt: String?,
-        initialResult: String? = null, initialStatus: String? = null, initialDescription: String? = null,
-        autoDenied: Boolean = false, denialReason: String? = null
+        initialState: SubAgentInitialState = SubAgentInitialState()
     )
 
     fun updateSubAgentResult(
@@ -106,11 +119,7 @@ interface ChatPanelApi : Disposable {
     // ── Turn lifecycle ─────────────────────────────────────────────
 
     fun finishResponse(toolCallCount: Int = 0, modelId: String = "", multiplier: String = "1x")
-    fun emitTurnStats(
-        durationMs: Long, inputTokens: Int, outputTokens: Int, costUsd: Double,
-        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String,
-        commitHashes: List<String> = emptyList()
-    )
+    fun emitTurnStats(stats: TurnStatsData)
 
     fun showQuickReplies(options: List<String>)
     fun disableQuickReplies()

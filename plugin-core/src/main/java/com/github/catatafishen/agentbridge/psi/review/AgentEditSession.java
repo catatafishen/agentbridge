@@ -4,7 +4,6 @@ import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.ChatWebServer;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -15,9 +14,9 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
 import com.intellij.openapi.ui.MessageType;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.ThrowableComputable;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
@@ -228,7 +227,8 @@ public final class AgentEditSession implements Disposable {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return Collections.emptyList();
 
-        String after = ReadAction.compute((ThrowableComputable<String, RuntimeException>) doc::getText);
+        String after = ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) doc::getText);
         if (before.equals(after)) return Collections.emptyList();
 
         return computeRanges(before, after);
@@ -596,7 +596,8 @@ public final class AgentEditSession implements Disposable {
 
     private boolean isProjectFile(@NotNull VirtualFile vf) {
         if (!vf.isValid() || vf.isDirectory()) return false;
-        return ReadAction.compute((ThrowableComputable<Boolean, RuntimeException>) () -> ProjectFileIndex.getInstance(project).isInContent(vf));
+        return ApplicationManager.getApplication().runReadAction(
+            (Computable<Boolean>) () -> ProjectFileIndex.getInstance(project).isInContent(vf));
     }
 
     private void sendRevertNudge(@NotNull VirtualFile vf, @NotNull String reason) {
@@ -741,24 +742,6 @@ public final class AgentEditSession implements Disposable {
         }
     }
 
-    /**
-     * Updates path-based tracking maps when a file is renamed or moved.
-     * Transfers snapshot and newFiles entries from the old path to the new path.
-     */
-    private void transferPathTracking(@NotNull VirtualFile vf) {
-        String oldPath = vf.getUserData(OLD_PATH_KEY);
-        if (oldPath == null) return;
-        vf.putUserData(OLD_PATH_KEY, null);
-
-        String snapshot = snapshots.remove(oldPath);
-        if (snapshot != null) {
-            snapshots.put(vf.getPath(), snapshot);
-        }
-        if (newFiles.remove(oldPath)) {
-            newFiles.add(vf.getPath());
-        }
-    }
-
     private class SessionDocumentListener implements DocumentListener {
 
         @Override
@@ -860,6 +843,24 @@ public final class AgentEditSession implements Disposable {
             String path = vf.getPath();
             if (snapshots.containsKey(path) || newFiles.contains(path)) {
                 vf.putUserData(OLD_PATH_KEY, path);
+            }
+        }
+
+        /**
+         * Updates path-based tracking maps when a file is renamed or moved.
+         * Transfers snapshot and newFiles entries from the old path to the new path.
+         */
+        private void transferPathTracking(@NotNull VirtualFile vf) {
+            String oldPath = vf.getUserData(OLD_PATH_KEY);
+            if (oldPath == null) return;
+            vf.putUserData(OLD_PATH_KEY, null);
+
+            String snapshot = snapshots.remove(oldPath);
+            if (snapshot != null) {
+                snapshots.put(vf.getPath(), snapshot);
+            }
+            if (newFiles.remove(oldPath)) {
+                newFiles.add(vf.getPath());
             }
         }
     }

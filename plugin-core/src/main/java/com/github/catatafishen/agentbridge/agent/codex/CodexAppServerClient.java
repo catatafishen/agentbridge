@@ -53,6 +53,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -102,6 +103,15 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private static final String MCP_TOOL_APPROVAL_QUESTION_ID_PREFIX = "mcp_tool_call_approval_";
     private static final String AGENTS_MD = "AGENTS.md";
 
+    // ── Additional string constants ──────────────────────────────────────────
+
+    private static final String F_MODEL = "model";
+    private static final String F_QUESTION = "question";
+    private static final String F_OPTIONS = "options";
+    private static final String F_REASON = "reason";
+    private static final String CMD_CONFIG = "--config";
+    private static final String DECISION_ACCEPT = "accept";
+
     private static final long TURN_WAIT_POLL_MILLIS = 1000;
 
     // ── Message classification enum ──────────────────────────────────────────
@@ -130,7 +140,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             persistent app-server subprocess (JSON-RPC 2.0 over stdio). \
             Supports streaming text, graceful tool-approval denial, and multi-turn threads. \
             Requires 'codex' to be installed and authenticated via 'codex login'.""");
-        p.setBinaryName("codex");
+        p.setBinaryName(PROFILE_ID);
         p.setAlternateNames(List.of());
         p.setInstallHint("Install with: npm install -g @openai/codex, then run 'codex login'.");
         p.setInstallUrl("https://developers.openai.com/codex/cli");
@@ -158,10 +168,10 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private final Project project;
     private final int mcpPort;
 
-    private volatile Process appServerProcess;
-    private volatile OutputStream stdin;
+    private final AtomicReference<Process> appServerProcess = new AtomicReference<>();
+    private final AtomicReference<OutputStream> stdin = new AtomicReference<>();
     private volatile boolean connected = false;
-    private volatile List<Model> dynamicModels = null;
+    private final AtomicReference<List<Model>> dynamicModels = new AtomicReference<>();
 
     private final AtomicInteger nextId = new AtomicInteger(1);
     private final Map<Integer, CompletableFuture<JsonObject>> pendingRequests = new ConcurrentHashMap<>();
@@ -210,8 +220,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     // Active turn state — one turn at a time over stdio
     private volatile String activeTurnId;
-    private volatile Consumer<SessionUpdate> activeTurnCallback;
-    private volatile CompletableFuture<String> activeTurnResult;
+    private final AtomicReference<Consumer<SessionUpdate>> activeTurnCallback = new AtomicReference<>();
+    private final AtomicReference<CompletableFuture<String>> activeTurnResult = new AtomicReference<>();
     private volatile String activeTurnSessionId;
 
     /**
@@ -223,8 +233,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
      */
     private volatile boolean reasoningActive = false;
 
-    @Nullable
-    private volatile Consumer<PermissionPrompt> permissionRequestListener;
+    private final AtomicReference<Consumer<PermissionPrompt>> permissionRequestListener = new AtomicReference<>();
 
     private String resolvedBinaryPath;
 
@@ -273,15 +282,16 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         connected = false;
         pendingRequests.forEach((id, f) -> f.completeExceptionally(new AgentException("Client stopped", null, false)));
         pendingRequests.clear();
-        CompletableFuture<String> turn = activeTurnResult;
+        CompletableFuture<String> turn = activeTurnResult.get();
         if (turn != null) turn.completeExceptionally(new AgentException("Client stopped", null, false));
-        activeTurnResult = null;
-        activeTurnCallback = null;
-        closeQuietly(stdin);
-        stdin = null;
-        if (appServerProcess != null) {
-            appServerProcess.destroyForcibly();
-            appServerProcess = null;
+        activeTurnResult.set(null);
+        activeTurnCallback.set(null);
+        closeQuietly(stdin.get());
+        stdin.set(null);
+        Process proc = appServerProcess.get();
+        if (proc != null) {
+            proc.destroyForcibly();
+            appServerProcess.set(null);
         }
         sessionToThreadId.clear();
         sessionCancelled.clear();
@@ -299,7 +309,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     @Override
     public boolean isHealthy() {
-        return isConnected() && appServerProcess != null && appServerProcess.isAlive();
+        return isConnected() && appServerProcess.get() != null && appServerProcess.get().isAlive();
     }
 
     @Override
@@ -359,7 +369,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     @Override
     public void setPermissionRequestListener(@Nullable Consumer<PermissionPrompt> listener) {
-        this.permissionRequestListener = listener;
+        this.permissionRequestListener.set(listener);
     }
 
     @Override
@@ -369,7 +379,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     @Override
     public List<Model> getAvailableModels() {
-        List<Model> models = dynamicModels;
+        List<Model> models = dynamicModels.get();
         if (models == null) throw new IllegalStateException("Model list not loaded — agent not initialized");
         return models;
     }
@@ -408,8 +418,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         // Set up the active turn future
         CompletableFuture<String> turnResult = new CompletableFuture<>();
         long turnStartNanos = System.nanoTime();
-        activeTurnResult = turnResult;
-        activeTurnCallback = onUpdate;
+        activeTurnResult.set(turnResult);
+        activeTurnCallback.set(onUpdate);
         activeTurnSessionId = sessionId;
         activeTurnLastOutputNanos = turnStartNanos;
 
@@ -427,8 +437,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             throw new AgentException("Codex turn failed: " + e.getMessage(), e, true);
         } finally {
             activeTurnId = null;
-            activeTurnResult = null;
-            activeTurnCallback = null;
+            activeTurnResult.set(null);
+            activeTurnCallback.set(null);
             activeTurnSessionId = null;
         }
     }
@@ -464,7 +474,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 throw new AgentException("Codex turn timed out after " + silenceSec + " seconds of inactivity", null, true);
             }
 
-            long waitMillis = Math.max(1L, Math.min(TURN_WAIT_POLL_MILLIS, TimeUnit.NANOSECONDS.toMillis(remainingNanos)));
+            long waitMillis = Math.clamp(TimeUnit.NANOSECONDS.toMillis(remainingNanos), 1L, TURN_WAIT_POLL_MILLIS);
             try {
                 return turnResult.get(waitMillis, TimeUnit.MILLISECONDS);
             } catch (java.util.concurrent.TimeoutException ignored) {
@@ -486,14 +496,14 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 pb.directory(new File(project.getBasePath()));
             }
             pb.redirectErrorStream(false);
-            appServerProcess = pb.start();
-            stdin = appServerProcess.getOutputStream();
+            appServerProcess.set(pb.start());
+            stdin.set(appServerProcess.get().getOutputStream());
 
             // Drain stderr on a daemon thread
-            startStderrDrainer(appServerProcess);
+            startStderrDrainer(appServerProcess.get());
 
             // Start reader thread
-            startReaderThread(appServerProcess);
+            startReaderThread(appServerProcess.get());
 
             // Perform JSON-RPC initialize handshake
             initialize();
@@ -515,14 +525,14 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         cmd.add("app-server");
 
         // Disable native shell execution tools; model must use MCP tools instead
-        cmd.add("--config");
+        cmd.add(CMD_CONFIG);
         cmd.add("features.shell_tool=false");
-        cmd.add("--config");
+        cmd.add(CMD_CONFIG);
         cmd.add("features.unified_exec=false");
 
         // Inject MCP server via --config if mcpPort is available
         if (mcpPort > 0) {
-            cmd.add("--config");
+            cmd.add(CMD_CONFIG);
             cmd.add("mcp_servers.agentbridge.url=http://localhost:" + mcpPort + "/mcp");
         }
 
@@ -574,7 +584,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             if (models.isEmpty()) {
                 throw new AgentException("model/list returned no models", null, true);
             }
-            dynamicModels = Collections.unmodifiableList(models);
+            dynamicModels.set(Collections.unmodifiableList(models));
             LOG.info("Loaded " + models.size() + " Codex model(s) from model/list");
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
@@ -602,7 +612,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             project != null && project.getBasePath() != null ? project.getBasePath() : ".");
 
         JsonObject params = new JsonObject();
-        params.addProperty("model", model);
+        params.addProperty(F_MODEL, model);
         params.addProperty("cwd", cwd);
         // on-request: server sends approval notifications we can decline
         params.addProperty("approvalPolicy", "on-request");
@@ -662,7 +672,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                                 @NotNull String sessionId) throws AgentException {
         JsonObject params = new JsonObject();
         params.addProperty("threadId", threadId);
-        params.addProperty("model", model);
+        params.addProperty(F_MODEL, model);
 
         try {
             JsonObject result = sendRequest("thread/resume", params).get(15, TimeUnit.SECONDS);
@@ -701,7 +711,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         JsonObject params = new JsonObject();
         params.addProperty("threadId", threadId);
         params.add("input", input);
-        params.addProperty("model", model);
+        params.addProperty(F_MODEL, model);
 
         String effort = getSessionOption(sessionId, EFFORT_OPTION.key());
         if (effort != null && !effort.isBlank()) {
@@ -777,7 +787,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     }
 
     private boolean writeMessage(@NotNull JsonObject msg) {
-        OutputStream out = stdin;
+        OutputStream out = stdin.get();
         if (out == null) return false;
         try {
             String json = msg.toString();
@@ -816,7 +826,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                 if (connected) LOG.warn("codex app-server reader ended: " + e.getMessage());
             } finally {
                 connected = false;
-                CompletableFuture<String> turn = activeTurnResult;
+                CompletableFuture<String> turn = activeTurnResult.get();
                 if (turn != null && !turn.isDone()) {
                     turn.completeExceptionally(new AgentException("codex app-server disconnected", null, true));
                 }
@@ -838,7 +848,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             if (isDebugLoggingEnabled()) {
                 LOG.info("[Codex] <<< " + line);
             }
-            if (activeTurnResult != null && !activeTurnResult.isDone()) {
+            if (activeTurnResult.get() != null && !activeTurnResult.get().isDone()) {
                 activeTurnLastOutputNanos = System.nanoTime();
             }
             dispatchMessage(msg);
@@ -863,14 +873,15 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             case SERVER_REQUEST -> handleServerRequest(msg);
             case NOTIFICATION -> handleNotification(msg);
             default -> {
+                // Ignore — UNKNOWN message type requires no action
             }
         }
     }
 
     static MessageType classifyMessageType(@NotNull JsonObject msg) {
         boolean hasId = msg.has("id") && !msg.get("id").isJsonNull();
-        boolean hasMethod = msg.has("method");
-        boolean hasResult = msg.has("result") || msg.has("error");
+        boolean hasMethod = msg.has(F_METHOD);
+        boolean hasResult = msg.has(F_RESULT) || msg.has(F_ERROR);
         if (hasId && hasResult && !hasMethod) return MessageType.RESPONSE;
         if (hasMethod && hasId) return MessageType.SERVER_REQUEST;
         if (hasMethod) return MessageType.NOTIFICATION;
@@ -903,7 +914,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     }
 
     static String extractJsonRpcErrorMessage(@NotNull JsonObject errorObj) {
-        return errorObj.has("message") ? errorObj.get("message").getAsString() : errorObj.toString();
+        return errorObj.has(F_MESSAGE) ? errorObj.get(F_MESSAGE).getAsString() : errorObj.toString();
     }
 
     // ── Server-initiated request handling ────────────────────────────────────
@@ -1033,29 +1044,17 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         return "Allow for this session";
     }
 
-    /**
-     * Forwards a non-approval {@code requestUserInput} question to the user via {@link AskUserTool}.
-     * Extracts the question text and options from the Codex protocol format and translates the
-     * user's response back to an answer label.
-     */
     @NotNull
     private String askUserForQuestionAnswer(@NotNull JsonObject question) {
-        String questionText = question.has("question") ? question.get("question").getAsString() : "";
-        List<String> optionLabels = new ArrayList<>();
-        if (question.has("options") && question.get("options").isJsonArray()) {
-            for (JsonElement opt : question.getAsJsonArray("options")) {
-                if (opt.isJsonObject() && opt.getAsJsonObject().has("label")) {
-                    optionLabels.add(opt.getAsJsonObject().get("label").getAsString());
-                }
-            }
-        }
+        String questionText = question.has(F_QUESTION) ? question.get(F_QUESTION).getAsString() : "";
+        List<String> optionLabels = extractOptionLabels(question);
 
         JsonObject toolArgs = new JsonObject();
-        toolArgs.addProperty("question", questionText);
+        toolArgs.addProperty(F_QUESTION, questionText);
         if (!optionLabels.isEmpty()) {
             JsonArray opts = new JsonArray();
             optionLabels.forEach(opts::add);
-            toolArgs.add("options", opts);
+            toolArgs.add(F_OPTIONS, opts);
         }
 
         try {
@@ -1070,6 +1069,22 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             // Return the last option (typically "Cancel") as a safe fallback
             return optionLabels.isEmpty() ? "Cancel" : optionLabels.getLast();
         }
+    }
+
+    /**
+     * Extracts the list of option labels from a question object's "options" array.
+     */
+    @NotNull
+    private static List<String> extractOptionLabels(@NotNull JsonObject question) {
+        List<String> labels = new ArrayList<>();
+        if (question.has(F_OPTIONS) && question.get(F_OPTIONS).isJsonArray()) {
+            for (JsonElement opt : question.getAsJsonArray(F_OPTIONS)) {
+                if (opt.isJsonObject() && opt.getAsJsonObject().has("label")) {
+                    labels.add(opt.getAsJsonObject().get("label").getAsString());
+                }
+            }
+        }
+        return labels;
     }
 
     // ── Notification handling ─────────────────────────────────────────────────
@@ -1091,7 +1106,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     }
 
     private void handleTextDelta(@NotNull JsonObject params) {
-        Consumer<SessionUpdate> cb = activeTurnCallback;
+        Consumer<SessionUpdate> cb = activeTurnCallback.get();
         if (cb == null) return;
         JsonElement delta = params.get(F_DELTA);
         if (delta == null) return;
@@ -1120,42 +1135,43 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             pendingMcpToolNames.put(item.get(F_ID).getAsString(), toolName);
         }
 
-        Consumer<SessionUpdate> cb = activeTurnCallback;
+        Consumer<SessionUpdate> cb = activeTurnCallback.get();
         if (cb == null) return;
-        switch (type) {
-            case TYPE_MCP_TOOL_CALL -> emitMcpToolCallStart(item, cb);
-            case "reasoning" -> {
-                // Emit one thinking chip per turn, then stream any available reasoning text into it.
-                if (!reasoningActive) {
-                    reasoningActive = true;
-                    cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text("Thought"))));
-                }
-                appendReasoningContent(item, cb);
+        if (TYPE_MCP_TOOL_CALL.equals(type)) {
+            emitMcpToolCallStart(item, cb);
+        } else if ("reasoning".equals(type)) {
+            // Emit one thinking chip per turn, then stream any available reasoning text into it.
+            if (!reasoningActive) {
+                reasoningActive = true;
+                cb.accept(new SessionUpdate.AgentThoughtChunk(List.of(new ContentBlock.Text("Thought"))));
             }
+            appendReasoningContent(item, cb);
         }
     }
 
     private void handleItemCompleted(@NotNull JsonObject params) {
-        Consumer<SessionUpdate> cb = activeTurnCallback;
         if (!params.has(F_ITEM)) return;
         JsonObject item = params.getAsJsonObject(F_ITEM);
         String type = item.has(F_TYPE) ? item.get(F_TYPE).getAsString() : "";
 
+        // Always update pending tool tracking, regardless of active turn callback
+        if (TYPE_MCP_TOOL_CALL.equals(type) && item.has(F_ID)) {
+            pendingMcpToolNames.remove(item.get(F_ID).getAsString());
+        }
+
+        Consumer<SessionUpdate> cb = activeTurnCallback.get();
+        if (cb == null) return;
+
         switch (type) {
-            case TYPE_MCP_TOOL_CALL -> {
-                if (item.has(F_ID)) pendingMcpToolNames.remove(item.get(F_ID).getAsString());
-                if (cb != null) emitMcpToolCallEnd(item, cb);
-            }
-            case "commandExecution" -> {
-                // Native command attempted — emit as a tool call (already declined, just for UI)
-                if (cb != null) emitNativeCommandItem(item, cb);
-            }
+            case TYPE_MCP_TOOL_CALL -> emitMcpToolCallEnd(item, cb);
+            // Native command attempted — emit as a tool call (already declined, just for UI)
+            case "commandExecution" -> emitNativeCommandItem(item, cb);
             default -> { /* reasoning is streamed via summaryTextDelta; no other types require handling */ }
         }
     }
 
     private void handleReasoningDelta(@NotNull JsonObject params) {
-        Consumer<SessionUpdate> cb = activeTurnCallback;
+        Consumer<SessionUpdate> cb = activeTurnCallback.get();
         if (cb == null) return;
         String text = extractReasoningText(params.get(F_DELTA));
         if (!text.isEmpty()) {
@@ -1177,7 +1193,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     private void handleTurnCompleted(@NotNull JsonObject params) {
         reasoningActive = false;
-        Consumer<SessionUpdate> cb = activeTurnCallback;
+        Consumer<SessionUpdate> cb = activeTurnCallback.get();
         JsonObject turn = params.has(F_TURN) ? params.getAsJsonObject(F_TURN) : new JsonObject();
         String status = turn.has(F_STATUS) ? turn.get(F_STATUS).getAsString() : "completed";
 
@@ -1187,7 +1203,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             if (cb != null) {
                 cb.accept(new SessionUpdate.Banner(errorMsg, SessionUpdate.BannerLevel.ERROR, SessionUpdate.ClearOn.MANUAL));
             }
-            CompletableFuture<String> f = activeTurnResult;
+            CompletableFuture<String> f = activeTurnResult.get();
             if (f != null) f.complete(F_ERROR);
             return;
         }
@@ -1196,7 +1212,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         if (cb != null && turn.has(F_USAGE)) {
             emitUsageStats(turn.getAsJsonObject(F_USAGE), cb);
         }
-        CompletableFuture<String> f = activeTurnResult;
+        CompletableFuture<String> f = activeTurnResult.get();
         if (f != null) f.complete("interrupted".equals(status) ? "cancelled" : "end_turn");
     }
 
@@ -1212,11 +1228,11 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             JsonObject turn = params.getAsJsonObject(F_TURN);
             errorMsg = extractTurnErrorMessage(turn);
         }
-        Consumer<SessionUpdate> cb = activeTurnCallback;
+        Consumer<SessionUpdate> cb = activeTurnCallback.get();
         if (cb != null) {
             cb.accept(new SessionUpdate.Banner(errorMsg, SessionUpdate.BannerLevel.ERROR, SessionUpdate.ClearOn.MANUAL));
         }
-        CompletableFuture<String> f = activeTurnResult;
+        CompletableFuture<String> f = activeTurnResult.get();
         if (f != null) f.complete(F_ERROR);
     }
 
@@ -1266,42 +1282,23 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         return "{\"command\":\"" + command.replace("\"", "\\\"") + "\"}";
     }
 
-    /**
-     * Routes Codex's native {@code request_user_input} tool call to our {@link AskUserTool},
-     * then returns the user's response to Codex. Blocks the reader thread until the user replies
-     * (same pattern as {@link #requestNativeApproval}).
-     */
     private void handleNativeAskUserRequest(@NotNull JsonElement id, @NotNull JsonObject params) {
         JsonObject arguments = params.has(F_ARGUMENTS) && params.get(F_ARGUMENTS).isJsonObject()
             ? params.getAsJsonObject(F_ARGUMENTS) : new JsonObject();
 
-        // Codex uses "question" or "prompt" for the question text
-        String question = null;
-        for (String key : List.of("question", "prompt", "message", "text")) {
-            if (arguments.has(key) && arguments.get(key).isJsonPrimitive()) {
-                question = arguments.get(key).getAsString().trim();
-                if (!question.isEmpty()) break;
-            }
-        }
+        String question = findQuestionTextInArgs(arguments);
         if (question == null || question.isEmpty()) {
             question = "The agent has a question for you. Please provide your response.";
         }
 
-        // Build args matching AskUserTool's expected schema
         JsonObject toolArgs = new JsonObject();
-        toolArgs.addProperty("question", question);
-        JsonArray options = new JsonArray();
-        if (arguments.has("options") && arguments.get("options").isJsonArray()) {
-            options = arguments.getAsJsonArray("options");
-        }
-        if (options.isEmpty()) {
-            options.add("Continue");
-        }
-        toolArgs.add("options", options);
+        toolArgs.addProperty(F_QUESTION, question);
+        JsonArray options = extractOptionsArray(arguments);
+        toolArgs.add(F_OPTIONS, options);
 
         // Emit a ToolCall chip so the user sees the ask_user tool being invoked
         String chipId = UUID.randomUUID().toString();
-        Consumer<SessionUpdate> cb = activeTurnCallback;
+        Consumer<SessionUpdate> cb = activeTurnCallback.get();
         if (cb != null) {
             cb.accept(new SessionUpdate.ToolCall(chipId, "ask_user", SessionUpdate.ToolKind.OTHER,
                 toolArgs.toString(), null, null, null, null, null));
@@ -1324,13 +1321,40 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
         // Send response back to Codex
         JsonObject textBlock = new JsonObject();
-        textBlock.addProperty(F_TYPE, "text");
+        textBlock.addProperty(F_TYPE, F_TEXT);
         textBlock.addProperty(F_TEXT, userResponse);
         JsonArray content = new JsonArray();
         content.add(textBlock);
         JsonObject resp = new JsonObject();
         resp.add("content", content);
         sendResponse(id, resp);
+    }
+
+    /**
+     * Searches for the question text in a JSON object by trying common field names in priority order.
+     */
+    @Nullable
+    private static String findQuestionTextInArgs(@NotNull JsonObject arguments) {
+        for (String key : List.of(F_QUESTION, "prompt", F_MESSAGE, F_TEXT)) {
+            if (arguments.has(key) && arguments.get(key).isJsonPrimitive()) {
+                String val = arguments.get(key).getAsString().trim();
+                if (!val.isEmpty()) return val;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the options array from a JSON object, falling back to a default "Continue" option.
+     */
+    @NotNull
+    private static JsonArray extractOptionsArray(@NotNull JsonObject arguments) {
+        if (arguments.has(F_OPTIONS) && arguments.get(F_OPTIONS).isJsonArray()) {
+            return arguments.getAsJsonArray(F_OPTIONS);
+        }
+        JsonArray defaultOpts = new JsonArray();
+        defaultOpts.add("Continue");
+        return defaultOpts;
     }
 
     private void handleNativeApprovalRequest(@NotNull JsonElement id, @NotNull String method, @NotNull JsonObject params) {
@@ -1340,14 +1364,14 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
         if (sessionId != null && isSessionApprovalAllowed(sessionId, permissionKey)) {
             LOG.info("Allowing native approval from session cache: " + method + " -> " + permissionKey);
-            sendNativeApprovalDecision(id, "accept");
+            sendNativeApprovalDecision(id, DECISION_ACCEPT);
             return;
         }
 
         switch (permission) {
             case ALLOW -> {
                 LOG.info("Allowing native approval from settings: " + method + " -> " + permissionKey);
-                sendNativeApprovalDecision(id, "accept");
+                sendNativeApprovalDecision(id, DECISION_ACCEPT);
                 if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
             }
             case DENY -> {
@@ -1362,13 +1386,15 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                         if (sessionId != null) allowSessionApproval(sessionId, permissionKey);
                         sendNativeApprovalDecision(id, "acceptForSession");
                     }
-                    case ALLOW_ONCE -> sendNativeApprovalDecision(id, "accept");
+                    case ALLOW_ONCE -> sendNativeApprovalDecision(id, DECISION_ACCEPT);
                     case DENY -> {
                         sendNativeApprovalDecision(id, "decline");
                         emitToolDeclinedBanner(method, params);
                     }
+                    default -> throw new IllegalStateException("Unexpected value: " + response);
                 }
             }
+            default -> throw new IllegalStateException("Unexpected value: " + permission);
         }
     }
 
@@ -1435,7 +1461,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             }
         };
 
-        Consumer<PermissionPrompt> listener = permissionRequestListener;
+        Consumer<PermissionPrompt> listener = permissionRequestListener.get();
         if (listener != null) {
             listener.accept(prompt);
         } else if (project != null) {
@@ -1468,10 +1494,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         return CodexMessageParser.buildNativeApprovalDescription(method, params);
     }
 
-    private static String extractNativeApprovalDetail(@NotNull JsonObject params) {
-        return CodexMessageParser.extractNativeApprovalDetail(params);
-    }
-
     private void sendNativeApprovalDecision(@NotNull JsonElement id, @NotNull String decision) {
         JsonObject result = new JsonObject();
         result.addProperty("decision", decision);
@@ -1480,14 +1502,14 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     private void emitToolDeclinedBanner(@NotNull String method, @NotNull JsonObject params) {
         // Surface a soft warning if the model is trying to use native tools
-        Consumer<SessionUpdate> cb = activeTurnCallback;
+        Consumer<SessionUpdate> cb = activeTurnCallback.get();
         if (cb == null) return;
         String detail;
         if (params.has(F_COMMAND) && !params.get(F_COMMAND).isJsonNull()) {
             JsonElement command = params.get(F_COMMAND);
             detail = command.isJsonPrimitive() ? command.getAsString() : command.toString();
-        } else if (params.has("reason") && !params.get("reason").isJsonNull()) {
-            JsonElement reason = params.get("reason");
+        } else if (params.has(F_REASON) && !params.get(F_REASON).isJsonNull()) {
+            JsonElement reason = params.get(F_REASON);
             detail = reason.isJsonPrimitive() ? reason.getAsString() : reason.toString();
         } else {
             detail = method;

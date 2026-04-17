@@ -105,7 +105,7 @@ object ToolRenderers {
      * back to the built-in renderer map for Copilot CLI tools.
      * Returns null if no renderer is found.
      */
-    fun get(
+    operator fun get(
         toolName: String,
         registry: ToolRegistry?
     ): ToolResultRenderer? {
