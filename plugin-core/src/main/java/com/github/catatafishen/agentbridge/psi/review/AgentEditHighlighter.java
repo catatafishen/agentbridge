@@ -39,9 +39,9 @@ public final class AgentEditHighlighter implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(AgentEditHighlighter.class);
 
-    private static final Color ADDED_BG = new Color(76, 175, 80, 40);
-    private static final Color MODIFIED_BG = new Color(255, 193, 7, 45);
-    private static final Color DELETED_BG = new Color(244, 67, 54, 55);
+    private static final Color ADDED_BG = new Color(76, 175, 80, 80);
+    private static final Color MODIFIED_BG = new Color(255, 193, 7, 90);
+    private static final Color DELETED_BG = new Color(244, 67, 54, 100);
 
     private final Project project;
 
@@ -168,11 +168,13 @@ public final class AgentEditHighlighter implements Disposable {
         int endOffset = editor.getDocument().getLineEndOffset(endLineInclusive);
         if (endOffset < startOffset) return null;
 
-        return markup.addRangeHighlighter(
+        RangeHighlighter h = markup.addRangeHighlighter(
             startOffset, endOffset,
             HighlighterLayer.SELECTION - 1,
             attrs,
             HighlighterTargetArea.LINES_IN_RANGE);
+        h.setErrorStripeMarkColor(bg);
+        return h;
     }
 
     /**

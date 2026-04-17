@@ -168,19 +168,32 @@ public abstract class FileTool extends Tool {
 
     /**
      * Notifies the {@link AgentEditSession} that a file is about to be modified.
-     * Starts the session (if the review setting is enabled) and captures a before-snapshot.
-     * All file-writing tools should call this before performing mutations.
+     * Starts the session (if the review setting is enabled), captures a before-snapshot,
+     * and sets the agent-edit marker so the session's document listener can distinguish
+     * agent edits from unrelated changes (branch switches, IDE reformats, etc.).
+     * <p>
+     * <b>Callers must</b> invoke {@link #notifyEditComplete()} in a {@code finally} block
+     * after the write completes.
      *
      * @param project the current project
      * @param vf      the virtual file about to be modified (may be null for new files)
      * @param doc     the document (used to read current content); may be null
      */
     public static void notifyBeforeEdit(Project project, VirtualFile vf, Document doc) {
+        AgentEditSession.markAgentEditStart();
         AgentEditSession session = AgentEditSession.getInstance(project);
         session.ensureStarted();
         if (vf != null && doc != null) {
             session.captureBeforeContent(vf, doc.getText());
         }
+    }
+
+    /**
+     * Clears the agent-edit marker after a tool's write operation completes.
+     * Always call in a {@code finally} block paired with {@link #notifyBeforeEdit}.
+     */
+    public static void notifyEditComplete() {
+        AgentEditSession.markAgentEditEnd();
     }
 
     /**

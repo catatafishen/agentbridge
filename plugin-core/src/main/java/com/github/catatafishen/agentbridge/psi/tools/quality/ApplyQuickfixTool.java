@@ -130,12 +130,15 @@ public final class ApplyQuickfixTool extends QualityTool {
                 }
 
                 // Write phase: only the actual fix application needs WriteAction
+                FileTool.notifyBeforeEdit(project, vf, document);
                 WriteAction.run(() -> {
                     try {
                         resultFuture.complete(applyAndReportFix(lineProblems, fixIndex, pathStr, targetLine));
                     } catch (Exception e) {
                         LOG.warn("Error applying quickfix", e);
                         resultFuture.complete("Error applying quickfix: " + e.getMessage());
+                    } finally {
+                        FileTool.notifyEditComplete();
                     }
                 });
             } catch (Exception e) {

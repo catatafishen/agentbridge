@@ -131,9 +131,13 @@ public final class InsertAfterSymbolTool extends EditingTool {
             final int fOffset = offset;
 
             FileTool.notifyBeforeEdit(project, vf, doc);
-            WriteCommandAction.runWriteCommandAction(
-                project, "Insert After Symbol", null,
-                () -> doc.insertString(fOffset, fContent));
+            try {
+                WriteCommandAction.runWriteCommandAction(
+                    project, "Insert After Symbol", null,
+                    () -> doc.insertString(fOffset, fContent));
+            } finally {
+                FileTool.notifyEditComplete();
+            }
 
             PsiDocumentManager.getInstance(project).commitDocument(doc);
             formatInline(vf);

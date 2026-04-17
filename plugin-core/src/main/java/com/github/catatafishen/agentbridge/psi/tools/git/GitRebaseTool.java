@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -84,6 +85,7 @@ public final class GitRebaseTool extends GitTool {
         String result = runGit(buildRebaseArgs(args).toArray(String[]::new));
         if (result.startsWith("Error")) return fetchNote + result;
 
+        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git rebase");
         return fetchNote + result + getBranchContext();
     }
 

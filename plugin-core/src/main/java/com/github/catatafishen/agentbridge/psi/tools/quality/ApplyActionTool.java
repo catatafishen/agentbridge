@@ -184,10 +184,17 @@ public final class ApplyActionTool extends QualityTool {
 
     private String applyWithOption(String option, String actionName, String pathStr, int targetLine,
                                    String before, ActionContext ctx) {
-        boolean selected = DialogInterceptor.runAndSelectOption(
-            () -> invokeRespectingWriteAction(actionName, ctx),
-            option
-        );
+        VirtualFile vf = FileDocumentManager.getInstance().getFile(ctx.doc());
+        FileTool.notifyBeforeEdit(project, vf, ctx.doc());
+        boolean selected;
+        try {
+            selected = DialogInterceptor.runAndSelectOption(
+                () -> invokeRespectingWriteAction(actionName, ctx),
+                option
+            );
+        } finally {
+            FileTool.notifyEditComplete();
+        }
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
         FileDocumentManager.getInstance().saveDocument(ctx.doc());
         String after = ctx.doc().getText();
@@ -215,7 +222,13 @@ public final class ApplyActionTool extends QualityTool {
 
     private String applyNormally(String actionName, String pathStr, int targetLine,
                                  String before, ActionContext ctx) {
-        invokeRespectingWriteAction(actionName, ctx);
+        VirtualFile vf = FileDocumentManager.getInstance().getFile(ctx.doc());
+        FileTool.notifyBeforeEdit(project, vf, ctx.doc());
+        try {
+            invokeRespectingWriteAction(actionName, ctx);
+        } finally {
+            FileTool.notifyEditComplete();
+        }
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
         FileDocumentManager.getInstance().saveDocument(ctx.doc());
         String after = ctx.doc().getText();

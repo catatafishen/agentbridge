@@ -128,15 +128,20 @@ public final class RefactorTool extends RefactoringTool {
                 ". Use search_symbols to find the correct name and location.";
         }
 
+        FileTool.notifyBeforeEdit(project, vf, document);
         String[] result = new String[1];
-        PlatformApiCompat.writeActionRunAndWait(() -> {
-            try {
-                result[0] = executeRefactoring(operation, targetElement, symbolName, newName, pathStr);
-            } catch (Exception e) {
-                LOG.warn("Refactoring error", e);
-                result[0] = "Error during refactoring: " + e.getMessage();
-            }
-        });
+        try {
+            PlatformApiCompat.writeActionRunAndWait(() -> {
+                try {
+                    result[0] = executeRefactoring(operation, targetElement, symbolName, newName, pathStr);
+                } catch (Exception e) {
+                    LOG.warn("Refactoring error", e);
+                    result[0] = "Error during refactoring: " + e.getMessage();
+                }
+            });
+        } finally {
+            FileTool.notifyEditComplete();
+        }
         return result[0];
     }
 

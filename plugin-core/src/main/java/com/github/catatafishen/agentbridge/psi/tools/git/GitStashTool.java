@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.ui.renderers.GitStashRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -85,15 +86,19 @@ public final class GitStashTool extends GitTool {
             }
             case "pop" -> {
                 String index = stashRef(args);
-                yield index != null
+                String result = index != null
                     ? runGit(CMD_STASH, "pop", index)
                     : runGit(CMD_STASH, "pop");
+                AgentEditSession.getInstance(project).invalidateOnWorktreeChange("stash pop");
+                yield result;
             }
             case ACTION_APPLY -> {
                 String index = stashRef(args);
-                yield index != null
+                String result = index != null
                     ? runGit(CMD_STASH, ACTION_APPLY, index)
                     : runGit(CMD_STASH, ACTION_APPLY);
+                AgentEditSession.getInstance(project).invalidateOnWorktreeChange("stash apply");
+                yield result;
             }
             case "drop" -> {
                 String index = stashRef(args);

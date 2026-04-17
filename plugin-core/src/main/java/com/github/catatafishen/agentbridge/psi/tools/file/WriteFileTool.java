@@ -173,8 +173,12 @@ public class WriteFileTool extends FileTool {
         if (doc != null) {
             String oldContent = doc.getText();
             notifyBeforeEdit(project, vf, doc);
-            WriteCommandAction.runWriteCommandAction(
-                project, "Write File", null, () -> doc.setText(newContent));
+            try {
+                WriteCommandAction.runWriteCommandAction(
+                    project, "Write File", null, () -> doc.setText(newContent));
+            } finally {
+                notifyEditComplete();
+            }
             FileDocumentManager.getInstance().saveDocument(doc);
             int[] diff = CodeChangeTracker.diffLines(oldContent, newContent);
             CodeChangeTracker.recordChange(diff[0], diff[1]);
@@ -282,9 +286,13 @@ public class WriteFileTool extends FileTool {
         final int finalIdx = idx;
         final int finalLen = matchLen;
         notifyBeforeEdit(project, vf, doc);
-        WriteCommandAction.runWriteCommandAction(
-            project, "Edit File", null,
-            () -> doc.replaceString(finalIdx, finalIdx + finalLen, normalizedNew));
+        try {
+            WriteCommandAction.runWriteCommandAction(
+                project, "Edit File", null,
+                () -> doc.replaceString(finalIdx, finalIdx + finalLen, normalizedNew));
+        } finally {
+            notifyEditComplete();
+        }
         FileDocumentManager.getInstance().saveDocument(doc);
         CodeChangeTracker.recordChange(CodeChangeTracker.countLines(normalizedNew), CodeChangeTracker.countLines(normalizedOld));
         String syntaxWarning = checkSyntaxErrors(doc, pathStr);
@@ -343,9 +351,13 @@ public class WriteFileTool extends FileTool {
         final String fNew = newStr;
         int replacedLines = endLine - startLine + 1;
         notifyBeforeEdit(project, vf, doc);
-        WriteCommandAction.runWriteCommandAction(
-            project, "Edit File (Line Range)", null,
-            () -> doc.replaceString(fStart, fEnd, fNew));
+        try {
+            WriteCommandAction.runWriteCommandAction(
+                project, "Edit File (Line Range)", null,
+                () -> doc.replaceString(fStart, fEnd, fNew));
+        } finally {
+            notifyEditComplete();
+        }
         FileDocumentManager.getInstance().saveDocument(doc);
         CodeChangeTracker.recordChange(CodeChangeTracker.countLines(fNew), replacedLines);
         String syntaxWarning = checkSyntaxErrors(doc, pathStr);
@@ -431,12 +443,16 @@ public class WriteFileTool extends FileTool {
             return;
         }
         notifyBeforeEdit(project, vf, doc);
-        WriteCommandAction.runWriteCommandAction(project, "Edit File", null, () -> {
-            for (int i = positions.size() - 1; i >= 0; i--) {
-                int start = positions.get(i);
-                doc.replaceString(start, start + normalizedOld.length(), normalizedNew);
-            }
-        });
+        try {
+            WriteCommandAction.runWriteCommandAction(project, "Edit File", null, () -> {
+                for (int i = positions.size() - 1; i >= 0; i--) {
+                    int start = positions.get(i);
+                    doc.replaceString(start, start + normalizedOld.length(), normalizedNew);
+                }
+            });
+        } finally {
+            notifyEditComplete();
+        }
         FileDocumentManager.getInstance().saveDocument(doc);
         CodeChangeTracker.recordChange(
             positions.size() * CodeChangeTracker.countLines(normalizedNew),

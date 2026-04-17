@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.ui.renderers.GitBranchRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -78,6 +79,7 @@ public final class GitBranchTool extends GitTool {
                     : null;
                 String result = ideCreate(name, base);
                 if (result.startsWith("Error")) yield result;
+                AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch create");
                 yield "Created and switched to branch '" + name + "'\n" + getBranchContext();
             }
             case "switch", CMD_CHECKOUT -> {
@@ -85,6 +87,7 @@ public final class GitBranchTool extends GitTool {
                 if (name == null) yield "Error: 'name' parameter is required for 'switch'";
                 String result = ideSwitch(name);
                 if (result.startsWith("Error")) yield result;
+                AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch switch");
                 yield "Switched to branch '" + name + "'\n" + getBranchContext();
             }
             case "delete" -> {

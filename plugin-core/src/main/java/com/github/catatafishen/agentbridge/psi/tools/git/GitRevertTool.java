@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -70,6 +71,10 @@ public final class GitRevertTool extends GitTool {
 
         cmdArgs.add(args.get(PARAM_COMMIT).getAsString());
 
-        return runGit(cmdArgs.toArray(String[]::new));
+        String result = runGit(cmdArgs.toArray(String[]::new));
+        if (!result.startsWith("Error")) {
+            AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git revert");
+        }
+        return result;
     }
 }

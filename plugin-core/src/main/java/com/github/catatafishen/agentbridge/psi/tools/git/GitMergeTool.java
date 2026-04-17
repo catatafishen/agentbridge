@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -107,6 +108,7 @@ public final class GitMergeTool extends GitTool {
         String result = runGit(cmdArgs.toArray(String[]::new));
         if (result.startsWith("Error")) return fetchNote + result;
 
+        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git merge");
         return fetchNote + result + getBranchSummary();
     }
 }

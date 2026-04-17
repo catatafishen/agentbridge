@@ -116,9 +116,13 @@ public final class ReplaceSymbolBodyTool extends EditingTool {
                 final String fNew = normalized;
 
                 FileTool.notifyBeforeEdit(project, vf, doc);
-                WriteCommandAction.runWriteCommandAction(
-                    project, "Replace Symbol Body", null,
-                    () -> doc.replaceString(fStart, fEnd, fNew));
+                try {
+                    WriteCommandAction.runWriteCommandAction(
+                        project, "Replace Symbol Body", null,
+                        () -> doc.replaceString(fStart, fEnd, fNew));
+                } finally {
+                    FileTool.notifyEditComplete();
+                }
 
                 PsiDocumentManager.getInstance(project).commitDocument(doc);
                 formatInline(vf);

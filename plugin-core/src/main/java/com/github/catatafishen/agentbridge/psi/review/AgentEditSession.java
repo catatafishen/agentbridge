@@ -64,6 +64,32 @@ public final class AgentEditSession implements Disposable {
     private volatile boolean active;
 
     /**
+     * Thread-local marker set during agent-originated tool edits.
+     * The {@link SessionDocumentListener} uses this to distinguish agent edits
+     * from unrelated document changes (branch switches, IDE reformats, user typing).
+     */
+    private static final ThreadLocal<Boolean> agentEditActive = ThreadLocal.withInitial(() -> false);
+
+    /**
+     * Marks the current thread as executing an agent-originated edit.
+     * Must be paired with {@link #markAgentEditEnd()} in a finally block.
+     */
+    public static void markAgentEditStart() {
+        agentEditActive.set(true);
+    }
+
+    /**
+     * Clears the agent-edit marker for the current thread.
+     */
+    public static void markAgentEditEnd() {
+        agentEditActive.set(false);
+    }
+
+    static boolean isAgentEditActive() {
+        return agentEditActive.get();
+    }
+
+    /**
      * Before-content snapshots keyed by canonical VFS path.
      */
     private final Map<String, String> snapshots = new ConcurrentHashMap<>();
@@ -115,12 +141,25 @@ public final class AgentEditSession implements Disposable {
         LOG.info("Agent edit review session started");
     }
 
+    /**
+     * Ends the session if active. Called from git tools that change the working tree
+     * (branch switch, reset --hard, rebase, stash pop, merge, pull, cherry-pick, revert).
+     * After a worktree change, existing snapshots are invalid since files may have
+     * reverted to different content.
+     */
+    public void invalidateOnWorktreeChange(@NotNull String operation) {
+        if (!active) return;
+        LOG.info("Invalidating review session due to: " + operation);
+        endSession();
+    }
+
     public void captureBeforeContent(@NotNull VirtualFile vf, @NotNull String content) {
         if (!active) return;
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
         if (!isProjectFile(vf)) return;
         String prev = snapshots.putIfAbsent(vf.getPath(), content);
         if (prev == null) {
+            LOG.info("Captured before-snapshot for: " + getRelativePath(vf));
             com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
         }
     }
@@ -331,6 +370,10 @@ public final class AgentEditSession implements Disposable {
         @Override
         public void beforeDocumentChange(@NotNull DocumentEvent event) {
             if (!active) return;
+            // Only capture snapshots during agent-originated tool edits.
+            // Non-agent changes (branch switches, IDE reformats, user typing)
+            // would pollute the session with incorrect "before" content.
+            if (!isAgentEditActive()) return;
 
             Document doc = event.getDocument();
             VirtualFile vf = FileDocumentManager.getInstance().getFile(doc);

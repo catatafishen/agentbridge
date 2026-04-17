@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.services.PermissionTemplateUtil;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -112,6 +113,7 @@ public final class GitPullTool extends GitTool {
         String result = runGit(cmdArgs.toArray(String[]::new));
         if (result.startsWith("Error")) return result;
 
+        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git pull");
         return result + getBranchContext();
     }
 }

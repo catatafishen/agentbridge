@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
+import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -73,6 +74,7 @@ public final class GitResetTool extends GitTool {
         }
 
         String result = runGit(cmdArgs.toArray(String[]::new));
+        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git reset");
         return result.isBlank() ? "Reset completed successfully." : result;
     }
 

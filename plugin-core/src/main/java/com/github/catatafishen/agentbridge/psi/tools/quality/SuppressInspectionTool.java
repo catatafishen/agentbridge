@@ -132,16 +132,21 @@ public final class SuppressInspectionTool extends QualityTool {
 
         String fileName = vf.getName();
 
-        if (fileName.endsWith(ToolUtils.JAVA_EXTENSION)) {
-            try {
-                resultFuture.complete(com.github.catatafishen.agentbridge.psi.java.CodeQualityJavaSupport.suppress(project, element, inspectionId, document));
-            } catch (NoClassDefFoundError e) {
+        FileTool.notifyBeforeEdit(project, vf, document);
+        try {
+            if (fileName.endsWith(ToolUtils.JAVA_EXTENSION)) {
+                try {
+                    resultFuture.complete(com.github.catatafishen.agentbridge.psi.java.CodeQualityJavaSupport.suppress(project, element, inspectionId, document));
+                } catch (NoClassDefFoundError e) {
+                    resultFuture.complete(suppressWithComment(element, inspectionId, document));
+                }
+            } else if (fileName.endsWith(".kt") || fileName.endsWith(".kts")) {
+                resultFuture.complete(suppressKotlin(element, inspectionId, document));
+            } else {
                 resultFuture.complete(suppressWithComment(element, inspectionId, document));
             }
-        } else if (fileName.endsWith(".kt") || fileName.endsWith(".kts")) {
-            resultFuture.complete(suppressKotlin(element, inspectionId, document));
-        } else {
-            resultFuture.complete(suppressWithComment(element, inspectionId, document));
+        } finally {
+            FileTool.notifyEditComplete();
         }
     }
 
