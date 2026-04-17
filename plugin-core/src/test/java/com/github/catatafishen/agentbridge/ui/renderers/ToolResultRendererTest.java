@@ -3,9 +3,11 @@ package com.github.catatafishen.agentbridge.ui.renderers;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.awt.Color;
+import java.awt.*;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for static/pure utility methods in {@link ToolRenderers}.
@@ -173,6 +175,41 @@ class ToolResultRendererTest {
         @Test
         void todoWriteCapitalizedHasRenderer() {
             assertTrue(ToolRenderers.INSTANCE.hasRenderer("TodoWrite", null));
+        }
+
+        @Test
+        void taskHasRenderer() {
+            assertTrue(ToolRenderers.INSTANCE.hasRenderer("task", null));
+        }
+
+        @Test
+        void bashHasRenderer() {
+            assertTrue(ToolRenderers.INSTANCE.hasRenderer("bash", null));
+        }
+
+        @Test
+        void listHasRenderer() {
+            assertTrue(ToolRenderers.INSTANCE.hasRenderer("list", null));
+        }
+
+        @Test
+        void lsHasRenderer() {
+            assertTrue(ToolRenderers.INSTANCE.hasRenderer("ls", null));
+        }
+
+        @Test
+        void patchHasRenderer() {
+            assertTrue(ToolRenderers.INSTANCE.hasRenderer("patch", null));
+        }
+
+        @Test
+        void webFetchHasRenderer() {
+            assertTrue(ToolRenderers.INSTANCE.hasRenderer("webfetch", null));
+        }
+
+        @Test
+        void webSearchHasRenderer() {
+            assertTrue(ToolRenderers.INSTANCE.hasRenderer("websearch", null));
         }
     }
 }

@@ -42,7 +42,8 @@ final class OpenCodeAgentConfig extends ProfileBasedAgentConfig {
      */
     private static final List<String> NATIVE_TOOLS = List.of(
         "grep", "glob", "ls", "read", "write", "edit", "patch",
-        "bash", "webfetch", "task", "todoread", "todowrite"
+        "bash", "webfetch", "task", "todoread", "todowrite",
+        "lsp", "websearch", "codesearch"
     );
 
     OpenCodeAgentConfig(@NotNull AgentProfile profile,

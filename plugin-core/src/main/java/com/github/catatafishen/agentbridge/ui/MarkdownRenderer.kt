@@ -10,6 +10,7 @@ object MarkdownRenderer {
     private const val HTML_TABLE_CLOSE = "</table>"
     private const val HTML_BLOCKQUOTE_CLOSE = "</blockquote>"
     private const val HTML_CODE_BLOCK_CLOSE = "</code></pre>"
+    private const val THINKING_FALLBACK = "No reasoning returned"
     private val FILE_PATH_REGEX: Regex = run {
         // Split into named parts so S5843 (regex complexity) analysis doesn't flag the combined form.
         val absolutePath = """/[\w.\-]+(?:/[\w.\-]+)*\.\w+"""
@@ -19,6 +20,11 @@ object MarkdownRenderer {
     }
     private val GIT_SHA_REGEX = Regex("""^[0-9a-f]{7,40}$""")
     private val BARE_GIT_SHA_REGEX = Regex("""\b([0-9a-f]{7,12})\b""")
+    private val THINK_TAG_REGEX =
+        Regex("""<(think|thinking)>(.*?)</\1>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+    private val WRAPPER_TAG_LINE_REGEX = Regex(
+        """(?im)^\s*</?(?:task_result|commentary|example|code)>\s*$\r?\n?"""
+    )
 
     data class MarkdownState(
         var inCode: Boolean = false,
@@ -35,13 +41,19 @@ object MarkdownRenderer {
         resolveFilePath: (String) -> String? = { null },
         isGitCommit: (String) -> Boolean = { false }
     ): String {
-        val lines = text.lines()
+        val lines = preprocessXmlTags(text).lines()
         val sb = StringBuilder()
         val state = MarkdownState()
 
         for (line in lines) {
             val t = line.trim()
             when {
+                t.startsWith("<thinking-block") -> {
+                    closeImplicitCode(sb, state)
+                    closeAllInlineBlocks(sb, state)
+                    sb.append(t)
+                }
+
                 t.startsWith("```") -> {
                     closeImplicitCode(sb, state)
                     handleCodeFence(sb, state, t)
@@ -85,6 +97,23 @@ object MarkdownRenderer {
 
         closeAllBlocks(sb, state)
         return sb.toString()
+    }
+
+    private fun preprocessXmlTags(text: String): String {
+        var processed = THINK_TAG_REGEX.replace(text) { match ->
+            buildThinkingBlockHtml(match.groupValues[2])
+        }
+        processed = WRAPPER_TAG_LINE_REGEX.replace(processed, "")
+        return processed
+    }
+
+    private fun buildThinkingBlockHtml(content: String): String {
+        val normalized = content.trim()
+            .ifEmpty { THINKING_FALLBACK }
+            .replace("\r\n", "\n")
+            .replace("\r", "\n")
+        val escaped = escapeHtml(normalized).replace("\n", "<br>")
+        return "<thinking-block><div class=\"thinking-content\">$escaped</div></thinking-block>"
     }
 
     private fun handleCodeFence(sb: StringBuilder, state: MarkdownState, fenceLine: String) {

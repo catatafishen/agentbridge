@@ -1268,6 +1268,54 @@ class MarkdownRendererTest {
         }
     }
 
+    @Nested
+    class XmlTagPreprocessing {
+        @Test
+        void thinkTagRendersAsThinkingBlock() {
+            String html = render("Before\n<think>Step 1\nStep 2</think>\nAfter");
+            assertTrue(html.contains("<thinking-block><div class=\"thinking-content\">Step 1<br>Step 2</div></thinking-block>"), html);
+            assertTrue(html.contains("<p>Before</p>"), html);
+            assertTrue(html.contains("<p>After</p>"), html);
+        }
+
+        @Test
+        void thinkingTagRendersAsThinkingBlock() {
+            String html = render("<thinking>Reasoning</thinking>");
+            assertTrue(html.contains("<thinking-block><div class=\"thinking-content\">Reasoning</div></thinking-block>"), html);
+        }
+
+        @Test
+        void unclosedThinkTagFallsBackToEscapedText() {
+            String html = render("<think>\nunfinished");
+            assertTrue(html.contains("&lt;think&gt;"), html);
+            assertFalse(html.contains("<thinking-block>"), html);
+        }
+
+        @Test
+        void wrapperTagsAreStrippedFromStandaloneLines() {
+            String html = render(String.join("\n",
+                "<task_result>",
+                "<commentary>",
+                "Result body",
+                "</commentary>",
+                "</task_result>",
+                "<example>",
+                "Example body",
+                "</example>",
+                "<code>",
+                "Code wrapper body",
+                "</code>"
+            ));
+            assertFalse(html.contains("task_result"), html);
+            assertFalse(html.contains("commentary"), html);
+            assertFalse(html.contains("example"), html);
+            assertFalse(html.contains("&lt;code&gt;"), html);
+            assertTrue(html.contains("<p>Result body</p>"), html);
+            assertTrue(html.contains("<p>Example body</p>"), html);
+            assertTrue(html.contains("<p>Code wrapper body</p>"), html);
+        }
+    }
+
     // ── Utility ─────────────────────────────────────────────────────────
 
     private static int countOccurrences(String str, String sub) {

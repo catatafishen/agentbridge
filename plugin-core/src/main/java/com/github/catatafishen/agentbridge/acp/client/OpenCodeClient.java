@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
+import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -8,8 +10,10 @@ import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * OpenCode ACP client.
@@ -22,10 +26,17 @@ import java.util.Map;
 public final class OpenCodeClient extends AcpClient {
 
     private static final String AGENT_ID = "opencode";
+    private static final String BUILD_AGENT = "build";
+    private static final String PLAN_AGENT = "plan";
+    private static final String GENERAL_AGENT = "general";
+    private static final String EXPLORE_AGENT = "explore";
+    private static final String PROJECT_AGENT_DIR = ".opencode/agent";
+    private static final String PROJECT_AGENTS_DIR = ".opencode/agents";
 
     private static final String KEY_RAW_INPUT = "rawInput";
     private static final List<String> NATIVE_TOOLS_TO_DENY = List.of(
-        "grep", "glob", "ls", "read", "write", "edit", "patch", "bash"
+        "grep", "glob", "ls", "read", "write", "edit", "patch", "bash",
+        "lsp", "websearch", "webfetch", "codesearch", "todoread", "todowrite"
     );
 
     static List<String> nativeToolsToDeny() {
@@ -44,6 +55,35 @@ public final class OpenCodeClient extends AcpClient {
     @Override
     public String displayName() {
         return "OpenCode";
+    }
+
+    @Override
+    public @Nullable String defaultAgentSlug() {
+        return BUILD_AGENT;
+    }
+
+    @Override
+    public List<AbstractAgentClient.AgentMode> getAvailableAgents() {
+        List<AbstractAgentClient.AgentMode> agents = new ArrayList<>(builtInAgents());
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            agents.addAll(ProjectAgentScanner.scanAgentDirectories(
+                Path.of(basePath),
+                Set.of(BUILD_AGENT, PLAN_AGENT, GENERAL_AGENT, EXPLORE_AGENT),
+                PROJECT_AGENT_DIR,
+                PROJECT_AGENTS_DIR
+            ));
+        }
+        return agents;
+    }
+
+    static List<AbstractAgentClient.AgentMode> builtInAgents() {
+        return List.of(
+            new AbstractAgentClient.AgentMode(BUILD_AGENT, "Build", "Default primary agent with full tool access"),
+            new AbstractAgentClient.AgentMode(PLAN_AGENT, "Plan", "Read-only planning mode with guarded edits and bash"),
+            new AbstractAgentClient.AgentMode(GENERAL_AGENT, "General", "General-purpose subagent for complex tasks"),
+            new AbstractAgentClient.AgentMode(EXPLORE_AGENT, "Explore", "Fast read-only subagent for codebase exploration")
+        );
     }
 
     @Override
@@ -83,20 +123,33 @@ public final class OpenCodeClient extends AcpClient {
 
     @Override
     protected Map<String, String> buildEnvironment(int mcpPort, String cwd) {
-        return buildPermissionConfig();
+        return buildPermissionConfig(resolveDefaultPrimaryAgent());
     }
 
     /**
      * Builds the OPENCODE_CONFIG_CONTENT environment variable denying native tools.
      */
     static Map<String, String> buildPermissionConfig() {
+        return buildPermissionConfig(BUILD_AGENT);
+    }
+
+    static Map<String, String> buildPermissionConfig(@Nullable String defaultAgentSlug) {
         JsonObject permission = new JsonObject();
         for (String tool : NATIVE_TOOLS_TO_DENY) {
             permission.addProperty(tool, "deny");
         }
         JsonObject config = new JsonObject();
         config.add("permission", permission);
-        return Map.of("OPENCODE_CONFIG_CONTENT", new com.google.gson.Gson().toJson(config));
+        if (defaultAgentSlug != null && !defaultAgentSlug.isBlank()) {
+            config.addProperty("default_agent", defaultAgentSlug);
+        }
+        return Map.of("OPENCODE_CONFIG_CONTENT", new Gson().toJson(config));
+    }
+
+    private @Nullable String resolveDefaultPrimaryAgent() {
+        String current = getCurrentAgentSlug();
+        if (PLAN_AGENT.equals(current)) return PLAN_AGENT;
+        return BUILD_AGENT;
     }
 
     @Override

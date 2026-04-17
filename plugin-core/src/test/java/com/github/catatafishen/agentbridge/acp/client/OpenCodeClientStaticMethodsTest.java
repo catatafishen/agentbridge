@@ -9,7 +9,11 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for the package-private static helpers in {@link OpenCodeClient}.
@@ -112,7 +116,35 @@ class OpenCodeClientStaticMethodsTest {
         @Test
         @DisplayName("native tools list has 8 entries")
         void nativeToolsCount() {
-            assertEquals(8, OpenCodeClient.nativeToolsToDeny().size());
+            assertEquals(14, OpenCodeClient.nativeToolsToDeny().size());
+        }
+
+        @Test
+        @DisplayName("config defaults to the native build agent")
+        void defaultAgentIsBuild() {
+            Map<String, String> result = OpenCodeClient.buildPermissionConfig();
+            JsonObject config = new Gson().fromJson(result.get("OPENCODE_CONFIG_CONTENT"), JsonObject.class);
+
+            assertEquals("build", config.get("default_agent").getAsString());
+        }
+    }
+
+    @Nested
+    @DisplayName("builtInAgents")
+    class BuiltInAgents {
+
+        @Test
+        @DisplayName("returns OpenCode's 4 native agents in display order")
+        void returnsNativeAgents() {
+            var agents = OpenCodeClient.builtInAgents();
+
+            assertEquals(4, agents.size());
+            assertEquals("build", agents.get(0).slug());
+            assertEquals("plan", agents.get(1).slug());
+            assertEquals("general", agents.get(2).slug());
+            assertEquals("explore", agents.get(3).slug());
+            assertEquals("Build", agents.get(0).name());
+            assertEquals("Plan", agents.get(1).name());
         }
     }
 

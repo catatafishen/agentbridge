@@ -87,8 +87,15 @@ object ToolRenderers {
         "write_file" to WriteFileRenderer,
         "create_file" to WriteFileRenderer,
         // OpenCode / Claude built-in tools
+        "task" to TaskToolRenderer,
+        "bash" to RunCommandRenderer,
         "todowrite" to TodoRenderer,
         "TodoWrite" to TodoRenderer,
+        "list" to ListProjectFilesRenderer,
+        "ls" to ListProjectFilesRenderer,
+        "patch" to WriteFileRenderer,
+        "webfetch" to WebFetchRenderer,
+        "websearch" to WebSearchRenderer,
         "grep" to GlobRenderer,  // similar list output format
         "Grep" to GlobRenderer,
     )
