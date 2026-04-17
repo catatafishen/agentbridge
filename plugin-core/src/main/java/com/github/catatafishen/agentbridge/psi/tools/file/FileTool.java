@@ -326,6 +326,14 @@ public abstract class FileTool extends Tool {
         int lineCount = doc.getLineCount();
         if (startLine <= 0 || endLine <= 0 || startLine > lineCount) return;
 
+        // When a review session is active, edit highlights are managed persistently
+        // by AgentEditHighlighter; skip the 2.5s transient flash to avoid double-marking.
+        Project project = editor.getProject();
+        if (color == HIGHLIGHT_EDIT && project != null
+            && AgentEditSession.getInstance(project).isActive()) {
+            return;
+        }
+
         int hlStart = doc.getLineStartOffset(startLine - 1);
         int hlEnd = doc.getLineEndOffset(Math.min(endLine, lineCount) - 1);
         if (hlEnd <= hlStart) return;
