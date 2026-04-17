@@ -170,7 +170,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean defaultsApplied = false;
         private boolean smoothScrollEnabled = false;
         private boolean showTurnStats = true;
-        private boolean reviewAgentEdits = true;
+        private boolean reviewAgentEdits = false;
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
