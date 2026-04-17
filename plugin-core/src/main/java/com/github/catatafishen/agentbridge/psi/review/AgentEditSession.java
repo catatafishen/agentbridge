@@ -479,15 +479,18 @@ public final class AgentEditSession implements Disposable {
     }
 
     /**
-     * Blocks the calling (tool) thread until the user has reviewed all pending agent
-     * edits, or the timeout expires. Returns {@code null} on success (the git operation
-     * may proceed) or an actionable error message on timeout.
-     * <p>
-     * The agent does not need to know about the review flow unless a timeout fires —
-     * a successful review completion is invisible to the caller.
-     * <p>
-     * The first call per pending batch sends a balloon + system + web-push notification
-     * and expands the Review panel. Subsequent calls only expand the panel.
+     * Blocks until all pending review items have been accepted/rejected, the session ends,
+     * or the timeout expires. Called by git tools before destructive operations.
+     *
+     * <p>On the first call, fires a balloon notification + system notification
+     * and expands the Review panel. Subsequent calls only expand the panel.</p>
+     *
+     * <p><b>Semaphore yield:</b> this method is called from inside a tool's {@code execute()},
+     * which holds the global write-tool semaphore in {@link PsiBridgeService}. Without yielding,
+     * the 10-minute blocking wait would starve all other tool calls (the agent can't even run
+     * {@code edit_text}). We release the semaphore before blocking and re-acquire it afterward,
+     * so other tools can execute during the review wait. After re-acquiring, we re-check
+     * {@code hasChanges()} to handle the case where new edits arrived during the wait.</p>
      *
      * @param operation description of the git operation (for the notification + error)
      * @return null if review completed in time; otherwise a timeout error message
@@ -511,9 +514,23 @@ public final class AgentEditSession implements Disposable {
                 .getInstance(project).expandReviewPanel();
         });
 
-        java.util.concurrent.CompletableFuture<Void> future = getOrCreateReviewCompletionFuture();
+        // Yield the write-tool semaphore while blocking so other MCP tools
+        // (edit_text, read_file, etc.) can still execute during the review wait.
+        // Without this, the blocking future.get() starves all tool calls for up
+        // to REVIEW_WAIT_TIMEOUT_MINUTES, effectively freezing the agent.
+        java.util.concurrent.Semaphore writeSemaphore =
+            PsiBridgeService.getInstance(project).getWriteToolSemaphore();
+        writeSemaphore.release();
         try {
+            java.util.concurrent.CompletableFuture<Void> future = getOrCreateReviewCompletionFuture();
             future.get(REVIEW_WAIT_TIMEOUT_MINUTES, java.util.concurrent.TimeUnit.MINUTES);
+
+            // Re-check: new edits may have arrived while we yielded the lock.
+            // If so, get a fresh future and wait again (same timeout restarts).
+            while (active && hasChanges()) {
+                future = getOrCreateReviewCompletionFuture();
+                future.get(REVIEW_WAIT_TIMEOUT_MINUTES, java.util.concurrent.TimeUnit.MINUTES);
+            }
             return null;
         } catch (java.util.concurrent.TimeoutException e) {
             return formatReviewTimeoutError(operation, fileCount);
@@ -522,6 +539,11 @@ public final class AgentEditSession implements Disposable {
             return "Error: Interrupted while waiting for agent-edit review.";
         } catch (java.util.concurrent.ExecutionException e) {
             return "Error: Review wait failed: " + e.getCause();
+        } finally {
+            // Re-acquire so callTool's finally block can release it cleanly.
+            // acquireUninterruptibly: we must re-acquire even if the thread was
+            // interrupted during the wait, otherwise callTool would over-release.
+            writeSemaphore.acquireUninterruptibly();
         }
     }
 

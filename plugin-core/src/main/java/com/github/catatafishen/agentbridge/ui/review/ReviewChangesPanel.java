@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui.review;
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.github.catatafishen.agentbridge.psi.review.ReviewItem;
 import com.github.catatafishen.agentbridge.psi.review.ReviewSessionTopic;
+import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionManager;
@@ -41,10 +42,17 @@ import java.util.List;
  */
 public final class ReviewChangesPanel extends JPanel implements Disposable {
 
+    private static final String CARD_TABLE = "table";
+    private static final String CARD_EMPTY = "empty";
+
     private final Project project;
     private final ReviewTableModel tableModel;
     private final JBTable table;
+    private final CardLayout cardLayout;
+    private final JPanel cardPanel;
+    private final JPanel emptyStatePanel;
     private final JBLabel emptyLabel;
+    private final JButton enableButton;
 
     public ReviewChangesPanel(@NotNull Project project) {
         super(new BorderLayout());
@@ -56,8 +64,30 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
 
         JBScrollPane scrollPane = new JBScrollPane(table);
 
-        emptyLabel = new JBLabel("No agent edits to review", SwingConstants.CENTER);
+        emptyLabel = new JBLabel("", SwingConstants.CENTER);
         emptyLabel.setForeground(JBColor.GRAY);
+        enableButton = new JButton("Enable Diff Review");
+        enableButton.addActionListener(e -> {
+            McpServerSettings.getInstance(project).setReviewAgentEdits(true);
+            refresh();
+        });
+        // Centered column: message on top, button below. Button is only visible when review is off.
+        emptyStatePanel = new JPanel(new GridBagLayout());
+        JPanel column = new JPanel();
+        column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));
+        emptyLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        enableButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        column.add(emptyLabel);
+        column.add(Box.createVerticalStrut(JBUI.scale(8)));
+        column.add(enableButton);
+        emptyStatePanel.add(column);
+
+        // CardLayout keeps both children alive — switching cards avoids the
+        // bug where add/remove on BorderLayout.CENTER loses the scrollPane.
+        cardLayout = new CardLayout();
+        cardPanel = new JPanel(cardLayout);
+        cardPanel.add(scrollPane, CARD_TABLE);
+        cardPanel.add(emptyStatePanel, CARD_EMPTY);
 
         ActionToolbar toolbar = createToolbar();
         toolbar.setTargetComponent(this);
@@ -77,7 +107,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         toolbarComponent.setMinimumSize(new Dimension(0, footerHeight));
         toolbarFooter.add(toolbarComponent, BorderLayout.CENTER);
 
-        add(scrollPane, BorderLayout.CENTER);
+        add(cardPanel, BorderLayout.CENTER);
         add(toolbarFooter, BorderLayout.SOUTH);
 
         // Own subscription so the panel refreshes whenever the session state changes.
@@ -100,12 +130,18 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         List<ReviewItem> items = session.isActive() ? session.getReviewItems() : List.of();
         tableModel.setItems(items);
 
-        boolean hasItems = !items.isEmpty();
-        table.setVisible(hasItems);
-        if (hasItems) {
-            remove(emptyLabel);
-        } else if (emptyLabel.getParent() != this) {
-            add(emptyLabel, BorderLayout.CENTER);
+        if (!items.isEmpty()) {
+            cardLayout.show(cardPanel, CARD_TABLE);
+        } else {
+            boolean reviewEnabled = McpServerSettings.getInstance(project).isReviewAgentEdits();
+            if (reviewEnabled) {
+                emptyLabel.setText("No agent edits to review");
+                enableButton.setVisible(false);
+            } else {
+                emptyLabel.setText("<html><center>Diff Review is off.<br>Agent edits are applied directly without review.</center></html>");
+                enableButton.setVisible(true);
+            }
+            cardLayout.show(cardPanel, CARD_EMPTY);
         }
         revalidate();
         repaint();
