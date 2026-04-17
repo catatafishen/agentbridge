@@ -6,6 +6,7 @@ import javax.swing.JComponent
 
 object TaskToolRenderer : ToolResultRenderer {
     private val TASK_ID_LINE = Regex("""^task_id:\s*(.+?)(?:\s+\(.*\))?\s*$""")
+    private val TASK_RESULT_WRAPPER_LINE = Regex("""^\s*</?task_result>\s*$""")
 
     data class ParsedTaskResult(val taskId: String?, val content: String)
 
@@ -23,12 +24,11 @@ object TaskToolRenderer : ToolResultRenderer {
 
         val content = lines
             .dropWhile { it.isBlank() }
+            .filterNot { TASK_RESULT_WRAPPER_LINE.matches(it) }
             .joinToString("\n")
-            .replace("<task_result>", "")
-            .replace("</task_result>", "")
             .trim()
 
-        return ParsedTaskResult(taskId, if (content.isNotBlank()) content else trimmed)
+        return ParsedTaskResult(taskId, content.ifBlank { trimmed })
     }
 
     override fun render(output: String): JComponent? {

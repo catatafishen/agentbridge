@@ -1314,6 +1314,37 @@ class MarkdownRendererTest {
             assertTrue(html.contains("<p>Example body</p>"), html);
             assertTrue(html.contains("<p>Code wrapper body</p>"), html);
         }
+
+        @Test
+        void thinkTagInsideFencedCodeIsPreserved() {
+            String html = render(String.join("\n",
+                "```md",
+                "<think>Reasoning</think>",
+                "<task_result>",
+                "```"
+            ));
+            assertTrue(html.contains("&lt;think&gt;Reasoning&lt;/think&gt;"), html);
+            assertTrue(html.contains("&lt;task_result&gt;"), html);
+            assertFalse(html.contains("<thinking-block>"), html);
+        }
+
+        @Test
+        void tagsInsideImplicitCodeArePreserved() {
+            String html = render(String.join("\n",
+                "// start",
+                "<think>Reasoning</think>",
+                "<task_result>"
+            ));
+            assertTrue(html.contains("&lt;think&gt;Reasoning&lt;/think&gt;"), html);
+            assertTrue(html.contains("&lt;task_result&gt;"), html);
+            assertFalse(html.contains("<thinking-block>"), html);
+        }
+
+        @Test
+        void emptyThinkTagUsesFallbackText() {
+            String html = render("<think>\r\n\r\n</think>");
+            assertTrue(html.contains("No reasoning returned"), html);
+        }
     }
 
     // ── Utility ─────────────────────────────────────────────────────────

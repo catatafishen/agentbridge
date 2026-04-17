@@ -1,7 +1,9 @@
 package com.github.catatafishen.agentbridge.ui.renderers
 
+import com.github.catatafishen.agentbridge.ui.FileNavigator
 import com.github.catatafishen.agentbridge.ui.MarkdownRenderer
 import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.project.ProjectManager
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
@@ -33,12 +35,22 @@ object HtmlToolRendererSupport {
             isOpaque = false
             border = JBUI.Borders.emptyTop(4)
             alignmentX = JComponent.LEFT_ALIGNMENT
-            addHyperlinkListener { event ->
-                if (event.eventType == HyperlinkEvent.EventType.ACTIVATED && event.url != null) {
-                    BrowserUtil.browse(event.url.toExternalForm())
+            addHyperlinkListener(::handleActivatedLink)
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+    }
+
+    private fun handleActivatedLink(event: HyperlinkEvent) {
+        if (event.eventType != HyperlinkEvent.EventType.ACTIVATED) return
+        val href = event.description ?: event.url?.toExternalForm() ?: return
+        when {
+            href.startsWith("openfile://") || href.startsWith("gitshow://") -> {
+                ProjectManager.getInstance().openProjects.firstOrNull { !it.isDisposed }?.let { project ->
+                    FileNavigator(project).handleFileLink(href)
                 }
             }
-            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+
+            href.startsWith("http://") || href.startsWith("https://") -> BrowserUtil.browse(href)
         }
     }
 }

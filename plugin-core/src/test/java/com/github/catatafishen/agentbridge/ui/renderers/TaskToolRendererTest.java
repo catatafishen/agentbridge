@@ -40,6 +40,15 @@ class TaskToolRendererTest {
     }
 
     @Test
+    void parseTaskOutputPreservesInlineTaskResultText() {
+        TaskToolRenderer.ParsedTaskResult parsed =
+            TaskToolRenderer.INSTANCE.parseTaskOutput("literal <task_result>text</task_result> body");
+
+        assertNull(parsed.getTaskId());
+        assertEquals("literal <task_result>text</task_result> body", parsed.getContent());
+    }
+
+    @Test
     void renderReturnsPanelForTaskOutput() {
         assertNotNull(TaskToolRenderer.INSTANCE.render("<task_result>hello</task_result>"));
     }
