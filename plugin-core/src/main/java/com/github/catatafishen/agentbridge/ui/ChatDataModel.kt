@@ -125,7 +125,9 @@ sealed class EntryData {
         val totalLinesAdded: Int = 0,
         val totalLinesRemoved: Int = 0,
         override val timestamp: String = "",
-        override val entryId: String = java.util.UUID.randomUUID().toString()
+        override val entryId: String = java.util.UUID.randomUUID().toString(),
+        /** Hashes of git commits made during this prompt turn (best-effort: startHash..HEAD range). */
+        val commitHashes: List<String> = emptyList()
     ) : EntryData()
 
     data class ContextFiles @JvmOverloads constructor(

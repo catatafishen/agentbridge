@@ -53,6 +53,7 @@ public final class EntryDataJsonAdapter {
     private static final String KEY_DENIAL_REASON = "denialReason";
     private static final String KEY_PLUGIN_TOOL = "pluginTool";
     private static final String KEY_FILES = "files";
+    private static final String KEY_COMMIT_HASHES = "commitHashes";
     private static final String KEY_CONTEXT_FILES = "contextFiles";
     private static final String KEY_PROMPT = "prompt";
 
@@ -212,6 +213,13 @@ public final class EntryDataJsonAdapter {
         addIfNonZero(json, "totalLinesAdded", ts.getTotalLinesAdded());
         addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
         json.addProperty(KEY_ENTRY_ID, ts.getEntryId());
+        if (!ts.getCommitHashes().isEmpty()) {
+            JsonArray arr = new JsonArray();
+            for (String hash : ts.getCommitHashes()) {
+                arr.add(hash);
+            }
+            json.add(KEY_COMMIT_HASHES, arr);
+        }
     }
 
     // ── Deserialize ───────────────────────────────────────────────────────────
@@ -350,7 +358,19 @@ public final class EntryDataJsonAdapter {
             intVal(json, "totalLinesAdded"),
             intVal(json, "totalLinesRemoved"),
             str(json, KEY_TIMESTAMP),
-            entryId);
+            entryId,
+            parseCommitHashes(json));
+    }
+
+    private static List<String> parseCommitHashes(@NotNull JsonObject json) {
+        if (!json.has(KEY_COMMIT_HASHES) || !json.get(KEY_COMMIT_HASHES).isJsonArray()) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (var element : json.getAsJsonArray(KEY_COMMIT_HASHES)) {
+            result.add(element.getAsString());
+        }
+        return result;
     }
 
     // ── Format detection ──────────────────────────────────────────────────────

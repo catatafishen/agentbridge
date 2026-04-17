@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,7 @@ public final class TurnStatisticsBackfill {
 
     private static final Logger LOG = Logger.getInstance(TurnStatisticsBackfill.class);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+    private static final String KEY_COMMIT_HASHES = "commitHashes";
 
     private TurnStatisticsBackfill() {
         throw new IllegalStateException("Utility class");
@@ -200,10 +202,21 @@ public final class TurnStatisticsBackfill {
         int linesRemoved = getInt(obj, "linesRemoved");
         double premiumRequests = parsePremiumMultiplier(getStr(obj, "multiplier"));
 
+        String commitHashes = null;
+        if (obj.has(KEY_COMMIT_HASHES) && obj.get(KEY_COMMIT_HASHES).isJsonArray()) {
+            List<String> hashes = new ArrayList<>();
+            for (var el : obj.getAsJsonArray(KEY_COMMIT_HASHES)) {
+                hashes.add(el.getAsString());
+            }
+            if (!hashes.isEmpty()) {
+                commitHashes = String.join(",", hashes);
+            }
+        }
+
         return new ToolCallStatisticsService.TurnStatsRecord(
             sessionId, agentId, date,
             inputTokens, outputTokens, toolCalls, durationMs,
-            linesAdded, linesRemoved, premiumRequests, timestamp);
+            linesAdded, linesRemoved, premiumRequests, timestamp, commitHashes);
     }
 
     private static double parsePremiumMultiplier(String multiplier) {

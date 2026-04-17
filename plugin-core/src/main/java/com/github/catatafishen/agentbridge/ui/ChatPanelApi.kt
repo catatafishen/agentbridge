@@ -108,7 +108,8 @@ interface ChatPanelApi : Disposable {
     fun finishResponse(toolCallCount: Int = 0, modelId: String = "", multiplier: String = "1x")
     fun emitTurnStats(
         durationMs: Long, inputTokens: Int, outputTokens: Int, costUsd: Double,
-        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String
+        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String,
+        commitHashes: List<String> = emptyList()
     )
 
     fun showQuickReplies(options: List<String>)

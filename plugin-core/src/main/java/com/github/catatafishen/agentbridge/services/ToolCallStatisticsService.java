@@ -146,6 +146,7 @@ public final class ToolCallStatisticsService implements Disposable {
                 "CREATE INDEX IF NOT EXISTS idx_turn_stats_date ON turn_stats(date)");
             stmt.execute(
                 "CREATE INDEX IF NOT EXISTS idx_turn_stats_session ON turn_stats(session_id)");
+            migrateAddCommitHashesColumn(stmt);
         }
     }
 
@@ -156,6 +157,18 @@ public final class ToolCallStatisticsService implements Disposable {
         } catch (SQLException e) {
             if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
                 LOG.warn("Unexpected error migrating tool_calls schema (error_message column)", e);
+            }
+            // else: duplicate column — expected for databases that have already been migrated
+        }
+    }
+
+    private void migrateAddCommitHashesColumn(java.sql.Statement stmt) {
+        try {
+            stmt.execute("ALTER TABLE turn_stats ADD COLUMN commit_hashes TEXT");
+            LOG.info("Migrated turn_stats table: added commit_hashes column");
+        } catch (SQLException e) {
+            if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
+                LOG.warn("Unexpected error migrating turn_stats schema (commit_hashes column)", e);
             }
             // else: duplicate column — expected for databases that have already been migrated
         }
@@ -464,8 +477,8 @@ public final class ToolCallStatisticsService implements Disposable {
         String sql = """
             INSERT INTO turn_stats (session_id, agent_id, date, input_tokens, output_tokens,
                                     tool_calls, duration_ms, lines_added, lines_removed,
-                                    premium_requests, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    premium_requests, timestamp, commit_hashes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setString(1, record.sessionId());
@@ -479,6 +492,7 @@ public final class ToolCallStatisticsService implements Disposable {
             stmt.setInt(9, record.linesRemoved());
             stmt.setDouble(10, record.premiumRequests());
             stmt.setString(11, record.timestamp());
+            stmt.setString(12, record.commitHashes());
             stmt.executeUpdate();
         } catch (SQLException e) {
             if (isDbMoved(e) && tryReconnect()) {
@@ -494,6 +508,7 @@ public final class ToolCallStatisticsService implements Disposable {
                     stmt.setInt(9, record.linesRemoved());
                     stmt.setDouble(10, record.premiumRequests());
                     stmt.setString(11, record.timestamp());
+                    stmt.setString(12, record.commitHashes());
                     stmt.executeUpdate();
                 } catch (SQLException retryEx) {
                     LOG.warn("Failed to record turn stats after reconnect", retryEx);
@@ -656,7 +671,8 @@ public final class ToolCallStatisticsService implements Disposable {
         int linesAdded,
         int linesRemoved,
         double premiumRequests,
-        @NotNull String timestamp
+        @NotNull String timestamp,
+        @Nullable String commitHashes
     ) {
     }
 

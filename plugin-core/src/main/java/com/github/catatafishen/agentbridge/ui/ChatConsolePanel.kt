@@ -717,7 +717,8 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
 
     override fun emitTurnStats(
         durationMs: Long, inputTokens: Int, outputTokens: Int, costUsd: Double,
-        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String
+        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, model: String, multiplier: String,
+        commitHashes: List<String>
     ) {
         val prev = entries.filterIsInstance<EntryData.TurnStats>().lastOrNull()
         entries.add(
@@ -740,6 +741,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 totalLinesAdded = (prev?.totalLinesAdded ?: 0) + linesAdded,
                 totalLinesRemoved = (prev?.totalLinesRemoved ?: 0) + linesRemoved,
                 timestamp = java.time.Instant.now().toString(),
+                commitHashes = commitHashes,
             )
         )
         // Render the turn summary footer in the chat panel
@@ -754,6 +756,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             multiplier
         )
         executeJs("ChatController.renderTurnSummary($statsJson)")
+        fireEntriesChanged()
     }
 
     private fun buildTurnSummaryJson(

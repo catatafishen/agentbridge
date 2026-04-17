@@ -82,6 +82,7 @@ class PromptOrchestrator(
     private var turnOutputTokens = 0
     private var turnCostUsd: Double? = null
     private var turnModelId = ""
+    private var turnStartHeadHash: String? = null
 
     /**
      * Stack of currently active sub-agent call IDs, ordered by start time (oldest first).
@@ -261,6 +262,7 @@ class PromptOrchestrator(
         activeSubAgentStack.clear()
         turnModelId = selectedModelId
         CodeChangeTracker.clear()
+        turnStartHeadHash = captureGitHead()
 
         // Register real-time listener so code-change chips update as each tool runs.
         codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
@@ -436,14 +438,16 @@ class PromptOrchestrator(
 
         val turnDuration = System.currentTimeMillis() - turnStartedAt
         val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
+        val commitHashes = collectTurnCommits()
         consolePanel().emitTurnStats(
             turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
-            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier
+            turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
+            commitHashes
         )
 
         recordTurnStatsToSqlite(
             turnDuration, turnInputTokens, turnOutputTokens,
-            turnToolCallCount, codeChanges[0], codeChanges[1], turnMultiplier
+            turnToolCallCount, codeChanges[0], codeChanges[1], turnMultiplier, commitHashes
         )
 
         val nextMsg = PsiBridgeService.getInstance(project).nextQueuedMessage
@@ -793,7 +797,8 @@ class PromptOrchestrator(
 
     private fun recordTurnStatsToSqlite(
         durationMs: Long, inputTokens: Int, outputTokens: Int,
-        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, multiplier: String
+        toolCallCount: Int, linesAdded: Int, linesRemoved: Int, multiplier: String,
+        commitHashes: List<String>
     ) {
         val sessionId = currentSessionId ?: return
         val agentId = agentManager.activeProfileId
@@ -801,6 +806,7 @@ class PromptOrchestrator(
         val now = java.time.Instant.now()
         val date = java.time.LocalDate.now().toString()
         val timestamp = now.toString()
+        val commitHashesStr = commitHashes.joinToString(",").ifEmpty { null }
 
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
@@ -809,12 +815,51 @@ class PromptOrchestrator(
                     ToolCallStatisticsService.TurnStatsRecord(
                         sessionId, agentId, date,
                         inputTokens.toLong(), outputTokens.toLong(), toolCallCount,
-                        durationMs, linesAdded, linesRemoved, premiumRequests, timestamp
+                        durationMs, linesAdded, linesRemoved, premiumRequests, timestamp,
+                        commitHashesStr
                     )
                 )
             } catch (e: Exception) {
                 log.warn("Failed to record turn stats to SQLite", e)
             }
+        }
+    }
+
+    /**
+     * Captures the current HEAD commit hash. Returns null if git is unavailable or the
+     * working directory is not a git repository.
+     */
+    private fun captureGitHead(): String? {
+        return try {
+            val pb = ProcessBuilder("git", "rev-parse", "HEAD")
+                .directory(java.io.File(project.basePath ?: return null))
+            pb.environment()["GIT_TERMINAL_PROMPT"] = "0"
+            val proc = pb.start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (proc.exitValue() == 0 && output.matches(Regex("[0-9a-f]{40}"))) output else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Collects commit hashes made since [turnStartHeadHash]. Returns an empty list if git
+     * is unavailable, the repository hasn't changed, or the start hash was not captured.
+     */
+    private fun collectTurnCommits(): List<String> {
+        val startHash = turnStartHeadHash ?: return emptyList()
+        return try {
+            val pb = ProcessBuilder("git", "log", "--format=%H", "$startHash..HEAD")
+                .directory(java.io.File(project.basePath ?: return emptyList()))
+            pb.environment()["GIT_TERMINAL_PROMPT"] = "0"
+            val proc = pb.start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (proc.exitValue() != 0) return emptyList()
+            output.lines().filter { it.matches(Regex("[0-9a-f]{40}")) }
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 

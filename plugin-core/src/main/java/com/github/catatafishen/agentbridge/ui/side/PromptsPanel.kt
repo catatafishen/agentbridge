@@ -12,6 +12,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Component
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
@@ -26,13 +27,38 @@ internal class PromptsPanel(
     private val chatConsole: ChatConsolePanel
 ) : JPanel(BorderLayout()), Disposable {
 
-    private data class PromptItem(val prompt: EntryData.Prompt, val stats: EntryData.TurnStats?)
+    private data class PromptItem(
+        val prompt: EntryData.Prompt,
+        val stats: EntryData.TurnStats?,
+        val commits: List<String>
+    )
 
     private val searchField = SearchTextField()
     private val listModel = DefaultListModel<PromptItem>()
     private val promptList = JBList(listModel)
     private val entriesListener = Runnable {
         ApplicationManager.getApplication().invokeLater(::refresh)
+    }
+
+    private var displayedCount = PAGE_SIZE
+    private var lastQuery = ""
+
+    private val loadMoreLabel = JLabel("↑ Load earlier prompts").apply {
+        font = JBUI.Fonts.miniFont()
+        foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
+        cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        horizontalAlignment = SwingConstants.CENTER
+        border = JBUI.Borders.empty(4)
+        addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) = loadMore()
+        })
+    }
+
+    private val loadMorePanel = JPanel(BorderLayout()).apply {
+        isOpaque = false
+        border = JBUI.Borders.empty()
+        add(loadMoreLabel, BorderLayout.CENTER)
+        isVisible = false
     }
 
     init {
@@ -49,18 +75,28 @@ internal class PromptsPanel(
         })
 
         searchField.addDocumentListener(object : DocumentAdapter() {
-            override fun textChanged(e: DocumentEvent) = refresh()
+            override fun textChanged(e: DocumentEvent) {
+                val q = searchField.text.orEmpty()
+                if (q != lastQuery) {
+                    lastQuery = q
+                    displayedCount = PAGE_SIZE
+                }
+                refresh()
+            }
         })
         searchField.textEditor.emptyText.text = "Search prompts…"
 
         val top = JPanel(BorderLayout())
         top.border = JBUI.Borders.empty(4)
         top.add(searchField, BorderLayout.CENTER)
-
         add(top, BorderLayout.NORTH)
+
+        val centerPanel = JPanel(BorderLayout())
+        centerPanel.add(loadMorePanel, BorderLayout.NORTH)
         val scrollPane = JBScrollPane(promptList)
         scrollPane.border = JBUI.Borders.empty()
-        add(scrollPane, BorderLayout.CENTER)
+        centerPanel.add(scrollPane, BorderLayout.CENTER)
+        add(centerPanel, BorderLayout.CENTER)
 
         chatConsole.addEntriesChangeListener(entriesListener)
         refresh()
@@ -71,9 +107,28 @@ internal class PromptsPanel(
         val allEntries = chatConsole.entriesSnapshot()
         val prompts = allEntries.filterIsInstance<EntryData.Prompt>()
         val filtered = filterPrompts(prompts, query)
-        val statsMap = buildStatsMap(allEntries)
+        val turnDataMap = buildTurnDataMap(allEntries)
+
+        val hasMore = filtered.size > displayedCount
+        loadMorePanel.isVisible = hasMore
+        val visible = if (hasMore) filtered.takeLast(displayedCount) else filtered
+
         listModel.clear()
-        filtered.forEach { p -> listModel.addElement(PromptItem(p, statsMap[promptEntryId(p)])) }
+        visible.forEach { p ->
+            val data = turnDataMap[promptEntryId(p)]
+            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList()))
+        }
+    }
+
+    private fun loadMore() {
+        // Preserve scroll: after adding PAGE_SIZE new items at top, scroll back to item at PAGE_SIZE
+        val targetIndex = PAGE_SIZE.coerceAtMost(listModel.size())
+        displayedCount += PAGE_SIZE
+        refresh()
+        if (targetIndex > 0 && targetIndex < listModel.size()) {
+            val bounds = promptList.getCellBounds(targetIndex, targetIndex)
+            if (bounds != null) promptList.scrollRectToVisible(bounds)
+        }
     }
 
     override fun dispose() {
@@ -83,9 +138,14 @@ internal class PromptsPanel(
     private class BubbleRenderer : ListCellRenderer<PromptItem> {
         private val outer = JPanel(BorderLayout(0, JBUI.scale(2)))
         private val headerPanel = JPanel(BorderLayout())
-        private val tsLabel = javax.swing.JLabel()
-        private val statsLabel = javax.swing.JLabel()
+        private val tsLabel = JLabel()
+        private val statsLabel = JLabel()
         private val textArea = JTextArea()
+        private val commitsLabel = JLabel()
+        private val commitsPanel = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(commitsLabel, BorderLayout.CENTER)
+        }
 
         init {
             outer.isOpaque = true
@@ -102,9 +162,12 @@ internal class PromptsPanel(
             textArea.wrapStyleWord = true
             textArea.font = UIManager.getFont("Label.font") ?: textArea.font
             textArea.border = null
-            textArea.cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+            textArea.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            commitsLabel.font = JBUI.Fonts.miniFont()
+            commitsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
             outer.add(headerPanel, BorderLayout.NORTH)
             outer.add(textArea, BorderLayout.CENTER)
+            outer.add(commitsPanel, BorderLayout.SOUTH)
             outer.border = JBUI.Borders.compound(
                 JBUI.Borders.empty(1, 0),
                 JBUI.Borders.empty(4, 8, 4, 6)
@@ -126,27 +189,41 @@ internal class PromptsPanel(
             tsLabel.text = formatTimestamp(value.prompt.timestamp)
             statsLabel.text = formatStats(value.stats)
             textArea.text = value.prompt.text.trim()
+
+            val commitsText = formatCommits(value.commits)
+            commitsLabel.text = commitsText
+            commitsPanel.isVisible = commitsText.isNotEmpty()
+
             if (isSelected) {
+                val selFg = list?.selectionForeground ?: UIManager.getColor("List.selectionForeground")
                 outer.background = list?.selectionBackground ?: UIManager.getColor("List.selectionBackground")
-                textArea.foreground = list?.selectionForeground ?: UIManager.getColor("List.selectionForeground")
-                tsLabel.foreground = list?.selectionForeground ?: UIManager.getColor("List.selectionForeground")
-                statsLabel.foreground = list?.selectionForeground ?: UIManager.getColor("List.selectionForeground")
+                textArea.foreground = selFg
+                tsLabel.foreground = selFg
+                statsLabel.foreground = selFg
+                commitsLabel.foreground = selFg
             } else {
                 outer.background = list?.background ?: UIManager.getColor("List.background")
                 textArea.foreground = list?.foreground ?: UIManager.getColor("List.foreground")
                 tsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 statsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+                commitsLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
             }
+
+            val commitsHeight = if (commitsPanel.isVisible) commitsLabel.preferredSize.height + JBUI.scale(2) else 0
             val textHeight = textArea.preferredSize.height
             outer.preferredSize = Dimension(
                 listWidth,
-                tsLabel.preferredSize.height + JBUI.scale(2) + textHeight + JBUI.scale(10)
+                tsLabel.preferredSize.height + JBUI.scale(2) + textHeight + commitsHeight + JBUI.scale(10)
             )
             return outer
         }
     }
 
     companion object {
+        private const val PAGE_SIZE = 20
+
+        private data class TurnData(val stats: EntryData.TurnStats, val commits: List<String>)
+
         fun formatTimestamp(iso: String): String {
             if (iso.isEmpty()) return ""
             return try {
@@ -175,16 +252,23 @@ internal class PromptsPanel(
 
         fun promptEntryId(p: EntryData.Prompt): String = p.id.ifEmpty { p.entryId }
 
-        fun buildStatsMap(entries: List<EntryData>): Map<String, EntryData.TurnStats> {
-            val result = mutableMapOf<String, EntryData.TurnStats>()
+        /**
+         * Builds a map from prompt key → TurnData (stats + commit hashes).
+         *
+         * For V2 sessions, [EntryData.TurnStats.turnId] matches [EntryData.Prompt.id] directly
+         * and is used as the primary lookup. For V1 sessions where turnId is empty, we fall back
+         * to positional matching: the TurnStats immediately following a Prompt is attributed to it.
+         */
+        private fun buildTurnDataMap(entries: List<EntryData>): Map<String, TurnData> {
+            val result = mutableMapOf<String, TurnData>()
             var lastPromptId: String? = null
             for (entry in entries) {
                 when (entry) {
                     is EntryData.Prompt -> lastPromptId = promptEntryId(entry)
                     is EntryData.TurnStats -> {
-                        val pid = lastPromptId
-                        if (pid != null) {
-                            result[pid] = entry
+                        val key = entry.turnId.takeIf { it.isNotEmpty() } ?: lastPromptId
+                        if (key != null) {
+                            result[key] = TurnData(entry, entry.commitHashes)
                             lastPromptId = null
                         }
                     }
@@ -204,6 +288,13 @@ internal class PromptsPanel(
                 parts.add(if (s < 60) "%.1fs".format(s) else "${(s / 60).toInt()}m ${(s % 60).toInt()}s")
             }
             return parts.joinToString(" · ")
+        }
+
+        fun formatCommits(hashes: List<String>): String {
+            if (hashes.isEmpty()) return ""
+            val abbrev = hashes.map { it.take(7) }
+            val label = if (hashes.size == 1) "Commit" else "${hashes.size} commits"
+            return "$label: ${abbrev.joinToString(", ")}"
         }
     }
 }
