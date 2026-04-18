@@ -349,6 +349,64 @@ class RunTestsToolStaticMethodsTest {
         }
     }
 
+    // ── buildGradleTestFilter ────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("buildGradleTestFilter")
+    class BuildGradleTestFilter {
+
+        @Test
+        @DisplayName("simple class name gets wildcard package prefix")
+        void simpleClassName() {
+            assertEquals("*.FormattingTest", RunTestsTool.buildGradleTestFilter("FormattingTest"));
+        }
+
+        @Test
+        @DisplayName("wildcard class suffix gets wildcard package prefix")
+        void wildcardSuffix() {
+            assertEquals("*.*Test", RunTestsTool.buildGradleTestFilter("*Test"));
+        }
+
+        @Test
+        @DisplayName("double wildcard is unchanged")
+        void doubleWildcard() {
+            assertEquals("*.*Test", RunTestsTool.buildGradleTestFilter("*.*Test"));
+        }
+
+        @Test
+        @DisplayName("fully qualified class name is unchanged")
+        void fullyQualifiedClass() {
+            assertEquals("com.example.FormattingTest",
+                RunTestsTool.buildGradleTestFilter("com.example.FormattingTest"));
+        }
+
+        @Test
+        @DisplayName("class.method with no package gets wildcard package prefix")
+        void classMethodNoPackage() {
+            assertEquals("*.FormattingTest.testFoo",
+                RunTestsTool.buildGradleTestFilter("FormattingTest.testFoo"));
+        }
+
+        @Test
+        @DisplayName("fully qualified class.method is unchanged")
+        void fullyQualifiedClassMethod() {
+            assertEquals("com.example.FormattingTest.testFoo",
+                RunTestsTool.buildGradleTestFilter("com.example.FormattingTest.testFoo"));
+        }
+
+        @Test
+        @DisplayName("wildcard with package qualifier is unchanged")
+        void wildcardWithPackage() {
+            assertEquals("*.FormattingTest", RunTestsTool.buildGradleTestFilter("*.FormattingTest"));
+        }
+
+        @Test
+        @DisplayName("single wildcard gets prefix")
+        void singleWildcard() {
+            assertEquals("*.*", RunTestsTool.buildGradleTestFilter("*"));
+        }
+    }
+
     // ── formatConsoleSection ─────────────────────────────────────────────────
 
     @Nested
