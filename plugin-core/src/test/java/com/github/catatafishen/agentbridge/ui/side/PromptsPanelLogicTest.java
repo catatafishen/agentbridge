@@ -99,6 +99,55 @@ final class PromptsPanelLogicTest {
         assertTrue(s.startsWith("Yesterday "), "Expected 'Yesterday …' got: " + s);
     }
 
+    // ── truncatePrompt ───────────────────────────────────────────────────────
+
+    @Test
+    void truncatePrompt_shortTextUnchanged() {
+        assertEquals("Hello", C.truncatePrompt("Hello"));
+    }
+
+    @Test
+    void truncatePrompt_exactMaxCharsUnchanged() {
+        String text = "a".repeat(200);
+        assertEquals(text, C.truncatePrompt(text));
+    }
+
+    @Test
+    void truncatePrompt_exceedsMaxCharsGetsEllipsis() {
+        String text = "a".repeat(201);
+        String result = C.truncatePrompt(text);
+        assertEquals("a".repeat(200) + "…", result);
+    }
+
+    @Test
+    void truncatePrompt_exactMaxRowsUnchanged() {
+        String text = "line1\nline2\nline3\nline4\nline5";
+        assertEquals(text, C.truncatePrompt(text));
+    }
+
+    @Test
+    void truncatePrompt_exceedsMaxRowsGetsEllipsis() {
+        String text = "line1\nline2\nline3\nline4\nline5\nline6";
+        String result = C.truncatePrompt(text);
+        assertEquals("line1\nline2\nline3\nline4\nline5…", result);
+    }
+
+    @Test
+    void truncatePrompt_rowsLimitBeforeCharsLimit() {
+        // 6 short lines (< 200 chars total) — rows should trigger first
+        String text = "a\nb\nc\nd\ne\nf";
+        String result = C.truncatePrompt(text);
+        assertEquals("a\nb\nc\nd\ne…", result);
+    }
+
+    @Test
+    void truncatePrompt_charsLimitBeforeRowsLimit() {
+        // single very long line (> 200 chars) — chars should trigger
+        String text = "a".repeat(300);
+        String result = C.truncatePrompt(text);
+        assertEquals("a".repeat(200) + "…", result);
+    }
+
     // ── filterPrompts ────────────────────────────────────────────────────────
 
     @Test
@@ -112,7 +161,7 @@ final class PromptsPanelLogicTest {
         List<EntryData.Prompt> all = List.of(prompt("p1", "Hello World"), prompt("p2", "Goodbye"));
         List<EntryData.Prompt> result = C.filterPrompts(all, "WORLD");
         assertEquals(1, result.size());
-        assertEquals("p1", result.get(0).getId());
+        assertEquals("p1", result.getFirst().getId());
     }
 
     @Test

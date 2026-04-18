@@ -783,5 +783,4 @@ class PsiBridgeServiceStaticMethodsTest {
             assertEquals(500L, PsiBridgeService.computeExtraSleep(lastFinished, settle, now));
         }
     }
-
 }

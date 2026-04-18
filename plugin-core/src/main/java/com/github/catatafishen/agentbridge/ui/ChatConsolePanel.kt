@@ -513,7 +513,13 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
             val paramsJson = if (!hasCustomRenderer) escJs(arguments) else ""
 
-            executeJs("ChatController.upsertToolChip('$currentTurnId','main','$newDid','${escJs(label)}','$paramsJson',{kind:'${escJs(resolvedKind)}',status:'running'})")
+            executeJs(
+                "ChatController.upsertToolChip('$currentTurnId','main','$newDid','${escJs(label)}','$paramsJson',{kind:'${
+                    escJs(
+                        resolvedKind
+                    )
+                }',status:'running'})"
+            )
 
             if (registration.initialState() == ToolChipRegistry.ChipState.RUNNING) {
                 executeJs("ChatController.markMcpHandled('$newDid')")
@@ -822,6 +828,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     /**
      * Scrolls the JCEF chat to the chat-message with the given entry id. No-op if the element
      * does not exist (e.g. the entry was restored from disk into the deferred history pile).
+     *
+     * Autoscroll is disabled first so the programmatic scroll is not immediately overridden by
+     * the ChatContainer's MutationObserver / ResizeObserver anchoring to the bottom. The user
+     * can re-enable autoscroll by scrolling back to the bottom.
      */
     fun scrollToEntry(entryId: String) {
         val safe = escJs(entryId)
@@ -830,6 +840,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             (function(){
                 var el = document.getElementById('$safe');
                 if (!el) return;
+                ChatController.setAutoScroll(false);
                 el.scrollIntoView({behavior:'smooth', block:'center'});
                 el.classList.add('prompt-flash');
                 setTimeout(function(){ el.classList.remove('prompt-flash'); }, 900);

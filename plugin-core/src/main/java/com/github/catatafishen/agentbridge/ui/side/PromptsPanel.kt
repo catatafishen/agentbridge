@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
+import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
+import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_ROWS
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -188,7 +190,7 @@ internal class PromptsPanel(
             }
             tsLabel.text = formatTimestamp(value.prompt.timestamp)
             statsLabel.text = formatStats(value.stats)
-            textArea.text = value.prompt.text.trim()
+            textArea.text = truncatePrompt(value.prompt.text.trim())
 
             val commitsText = formatCommits(value.commits)
             commitsLabel.text = commitsText
@@ -221,8 +223,21 @@ internal class PromptsPanel(
 
     companion object {
         private const val PAGE_SIZE = 20
+        private const val MAX_CHARS = 200
+        private const val MAX_ROWS = 5
 
         private data class TurnData(val stats: EntryData.TurnStats, val commits: List<String>)
+
+        /**
+         * Truncates [text] to at most [MAX_ROWS] lines and at most [MAX_CHARS] characters,
+         * whichever limit is reached first. Appends "…" when truncation occurs.
+         */
+        fun truncatePrompt(text: String): String {
+            val lines = text.lines()
+            val byRows = if (lines.size > MAX_ROWS) lines.take(MAX_ROWS).joinToString("\n") else text
+            val truncated = byRows.take(MAX_CHARS)
+            return if (truncated.length < text.length) truncated.trimEnd() + "…" else text
+        }
 
         fun formatTimestamp(iso: String): String {
             if (iso.isEmpty()) return ""
