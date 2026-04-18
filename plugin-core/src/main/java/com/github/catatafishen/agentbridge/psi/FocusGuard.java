@@ -37,6 +37,14 @@ import java.util.concurrent.atomic.AtomicReference;
  * property-change dispatch — before any {@link java.awt.event.KeyEvent} is delivered
  * to the new component — typed characters can never leak into the editor.
  *
+ * <p><b>Reclaim fires at most once per tool call.</b> If {@code requestFocusInWindow()}
+ * on the JCEF component resolves to a component that is not exactly {@code chatFocusOwner}
+ * (possible when JCEF routes focus to a parent or sibling component internally), a second
+ * invocation of this listener would also pass the checks and fire another reclaim,
+ * creating a focus ping-pong that starves the EDT of mouse/paint events and freezes the
+ * JCEF panel. The {@code hasReclaimed} flag ensures we call {@code requestFocusInWindow()}
+ * at most once — subsequent focus changes are left to the existing 150ms restore alarm.
+ *
  * <p><b>User-initiated focus changes are respected.</b> The guard inspects the AWT
  * event currently being dispatched; if it is a {@link InputEvent} (user click or
  * keystroke) the focus change is allowed through. This preserves the ability to
@@ -53,6 +61,14 @@ final class FocusGuard implements PropertyChangeListener {
     private final KeyboardFocusManager kfm;
     private final Component chatFocusOwner;
     private volatile boolean uninstalled;
+    /**
+     * Ensures {@code requestFocusInWindow()} is called at most once per tool call.
+     * Without this, a failed or mis-routed reclaim produces a new focus event that
+     * passes all the same checks, firing another reclaim and creating a focus storm
+     * that starves the EDT and freezes the JCEF panel.
+     */
+    private final java.util.concurrent.atomic.AtomicBoolean hasReclaimed =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
 
     private FocusGuard(Project project, KeyboardFocusManager kfm, Component chatFocusOwner) {
         this.project = project;
@@ -160,6 +176,14 @@ final class FocusGuard implements PropertyChangeListener {
         } catch (Throwable ignored) {
             // IdeEventQueue unavailable in some test contexts — rely on EventQueue check above.
         }
+
+        // Only reclaim once per tool call. If requestFocusInWindow() routes focus to
+        // a component that is neither chatFocusOwner nor inside the chat TW (possible
+        // with JCEF's internal focus delegation), a second invocation would also pass
+        // the checks above and call requestFocusInWindow() again, creating a focus
+        // ping-pong that freezes the JCEF panel. Let the 150ms alarm handle anything
+        // the single reclaim doesn't fully resolve.
+        if (!hasReclaimed.compareAndSet(false, true)) return;
 
         // Programmatic focus steal detected — synchronously reclaim focus for the chat.
         try {
