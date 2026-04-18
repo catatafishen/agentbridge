@@ -193,41 +193,6 @@ public final class GitCommitTool extends GitTool {
         return !args.has("all") || args.get("all").getAsBoolean();
     }
 
-    /**
-     * Builds a detailed hint for the "nothing to commit" case, listing which paths are
-     * unstaged/untracked/ignored so the agent knows exactly what to stage (or force-add).
-     */
-    private String buildNothingToCommitHint() {
-        String unstaged = runGitQuiet("diff", "--name-only");
-        String untracked = runGitQuiet("ls-files", "--others", "--exclude-standard");
-        String ignored = runGitQuiet("ls-files", "--others", "--ignored", "--exclude-standard");
-
-        boolean hasUnstaged = unstaged != null && !unstaged.isEmpty();
-        boolean hasUntracked = untracked != null && !untracked.isEmpty();
-        boolean hasIgnored = ignored != null && !ignored.isEmpty();
-
-        StringBuilder hint = new StringBuilder("Error: nothing to commit.");
-        if (!hasUnstaged && !hasUntracked && !hasIgnored) {
-            hint.append(" The working tree is clean.");
-            return hint.toString();
-        }
-
-        hint.append(" Changes exist but were not staged by --all:");
-        if (hasUnstaged) {
-            hint.append("\n  Modified (not staged): ").append(unstaged.replace("\n", ", "));
-        }
-        if (hasUntracked) {
-            hint.append("\n  Untracked: ").append(untracked.replace("\n", ", "));
-        }
-        if (hasIgnored) {
-            hint.append("\n  Gitignored: ").append(ignored.replace("\n", ", "))
-                .append("\n  (ignored files require explicit `git add -f <path>` — git_stage will not force-add them)");
-        }
-        hint.append("\nUse git_stage with an explicit path to include specific files, "
-            + "or update .gitignore if these should be tracked.");
-        return hint.toString();
-    }
-
     @Override
     public @NotNull Object resultRenderer() {
         return GitCommitRenderer.INSTANCE;
