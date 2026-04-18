@@ -9,11 +9,13 @@ import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.session.SessionSwitchService;
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings;
+import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.intellij.ide.util.PropertiesComponent;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -59,6 +61,9 @@ public final class ActiveAgentManager implements Disposable {
     public ActiveAgentManager(@NotNull Project project) {
         this.project = project;
         LOG.info("ActiveAgentManager initialised for project: " + project.getName());
+        // Pre-warm the shell environment cache on a background thread so the first connect
+        // doesn't block on login-shell spawning (bash -l + nvm/sdkman/cargo init can take 1–5 s).
+        AppExecutorUtil.getAppExecutorService().submit(ShellEnvironment::getEnvironment);
     }
 
     @NotNull
