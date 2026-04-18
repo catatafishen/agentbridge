@@ -509,7 +509,6 @@ public final class PsiBridgeService implements Disposable {
                 }
             }
         }
-        }
     }
 
     /**
