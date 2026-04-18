@@ -829,9 +829,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
      * Scrolls the JCEF chat to the chat-message with the given entry id. No-op if the element
      * does not exist (e.g. the entry was restored from disk into the deferred history pile).
      *
-     * Autoscroll is disabled first so the programmatic scroll is not immediately overridden by
-     * the ChatContainer's MutationObserver / ResizeObserver anchoring to the bottom. The user
-     * can re-enable autoscroll by scrolling back to the bottom.
+     * Autoscroll is disabled for the duration of the navigation animation (900 ms) so the
+     * ResizeObserver / MutationObserver cannot re-anchor to the bottom while the smooth-scroll
+     * is in flight. After the animation, autoscroll is silently restored so future incoming
+     * messages continue to scroll into view.
      */
     fun scrollToEntry(entryId: String) {
         val safe = escJs(entryId)
@@ -843,7 +844,10 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
                 ChatController.setAutoScroll(false);
                 el.scrollIntoView({behavior:'smooth', block:'center'});
                 el.classList.add('prompt-flash');
-                setTimeout(function(){ el.classList.remove('prompt-flash'); }, 900);
+                setTimeout(function(){
+                    el.classList.remove('prompt-flash');
+                    ChatController.resumeAutoScroll();
+                }, 900);
             })()
             """.trimIndent()
         )

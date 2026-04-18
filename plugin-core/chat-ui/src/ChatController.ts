@@ -355,7 +355,11 @@ const ChatController = {
         this.upsertToolChip(turnId, agentId, id, title, paramsJson, {kind, status: initialStatus || 'pending'});
     },
 
-    upsertToolChip(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, options?: {kind?: string, status?: string, timestamp?: string}): void {
+    upsertToolChip(turnId: string, agentId: string, id: string, title: string, paramsJson?: string, options?: {
+        kind?: string,
+        status?: string,
+        timestamp?: string
+    }): void {
         this._resetWorkingTimer();
         let chip = document.querySelector('[data-chip-for="' + id + '"]') as HTMLElement | null;
         if (!chip) {
@@ -937,6 +941,11 @@ const ChatController = {
     setAutoScroll(enabled: boolean): void {
         const container = this._container();
         if (container) container.autoScroll = enabled;
+    },
+
+    /** Re-enables autoscroll without jumping to the bottom. See {@link ChatContainer.resumeAutoScroll}. */
+    resumeAutoScroll(): void {
+        this._container()?.resumeAutoScroll();
     },
 
 };

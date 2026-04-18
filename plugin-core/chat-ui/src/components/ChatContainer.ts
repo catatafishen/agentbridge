@@ -212,6 +212,16 @@ export default class ChatContainer extends HTMLElement {
         }
     }
 
+    /**
+     * Re-enables the autoscroll flag without forcing a jump to the bottom.
+     * Use after programmatic navigation (e.g. scrollToEntry) so that future
+     * incoming messages still scroll into view, while leaving the current
+     * viewport position intact.
+     */
+    resumeAutoScroll(): void {
+        this._autoScroll = true;
+    }
+
     scrollIfNeeded(): void {
         if (this._autoScroll && !this._restoring) {
             this.scrollTop = this.scrollHeight;
