@@ -447,7 +447,12 @@ public final class PsiBridgeService implements Disposable {
             if (writeRegistered.get()) writeBatchCoordinator.unregisterWrite();
             if (needsGlobalLock && !semaphoreReleasedEarly.get()) writeToolSemaphore.release();
             fireToolCallEvent(req.toolName(), req.startMs(), success, req.inputSize(), outputSize, req.categoryName(), errorMessage);
-            if (req.chatWasActive()) fireFocusRestoreEvent();
+            // Restore focus only if chat was active when the tool STARTED *and* is still active
+            // now. If the user switched away during execution, they made an explicit navigation
+            // decision — honouring chatWasActive alone would steal focus from wherever they went.
+            if (req.chatWasActive() && isChatToolWindowActive(project)) {
+                fireFocusRestoreEvent();
+            }
         }
     }
 
@@ -487,6 +492,7 @@ public final class PsiBridgeService implements Disposable {
                     currentSyncLock.remove();
                 }
             }
+        }
         }
     }
 

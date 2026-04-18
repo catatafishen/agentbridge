@@ -194,14 +194,14 @@ public abstract class Tool implements ToolDefinition {
             }
         });
 
-        // Don't activate (focus) the Run panel when the chat prompt has focus
-        boolean activateRunPanel = !PsiBridgeService.isChatToolWindowActive(project);
-
         EdtUtil.invokeLater(() -> {
             try {
+                // Evaluate chat-active state here on the EDT, not before invokeLater, to avoid
+                // a stale capture: RunContentExecutor.run() is the actual UI operation,
+                // and the user's focus may have changed between the check and this point.
                 new RunContentExecutor(project, processHandler)
                     .withTitle(title)
-                    .withActivateToolWindow(activateRunPanel)
+                    .withActivateToolWindow(!PsiBridgeService.isChatToolWindowActive(project))
                     .run();
             } catch (Exception e) {
                 // RunContentExecutor.run() may have already called startNotify() before
