@@ -319,6 +319,16 @@ public final class PsiBridgeService implements Disposable {
         String categoryName = def.category().name();
         long startMs = System.currentTimeMillis();
         boolean chatWasActive = isChatToolWindowActive(project);
+
+        // Install a synchronous focus guard that reclaims keyboard focus whenever a
+        // programmatic focus change during this tool call would otherwise steal focus
+        // from the chat prompt. Without this, Swing APIs like openFile(vf, false) and
+        // navigate(false) still transiently grab focus (JCEF's focus is invisible to
+        // the Java KeyboardFocusManager, so Swing hands focus to the new editor), and
+        // in-flight keystrokes leak into the editor before the 150ms delayed alarm
+        // restores focus. User-initiated focus changes (mouse clicks, tab key) are
+        // respected by the guard — only programmatic changes are reclaimed.
+        FocusGuard focusGuard = chatWasActive ? FocusGuard.install(project) : null;
         boolean requiresSync = isSyncCategory(categoryName);
         boolean needsGlobalLock = def.needsWriteLock();
         boolean isWriteOp = needsGlobalLock && isWriteToolName(toolName);
@@ -328,10 +338,16 @@ public final class PsiBridgeService implements Disposable {
             toolName, def, arguments, toolUseId,
             inputSize, categoryName, startMs, chatWasActive);
 
-        String preflightError = acquireExecutionContext(req, isWriteOp, needsGlobalLock, writeRegistered);
-        if (preflightError != null) return preflightError;
+        try {
+            String preflightError = acquireExecutionContext(req, isWriteOp, needsGlobalLock, writeRegistered);
+            if (preflightError != null) return preflightError;
 
-        return runToolExecution(req, requiresSync, needsGlobalLock, writeRegistered);
+            return runToolExecution(req, requiresSync, needsGlobalLock, writeRegistered);
+        } finally {
+            // Uninstall the focus guard after the tool completes so it does not interfere
+            // with the restoreFocus() request fired from runToolExecution's finally block.
+            if (focusGuard != null) focusGuard.uninstall();
+        }
     }
 
     /**
