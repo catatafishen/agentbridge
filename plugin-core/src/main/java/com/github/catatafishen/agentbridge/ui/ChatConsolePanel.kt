@@ -42,7 +42,12 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     // ── Data model (same types as V1 for serialization compat) ─────
     private val entries = mutableListOf<EntryData>()
 
-    /** Snapshot of the current entries list — safe to read from any thread as a defensive copy. */
+    /**
+     * Snapshot of the current entries list. Returns a defensive copy, but the copy operation
+     * itself iterates the underlying mutable list, so this method is **EDT-only** — calling it
+     * off the EDT can race with mutations and throw `ConcurrentModificationException`.
+     * Off-EDT callers must hop via `ApplicationManager.getApplication().invokeLater { ... }`.
+     */
     fun entriesSnapshot(): List<EntryData> = ArrayList(entries)
     private var currentTextData: EntryData.Text? = null
     private var currentThinkingData: EntryData.Thinking? = null

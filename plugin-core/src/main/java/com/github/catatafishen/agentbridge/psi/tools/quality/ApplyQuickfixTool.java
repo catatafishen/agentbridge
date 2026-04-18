@@ -129,18 +129,24 @@ public final class ApplyQuickfixTool extends QualityTool {
                     return;
                 }
 
-                // Write phase: only the actual fix application needs WriteAction
+                // Write phase: only the actual fix application needs WriteAction.
+                // notifyEditComplete() must run even if WriteAction.run itself throws before
+                // invoking the lambda, otherwise the ThreadLocal agent-edit marker leaks across
+                // tool calls. Wrap the whole WriteAction.run() in try/finally (matches the
+                // pattern used in ApplyActionTool / SuppressInspectionTool / WriteFileTool).
                 FileTool.notifyBeforeEdit(project, vf, document);
-                WriteAction.run(() -> {
-                    try {
-                        resultFuture.complete(applyAndReportFix(lineProblems, fixIndex, pathStr, targetLine));
-                    } catch (Exception e) {
-                        LOG.warn("Error applying quickfix", e);
-                        resultFuture.complete("Error applying quickfix: " + e.getMessage());
-                    } finally {
-                        FileTool.notifyEditComplete();
-                    }
-                });
+                try {
+                    WriteAction.run(() -> {
+                        try {
+                            resultFuture.complete(applyAndReportFix(lineProblems, fixIndex, pathStr, targetLine));
+                        } catch (Exception e) {
+                            LOG.warn("Error applying quickfix", e);
+                            resultFuture.complete("Error applying quickfix: " + e.getMessage());
+                        }
+                    });
+                } finally {
+                    FileTool.notifyEditComplete();
+                }
             } catch (Exception e) {
                 LOG.warn("Error in applyQuickfix", e);
                 resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());

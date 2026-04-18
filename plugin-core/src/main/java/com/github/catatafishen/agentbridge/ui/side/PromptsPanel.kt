@@ -6,7 +6,6 @@ import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CH
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_ROWS
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.project.Project
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.SearchTextField
 import com.intellij.ui.components.JBList
@@ -25,7 +24,6 @@ import javax.swing.*
 import javax.swing.event.DocumentEvent
 
 internal class PromptsPanel(
-    @Suppress("UNUSED_PARAMETER") project: Project,
     private val chatConsole: ChatConsolePanel
 ) : JPanel(BorderLayout()), Disposable {
 
@@ -70,6 +68,10 @@ internal class PromptsPanel(
             override fun mouseClicked(e: MouseEvent) {
                 val idx = promptList.locationToIndex(e.point)
                 if (idx < 0) return
+                // locationToIndex returns the nearest index even when clicking empty space below
+                // the last row — guard against that by verifying the click is inside the cell.
+                val cellBounds = promptList.getCellBounds(idx, idx) ?: return
+                if (!cellBounds.contains(e.point)) return
                 val item = listModel.getElementAt(idx) ?: return
                 val entryId = promptEntryId(item.prompt)
                 if (entryId.isNotEmpty()) chatConsole.scrollToEntry(entryId)

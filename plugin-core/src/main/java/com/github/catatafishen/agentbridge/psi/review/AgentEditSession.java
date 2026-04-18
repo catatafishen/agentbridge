@@ -556,9 +556,16 @@ public final class AgentEditSession implements Disposable {
             () -> doc.setText(before));
         FileDocumentManager.getInstance().saveDocument(doc);
 
+        // Mirror acceptFile()/rejectFile(): clear highlights, refresh banner, and update review state
+        // so the file no longer shows up in the Review panel and any blocked git gate can proceed.
+        AgentEditHighlighter.getInstance(project).clearForFile(vf);
+        com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
+
         if (reason != null && !reason.isBlank()) {
             sendRevertNudge(vf, reason);
         }
+        fireReviewStateChanged();
+        completeReviewIfEmpty();
     }
 
     public synchronized void endSession() {
