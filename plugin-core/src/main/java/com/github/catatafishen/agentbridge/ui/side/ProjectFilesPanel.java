@@ -274,6 +274,14 @@ final class ProjectFilesPanel extends JPanel {
                                                       boolean expanded, boolean leaf, int row,
                                                       boolean hasFocus) {
             Component c = super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
+            if (!sel) {
+                // DefaultTreeCellRenderer can paint a non-transparent background in dark themes;
+                // clear it so the tree background shows through on non-selected rows.
+                setOpaque(false);
+                if (c instanceof JLabel label) {
+                    label.setOpaque(false);
+                }
+            }
             if (value instanceof DefaultMutableTreeNode node && node.getUserObject() instanceof FileNode fn
                 && c instanceof JLabel label) {
                 label.setIcon(fn.icon());
