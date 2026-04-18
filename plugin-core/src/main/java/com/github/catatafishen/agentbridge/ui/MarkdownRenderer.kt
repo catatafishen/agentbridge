@@ -35,6 +35,7 @@ object MarkdownRenderer {
         var inImplicitCode: Boolean = false
     )
 
+    @JvmOverloads
     fun markdownToHtml(
         text: String,
         resolveFileReference: (String) -> Pair<String, Int?>? = { null },

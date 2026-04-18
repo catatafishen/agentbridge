@@ -1289,6 +1289,16 @@ public final class PlatformApiCompat {
         }
 
         /**
+         * Updates the visible title of the tab at {@code index}.
+         * Used for badge overlays like {@code "Todos (3/7)"}.
+         */
+        public void setTabTitle(int index, @NotNull String title) {
+            if (index >= 0 && index < tabInfos.size()) {
+                tabInfos.get(index).setText(title);
+            }
+        }
+
+        /**
          * Registers a tab-selection listener. {@code onTabSelected} receives the zero-based
          * index of the newly selected tab whenever the selection changes.
          */
