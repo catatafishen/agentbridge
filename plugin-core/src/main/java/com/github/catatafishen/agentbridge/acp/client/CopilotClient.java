@@ -10,7 +10,6 @@ import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
-import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -121,10 +120,11 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected void beforeLaunch(String cwd, int mcpPort) throws IOException {
-        // Refresh shell environment before launch — picks up any tools installed since last capture
-        // (e.g., charset fix for non-ASCII usernames). Done here instead of the constructor so the
-        // re-captured environment is immediately available for binary detection in launchProcess().
-        ShellEnvironment.refresh();
+        // Do NOT call ShellEnvironment.refresh() here. refresh() clears the cache, which forces
+        // a login-shell spawn on the next getEnvironment() call — that blocks for 1–5 s while
+        // bash -l sources nvm/sdkman/cargo init scripts. Doing this on every connect makes the
+        // chat pane noticeably slow to open. The cache is pre-warmed at project open by
+        // ActiveAgentManager and remains valid for the IDE session.
         Path home = copilotHome();
         writeAgentDefinitions(home.toString());
         String basePath = project.getBasePath();
