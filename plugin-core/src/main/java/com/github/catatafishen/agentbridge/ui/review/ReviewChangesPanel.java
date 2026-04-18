@@ -45,7 +45,8 @@ import java.util.List;
  * Side panel listing every file the agent has touched in the current
  * {@link AgentEditSession}.
  * <p>
- * Columns: [status icon] [file name + meta] [approve checkbox] [remove X].
+ * Columns: [file name (status-colored) + meta] [approve checkbox] [remove X].
+ * File names are colored by status: green = added, blue = modified, grey = deleted.
  * Clicking a row opens the file. The approve checkbox toggles between PENDING and
  * APPROVED (green check when approved). The X button removes approved rows.
  */
@@ -60,6 +61,14 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
      */
     private static final JBColor DIFF_GREEN = new JBColor(new Color(0, 128, 0), new Color(80, 200, 80));
     private static final JBColor DIFF_RED = new JBColor(new Color(200, 0, 0), new Color(255, 80, 80));
+
+    /**
+     * File status colors — matches IntelliJ's VCS file coloring convention:
+     * green = added, blue = modified, grey = deleted.
+     */
+    private static final JBColor STATUS_ADDED = new JBColor(new Color(0x00, 0x61, 0x00), new Color(0x57, 0xAB, 0x5A));
+    private static final JBColor STATUS_MODIFIED = new JBColor(new Color(0x08, 0x69, 0xDA), new Color(0x58, 0xA6, 0xFF));
+    private static final JBColor STATUS_DELETED = new JBColor(new Color(0x6E, 0x77, 0x81), new Color(0x8B, 0x94, 0x9E));
 
     private final transient Project project;
     private final ReviewTableModel tableModel;
@@ -183,12 +192,6 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         table.setFillsViewportHeight(true);
         table.setTableHeader(null);
         table.setExpandableItemsEnabled(false);
-
-        // COL_STATUS — small icon column
-        TableColumn statusCol = table.getColumnModel().getColumn(ReviewTableModel.COL_STATUS);
-        statusCol.setPreferredWidth(JBUI.scale(28));
-        statusCol.setMaxWidth(JBUI.scale(32));
-        statusCol.setCellRenderer(new StatusCellRenderer());
 
         // COL_FILE — file name + meta (takes remaining space)
         TableColumn fileCol = table.getColumnModel().getColumn(ReviewTableModel.COL_FILE);
@@ -392,11 +395,10 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     // ── Table model ───────────────────────────────────────────────────────────
 
     private static final class ReviewTableModel extends AbstractTableModel {
-        static final int COL_STATUS = 0;
-        static final int COL_FILE = 1;
-        static final int COL_APPROVE = 2;
-        static final int COL_REMOVE = 3;
-        private static final String[] COLUMN_NAMES = {"", "File", "", ""};
+        static final int COL_FILE = 0;
+        static final int COL_APPROVE = 1;
+        static final int COL_REMOVE = 2;
+        private static final String[] COLUMN_NAMES = {"File", "", ""};
 
         private final List<ReviewItem> items = new ArrayList<>();
 
@@ -434,40 +436,6 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     // ── Cell renderers ────────────────────────────────────────────────────────
 
     /**
-     * Status icon column: Add/Edit/Remove icon with diff colors.
-     */
-    private static final class StatusCellRenderer extends DefaultTableCellRenderer {
-        @Override
-        public Component getTableCellRendererComponent(JTable table, Object value,
-                                                       boolean isSelected, boolean hasFocus,
-                                                       int row, int column) {
-            Component c = super.getTableCellRendererComponent(table, "", isSelected, hasFocus, row, column);
-            if (value instanceof ReviewItem item && c instanceof JLabel label) {
-                label.setText("");
-                label.setHorizontalAlignment(CENTER);
-                switch (item.status()) {
-                    case ADDED -> {
-                        label.setIcon(AllIcons.General.Add);
-                        label.setToolTipText("Added");
-                    }
-                    case MODIFIED -> {
-                        label.setIcon(AllIcons.Actions.Edit);
-                        label.setToolTipText("Modified");
-                    }
-                    case DELETED -> {
-                        label.setIcon(AllIcons.General.Remove);
-                        label.setToolTipText("Deleted");
-                    }
-                }
-                if (item.approved() && !isSelected) {
-                    label.setForeground(JBColor.GRAY);
-                }
-            }
-            return c;
-        }
-    }
-
-    /**
      * File name column: shows file name, diff-colored line counts, and timestamp.
      * Approved rows are muted.
      */
@@ -500,6 +468,13 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
             StringBuilder sb = new StringBuilder("<html>");
             if (approved && !isSelected) {
                 sb.append("<font color='gray'>").append(escapeHtml(fileName)).append(FONT_CLOSE);
+            } else if (!isSelected) {
+                Color statusColor = switch (item.status()) {
+                    case ADDED -> STATUS_ADDED;
+                    case MODIFIED -> STATUS_MODIFIED;
+                    case DELETED -> STATUS_DELETED;
+                };
+                sb.append(colorSpan(statusColor, escapeHtml(fileName)));
             } else {
                 sb.append(escapeHtml(fileName));
             }
