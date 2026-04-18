@@ -157,9 +157,15 @@ class ChatToolWindowContent(
      * Subscribes to focus restore events published by PsiBridgeService after tool calls complete.
      * Restores keyboard focus to the chat input after files are opened in follow mode.
      *
-     * Uses a short delay (150ms) to ensure the restore fires AFTER any secondary focus changes
-     * triggered by tool window activations, navigate() calls, or showDiff() events that
-     * may themselves use invokeLater internally.
+     * <p>Uses a short delay (150ms) to ensure the restore fires <em>after</em> any secondary
+     * focus changes triggered by tool window activations, navigate() calls, or showDiff() events
+     * that may themselves use invokeLater internally.
+     *
+     * <p>This alarm complements {@code FocusGuard}, which handles focus steals <em>during</em>
+     * tool execution synchronously. The alarm covers a different window: queued invokeLater tasks
+     * that were created during the tool but run after the guard is removed (between tool completion
+     * and T+150ms). The {@code isChatToolWindowActive} check inside the callback prevents the
+     * alarm from stealing focus back if the user navigated away intentionally in that window.
      */
     private fun subscribeToFocusRestoreEvents() {
         val alarm = com.intellij.util.Alarm(com.intellij.util.Alarm.ThreadToUse.SWING_THREAD, project)
@@ -169,7 +175,15 @@ class ChatToolWindowContent(
             com.github.catatafishen.agentbridge.psi.PsiBridgeService.FocusRestoreListener {
                 if (::promptTextArea.isInitialized) {
                     alarm.cancelAllRequests()
-                    alarm.addRequest({ promptTextArea.requestFocusInWindow() }, 150)
+                    alarm.addRequest({
+                        // Re-check that chat is still the intended focus target. If the user
+                        // clicked elsewhere in the 150ms window, honour that intent rather than
+                        // stealing focus back to the prompt.
+                        if (com.github.catatafishen.agentbridge.psi.PsiBridgeService
+                                .isChatToolWindowActive(project)) {
+                            promptTextArea.requestFocusInWindow()
+                        }
+                    }, 150)
                 }
             }
         )

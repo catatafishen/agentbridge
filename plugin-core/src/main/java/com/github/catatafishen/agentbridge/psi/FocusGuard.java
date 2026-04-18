@@ -6,12 +6,8 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.wm.ToolWindowManager;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.JComponent;
-import javax.swing.SwingUtilities;
-import java.awt.AWTEvent;
-import java.awt.Component;
-import java.awt.KeyboardFocusManager;
-import java.awt.Window;
+import javax.swing.*;
+import java.awt.*;
 import java.awt.event.InputEvent;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
@@ -60,7 +56,10 @@ final class FocusGuard implements PropertyChangeListener {
     private final Project project;
     private final KeyboardFocusManager kfm;
     private final Component chatFocusOwner;
-    private volatile boolean uninstalled;
+    /**
+     * Package-private so tests can simulate the uninstalled state without requiring the IDE platform.
+     */
+    volatile boolean uninstalled;
     /**
      * Ensures {@code requestFocusInWindow()} is called at most once per tool call.
      * Without this, a failed or mis-routed reclaim produces a new focus event that
@@ -70,7 +69,10 @@ final class FocusGuard implements PropertyChangeListener {
     private final java.util.concurrent.atomic.AtomicBoolean hasReclaimed =
         new java.util.concurrent.atomic.AtomicBoolean(false);
 
-    private FocusGuard(Project project, KeyboardFocusManager kfm, Component chatFocusOwner) {
+    /**
+     * Package-private for tests; use {@link #install(Project)} in production code.
+     */
+    FocusGuard(Project project, KeyboardFocusManager kfm, Component chatFocusOwner) {
         this.project = project;
         this.kfm = kfm;
         this.chatFocusOwner = chatFocusOwner;
