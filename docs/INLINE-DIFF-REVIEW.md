@@ -212,6 +212,9 @@ once" — one row per file. Cleanup is explicit and predictable:
 - **Successful `git_commit`** prunes approved rows whose path appears in the commit.
   Pending rows are never pruned (and the gate would have prevented the commit anyway).
   The commit-to-paths mapping uses `git show --name-only --format= HEAD`.
+  Note: `git show --name-only` returns **relative** paths, but the internal maps key on
+  **absolute** paths. `AgentEditSession.toAbsolutePath()` resolves them against
+  `project.getBasePath()` before the map lookup.
 - **Worktree-changing git operations** (branch switch, `reset --hard`, rebase, pull,
   merge, stash pop/apply, revert, cherry-pick) call `invalidateOnWorktreeChange()` after
   the gate has been resolved, wiping every row — pending or approved — because the

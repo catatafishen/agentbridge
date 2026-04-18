@@ -475,13 +475,20 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     /**
      * Post-commit prune: removes APPROVED rows whose paths were committed. Pending rows
      * are intentionally left in place — they didn't make it into the commit anyway.
+     * <p>
+     * <b>Path normalisation</b>: {@code git show --name-only} returns <em>relative</em> paths
+     * (e.g. {@code plugin-core/src/…/Foo.java}), but all internal maps key on
+     * <em>absolute</em> paths. Each path is resolved against {@code project.getBasePath()}
+     * before the map lookup so the prune actually fires.
      */
     public void removeApprovedForCommit(@NotNull Collection<String> committedPaths) {
         if (committedPaths.isEmpty()) return;
+        String basePath = project.getBasePath();
         boolean changed = false;
         for (String path : committedPaths) {
-            if (approvals.get(path) == ApprovalState.APPROVED && pathIsTracked(path)) {
-                clearTrackedPath(path);
+            String absPath = toAbsolutePath(path, basePath);
+            if (approvals.get(absPath) == ApprovalState.APPROVED && pathIsTracked(absPath)) {
+                clearTrackedPath(absPath);
                 changed = true;
             }
         }
@@ -489,6 +496,15 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
             fireReviewStateChanged();
         }
+    }
+
+    /**
+     * Resolves {@code path} to an absolute path. If {@code path} is already absolute it is
+     * returned as-is; otherwise it is joined to {@code basePath}.
+     */
+    private static @NotNull String toAbsolutePath(@NotNull String path, @Nullable String basePath) {
+        if (basePath == null || path.startsWith("/")) return path;
+        return basePath + "/" + path;
     }
 
     private void clearTrackedPath(@NotNull String path) {
