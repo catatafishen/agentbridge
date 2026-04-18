@@ -34,7 +34,7 @@ public final class SidePanel extends JPanel implements Disposable {
         Disposer.register(this, reviewPanel);
 
         ProjectFilesPanel projectFilesPanel = new ProjectFilesPanel(project);
-        PromptsPanel promptsPanel = new PromptsPanel(project, chatConsole);
+        PromptsPanel promptsPanel = new PromptsPanel(chatConsole);
         Disposer.register(this, promptsPanel);
 
         tabsPanel = PlatformApiCompat.createJBTabsPanel(project, this);

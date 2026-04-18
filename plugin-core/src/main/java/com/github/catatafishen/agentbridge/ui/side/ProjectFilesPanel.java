@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileTypes.FileTypeManager;
@@ -180,19 +181,55 @@ final class ProjectFilesPanel extends JPanel {
         File file = new File(fn.base, fn.relativePath);
         if (!file.exists()) {
             if (!fn.createIfMissing) return;
-            try {
-                File parent = file.getParentFile();
-                if (parent != null) Files.createDirectories(parent.toPath());
-                Files.writeString(file.toPath(), "");
-            } catch (IOException ex) {
-                return;
-            }
+            VirtualFile created = createEmptyFile(file);
+            if (created == null) return;
+            FileEditorManager.getInstance(project).openFile(created, true);
+            refresh();
+            return;
         }
         VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file);
         if (vf != null) {
             FileEditorManager.getInstance(project).openFile(vf, true);
         }
         refresh();
+    }
+
+    /**
+     * Creates an empty file via VFS inside a {@link com.intellij.openapi.application.WriteAction},
+     * so VFS events (and the file-type/index pipeline) stay consistent. Surfaces an error notification
+     * if creation fails — silently swallowing here would make the click appear to do nothing.
+     */
+    private @org.jetbrains.annotations.Nullable VirtualFile createEmptyFile(@NotNull File file) {
+        File parent = file.getParentFile();
+        try {
+            if (parent != null) Files.createDirectories(parent.toPath());
+        } catch (IOException ex) {
+            notifyCreateFailure(file, ex);
+            return null;
+        }
+        VirtualFile parentVf = parent == null ? null
+            : LocalFileSystem.getInstance().refreshAndFindFileByIoFile(parent);
+        if (parentVf == null) {
+            notifyCreateFailure(file, new IOException("parent directory not visible to VFS"));
+            return null;
+        }
+        return com.intellij.openapi.application.WriteAction.compute(() -> {
+            try {
+                return parentVf.createChildData(this, file.getName());
+            } catch (IOException ex) {
+                notifyCreateFailure(file, ex);
+                return null;
+            }
+        });
+    }
+
+    private void notifyCreateFailure(@NotNull File file, @NotNull Throwable cause) {
+        String detail = cause.getMessage() == null ? cause.toString() : cause.getMessage();
+        PlatformApiCompat.showNotification(
+            project,
+            "Could not create " + file.getName(),
+            detail,
+            com.intellij.notification.NotificationType.ERROR);
     }
 
     /**
