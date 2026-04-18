@@ -509,7 +509,7 @@ public final class RunTestsTool extends TestingTool {
             setTaskNames.invoke(gradleSettings, List.of(taskPrefix + "test"));
 
             var setScriptParameters = gradleSettings.getClass().getMethod("setScriptParameters", String.class);
-            setScriptParameters.invoke(gradleSettings, "--tests " + target);
+            setScriptParameters.invoke(gradleSettings, "--tests " + buildGradleTestFilter(target));
 
             String basePath = project.getBasePath();
             if (basePath != null) {
@@ -873,6 +873,35 @@ public final class RunTestsTool extends TestingTool {
      */
     static String buildGradleTaskPrefix(@NotNull String module) {
         return module.isEmpty() ? "" : ":" + module + ":";
+    }
+
+    /**
+     * Normalises a Gradle {@code --tests} filter argument so it always includes a package qualifier.
+     * <p>
+     * Gradle's {@code --tests} filter requires a pattern in the form
+     * {@code [package.]ClassName[.methodName]}.  A bare simple name such as {@code FormattingTest}
+     * or a wildcard like {@code *Test} is silently rejected with
+     * {@code "No tests found for given includes"} because Gradle interprets it as a root-package
+     * class pattern, not an any-package wildcard.
+     * <p>
+     * Rules applied:
+     * <ul>
+     *   <li>No dot in target (e.g. {@code FormattingTest}, {@code *Test}) → prepend {@code *.}</li>
+     *   <li>Has a dot but first segment starts with an uppercase letter
+     *       (e.g. {@code FormattingTest.testFoo}) → prepend {@code *.}</li>
+     *   <li>Otherwise (e.g. {@code com.example.Foo}, {@code *.*Test}) → return unchanged</li>
+     * </ul>
+     * Pure function — no IDE dependency.
+     */
+    static String buildGradleTestFilter(@NotNull String target) {
+        if (!target.contains(".")) {
+            return "*." + target;
+        }
+        char first = target.charAt(0);
+        if (Character.isUpperCase(first)) {
+            return "*." + target;
+        }
+        return target;
     }
 
     /**
