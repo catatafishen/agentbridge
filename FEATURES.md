@@ -280,10 +280,12 @@ Fine-grained control over what the agent can do.
 
 - **Per-tool permissions** — Allow, Ask, or Deny for each of the 92 tools
 - **Three-way prompts** — Deny / Allow / Allow for Session
-- **Path-based rules** — Different permissions for project files vs. files outside the project
 - **Built-in edit interception** — Agent CLI file edits are redirected through IntelliJ's document API so every change
   is undoable
-- **Sub-agent write blocking** — Built-in write tools automatically denied for sub-agents
+- **Diff Review for agent edits** — every file the agent writes shows up in the Review panel with persistent
+  green/amber/red highlights; you can require manual approval, gate destructive git operations on pending review, and
+  send structured revert nudges back to the agent. See the [Diff Review for Agent Edits](#diff-review-for-agent-edits)
+  section below
 - **Settings panel** — Enable/disable individual tools and configure permissions visually
 
 ---
