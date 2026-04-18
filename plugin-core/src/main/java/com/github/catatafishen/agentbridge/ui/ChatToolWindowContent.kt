@@ -60,6 +60,9 @@ class ChatToolWindowContent(
     ).also {
         it.secondComponent = mainPanel
         it.setHonorComponentsMinimumSize(false)
+        // When the tool window is resized (by dragging its border), keep the chat pane
+        // at its current width and let the sidebar absorb the size change.
+        it.dividerPositionStrategy = com.intellij.openapi.ui.Splitter.DividerPositionStrategy.KEEP_SECOND_SIZE
         it.border = com.intellij.ui.SideBorder(JBColor.border(), com.intellij.ui.SideBorder.TOP)
     }
 
