@@ -32,6 +32,10 @@ public final class ChatInputConfigurable implements Configurable {
     private JSpinner scratchRetentionSpinner;
     private JCheckBox autoCloseTabsCheckbox;
     private JCheckBox closeRunningTerminalsCheckbox;
+    private JComboBox<String> unhandledNudgeModeCombo;
+
+    private static final String NUDGE_MODE_AUTO_SEND_LABEL = "Auto-send as a new prompt";
+    private static final String NUDGE_MODE_RESTORE_LABEL = "Restore into chat input";
 
     public ChatInputConfigurable(@NotNull Project project) {
         this.project = project;
@@ -87,6 +91,10 @@ public final class ChatInputConfigurable implements Configurable {
             cleanupSettings.isAutoCloseRunningTerminals());
         closeRunningTerminalsCheckbox.setEnabled(cleanupSettings.isAutoCloseAgentTabs());
 
+        unhandledNudgeModeCombo = new JComboBox<>(new String[]{
+            NUDGE_MODE_AUTO_SEND_LABEL, NUDGE_MODE_RESTORE_LABEL
+        });
+
         autoCloseTabsCheckbox.addChangeListener(e ->
             closeRunningTerminalsCheckbox.setEnabled(autoCloseTabsCheckbox.isSelected()));
 
@@ -131,6 +139,10 @@ public final class ChatInputConfigurable implements Configurable {
             .addLabeledComponent("Scratch file retention (hours, 0 = forever):", scratchRetentionSpinner)
             .addComponent(autoCloseTabsCheckbox)
             .addComponent(closeRunningTerminalsCheckbox)
+            .addVerticalGap(4)
+            .addSeparator(8)
+            .addLabeledComponent("When the agent finishes before you act on a nudge:", unhandledNudgeModeCombo)
+            .addTooltip("\"Restore into chat input\" prepends the unsent nudge to the input area instead of firing it.")
             .addComponentFillVertically(new JPanel(), 0)
             .getPanel();
         panel.setBorder(JBUI.Borders.empty(8));
@@ -182,7 +194,8 @@ public final class ChatInputConfigurable implements Configurable {
         CleanupSettings cleanupSettings = CleanupSettings.getInstance(project);
         if ((int) scratchRetentionSpinner.getValue() != cleanupSettings.getScratchRetentionHours()) return true;
         if (autoCloseTabsCheckbox.isSelected() != cleanupSettings.isAutoCloseAgentTabs()) return true;
-        return closeRunningTerminalsCheckbox.isSelected() != cleanupSettings.isAutoCloseRunningTerminals();
+        if (closeRunningTerminalsCheckbox.isSelected() != cleanupSettings.isAutoCloseRunningTerminals()) return true;
+        return selectedNudgeMode() != s.getUnhandledNudgeMode();
     }
 
     @Override
@@ -215,6 +228,8 @@ public final class ChatInputConfigurable implements Configurable {
         cleanupSettings.setScratchRetentionHours((int) scratchRetentionSpinner.getValue());
         cleanupSettings.setAutoCloseAgentTabs(autoCloseTabsCheckbox.isSelected());
         cleanupSettings.setAutoCloseRunningTerminals(closeRunningTerminalsCheckbox.isSelected());
+
+        s.setUnhandledNudgeMode(selectedNudgeMode());
     }
 
     @Override
@@ -238,6 +253,11 @@ public final class ChatInputConfigurable implements Configurable {
         autoCloseTabsCheckbox.setSelected(cleanupSettings.isAutoCloseAgentTabs());
         closeRunningTerminalsCheckbox.setSelected(cleanupSettings.isAutoCloseRunningTerminals());
         closeRunningTerminalsCheckbox.setEnabled(cleanupSettings.isAutoCloseAgentTabs());
+
+        unhandledNudgeModeCombo.setSelectedItem(switch (s.getUnhandledNudgeMode()) {
+            case RESTORE_INTO_INPUT -> NUDGE_MODE_RESTORE_LABEL;
+            case AUTO_SEND -> NUDGE_MODE_AUTO_SEND_LABEL;
+        });
     }
 
     @Override
@@ -254,6 +274,14 @@ public final class ChatInputConfigurable implements Configurable {
         scratchRetentionSpinner = null;
         autoCloseTabsCheckbox = null;
         closeRunningTerminalsCheckbox = null;
+        unhandledNudgeModeCombo = null;
+    }
+
+    private ChatInputSettings.UnhandledNudgeMode selectedNudgeMode() {
+        if (unhandledNudgeModeCombo == null) return ChatInputSettings.UnhandledNudgeMode.AUTO_SEND;
+        return NUDGE_MODE_RESTORE_LABEL.equals(unhandledNudgeModeCombo.getSelectedItem())
+            ? ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT
+            : ChatInputSettings.UnhandledNudgeMode.AUTO_SEND;
     }
 
     private String selectedTriggerChar() {

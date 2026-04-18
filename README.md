@@ -73,10 +73,12 @@ dialog interaction, build/run output reading, user prompts.
 **Editor** — Open files, show diffs, scratch files, conversation history search, theme
 management.
 
-**Diff Review** *(opt-in)* — Review every agent edit before it lands. Persistent
-green/amber/red diff highlights, a Review panel with Accept / Revert per file,
-cross-file change navigation, and automatic gating of destructive git operations
-(commit, merge, rebase, reset --hard, …) until review is resolved. See
+**Diff Review** — Always-on tracker for every agent edit. Persistent green/amber/red
+diff highlights, a Review panel listing each file with `+N / −N` line counts and
+last-edited timestamps, optional **Auto-Approve** toggle, structured revert nudges
+(with diff body) sent back to the agent, and automatic gating of destructive git
+operations (commit, merge, rebase, reset --hard, …) until pending changes are
+resolved. The list survives IDE restarts. See
 [docs/INLINE-DIFF-REVIEW.md](docs/INLINE-DIFF-REVIEW.md).
 
 **Nudge system** — Send mid-turn guidance while the agent is working (Enter), force-stop

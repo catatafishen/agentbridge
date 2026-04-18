@@ -127,14 +127,47 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
-     * When true, the plugin runs an agent-edit review session that captures before-snapshots
-     * of files on first modification and renders persistent diff highlights in the editor
-     * until the user ends the session. See {@link com.github.catatafishen.agentbridge.psi.review.AgentEditSession}.
+     * When true, agent edits are auto-approved as soon as they land. Disabling makes new
+     * rows appear as PENDING — they accumulate in the Review panel and the user must
+     * accept (or revert) them. Toggling this on also sweeps any existing PENDING rows
+     * to APPROVED. The Diff Review session itself is always on; this flag only controls
+     * the default approval state of new rows.
+     *
+     * <p>See {@link com.github.catatafishen.agentbridge.psi.review.AgentEditSession}.
      */
+    public boolean isAutoApproveAgentEdits() {
+        return myState.autoApproveAgentEdits;
+    }
+
+    public void setAutoApproveAgentEdits(boolean enabled) {
+        myState.autoApproveAgentEdits = enabled;
+    }
+
+    /**
+     * When true, the Review panel automatically removes all approved rows when the user
+     * starts a fresh prompt (not nudges or follow-ups within the same turn). The list
+     * still grows during a single agent turn so the user can audit a full batch of edits
+     * after it completes.
+     */
+    public boolean isAutoCleanReviewOnNewPrompt() {
+        return myState.autoCleanReviewOnNewPrompt;
+    }
+
+    public void setAutoCleanReviewOnNewPrompt(boolean enabled) {
+        myState.autoCleanReviewOnNewPrompt = enabled;
+    }
+
+    /**
+     * @deprecated The Diff Review session is now always-on. The on/off toggle has been
+     * replaced by the Auto-Approve toggle ({@link #isAutoApproveAgentEdits()}). This
+     * accessor is kept only to read legacy persisted state during migration.
+     */
+    @Deprecated(forRemoval = true)
     public boolean isReviewAgentEdits() {
         return myState.reviewAgentEdits;
     }
 
+    @Deprecated(forRemoval = true)
     public void setReviewAgentEdits(boolean enabled) {
         myState.reviewAgentEdits = enabled;
     }
@@ -171,6 +204,8 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private boolean smoothScrollEnabled = false;
         private boolean showTurnStats = true;
         private boolean reviewAgentEdits = false;
+        private boolean autoApproveAgentEdits = false;
+        private boolean autoCleanReviewOnNewPrompt = false;
         private String kindReadColorKey = null;
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
@@ -246,6 +281,22 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setReviewAgentEdits(boolean reviewAgentEdits) {
             this.reviewAgentEdits = reviewAgentEdits;
+        }
+
+        public boolean isAutoApproveAgentEdits() {
+            return autoApproveAgentEdits;
+        }
+
+        public void setAutoApproveAgentEdits(boolean autoApproveAgentEdits) {
+            this.autoApproveAgentEdits = autoApproveAgentEdits;
+        }
+
+        public boolean isAutoCleanReviewOnNewPrompt() {
+            return autoCleanReviewOnNewPrompt;
+        }
+
+        public void setAutoCleanReviewOnNewPrompt(boolean autoCleanReviewOnNewPrompt) {
+            this.autoCleanReviewOnNewPrompt = autoCleanReviewOnNewPrompt;
         }
 
         public @org.jetbrains.annotations.Nullable String getKindReadColorKey() {

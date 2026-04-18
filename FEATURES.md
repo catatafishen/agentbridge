@@ -290,26 +290,45 @@ Fine-grained control over what the agent can do.
 
 ## Diff Review for Agent Edits
 
-Opt-in safety net that turns every agent-originated file edit into a reviewable change.
+Always-on safety net that turns every agent-originated file edit into a reviewable change.
 See the full reference in [docs/INLINE-DIFF-REVIEW.md](docs/INLINE-DIFF-REVIEW.md).
 
+- **Always-on tracking** — every agent edit shows up as a row, no setup required. There is
+  no master "off" switch anymore; you choose between **manual approval** and **Auto-Approve**
+- **Auto-Approve toggle** — when enabled, new edits land as **APPROVED** automatically and
+  any existing pending rows are swept to APPROVED. Toggle it off to review every change
 - **Persistent diff highlights** — green (added), amber (modified), red (deleted) bands
   appear in the gutter and editor, powered by the same `RangeHighlighter` layer used by VCS
-- **Review tab** — side-panel list of every file with pending changes; per-row Open / Accept
-  / Revert plus toolbar-level Accept All and Reject All (with optional reason nudge)
+- **Review tab** — side-panel list of every file with `+N / −N` line counts, status icon,
+  and last-edited timestamp. Per-row Open / Accept / Revert; approved rows stay listed
+  (visually muted) until cleaned. Press `Delete` on an approved row to remove it
+- **Re-edit flips back to PENDING** — when Auto-Approve is off and the agent edits a file
+  that was already approved, the row flips back to PENDING and only the *new* hunks
+  remain highlighted (the snapshot is rebased onto the previously-approved content)
+- **Cleanup paths** — per-row `Delete`, toolbar **Clean Approved**, post-`git_commit` prune
+  (only files actually in the commit), branch-switch / reset-hard wipe, and an optional
+  toolbar toggle **Auto-Clean on New Prompt**
 - **Editor banner** — shows `Review: File 3/7 · 5 changes` with Show-diff, Accept,
-  Previous, Next, and Revert… actions; navigation works across all tracked files
+  Previous, Next, and Revert… actions; navigation works across all pending files
+- **Structured revert nudges** — reverting a file (from panel or banner) sends the agent a
+  nudge containing the relative path, line ranges, optional reason, and a unified diff of
+  the reverted hunks. When a git gate is currently blocking, the revert dialog offers
+  **Continue reviewing** (queues the nudge, keeps gating) or **Send to agent now**
+  (short-circuits the gate immediately so the agent can re-plan)
 - **Git gating** — `git_commit`, `git_merge`, `git_rebase`, `git_pull`, `git_reset --hard`,
   `git_stash pop/apply`, `git_branch create/switch`, `git_cherry_pick`, and `git_revert`
-  block (up to 10 minutes) until review is resolved, so the agent can't commit or rebase
-  over unreviewed changes
+  block (up to 10 minutes) until **pending** items are resolved. Approved rows are no-ops
+  for the gate
 - **Agent-only tracking** — a thread-local marker ensures user typing, manual reformats,
   and external edits are *not* captured; only edits made from inside tool calls become
   review items
 - **Worktree-safe** — snapshots are invalidated automatically on branch switch,
   `reset --hard`, rebase, and similar operations so stale baselines never linger
-- **Off by default** — toggle via Review panel toolbar or `Settings → Tools → AgentBridge →
-  Review agent edits`
+- **Persistence** — the review list (snapshots, approval state, timestamps, line counts) is
+  stored in the workspace file and survives IDE restarts
+- **Unhandled-nudge handling** — `Settings → Tools → AgentBridge → Chat input` lets you
+  choose whether unhandled nudges are *Auto-sent as a new prompt* (default) or
+  *Restored into the chat input* (prepended to whatever you were typing)
 
 ---
 

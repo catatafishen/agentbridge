@@ -17,9 +17,6 @@ import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import javax.swing.*
 import javax.swing.event.DocumentEvent
 
@@ -241,24 +238,8 @@ internal class PromptsPanel(
             return if (truncated.length < text.length) truncated.trimEnd() + "…" else text
         }
 
-        fun formatTimestamp(iso: String): String {
-            if (iso.isEmpty()) return ""
-            return try {
-                val instant = java.time.Instant.parse(iso)
-                val zdt = instant.atZone(ZoneId.systemDefault())
-                val today = LocalDate.now()
-                val date = zdt.toLocalDate()
-                val time = DateTimeFormatter.ofPattern("HH:mm").format(zdt)
-                when {
-                    date == today -> "Today $time"
-                    date == today.minusDays(1) -> "Yesterday $time"
-                    date.year == today.year -> "${DateTimeFormatter.ofPattern("MMM d").format(zdt)} $time"
-                    else -> "${DateTimeFormatter.ofPattern("MMM d yyyy").format(zdt)} $time"
-                }
-            } catch (_: Exception) {
-                iso
-            }
-        }
+        fun formatTimestamp(iso: String): String =
+            com.github.catatafishen.agentbridge.ui.util.TimestampDisplayFormatter.formatIsoTimestamp(iso)
 
         fun filterPrompts(prompts: List<EntryData.Prompt>, query: String): List<EntryData.Prompt> {
             val q = query.trim()

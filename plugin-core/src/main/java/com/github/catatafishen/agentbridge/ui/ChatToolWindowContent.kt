@@ -839,6 +839,12 @@ class ChatToolWindowContent(
         if (rawText.isEmpty()) return
         consolePanel.disableQuickReplies()
         statusBanner?.dismissCurrent()
+        // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up).
+        if (com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt) {
+            try {
+                project.getService(com.github.catatafishen.agentbridge.psi.review.AgentEditSession::class.java)?.removeAllApproved()
+            } catch (_: Throwable) { /* defensive: review session is best-effort */ }
+        }
         setSendingState(true)
 
         val contextItems = contextManager.collectInlineContextItems()
@@ -963,8 +969,17 @@ class ChatToolWindowContent(
                 ApplicationManager.getApplication().invokeLater {
                     consolePanel.removeNudgeBubble(nudgeId)
                     if (nudgeText != null) {
-                        promptTextArea.text = nudgeText
-                        onSendStopClicked()
+                        val mode = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().unhandledNudgeMode
+                        if (mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT) {
+                            // Prepend the unhandled nudge to whatever the user is currently typing — do not auto-send.
+                            val current = promptTextArea.text
+                            promptTextArea.text = if (current.isNullOrEmpty()) nudgeText else nudgeText + "\n\n" + current
+                            promptTextArea.requestFocusInWindow()
+                        } else {
+                            // Default: auto-send the nudge as a fresh prompt.
+                            promptTextArea.text = nudgeText
+                            onSendStopClicked()
+                        }
                     }
                 }
             }

@@ -128,6 +128,26 @@ public final class GitCommitTool extends GitTool {
 
         if (result.startsWith("Error")) return result;
 
+        // Prune approved review rows for files that are now part of this commit.
+        // Run on EDT-safe pool: AgentEditSession mutations + listeners are EDT-safe.
+        try {
+            String committedNames = runGitQuiet("show", "--name-only", "--format=", "HEAD");
+            if (committedNames != null && !committedNames.isBlank()) {
+                java.util.List<String> paths = new java.util.ArrayList<>();
+                for (String line : committedNames.split("\\r?\\n")) {
+                    String trimmed = line.trim();
+                    if (!trimmed.isEmpty()) paths.add(trimmed);
+                }
+                if (!paths.isEmpty()) {
+                    var session = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+                        .getService(project, com.github.catatafishen.agentbridge.psi.review.AgentEditSession.class);
+                    if (session != null) session.removeApprovedForCommit(paths);
+                }
+            }
+        } catch (Throwable ignored) {
+            // Best-effort: failure to prune the review list must not affect the commit result.
+        }
+
         // Append committed file list so agent can verify what was included
         String fileStats = runGitQuiet("show", "--stat", "--format=", "HEAD");
         if (fileStats != null && !fileStats.isBlank()) {

@@ -35,17 +35,20 @@ class ReviewItemDerivationTest {
             String path = entry.getKey();
             if (deletedFiles.containsKey(path)) continue;
             items.add(new ReviewItem(path, relativize(path),
-                ReviewItem.Status.MODIFIED, entry.getValue()));
+                ReviewItem.Status.MODIFIED, entry.getValue(),
+                ApprovalState.PENDING, 0L, 0, 0));
         }
         for (String path : newFiles) {
             items.add(new ReviewItem(path, relativize(path),
-                ReviewItem.Status.ADDED, null));
+                ReviewItem.Status.ADDED, null,
+                ApprovalState.PENDING, 0L, 0, 0));
         }
         for (var entry : deletedFiles.entrySet()) {
             String path = entry.getKey();
             String beforeContent = snapshots.getOrDefault(path, entry.getValue());
             items.add(new ReviewItem(path, relativize(path),
-                ReviewItem.Status.DELETED, beforeContent));
+                ReviewItem.Status.DELETED, beforeContent,
+                ApprovalState.PENDING, 0L, 0, 0));
         }
 
         items.sort((a, b) -> a.relativePath().compareToIgnoreCase(b.relativePath()));

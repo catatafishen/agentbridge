@@ -63,11 +63,16 @@ public final class AgentEditNotificationProvider implements EditorNotificationPr
 
         panel.createActionLabel("Revert…", () -> {
             String relativePath = toRelativePath(project, file);
-            RevertReasonDialog dialog = new RevertReasonDialog(project, file, relativePath);
-            if (dialog.showAndGet()) {
-                AgentEditSession.getInstance(project).revertFile(file, dialog.getReason());
-                EditorNotifications.getInstance(project).updateNotifications(file);
-            }
+            AgentEditSession s = AgentEditSession.getInstance(project);
+            RevertReasonDialog dialog = new RevertReasonDialog(project, file, relativePath, s.isGateActive());
+            if (!dialog.showAndGet()) return;
+            AgentEditSession.RevertGateAction gateAction = switch (dialog.getResult()) {
+                case CONTINUE_REVIEWING -> AgentEditSession.RevertGateAction.CONTINUE_REVIEWING;
+                case SEND_NOW -> AgentEditSession.RevertGateAction.SEND_NOW;
+                default -> AgentEditSession.RevertGateAction.DEFAULT;
+            };
+            s.revertFile(file.getPath(), dialog.getReason(), gateAction);
+            EditorNotifications.getInstance(project).updateNotifications(file);
         });
 
         return panel;

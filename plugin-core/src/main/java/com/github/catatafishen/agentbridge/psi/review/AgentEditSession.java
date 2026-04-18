@@ -2,9 +2,15 @@ package com.github.catatafishen.agentbridge.psi.review;
 
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.ChatWebServer;
+import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.WriteCommandAction;
+import com.intellij.openapi.components.PersistentStateComponent;
+import com.intellij.openapi.components.Service;
+import com.intellij.openapi.components.State;
+import com.intellij.openapi.components.Storage;
+import com.intellij.openapi.components.StoragePathMacros;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.EditorFactory;
@@ -36,39 +42,61 @@ import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Tracks file state before agent edits during a review session.
- * <p>
- * <b>Lifecycle:</b> auto-starts on first agent file edit (when enabled) and continues
- * until the user explicitly ends the session. Captures a "before" snapshot of each file
- * on first modification; supports per-file revert with optional reason nudge.
- * <p>
- * <b>Snapshot strategy:</b> lazy — only files that are actually modified get captured.
- * The before-content is stored with {@code putIfAbsent} so only the very first capture
- * (the pre-session state) is kept, regardless of how many subsequent edits occur.
+ * Always-on tracker for agent-originated file edits. The session itself never turns off;
+ * it persists across IDE restarts via {@link PersistentStateComponent}. What does change
+ * is the per-row {@link ApprovalState}: rows are PENDING by default and APPROVED either
+ * automatically (when {@link McpServerSettings#isAutoApproveAgentEdits()} is on) or via
+ * explicit user action. Approved rows stay visible until pruned (DEL key, "Clean
+ * Approved" toolbar action, post-commit prune, worktree-changing git operation, or
+ * optional auto-clean on a new prompt).
+ *
+ * <p><b>Gating:</b> {@link #awaitReviewCompletion} blocks only on PENDING rows. While a
+ * gate is active, {@link #revertFile} can short-circuit it via the
+ * {@link RevertGateAction#SEND_NOW} option, returning the merged revert nudges as the
+ * gated tool's error response so the agent can re-plan.
+ *
+ * <p><b>Re-edit of an approved file:</b> when a file with an APPROVED row is edited
+ * again by the agent, the snapshot is rebased to the just-approved content (the diff in
+ * the panel shows only the <i>new</i> changes, not the cumulative ones since the session
+ * began). When auto-approve is OFF, the row also flips back to PENDING; with auto-approve
+ * ON it stays APPROVED.
+ *
+ * <p>Storage is workspace-only (not committed to VCS).
  */
-public final class AgentEditSession implements Disposable {
+@Service(Service.Level.PROJECT)
+@State(
+    name = "AgentEditReview",
+    storages = @Storage(StoragePathMacros.WORKSPACE_FILE)
+)
+public final class AgentEditSession implements Disposable, PersistentStateComponent<AgentEditSession.PersistedState> {
 
     private static final Logger LOG = Logger.getInstance(AgentEditSession.class);
 
-    /**
-     * Skip snapshotting files larger than 5 MB to avoid memory bloat.
-     */
+    /** Skip snapshotting files larger than 5 MB to avoid memory bloat. */
     private static final long MAX_SNAPSHOT_BYTES = 5L * 1024 * 1024;
 
     /**
-     * UserData key for tracking old path during rename/move events.
+     * Project-wide cap on the total size of all snapshots + deletedFiles content. When
+     * exceeded, the oldest APPROVED rows are evicted first; if still over cap nothing
+     * else is dropped (the new edit is accepted but the user is not blocked).
      */
-    private static final Key<String> OLD_PATH_KEY = Key.create("AgentEditSession.oldPath");
+    private static final long MAX_TOTAL_SNAPSHOT_BYTES = 50L * 1024 * 1024;
 
-    private final Project project;
-    private volatile boolean active;
+    private static final long REVIEW_WAIT_TIMEOUT_MINUTES = 10;
+
+    /** UserData key for tracking old path during rename/move events. */
+    private static final Key<String> OLD_PATH_KEY = Key.create("AgentEditSession.oldPath");
 
     /**
      * Thread-local marker set during agent-originated tool edits.
@@ -77,17 +105,10 @@ public final class AgentEditSession implements Disposable {
      */
     private static final ThreadLocal<Boolean> agentEditActive = ThreadLocal.withInitial(() -> false);
 
-    /**
-     * Marks the current thread as executing an agent-originated edit.
-     * Must be paired with {@link #markAgentEditEnd()} in a finally block.
-     */
     public static void markAgentEditStart() {
         agentEditActive.set(true);
     }
 
-    /**
-     * Clears the agent-edit marker for the current thread.
-     */
     public static void markAgentEditEnd() {
         agentEditActive.remove();
     }
@@ -96,59 +117,59 @@ public final class AgentEditSession implements Disposable {
         return agentEditActive.get();
     }
 
-    /**
-     * Before-content snapshots keyed by canonical VFS path.
-     */
+    private final Project project;
+
+    /** Before-content snapshots keyed by canonical VFS path. */
     private final Map<String, String> snapshots = new ConcurrentHashMap<>();
-
-    /**
-     * Content of files deleted during the session, keyed by path.
-     */
+    /** Content of files deleted during the session, keyed by path. */
     private final Map<String, String> deletedFiles = new ConcurrentHashMap<>();
-
-    /**
-     * Paths of files created during the session.
-     */
+    /** Paths of files created during the session. */
     private final Set<String> newFiles = ConcurrentHashMap.newKeySet();
+    /** User approval state per path. */
+    private final Map<String, ApprovalState> approvals = new ConcurrentHashMap<>();
+    /** Epoch millis of the most recent agent edit per path. */
+    private final Map<String, Long> lastEditedAt = new ConcurrentHashMap<>();
+    /** Inserted line count vs. the snapshot baseline. */
+    private final Map<String, Integer> linesAdded = new ConcurrentHashMap<>();
+    /** Deleted line count vs. the snapshot baseline. */
+    private final Map<String, Integer> linesRemoved = new ConcurrentHashMap<>();
 
-    /**
-     * Disposable for session-scoped listeners; null when inactive.
-     */
     private Disposable sessionDisposable;
+    private volatile boolean started;
 
-    /**
-     * Tracks whether the user has been notified about the currently-pending review state.
-     * Reset when review items are resolved. Prevents notification spam on agent retries
-     * of gated git operations.
-     */
     private volatile boolean reviewNotificationFired;
+    private java.util.concurrent.CompletableFuture<Void> reviewCompletionFuture;
 
     /**
-     * Completes when the current review batch has been fully resolved (accept or reject)
-     * or the session has ended. Lazily (re-)created by {@link #awaitReviewCompletion}
-     * when a blocking gate starts; completed by {@link #completeReviewIfEmpty} /
-     * {@link #endSession}. Null when no gate is currently in flight.
+     * Buffer of revert nudges accumulated during the current gate. Flushed on either
+     * {@link RevertGateAction#SEND_NOW} (returned as the tool error) or on natural gate
+     * resolution (forwarded into {@link PsiBridgeService#setPendingNudge}).
      */
-    private java.util.concurrent.CompletableFuture<Void> reviewCompletionFuture;
+    private final List<String> gateRevertBuffer = Collections.synchronizedList(new ArrayList<>());
+
+    /**
+     * Set when the current gate is short-circuited via "Send to agent now". Cleared
+     * after the gated tool consumes it and reports the error to the agent.
+     */
+    private volatile String pendingGateCancelMessage;
 
     public AgentEditSession(@NotNull Project project) {
         this.project = project;
+        ensureStarted();
     }
 
     public static AgentEditSession getInstance(@NotNull Project project) {
         return project.getService(AgentEditSession.class);
     }
 
-    public boolean isActive() {
-        return active;
-    }
-
+    /**
+     * Always-on session bootstrap: installs the document and VFS listeners exactly once
+     * per project lifetime. Kept public for back-compat with the older opt-in API — most
+     * callers can drop the call entirely.
+     */
     public synchronized void ensureStarted() {
-        if (active) return;
-        if (!com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isReviewAgentEdits()) {
-            return;
-        }
-        active = true;
+        if (started || project.isDisposed()) return;
+        started = true;
 
         sessionDisposable = Disposer.newDisposable("AgentEditSession");
         Disposer.register(this, sessionDisposable);
@@ -160,32 +181,35 @@ public final class AgentEditSession implements Disposable {
         project.getMessageBus().connect(sessionDisposable)
             .subscribe(VirtualFileManager.VFS_CHANGES, new SessionVfsListener());
 
-        LOG.info("Agent edit review session started");
-        fireReviewStateChanged();
+        LOG.info("Agent edit review session started (always-on)");
     }
 
     /**
-     * Ends the session if active. Called from git tools that change the working tree
-     * (branch switch, reset --hard, rebase, stash pop, merge, pull, cherry-pick, revert).
-     * After a worktree change, existing snapshots are invalid since files may have
-     * reverted to different content.
+     * Always-on session is always "active". Kept for API back-compat (old call sites
+     * that used to short-circuit on inactive sessions).
      */
-    public void invalidateOnWorktreeChange(@NotNull String operation) {
-        if (!active) return;
-        LOG.info("Invalidating review session due to: " + operation);
-        endSession();
+    public boolean isActive() {
+        return started;
     }
 
+    /**
+     * Wipes all tracked state and ends any in-flight gate. Called on worktree changes
+     * (branch switch, reset --hard, rebase, stash pop, merge, pull, cherry-pick, revert)
+     * — existing snapshots would otherwise be stale.
+     */
+    public void invalidateOnWorktreeChange(@NotNull String operation) {
+        if (snapshots.isEmpty() && deletedFiles.isEmpty() && newFiles.isEmpty()) return;
+        LOG.info("Invalidating review session due to: " + operation);
+        wipeAllTrackedState();
+        completeGate();
+    }
+
+    // ── Capture / register ──────────────────────────────────────────────────
+
     public void captureBeforeContent(@NotNull VirtualFile vf, @NotNull String content) {
-        if (!active) return;
-        if (content.length() > MAX_SNAPSHOT_BYTES) return;
         if (!isProjectFile(vf)) return;
-        String prev = snapshots.putIfAbsent(vf.getPath(), content);
-        if (prev == null) {
-            LOG.info("Captured before-snapshot for: " + getRelativePath(vf));
-            com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
-            fireReviewStateChanged();
-        }
+        captureBeforeContent(vf.getPath(), content);
+        com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
     }
 
     /**
@@ -193,33 +217,42 @@ public final class AgentEditSession implements Disposable {
      * Used when a VirtualFile is not available (e.g., files that don't exist yet on VFS).
      */
     public void captureBeforeContent(@NotNull String path, @NotNull String content) {
-        if (!active) return;
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
         snapshots.putIfAbsent(path, content);
+        lastEditedAt.put(path, System.currentTimeMillis());
+        applyDefaultApproval(path);
+        recomputeLineCounts(path);
+        enforceTotalSnapshotCap();
+        fireReviewStateChanged();
     }
 
-    /**
-     * Registers a file as newly created during this session.
-     */
     public void registerNewFile(@NotNull String path) {
-        if (!active) return;
         newFiles.add(path);
+        lastEditedAt.put(path, System.currentTimeMillis());
+        applyDefaultApproval(path);
+        fireReviewStateChanged();
     }
 
-    /**
-     * Registers a file as deleted during this session, capturing its content for restore.
-     */
     public void registerDeletedFile(@NotNull String path, @NotNull String content) {
-        if (!active) return;
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
         deletedFiles.put(path, content);
+        lastEditedAt.put(path, System.currentTimeMillis());
+        applyDefaultApproval(path);
+        enforceTotalSnapshotCap();
+        fireReviewStateChanged();
     }
 
-    /**
-     * Computes change ranges between the before-snapshot and the current document content.
-     *
-     * @return list of change ranges, or empty if no snapshot exists or content is unchanged
-     */
+    private void applyDefaultApproval(@NotNull String path) {
+        ApprovalState defaultState = isAutoApproveOn() ? ApprovalState.APPROVED : ApprovalState.PENDING;
+        approvals.put(path, defaultState);
+    }
+
+    private boolean isAutoApproveOn() {
+        return McpServerSettings.getInstance(project).isAutoApproveAgentEdits();
+    }
+
+    // ── Range / snapshot accessors (unchanged surface) ──────────────────────
+
     public @NotNull List<ChangeRange> computeRanges(@NotNull VirtualFile vf) {
         String before = snapshots.get(vf.getPath());
         if (before == null) return Collections.emptyList();
@@ -234,12 +267,7 @@ public final class AgentEditSession implements Disposable {
         return computeRanges(before, after);
     }
 
-    /**
-     * Computes line-level change ranges between two strings.
-     * Package-visible for testing.
-     */
     @SuppressWarnings("RedundantThrows")
-    // Diff.buildChanges throws checked exception in some SDK versions but not others
     static @NotNull List<ChangeRange> computeRanges(@NotNull String before, @NotNull String after) {
         String[] beforeLines = Diff.splitLines(before);
         String[] afterLines = Diff.splitLines(after);
@@ -275,16 +303,10 @@ public final class AgentEditSession implements Disposable {
         }
     }
 
-    /**
-     * Returns the before-content snapshot for a file, or null if not captured.
-     */
     public @Nullable String getSnapshot(@NotNull VirtualFile vf) {
         return snapshots.get(vf.getPath());
     }
 
-    /**
-     * Returns all paths that have been modified during this session (not including new or deleted).
-     */
     public @NotNull Set<String> getModifiedFilePaths() {
         return Collections.unmodifiableSet(snapshots.keySet());
     }
@@ -297,181 +319,404 @@ public final class AgentEditSession implements Disposable {
         return Collections.unmodifiableSet(newFiles);
     }
 
+    // ── Aggregate state ─────────────────────────────────────────────────────
+
     /**
-     * Checks whether any changes have been captured in this session.
+     * Any tracked items at all (pending or approved). Used by UI emptiness checks.
      */
     public boolean hasChanges() {
         return !snapshots.isEmpty() || !deletedFiles.isEmpty() || !newFiles.isEmpty();
     }
 
     /**
-     * Builds a unified list of review items from the session's tracked state.
-     * Each file appears exactly once: as ADDED, MODIFIED, or DELETED.
+     * Any PENDING items remaining. Gate-blocking check.
      */
+    public boolean hasPendingChanges() {
+        for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
+            if (e.getValue() == ApprovalState.PENDING && pathIsTracked(e.getKey())) return true;
+        }
+        return false;
+    }
+
+    /** True while {@link #awaitReviewCompletion} is blocking on a future. */
+    public boolean isGateActive() {
+        java.util.concurrent.CompletableFuture<Void> f = reviewCompletionFuture;
+        return f != null && !f.isDone();
+    }
+
+    private boolean pathIsTracked(@NotNull String path) {
+        return snapshots.containsKey(path) || newFiles.contains(path) || deletedFiles.containsKey(path);
+    }
+
     public @NotNull List<ReviewItem> getReviewItems() {
-        if (!active) return Collections.emptyList();
         String basePath = project.getBasePath();
         List<ReviewItem> items = new ArrayList<>();
 
         for (Map.Entry<String, String> entry : snapshots.entrySet()) {
             String path = entry.getKey();
-            // Skip files that were subsequently deleted — they'll appear as DELETED
             if (deletedFiles.containsKey(path)) continue;
-            items.add(new ReviewItem(path, relativize(path, basePath),
-                ReviewItem.Status.MODIFIED, entry.getValue()));
+            items.add(buildItem(path, basePath, ReviewItem.Status.MODIFIED, entry.getValue()));
         }
         for (String path : newFiles) {
-            items.add(new ReviewItem(path, relativize(path, basePath),
-                ReviewItem.Status.ADDED, null));
+            items.add(buildItem(path, basePath, ReviewItem.Status.ADDED, null));
         }
         for (Map.Entry<String, String> entry : deletedFiles.entrySet()) {
             String path = entry.getKey();
-            // For deleted files, beforeContent is the original snapshot if available,
-            // otherwise the content captured at deletion time
             String beforeContent = snapshots.getOrDefault(path, entry.getValue());
-            items.add(new ReviewItem(path, relativize(path, basePath),
-                ReviewItem.Status.DELETED, beforeContent));
+            items.add(buildItem(path, basePath, ReviewItem.Status.DELETED, beforeContent));
         }
 
         items.sort((a, b) -> a.relativePath().compareToIgnoreCase(b.relativePath()));
         return items;
     }
 
-    /**
-     * Accepts a file's changes — removes it from review tracking.
-     * For MODIFIED: clears the snapshot (keeps current content).
-     * For ADDED: removes from newFiles set (keeps the file).
-     * For DELETED: removes from deletedFiles map (keeps it deleted).
-     */
-    public void acceptFile(@NotNull String path) {
-        if (!active) return;
-        snapshots.remove(path);
-        newFiles.remove(path);
-        deletedFiles.remove(path);
+    private @NotNull ReviewItem buildItem(@NotNull String path, @Nullable String basePath,
+                                          @NotNull ReviewItem.Status status,
+                                          @Nullable String beforeContent) {
+        ApprovalState state = approvals.getOrDefault(path, ApprovalState.PENDING);
+        long ts = lastEditedAt.getOrDefault(path, 0L);
+        int added = linesAdded.getOrDefault(path, 0);
+        int removed = linesRemoved.getOrDefault(path, 0);
+        return new ReviewItem(path, relativize(path, basePath), status, beforeContent,
+            state, ts, added, removed);
+    }
 
+    // ── Approval mutations ──────────────────────────────────────────────────
+
+    /** Flips a single row to APPROVED. Keeps the row visible. */
+    public void acceptFile(@NotNull String path) {
+        if (!pathIsTracked(path)) return;
+        approvals.put(path, ApprovalState.APPROVED);
+        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+        if (vf != null) {
+            com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
+        }
+        fireReviewStateChanged();
+        completeGateIfNoPending();
+    }
+
+    /** Flips every PENDING row to APPROVED. Used by the "Auto-Approve ON" sweep. */
+    public void acceptAll() {
+        boolean changed = false;
+        for (String path : collectAllPaths()) {
+            if (approvals.put(path, ApprovalState.APPROVED) != ApprovalState.APPROVED) {
+                changed = true;
+            }
+        }
+        if (changed) {
+            com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+            fireReviewStateChanged();
+            completeGateIfNoPending();
+        }
+    }
+
+    /**
+     * Removes a single row from tracking and clears its highlights. Caller is responsible
+     * for ensuring the row is APPROVED — pending rows should be reverted, not removed.
+     */
+    public void removeApproved(@NotNull String path) {
+        if (approvals.get(path) != ApprovalState.APPROVED) return;
+        clearTrackedPath(path);
+        fireReviewStateChanged();
+    }
+
+    /** Removes every APPROVED row. */
+    public void removeAllApproved() {
+        List<String> approved = new ArrayList<>();
+        for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
+            if (e.getValue() == ApprovalState.APPROVED) approved.add(e.getKey());
+        }
+        if (approved.isEmpty()) return;
+        for (String path : approved) clearTrackedPath(path);
+        com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+        fireReviewStateChanged();
+    }
+
+    /**
+     * Post-commit prune: removes APPROVED rows whose paths were committed. Pending rows
+     * are intentionally left in place — they didn't make it into the commit anyway.
+     */
+    public void removeApprovedForCommit(@NotNull Collection<String> committedPaths) {
+        if (committedPaths.isEmpty()) return;
+        boolean changed = false;
+        for (String path : committedPaths) {
+            if (approvals.get(path) == ApprovalState.APPROVED && pathIsTracked(path)) {
+                clearTrackedPath(path);
+                changed = true;
+            }
+        }
+        if (changed) {
+            com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+            fireReviewStateChanged();
+        }
+    }
+
+    private void clearTrackedPath(@NotNull String path) {
+        snapshots.remove(path);
+        deletedFiles.remove(path);
+        newFiles.remove(path);
+        approvals.remove(path);
+        lastEditedAt.remove(path);
+        linesAdded.remove(path);
+        linesRemoved.remove(path);
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
         if (vf != null) {
             AgentEditHighlighter.getInstance(project).clearForFile(vf);
             com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
         }
-        fireReviewStateChanged();
-        completeReviewIfEmpty();
     }
 
     /**
-     * Accepts all files — clears all review tracking.
+     * Called from settings on Auto-Approve toggle ON. Sweeps all current PENDING rows
+     * to APPROVED and fires a single state change.
      */
-    public void acceptAll() {
-        if (!active) return;
-        // Collect paths that need highlight clearing before we wipe the maps
-        Set<String> allPaths = new java.util.HashSet<>(snapshots.keySet());
-        allPaths.addAll(newFiles);
-        // deletedFiles have no open editors to clear
+    public void onAutoApproveTurnedOn() {
+        acceptAll();
+    }
 
-        snapshots.clear();
-        newFiles.clear();
-        deletedFiles.clear();
+    // ── Revert (always sends a structured nudge) ────────────────────────────
 
-        AgentEditHighlighter highlighter = AgentEditHighlighter.getInstance(project);
-        for (String path : allPaths) {
-            VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
-            if (vf != null) {
-                highlighter.clearForFile(vf);
+    /** What to do with the in-flight gate when reverting during a blocked git op. */
+    public enum RevertGateAction {
+        /** Queue the nudge into pendingNudge; keep the gate blocking so the user can
+         * reject more files. Subsequent reverts during the same gate default here. */
+        CONTINUE_REVIEWING,
+        /** Short-circuit the gate immediately — the gated tool returns the merged
+         * revert nudges as its error response so the agent can re-plan. */
+        SEND_NOW,
+        /** Plain revert with no gate special-casing (used when no gate is active). */
+        DEFAULT
+    }
+
+    /**
+     * Reverts a tracked file and emits a structured nudge to the agent.
+     *
+     * <p>The nudge always has the form:
+     * <pre>
+     * [User reverted &lt;rel-path&gt;:&lt;line-ranges&gt;] Reason: &lt;reason&gt;
+     * &lt;unified diff body&gt;
+     * Please try a different approach for this file.
+     * </pre>
+     *
+     * @param path       absolute VFS path of the tracked file
+     * @param reason     user-supplied reason; may be blank
+     * @param gateAction what to do with any in-flight gate; pass {@link
+     *                   RevertGateAction#DEFAULT} when called outside a gate
+     */
+    public void revertFile(@NotNull String path, @Nullable String reason,
+                           @NotNull RevertGateAction gateAction) {
+        if (!pathIsTracked(path)) return;
+
+        ReviewItem item = findItem(path);
+        if (item == null) return;
+
+        String nudge = buildRevertNudge(item, reason);
+        applyRevert(item);
+
+        boolean gateActive = isGateActive();
+        switch (gateAction) {
+            case SEND_NOW -> {
+                synchronized (gateRevertBuffer) {
+                    gateRevertBuffer.add(nudge);
+                    pendingGateCancelMessage = String.join("\n\n", gateRevertBuffer);
+                    gateRevertBuffer.clear();
+                }
+                completeGate();
+            }
+            case CONTINUE_REVIEWING -> {
+                synchronized (gateRevertBuffer) {
+                    gateRevertBuffer.add(nudge);
+                }
+            }
+            case DEFAULT -> {
+                if (gateActive) {
+                    synchronized (gateRevertBuffer) {
+                        gateRevertBuffer.add(nudge);
+                    }
+                } else {
+                    PsiBridgeService.getInstance(project).setPendingNudge(nudge);
+                }
             }
         }
-        com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+
+        clearTrackedPath(path);
         fireReviewStateChanged();
-        completeReviewIfEmpty();
+        completeGateIfNoPending();
+    }
+
+    /** Convenience overload for callers that have a {@link VirtualFile}. */
+    public void revertFile(@NotNull VirtualFile vf, @Nullable String reason) {
+        revertFile(vf.getPath(), reason, RevertGateAction.DEFAULT);
+    }
+
+    private @Nullable ReviewItem findItem(@NotNull String path) {
+        for (ReviewItem item : getReviewItems()) {
+            if (item.path().equals(path)) return item;
+        }
+        return null;
+    }
+
+    private void applyRevert(@NotNull ReviewItem item) {
+        switch (item.status()) {
+            case MODIFIED -> restoreModifiedFile(item);
+            case ADDED -> deleteAddedFile(item);
+            case DELETED -> restoreDeletedFile(item);
+        }
+    }
+
+    private void restoreModifiedFile(@NotNull ReviewItem item) {
+        String snapshot = snapshots.get(item.path());
+        if (snapshot == null) return;
+        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(item.path());
+        if (vf == null) return;
+        Document doc = FileDocumentManager.getInstance().getDocument(vf);
+        if (doc != null) {
+            WriteCommandAction.runWriteCommandAction(project, "Revert Agent Edit", null,
+                () -> doc.setText(snapshot));
+            FileDocumentManager.getInstance().saveDocument(doc);
+        }
+    }
+
+    private void deleteAddedFile(@NotNull ReviewItem item) {
+        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(item.path());
+        if (vf == null) return;
+        WriteCommandAction.runWriteCommandAction(project, "Delete Agent-Created File", null, () -> {
+            try {
+                vf.delete(this);
+            } catch (Exception e) {
+                LOG.warn("Failed to delete agent-created file: " + item.path(), e);
+            }
+        });
+    }
+
+    private void restoreDeletedFile(@NotNull ReviewItem item) {
+        String content = item.beforeContent();
+        if (content == null) return;
+        WriteCommandAction.runWriteCommandAction(project, "Restore Deleted File", null, () -> {
+            try {
+                java.io.File ioFile = new java.io.File(item.path());
+                java.io.File parent = ioFile.getParentFile();
+                if (parent != null) {
+                    VirtualFile parentVf = LocalFileSystem.getInstance()
+                        .refreshAndFindFileByIoFile(parent);
+                    if (parentVf != null) {
+                        VirtualFile created = parentVf.createChildData(this, ioFile.getName());
+                        created.setBinaryContent(content.getBytes(StandardCharsets.UTF_8));
+                    }
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to restore deleted file: " + item.path(), e);
+            }
+        });
     }
 
     /**
-     * Rejects a single file — restores it to pre-session state.
-     * For MODIFIED: restores snapshot content.
-     * For ADDED: deletes the file.
-     * For DELETED: recreates the file with its original content.
-     *
-     * @param path   file path
-     * @param reason optional reason (sent as nudge to agent)
+     * Builds the structured revert nudge: {@code [User reverted file:ranges] Reason:...}
+     * followed by a unified-diff body, followed by a re-plan nudge.
      */
-    public void rejectFile(@NotNull String path, @Nullable String reason) {
-        if (!active) return;
-
-        String basePath = project.getBasePath();
-        if (snapshots.containsKey(path) && !deletedFiles.containsKey(path)) {
-            rejectModifiedFile(new ReviewItem(path, relativize(path, basePath), ReviewItem.Status.MODIFIED, null));
-        } else if (newFiles.contains(path)) {
-            rejectAddedFile(new ReviewItem(path, relativize(path, basePath), ReviewItem.Status.ADDED, null));
-        } else if (deletedFiles.containsKey(path)) {
-            rejectDeletedFile(new ReviewItem(path, relativize(path, basePath), ReviewItem.Status.DELETED, null));
-        }
-
-        if (reason != null && !reason.isBlank()) {
-            VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
-            if (vf != null) {
-                sendRevertNudge(vf, reason);
+    private @NotNull String buildRevertNudge(@NotNull ReviewItem item, @Nullable String reason) {
+        String header;
+        String body;
+        switch (item.status()) {
+            case MODIFIED -> {
+                String before = snapshots.get(item.path());
+                String after = readCurrentContent(item.path());
+                List<ChangeRange> ranges = (before != null && after != null)
+                    ? computeRanges(before, after) : Collections.emptyList();
+                header = "[User reverted " + item.relativePath() + formatRanges(ranges) + "]";
+                body = (before != null && after != null) ? buildUnifiedDiff(before, after) : "";
+            }
+            case ADDED -> {
+                header = "[User reverted creation of " + item.relativePath() + "]";
+                body = "";
+            }
+            case DELETED -> {
+                header = "[User reverted deletion of " + item.relativePath() + "]";
+                body = "";
+            }
+            default -> {
+                header = "[User reverted " + item.relativePath() + "]";
+                body = "";
             }
         }
-        fireReviewStateChanged();
-        completeReviewIfEmpty();
-    }
 
-    /**
-     * Rejects all files — restores all to pre-session state.
-     *
-     * @param reason optional reason (sent as nudge to agent)
-     */
-    public void rejectAll(@Nullable String reason) {
-        if (!active) return;
-        List<ReviewItem> items = getReviewItems();
-        for (ReviewItem item : items) {
-            // Call individual reject but suppress intermediate topic events
-            rejectFileSilent(item);
-        }
+        StringBuilder sb = new StringBuilder(header);
         if (reason != null && !reason.isBlank()) {
-            String nudge = "[User rejected all agent edits]: " + reason
-                + "\nPlease try a different approach.";
-            PsiBridgeService.getInstance(project).setPendingNudge(nudge);
+            sb.append(" Reason: ").append(reason.trim());
         }
-        fireReviewStateChanged();
-        completeReviewIfEmpty();
+        if (!body.isEmpty()) {
+            sb.append('\n').append(body);
+        }
+        sb.append("\nPlease try a different approach for this file.");
+        return sb.toString();
     }
 
-    /**
-     * Blocks until all pending review items have been accepted/rejected, the session ends,
-     * or the timeout expires. Called by git tools before destructive operations.
-     *
-     * <p>On the first call, fires a balloon notification + system notification
-     * and expands the Review panel. Subsequent calls only expand the panel.</p>
-     *
-     * <p><b>Lock yield:</b> this method is called from inside a tool's {@code execute()},
-     * which holds two locks: the global write-tool semaphore and the per-tool sync lock
-     * (both managed by {@link PsiBridgeService#callTool}). Without yielding both, a second
-     * call to the same tool from another mcp-http thread deadlocks: the second thread acquires
-     * the semaphore (released here) but then waits for the syncLock, while this thread still
-     * holds the syncLock and waits to re-acquire the semaphore. We release both before blocking
-     * and re-acquire both afterward (semaphore first, then syncLock — matching callTool's
-     * acquisition order) to break the circular dependency.</p>
-     *
-     * @param operation description of the git operation (for the notification + error)
-     * @return null if review completed in time; otherwise a timeout error message
-     */
-    // S2222: syncLock.lock() in this finally block intentionally re-acquires a lock that was
-    // originally acquired by callTool(). Sonar cannot trace cross-method lock ownership.
-    // The lock is released by callTool's own finally block, maintaining correct lock ordering.
+    private static @NotNull String formatRanges(@NotNull List<ChangeRange> ranges) {
+        if (ranges.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder(":");
+        boolean first = true;
+        for (ChangeRange r : ranges) {
+            if (!first) sb.append(',');
+            first = false;
+            int start = r.startLine() + 1;
+            int end = Math.max(start, r.endLine());
+            if (start == end) sb.append(start);
+            else sb.append(start).append('-').append(end);
+        }
+        return sb.toString();
+    }
+
+    private @Nullable String readCurrentContent(@NotNull String path) {
+        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+        if (vf == null) return null;
+        Document doc = FileDocumentManager.getInstance().getDocument(vf);
+        if (doc == null) return null;
+        return ApplicationManager.getApplication().runReadAction((Computable<String>) doc::getText);
+    }
+
+    private static @NotNull String buildUnifiedDiff(@NotNull String before, @NotNull String after) {
+        String[] beforeLines = Diff.splitLines(before);
+        String[] afterLines = Diff.splitLines(after);
+        try {
+            Diff.Change change = Diff.buildChanges(beforeLines, afterLines);
+            StringBuilder sb = new StringBuilder();
+            sb.append("```diff\n");
+            while (change != null) {
+                sb.append("@@ -").append(change.line0 + 1).append(',').append(change.deleted)
+                    .append(" +").append(change.line1 + 1).append(',').append(change.inserted)
+                    .append(" @@\n");
+                for (int i = 0; i < change.deleted && (change.line0 + i) < beforeLines.length; i++) {
+                    sb.append('-').append(beforeLines[change.line0 + i]);
+                    if (!sb.toString().endsWith("\n")) sb.append('\n');
+                }
+                for (int i = 0; i < change.inserted && (change.line1 + i) < afterLines.length; i++) {
+                    sb.append('+').append(afterLines[change.line1 + i]);
+                    if (!sb.toString().endsWith("\n")) sb.append('\n');
+                }
+                change = change.link;
+            }
+            sb.append("```");
+            return sb.toString();
+        } catch (FilesTooBigForDiffException e) {
+            return "```\n(diff too large to render)\n```";
+        }
+    }
+
+    // ── Gating ──────────────────────────────────────────────────────────────
+
     @SuppressWarnings("java:S2222")
     public @Nullable String awaitReviewCompletion(@NotNull String operation) {
-        if (!active || !hasChanges()) {
+        if (!hasPendingChanges()) {
             reviewNotificationFired = false;
             return null;
         }
 
-        int fileCount = getReviewItems().size();
+        int fileCount = countPending();
 
         if (!reviewNotificationFired) {
             reviewNotificationFired = true;
             notifyReviewRequired(operation);
         }
-        // Always expand the review panel so the user sees what's blocked.
         ApplicationManager.getApplication().invokeLater(() -> {
             if (project.isDisposed()) return;
             com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
@@ -480,24 +725,22 @@ public final class AgentEditSession implements Disposable {
 
         PsiBridgeService psi = PsiBridgeService.getInstance(project);
         java.util.concurrent.Semaphore writeSemaphore = psi.getWriteToolSemaphore();
-        // Read the syncLock BEFORE releasing anything — it is a ThreadLocal on this thread.
         java.util.concurrent.locks.ReentrantLock syncLock = psi.getCurrentSyncLock();
 
-        // Release the syncLock first (if any), then the semaphore.
-        // Reversed acquisition order breaks the circular-wait condition.
         if (syncLock != null) syncLock.unlock();
         writeSemaphore.release();
         try {
-            // Re-check after releasing locks: the EDT can call completeReviewIfEmpty() at
-            // any time, including in the window between the checks above and getOrCreate().
-            // If it ran with a null future (no changes left), we must not hang on get().
-            while (active && hasChanges()) {
+            while (hasPendingChanges() && pendingGateCancelMessage == null) {
                 java.util.concurrent.CompletableFuture<Void> future = getOrCreateReviewCompletionFuture();
-                // Guard: if the EDT cleared all changes between creating the future and now
-                // (and therefore completed or never completed it), avoid waiting.
-                if (!active || !hasChanges()) break;
+                if (!hasPendingChanges() || pendingGateCancelMessage != null) break;
                 future.get(REVIEW_WAIT_TIMEOUT_MINUTES, java.util.concurrent.TimeUnit.MINUTES);
             }
+            String cancelMessage = pendingGateCancelMessage;
+            if (cancelMessage != null) {
+                pendingGateCancelMessage = null;
+                return "Error: " + operation + " cancelled by user revert.\n" + cancelMessage;
+            }
+            flushBufferedRevertsToPendingNudge();
             return null;
         } catch (java.util.concurrent.TimeoutException e) {
             return formatReviewTimeoutError(operation, fileCount);
@@ -507,12 +750,17 @@ public final class AgentEditSession implements Disposable {
         } catch (java.util.concurrent.ExecutionException e) {
             return "Error: Review wait failed: " + e.getCause();
         } finally {
-            // Re-acquire in the same order as callTool: semaphore first, then syncLock.
-            // acquireUninterruptibly: we must re-acquire even if the thread was interrupted,
-            // otherwise callTool's finally block would over-release the semaphore.
             writeSemaphore.acquireUninterruptibly();
             if (syncLock != null) syncLock.lock();
         }
+    }
+
+    private int countPending() {
+        int n = 0;
+        for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
+            if (e.getValue() == ApprovalState.PENDING && pathIsTracked(e.getKey())) n++;
+        }
+        return n;
     }
 
     private synchronized java.util.concurrent.CompletableFuture<Void> getOrCreateReviewCompletionFuture() {
@@ -524,48 +772,36 @@ public final class AgentEditSession implements Disposable {
         return f;
     }
 
-    /**
-     * Package-private pure formatter — extracted so unit tests can verify the wording
-     * without needing a {@link Project} or the message bus.
-     */
+    private void completeGate() {
+        java.util.concurrent.CompletableFuture<Void> f = reviewCompletionFuture;
+        if (f != null && !f.isDone()) {
+            f.complete(null);
+        }
+    }
+
+    private void completeGateIfNoPending() {
+        if (hasPendingChanges()) return;
+        reviewNotificationFired = false;
+        completeGate();
+    }
+
+    private void flushBufferedRevertsToPendingNudge() {
+        String merged;
+        synchronized (gateRevertBuffer) {
+            if (gateRevertBuffer.isEmpty()) return;
+            merged = String.join("\n\n", gateRevertBuffer);
+            gateRevertBuffer.clear();
+        }
+        PsiBridgeService.getInstance(project).setPendingNudge(merged);
+    }
+
     static @NotNull String formatReviewTimeoutError(@NotNull String operation, int fileCount) {
         return "Error: Timed out after " + REVIEW_WAIT_TIMEOUT_MINUTES
             + " minutes waiting for the user to review " + fileCount
             + (fileCount == 1 ? " agent-edited file" : " agent-edited files")
             + " before '" + operation
-            + "' could run. Ask the user to accept/reject the pending edits in the"
-            + " Review panel (left of chat), or end the review session, then retry.";
-    }
-
-    private static final long REVIEW_WAIT_TIMEOUT_MINUTES = 10;
-
-    /**
-     * Reverts a file to its pre-session state.
-     *
-     * @param vf     the file to revert
-     * @param reason optional reason for the revert (sent as nudge to agent)
-     */
-    public void revertFile(@NotNull VirtualFile vf, @Nullable String reason) {
-        String before = snapshots.remove(vf.getPath());
-        if (before == null) return;
-
-        Document doc = FileDocumentManager.getInstance().getDocument(vf);
-        if (doc == null) return;
-
-        WriteCommandAction.runWriteCommandAction(project, "Revert Agent Edit", null,
-            () -> doc.setText(before));
-        FileDocumentManager.getInstance().saveDocument(doc);
-
-        // Mirror acceptFile()/rejectFile(): clear highlights, refresh banner, and update review state
-        // so the file no longer shows up in the Review panel and any blocked git gate can proceed.
-        AgentEditHighlighter.getInstance(project).clearForFile(vf);
-        com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
-
-        if (reason != null && !reason.isBlank()) {
-            sendRevertNudge(vf, reason);
-        }
-        fireReviewStateChanged();
-        completeReviewIfEmpty();
+            + "' could run. Ask the user to accept or revert the pending edits in the"
+            + " Review panel (left of chat), then retry.";
     }
 
     public synchronized void endSession() {
@@ -595,23 +831,42 @@ public final class AgentEditSession implements Disposable {
 
         LOG.info("Agent edit review session ended");
     }
+    }
 
     @Override
     public void dispose() {
-        endSession();
+        wipeAllTrackedState();
+        completeGate();
+        if (sessionDisposable != null) {
+            Disposer.dispose(sessionDisposable);
+            sessionDisposable = null;
+        }
     }
+
+    private void wipeAllTrackedState() {
+        AgentEditHighlighter.getInstance(project).clearAll();
+        snapshots.clear();
+        deletedFiles.clear();
+        newFiles.clear();
+        approvals.clear();
+        lastEditedAt.clear();
+        linesAdded.clear();
+        linesRemoved.clear();
+        synchronized (gateRevertBuffer) {
+            gateRevertBuffer.clear();
+        }
+        pendingGateCancelMessage = null;
+        reviewNotificationFired = false;
+        com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+        fireReviewStateChanged();
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
 
     private boolean isProjectFile(@NotNull VirtualFile vf) {
         if (!vf.isValid() || vf.isDirectory()) return false;
         return ApplicationManager.getApplication().runReadAction(
             (Computable<Boolean>) () -> ProjectFileIndex.getInstance(project).isInContent(vf));
-    }
-
-    private void sendRevertNudge(@NotNull VirtualFile vf, @NotNull String reason) {
-        String relativePath = getRelativePath(vf);
-        String nudge = "[User reverted " + relativePath + "]: " + reason
-            + "\nPlease try a different approach for this file.";
-        PsiBridgeService.getInstance(project).setPendingNudge(nudge);
     }
 
     private @NotNull String getRelativePath(@NotNull VirtualFile vf) {
@@ -630,102 +885,63 @@ public final class AgentEditSession implements Disposable {
         return new java.io.File(path).getName();
     }
 
-    /**
-     * Rejects a single review item without firing topic events (used in bulk reject).
-     */
-    private void rejectFileSilent(@NotNull ReviewItem item) {
-        switch (item.status()) {
-            case MODIFIED -> rejectModifiedFile(item);
-            case ADDED -> rejectAddedFile(item);
-            case DELETED -> rejectDeletedFile(item);
-        }
+    private @NotNull Set<String> collectAllPaths() {
+        Set<String> paths = new HashSet<>();
+        paths.addAll(snapshots.keySet());
+        paths.addAll(newFiles);
+        paths.addAll(deletedFiles.keySet());
+        return paths;
     }
 
-    /**
-     * Restores a MODIFIED file to its snapshot content and clears editor decorations.
-     */
-    private void rejectModifiedFile(@NotNull ReviewItem item) {
-        String path = item.path();
-        String snapshot = snapshots.remove(path);
-        if (snapshot == null) return;
+    private void recomputeLineCounts(@NotNull String path) {
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
-        if (vf == null) return;
+        String before = snapshots.get(path);
+        if (vf == null || before == null) return;
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
-        if (doc != null) {
-            WriteCommandAction.runWriteCommandAction(project, "Reject Agent Edit", null,
-                () -> doc.setText(snapshot));
-            FileDocumentManager.getInstance().saveDocument(doc);
+        if (doc == null) return;
+        String after = ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) doc::getText);
+        int added = 0;
+        int removed = 0;
+        for (ChangeRange r : computeRanges(before, after)) {
+            added += r.insertedCount();
+            removed += r.deletedCount();
         }
-        AgentEditHighlighter.getInstance(project).clearForFile(vf);
-        com.intellij.ui.EditorNotifications.getInstance(project).updateNotifications(vf);
+        linesAdded.put(path, added);
+        linesRemoved.put(path, removed);
     }
 
     /**
-     * Deletes an ADDED (agent-created) file and clears editor decorations.
+     * Drops oldest APPROVED rows until total snapshot bytes are under the project-wide
+     * cap. Pending rows are never auto-evicted — the user controls them.
      */
-    private void rejectAddedFile(@NotNull ReviewItem item) {
-        String path = item.path();
-        newFiles.remove(path);
-        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
-        if (vf == null) return;
-        AgentEditHighlighter.getInstance(project).clearForFile(vf);
-        WriteCommandAction.runWriteCommandAction(project, "Delete Agent-Created File", null, () -> {
-            try {
-                vf.delete(this);
-            } catch (Exception e) {
-                LOG.warn("Failed to delete agent-created file: " + path, e);
-            }
-        });
+    private void enforceTotalSnapshotCap() {
+        long total = totalSnapshotBytes();
+        if (total <= MAX_TOTAL_SNAPSHOT_BYTES) return;
+
+        List<Map.Entry<String, Long>> approved = new ArrayList<>();
+        for (Map.Entry<String, Long> e : lastEditedAt.entrySet()) {
+            if (approvals.get(e.getKey()) == ApprovalState.APPROVED) approved.add(e);
+        }
+        approved.sort(Map.Entry.comparingByValue());
+        for (Map.Entry<String, Long> e : approved) {
+            if (totalSnapshotBytes() <= MAX_TOTAL_SNAPSHOT_BYTES) return;
+            clearTrackedPath(e.getKey());
+        }
     }
 
-    /**
-     * Recreates a DELETED file from its original content (prefers snapshot over deletion-time capture).
-     */
-    private void rejectDeletedFile(@NotNull ReviewItem item) {
-        String path = item.path();
-        String content = deletedFiles.remove(path);
-        String snapshotContent = snapshots.remove(path);
-        String restore = snapshotContent != null ? snapshotContent : content;
-        if (restore == null) return;
-        WriteCommandAction.runWriteCommandAction(project, "Restore Deleted File", null, () -> {
-            try {
-                java.io.File ioFile = new java.io.File(path);
-                java.io.File parent = ioFile.getParentFile();
-                if (parent != null) {
-                    VirtualFile parentVf = LocalFileSystem.getInstance()
-                        .refreshAndFindFileByIoFile(parent);
-                    if (parentVf != null) {
-                        VirtualFile created = parentVf.createChildData(this, ioFile.getName());
-                        created.setBinaryContent(restore.getBytes(StandardCharsets.UTF_8));
-                    }
-                }
-            } catch (Exception e) {
-                LOG.warn("Failed to restore deleted file: " + path, e);
-            }
-        });
+    private long totalSnapshotBytes() {
+        long total = 0;
+        for (String s : snapshots.values()) total += s.length();
+        for (String s : deletedFiles.values()) total += s.length();
+        return total;
     }
 
     private void fireReviewStateChanged() {
+        if (project.isDisposed()) return;
         project.getMessageBus().syncPublisher(ReviewSessionTopic.TOPIC).reviewStateChanged();
     }
 
-    /**
-     * Resets the notification flag when the review batch is fully resolved so a future
-     * agent edit cycle will re-notify when gating fires again.
-     */
-    private void completeReviewIfEmpty() {
-        if (hasChanges()) return;
-        reviewNotificationFired = false;
-        java.util.concurrent.CompletableFuture<Void> f = reviewCompletionFuture;
-        if (f != null && !f.isDone()) {
-            f.complete(null);
-        }
-    }
-
-    /**
-     * Sends notifications (IntelliJ balloon + system + web push) when a git operation
-     * is blocked waiting for review completion.
-     */
     private void notifyReviewRequired(@NotNull String operation) {
         String title = "Review Required";
         String body = "'" + operation + "' is waiting for you to review agent edits.";
@@ -735,7 +951,6 @@ public final class AgentEditSession implements Disposable {
                 "AgentBridge", MessageType.WARNING,
                 "<b>" + title + "</b><br>" + body
             );
-            // Expand the inline Review panel and activate the tool window
             com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
                 .getInstance(project).expandReviewPanel();
         });
@@ -749,47 +964,57 @@ public final class AgentEditSession implements Disposable {
         }
     }
 
+    // ── Listeners ───────────────────────────────────────────────────────────
+
     private class SessionDocumentListener implements DocumentListener {
 
         @Override
         public void beforeDocumentChange(@NotNull DocumentEvent event) {
-            if (!active) return;
-            // Only capture snapshots during agent-originated tool edits.
-            // Non-agent changes (branch switches, IDE reformats, user typing)
-            // would pollute the session with incorrect "before" content.
             if (!isAgentEditActive()) return;
 
             Document doc = event.getDocument();
             VirtualFile vf = FileDocumentManager.getInstance().getFile(doc);
             if (vf == null || !vf.isValid()) return;
 
+            String path = vf.getPath();
+            // Re-edit of an APPROVED row: rebase the snapshot to the just-approved state
+            // (so the diff shows only the *new* hunks, not the cumulative ones).
+            if (approvals.get(path) == ApprovalState.APPROVED && snapshots.containsKey(path)) {
+                String currentText = doc.getText();
+                snapshots.put(path, currentText);
+                if (!isAutoApproveOn()) {
+                    approvals.put(path, ApprovalState.PENDING);
+                }
+                lastEditedAt.put(path, System.currentTimeMillis());
+                AgentEditHighlighter.getInstance(project).clearForFile(vf);
+                fireReviewStateChanged();
+                return;
+            }
+
             captureBeforeContent(vf, doc.getText());
         }
 
         @Override
         public void documentChanged(@NotNull DocumentEvent event) {
-            if (!active) return;
-
             Document doc = event.getDocument();
             VirtualFile vf = FileDocumentManager.getInstance().getFile(doc);
             if (vf == null || !vf.isValid()) return;
 
             if (snapshots.containsKey(vf.getPath())) {
                 AgentEditHighlighter.getInstance(project).refreshHighlights(vf);
+                if (isAgentEditActive()) {
+                    recomputeLineCounts(vf.getPath());
+                    lastEditedAt.put(vf.getPath(), System.currentTimeMillis());
+                    fireReviewStateChanged();
+                }
             }
         }
     }
 
-    /**
-     * Safety-net VFS listener: captures file lifecycle events (create, delete, rename, move)
-     * that the DocumentListener cannot detect.
-     */
     private class SessionVfsListener implements BulkFileListener {
 
         @Override
         public void before(@NotNull List<? extends VFileEvent> events) {
-            if (!active) return;
-
             for (VFileEvent event : events) {
                 if (event instanceof VFileDeleteEvent deleteEvent) {
                     handleBeforeDelete(deleteEvent);
@@ -804,12 +1029,10 @@ public final class AgentEditSession implements Disposable {
 
         @Override
         public void after(@NotNull List<? extends VFileEvent> events) {
-            if (!active) return;
-
             for (VFileEvent event : events) {
                 if (event instanceof VFileCreateEvent) {
                     VirtualFile vf = event.getFile();
-                    if (vf != null && !vf.isDirectory() && isProjectFile(vf)) {
+                    if (vf != null && !vf.isDirectory() && isProjectFile(vf) && isAgentEditActive()) {
                         registerNewFile(vf.getPath());
                     }
                 } else if (event instanceof VFileMoveEvent moveEvent) {
@@ -824,10 +1047,7 @@ public final class AgentEditSession implements Disposable {
         private void handleBeforeDelete(@NotNull VFileDeleteEvent event) {
             VirtualFile vf = event.getFile();
             if (vf.isDirectory() || !isProjectFile(vf)) return;
-            // Only capture agent-initiated deletes (same guard as beforeDocumentChange).
-            // User-initiated deletes must not be registered as agent edits.
             if (!isAgentEditActive()) return;
-
             if (newFiles.remove(vf.getPath())) return;
 
             try {
@@ -841,10 +1061,6 @@ public final class AgentEditSession implements Disposable {
             }
         }
 
-        /**
-         * Tags a file with its current path before rename/move so we can update
-         * path-based tracking after the event completes.
-         */
         private void tagOldPath(@NotNull VirtualFile vf) {
             if (vf.isDirectory()) return;
             String path = vf.getPath();
@@ -853,10 +1069,6 @@ public final class AgentEditSession implements Disposable {
             }
         }
 
-        /**
-         * Updates path-based tracking maps when a file is renamed or moved.
-         * Transfers snapshot and newFiles entries from the old path to the new path.
-         */
         private void transferPathTracking(@NotNull VirtualFile vf) {
             String oldPath = vf.getUserData(OLD_PATH_KEY);
             if (oldPath == null) return;
@@ -869,6 +1081,110 @@ public final class AgentEditSession implements Disposable {
             if (newFiles.remove(oldPath)) {
                 newFiles.add(vf.getPath());
             }
+            ApprovalState st = approvals.remove(oldPath);
+            if (st != null) approvals.put(vf.getPath(), st);
+            Long ts = lastEditedAt.remove(oldPath);
+            if (ts != null) lastEditedAt.put(vf.getPath(), ts);
+            Integer la = linesAdded.remove(oldPath);
+            if (la != null) linesAdded.put(vf.getPath(), la);
+            Integer lr = linesRemoved.remove(oldPath);
+            if (lr != null) linesRemoved.put(vf.getPath(), lr);
         }
+    }
+
+    // ── PersistentStateComponent ────────────────────────────────────────────
+
+    @Override
+    public @Nullable PersistedState getState() {
+        PersistedState state = new PersistedState();
+        state.snapshots = new LinkedHashMap<>(snapshots);
+        state.deletedFiles = new LinkedHashMap<>(deletedFiles);
+        state.newFiles = new ArrayList<>(newFiles);
+        Map<String, String> approvalsAsString = new LinkedHashMap<>();
+        for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
+            approvalsAsString.put(e.getKey(), e.getValue().name());
+        }
+        state.approvals = approvalsAsString;
+        Map<String, String> tsAsString = new LinkedHashMap<>();
+        for (Map.Entry<String, Long> e : lastEditedAt.entrySet()) {
+            tsAsString.put(e.getKey(), Long.toString(e.getValue()));
+        }
+        state.lastEditedAt = tsAsString;
+        Map<String, String> addedAsString = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> e : linesAdded.entrySet()) {
+            addedAsString.put(e.getKey(), Integer.toString(e.getValue()));
+        }
+        state.linesAdded = addedAsString;
+        Map<String, String> removedAsString = new LinkedHashMap<>();
+        for (Map.Entry<String, Integer> e : linesRemoved.entrySet()) {
+            removedAsString.put(e.getKey(), Integer.toString(e.getValue()));
+        }
+        state.linesRemoved = removedAsString;
+        return state;
+    }
+
+    @Override
+    public void loadState(@NotNull PersistedState state) {
+        snapshots.clear();
+        if (state.snapshots != null) snapshots.putAll(state.snapshots);
+        deletedFiles.clear();
+        if (state.deletedFiles != null) deletedFiles.putAll(state.deletedFiles);
+        newFiles.clear();
+        if (state.newFiles != null) newFiles.addAll(state.newFiles);
+
+        approvals.clear();
+        if (state.approvals != null) {
+            for (Map.Entry<String, String> e : state.approvals.entrySet()) {
+                try {
+                    approvals.put(e.getKey(), ApprovalState.valueOf(e.getValue()));
+                } catch (IllegalArgumentException ignored) {
+                    approvals.put(e.getKey(), ApprovalState.PENDING);
+                }
+            }
+        }
+        lastEditedAt.clear();
+        if (state.lastEditedAt != null) {
+            for (Map.Entry<String, String> e : state.lastEditedAt.entrySet()) {
+                try {
+                    lastEditedAt.put(e.getKey(), Long.parseLong(e.getValue()));
+                } catch (NumberFormatException ignored) {
+                    // skip malformed entries
+                }
+            }
+        }
+        linesAdded.clear();
+        if (state.linesAdded != null) {
+            for (Map.Entry<String, String> e : state.linesAdded.entrySet()) {
+                try {
+                    linesAdded.put(e.getKey(), Integer.parseInt(e.getValue()));
+                } catch (NumberFormatException ignored) {
+                    // skip malformed entries
+                }
+            }
+        }
+        linesRemoved.clear();
+        if (state.linesRemoved != null) {
+            for (Map.Entry<String, String> e : state.linesRemoved.entrySet()) {
+                try {
+                    linesRemoved.put(e.getKey(), Integer.parseInt(e.getValue()));
+                } catch (NumberFormatException ignored) {
+                    // skip malformed entries
+                }
+            }
+        }
+    }
+
+    /**
+     * Serialized review state. All maps use {@code String} values so IntelliJ's
+     * {@code XmlSerializer} can round-trip them without custom converters.
+     */
+    public static final class PersistedState {
+        public Map<String, String> snapshots = new HashMap<>();
+        public Map<String, String> deletedFiles = new HashMap<>();
+        public List<String> newFiles = new ArrayList<>();
+        public Map<String, String> approvals = new HashMap<>();
+        public Map<String, String> lastEditedAt = new HashMap<>();
+        public Map<String, String> linesAdded = new HashMap<>();
+        public Map<String, String> linesRemoved = new HashMap<>();
     }
 }

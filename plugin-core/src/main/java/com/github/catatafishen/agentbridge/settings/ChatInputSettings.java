@@ -82,6 +82,31 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         myState.fileSearchTrigger = trigger;
     }
 
+    // ── Unhandled nudge mode ────────────────────────────────────────────────
+
+    /**
+     * What happens to a queued nudge when the agent finishes its turn before the user
+     * acted on it.
+     *
+     * <p>{@link #AUTO_SEND} (default) — fire the nudge as a brand-new prompt
+     * automatically, preserving the historical behaviour. <br>
+     * {@link #RESTORE_INTO_INPUT} — prepend the nudge text into the chat input area so
+     * the user can edit it (and any text they were already typing stays appended).
+     */
+    public enum UnhandledNudgeMode {
+        AUTO_SEND,
+        RESTORE_INTO_INPUT
+    }
+
+    @NotNull
+    public UnhandledNudgeMode getUnhandledNudgeMode() {
+        return myState.unhandledNudgeMode == null ? UnhandledNudgeMode.AUTO_SEND : myState.unhandledNudgeMode;
+    }
+
+    public void setUnhandledNudgeMode(@NotNull UnhandledNudgeMode mode) {
+        myState.unhandledNudgeMode = mode;
+    }
+
     // ── PersistentStateComponent ────────────────────────────────────────────
 
     @Override
@@ -102,5 +127,7 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         public int smartPasteMinChars = DEFAULT_SMART_PASTE_MIN_CHARS;
         @NotNull
         public String fileSearchTrigger = "#";
+        @NotNull
+        public UnhandledNudgeMode unhandledNudgeMode = UnhandledNudgeMode.AUTO_SEND;
     }
 }

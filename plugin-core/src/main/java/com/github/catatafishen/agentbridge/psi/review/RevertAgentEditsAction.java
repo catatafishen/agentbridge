@@ -41,12 +41,16 @@ public final class RevertAgentEditsAction extends AnAction {
         if (!session.isActive() || session.getSnapshot(vf) == null) return;
 
         String relativePath = toRelativePath(project, vf);
-        RevertReasonDialog dialog = new RevertReasonDialog(project, vf, relativePath);
+        RevertReasonDialog dialog = new RevertReasonDialog(project, vf, relativePath, session.isGateActive());
         if (!dialog.showAndGet()) {
             return;
         }
-
-        session.revertFile(vf, dialog.getReason());
+        AgentEditSession.RevertGateAction gateAction = switch (dialog.getResult()) {
+            case CONTINUE_REVIEWING -> AgentEditSession.RevertGateAction.CONTINUE_REVIEWING;
+            case SEND_NOW -> AgentEditSession.RevertGateAction.SEND_NOW;
+            default -> AgentEditSession.RevertGateAction.DEFAULT;
+        };
+        session.revertFile(vf.getPath(), dialog.getReason(), gateAction);
     }
 
     private static @NotNull String toRelativePath(@NotNull Project project,
