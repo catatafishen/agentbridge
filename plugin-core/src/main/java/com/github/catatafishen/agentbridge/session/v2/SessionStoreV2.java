@@ -27,6 +27,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -388,6 +389,24 @@ public final class SessionStoreV2 implements Disposable {
     }
 
     /**
+     * Maximum bytes to read from disk when loading recent entries for UI restore or export.
+     * Files are read newest-first and loading stops once this budget is exceeded, keeping
+     * memory use bounded even for very large sessions.
+     */
+    static final long RECENT_ENTRIES_MAX_BYTES = 20L * 1024 * 1024; // 20 MB
+
+    /**
+     * Result of a tail-limited session load via {@link #loadRecentEntries(String)}.
+     *
+     * @param entries       loaded entries in chronological order
+     * @param hasMoreOnDisk {@code true} when older entries exist in part files that were
+     *                      not loaded because the byte budget was reached
+     */
+    public record RecentEntriesResult(
+        @NotNull List<EntryData> entries,
+        boolean hasMoreOnDisk) {}
+
+    /**
      * Loads conversation directly as EntryData entries from V2 JSONL,
      * bypassing the V1 JSON intermediary. This is the preferred load path.
      * Falls back to V1 if V2 is absent.
@@ -455,34 +474,129 @@ public final class SessionStoreV2 implements Disposable {
         }
     }
 
+    /**
+     * Loads the most recent entries from the current session, bounded by
+     * {@link #RECENT_ENTRIES_MAX_BYTES}. Reads part files in reverse order (active file
+     * first, then part files from highest to lowest) and stops once the cumulative
+     * on-disk byte size of loaded files reaches the budget.
+     *
+     * <p>Use this for UI restore and for export, where only recent context is needed.
+     * Use {@link #loadEntries(String)} only when all historical data is required
+     * (e.g., usage statistics).
+     *
+     * @return a {@link RecentEntriesResult} with entries in chronological order, or
+     *         {@code null} if no v2 session files exist
+     */
+    @Nullable
+    public RecentEntriesResult loadRecentEntries(@Nullable String basePath) {
+        File dir = sessionsDir(basePath);
+        File idFile = currentSessionIdFile(basePath);
+        if (!idFile.exists()) return null;
+
+        String sessionId;
+        try {
+            sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
+        } catch (IOException e) {
+            LOG.warn("Could not read current-session-id", e);
+            return null;
+        }
+        if (sessionId.isEmpty()) return null;
+
+        List<Path> allFiles = SessionFileRotation.listAllFiles(dir, sessionId);
+        if (allFiles.isEmpty()) return null;
+
+        // Collect files newest-first until byte budget is reached.
+        List<Path> filesToLoad = new ArrayList<>();
+        long totalBytesRead = 0;
+        boolean hasMoreOnDisk = false;
+        for (int i = allFiles.size() - 1; i >= 0; i--) {
+            if (totalBytesRead >= RECENT_ENTRIES_MAX_BYTES) {
+                hasMoreOnDisk = true;
+                break;
+            }
+            Path file = allFiles.get(i);
+            filesToLoad.add(file);
+            totalBytesRead += file.toFile().length();
+        }
+
+        // Reverse to chronological order and parse.
+        Collections.reverse(filesToLoad);
+        List<EntryData> allDirectEntries = new ArrayList<>();
+        List<JsonObject> allLegacyMessages = new ArrayList<>();
+        int totalSkipped = 0;
+        for (Path file : filesToLoad) {
+            totalSkipped += parseFileIntoCollections(file, allDirectEntries, allLegacyMessages);
+        }
+        if (totalSkipped > 0) {
+            logSkippedLines(allDirectEntries.size() + allLegacyMessages.size(),
+                filesToLoad.size(), totalSkipped, "recent");
+        }
+
+        List<EntryData> entries;
+        if (!allDirectEntries.isEmpty()) entries = allDirectEntries;
+        else if (!allLegacyMessages.isEmpty()) entries = convertLegacyMessages(allLegacyMessages);
+        else return null;
+
+        return new RecentEntriesResult(entries, hasMoreOnDisk);
+    }
+
     @Nullable
     private List<EntryData> loadEntriesFromFiles(@NotNull List<Path> files) {
         List<EntryData> allDirectEntries = new ArrayList<>();
         List<JsonObject> allLegacyMessages = new ArrayList<>();
-        int skippedLines = 0;
+        int totalSkipped = 0;
 
         for (Path file : files) {
-            try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    line = line.trim();
-                    if (line.isEmpty()) continue;
-                    if (!parseOneJsonlLine(line, allDirectEntries, allLegacyMessages)) skippedLines++;
-                }
-            } catch (IOException e) {
-                LOG.warn("Failed to read session file: " + file, e);
-            }
+            totalSkipped += parseFileIntoCollections(file, allDirectEntries, allLegacyMessages);
         }
 
-        if (skippedLines > 0) {
-            int totalParsed = allDirectEntries.size() + allLegacyMessages.size();
-            LOG.warn("JSONL parse: loaded " + totalParsed + " entries across "
-                + files.size() + " file(s), skipped " + skippedLines + " malformed lines");
+        if (totalSkipped > 0) {
+            logSkippedLines(allDirectEntries.size() + allLegacyMessages.size(),
+                files.size(), totalSkipped, null);
         }
 
         if (!allDirectEntries.isEmpty()) return allDirectEntries;
         if (!allLegacyMessages.isEmpty()) return convertLegacyMessages(allLegacyMessages);
         return null;
+    }
+
+    /**
+     * Parses a single JSONL file into the given collections.
+     * Extracted to support both full-load and tail-load paths.
+     *
+     * @return number of malformed lines skipped
+     */
+    private int parseFileIntoCollections(
+        @NotNull Path file,
+        @NotNull List<EntryData> directEntries,
+        @NotNull List<JsonObject> legacyMessages) {
+
+        int skipped = 0;
+        try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty()) continue;
+                if (!parseOneJsonlLine(line, directEntries, legacyMessages)) skipped++;
+            }
+        } catch (IOException e) {
+            LOG.warn("Failed to read session file: " + file, e);
+        }
+        return skipped;
+    }
+
+    /**
+     * Emits a WARN log when malformed JSONL lines were skipped during a load.
+     *
+     * @param totalParsed total entries successfully parsed
+     * @param fileCount   number of files read
+     * @param skipped     number of lines skipped
+     * @param qualifier   optional label inserted before "JSONL parse" (e.g. "recent"); may be null
+     */
+    private static void logSkippedLines(int totalParsed, int fileCount, int skipped, @Nullable String qualifier) {
+        String label = qualifier != null ? "JSONL parse (" + qualifier + ")" : "JSONL parse";
+        LOG.warn(label + ": loaded " + totalParsed + " entries across "
+            + fileCount + " file(s), skipped " + skipped + " malformed lines");
     }
 
     /**

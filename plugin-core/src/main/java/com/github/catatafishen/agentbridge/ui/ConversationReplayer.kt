@@ -5,12 +5,13 @@ internal class ConversationReplayer {
     private val deferredEntries = ArrayDeque<EntryData>()
     private var recentSnapshot: List<EntryData> = emptyList()
 
-    /**
-     * Splits [entries] into recent/deferred and resets internal state.
-     * Call [recentEntries] to get what should be rendered immediately, and
-     * [loadNextBatch] each time the user scrolls up for more.
-     */
-    fun loadAndSplit(entries: List<EntryData>, recentTurns: Int = 5) {
+    /** True when the 20 MB tail-read budget was hit and older history was not loaded from disk. */
+    var hasOlderHistoryOnDisk: Boolean = false
+        private set
+
+    @JvmOverloads
+    fun loadAndSplit(entries: List<EntryData>, recentTurns: Int = 5, hasMoreOnDisk: Boolean = false) {
+        hasOlderHistoryOnDisk = hasMoreOnDisk
         deferredEntries.clear()
         if (entries.isEmpty()) {
             recentSnapshot = emptyList()

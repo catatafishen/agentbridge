@@ -618,7 +618,7 @@ public final class SessionSwitchService implements Disposable {
 
     @Nullable
     private List<EntryData> loadCurrentV2Session(@Nullable String basePath) {
-        return SessionStoreV2.getInstance(project).loadEntries(basePath);
+        return SessionStoreV2.getInstance(project).loadRecentEntries(basePath).entries();
     }
 
     // ── Path helpers ──────────────────────────────────────────────────────────

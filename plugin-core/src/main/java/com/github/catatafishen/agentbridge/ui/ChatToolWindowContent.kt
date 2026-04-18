@@ -183,7 +183,8 @@ class ChatToolWindowContent(
                         // clicked elsewhere in the 150ms window, honour that intent rather than
                         // stealing focus back to the prompt.
                         if (com.github.catatafishen.agentbridge.psi.PsiBridgeService
-                                .isChatToolWindowActive(project)) {
+                                .isChatToolWindowActive(project)
+                        ) {
                             promptTextArea.requestFocusInWindow()
                         }
                     }, 150)
@@ -845,8 +846,10 @@ class ChatToolWindowContent(
         // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up).
         if (com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt) {
             try {
-                project.getService(com.github.catatafishen.agentbridge.psi.review.AgentEditSession::class.java)?.removeAllApproved()
-            } catch (_: Throwable) { /* defensive: review session is best-effort */ }
+                project.getService(com.github.catatafishen.agentbridge.psi.review.AgentEditSession::class.java)
+                    ?.removeAllApproved()
+            } catch (_: Throwable) { /* defensive: review session is best-effort */
+            }
         }
         setSendingState(true)
 
@@ -972,11 +975,13 @@ class ChatToolWindowContent(
                 ApplicationManager.getApplication().invokeLater {
                     consolePanel.removeNudgeBubble(nudgeId)
                     if (nudgeText != null) {
-                        val mode = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().unhandledNudgeMode
+                        val mode =
+                            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().unhandledNudgeMode
                         if (mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT) {
                             // Prepend the unhandled nudge to whatever the user is currently typing — do not auto-send.
                             val current = promptTextArea.text
-                            promptTextArea.text = if (current.isNullOrEmpty()) nudgeText else nudgeText + "\n\n" + current
+                            promptTextArea.text =
+                                if (current.isNullOrEmpty()) nudgeText else nudgeText + "\n\n" + current
                             promptTextArea.requestFocusInWindow()
                         } else {
                             // Default: auto-send the nudge as a fresh prompt.
@@ -2072,12 +2077,18 @@ class ChatToolWindowContent(
     private fun restoreConversation(onComplete: () -> Unit = {}) {
         ApplicationManager.getApplication().executeOnPooledThread {
             V1ToV2Migrator.migrateIfNeeded(project.basePath)
-            val entries = conversationStore.loadEntries(project.basePath)
+            val result = conversationStore.loadRecentEntries(project.basePath)
+            val entries = result?.entries() ?: emptyList()
+            val hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
             ApplicationManager.getApplication().invokeLater {
-                if (entries != null) {
+                if (entries.isNotEmpty()) {
                     val histSettings = ChatHistorySettings.getInstance(project)
                     chatConsolePanel.setDomMessageLimit(histSettings.domMessageLimit)
-                    conversationReplayer.loadAndSplit(entries, histSettings.recentTurnsOnRestore)
+                    conversationReplayer.loadAndSplit(
+                        entries,
+                        histSettings.recentTurnsOnRestore,
+                        hasMoreOnDisk
+                    )
                     chatConsolePanel.appendEntries(
                         conversationReplayer.recentEntries(),
                         conversationReplayer.totalPromptCount()
@@ -2192,8 +2203,14 @@ class ChatToolWindowContent(
         val batch = conversationReplayer.loadNextBatch(batchSize)
         if (batch.isNotEmpty()) chatConsolePanel.prependEntries(batch)
         val remaining = conversationReplayer.remainingPromptCount()
-        if (remaining > 0) chatConsolePanel.showLoadMore(remaining)
-        else chatConsolePanel.hideLoadMore()
+        if (remaining > 0) {
+            chatConsolePanel.showLoadMore(remaining)
+        } else {
+            if (conversationReplayer.hasOlderHistoryOnDisk) {
+                LOG.info("Older history exists on disk but was not loaded (session too large for tail-read budget)")
+            }
+            chatConsolePanel.hideLoadMore()
+        }
     }
 
     fun getComponent(): JComponent = rootSplitter
