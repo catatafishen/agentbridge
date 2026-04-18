@@ -102,6 +102,11 @@ public abstract class AcpClient extends AbstractAgentClient {
     private @Nullable Process agentProcess;
     private @Nullable InitializeResponse capabilities;
     private @Nullable String currentSessionId;
+
+    protected @Nullable String getCurrentSessionId() {
+        return currentSessionId;
+    }
+
     private @Nullable String launchCwd;
     /**
      * Tracks the resume session ID requested in the current launch cycle.

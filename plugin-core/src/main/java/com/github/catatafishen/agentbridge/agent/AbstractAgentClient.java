@@ -64,6 +64,17 @@ public abstract class AbstractAgentClient {
     }
 
     /**
+     * Returns the filesystem path to the current session's working directory,
+     * or {@code null} if no session is active or the client doesn't expose one.
+     * <p>
+     * Used by the Files tab in the side panel to list session artifacts
+     * (plans, events, checkpoints, research files, etc.).
+     */
+    public @Nullable java.nio.file.Path getSessionDirectory() {
+        return null;
+    }
+
+    /**
      * Close/stop the agent. Alias for {@link #stop()}.
      */
     public void close() {
@@ -111,7 +122,8 @@ public abstract class AbstractAgentClient {
      * should override this method.
      * </p>
      */
-    public void dropCurrentSession() {}
+    public void dropCurrentSession() {
+    }
 
     // ─── Prompts ─────────────────────────────────────
 

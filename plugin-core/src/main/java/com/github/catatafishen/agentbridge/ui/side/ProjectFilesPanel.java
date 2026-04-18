@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileTypes.FileTypeManager;
@@ -23,6 +24,7 @@ import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -105,6 +107,8 @@ final class ProjectFilesPanel extends JPanel {
         kiro.addAll(glob(base, ".agent-work/kiro/skills", "*/SKILL.md"));
         addSection("Kiro", kiro);
 
+        addSessionSection();
+
         treeModel.reload();
         for (int i = 0; i < tree.getRowCount(); i++) {
             tree.expandRow(i);
@@ -118,6 +122,42 @@ final class ProjectFilesPanel extends JPanel {
             section.add(new DefaultMutableTreeNode(fn));
         }
         root.add(section);
+    }
+
+    /**
+     * Adds a "Current Session" section listing files from the active agent's session directory.
+     */
+    private void addSessionSection() {
+        try {
+            var manager = ActiveAgentManager.getInstance(project);
+            var client = manager.getClient();
+            Path sessionDir = client.getSessionDirectory();
+            if (sessionDir == null || !Files.isDirectory(sessionDir)) return;
+
+            List<FileNode> sessionFiles = listSessionFiles(sessionDir.toFile(), sessionDir.toFile());
+            sessionFiles.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
+            addSection("Current Session", sessionFiles);
+        } catch (Throwable ignored) {
+            // agent may not be started yet
+        }
+    }
+
+    /**
+     * Recursively lists files under the session directory, using relative paths as labels.
+     */
+    private static @NotNull List<FileNode> listSessionFiles(@NotNull File root, @NotNull File dir) {
+        List<FileNode> results = new ArrayList<>();
+        File[] children = dir.listFiles();
+        if (children == null) return results;
+        for (File child : children) {
+            if (child.isDirectory()) {
+                results.addAll(listSessionFiles(root, child));
+            } else {
+                String rel = root.toURI().relativize(child.toURI()).getPath();
+                results.add(new FileNode(root.getAbsolutePath(), rel, rel, false));
+            }
+        }
+        return results;
     }
 
     /**

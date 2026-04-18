@@ -219,6 +219,14 @@ public final class CopilotClient extends AcpClient {
                 + "The --resume CLI flag is passed at launch but is currently ignored.");
     }
 
+    @Override
+    public @Nullable Path getSessionDirectory() {
+        String sid = getCurrentSessionId();
+        if (sid == null) return null;
+        Path dir = copilotHome().resolve(SESSION_STATE_DIR).resolve(sid);
+        return java.nio.file.Files.isDirectory(dir) ? dir : null;
+    }
+
     /**
      * Returns the standard Copilot CLI home directory ({@code ~/.copilot/}).
      * No environment overrides — the CLI uses the real user home for config, auth, and sessions.
