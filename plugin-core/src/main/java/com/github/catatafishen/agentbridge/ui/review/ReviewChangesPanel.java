@@ -67,6 +67,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     private final CardLayout cardLayout;
     private final JPanel cardPanel;
     private final JBLabel emptyLabel;
+    private final JBLabel diffTotalsLabel;
 
     public ReviewChangesPanel(@NotNull Project project) {
         super(new BorderLayout());
@@ -106,6 +107,10 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         int footerHeight = JBUI.scale(32);
         toolbarComponent.setPreferredSize(new Dimension(0, footerHeight));
         toolbarComponent.setMinimumSize(new Dimension(0, footerHeight));
+
+        diffTotalsLabel = new JBLabel();
+        diffTotalsLabel.setBorder(JBUI.Borders.emptyRight(8));
+        toolbarFooter.add(diffTotalsLabel, BorderLayout.EAST);
         toolbarFooter.add(toolbarComponent, BorderLayout.CENTER);
 
         add(cardPanel, BorderLayout.CENTER);
@@ -127,6 +132,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         AgentEditSession session = AgentEditSession.getInstance(project);
         List<ReviewItem> items = session.getReviewItems();
         tableModel.setItems(items);
+        updateDiffTotals(items);
 
         if (!items.isEmpty()) {
             cardLayout.show(cardPanel, CARD_TABLE);
@@ -137,6 +143,37 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         }
         revalidate();
         repaint();
+    }
+
+    private void updateDiffTotals(@NotNull List<ReviewItem> items) {
+        int added = 0;
+        int removed = 0;
+        for (ReviewItem item : items) {
+            added += item.linesAdded();
+            removed += item.linesRemoved();
+        }
+        if (added == 0 && removed == 0) {
+            diffTotalsLabel.setText("");
+        } else {
+            StringBuilder sb = new StringBuilder("<html><font size='-2'>");
+            if (added > 0) sb.append(colorSpan(DIFF_GREEN, "+" + added));
+            if (removed > 0) {
+                if (added > 0) sb.append(" ");
+                sb.append(colorSpan(DIFF_RED, "-" + removed));
+            }
+            sb.append(FONT_CLOSE).append("</html>");
+            diffTotalsLabel.setText(sb.toString());
+        }
+    }
+
+    private static @NotNull String colorHex(@NotNull Color c) {
+        return String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
+    }
+
+    private static final String FONT_CLOSE = "</font>";
+
+    private static @NotNull String colorSpan(@NotNull Color c, @NotNull String text) {
+        return "<font color='" + colorHex(c) + "'>" + text + FONT_CLOSE;
     }
 
     private void configureTable() {
@@ -462,7 +499,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
                                           boolean isSelected, boolean approved) {
             StringBuilder sb = new StringBuilder("<html>");
             if (approved && !isSelected) {
-                sb.append("<font color='gray'>").append(escapeHtml(fileName)).append("</font>");
+                sb.append("<font color='gray'>").append(escapeHtml(fileName)).append(FONT_CLOSE);
             } else {
                 sb.append(escapeHtml(fileName));
             }
@@ -471,22 +508,22 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
             if (item.linesAdded() > 0 || item.linesRemoved() > 0) {
                 sb.append(" <font size='-2'>");
                 if (item.linesAdded() > 0) {
-                    String green = colorHex(approved && !isSelected ? JBColor.GRAY : DIFF_GREEN);
-                    sb.append("<font color='").append(green).append("'>+").append(item.linesAdded()).append("</font>");
+                    Color green = approved && !isSelected ? JBColor.GRAY : DIFF_GREEN;
+                    sb.append(colorSpan(green, "+" + item.linesAdded()));
                 }
                 if (item.linesRemoved() > 0) {
                     if (item.linesAdded() > 0) sb.append(" ");
-                    String red = colorHex(approved && !isSelected ? JBColor.GRAY : DIFF_RED);
-                    sb.append("<font color='").append(red).append("'>-").append(item.linesRemoved()).append("</font>");
+                    Color red = approved && !isSelected ? JBColor.GRAY : DIFF_RED;
+                    sb.append(colorSpan(red, "-" + item.linesRemoved()));
                 }
-                sb.append("</font>");
+                sb.append(FONT_CLOSE);
             }
 
             // Timestamp
             if (item.lastEditedMillis() > 0) {
                 sb.append(" <font size='-2' color='gray'>");
                 sb.append(TimestampDisplayFormatter.formatEpochMillis(item.lastEditedMillis()));
-                sb.append("</font>");
+                sb.append(FONT_CLOSE);
             }
 
             sb.append("</html>");
@@ -495,10 +532,6 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
 
         private static @NotNull String escapeHtml(@NotNull String s) {
             return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
-        }
-
-        private static @NotNull String colorHex(@NotNull Color c) {
-            return String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
         }
     }
 
