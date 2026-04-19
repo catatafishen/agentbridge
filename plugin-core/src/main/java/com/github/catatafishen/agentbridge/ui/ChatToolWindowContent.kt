@@ -85,6 +85,7 @@ class ChatToolWindowContent(
     @Volatile
     private var modelsStatusText: String? = MSG_LOADING
     private lateinit var controlsToolbar: ActionToolbar
+    private lateinit var innerInputToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
@@ -694,9 +695,6 @@ class ChatToolWindowContent(
         topPanel.add(responsePanelContainer, BorderLayout.CENTER)
 
         val inputRow = createInputRow()
-        val controlsRow = createControlsRow()
-        controlsRow.isOpaque = false
-        controlsRow.border = com.intellij.ui.SideBorder(JBColor.border(), com.intellij.ui.SideBorder.TOP)
 
         val inputSection = JBPanel<JBPanel<*>>(BorderLayout())
         inputSection.isOpaque = true
@@ -706,11 +704,26 @@ class ChatToolWindowContent(
             com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
         )
         inputSection.add(inputRow, BorderLayout.CENTER)
-        inputSection.add(controlsRow, BorderLayout.SOUTH)
+
+        val sideButtonsPanel = createSideButtonsPanel()
+        controlsToolbar.targetComponent = inputSection
+        innerInputToolbar.targetComponent = inputSection
+
+        val inputWithSidebar = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(4), 0))
+        inputWithSidebar.isOpaque = false
+        inputWithSidebar.add(sideButtonsPanel, BorderLayout.WEST)
+        inputWithSidebar.add(inputSection, BorderLayout.CENTER)
+
+        val aboveInputRow = createAboveInputRow()
+
+        val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
+        bottomSection.isOpaque = false
+        bottomSection.add(aboveInputRow, BorderLayout.NORTH)
+        bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
 
         val splitter = com.intellij.ui.OnePixelSplitter(true, "AgentBridge.InputSplitter", 0.78f)
         splitter.firstComponent = topPanel
-        splitter.secondComponent = inputSection
+        splitter.secondComponent = bottomSection
         panel.add(splitter, BorderLayout.CENTER)
 
         billing.loadBillingData()
@@ -828,6 +841,25 @@ class ChatToolWindowContent(
         inputContainer.add(promptTextArea)    // index 1 = behind, visible through transparent shortcutHintPanel
 
         row.add(inputContainer, BorderLayout.CENTER)
+
+        val modelGroup = DefaultActionGroup()
+        modelGroup.add(ModelSelectorAction())
+        val modelToolbar = ActionManager.getInstance().createActionToolbar("AgentModel", modelGroup, true)
+        modelToolbar.isReservePlaceAutoPopupIcon = false
+        modelToolbar.component.isOpaque = false
+
+        val sendGroup = DefaultActionGroup()
+        sendGroup.add(SendAction())
+        innerInputToolbar = ActionManager.getInstance().createActionToolbar("AgentSend", sendGroup, true)
+        innerInputToolbar.isReservePlaceAutoPopupIcon = false
+        innerInputToolbar.component.isOpaque = false
+
+        val innerBar = JBPanel<JBPanel<*>>(BorderLayout())
+        innerBar.isOpaque = false
+        innerBar.border = JBUI.Borders.empty(0, 6, 2, 4)
+        innerBar.add(modelToolbar.component, BorderLayout.WEST)
+        innerBar.add(innerInputToolbar.component, BorderLayout.EAST)
+        row.add(innerBar, BorderLayout.SOUTH)
 
         return row
     }
@@ -1001,32 +1033,33 @@ class ChatToolWindowContent(
         ApplicationManager.getApplication().invokeLater {
             updatePromptPlaceholder()
             controlsToolbar.updateActionsAsync()
+            innerInputToolbar.updateActionsAsync()
             if (::processingTimerPanel.isInitialized) {
                 if (sending) processingTimerPanel.start() else processingTimerPanel.stop()
             }
         }
     }
 
-    private fun createControlsRow(): JBPanel<JBPanel<*>> {
-        val row = JBPanel<JBPanel<*>>(BorderLayout())
-
+    private fun createSideButtonsPanel(): JComponent {
         val leftGroup = DefaultActionGroup()
-        leftGroup.add(SendStopAction())
+        leftGroup.add(StopOnlyAction())
         leftGroup.addSeparator()
         leftGroup.add(AttachContextDropdownAction())
-        leftGroup.addSeparator()
-        leftGroup.add(ModelSelectorAction())
         leftGroup.addSeparator()
         restartSessionGroup = RestartSessionGroup()
         leftGroup.add(restartSessionGroup!!)
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
-            "AgentControls", leftGroup, true
+            "AgentControls", leftGroup, false
         )
-        controlsToolbar.targetComponent = row
         controlsToolbar.isReservePlaceAutoPopupIcon = false
-        controlsToolbar.component.border = JBUI.Borders.empty()
+        controlsToolbar.component.border = JBUI.Borders.empty(4, 4, 4, 0)
+        controlsToolbar.component.isOpaque = false
 
+        return controlsToolbar.component
+    }
+
+    private fun createAboveInputRow(): JComponent {
         val rightGroup = DefaultActionGroup()
         rightGroup.add(ProcessingIndicatorAction())
         rightGroup.add(billing.createUsageGraphAction(project))
@@ -1034,27 +1067,16 @@ class ChatToolWindowContent(
         val rightToolbar = ActionManager.getInstance().createActionToolbar(
             "AgentRight", rightGroup, true
         )
-        rightToolbar.targetComponent = row
         rightToolbar.isReservePlaceAutoPopupIcon = false
         rightToolbar.component.border = JBUI.Borders.empty()
 
-        val wrapper = JBPanel<JBPanel<*>>(GridBagLayout())
+        val wrapper = JBPanel<JBPanel<*>>(BorderLayout())
         wrapper.isOpaque = false
-        wrapper.border = JBUI.Borders.empty(2, 0) // Balance vertical padding
-        val c = GridBagConstraints()
-        c.fill = GridBagConstraints.VERTICAL
-        c.weighty = 1.0
-        c.anchor = GridBagConstraints.WEST
-        c.weightx = 1.0
-        wrapper.add(controlsToolbar.component, c)
+        wrapper.border = JBUI.Borders.empty(2, 0)
+        rightToolbar.targetComponent = wrapper
+        wrapper.add(rightToolbar.component, BorderLayout.EAST)
 
-        c.weightx = 0.0
-        c.anchor = GridBagConstraints.EAST
-        wrapper.add(rightToolbar.component, c)
-
-        row.add(wrapper, BorderLayout.CENTER)
-
-        return row
+        return wrapper
     }
 
     /** Toolbar action showing a native processing timer while the agent works. */
@@ -1073,10 +1095,22 @@ class ChatToolWindowContent(
         }
     }
 
-    /** Send/Stop toggle action for the toolbar. */
-    private inner class SendStopAction : AnAction(
-        "Send", "Send prompt (Enter)", AllIcons.Actions.Execute
-    ) {
+    /** Stop-only action for the left sidebar: always shows Stop icon, enabled only while agent is running. */
+    private inner class StopOnlyAction : AnAction("Stop", "Stop the agent", AllIcons.Actions.Suspend) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            promptOrchestrator.stop()
+            setSendingState(false)
+        }
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = isSending
+        }
+    }
+
+    /** Send action embedded inside the input box: enabled when agent is idle and user is signed in. */
+    private inner class SendAction : AnAction("Send", "Send prompt (Enter)", AllIcons.Actions.Execute) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun actionPerformed(e: AnActionEvent) {
@@ -1085,17 +1119,8 @@ class ChatToolWindowContent(
 
         override fun update(e: AnActionEvent) {
             val isLoggedIn = authService.pendingAuthError == null
-            if (isSending) {
-                e.presentation.icon = AllIcons.Actions.Suspend
-                e.presentation.text = "Stop"
-                e.presentation.description = "Stop"
-                e.presentation.isEnabled = true
-            } else {
-                e.presentation.icon = AllIcons.Actions.Execute
-                e.presentation.text = "Send"
-                e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
-                e.presentation.isEnabled = isLoggedIn
-            }
+            e.presentation.isEnabled = !isSending && isLoggedIn
+            e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
         }
     }
 
