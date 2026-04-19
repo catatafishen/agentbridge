@@ -855,8 +855,8 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     }
 
     public synchronized void endSession() {
-        if (!active) return;
-        active = false;
+        if (!started) return;
+        started = false;
 
         AgentEditHighlighter.getInstance(project).clearAll();
 
@@ -880,7 +880,6 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         fireReviewStateChanged();
 
         LOG.info("Agent edit review session ended");
-    }
     }
 
     @Override
