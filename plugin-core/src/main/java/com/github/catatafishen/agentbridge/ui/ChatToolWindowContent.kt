@@ -697,6 +697,7 @@ class ChatToolWindowContent(
         val inputRow = createInputRow()
 
         val inputSection = JBPanel<JBPanel<*>>(BorderLayout())
+        inputSection.isOpaque = false
         inputSection.border = JBUI.Borders.compound(
             JBUI.Borders.empty(4),
             com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
@@ -721,8 +722,7 @@ class ChatToolWindowContent(
         bottomSection.add(aboveInputRow, BorderLayout.NORTH)
         bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
 
-        val splitter = com.intellij.ui.JBSplitter(true, "AgentBridge.InputSplitter", 0.78f)
-        splitter.setDividerWidth(0)
+        val splitter = com.intellij.ui.OnePixelSplitter(true, "AgentBridge.InputSplitter", 0.78f)
         splitter.firstComponent = topPanel
         splitter.secondComponent = bottomSection
         panel.add(splitter, BorderLayout.CENTER)
@@ -1117,7 +1117,10 @@ class ChatToolWindowContent(
     }
 
     /** Send action embedded inside the input box: enabled when agent is idle and user is signed in. */
-    private inner class SendAction : AnAction("Send", "Send prompt (Enter)", AllIcons.Vcs.Push) {
+    private inner class SendAction : AnAction(
+        "Send", "Send prompt (Enter)",
+        com.intellij.openapi.util.IconLoader.getIcon("/icons/send.svg", SendAction::class.java)
+    ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun actionPerformed(e: AnActionEvent) {
