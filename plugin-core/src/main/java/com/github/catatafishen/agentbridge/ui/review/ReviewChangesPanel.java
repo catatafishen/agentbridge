@@ -31,6 +31,7 @@ import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableColumn;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -60,6 +61,14 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
      */
     private static final JBColor DIFF_GREEN = new JBColor(new Color(0, 128, 0), new Color(80, 200, 80));
     private static final JBColor DIFF_RED = new JBColor(new Color(200, 0, 0), new Color(255, 80, 80));
+
+    /**
+     * Approve toggle button colors — green fill when approved, dim outline when pending.
+     * Matches the GitHub-style approve-button convention used in other parts of the UI.
+     */
+    private static final JBColor APPROVE_BG = new JBColor(new Color(0x2d, 0xa4, 0x4e), new Color(0x2d, 0xa4, 0x4e));
+    private static final JBColor APPROVE_FG = new JBColor(Color.WHITE, Color.WHITE);
+    private static final JBColor PENDING_BORDER = new JBColor(new Color(0x8e, 0x95, 0x9e), new Color(0x8b, 0x94, 0x9e));
 
     /**
      * File status colors — matches IntelliJ's VCS file coloring convention:
@@ -223,11 +232,11 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         fileCol.setPreferredWidth(JBUI.scale(280));
         fileCol.setCellRenderer(new FileCellRenderer());
 
-        // COL_APPROVE — toggleable checkbox icon
+        // COL_APPROVE — green toggle button when approved, outline button when pending
         TableColumn approveCol = table.getColumnModel().getColumn(ReviewTableModel.COL_APPROVE);
-        approveCol.setPreferredWidth(JBUI.scale(28));
-        approveCol.setMaxWidth(JBUI.scale(32));
-        approveCol.setCellRenderer(new ApproveCheckboxRenderer());
+        approveCol.setPreferredWidth(JBUI.scale(72));
+        approveCol.setMaxWidth(JBUI.scale(80));
+        approveCol.setCellRenderer(new ApproveToggleRenderer());
 
         // COL_REMOVE — X button (only for approved rows)
         TableColumn removeCol = table.getColumnModel().getColumn(ReviewTableModel.COL_REMOVE);
@@ -527,26 +536,77 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     }
 
     /**
-     * Approve checkbox column: green check when approved, gray unchecked when pending.
+     * Approve column: a pill-shaped toggle button. Green fill with "✓ Approved" when the row is
+     * approved; a dim outline with "Approve" when pending. Matches the visual language of the
+     * auto-approve toggle in the toolbar.
      */
-    private static final class ApproveCheckboxRenderer extends DefaultTableCellRenderer {
+    private static final class ApproveToggleRenderer implements TableCellRenderer {
+        private final ApproveButtonPanel button = new ApproveButtonPanel();
+
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                                                        boolean isSelected, boolean hasFocus,
                                                        int row, int column) {
-            Component c = super.getTableCellRendererComponent(table, "", isSelected, hasFocus, row, column);
-            if (value instanceof ReviewItem item && c instanceof JLabel label) {
-                label.setText("");
-                label.setHorizontalAlignment(CENTER);
-                if (item.approved()) {
-                    label.setIcon(AllIcons.Diff.GutterCheckBoxSelected);
-                    label.setToolTipText("Approved — click to unapprove");
-                } else {
-                    label.setIcon(AllIcons.Diff.GutterCheckBox);
-                    label.setToolTipText("Pending — click to approve");
-                }
+            if (value instanceof ReviewItem item) {
+                button.setState(item.approved(), isSelected, table);
             }
-            return c;
+            return button;
+        }
+    }
+
+    /**
+     * Pill-shaped button panel that paints itself as a toggle button without requiring
+     * an actual Swing button component (avoids focus/repaint issues in a table renderer).
+     */
+    private static final class ApproveButtonPanel extends JPanel {
+        private boolean approved;
+
+        ApproveButtonPanel() {
+            setOpaque(false);
+            Font base = UIManager.getFont("Label.font");
+            if (base != null) setFont(base.deriveFont((float) JBUI.scaleFontSize(11)));
+        }
+
+        void setState(boolean approved, boolean rowSelected, JTable table) {
+            this.approved = approved;
+            setBackground(rowSelected ? table.getSelectionBackground() : table.getBackground());
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            // Fill row background first
+            g2.setColor(getBackground());
+            g2.fillRect(0, 0, getWidth(), getHeight());
+
+            int arc = JBUI.scale(10);
+            int hpad = JBUI.scale(6);
+            int vpad = JBUI.scale(4);
+            int btnW = getWidth() - 2 * hpad;
+            int btnH = getHeight() - 2 * vpad;
+
+            String text = approved ? "✓ Approved" : "Approve";
+
+            if (approved) {
+                g2.setColor(APPROVE_BG);
+                g2.fillRoundRect(hpad, vpad, btnW, btnH, arc, arc);
+                g2.setColor(APPROVE_FG);
+            } else {
+                g2.setColor(PENDING_BORDER);
+                g2.drawRoundRect(hpad, vpad, btnW - 1, btnH - 1, arc, arc);
+                g2.setColor(PENDING_BORDER);
+            }
+
+            FontMetrics fm = g2.getFontMetrics(getFont());
+            int textW = fm.stringWidth(text);
+            int textX = hpad + (btnW - textW) / 2;
+            int textY = vpad + (btnH + fm.getAscent() - fm.getDescent()) / 2;
+            g2.setFont(getFont());
+            g2.drawString(text, textX, textY);
+            g2.dispose();
         }
     }
 
