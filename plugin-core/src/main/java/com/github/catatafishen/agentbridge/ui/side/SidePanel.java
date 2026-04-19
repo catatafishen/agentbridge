@@ -21,7 +21,7 @@ import java.awt.*;
  *   <li><b>Todo</b> — rendered view of the active agent session's {@code plan.md},
  *       with a {@code (done/total)} badge in the tab title when checkbox-style todos exist.</li>
  *   <li><b>Search</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
- *   <li><b>Stats</b> — session statistics: processing timer, usage graph, and billing info.</li>
+ *   <li><b>Session</b> — session statistics: processing timer, usage graph, and billing info.</li>
  * </ol>
  * Tab order is deliberate: review is the most time-sensitive and sits first.
  */
@@ -50,7 +50,7 @@ public final class SidePanel extends JPanel implements Disposable {
         tabsPanel.addTab(projectFilesPanel, "Files");
         tabsPanel.addTab(todoPanel, "Todo");
         tabsPanel.addTab(promptsPanel, "Search");
-        tabsPanel.addTab(sessionStatsPanel, "Stats");
+        tabsPanel.addTab(sessionStatsPanel, "Session");
 
         todoPanel.setOnProgressChanged(() -> {
             int total = todoPanel.getTotal();

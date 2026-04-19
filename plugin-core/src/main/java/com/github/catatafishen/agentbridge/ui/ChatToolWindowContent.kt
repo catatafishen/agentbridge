@@ -701,7 +701,7 @@ class ChatToolWindowContent(
         // Rounded border makes the chat area a distinct panel matching the side panel and input row,
         // styled like the IDE's own tool-window frames.
         responsePanelContainer.border = JBUI.Borders.compound(
-            JBUI.Borders.empty(4),
+            JBUI.Borders.empty(4, 4, 0, 4),
             com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
         )
 

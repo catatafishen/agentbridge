@@ -39,8 +39,15 @@ public final class SessionStatsPanel extends JPanel {
         billingSection.setBorder(BorderFactory.createEmptyBorder(
             JBUI.scale(4), JBUI.scale(8), JBUI.scale(8), JBUI.scale(8)));
         billingSection.setOpaque(false);
-        billingSection.add(billing.getUsageLabel(), BorderLayout.NORTH);
-        billingSection.add(billing.getCostLabel(), BorderLayout.SOUTH);
+        JLabel usageLabel = billing.getUsageLabel();
+        JLabel costLabel = billing.getCostLabel();
+        // Cap each label to a single line of text so long billing strings don't wrap and
+        // push the graph out of view.
+        int lineH = JBUI.scale(20);
+        usageLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, lineH));
+        costLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, lineH));
+        billingSection.add(usageLabel, BorderLayout.NORTH);
+        billingSection.add(costLabel, BorderLayout.SOUTH);
 
         JPanel content = new JPanel(new BorderLayout());
         content.setOpaque(false);
