@@ -8,11 +8,11 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
 import com.intellij.util.ui.UIUtil;
-import com.intellij.ui.JBColor;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -75,9 +75,9 @@ final class TodoPanel extends JPanel implements Disposable {
 
         emptyLabel = new JBLabel(
             "<html><div style='text-align:center; color:#888;'>"
-            + "No todos for the current agent session."
-            + "<br><br><small>Ask the agent to create a plan, or start a new task.</small>"
-            + "</div></html>",
+                + "No todos for the current agent session."
+                + "<br><br><small>Ask the agent to create a plan, or start a new task.</small>"
+                + "</div></html>",
             SwingConstants.CENTER
         );
         emptyLabel.setVerticalAlignment(SwingConstants.CENTER);
@@ -104,12 +104,16 @@ final class TodoPanel extends JPanel implements Disposable {
         this.onProgressChanged = callback;
     }
 
-    /** Zero when no checkbox-style todos were found. */
+    /**
+     * Zero when no checkbox-style todos were found.
+     */
     int getTotal() {
         return Math.max(0, lastTotal);
     }
 
-    /** Zero when no checkbox-style todos were found. */
+    /**
+     * Zero when no checkbox-style todos were found.
+     */
     int getDone() {
         return Math.max(0, lastDone);
     }
@@ -256,7 +260,7 @@ final class TodoPanel extends JPanel implements Disposable {
                 if (!" ".equals(m.group(1))) done++;
             }
         }
-        return new int[] { done, total };
+        return new int[]{done, total};
     }
 
     /**
