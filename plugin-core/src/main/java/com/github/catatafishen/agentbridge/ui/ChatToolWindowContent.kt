@@ -705,7 +705,9 @@ class ChatToolWindowContent(
                     g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
                     g2.fillRoundRect(0, 0, width, height, arc, arc)
                     g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
-                    g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
+                    // Offset by 1 so the 1px stroke is centred at coordinate 1, spanning [0.5,1.5]
+                    // instead of [−0.5,0.5] which would be half-clipped at the component edge.
+                    g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
                 } finally {
                     g2.dispose()
                 }

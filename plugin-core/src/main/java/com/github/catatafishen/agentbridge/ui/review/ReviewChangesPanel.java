@@ -404,12 +404,20 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
                 @Override
                 protected void paintButtonLook(Graphics g) {
                     if (isSelected()) {
+                        // Paint green background first
                         Graphics2D g2 = (Graphics2D) g.create();
                         g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                         g2.setColor(APPROVED_BG);
                         int arc = JBUI.scale(4);
                         g2.fillRoundRect(2, 2, getWidth() - 4, getHeight() - 4, arc, arc);
                         g2.dispose();
+                        // Paint icon on top of green so it remains visible
+                        Icon icon = presentation.getIcon();
+                        if (icon != null) {
+                            int x = (getWidth() - icon.getIconWidth()) / 2;
+                            int y = (getHeight() - icon.getIconHeight()) / 2;
+                            icon.paintIcon(this, g, x, y);
+                        }
                     } else {
                         super.paintButtonLook(g);
                     }
@@ -554,12 +562,13 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     }
 
     /**
-     * Solid green fill used for the "approved" state in both the table cell toggle and the
-     * auto-approve toolbar button. Mirrors IntelliJ's diff-add background palette.
+     * Semi-transparent green tint used for the "approved" state in both the table cell toggle and
+     * the auto-approve toolbar button. Alpha ~35% so the tint is clearly visible on any background
+     * while keeping the hue consistent with the original design.
      */
     private static final JBColor APPROVED_BG = new JBColor(
-        new Color(0xD1, 0xF5, 0xD0),   // light: soft diff-add green
-        new Color(0x2A, 0x45, 0x2C));  // dark: muted forest green
+        new Color(0, 120, 0, 90),    // light: pure green, ~35% opacity — original hue
+        new Color(80, 200, 80, 90)); // dark: lighter green, ~35% opacity
 
     /**
      * Renders the approve column as a toolbar-style icon toggle button.
@@ -587,17 +596,24 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
 
         @Override
         protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             if (approved) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
                 int size = JBUI.scale(22);
                 int x = (getWidth() - size) / 2;
                 int y = (getHeight() - size) / 2;
                 g2.setColor(APPROVED_BG);
                 g2.fillRoundRect(x, y, size, size, JBUI.scale(4), JBUI.scale(4));
+                g2.dispose();
             }
-            g2.dispose();
-            super.paintComponent(g);
+            // Paint the icon manually to avoid super.paintComponent() filling an opaque background
+            // (which the table renderer pipeline may set) and covering the green tint on hover-out.
+            Icon icon = getIcon();
+            if (icon != null) {
+                int x = (getWidth() - icon.getIconWidth()) / 2;
+                int y = (getHeight() - icon.getIconHeight()) / 2;
+                icon.paintIcon(this, g, x, y);
+            }
         }
     }
 
