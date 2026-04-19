@@ -698,15 +698,19 @@ class ChatToolWindowContent(
 
         val inputSection = object : JBPanel<JBPanel<*>>(BorderLayout()) {
             override fun paintComponent(g: Graphics) {
+                // Non-opaque components must call super so Swing can satisfy dirty-region
+                // obligations (e.g. clearing the back buffer) before we paint on top.
+                super.paintComponent(g)
                 val g2 = g.create() as Graphics2D
                 try {
                     g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                     val arc = JBUI.scale(8)
                     g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
                     g2.fillRoundRect(0, 0, width, height, arc, arc)
-                    g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
-                    // Offset by 1 so the 1px stroke is centred at coordinate 1, spanning [0.5,1.5]
-                    // instead of [−0.5,0.5] which would be half-clipped at the component edge.
+                    // Use the component border color (typically ~#ADADAD light / #5A5D63 dark),
+                    // which is more visible than the tool-window separator color.
+                    g2.color = UIManager.getColor("Component.borderColor")
+                        ?: JBUI.CurrentTheme.ToolWindow.borderColor()
                     g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
                 } finally {
                     g2.dispose()
