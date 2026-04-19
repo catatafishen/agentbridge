@@ -697,8 +697,6 @@ class ChatToolWindowContent(
         val inputRow = createInputRow()
 
         val inputSection = JBPanel<JBPanel<*>>(BorderLayout())
-        inputSection.isOpaque = true
-        inputSection.background = com.intellij.util.ui.UIUtil.getTextFieldBackground()
         inputSection.border = JBUI.Borders.compound(
             JBUI.Borders.empty(4),
             com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
@@ -718,10 +716,13 @@ class ChatToolWindowContent(
 
         val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
         bottomSection.isOpaque = false
+        // Left/right padding mirrors responsePanelContainer's compound(empty(4),...) so columns align
+        bottomSection.border = JBUI.Borders.empty(0, 4, 4, 4)
         bottomSection.add(aboveInputRow, BorderLayout.NORTH)
         bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
 
-        val splitter = com.intellij.ui.OnePixelSplitter(true, "AgentBridge.InputSplitter", 0.78f)
+        val splitter = com.intellij.ui.JBSplitter(true, "AgentBridge.InputSplitter", 0.78f)
+        splitter.setDividerWidth(0)
         splitter.firstComponent = topPanel
         splitter.secondComponent = bottomSection
         panel.add(splitter, BorderLayout.CENTER)
@@ -733,6 +734,8 @@ class ChatToolWindowContent(
 
     private fun createInputRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
+        row.isOpaque = true
+        row.background = com.intellij.util.ui.UIUtil.getTextFieldBackground()
         val minHeight = JBUI.scale(48)
         row.minimumSize = JBUI.size(100, minHeight)
         val editorCustomizations = mutableListOf<com.intellij.ui.EditorCustomization>()
@@ -857,8 +860,12 @@ class ChatToolWindowContent(
         val innerBar = JBPanel<JBPanel<*>>(BorderLayout())
         innerBar.isOpaque = false
         innerBar.border = JBUI.Borders.empty(0, 6, 2, 4)
-        innerBar.add(modelToolbar.component, BorderLayout.WEST)
-        innerBar.add(innerInputToolbar.component, BorderLayout.EAST)
+        // Model selector and Send button grouped together on the right
+        val rightSide = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(2), 0))
+        rightSide.isOpaque = false
+        rightSide.add(modelToolbar.component, BorderLayout.WEST)
+        rightSide.add(innerInputToolbar.component, BorderLayout.EAST)
+        innerBar.add(rightSide, BorderLayout.EAST)
         row.add(innerBar, BorderLayout.SOUTH)
 
         return row
@@ -1061,8 +1068,8 @@ class ChatToolWindowContent(
 
     private fun createAboveInputRow(): JComponent {
         val rightGroup = DefaultActionGroup()
-        rightGroup.add(ProcessingIndicatorAction())
         rightGroup.add(billing.createUsageGraphAction(project))
+        rightGroup.add(ProcessingIndicatorAction())
 
         val rightToolbar = ActionManager.getInstance().createActionToolbar(
             "AgentRight", rightGroup, true
@@ -1110,7 +1117,7 @@ class ChatToolWindowContent(
     }
 
     /** Send action embedded inside the input box: enabled when agent is idle and user is signed in. */
-    private inner class SendAction : AnAction("Send", "Send prompt (Enter)", AllIcons.Actions.Execute) {
+    private inner class SendAction : AnAction("Send", "Send prompt (Enter)", AllIcons.Vcs.Push) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun actionPerformed(e: AnActionEvent) {
