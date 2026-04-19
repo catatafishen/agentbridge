@@ -696,12 +696,23 @@ class ChatToolWindowContent(
 
         val inputRow = createInputRow()
 
-        val inputSection = JBPanel<JBPanel<*>>(BorderLayout())
+        val inputSection = object : JBPanel<JBPanel<*>>(BorderLayout()) {
+            override fun paintComponent(g: Graphics) {
+                val g2 = g.create() as Graphics2D
+                try {
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    val arc = JBUI.scale(8)
+                    g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
+                    g2.fillRoundRect(0, 0, width, height, arc, arc)
+                    g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
+                    g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc)
+                } finally {
+                    g2.dispose()
+                }
+            }
+        }
         inputSection.isOpaque = false
-        inputSection.border = JBUI.Borders.compound(
-            JBUI.Borders.empty(4),
-            com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
-        )
+        inputSection.border = JBUI.Borders.empty(4)
         inputSection.add(inputRow, BorderLayout.CENTER)
 
         val sideButtonsPanel = createSideButtonsPanel()
@@ -723,6 +734,7 @@ class ChatToolWindowContent(
         bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
 
         val splitter = com.intellij.ui.OnePixelSplitter(true, "AgentBridge.InputSplitter", 0.78f)
+        splitter.divider.isOpaque = false
         splitter.firstComponent = topPanel
         splitter.secondComponent = bottomSection
         panel.add(splitter, BorderLayout.CENTER)
@@ -734,8 +746,7 @@ class ChatToolWindowContent(
 
     private fun createInputRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
-        row.isOpaque = true
-        row.background = com.intellij.util.ui.UIUtil.getTextFieldBackground()
+        row.isOpaque = false
         val minHeight = JBUI.scale(48)
         row.minimumSize = JBUI.size(100, minHeight)
         val editorCustomizations = mutableListOf<com.intellij.ui.EditorCustomization>()
