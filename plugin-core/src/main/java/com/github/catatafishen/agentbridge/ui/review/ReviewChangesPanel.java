@@ -573,20 +573,29 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     /**
      * Renders the approve column as a toolbar-style icon toggle button.
      * Shows {@link #APPROVED_BG} (semi-transparent green) when approved.
+     *
+     * <p>Extends {@link DefaultTableCellRenderer} so that IntelliJ's table UI can set the
+     * appropriate hover/selection background via {@code setBackground} before painting.
+     * {@code paintComponent} then fills that background first, draws the green badge on top
+     * (when approved), and finally draws the icon — giving correct row-hover highlight in
+     * the non-approved area around the badge.</p>
      */
-    private static final class ApproveToggleRenderer extends JLabel implements TableCellRenderer {
+    private static final class ApproveToggleRenderer extends DefaultTableCellRenderer {
         private boolean approved;
 
         ApproveToggleRenderer() {
             setHorizontalAlignment(CENTER);
-            setOpaque(false);
-            setIcon(AllIcons.Actions.Checked);
         }
 
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                                                        boolean isSelected, boolean hasFocus,
                                                        int row, int column) {
+            // DefaultTableCellRenderer sets background/foreground/opaque correctly,
+            // including IntelliJ's hover-row color that is applied after this call.
+            super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            setText(null);
+            setIcon(AllIcons.Actions.Checked);
             if (value instanceof ReviewItem item) {
                 approved = item.approved();
                 setToolTipText(approved ? "Approved — click to unapprove" : "Approve this change");
@@ -596,6 +605,12 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
 
         @Override
         protected void paintComponent(Graphics g) {
+            // Temporarily hide the icon so super only fills the background (no double-paint).
+            Icon icon = getIcon();
+            setIcon(null);
+            super.paintComponent(g); // fills row background (hover/selection/normal)
+            setIcon(icon);
+
             if (approved) {
                 Graphics2D g2 = (Graphics2D) g.create();
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -606,9 +621,6 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
                 g2.fillRoundRect(x, y, size, size, JBUI.scale(4), JBUI.scale(4));
                 g2.dispose();
             }
-            // Paint the icon manually to avoid super.paintComponent() filling an opaque background
-            // (which the table renderer pipeline may set) and covering the green tint on hover-out.
-            Icon icon = getIcon();
             if (icon != null) {
                 int x = (getWidth() - icon.getIconWidth()) / 2;
                 int y = (getHeight() - icon.getIconHeight()) / 2;
