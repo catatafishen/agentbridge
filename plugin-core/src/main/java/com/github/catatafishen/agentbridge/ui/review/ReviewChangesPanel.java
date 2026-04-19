@@ -232,17 +232,17 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         fileCol.setPreferredWidth(JBUI.scale(280));
         fileCol.setCellRenderer(new FileCellRenderer());
 
-        // COL_APPROVE — green toggle button when approved, outline button when pending
+        // COL_APPROVE — green toggle pill (✓) when approved, outline when pending
         TableColumn approveCol = table.getColumnModel().getColumn(ReviewTableModel.COL_APPROVE);
-        approveCol.setPreferredWidth(JBUI.scale(72));
-        approveCol.setMaxWidth(JBUI.scale(80));
+        approveCol.setPreferredWidth(JBUI.scale(32));
+        approveCol.setMaxWidth(JBUI.scale(36));
         approveCol.setCellRenderer(new ApproveToggleRenderer());
 
-        // COL_REMOVE — X button (only for approved rows)
+        // COL_REMOVE — rollback icon for pending (reject), X icon for approved (remove)
         TableColumn removeCol = table.getColumnModel().getColumn(ReviewTableModel.COL_REMOVE);
         removeCol.setPreferredWidth(JBUI.scale(28));
         removeCol.setMaxWidth(JBUI.scale(32));
-        removeCol.setCellRenderer(new RemoveButtonRenderer());
+        removeCol.setCellRenderer(new RejectOrRemoveRenderer());
 
         table.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         table.addMouseListener(new MouseAdapter() {
@@ -258,6 +258,8 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
                     case ReviewTableModel.COL_REMOVE -> {
                         if (item.approved()) {
                             AgentEditSession.getInstance(project).removeApproved(item.path());
+                        } else {
+                            showRevertDialog(item);
                         }
                     }
                     default -> navigateToFile(item);
@@ -570,6 +572,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         void setState(boolean approved, boolean rowSelected, JTable table) {
             this.approved = approved;
             setBackground(rowSelected ? table.getSelectionBackground() : table.getBackground());
+            setToolTipText(approved ? "Approved — click to unapprove" : "Click to approve this change");
         }
 
         @Override
@@ -578,42 +581,39 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-            // Fill row background first
             g2.setColor(getBackground());
             g2.fillRect(0, 0, getWidth(), getHeight());
 
             int arc = JBUI.scale(10);
             int hpad = JBUI.scale(6);
-            int vpad = JBUI.scale(4);
+            int vpad = JBUI.scale(5);
             int btnW = getWidth() - 2 * hpad;
             int btnH = getHeight() - 2 * vpad;
-
-            String text = approved ? "✓ Approved" : "Approve";
 
             if (approved) {
                 g2.setColor(APPROVE_BG);
                 g2.fillRoundRect(hpad, vpad, btnW, btnH, arc, arc);
                 g2.setColor(APPROVE_FG);
+                g2.setFont(getFont().deriveFont(Font.BOLD, JBUI.scaleFontSize(13)));
+                FontMetrics fm = g2.getFontMetrics();
+                String mark = "✓";
+                int textX = hpad + (btnW - fm.stringWidth(mark)) / 2;
+                int textY = vpad + (btnH + fm.getAscent() - fm.getDescent()) / 2;
+                g2.drawString(mark, textX, textY);
             } else {
                 g2.setColor(PENDING_BORDER);
                 g2.drawRoundRect(hpad, vpad, btnW - 1, btnH - 1, arc, arc);
-                g2.setColor(PENDING_BORDER);
             }
 
-            FontMetrics fm = g2.getFontMetrics(getFont());
-            int textW = fm.stringWidth(text);
-            int textX = hpad + (btnW - textW) / 2;
-            int textY = vpad + (btnH + fm.getAscent() - fm.getDescent()) / 2;
-            g2.setFont(getFont());
-            g2.drawString(text, textX, textY);
             g2.dispose();
         }
     }
 
     /**
-     * Remove X column: only active for approved rows.
+     * Right-hand action column: rollback icon for pending rows (opens reject dialog),
+     * X icon for approved rows (removes from list).
      */
-    private static final class RemoveButtonRenderer extends DefaultTableCellRenderer {
+    private static final class RejectOrRemoveRenderer extends DefaultTableCellRenderer {
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                                                        boolean isSelected, boolean hasFocus,
@@ -626,11 +626,8 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
                     label.setIcon(AllIcons.Actions.Close);
                     label.setToolTipText("Remove from list");
                 } else {
-                    label.setIcon(AllIcons.Actions.CloseHovered);
-                    // Dim the icon for pending rows — they should be reverted, not removed
-                    label.setForeground(JBColor.GRAY);
-                    label.setIcon(null);
-                    label.setToolTipText(null);
+                    label.setIcon(AllIcons.Actions.Rollback);
+                    label.setToolTipText("Reject this change…");
                 }
             }
             return c;
