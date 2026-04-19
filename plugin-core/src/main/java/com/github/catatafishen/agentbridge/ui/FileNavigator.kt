@@ -25,7 +25,11 @@ class FileNavigator(private val project: Project) {
         val normalizedPath = filePath.replace('\\', '/')
         val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
         ApplicationManager.getApplication().invokeLater {
-            OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(true)
+            try {
+                OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(true)
+            } catch (e: Exception) {
+                log.warn("Failed to navigate to file $normalizedPath:$line", e)
+            }
         }
     }
 
