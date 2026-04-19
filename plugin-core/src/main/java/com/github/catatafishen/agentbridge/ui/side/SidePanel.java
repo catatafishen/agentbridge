@@ -14,13 +14,14 @@ import java.awt.*;
 /**
  * Tabbed container for the left-hand tool-window pane.
  * Uses {@link PlatformApiCompat#createJBTabsPanel} for native IntelliJ flat tab styling.
- * Hosts four tabs:
+ * Hosts five tabs:
  * <ol>
  *   <li><b>Diff</b> — the existing {@link ReviewChangesPanel} with pending agent edits.</li>
  *   <li><b>Files</b> — configuration/agent-definition files for this project.</li>
  *   <li><b>Todo</b> — rendered view of the active agent session's {@code plan.md},
  *       with a {@code (done/total)} badge in the tab title when checkbox-style todos exist.</li>
  *   <li><b>Search</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
+ *   <li><b>Stats</b> — session statistics: processing timer, usage graph, and billing info.</li>
  * </ol>
  * Tab order is deliberate: review is the most time-sensitive and sits first.
  */
@@ -32,7 +33,8 @@ public final class SidePanel extends JPanel implements Disposable {
 
     private final transient PlatformApiCompat.JBTabsPanel tabsPanel;
 
-    public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole) {
+    public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
+                     @NotNull SessionStatsPanel sessionStatsPanel) {
         super(new BorderLayout());
         ReviewChangesPanel reviewPanel = new ReviewChangesPanel(project);
         Disposer.register(this, reviewPanel);
@@ -48,6 +50,7 @@ public final class SidePanel extends JPanel implements Disposable {
         tabsPanel.addTab(projectFilesPanel, "Files");
         tabsPanel.addTab(todoPanel, "Todo");
         tabsPanel.addTab(promptsPanel, "Search");
+        tabsPanel.addTab(sessionStatsPanel, "Stats");
 
         todoPanel.setOnProgressChanged(() -> {
             int total = todoPanel.getTotal();

@@ -12,7 +12,6 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
-import com.intellij.openapi.actionSystem.ex.CustomComponentAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project
@@ -624,10 +623,31 @@ class ChatToolWindowContent(
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
 
         val responsePanel = createResponsePanel()
+        // Create processing timer and usage graph panels directly so they can be
+        // hosted in the side panel's Stats tab instead of above the input area.
+        processingTimerPanel = ProcessingTimerPanel(
+            supportsMultiplier = { agentManager.client.supportsMultiplier() },
+            localSessionRequests = { billing.localSessionRequests }
+        )
+        com.intellij.openapi.util.Disposer.register(project, processingTimerPanel)
+
+        val statsUsageGraphPanel = UsageGraphPanel()
+        statsUsageGraphPanel.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        statsUsageGraphPanel.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                billing.showUsagePopup(statsUsageGraphPanel)
+            }
+        })
+        billing.usageGraphPanel = statsUsageGraphPanel
+
+        val sessionStatsPanel = com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel(
+            processingTimerPanel, statsUsageGraphPanel, billing
+        )
+
         // chatConsolePanel is now initialised — build the side panel and attach it to
         // the root splitter. Registered with the tool window so the embedded subscriptions
         // (Review panel message-bus, Prompts listener) are disposed when the window is closed.
-        val side = com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel)
+        val side = com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel)
         side.border = JBUI.Borders.compound(
             JBUI.Borders.empty(4),
             com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
@@ -732,14 +752,11 @@ class ChatToolWindowContent(
         inputWithSidebar.add(sideButtonsPanel, BorderLayout.WEST)
         inputWithSidebar.add(inputSection, BorderLayout.CENTER)
 
-        val aboveInputRow = createAboveInputRow()
-
         val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
         bottomSection.isOpaque = false
         // Left/right padding mirrors responsePanelContainer's compound(empty(4),...) so columns align.
         // Right gets extra padding to match the chat bubble right margin; left gets 5px more.
         bottomSection.border = JBUI.Borders.empty(0, 9, 8, 20)
-        bottomSection.add(aboveInputRow, BorderLayout.NORTH)
         bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
 
         // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
@@ -771,7 +788,7 @@ class ChatToolWindowContent(
             override fun mouseDragged(e: java.awt.event.MouseEvent) {
                 val (startY, startH) = activeResize ?: return
                 val delta = startY - e.locationOnScreen.y
-                val minH = JBUI.scale(60)
+                val minH = JBUI.scale(100)
                 val maxH = (splitPanel.height - JBUI.scale(80)).coerceAtLeast(minH)
                 bottomSection.preferredSize = Dimension(bottomSection.width, (startH + delta).coerceIn(minH, maxH))
                 splitPanel.revalidate()
@@ -799,7 +816,7 @@ class ChatToolWindowContent(
                 splitPanel.removeComponentListener(this)
                 val targetH = if (savedInputHeight > 0) savedInputHeight
                 else (splitPanel.height * 0.22).toInt()
-                val minH = JBUI.scale(60)
+                val minH = JBUI.scale(100)
                 val maxH = (splitPanel.height - JBUI.scale(80)).coerceAtLeast(minH)
                 bottomSection.preferredSize = Dimension(bottomSection.width, targetH.coerceIn(minH, maxH))
                 splitPanel.revalidate()
@@ -941,7 +958,7 @@ class ChatToolWindowContent(
 
         val innerBar = JBPanel<JBPanel<*>>(BorderLayout())
         innerBar.isOpaque = false
-        innerBar.border = JBUI.Borders.empty(0, 6, 2, 4)
+        innerBar.border = JBUI.Borders.empty(0, 2, 1, 2)
         // Model selector and Send button grouped together on the right
         val rightSide = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(2), 0))
         rightSide.isOpaque = false
@@ -1146,42 +1163,6 @@ class ChatToolWindowContent(
         controlsToolbar.component.isOpaque = false
 
         return controlsToolbar.component
-    }
-
-    private fun createAboveInputRow(): JComponent {
-        val rightGroup = DefaultActionGroup()
-        rightGroup.add(billing.createUsageGraphAction(project))
-        rightGroup.add(ProcessingIndicatorAction())
-
-        val rightToolbar = ActionManager.getInstance().createActionToolbar(
-            "AgentRight", rightGroup, true
-        )
-        rightToolbar.isReservePlaceAutoPopupIcon = false
-        rightToolbar.component.border = JBUI.Borders.empty()
-
-        val wrapper = JBPanel<JBPanel<*>>(BorderLayout())
-        wrapper.isOpaque = false
-        wrapper.border = JBUI.Borders.empty(2, 0)
-        rightToolbar.targetComponent = wrapper
-        wrapper.add(rightToolbar.component, BorderLayout.EAST)
-
-        return wrapper
-    }
-
-    /** Toolbar action showing a native processing timer while the agent works. */
-    private inner class ProcessingIndicatorAction : AnAction("Processing"), CustomComponentAction {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-        override fun actionPerformed(e: AnActionEvent) { /* UI-only toolbar widget */
-        }
-
-        override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
-            processingTimerPanel = ProcessingTimerPanel(
-                supportsMultiplier = { agentManager.client.supportsMultiplier() },
-                localSessionRequests = { billing.localSessionRequests }
-            )
-            com.intellij.openapi.util.Disposer.register(project, processingTimerPanel)
-            return processingTimerPanel
-        }
     }
 
     /** Stop-only action for the left sidebar: always shows Stop icon, enabled only while agent is running. */

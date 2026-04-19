@@ -56,7 +56,7 @@ class BillingManager {
 
     private var usageDisplayMode = UsageDisplayMode.MONTHLY
     lateinit var usageGraphPanel: UsageGraphPanel
-        private set
+        internal set
     private var lastBillingEntitlement = 0
     private var lastBillingUnlimited = false
     private var lastBillingRemaining = 0
