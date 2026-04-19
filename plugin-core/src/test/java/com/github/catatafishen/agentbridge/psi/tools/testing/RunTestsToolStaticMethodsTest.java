@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// appended below the outer class — injected via insert_before_symbol on next nested class boundary
+
 /**
  * Unit tests for the package-private static helper methods in {@link RunTestsTool}.
  *
@@ -451,6 +453,157 @@ class RunTestsToolStaticMethodsTest {
             assertTrue(result.startsWith("\n=== Console Output ===\n"),
                 "should start with console header");
             assertTrue(result.contains("truncated"), "long text should be truncated");
+        }
+    }
+
+    // ── findTestTaskInBuildFile ───────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("findTestTaskInBuildFile")
+    class FindTestTaskInBuildFile {
+
+        @Test
+        @DisplayName("returns null for empty content")
+        void emptyContent() {
+            assertNull(RunTestsTool.findTestTaskInBuildFile(""));
+        }
+
+        @Test
+        @DisplayName("returns null when only standard 'test' task is present")
+        void standardTestTask() {
+            assertNull(RunTestsTool.findTestTaskInBuildFile(
+                "tasks.register(\"test\", Test::class)"));
+        }
+
+        @Test
+        @DisplayName("detects Kotlin DSL register(\"name\", Test::class)")
+        void kotlinDslRegister() {
+            assertEquals("unitTest", RunTestsTool.findTestTaskInBuildFile(
+                "tasks.register(\"unitTest\", Test::class)"));
+        }
+
+        @Test
+        @DisplayName("detects Kotlin DSL register<Test>(\"name\")")
+        void kotlinDslRegisterGeneric() {
+            assertEquals("unitTest", RunTestsTool.findTestTaskInBuildFile(
+                "tasks.register<Test>(\"unitTest\")"));
+        }
+
+        @Test
+        @DisplayName("detects Kotlin DSL val name by tasks.registering(Test...)")
+        void kotlinDslRegistering() {
+            assertEquals("unitTest", RunTestsTool.findTestTaskInBuildFile(
+                "val unitTest by tasks.registering(Test::class)"));
+        }
+
+        @Test
+        @DisplayName("detects Groovy DSL task name(type: Test)")
+        void groovyDslTaskType() {
+            assertEquals("unitTest", RunTestsTool.findTestTaskInBuildFile(
+                "task unitTest(type: Test)"));
+        }
+
+        @Test
+        @DisplayName("detects Groovy DSL tasks.register('name', Test)")
+        void groovyDslRegister() {
+            assertEquals("unitTest", RunTestsTool.findTestTaskInBuildFile(
+                "tasks.register('unitTest', Test)"));
+        }
+    }
+
+    // ── parseTestsFilterFromCommand ───────────────────────────────────────────
+
+    @Nested
+    @DisplayName("parseTestsFilterFromCommand")
+    class ParseTestsFilterFromCommand {
+
+        @Test
+        @DisplayName("extracts --tests argument from Gradle command")
+        void gradleTests() {
+            assertEquals("com.example.MyTest",
+                RunTestsTool.parseTestsFilterFromCommand("./gradlew test --tests com.example.MyTest"));
+        }
+
+        @Test
+        @DisplayName("extracts --tests with quoted argument")
+        void gradleTestsQuoted() {
+            assertEquals("com.example.MyTest",
+                RunTestsTool.parseTestsFilterFromCommand("./gradlew test --tests \"com.example.MyTest\""));
+        }
+
+        @Test
+        @DisplayName("extracts -Dtest argument from Maven command")
+        void mavenTests() {
+            assertEquals("MyTest",
+                RunTestsTool.parseTestsFilterFromCommand("mvn test -Dtest=MyTest"));
+        }
+
+        @Test
+        @DisplayName("returns null when no test filter present")
+        void noFilter() {
+            assertNull(RunTestsTool.parseTestsFilterFromCommand("./gradlew test"));
+        }
+    }
+
+    // ── parseGradleModuleFromCommand ──────────────────────────────────────────
+
+    @Nested
+    @DisplayName("parseGradleModuleFromCommand")
+    class ParseGradleModuleFromCommand {
+
+        @Test
+        @DisplayName("extracts module from :module:task notation")
+        void moduleAndTask() {
+            assertEquals("plugin-core",
+                RunTestsTool.parseGradleModuleFromCommand("./gradlew :plugin-core:test"));
+        }
+
+        @Test
+        @DisplayName("returns empty string for no module prefix")
+        void noModule() {
+            assertEquals("",
+                RunTestsTool.parseGradleModuleFromCommand("./gradlew test"));
+        }
+
+        @Test
+        @DisplayName("returns empty string for bare task name")
+        void bareTask() {
+            assertEquals("",
+                RunTestsTool.parseGradleModuleFromCommand("./gradlew unitTest --tests Foo"));
+        }
+    }
+
+    // ── parseGradleTaskFromCommand ────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("parseGradleTaskFromCommand")
+    class ParseGradleTaskFromCommand {
+
+        @Test
+        @DisplayName("extracts task name from gradlew command")
+        void gradlewTask() {
+            assertEquals("unitTest",
+                RunTestsTool.parseGradleTaskFromCommand("./gradlew unitTest"));
+        }
+
+        @Test
+        @DisplayName("extracts task name with module prefix")
+        void taskWithModule() {
+            assertEquals("unitTest",
+                RunTestsTool.parseGradleTaskFromCommand("./gradlew :plugin-core:unitTest"));
+        }
+
+        @Test
+        @DisplayName("extracts task name with following flags")
+        void taskWithFlags() {
+            assertEquals("unitTest",
+                RunTestsTool.parseGradleTaskFromCommand("./gradlew unitTest --tests com.example.Foo"));
+        }
+
+        @Test
+        @DisplayName("returns null for non-Gradle command")
+        void nonGradleCommand() {
+            assertNull(RunTestsTool.parseGradleTaskFromCommand("mvn test"));
         }
     }
 }

@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.tools.testing.RunTestsTool;
 import com.github.catatafishen.agentbridge.ui.renderers.RunCommandRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.execution.configurations.GeneralCommandLine;
@@ -111,6 +112,9 @@ public final class RunCommandTool extends InfrastructureTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String command = args.get(PARAM_COMMAND).getAsString();
         String abuseType = ToolUtils.detectCommandAbuseType(command);
+        if ("test".equals(abuseType)) {
+            return new RunTestsTool(project).executeFromCommand(command);
+        }
         if (abuseType != null) return ToolUtils.getCommandAbuseMessage(abuseType);
 
         EdtUtil.invokeAndWait(() ->

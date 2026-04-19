@@ -50,6 +50,21 @@ public final class RunTestsTool extends TestingTool {
 
     private static final String JSON_MODULE = "module";
     private static final String PARAM_TARGET = "target";
+    private static final String PARAM_GRADLE_TASK = "gradle_task";
+
+    /**
+     * Matches Gradle test task registrations in Kotlin/Groovy DSL build files.
+     * Each alternative captures the task name in its respective group.
+     * Used by {@link #findTestTaskInBuildFile(String)} for auto-detection.
+     */
+    private static final java.util.regex.Pattern GRADLE_TEST_TASK_PATTERN =
+        java.util.regex.Pattern.compile(
+            "tasks\\.register\\(\"([a-zA-Z][a-zA-Z0-9]*)\",\\s*Test::" +      // register("name", Test::class)
+                "|tasks\\.register<Test>\\(\"([a-zA-Z][a-zA-Z0-9]*)\"" +           // register<Test>("name")
+                "|val\\s+([a-zA-Z][a-zA-Z0-9]*)\\s+by\\s+tasks\\.registering\\(Test" + // val name by tasks.registering(Test
+                "|\\btask\\s+([a-zA-Z][a-zA-Z0-9]*)\\s*\\(\\s*type\\s*:\\s*Test" + // task name(type: Test)
+                "|tasks\\.register\\('([a-zA-Z][a-zA-Z0-9]*)',\\s*Test"            // register('name', Test) Groovy
+        );
     private static final String TEST_TYPE_METHOD = "method";
     private static final String TEST_TYPE_CLASS = "class";
     private static final String TEST_TYPE_PATTERN = "pattern";
@@ -64,6 +79,7 @@ public final class RunTestsTool extends TestingTool {
     private static final String ERROR_TESTS_TIMED_OUT = "Tests timed out after 120 seconds: ";
     private static final String STARTED_TESTS_MSG = "Started tests via IntelliJ JUnit runner: ";
     private static final String RESULTS_IN_RUNNER_PANEL = "\nResults are visible in the IntelliJ test runner panel.";
+    private static final String ERROR_NO_PROJECT_PATH = "Error: Could not determine project base path";
 
     public RunTestsTool(Project project) {
         super(project);
@@ -83,7 +99,8 @@ public final class RunTestsTool extends TestingTool {
     public @NotNull String description() {
         return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner — " +
             "auto-detects the test framework (JUnit, TestNG, pytest, etc.) via ConfigurationContext. " +
-            "Falls back to Gradle for unresolvable targets. " +
+            "Falls back to Gradle for unresolvable targets; use the 'gradle_task' parameter when the " +
+            "project defines a custom test task (e.g., 'unitTest') instead of the standard ':test'. " +
             "Returns pass/fail counts and failure details. Use list_tests to discover available test targets.";
     }
 
@@ -106,7 +123,10 @@ public final class RunTestsTool extends TestingTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_TARGET, TYPE_STRING, "Test target: fully qualified class class.method (e.g., 'MyTest.testFoo'), or pattern with wildcards (e.g., '*Test')"),
-            Param.optional(JSON_MODULE, TYPE_STRING, "Optional module name (e.g., 'plugin-core')", "")
+            Param.optional(JSON_MODULE, TYPE_STRING, "Optional module name (e.g., 'plugin-core')", ""),
+            Param.optional(PARAM_GRADLE_TASK, TYPE_STRING,
+                "Gradle task name when the project does not use the standard ':test' task "
+                    + "(e.g., 'unitTest'). Auto-detected from build files if not specified.", "")
         );
     }
 
@@ -119,6 +139,7 @@ public final class RunTestsTool extends TestingTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String target = args.get(PARAM_TARGET).getAsString();
         String module = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
+        String gradleTask = args.has(PARAM_GRADLE_TASK) ? args.get(PARAM_GRADLE_TASK).getAsString() : "";
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -129,7 +150,7 @@ public final class RunTestsTool extends TestingTool {
             String patternResult = tryRunJUnitPattern(target);
             if (patternResult != null) return patternResult;
 
-            return runTestsViaGradleConfig(target, module);
+            return runTestsViaGradleConfig(target, module, gradleTask);
         }
 
         // Framework-agnostic: resolve the target to a PSI element and use ConfigurationContext
@@ -140,7 +161,7 @@ public final class RunTestsTool extends TestingTool {
         String junitResult = tryRunJUnitNatively(target);
         if (junitResult != null) return junitResult;
 
-        return runTestsViaGradleConfig(target, module);
+        return runTestsViaGradleConfig(target, module, gradleTask);
     }
 
     // ── Run configuration lookup ─────────────────────────────
@@ -453,9 +474,10 @@ public final class RunTestsTool extends TestingTool {
 
     // ── Gradle runner ────────────────────────────────────────
 
-    private String runTestsViaGradleConfig(String target, String module) {
+    private String runTestsViaGradleConfig(String target, String module, String gradleTask) {
         try {
             String taskPrefix = buildGradleTaskPrefix(module);
+            String resolvedTask = gradleTask.isEmpty() ? resolveGradleTestTask() : gradleTask;
             String configName = "Gradle Test: " + target;
 
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
@@ -466,7 +488,7 @@ public final class RunTestsTool extends TestingTool {
             CompletableFuture<String> launchFuture = new CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
                 try {
-                    String error = createAndRunGradleTestConfig(configName, taskPrefix, target);
+                    String error = createAndRunGradleTestConfig(configName, taskPrefix, target, resolvedTask);
                     launchFuture.complete(error);
                 } catch (Exception e) {
                     LOG.warn("Failed to create Gradle test config", e);
@@ -485,7 +507,7 @@ public final class RunTestsTool extends TestingTool {
         }
     }
 
-    private String createAndRunGradleTestConfig(String configName, String taskPrefix, String target) {
+    private String createAndRunGradleTestConfig(String configName, String taskPrefix, String target, String gradleTask) {
         try {
             RunManager runManager = RunManager.getInstance(project);
 
@@ -506,7 +528,7 @@ public final class RunTestsTool extends TestingTool {
             Object gradleSettings = getSettings.invoke(config);
 
             var setTaskNames = gradleSettings.getClass().getMethod("setTaskNames", List.class);
-            setTaskNames.invoke(gradleSettings, List.of(taskPrefix + "test"));
+            setTaskNames.invoke(gradleSettings, List.of(taskPrefix + gradleTask));
 
             var setScriptParameters = gradleSettings.getClass().getMethod("setScriptParameters", String.class);
             setScriptParameters.invoke(gradleSettings, "--tests " + buildGradleTestFilter(target));
@@ -532,6 +554,148 @@ public final class RunTestsTool extends TestingTool {
             LOG.warn("createAndRunGradleTestConfig failed", e);
             return LAUNCH_FAILED;
         }
+    }
+
+    /**
+     * Resolves the Gradle test task name to use. Falls back to build-file auto-detection
+     * and then to the standard {@code "test"} task if nothing custom is found.
+     */
+    private String resolveGradleTestTask() {
+        String detected = detectGradleTestTask();
+        return detected != null ? detected : "test";
+    }
+
+    /**
+     * Scans Gradle build files in the project root and one level of subdirectories for
+     * non-standard test task registrations (tasks of type {@code Test} whose name is not
+     * {@code "test"}).  Returns the first match found, or {@code null} if only the standard
+     * task is present or no build files are found.
+     */
+    @Nullable
+    private String detectGradleTestTask() {
+        String basePath = project.getBasePath();
+        if (basePath == null) return null;
+        java.io.File root = new java.io.File(basePath);
+
+        for (String fileName : List.of("build.gradle.kts", "build.gradle")) {
+            String content = readBuildFileQuietly(new java.io.File(root, fileName));
+            if (content != null) {
+                String task = findTestTaskInBuildFile(content);
+                if (task != null) return task;
+            }
+        }
+
+        java.io.File[] subdirs = root.listFiles(java.io.File::isDirectory);
+        if (subdirs != null) {
+            for (java.io.File dir : subdirs) {
+                for (String fileName : List.of("build.gradle.kts", "build.gradle")) {
+                    String content = readBuildFileQuietly(new java.io.File(dir, fileName));
+                    if (content != null) {
+                        String task = findTestTaskInBuildFile(content);
+                        if (task != null) return task;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static String readBuildFileQuietly(java.io.File file) {
+        if (!file.exists()) return null;
+        try {
+            return java.nio.file.Files.readString(file.toPath());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Scans a single Gradle build file's content for non-standard test task registrations
+     * (tasks of type {@code Test} with a name other than {@code "test"}).
+     * Supports Kotlin DSL ({@code tasks.register}, {@code tasks.register&lt;Test&gt;},
+     * delegate {@code by tasks.registering}) and Groovy DSL ({@code task name(type: Test)}).
+     * Pure function — no IDE dependency.
+     *
+     * @return the first custom test task name found, or {@code null}
+     */
+    @Nullable
+    static String findTestTaskInBuildFile(@NotNull String content) {
+        var matcher = GRADLE_TEST_TASK_PATTERN.matcher(content);
+        while (matcher.find()) {
+            for (int i = 1; i <= matcher.groupCount(); i++) {
+                String name = matcher.group(i);
+                if (name != null && !"test".equals(name)) return name;
+            }
+        }
+        return null;
+    }
+
+    public String executeFromCommand(@NotNull String command) {
+        String target = parseTestsFilterFromCommand(command);
+        String module = parseGradleModuleFromCommand(command);
+        String gradleTask = parseGradleTaskFromCommand(command);
+
+        JsonObject args = new JsonObject();
+        args.addProperty(PARAM_TARGET, target != null ? target : "*");
+        if (!module.isEmpty()) args.addProperty(JSON_MODULE, module);
+        if (gradleTask != null) args.addProperty(PARAM_GRADLE_TASK, gradleTask);
+
+        try {
+            return execute(args);
+        } catch (Exception e) {
+            LOG.warn("executeFromCommand failed", e);
+            return "Error: Failed to run tests: " + e.getMessage();
+        }
+    }
+
+    /**
+     * Extracts the test filter value from a Gradle ({@code --tests &lt;filter&gt;}) or
+     * Maven ({@code -Dtest=&lt;filter&gt;}) command string.
+     * Pure function — no IDE dependency.
+     *
+     * @return the filter value, or {@code null} if no filter is present
+     */
+    @Nullable
+    static String parseTestsFilterFromCommand(@NotNull String command) {
+        var gradleMatcher = java.util.regex.Pattern
+            .compile("--tests\\s+[\"']?([^\"'\\s]+)[\"']?(?:\\s|$)")
+            .matcher(command);
+        if (gradleMatcher.find()) return gradleMatcher.group(1);
+
+        var mavenMatcher = java.util.regex.Pattern
+            .compile("-Dtest=(\\S+)")
+            .matcher(command);
+        if (mavenMatcher.find()) return mavenMatcher.group(1);
+
+        return null;
+    }
+
+    /**
+     * Extracts the module name from a {@code :module:task} Gradle task path in a command.
+     * Returns an empty string if no module prefix is present.
+     * Pure function — no IDE dependency.
+     */
+    @NotNull
+    static String parseGradleModuleFromCommand(@NotNull String command) {
+        var m = java.util.regex.Pattern
+            .compile(":([a-zA-Z][a-zA-Z0-9._-]*):[a-zA-Z]")
+            .matcher(command);
+        return m.find() ? m.group(1) : "";
+    }
+
+    /**
+     * Extracts the Gradle task name from a {@code gradlew [:]task} invocation.
+     * Returns {@code null} if the command is not a recognisable Gradle command.
+     * Pure function — no IDE dependency.
+     */
+    @Nullable
+    static String parseGradleTaskFromCommand(@NotNull String command) {
+        var m = java.util.regex.Pattern.compile(
+            "gradlew?(?:\\.bat)?\\s+(?::[a-z][-a-z0-9._:]*:)?([a-z][a-z0-9]*+)(?:\\s|$)",
+            java.util.regex.Pattern.CASE_INSENSITIVE
+        ).matcher(command);
+        return m.find() ? m.group(1) : null;
     }
 
     // ── Execution lifecycle helpers ──────────────────────────
