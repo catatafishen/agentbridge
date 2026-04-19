@@ -17,6 +17,7 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
 
     private static final Logger LOG = Logger.getInstance(ReadBuildOutputTool.class);
     private static final String PARAM_MAX_CHARS = "max_chars";
+    private static final String PARAM_OFFSET = "offset";
     private static final String JSON_TAB_NAME = "tab_name";
 
     public ReadBuildOutputTool(Project project) {
@@ -52,18 +53,20 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional(JSON_TAB_NAME, TYPE_STRING, "Name of the Build tab to read (default: currently selected or most recent). Use tab names shown in IntelliJ's Build tool window."),
-            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)")
+            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Character offset to start from (default: -1 = show last max_chars chars). Use 0 to read from the beginning, or a previous end offset to paginate forward.")
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
+        int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : -1;
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
 
         try {
             var textRef = new AtomicReference<String>();
-            EdtUtil.invokeAndWait(() -> textRef.set(readBuildOutputOnEdt(tabName, maxChars)));
+            EdtUtil.invokeAndWait(() -> textRef.set(readBuildOutputOnEdt(tabName, maxChars, offset)));
             return textRef.get();
         } catch (Exception e) {
             LOG.warn("Failed to read Build output", e);
@@ -76,7 +79,7 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
         return TerminalOutputRenderer.INSTANCE;
     }
 
-    private String readBuildOutputOnEdt(String tabName, int maxChars) {
+    private String readBuildOutputOnEdt(String tabName, int maxChars, int offset) {
         var toolWindow = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
             .getToolWindow("Build");
         if (toolWindow == null) {
@@ -96,7 +99,7 @@ public final class ReadBuildOutputTool extends InfrastructureTool {
         if (text == null || text.isBlank()) {
             return buildEmptyContentMessage(displayName, contents, target);
         }
-        return formatRunOutput(displayName, text, maxChars);
+        return formatRunOutput(displayName, text, maxChars, offset);
     }
 
     @Nullable

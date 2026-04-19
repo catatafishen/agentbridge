@@ -5,10 +5,12 @@ import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for {@link InfrastructureTool#formatRunOutput(String, String, int)}.
+ * Tests for {@link InfrastructureTool#formatRunOutput(String, String, int, int)}.
  * <p>
  * Uses a minimal concrete subclass to invoke the protected method directly.
  * The method uses no instance state, so passing {@code null} as the project is safe.
@@ -92,6 +94,51 @@ class InfrastructureToolFormatTest {
         assertFalse(result.contains("truncated"), "Should not contain truncation notice");
     }
 
+    @Test
+    void truncationHintMentionsOffset() {
+        String text = "a".repeat(200);
+        String result = tool.callFormatRunOutput("Tab", text, 50);
+
+        assertTrue(result.contains("offset=0"),
+            "Truncation notice should suggest using offset=0 to read from beginning");
+    }
+
+    @Test
+    void offsetZero_readsFromBeginning() {
+        String text = "abcdefghijklmnopqrstuvwxyz"; // 26 chars
+        String result = tool.callFormatRunOutput("Tab", text, 10, 0);
+
+        assertTrue(result.contains("abcdefghij"), "Should start from the beginning");
+        assertFalse(result.contains("qrstuvwxyz"), "Should not contain the tail");
+    }
+
+    @Test
+    void offsetMid_readsFromPosition() {
+        String text = "abcdefghijklmnopqrstuvwxyz"; // 26 chars
+        String result = tool.callFormatRunOutput("Tab", text, 10, 5);
+
+        assertTrue(result.contains("fghijklmno"), "Should start from offset 5");
+        assertFalse(result.contains("abcde"), "Should not contain text before offset");
+    }
+
+    @Test
+    void offsetPaginationHintShowsNextOffset() {
+        String text = "a".repeat(100);
+        String result = tool.callFormatRunOutput("Tab", text, 30, 0);
+
+        assertTrue(result.contains("offset=30"),
+            "Should hint the next offset to continue reading");
+    }
+
+    @Test
+    void offsetBeyondEnd_returnsEmptyChunk() {
+        String text = "short"; // 5 chars
+        String result = tool.callFormatRunOutput("Tab", text, 10, 100);
+
+        assertFalse(result.contains("truncated"), "Should not show truncation for empty chunk");
+        assertFalse(result.contains("offset="), "Should not show next-offset hint when at end");
+    }
+
     // ── Concrete test subclass ──────────────────────────────
 
     /**
@@ -105,7 +152,11 @@ class InfrastructureToolFormatTest {
         }
 
         String callFormatRunOutput(String displayName, String text, int maxChars) {
-            return formatRunOutput(displayName, text, maxChars);
+            return formatRunOutput(displayName, text, maxChars, -1);
+        }
+
+        String callFormatRunOutput(String displayName, String text, int maxChars, int offset) {
+            return formatRunOutput(displayName, text, maxChars, offset);
         }
 
         @Override

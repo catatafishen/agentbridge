@@ -225,19 +225,41 @@ public abstract class InfrastructureTool extends Tool {
         return null;
     }
 
-    protected String formatRunOutput(String displayName, String text, int maxChars) {
+    /**
+     * Formats build/run output for the MCP response.
+     *
+     * @param offset character offset to start reading from ({@code -1} = show last {@code maxChars} chars).
+     *               Pass {@code 0} or a positive value to read from the beginning or a specific position.
+     */
+    protected String formatRunOutput(String displayName, String text, int maxChars, int offset) {
         StringBuilder result = new StringBuilder();
         result.append("Tab: ").append(displayName).append("\n");
         result.append("Total length: ").append(text.length()).append(" chars\n\n");
 
-        if (text.length() > maxChars) {
-            result.append("...(truncated, showing last ").append(maxChars).append(" of ").append(text.length())
-                .append(" chars. Use max_chars parameter to read more.)\n");
-            result.append(text.substring(text.length() - maxChars));
+        if (offset < 0) {
+            // Default: show the tail (most recent output)
+            if (text.length() > maxChars) {
+                result.append("...(truncated, showing last ").append(maxChars)
+                    .append(" of ").append(text.length())
+                    .append(" chars. Use offset=0 to read from beginning.)\n");
+                result.append(text, text.length() - maxChars, text.length());
+            } else {
+                result.append(text);
+            }
         } else {
-            result.append(text);
+            // Paginated read from a specific position
+            int start = Math.min(offset, text.length());
+            int end = Math.min(start + maxChars, text.length());
+            if (start > 0) {
+                result.append("...(showing chars ").append(start).append("-").append(end)
+                    .append(" of ").append(text.length()).append(")\n");
+            }
+            result.append(text, start, end);
+            if (end < text.length()) {
+                result.append("\n...(").append(text.length() - end)
+                    .append(" more chars. Use offset=").append(end).append(" to continue.)");
+            }
         }
-
         return result.toString();
     }
 

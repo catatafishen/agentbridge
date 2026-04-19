@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public final class ReadRunOutputTool extends InfrastructureTool {
 
     private static final String PARAM_MAX_CHARS = "max_chars";
+    private static final String PARAM_OFFSET = "offset";
     private static final String JSON_TAB_NAME = "tab_name";
 
     public ReadRunOutputTool(Project project) {
@@ -53,13 +54,15 @@ public final class ReadRunOutputTool extends InfrastructureTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional(JSON_TAB_NAME, TYPE_STRING, "Name of the Run tab to read (default: most recent)"),
-            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)")
+            Param.optional(PARAM_MAX_CHARS, TYPE_INTEGER, "Maximum characters to return (default: 8000)"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Character offset to start from (default: -1 = show last max_chars chars). Use 0 to read from the beginning, or a previous end offset to paginate forward.")
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) {
         int maxChars = args.has(PARAM_MAX_CHARS) ? args.get(PARAM_MAX_CHARS).getAsInt() : 8000;
+        int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : -1;
         String tabName = args.has(JSON_TAB_NAME) ? args.get(JSON_TAB_NAME).getAsString() : null;
 
         try {
@@ -89,7 +92,7 @@ public final class ReadRunOutputTool extends InfrastructureTool {
                     + "' has no text content (console type: " + consoleClass
                     + "). The run may still be in progress or the console type is unsupported.";
             }
-            return formatRunOutput(target.getDisplayName(), text, maxChars);
+            return formatRunOutput(target.getDisplayName(), text, maxChars, offset);
         } catch (Exception e) {
             return "Error reading Run output: " + e.getMessage();
         }
