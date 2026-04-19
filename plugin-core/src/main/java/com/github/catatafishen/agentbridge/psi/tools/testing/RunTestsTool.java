@@ -17,6 +17,12 @@ import com.intellij.execution.process.ProcessHandler;
 import com.intellij.execution.runners.ExecutionEnvironmentBuilder;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
+import com.intellij.openapi.externalSystem.ExternalSystemManager;
+import com.intellij.openapi.externalSystem.model.ExternalProjectInfo;
+import com.intellij.openapi.externalSystem.model.ProjectKeys;
+import com.intellij.openapi.externalSystem.model.task.TaskData;
+import com.intellij.openapi.externalSystem.service.project.ProjectDataManager;
+import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectFileIndex;
@@ -36,6 +42,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Runs tests by class, method, or wildcard pattern.
@@ -50,7 +58,7 @@ public final class RunTestsTool extends TestingTool {
 
     private static final String JSON_MODULE = "module";
     private static final String PARAM_TARGET = "target";
-    private static final String PARAM_GRADLE_TASK = "gradle_task";
+    private static final String PARAM_TEST_TASK = "test_task";
 
     /**
      * Matches Gradle test task registrations in Kotlin/Groovy DSL build files.
@@ -99,8 +107,8 @@ public final class RunTestsTool extends TestingTool {
     public @NotNull String description() {
         return "Run tests by class, method, or wildcard pattern. Uses IntelliJ's built-in test runner — " +
             "auto-detects the test framework (JUnit, TestNG, pytest, etc.) via ConfigurationContext. " +
-            "Falls back to Gradle for unresolvable targets; use the 'gradle_task' parameter when the " +
-            "project defines a custom test task (e.g., 'unitTest') instead of the standard ':test'. " +
+            "Falls back to the project's build tool for unresolvable targets; use the 'test_task' parameter " +
+            "when the project defines a custom test task (e.g., 'unitTest') instead of the standard 'test'. " +
             "Returns pass/fail counts and failure details. Use list_tests to discover available test targets.";
     }
 
@@ -124,9 +132,9 @@ public final class RunTestsTool extends TestingTool {
         return schema(
             Param.required(PARAM_TARGET, TYPE_STRING, "Test target: fully qualified class class.method (e.g., 'MyTest.testFoo'), or pattern with wildcards (e.g., '*Test')"),
             Param.optional(JSON_MODULE, TYPE_STRING, "Optional module name (e.g., 'plugin-core')", ""),
-            Param.optional(PARAM_GRADLE_TASK, TYPE_STRING,
-                "Gradle task name when the project does not use the standard ':test' task "
-                    + "(e.g., 'unitTest'). Auto-detected from build files if not specified.", "")
+            Param.optional(PARAM_TEST_TASK, TYPE_STRING,
+                "Build task name when the project does not use the standard 'test' task "
+                    + "(e.g., 'unitTest'). Auto-detected from the project model if not specified.", "")
         );
     }
 
@@ -139,7 +147,7 @@ public final class RunTestsTool extends TestingTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String target = args.get(PARAM_TARGET).getAsString();
         String module = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";
-        String gradleTask = args.has(PARAM_GRADLE_TASK) ? args.get(PARAM_GRADLE_TASK).getAsString() : "";
+        String testTask = args.has(PARAM_TEST_TASK) ? args.get(PARAM_TEST_TASK).getAsString() : "";
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -150,7 +158,7 @@ public final class RunTestsTool extends TestingTool {
             String patternResult = tryRunJUnitPattern(target);
             if (patternResult != null) return patternResult;
 
-            return runTestsViaGradleConfig(target, module, gradleTask);
+            return runTestsViaGradleConfig(target, module, testTask);
         }
 
         // Framework-agnostic: resolve the target to a PSI element and use ConfigurationContext
@@ -161,7 +169,7 @@ public final class RunTestsTool extends TestingTool {
         String junitResult = tryRunJUnitNatively(target);
         if (junitResult != null) return junitResult;
 
-        return runTestsViaGradleConfig(target, module, gradleTask);
+        return runTestsViaGradleConfig(target, module, testTask);
     }
 
     // ── Run configuration lookup ─────────────────────────────
@@ -474,10 +482,10 @@ public final class RunTestsTool extends TestingTool {
 
     // ── Gradle runner ────────────────────────────────────────
 
-    private String runTestsViaGradleConfig(String target, String module, String gradleTask) {
+    private String runTestsViaGradleConfig(String target, String module, String testTask) {
         try {
             String taskPrefix = buildGradleTaskPrefix(module);
-            String resolvedTask = gradleTask.isEmpty() ? resolveGradleTestTask() : gradleTask;
+            String resolvedTask = testTask.isEmpty() ? resolveTestTask() : testTask;
             String configName = "Gradle Test: " + target;
 
             CompletableFuture<ProcessHandler> handlerFuture = new CompletableFuture<>();
@@ -557,26 +565,54 @@ public final class RunTestsTool extends TestingTool {
     }
 
     /**
-     * Resolves the Gradle test task name to use. Falls back to build-file auto-detection
-     * and then to the standard {@code "test"} task if nothing custom is found.
+     * Resolves the test task name to use. Falls back to the standard {@code "test"} task
+     * if nothing custom is found via the project model or build files.
      */
-    private String resolveGradleTestTask() {
-        String detected = detectGradleTestTask();
+    private String resolveTestTask() {
+        String detected = detectTestTask();
         return detected != null ? detected : "test";
     }
 
     /**
-     * Scans Gradle build files in the project root and one level of subdirectories for
-     * non-standard test task registrations (tasks of type {@code Test} whose name is not
-     * {@code "test"}).  Returns the first match found, or {@code null} if only the standard
-     * task is present or no build files are found.
+     * Detects a non-standard test task registered in the project.
+     *
+     * <p>Uses IntelliJ's ExternalSystem API as the primary source — works for any build
+     * system imported by IntelliJ (Gradle, Maven, etc.) via {@link TaskData#isTest()}.
+     * Falls back to scanning Gradle build files when no ExternalSystem data is available.</p>
+     *
+     * @return the first non-standard test task name found, or {@code null} if only the
+     * standard {@code "test"} task is present or nothing could be detected
      */
     @Nullable
-    private String detectGradleTestTask() {
+    private String detectTestTask() {
         String basePath = project.getBasePath();
         if (basePath == null) return null;
-        java.io.File root = new java.io.File(basePath);
 
+        for (ExternalSystemManager<?, ?, ?, ?, ?> manager : ExternalSystemApiUtil.getAllManagers()) {
+            var systemId = manager.getSystemId();
+            ExternalProjectInfo info = ProjectDataManager.getInstance()
+                .getExternalProjectData(project, systemId, basePath);
+            if (info == null || info.getExternalProjectStructure() == null) continue;
+            var taskNodes = ExternalSystemApiUtil.findAllRecursively(
+                info.getExternalProjectStructure(), ProjectKeys.TASK);
+            for (var taskNode : taskNodes) {
+                TaskData task = taskNode.getData();
+                String name = task.getName();
+                if (!"test".equals(name) && task.isTest()) return name;
+            }
+        }
+
+        return detectTestTaskFromBuildFiles(basePath);
+    }
+
+    /**
+     * Fallback for projects not yet imported into IntelliJ's ExternalSystem model.
+     * Scans Gradle build files in the project root and first-level subdirectories
+     * using {@link #findTestTaskInBuildFile(String)}.
+     */
+    @Nullable
+    private static String detectTestTaskFromBuildFiles(@NotNull String basePath) {
+        java.io.File root = new java.io.File(basePath);
         for (String fileName : List.of("build.gradle.kts", "build.gradle")) {
             String content = readBuildFileQuietly(new java.io.File(root, fileName));
             if (content != null) {
@@ -584,7 +620,6 @@ public final class RunTestsTool extends TestingTool {
                 if (task != null) return task;
             }
         }
-
         java.io.File[] subdirs = root.listFiles(java.io.File::isDirectory);
         if (subdirs != null) {
             for (java.io.File dir : subdirs) {
@@ -633,13 +668,13 @@ public final class RunTestsTool extends TestingTool {
 
     public String executeFromCommand(@NotNull String command) {
         String target = parseTestsFilterFromCommand(command);
-        String module = parseGradleModuleFromCommand(command);
-        String gradleTask = parseGradleTaskFromCommand(command);
+        String module = parseModuleFromCommand(command);
+        String taskName = parseTaskFromCommand(command);
 
         JsonObject args = new JsonObject();
         args.addProperty(PARAM_TARGET, target != null ? target : "*");
         if (!module.isEmpty()) args.addProperty(JSON_MODULE, module);
-        if (gradleTask != null) args.addProperty(PARAM_GRADLE_TASK, gradleTask);
+        if (taskName != null) args.addProperty(PARAM_TEST_TASK, taskName);
 
         try {
             return execute(args);
@@ -671,29 +706,18 @@ public final class RunTestsTool extends TestingTool {
         return null;
     }
 
-    /**
-     * Extracts the module name from a {@code :module:task} Gradle task path in a command.
-     * Returns an empty string if no module prefix is present.
-     * Pure function — no IDE dependency.
-     */
-    @NotNull
-    static String parseGradleModuleFromCommand(@NotNull String command) {
-        var m = java.util.regex.Pattern
-            .compile(":([a-zA-Z][a-zA-Z0-9._-]*):[a-zA-Z]")
-            .matcher(command);
+    static @NotNull String parseModuleFromCommand(@NotNull String command) {
+        Matcher m = Pattern.compile(
+            "\\s:([a-z][a-z0-9._-]*):[a-z]",
+            Pattern.CASE_INSENSITIVE).matcher(command);
         return m.find() ? m.group(1) : "";
     }
 
-    /**
-     * Extracts the Gradle task name from a {@code gradlew [:]task} invocation.
-     * Returns {@code null} if the command is not a recognisable Gradle command.
-     * Pure function — no IDE dependency.
-     */
     @Nullable
-    static String parseGradleTaskFromCommand(@NotNull String command) {
-        var m = java.util.regex.Pattern.compile(
+    static String parseTaskFromCommand(@NotNull String command) {
+        var m = Pattern.compile(
             "gradlew?(?:\\.bat)?\\s+(?::[a-z][-a-z0-9._:]*:)?([a-z][a-z0-9]*+)(?:\\s|$)",
-            java.util.regex.Pattern.CASE_INSENSITIVE
+            Pattern.CASE_INSENSITIVE
         ).matcher(command);
         return m.find() ? m.group(1) : null;
     }

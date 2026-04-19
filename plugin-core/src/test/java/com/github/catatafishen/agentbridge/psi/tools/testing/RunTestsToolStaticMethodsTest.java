@@ -545,65 +545,65 @@ class RunTestsToolStaticMethodsTest {
         }
     }
 
-    // ── parseGradleModuleFromCommand ──────────────────────────────────────────
+    // ── parseModuleFromCommand ────────────────────────────────────────────────
 
     @Nested
-    @DisplayName("parseGradleModuleFromCommand")
-    class ParseGradleModuleFromCommand {
+    @DisplayName("parseModuleFromCommand")
+    class ParseModuleFromCommand {
 
         @Test
         @DisplayName("extracts module from :module:task notation")
         void moduleAndTask() {
             assertEquals("plugin-core",
-                RunTestsTool.parseGradleModuleFromCommand("./gradlew :plugin-core:test"));
+                RunTestsTool.parseModuleFromCommand("./gradlew :plugin-core:test"));
         }
 
         @Test
         @DisplayName("returns empty string for no module prefix")
         void noModule() {
             assertEquals("",
-                RunTestsTool.parseGradleModuleFromCommand("./gradlew test"));
+                RunTestsTool.parseModuleFromCommand("./gradlew test"));
         }
 
         @Test
         @DisplayName("returns empty string for bare task name")
         void bareTask() {
             assertEquals("",
-                RunTestsTool.parseGradleModuleFromCommand("./gradlew unitTest --tests Foo"));
+                RunTestsTool.parseModuleFromCommand("./gradlew unitTest --tests Foo"));
         }
     }
 
-    // ── parseGradleTaskFromCommand ────────────────────────────────────────────
+    // ── parseTaskFromCommand ──────────────────────────────────────────────────
 
     @Nested
-    @DisplayName("parseGradleTaskFromCommand")
-    class ParseGradleTaskFromCommand {
+    @DisplayName("parseTaskFromCommand")
+    class ParseTaskFromCommand {
 
         @Test
         @DisplayName("extracts task name from gradlew command")
         void gradlewTask() {
             assertEquals("unitTest",
-                RunTestsTool.parseGradleTaskFromCommand("./gradlew unitTest"));
+                RunTestsTool.parseTaskFromCommand("./gradlew unitTest"));
         }
 
         @Test
         @DisplayName("extracts task name with module prefix")
         void taskWithModule() {
             assertEquals("unitTest",
-                RunTestsTool.parseGradleTaskFromCommand("./gradlew :plugin-core:unitTest"));
+                RunTestsTool.parseTaskFromCommand("./gradlew :plugin-core:unitTest"));
         }
 
         @Test
         @DisplayName("extracts task name with following flags")
         void taskWithFlags() {
             assertEquals("unitTest",
-                RunTestsTool.parseGradleTaskFromCommand("./gradlew unitTest --tests com.example.Foo"));
+                RunTestsTool.parseTaskFromCommand("./gradlew unitTest --tests com.example.Foo"));
         }
 
         @Test
         @DisplayName("returns null for non-Gradle command")
         void nonGradleCommand() {
-            assertNull(RunTestsTool.parseGradleTaskFromCommand("mvn test"));
+            assertNull(RunTestsTool.parseTaskFromCommand("mvn test"));
         }
     }
 }
