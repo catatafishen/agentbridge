@@ -471,8 +471,13 @@ public final class PlatformApiCompat {
                     if (!navigated.compareAndSet(false, true)) return null;
                     data.removeDataPackChangeListener(
                         (com.intellij.vcs.log.data.DataPackChangeListener) proxy);
-                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-                        com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                        // This fires asynchronously after VCS refresh — the FocusGuard installed at
+                        // tool-call start is long gone by now. Skip the navigation when the user is
+                        // in the chat prompt so the VCS Log doesn't steal keyboard focus from them.
+                        if (PsiBridgeService.isChatToolWindowActive(project)) return;
+                        com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash);
+                    });
                     return null;
                 });
 

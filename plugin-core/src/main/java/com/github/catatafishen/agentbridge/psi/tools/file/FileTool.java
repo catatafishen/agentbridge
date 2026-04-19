@@ -275,10 +275,10 @@ public abstract class FileTool extends Tool {
     }
 
     /**
-     * Selects the given file in the Project View tree without requesting focus.
+     * Scrolls the Project View tree to the given file if the Project tool window is already open.
      * Throttled to avoid excessive tree navigation during rapid file access.
-     * Skipped entirely when the chat prompt has focus to prevent any focus side-effects
-     * from showing a previously hidden tool window.
+     * Skipped entirely when the chat prompt has focus, and also skipped when the Project window
+     * is not visible — we never force it open, to avoid hijacking the user's terminal or other panel.
      */
     private static void selectInProjectView(Project project, VirtualFile vf) {
         long now = System.currentTimeMillis();
@@ -289,9 +289,9 @@ public abstract class FileTool extends Tool {
         try {
             var twm = ToolWindowManager.getInstance(project);
             var tw = twm.getToolWindow("Project");
-            if (tw != null && !tw.isVisible()) {
-                tw.show();
-            }
+            // Only scroll the tree when the Project window is already open — don't force it
+            // visible when the user is focused on a terminal or other non-project panel.
+            if (tw == null || !tw.isVisible()) return;
             com.intellij.ide.projectView.ProjectView.getInstance(project).select(null, vf, false);
         } catch (Exception e) {
             LOG.debug("Project view select failed", e);

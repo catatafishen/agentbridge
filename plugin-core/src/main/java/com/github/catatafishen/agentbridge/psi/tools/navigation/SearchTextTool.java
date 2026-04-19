@@ -173,6 +173,10 @@ public final class SearchTextTool extends NavigationTool {
         // No PsiManager lookup needed on the EDT.
         List<MatchPosition> snapshot = List.copyOf(positions);
         ApplicationManager.getApplication().invokeLater(() -> {
+            // This invokeLater fires after the tool call returns and FocusGuard is uninstalled.
+            // Skip opening the Find tool window when the user is in chat — they can read the
+            // results in the chat response and don't want the IDE switching panels under them.
+            if (com.github.catatafishen.agentbridge.psi.PsiBridgeService.isChatToolWindowActive(project)) return;
             Usage[] usages = snapshot.stream()
                 .filter(pos -> pos.psiFile() != null)
                 .map(pos -> (Usage) new UsageInfo2UsageAdapter(
