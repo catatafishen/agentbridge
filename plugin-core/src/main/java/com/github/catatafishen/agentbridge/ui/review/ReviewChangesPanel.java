@@ -63,14 +63,6 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     private static final JBColor DIFF_RED = new JBColor(new Color(200, 0, 0), new Color(255, 80, 80));
 
     /**
-     * Approve toggle button colors — green fill when approved, dim outline when pending.
-     * Matches the GitHub-style approve-button convention used in other parts of the UI.
-     */
-    private static final JBColor APPROVE_BG = new JBColor(new Color(0x2d, 0xa4, 0x4e), new Color(0x2d, 0xa4, 0x4e));
-    private static final JBColor APPROVE_FG = new JBColor(Color.WHITE, Color.WHITE);
-    private static final JBColor PENDING_BORDER = new JBColor(new Color(0x8e, 0x95, 0x9e), new Color(0x8b, 0x94, 0x9e));
-
-    /**
      * File status colors — matches IntelliJ's VCS file coloring convention:
      * green = added, blue = modified, grey = deleted.
      */
@@ -232,7 +224,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         fileCol.setPreferredWidth(JBUI.scale(280));
         fileCol.setCellRenderer(new FileCellRenderer());
 
-        // COL_APPROVE — green toggle pill (✓) when approved, outline when pending
+        // COL_APPROVE — toolbar-style toggle button: highlighted when approved, plain when pending
         TableColumn approveCol = table.getColumnModel().getColumn(ReviewTableModel.COL_APPROVE);
         approveCol.setPreferredWidth(JBUI.scale(32));
         approveCol.setMaxWidth(JBUI.scale(36));
@@ -538,74 +530,47 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     }
 
     /**
-     * Approve column: a pill-shaped toggle button. Green fill with "✓ Approved" when the row is
-     * approved; a dim outline with "Approve" when pending. Matches the visual language of the
-     * auto-approve toggle in the toolbar.
+     * Renders the approve column as a toolbar-style icon toggle button.
+     * Uses {@link JBUI.CurrentTheme.ActionButton#pressedBackground()} for the highlighted
+     * background when approved — the exact same tint IntelliJ uses for toggled toolbar buttons —
+     * so the inline cell button and the Auto-Approve toolbar toggle share the same visual language.
      */
-    private static final class ApproveToggleRenderer implements TableCellRenderer {
-        private final ApproveButtonPanel button = new ApproveButtonPanel();
+    private static final class ApproveToggleRenderer extends JLabel implements TableCellRenderer {
+        private boolean approved;
+
+        ApproveToggleRenderer() {
+            setHorizontalAlignment(CENTER);
+            setOpaque(false);
+            setIcon(AllIcons.Actions.Commit);
+        }
 
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                                                        boolean isSelected, boolean hasFocus,
                                                        int row, int column) {
             if (value instanceof ReviewItem item) {
-                button.setState(item.approved(), isSelected, table);
+                approved = item.approved();
+                setToolTipText(approved ? "Approved — click to unapprove" : "Approve this change");
             }
-            return button;
-        }
-    }
-
-    /**
-     * Pill-shaped button panel that paints itself as a toggle button without requiring
-     * an actual Swing button component (avoids focus/repaint issues in a table renderer).
-     */
-    private static final class ApproveButtonPanel extends JPanel {
-        private boolean approved;
-
-        ApproveButtonPanel() {
-            setOpaque(false);
-            Font base = UIManager.getFont("Label.font");
-            if (base != null) setFont(base.deriveFont((float) JBUI.scaleFontSize(11)));
-        }
-
-        void setState(boolean approved, boolean rowSelected, JTable table) {
-            this.approved = approved;
-            setBackground(rowSelected ? table.getSelectionBackground() : table.getBackground());
-            setToolTipText(approved ? "Approved — click to unapprove" : "Click to approve this change");
+            setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+            return this;
         }
 
         @Override
         protected void paintComponent(Graphics g) {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-
             g2.setColor(getBackground());
             g2.fillRect(0, 0, getWidth(), getHeight());
-
-            int arc = JBUI.scale(10);
-            int hpad = JBUI.scale(6);
-            int vpad = JBUI.scale(5);
-            int btnW = getWidth() - 2 * hpad;
-            int btnH = getHeight() - 2 * vpad;
-
             if (approved) {
-                g2.setColor(APPROVE_BG);
-                g2.fillRoundRect(hpad, vpad, btnW, btnH, arc, arc);
-                g2.setColor(APPROVE_FG);
-                g2.setFont(getFont().deriveFont(Font.BOLD, JBUI.scaleFontSize(13)));
-                FontMetrics fm = g2.getFontMetrics();
-                String mark = "✓";
-                int textX = hpad + (btnW - fm.stringWidth(mark)) / 2;
-                int textY = vpad + (btnH + fm.getAscent() - fm.getDescent()) / 2;
-                g2.drawString(mark, textX, textY);
-            } else {
-                g2.setColor(PENDING_BORDER);
-                g2.drawRoundRect(hpad, vpad, btnW - 1, btnH - 1, arc, arc);
+                int size = JBUI.scale(22);
+                int x = (getWidth() - size) / 2;
+                int y = (getHeight() - size) / 2;
+                g2.setColor(JBUI.CurrentTheme.ActionButton.pressedBackground());
+                g2.fillRoundRect(x, y, size, size, JBUI.scale(4), JBUI.scale(4));
             }
-
             g2.dispose();
+            super.paintComponent(g);
         }
     }
 
@@ -613,24 +578,38 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
      * Right-hand action column: rollback icon for pending rows (opens reject dialog),
      * X icon for approved rows (removes from list).
      */
-    private static final class RejectOrRemoveRenderer extends DefaultTableCellRenderer {
+    private static final class RejectOrRemoveRenderer extends JLabel implements TableCellRenderer {
+
+        RejectOrRemoveRenderer() {
+            setHorizontalAlignment(CENTER);
+            setOpaque(false);
+        }
+
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                                                        boolean isSelected, boolean hasFocus,
                                                        int row, int column) {
-            Component c = super.getTableCellRendererComponent(table, "", isSelected, hasFocus, row, column);
-            if (value instanceof ReviewItem item && c instanceof JLabel label) {
-                label.setText("");
-                label.setHorizontalAlignment(CENTER);
+            setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+            if (value instanceof ReviewItem item) {
                 if (item.approved()) {
-                    label.setIcon(AllIcons.Actions.Close);
-                    label.setToolTipText("Remove from list");
+                    setIcon(AllIcons.Actions.Close);
+                    setToolTipText("Remove from list");
                 } else {
-                    label.setIcon(AllIcons.Actions.Rollback);
-                    label.setToolTipText("Reject this change…");
+                    setIcon(AllIcons.Actions.Rollback);
+                    setToolTipText("Reject this change…");
                 }
             }
-            return c;
+            return this;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setColor(getBackground());
+            g2.fillRect(0, 0, getWidth(), getHeight());
+            g2.dispose();
+            super.paintComponent(g);
         }
     }
 }
+
