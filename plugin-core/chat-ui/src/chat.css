@@ -180,7 +180,7 @@ chat-container {
     background: var(--user-a12);
     border-radius: var(--r-lg) var(--r-lg) var(--r-sm) var(--r-lg);
     padding: var(--sp-3) var(--sp-7);
-    max-width: calc(94% + 26px);
+    max-width: 94%;
     font-weight: normal;
     white-space: pre-wrap;
     font-size: 0.88em;

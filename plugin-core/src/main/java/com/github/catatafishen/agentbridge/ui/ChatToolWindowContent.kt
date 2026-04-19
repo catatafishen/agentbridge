@@ -700,9 +700,31 @@ class ChatToolWindowContent(
 
         // Rounded border makes the chat area a distinct panel matching the side panel and input row,
         // styled like the IDE's own tool-window frames.
+        // Custom border with 0 bottom inset: the rounded rect is drawn taller than the component so
+        // the bottom arc is clipped away, leaving only top, left, and right sides visible. This
+        // eliminates the 1px gap that RoundedLineBorder's bottom inset would otherwise create between
+        // the chat output and the input box.
         responsePanelContainer.border = JBUI.Borders.compound(
             JBUI.Borders.empty(4, 4, 0, 4),
-            com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
+            object : javax.swing.border.AbstractBorder() {
+                override fun getBorderInsets(c: Component, insets: Insets): Insets {
+                    insets.set(1, 1, 0, 1)
+                    return insets
+                }
+
+                override fun paintBorder(c: Component, g: Graphics, x: Int, y: Int, width: Int, height: Int) {
+                    val g2 = g.create() as Graphics2D
+                    try {
+                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                        g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
+                        val arc = JBUI.scale(8)
+                        // Extend height by arc so the bottom arc falls outside the clip and is not painted.
+                        g2.drawRoundRect(x, y, width - 1, height - 1 + arc, arc, arc)
+                    } finally {
+                        g2.dispose()
+                    }
+                }
+            }
         )
 
         consolePanel.onStatusMessage = { type, message ->
