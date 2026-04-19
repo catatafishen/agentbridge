@@ -174,9 +174,10 @@ public final class SearchTextTool extends NavigationTool {
         List<MatchPosition> snapshot = List.copyOf(positions);
         ApplicationManager.getApplication().invokeLater(() -> {
             // This invokeLater fires after the tool call returns and FocusGuard is uninstalled.
-            // Skip opening the Find tool window when the user is in chat — they can read the
-            // results in the chat response and don't want the IDE switching panels under them.
-            if (com.github.catatafishen.agentbridge.psi.PsiBridgeService.isChatToolWindowActive(project)) return;
+            // Only suppress opening the Find window when the user is actively typing — that is,
+            // chat is focused, the input is non-empty, and it changed within the last 10 seconds.
+            // When the input is idle or empty, showing the Find window is useful follow-along.
+            if (com.github.catatafishen.agentbridge.psi.PsiBridgeService.isUserTypingInChat(project)) return;
             Usage[] usages = snapshot.stream()
                 .filter(pos -> pos.psiFile() != null)
                 .map(pos -> (Usage) new UsageInfo2UsageAdapter(

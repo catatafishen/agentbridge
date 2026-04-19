@@ -155,6 +155,18 @@ public final class PsiBridgeService implements Disposable {
      */
     private volatile boolean chatToolWindowActiveCache;
 
+    /**
+     * Millisecond timestamp of the last change to the chat input text area.
+     * Updated by {@link #notifyChatInputChanged}; read by {@link #isUserTypingInChat}.
+     */
+    private volatile long lastChatInputChangeMs = 0L;
+
+    /**
+     * Whether the chat input text area is currently empty.
+     * Updated by {@link #notifyChatInputChanged}; read by {@link #isUserTypingInChat}.
+     */
+    private volatile boolean chatInputIsEmpty = true;
+
     private final Project project;
     private final ToolRegistry registry;
     private final java.util.Set<String> sessionAllowedTools =
@@ -641,6 +653,38 @@ public final class PsiBridgeService implements Disposable {
         } catch (Exception e) {
             LOG.debug("Failed to refresh chat tool window state", e);
         }
+    }
+
+    /**
+     * Notifies the service that the chat input text area content has changed.
+     * Called by {@link com.github.catatafishen.agentbridge.ui.ChatToolWindowContent}
+     * from the prompt's document listener. Thread-safe (only writes volatile fields).
+     *
+     * @param project the current project
+     * @param isEmpty whether the input is now empty
+     */
+    public static void notifyChatInputChanged(@NotNull Project project, boolean isEmpty) {
+        PsiBridgeService service = getInstance(project);
+        if (service == null) return;
+        service.lastChatInputChangeMs = System.currentTimeMillis();
+        service.chatInputIsEmpty = isEmpty;
+    }
+
+    /**
+     * Returns {@code true} if the user is actively composing a message in the chat input:
+     * the chat tool window is active, the input is non-empty, and the content changed
+     * within the last 10 seconds.
+     *
+     * <p>Use this to suppress "follow agent" UI side effects (e.g. opening the Find tool
+     * window) that would interrupt the user mid-keystroke, while still allowing those
+     * effects when the input is idle or empty (the user is watching, not typing).</p>
+     */
+    public static boolean isUserTypingInChat(@NotNull Project project) {
+        if (!isChatToolWindowActive(project)) return false;
+        PsiBridgeService service = getInstance(project);
+        if (service == null) return false;
+        if (service.chatInputIsEmpty) return false;
+        return (System.currentTimeMillis() - service.lastChatInputChangeMs) < 10_000L;
     }
 
     /**

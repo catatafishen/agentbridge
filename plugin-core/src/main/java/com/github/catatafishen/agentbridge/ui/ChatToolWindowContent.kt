@@ -934,6 +934,9 @@ class ChatToolWindowContent(
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
             override fun documentChanged(event: com.intellij.openapi.editor.event.DocumentEvent) {
+                com.github.catatafishen.agentbridge.psi.PsiBridgeService.notifyChatInputChanged(
+                    project, event.document.textLength == 0
+                )
                 ApplicationManager.getApplication().invokeLater {
                     promptTextArea.revalidate()
                     checkSlashCommandAutocomplete()
