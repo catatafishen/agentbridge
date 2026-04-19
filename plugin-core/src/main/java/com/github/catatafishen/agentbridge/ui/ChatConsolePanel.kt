@@ -850,9 +850,12 @@ class ChatConsolePanel(
         val safe = escJs(entryId)
         executeJs(
             """
-            (function(){
+            (function attempt(n){
                 var el = document.getElementById('$safe');
-                if (!el) return;
+                if (!el) {
+                    if (n > 0) { setTimeout(function(){ attempt(n-1); }, 80); }
+                    return;
+                }
                 ChatController.setAutoScroll(false);
                 el.scrollIntoView({behavior:'smooth', block:'center'});
                 el.classList.add('prompt-flash');
@@ -860,7 +863,7 @@ class ChatConsolePanel(
                     el.classList.remove('prompt-flash');
                     ChatController.resumeAutoScroll();
                 }, 900);
-            })()
+            })(15)
             """.trimIndent()
         )
     }

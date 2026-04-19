@@ -206,13 +206,14 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     }
 
     private static final String FONT_CLOSE = "</font>";
+    private static final String DIV_CLOSE = "</div>";
 
     private static @NotNull String colorSpan(@NotNull Color c, @NotNull String text) {
         return "<font color='" + colorHex(c) + "'>" + text + FONT_CLOSE;
     }
 
     private void configureTable() {
-        table.setRowHeight(JBUI.scale(32));
+        table.setRowHeight(JBUI.scale(52));
         table.setShowGrid(false);
         table.setIntercellSpacing(new Dimension(0, 0));
         table.setFillsViewportHeight(true);
@@ -489,35 +490,35 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         private @NotNull String buildHtml(@NotNull String fileName, @NotNull ReviewItem item,
                                           boolean isSelected, @NotNull ReviewDiffCountAnimator.DiffCounts counts) {
             StringBuilder sb = new StringBuilder("<html>");
+
+            // Row 1: timestamp (small, muted)
+            if (item.lastEditedMillis() > 0) {
+                sb.append("<div><font size='-2' color='gray'>")
+                    .append(TimestampDisplayFormatter.formatEpochMillis(item.lastEditedMillis()))
+                    .append(FONT_CLOSE).append(DIV_CLOSE);
+            }
+
+            // Row 2: filename (status-colored, main text)
             if (!isSelected) {
                 Color statusColor = switch (item.status()) {
                     case ADDED -> STATUS_ADDED;
                     case MODIFIED -> STATUS_MODIFIED;
                     case DELETED -> STATUS_DELETED;
                 };
-                sb.append(colorSpan(statusColor, escapeHtml(fileName)));
+                sb.append("<div>").append(colorSpan(statusColor, escapeHtml(fileName))).append(DIV_CLOSE);
             } else {
-                sb.append(escapeHtml(fileName));
+                sb.append("<div>").append(escapeHtml(fileName)).append(DIV_CLOSE);
             }
 
-            // Diff-colored line counts
+            // Row 3: diff counts (small, colored)
             if (counts.added() > 0 || counts.removed() > 0) {
-                sb.append(" <font size='-2'>");
-                if (counts.added() > 0) {
-                    sb.append(colorSpan(DIFF_GREEN, "+" + counts.added()));
-                }
+                sb.append("<div><font size='-2'>");
+                if (counts.added() > 0) sb.append(colorSpan(DIFF_GREEN, "+" + counts.added()));
                 if (counts.removed() > 0) {
                     if (counts.added() > 0) sb.append(" ");
                     sb.append(colorSpan(DIFF_RED, "-" + counts.removed()));
                 }
-                sb.append(FONT_CLOSE);
-            }
-
-            // Timestamp
-            if (item.lastEditedMillis() > 0) {
-                sb.append(" <font size='-2' color='gray'>");
-                sb.append(TimestampDisplayFormatter.formatEpochMillis(item.lastEditedMillis()));
-                sb.append(FONT_CLOSE);
+                sb.append(FONT_CLOSE).append(DIV_CLOSE);
             }
 
             sb.append("</html>");

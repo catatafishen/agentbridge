@@ -51,4 +51,34 @@ class ReviewDiffCountAnimatorTest {
         assertEquals(4, end.removed());
         assertFalse(animator.hasActiveAnimations(finished));
     }
+
+    @Test
+    void newItemAnimatesFromZero() {
+        ReviewDiffCountAnimator animator = new ReviewDiffCountAnimator();
+        ReviewItem item = new ReviewItem(
+            "/tmp/Bar.java",
+            "Bar.java",
+            ReviewItem.Status.ADDED,
+            null,
+            ApprovalState.PENDING,
+            1L,
+            20,
+            0
+        );
+
+        animator.sync(List.of(item), 0L);
+
+        ReviewDiffCountAnimator.DiffCounts atStart = animator.displayCounts(item, 0L);
+        assertEquals(0, atStart.added(), "new item should start at 0");
+        assertTrue(animator.hasActiveAnimations(0L));
+
+        long midpoint = ReviewDiffCountAnimator.ANIMATION_DURATION_MS / 2;
+        ReviewDiffCountAnimator.DiffCounts mid = animator.displayCounts(item, midpoint);
+        assertTrue(mid.added() > 0 && mid.added() < 20, "midpoint should be between 0 and target");
+
+        long finished = ReviewDiffCountAnimator.ANIMATION_DURATION_MS + 1L;
+        ReviewDiffCountAnimator.DiffCounts end = animator.displayCounts(item, finished);
+        assertEquals(20, end.added());
+        assertFalse(animator.hasActiveAnimations(finished));
+    }
 }

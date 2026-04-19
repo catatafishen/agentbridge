@@ -11,7 +11,7 @@ import java.util.Set;
 
 final class ReviewDiffCountAnimator {
 
-    static final long ANIMATION_DURATION_MS = 180L;
+    static final long ANIMATION_DURATION_MS = 600L;
 
     private final Map<String, DiffCountState> states = new HashMap<>();
 
@@ -21,7 +21,7 @@ final class ReviewDiffCountAnimator {
             livePaths.add(item.path());
             DiffCountState state = states.get(item.path());
             if (state == null) {
-                states.put(item.path(), DiffCountState.stationary(item.linesAdded(), item.linesRemoved()));
+                states.put(item.path(), DiffCountState.animateFromZero(item.linesAdded(), item.linesRemoved(), nowMillis));
             } else {
                 state.retarget(item.linesAdded(), item.linesRemoved(), nowMillis);
             }
@@ -65,6 +65,10 @@ final class ReviewDiffCountAnimator {
 
         static @NotNull DiffCountState stationary(int added, int removed) {
             return new DiffCountState(added, removed, added, removed, 0L);
+        }
+
+        static @NotNull DiffCountState animateFromZero(int added, int removed, long startMillis) {
+            return new DiffCountState(0, 0, added, removed, startMillis);
         }
 
         void retarget(int added, int removed, long nowMillis) {
