@@ -370,7 +370,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         private final Project project;
 
         AutoApproveToggleAction(@NotNull Project project) {
-            super("Auto-Approve", "Apply agent edits without per-file approval", AllIcons.Actions.Lightning);
+            super("Auto-Approve", "Apply agent edits without per-file approval", AllIcons.Actions.Checked);
             this.project = project;
         }
 
@@ -541,7 +541,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         ApproveToggleRenderer() {
             setHorizontalAlignment(CENTER);
             setOpaque(false);
-            setIcon(AllIcons.Actions.Commit);
+            setIcon(AllIcons.Actions.Checked);
         }
 
         @Override

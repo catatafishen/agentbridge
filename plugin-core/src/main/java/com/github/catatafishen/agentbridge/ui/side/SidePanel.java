@@ -16,11 +16,11 @@ import java.awt.*;
  * Uses {@link PlatformApiCompat#createJBTabsPanel} for native IntelliJ flat tab styling.
  * Hosts four tabs:
  * <ol>
- *   <li><b>Review</b> — the existing {@link ReviewChangesPanel} with pending agent edits.</li>
+ *   <li><b>Diff</b> — the existing {@link ReviewChangesPanel} with pending agent edits.</li>
  *   <li><b>Files</b> — configuration/agent-definition files for this project.</li>
- *   <li><b>Todos</b> — rendered view of the active agent session's {@code plan.md},
+ *   <li><b>Todo</b> — rendered view of the active agent session's {@code plan.md},
  *       with a {@code (done/total)} badge in the tab title when checkbox-style todos exist.</li>
- *   <li><b>Prompts</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
+ *   <li><b>Search</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
  * </ol>
  * Tab order is deliberate: review is the most time-sensitive and sits first.
  */
@@ -29,7 +29,6 @@ public final class SidePanel extends JPanel implements Disposable {
     private static final int TAB_REVIEW = 0;
     private static final int TAB_FILES = 1;
     private static final int TAB_TODOS = 2;
-    private static final int TAB_PROMPTS = 3;
 
     private final transient PlatformApiCompat.JBTabsPanel tabsPanel;
 
@@ -45,15 +44,15 @@ public final class SidePanel extends JPanel implements Disposable {
         Disposer.register(this, promptsPanel);
 
         tabsPanel = PlatformApiCompat.createJBTabsPanel(project, this);
-        tabsPanel.addTab(reviewPanel, "Review");
+        tabsPanel.addTab(reviewPanel, "Diff");
         tabsPanel.addTab(projectFilesPanel, "Files");
-        tabsPanel.addTab(todoPanel, "Todos");
-        tabsPanel.addTab(promptsPanel, "Prompts");
+        tabsPanel.addTab(todoPanel, "Todo");
+        tabsPanel.addTab(promptsPanel, "Search");
 
         todoPanel.setOnProgressChanged(() -> {
             int total = todoPanel.getTotal();
             int done = todoPanel.getDone();
-            String title = total > 0 ? "Todos (" + done + "/" + total + ")" : "Todos";
+            String title = total > 0 ? "Todo (" + done + "/" + total + ")" : "Todo";
             tabsPanel.setTabTitle(TAB_TODOS, title);
         });
 
@@ -68,7 +67,7 @@ public final class SidePanel extends JPanel implements Disposable {
     }
 
     /**
-     * Switches to the Review tab. Safe to call from the EDT.
+     * Switches to the Diff tab. Safe to call from the EDT.
      */
     public void selectReviewTab() {
         tabsPanel.selectTab(TAB_REVIEW);

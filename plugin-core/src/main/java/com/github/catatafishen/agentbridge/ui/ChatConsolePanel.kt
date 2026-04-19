@@ -29,7 +29,11 @@ import javax.swing.JComponent
  * Chat panel — web-component-based implementation.
  * All rendering delegated to JS ChatController; Kotlin manages data model and bridge.
  */
-class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>(BorderLayout()), ChatPanelApi {
+class ChatConsolePanel(
+    private val project: Project,
+    /** When false the panel is not registered in [instances] and won't replace the main panel entry. */
+    private val registerAsMain: Boolean = true,
+) : JBPanel<ChatConsolePanel>(BorderLayout()), ChatPanelApi {
 
     override val component: JComponent get() = this
     override var onQuickReply: ((String) -> Unit)? = null
@@ -275,7 +279,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
             fallbackArea = JBTextArea().apply { isEditable = false; lineWrap = true; wrapStyleWord = true }
             add(JBScrollPane(fallbackArea), BorderLayout.CENTER)
         }
-        instances[project] = this
+        if (registerAsMain) instances[project] = this
         registerChipStateListener()
     }
 
@@ -1157,7 +1161,7 @@ class ChatConsolePanel(private val project: Project) : JBPanel<ChatConsolePanel>
     override fun dispose() {
         registry.removeKindStateListener(kindStateListener)
         repaintTimer.stop()
-        instances.remove(project)
+        if (registerAsMain) instances.remove(project)
     }
 
     // ── Internal ───────────────────────────────────────────────────
