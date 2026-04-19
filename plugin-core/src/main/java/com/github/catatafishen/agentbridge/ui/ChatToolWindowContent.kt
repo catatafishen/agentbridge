@@ -42,6 +42,7 @@ class ChatToolWindowContent(
         const val CARD_CONNECT = "connect"
         const val CARD_CHAT = "chat"
         private const val PREF_SIDE_PANEL_OPEN = "agentbridge.sidePanelOpen"
+        private const val PREF_INPUT_PANEL_HEIGHT = "agentbridge.inputPanelHeight"
 
         private val instances = java.util.concurrent.ConcurrentHashMap<Project, ChatToolWindowContent>()
 
@@ -718,7 +719,8 @@ class ChatToolWindowContent(
             }
         }
         inputSection.isOpaque = false
-        inputSection.border = JBUI.Borders.empty(4)
+        // 8px top inset doubles as the resize drag zone (see resizeHandler below)
+        inputSection.border = JBUI.Borders.empty(8, 4, 4, 4)
         inputSection.add(inputRow, BorderLayout.CENTER)
 
         val sideButtonsPanel = createSideButtonsPanel()
@@ -734,16 +736,79 @@ class ChatToolWindowContent(
 
         val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
         bottomSection.isOpaque = false
-        // Left/right padding mirrors responsePanelContainer's compound(empty(4),...) so columns align
-        bottomSection.border = JBUI.Borders.empty(0, 4, 4, 4)
+        // Left/right padding mirrors responsePanelContainer's compound(empty(4),...) so columns align.
+        // Right gets extra padding to match the chat bubble right margin; left gets 5px more.
+        bottomSection.border = JBUI.Borders.empty(0, 9, 8, 20)
         bottomSection.add(aboveInputRow, BorderLayout.NORTH)
         bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
 
-        val splitter = com.intellij.ui.OnePixelSplitter(true, "AgentBridge.InputSplitter", 0.78f)
-        splitter.divider.isOpaque = false
-        splitter.firstComponent = topPanel
-        splitter.secondComponent = bottomSection
-        panel.add(splitter, BorderLayout.CENTER)
+        // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
+        // We replace OnePixelSplitter (which draws a visible 1px divider) with a plain BorderLayout
+        // and wire up a mouse resize handler on inputSection's top inset area.
+        val splitPanel = JBPanel<JBPanel<*>>(BorderLayout())
+        splitPanel.isOpaque = false
+
+        val savedInputHeight = props.getInt(PREF_INPUT_PANEL_HEIGHT, 0)
+
+        // activeResize: startScreenY to startBottomHeight; null = not currently resizing
+        var activeResize: Pair<Int, Int>? = null
+        val resizeDragZone = JBUI.scale(8)
+
+        val resizeHandler = object : java.awt.event.MouseAdapter() {
+            override fun mouseMoved(e: java.awt.event.MouseEvent) {
+                inputSection.cursor = if (e.y <= resizeDragZone)
+                    Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
+                else
+                    Cursor.getDefaultCursor()
+            }
+
+            override fun mousePressed(e: java.awt.event.MouseEvent) {
+                if (e.y <= resizeDragZone) {
+                    activeResize = Pair(e.locationOnScreen.y, bottomSection.height)
+                }
+            }
+
+            override fun mouseDragged(e: java.awt.event.MouseEvent) {
+                val (startY, startH) = activeResize ?: return
+                val delta = startY - e.locationOnScreen.y
+                val minH = JBUI.scale(60)
+                val maxH = (splitPanel.height - JBUI.scale(80)).coerceAtLeast(minH)
+                bottomSection.preferredSize = Dimension(bottomSection.width, (startH + delta).coerceIn(minH, maxH))
+                splitPanel.revalidate()
+            }
+
+            override fun mouseReleased(e: java.awt.event.MouseEvent) {
+                if (activeResize != null) {
+                    activeResize = null
+                    props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
+                }
+            }
+
+            override fun mouseExited(e: java.awt.event.MouseEvent) {
+                if (activeResize == null) inputSection.cursor = Cursor.getDefaultCursor()
+            }
+        }
+        inputSection.addMouseMotionListener(resizeHandler)
+        inputSection.addMouseListener(resizeHandler)
+
+        // Apply saved (or default) height on first layout pass, once the panel has a real size.
+        // The listener removes itself so it only fires once.
+        splitPanel.addComponentListener(object : java.awt.event.ComponentAdapter() {
+            override fun componentResized(e: java.awt.event.ComponentEvent) {
+                if (splitPanel.height <= 0) return
+                splitPanel.removeComponentListener(this)
+                val targetH = if (savedInputHeight > 0) savedInputHeight
+                else (splitPanel.height * 0.22).toInt()
+                val minH = JBUI.scale(60)
+                val maxH = (splitPanel.height - JBUI.scale(80)).coerceAtLeast(minH)
+                bottomSection.preferredSize = Dimension(bottomSection.width, targetH.coerceIn(minH, maxH))
+                splitPanel.revalidate()
+            }
+        })
+
+        splitPanel.add(topPanel, BorderLayout.CENTER)
+        splitPanel.add(bottomSection, BorderLayout.SOUTH)
+        panel.add(splitPanel, BorderLayout.CENTER)
 
         billing.loadBillingData()
 
