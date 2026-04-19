@@ -756,7 +756,7 @@ class ChatToolWindowContent(
         bottomSection.isOpaque = false
         // Left/right padding mirrors responsePanelContainer's compound(empty(4),...) so columns align.
         // Right gets extra padding to match the chat bubble right margin; left gets 5px more.
-        bottomSection.border = JBUI.Borders.empty(0, 9, 8, 20)
+        bottomSection.border = JBUI.Borders.empty(0, 9, 8, 17)
         bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
 
         // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
