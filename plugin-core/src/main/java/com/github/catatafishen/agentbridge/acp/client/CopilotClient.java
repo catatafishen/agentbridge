@@ -398,6 +398,24 @@ public final class CopilotClient extends AcpClient {
         return null;
     }
 
+    private static final Model AUTO_MODEL = new Model(
+        "auto",
+        "Auto (best for task)",
+        "GitHub Copilot automatically selects the best model for your task. " +
+            "Useful when you've reached the rate limit of a specific model.",
+        null
+    );
+
+    /**
+     * Prepends the {@code auto} model to whatever the CLI reports so users can always
+     * switch to it — Copilot CLI does not include it in the {@code session/new} model list
+     * but accepts {@code "auto"} as a valid model ID via {@code session/set_model}.
+     */
+    @Override
+    protected List<Model> getDefaultModels() {
+        return List.of(AUTO_MODEL);
+    }
+
     // ─── Agent definitions ───────────────────────────
 
     private void writeAgentDefinitions(String configDir) throws IOException {

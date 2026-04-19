@@ -401,6 +401,14 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (response.models() != null) {
             availableModels.clear();
             availableModels.addAll(response.models());
+            // Prepend any subclass-defined default models not already in the list.
+            // Iterating in reverse so the first default ends up at index 0.
+            List<Model> defaults = getDefaultModels();
+            for (int i = defaults.size() - 1; i >= 0; i--) {
+                Model m = defaults.get(i);
+                boolean absent = availableModels.stream().noneMatch(a -> a.id().equals(m.id()));
+                if (absent) availableModels.addFirst(m);
+            }
         }
 
         if (response.currentModelId() != null) {
@@ -827,6 +835,16 @@ public abstract class AcpClient extends AbstractAgentClient {
     @Override
     public final List<Model> getAvailableModels() {
         return Collections.unmodifiableList(availableModels);
+    }
+
+    /**
+     * Models that should always appear in the model list, regardless of what the agent
+     * reports in {@code session/new}. Subclasses override this to inject agent-specific
+     * defaults (e.g. {@code "auto"} for Copilot) that the CLI omits from its model list.
+     * Any model whose ID is already present in the session response is not duplicated.
+     */
+    protected List<Model> getDefaultModels() {
+        return List.of();
     }
 
     @Override
