@@ -48,7 +48,7 @@ startStreaming()                               finishResponse()
      │                                              │
      ├── setFrameRate(60)                           ├── setFrameRate(30)
      ├── repaintTimer.start()  (200ms invalidate)   ├── repaintTimer.stop()
-     └── setStreaming(true, false)  [disable smooth] └── restore smooth scroll
+     └── setStreaming(true, false)  [disable smooth] └── restore smooth-scroll preference
 ```
 
 ### Per-token flow
@@ -67,6 +67,8 @@ Kotlin appendText()
 - **One scroll write per rAF** — the `_scrollRAF` gate in `ChatContainer` ensures only one
   `scrollIfNeeded()` runs per animation frame, regardless of how many mutations occurred.
 - **No smooth scroll during streaming** — `setStreaming(true, false)` disables CSS smooth scroll.
+- **Programmatic bottom-lock is always instant** — `scrollIfNeeded()`, `forceScroll()`, and
+  `compensateScroll()` all go through `_scrollToInstant()` even when smooth scrolling is enabled.
 - **CEF invalidation safety net** — `repaintTimer` fires `cef.invalidate()` every 200ms during
   streaming, plus throttled per-`executeJs` invalidation (50ms) catches inter-timer gaps.
 - **No code block decoration during streaming** — `_setupCodeBlocks()` skips `<pre>` elements
@@ -96,9 +98,11 @@ Kotlin appendText()
 
 ### Fix 2 — Autoscroll stutter fix (`f8eb82f5`)
 
-Added `_scrollToInstant()` method that temporarily sets `scroll-behavior: auto` for each
-programmatic scroll, then restores. Prevents stutter loops when smooth scroll is re-enabled after
-streaming. During streaming this is a noop since behavior is already 'auto'.
+Added `_scrollToInstant()` so programmatic bottom-locking can temporarily set
+`scroll-behavior: auto`, perform the scroll, then restore the previous CSS setting. This now backs
+`scrollIfNeeded()`, `forceScroll()`, and `compensateScroll()`, preventing stutter loops when smooth
+scroll is re-enabled after streaming. During streaming this is a noop since behavior is already
+`'auto'`.
 
 ### Fix 3 — DOM churn + invalidation throttle (this commit)
 
@@ -149,7 +153,7 @@ streaming. During streaming this is a noop since behavior is already 'auto'.
 | `ChatContainer.ts` | `MutationObserver` | Auto-scroll trigger — debounced via `_scrollRAF` |
 | `ChatContainer.ts` | `_copyObs` | Code block buttons — skips streaming bubbles |
 | `ChatContainer.ts` | `_setupCodeBlocks()` | Checks `pre.closest('message-bubble[streaming]')` |
-| `ChatContainer.ts` | `setStreaming()` | Toggles smooth scroll, updates `_streaming` flag |
+| `ChatContainer.ts` | `setStreaming()` | Toggles CSS smooth-scroll policy between streaming and idle |
 | `ChatContainer.ts` | `_scrollToInstant()` | Temporarily forces `scroll-behavior: auto` for scroll |
 | `ChatController.ts` | `appendAgentText()` | No longer calls synchronous `scrollIfNeeded()` |
 | `MessageBubble.ts` | `appendStreamingText()` | rAF-debounced markdown re-render |
@@ -165,7 +169,8 @@ When modifying the streaming pipeline, watch for:
    risks creating a mutation loop. Always check for `message-bubble[streaming]` before adding nodes.
 
 2. **Synchronous `scrollTop` writes** — never write `scrollTop` directly during streaming outside
-   the `_scrollRAF` gate. Use `scrollIfNeeded()` which goes through the debounce path.
+   the `_scrollRAF` gate. Use `scrollIfNeeded()` for observer-driven autoscroll, or
+   `_scrollToInstant()`-backed helpers for explicit snap-to-bottom operations.
 
 3. **New `executeJs` calls during streaming** — each call now triggers throttled invalidation,
    but excessive calls still add EDT overhead via `pushJsEvent()`. Batch when possible.

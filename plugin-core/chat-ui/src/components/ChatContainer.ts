@@ -253,8 +253,9 @@ export default class ChatContainer extends HTMLElement {
         return this.scrollHeight - this.scrollTop - this.clientHeight < 30;
     }
 
+    /** Snap to the bottom instantly after programmatic inserts or restore completion. */
     forceScroll(): void {
-        this.scrollTop = this.scrollHeight;
+        this._scrollToInstant(this.scrollHeight);
     }
 
     /** Suppress auto-scroll while initial history batch is being inserted. */
@@ -274,12 +275,11 @@ export default class ChatContainer extends HTMLElement {
     /**
      * Control CSS scroll-behavior based on streaming state.
      *
-     * During streaming: always 'auto' (instant) so forceScroll() and the
-     * autoScroll setter jump instantly.
-     * After streaming: 'smooth' if the user preference is enabled, giving
-     * forceScroll() a smooth animation for user-initiated "scroll to bottom".
+     * During streaming: always 'auto' (instant) so the autoScroll setter jumps instantly.
+     * After streaming: restore the user preference so explicit user-initiated scrolling
+     * (for example via the web app's "scroll to bottom" control) may stay smooth.
      *
-     * Note: scrollIfNeeded() and compensateScroll() always use instant scrolling
+     * Note: scrollIfNeeded(), forceScroll(), and compensateScroll() always use instant scrolling
      * via _scrollToInstant() regardless of this CSS property.
      */
     setStreaming(active: boolean, smoothScrollEnabled: boolean): void {
