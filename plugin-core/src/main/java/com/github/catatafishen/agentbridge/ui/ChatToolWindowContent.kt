@@ -1196,12 +1196,12 @@ class ChatToolWindowContent(
 
     private fun createSideButtonsPanel(): JComponent {
         val leftGroup = DefaultActionGroup()
-        leftGroup.add(DisconnectOrStopAction())
+        restartSessionGroup = RestartSessionGroup()
+        leftGroup.add(restartSessionGroup!!)
         leftGroup.addSeparator()
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.addSeparator()
-        restartSessionGroup = RestartSessionGroup()
-        leftGroup.add(restartSessionGroup!!)
+        leftGroup.add(DisconnectOrStopAction())
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
             "AgentControls", leftGroup, false
