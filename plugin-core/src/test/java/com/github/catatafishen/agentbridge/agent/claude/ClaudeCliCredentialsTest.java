@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,16 +25,23 @@ class ClaudeCliCredentialsTest {
     Path tempDir;
 
     private String originalUserHome;
+    private String originalOsName;
 
     @BeforeEach
     void redirectUserHome() {
         originalUserHome = System.getProperty("user.home");
+        originalOsName = System.getProperty("os.name");
         System.setProperty("user.home", tempDir.toString());
     }
 
     @AfterEach
     void restoreUserHome() {
         System.setProperty("user.home", originalUserHome);
+        if (originalOsName == null) {
+            System.clearProperty("os.name");
+        } else {
+            System.setProperty("os.name", originalOsName);
+        }
     }
 
     private void createCredentialsFile(String json) throws IOException {
@@ -50,6 +58,25 @@ class ClaudeCliCredentialsTest {
         ClaudeCliCredentials creds = ClaudeCliCredentials.read();
         assertFalse(creds.isLoggedIn());
         assertNull(creds.getDisplayName());
+    }
+
+    @Test
+    void fallsBackToMacOsKeychainWhenFileDoesNotExist() {
+        System.setProperty("os.name", "Mac OS X");
+
+        ClaudeCliCredentials creds = ClaudeCliCredentials.read(command -> {
+            assertEquals(List.of("/usr/bin/security", "find-generic-password", "-s",
+                "Claude Code-credentials", "-w"), command);
+            return """
+                {
+                  "oauthAccount": { "displayName": "Alice" },
+                  "claudeAiOauth": { "accessToken": "tok-keychain" }
+                }
+                """;
+        });
+
+        assertTrue(creds.isLoggedIn());
+        assertEquals("Alice", creds.getDisplayName());
     }
 
     // ── valid credentials ─────────────────────────────────────────────────────
@@ -95,6 +122,24 @@ class ClaudeCliCredentialsTest {
         assertEquals("alice@example.com", creds.getDisplayName());
     }
 
+    @Test
+    void prefersCredentialsFileOverMacOsKeychain() throws IOException {
+        System.setProperty("os.name", "Mac OS X");
+        createCredentialsFile("""
+            {
+              "oauthAccount": { "displayName": "File Alice" },
+              "claudeAiOauth": { "accessToken": "tok-file" }
+            }
+            """);
+
+        ClaudeCliCredentials creds = ClaudeCliCredentials.read(command -> {
+            throw new AssertionError("Keychain must not be queried when the credentials file is valid");
+        });
+
+        assertTrue(creds.isLoggedIn());
+        assertEquals("File Alice", creds.getDisplayName());
+    }
+
     // ── invalid / incomplete credentials ─────────────────────────────────────
 
     @Test
@@ -127,6 +172,22 @@ class ClaudeCliCredentialsTest {
         assertFalse(creds.isLoggedIn());
     }
 
+    @Test
+    void fallsBackToMacOsKeychainWhenFileIsMalformed() throws IOException {
+        System.setProperty("os.name", "Mac OS X");
+        createCredentialsFile("not-valid-json{{{");
+
+        ClaudeCliCredentials creds = ClaudeCliCredentials.read(command -> """
+            {
+              "oauthAccount": { "emailAddress": "alice@example.com" },
+              "claudeAiOauth": { "accessToken": "tok-keychain" }
+            }
+            """);
+
+        assertTrue(creds.isLoggedIn());
+        assertEquals("alice@example.com", creds.getDisplayName());
+    }
+
     // ── logout ────────────────────────────────────────────────────────────────
 
     @Test
@@ -141,6 +202,17 @@ class ClaudeCliCredentialsTest {
         assertTrue(ClaudeCliCredentials.logout(), "logout must return true when file existed");
         assertFalse(Files.exists(ClaudeCliCredentials.credentialsPath()),
             "credentials file must be deleted after logout");
+    }
+
+    @Test
+    void logoutDeletesMacOsKeychainCredential() {
+        System.setProperty("os.name", "Mac OS X");
+
+        assertTrue(ClaudeCliCredentials.logout(command -> {
+            assertEquals(List.of("/usr/bin/security", "delete-generic-password", "-s",
+                "Claude Code-credentials"), command);
+            return "";
+        }));
     }
 
     // ── parseCredentials (pure parsing, no filesystem) ─────────────────────

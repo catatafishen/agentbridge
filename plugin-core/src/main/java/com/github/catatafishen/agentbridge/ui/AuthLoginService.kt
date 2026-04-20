@@ -253,7 +253,8 @@ class AuthLoginService(private val project: Project) {
      * Logs out the active agent by cleaning up its authentication data.
      * Always clears pending auth errors.
      *
-     * - **Claude CLI**: deletes `~/.claude/.credentials.json`
+     * - **Claude CLI**: deletes `~/.claude/.credentials.json` and the macOS Keychain entry used
+     *   by newer Claude Code versions
      * - **Kiro CLI**: delegates to `kiro-cli logout`
      * - **Copilot CLI**: runs `gh auth logout` because Copilot CLI authenticates
      *   via the `gh` token stored in the system keyring — there is no
@@ -269,7 +270,7 @@ class AuthLoginService(private val project: Project) {
             val profile = agentManager.getActiveProfile()
             val agentId = profile.id
 
-            // Claude CLI stores credentials at ~/.claude/.credentials.json, not in .agent-work/
+            // Claude CLI stores credentials outside .agent-work/ (file on most platforms, Keychain on macOS)
             if (agentId == ClaudeCliClient.PROFILE_ID) {
                 val deleted = ClaudeCliCredentials.logout()
                 LOG.info("Claude CLI logout: credentials deleted=$deleted")

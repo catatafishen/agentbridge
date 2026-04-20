@@ -7,20 +7,28 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
- * Reads the Claude CLI credential file ({@code ~/.claude/.credentials.json}) written by
- * {@code claude auth login} to determine whether the user is logged in.
+ * Reads the Claude CLI credentials written by {@code claude auth login} to determine whether the
+ * user is logged in.
  *
- * <p>The file contains an {@code oauthAccount} section and a {@code claudeAiOauth} section
- * with {@code accessToken} and {@code expiresAt} (Unix ms). The access token authenticates
- * the {@code claude} subprocess — it is NOT sent to any external API by this plugin.</p>
+ * <p>Older Claude Code versions store credentials in {@code ~/.claude/.credentials.json}. Claude
+ * Code 2.x on macOS stores the same JSON blob in the macOS Keychain under the service name
+ * {@code "Claude Code-credentials"}. The access token authenticates the {@code claude}
+ * subprocess — it is NOT sent to any external API by this plugin.</p>
  */
 public final class ClaudeCliCredentials {
 
     private static final Logger LOG = Logger.getInstance(ClaudeCliCredentials.class);
+    private static final String KEYCHAIN_SERVICE_NAME = "Claude Code-credentials";
+    private static final String MACOS_SECURITY_BINARY = "/usr/bin/security";
+    private static final int SECURITY_COMMAND_TIMEOUT_SECONDS = 3;
 
     private final boolean loggedIn;
     @Nullable
@@ -32,21 +40,79 @@ public final class ClaudeCliCredentials {
     }
 
     /**
-     * Reads credentials from disk and returns a snapshot.
+     * Reads credentials from disk (or from the macOS Keychain on macOS) and returns a snapshot.
      * Never throws — returns a "not logged in" instance on any error.
+     *
+     * <p>Claude Code 2.x stores OAuth credentials in the macOS Keychain under the service name
+     * {@code "Claude Code-credentials"} instead of the credentials file. On macOS we therefore
+     * try the Keychain as a fallback when the file is absent or contains no valid token.</p>
      */
     @NotNull
     public static ClaudeCliCredentials read() {
+        return read(ClaudeCliCredentials::runSecurityCommand);
+    }
+
+    @NotNull
+    static ClaudeCliCredentials read(@NotNull SecurityCommandRunner securityCommandRunner) {
+        // Always try the file first — covers non-macOS platforms and older Claude Code versions.
         Path path = credentialsPath();
         try {
-            if (!Files.exists(path)) {
-                return new ClaudeCliCredentials(false, null);
+            if (Files.exists(path)) {
+                ClaudeCliCredentials fromFile = parseCredentials(Files.readString(path));
+                if (fromFile.isLoggedIn()) return fromFile;
             }
-            return parseCredentials(Files.readString(path));
         } catch (IOException | RuntimeException e) {
-            LOG.warn("Failed to read Claude CLI credentials: " + e.getMessage());
-            return new ClaudeCliCredentials(false, null);
+            LOG.warn("Failed to read Claude CLI credentials file: " + e.getMessage());
         }
+
+        // On macOS, Claude Code 2.x stores tokens in the Keychain instead of the file.
+        if (isMac()) {
+            return readFromMacOsKeychain(securityCommandRunner);
+        }
+
+        return new ClaudeCliCredentials(false, null);
+    }
+
+    private static boolean isMac() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+    }
+
+    /**
+     * Reads the credential JSON blob stored by Claude Code 2.x in the macOS Keychain
+     * (service name {@code "Claude Code-credentials"}) via the {@code security} CLI.
+     * Returns a "not logged in" instance if the entry is absent or unreadable.
+     */
+    @NotNull
+    private static ClaudeCliCredentials readFromMacOsKeychain(@NotNull SecurityCommandRunner securityCommandRunner) {
+        try {
+            String json = securityCommandRunner.run(List.of(
+                MACOS_SECURITY_BINARY, "find-generic-password", "-s", KEYCHAIN_SERVICE_NAME, "-w"));
+            if (json != null && !json.isBlank()) {
+                ClaudeCliCredentials creds = parseCredentials(json);
+                if (creds.isLoggedIn()) return creds;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.debug("Interrupted while reading Claude credentials from macOS Keychain");
+        } catch (IOException e) {
+            LOG.debug("Could not read Claude credentials from macOS Keychain: " + e.getMessage());
+        }
+        return new ClaudeCliCredentials(false, null);
+    }
+
+    @Nullable
+    private static String runSecurityCommand(@NotNull List<String> command) throws IOException, InterruptedException {
+        ProcessBuilder pb = new ProcessBuilder(command);
+        pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        Process process = pb.start();
+        if (!process.waitFor(SECURITY_COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            return null;
+        }
+        if (process.exitValue() != 0) {
+            return null;
+        }
+        return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
     }
 
     /**
@@ -98,20 +164,43 @@ public final class ClaudeCliCredentials {
     }
 
     /**
-     * Deletes the credentials file, effectively logging the user out of the Claude CLI.
+     * Deletes the credentials file and, on macOS, the Keychain entry used by Claude Code 2.x.
      *
-     * @return true if the file was deleted, false if it did not exist or deletion failed
+     * @return true if any credential storage was deleted, false if nothing was removed
      */
     public static boolean logout() {
+        return logout(ClaudeCliCredentials::runSecurityCommand);
+    }
+
+    static boolean logout(@NotNull SecurityCommandRunner securityCommandRunner) {
+        boolean deletedFile = false;
         try {
-            return Files.deleteIfExists(credentialsPath());
+            deletedFile = Files.deleteIfExists(credentialsPath());
         } catch (IOException e) {
             LOG.warn("Failed to delete Claude CLI credentials: " + e.getMessage());
-            return false;
         }
+        return deletedFile || (isMac() && deleteMacOsKeychainCredentials(securityCommandRunner));
+    }
+
+    private static boolean deleteMacOsKeychainCredentials(@NotNull SecurityCommandRunner securityCommandRunner) {
+        try {
+            return securityCommandRunner.run(List.of(
+                MACOS_SECURITY_BINARY, "delete-generic-password", "-s", KEYCHAIN_SERVICE_NAME)) != null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.debug("Interrupted while deleting Claude credentials from macOS Keychain");
+        } catch (IOException e) {
+            LOG.debug("Could not delete Claude credentials from macOS Keychain: " + e.getMessage());
+        }
+        return false;
     }
 
     static Path credentialsPath() {
         return Path.of(System.getProperty("user.home"), ".claude", ".credentials.json");
+    }
+
+    @FunctionalInterface
+    interface SecurityCommandRunner {
+        @Nullable String run(@NotNull List<String> command) throws IOException, InterruptedException;
     }
 }
