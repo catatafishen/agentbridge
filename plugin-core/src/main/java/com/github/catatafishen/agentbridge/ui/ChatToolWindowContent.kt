@@ -91,6 +91,8 @@ class ChatToolWindowContent(
     private lateinit var promptTextArea: EditorTextField
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
     private var isInputHovered = false
+
+    @Volatile
     private var isSending = false
 
     @Volatile
@@ -988,6 +990,7 @@ class ChatToolWindowContent(
                 isInputHovered = true
                 updateShortcutHintVisibility()
             }
+
             override fun mouseExited(e: java.awt.event.MouseEvent) = exitCheckRun.run()
         })
         promptTextArea.addMouseListener(object : java.awt.event.MouseAdapter() {
@@ -1193,14 +1196,12 @@ class ChatToolWindowContent(
 
     private fun createSideButtonsPanel(): JComponent {
         val leftGroup = DefaultActionGroup()
-        leftGroup.add(StopOnlyAction())
+        leftGroup.add(DisconnectOrStopAction())
         leftGroup.addSeparator()
         leftGroup.add(AttachContextDropdownAction())
         leftGroup.addSeparator()
         restartSessionGroup = RestartSessionGroup()
         leftGroup.add(restartSessionGroup!!)
-        leftGroup.addSeparator()
-        leftGroup.add(PowerOffDropdownAction())
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
             "AgentControls", leftGroup, false
@@ -1212,35 +1213,127 @@ class ChatToolWindowContent(
         return controlsToolbar.component
     }
 
-    /** Stop-only action for the left sidebar: always shows Stop icon, enabled only while agent is running. */
-    private inner class StopOnlyAction : AnAction("Stop", "Stop the agent", AllIcons.Actions.Suspend) {
+    /**
+     * Single toolbar slot that shows as Stop while the agent is running, and as Disconnect when idle.
+     * This lets the power/disconnect action occupy the same visual position as the stop button
+     * without needing two separate buttons.
+     */
+    private inner class DisconnectOrStopAction : AnAction() {
+        private val powerIcon = com.intellij.openapi.util.IconLoader.getIcon(
+            "/icons/power.svg", DisconnectOrStopAction::class.java
+        )
+
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
-        override fun actionPerformed(e: AnActionEvent) {
-            promptOrchestrator.stop()
-            setSendingState(false)
+        override fun update(e: AnActionEvent) {
+            if (isSending) {
+                e.presentation.icon = AllIcons.Actions.Suspend
+                e.presentation.text = "Stop"
+                e.presentation.description = "Stop the agent"
+            } else {
+                e.presentation.icon = powerIcon
+                e.presentation.text = "Disconnect"
+                e.presentation.description = "Disconnect or manage the current session"
+            }
+            e.presentation.isEnabled = true
         }
 
-        override fun update(e: AnActionEvent) {
-            e.presentation.isEnabled = isSending
+        override fun actionPerformed(e: AnActionEvent) {
+            if (isSending) {
+                promptOrchestrator.stop()
+                setSendingState(false)
+            } else {
+                val inputEvent = e.inputEvent ?: return
+                val component = inputEvent.source as? Component ?: return
+                val group = DefaultActionGroup()
+                addSessionManagementSection(group)
+                val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
+                    .createActionGroupPopup(
+                        null, group, e.dataContext,
+                        com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+                    )
+                popup.showUnderneathOf(component)
+            }
         }
     }
 
-    /** Send action embedded inside the input box: enabled when agent is idle and user is signed in. */
-    private inner class SendAction : AnAction(
-        "Send", "Send prompt (Enter)",
-        com.intellij.openapi.util.IconLoader.getIcon("/icons/send.svg", SendAction::class.java)
-    ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+    /**
+     * Send button inside the input box.
+     *
+     * - Idle: sends the prompt (enabled only when logged in).
+     * - Pending ask-user: submits the user's answer (same as idle path).
+     * - Agent running: opens a popup with Nudge / Queue / Stop and Send.
+     *
+     * Enter key handling is separate (keyboard shortcuts route to the same underlying functions)
+     * and is unchanged by this class.
+     */
+    private inner class SendAction : AnAction() {
+        private val sendIcon = com.intellij.openapi.util.IconLoader.getIcon(
+            "/icons/send.svg", SendAction::class.java
+        )
 
-        override fun actionPerformed(e: AnActionEvent) {
-            onSendStopClicked()
-        }
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun update(e: AnActionEvent) {
             val isLoggedIn = authService.pendingAuthError == null
-            e.presentation.isEnabled = !isSending && isLoggedIn
-            e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
+            if (isSending && !consolePanel.hasPendingAskUserRequest()) {
+                e.presentation.icon = AllIcons.Actions.More
+                e.presentation.text = "More"
+                e.presentation.description = "Nudge, queue, or stop and send"
+                e.presentation.isEnabled = true
+            } else {
+                e.presentation.icon = sendIcon
+                e.presentation.text = "Send"
+                e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
+                e.presentation.isEnabled = isLoggedIn
+            }
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            // Pending ask-user or idle: normal send/answer flow.
+            if (!isSending || consolePanel.hasPendingAskUserRequest()) {
+                onSendStopClicked()
+                return
+            }
+            // Agent is running: show nudge/queue/stop-and-send dropdown.
+            val inputEvent = e.inputEvent ?: return
+            val component = inputEvent.source as? Component ?: return
+            val hasText = promptTextArea.text.trim().isNotEmpty()
+
+            val group = DefaultActionGroup()
+            group.add(object : AnAction("Nudge", "Send a nudge to the running agent", AllIcons.Actions.Forward) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isEnabled = hasText
+                }
+
+                override fun actionPerformed(e: AnActionEvent) = onNudgeClicked()
+            })
+            group.add(object :
+                AnAction("Queue", "Queue this message to send after the agent finishes", AllIcons.General.Add) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isEnabled = hasText && authService.pendingAuthError == null
+                }
+
+                override fun actionPerformed(e: AnActionEvent) = onQueueMessageClicked()
+            })
+            group.add(object :
+                AnAction("Stop and Send", "Stop the agent and send this as a new prompt", AllIcons.Actions.Restart) {
+                override fun getActionUpdateThread() = ActionUpdateThread.EDT
+                override fun update(e: AnActionEvent) {
+                    e.presentation.isEnabled = hasText
+                }
+
+                override fun actionPerformed(e: AnActionEvent) = onForceStopAndSend()
+            })
+
+            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
+                .createActionGroupPopup(
+                    null, group, e.dataContext,
+                    com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+                )
+            popup.showUnderneathOf(component)
         }
     }
 
@@ -1341,26 +1434,6 @@ class ChatToolWindowContent(
             addAgentSelectionSection(group)
             addSessionOptionsSection(group)
             if (group.childrenCount == 0) return
-            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
-                null, group, e.dataContext,
-                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
-            )
-            popup.showUnderneathOf(component)
-        }
-    }
-
-    /** Dropdown button for session lifecycle actions: Disconnect and Session sub-group. */
-    private inner class PowerOffDropdownAction : AnAction(
-        "Power Off", "Disconnect or manage the current session",
-        com.intellij.openapi.util.IconLoader.getIcon("/icons/power.svg", PowerOffDropdownAction::class.java)
-    ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.EDT
-
-        override fun actionPerformed(e: AnActionEvent) {
-            val inputEvent = e.inputEvent ?: return
-            val component = inputEvent.source as? Component ?: return
-            val group = DefaultActionGroup()
-            addSessionManagementSection(group)
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
                 null, group, e.dataContext,
                 com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
