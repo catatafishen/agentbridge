@@ -116,6 +116,11 @@ class FocusGuardTest {
 
         @Test
         void whenTargetIsInDifferentWindow() throws java.beans.PropertyVetoException {
+            // Requires a real display — CI runs headless and JFrame() throws HeadlessException.
+            org.junit.jupiter.api.Assumptions.assumeFalse(
+                java.awt.GraphicsEnvironment.isHeadless(),
+                "Skipped in headless mode — JFrame requires a display");
+
             // Focus to a component in a different Window (dialog, popup) — allowed through.
             // Create a chatOwner that has a Window ancestor to distinguish from dialog target.
             JFrame mainFrame = new JFrame("IDE Main");

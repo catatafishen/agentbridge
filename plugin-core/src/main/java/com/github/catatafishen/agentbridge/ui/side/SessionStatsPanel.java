@@ -172,7 +172,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
             JBUI.scale(2), JBUI.scale(8), JBUI.scale(8), JBUI.scale(8)));
 
         billingHeader = createSectionHeader("Monthly quota");
-        billingNoteLabel = new JLabel("via gh cli");
+        billingNoteLabel = new JLabel("via gh CLI");
         billingNoteLabel.setFont(smallFont);
         billingNoteLabel.setForeground(dimColor);
         billingNoteLabel.setBorder(BorderFactory.createEmptyBorder(0, JBUI.scale(8), JBUI.scale(2), JBUI.scale(8)));
