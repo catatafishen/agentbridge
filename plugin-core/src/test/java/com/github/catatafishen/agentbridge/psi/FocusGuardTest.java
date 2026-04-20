@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test;
 import javax.swing.*;
 import java.awt.*;
 import java.beans.PropertyChangeEvent;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -34,22 +36,40 @@ class FocusGuardTest {
     private Project project;
     private FocusGuard guard;
     private Component chatOwner;
+    private JPanel outsideSameWindowTarget;
+    private JPanel differentWindowTarget;
+    private Window mainWindow;
+    private Window dialogWindow;
 
     @BeforeEach
     void setUp() {
         project = mock(Project.class);
         when(project.isDisposed()).thenReturn(false);
         chatOwner = mock(Component.class);
-        guard = new FocusGuard(project, KeyboardFocusManager.getCurrentKeyboardFocusManager(), chatOwner);
+        outsideSameWindowTarget = new JPanel();
+        differentWindowTarget = new JPanel();
+        mainWindow = mock(Window.class);
+        dialogWindow = mock(Window.class);
+
+        Map<Component, Window> windows = new HashMap<>();
+        windows.put(chatOwner, mainWindow);
+        windows.put(outsideSameWindowTarget, mainWindow);
+        windows.put(differentWindowTarget, dialogWindow);
+
+        guard = new FocusGuard(
+            project,
+            KeyboardFocusManager.getCurrentKeyboardFocusManager(),
+            chatOwner,
+            windows::get
+        );
     }
 
     /**
-     * A focus event where focus moves from chatOwner to a JPanel outside the chat TW.
-     * The JPanel has no Window ancestor, so the chatWindow-matching check passes
-     * (both are null in test context — treated as same window).
+     * A focus event where focus moves from chatOwner to a JPanel outside the chat TW
+     * but still inside the same IDE main window.
      */
     private PropertyChangeEvent outsideEvent() {
-        return new PropertyChangeEvent(new Object(), "focusOwner", chatOwner, new JPanel());
+        return new PropertyChangeEvent(new Object(), "focusOwner", chatOwner, outsideSameWindowTarget);
     }
 
     // ── Core veto behaviour ──────────────────────────────────────────────────────────────────────
@@ -116,31 +136,10 @@ class FocusGuardTest {
 
         @Test
         void whenTargetIsInDifferentWindow() throws java.beans.PropertyVetoException {
-            // Requires a real display — CI runs headless and JFrame() throws HeadlessException.
-            org.junit.jupiter.api.Assumptions.assumeFalse(
-                java.awt.GraphicsEnvironment.isHeadless(),
-                "Skipped in headless mode — JFrame requires a display");
-
             // Focus to a component in a different Window (dialog, popup) — allowed through.
-            // Create a chatOwner that has a Window ancestor to distinguish from dialog target.
-            JFrame mainFrame = new JFrame("IDE Main");
-            JPanel chatPanel = new JPanel();
-            mainFrame.getContentPane().add(chatPanel);
-
-            FocusGuard windowGuard = new FocusGuard(
-                project, KeyboardFocusManager.getCurrentKeyboardFocusManager(), chatPanel);
-
-            // Target in a different JFrame (simulating a dialog)
-            JFrame dialogFrame = new JFrame("Dialog");
-            JPanel dialogPanel = new JPanel();
-            dialogFrame.getContentPane().add(dialogPanel);
-
             PropertyChangeEvent evt = new PropertyChangeEvent(
-                new Object(), "focusOwner", chatPanel, dialogPanel);
-            windowGuard.vetoableChange(evt);
-
-            mainFrame.dispose();
-            dialogFrame.dispose();
+                new Object(), "focusOwner", chatOwner, differentWindowTarget);
+            guard.vetoableChange(evt);
         }
     }
 }

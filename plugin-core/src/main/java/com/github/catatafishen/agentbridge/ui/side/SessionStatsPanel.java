@@ -350,7 +350,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         if (snap.getMultiplierMode()) {
             tokensRowLabel.setText("Premium req");
-            tokensValue.setText(String.valueOf((int) snap.getLocalSessionPremiumRequests()));
+            tokensValue.setText(BillingCalculator.formatPremium(snap.getLocalSessionPremiumRequests()));
             tokensRow.setVisible(true);
             costRow.setVisible(false);
         } else {
