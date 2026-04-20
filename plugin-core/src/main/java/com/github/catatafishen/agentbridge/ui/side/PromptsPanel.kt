@@ -45,6 +45,7 @@ internal class PromptsPanel(
 
     private var displayedCount = PAGE_SIZE
     private var lastQuery = ""
+
     @Volatile
     private var historyEntries: List<EntryData> = emptyList()
 
@@ -141,6 +142,10 @@ internal class PromptsPanel(
     }
 
     private fun refresh() {
+        refresh(scrollToBottom = true)
+    }
+
+    private fun refresh(scrollToBottom: Boolean) {
         val query = searchField.text.orEmpty()
         val allEntries = mergeEntries(historyEntries, chatConsole.entriesSnapshot())
         val prompts = allEntries.filterIsInstance<EntryData.Prompt>()
@@ -156,13 +161,19 @@ internal class PromptsPanel(
             val data = turnDataMap[promptEntryId(p)]
             listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList()))
         }
+
+        if (scrollToBottom && listModel.size() > 0) {
+            SwingUtilities.invokeLater {
+                promptList.ensureIndexIsVisible(listModel.size() - 1)
+            }
+        }
     }
 
     private fun loadMore() {
         // Preserve scroll: after adding PAGE_SIZE new items at top, scroll back to item at PAGE_SIZE
         val targetIndex = PAGE_SIZE.coerceAtMost(listModel.size())
         displayedCount += PAGE_SIZE
-        refresh()
+        refresh(scrollToBottom = false)
         if (targetIndex > 0 && targetIndex < listModel.size()) {
             val bounds = promptList.getCellBounds(targetIndex, targetIndex)
             if (bounds != null) promptList.scrollRectToVisible(bounds)
