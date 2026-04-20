@@ -8,9 +8,12 @@ import com.github.catatafishen.agentbridge.ui.renderers.GitCommitRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Commits staged changes with a message.
@@ -73,11 +76,14 @@ public final class GitCommitTool extends GitTool {
             return "Error: 'message' parameter is required";
         }
 
-        String reviewError = AgentEditSession.getInstance(project)
-            .awaitReviewCompletion("git commit");
-        if (reviewError != null) return reviewError;
-
         boolean commitAll = resolveCommitAll(args);
+
+        // Compute which files will be committed, then only gate on those paths.
+        // This prevents unrelated PENDING review items from blocking the commit.
+        Collection<String> filesToCommit = resolveFilesToCommit(commitAll);
+        String reviewError = AgentEditSession.getInstance(project)
+            .awaitReviewForPaths("git commit", filesToCommit);
+        if (reviewError != null) return reviewError;
 
         if (commitAll) {
             // Stage all changes including new untracked files (equivalent to git add -A)
@@ -169,6 +175,46 @@ public final class GitCommitTool extends GitTool {
      */
     static boolean resolveAmend(JsonObject args) {
         return args.has(PARAM_AMEND) && args.get(PARAM_AMEND).getAsBoolean();
+    }
+
+    /**
+     * Determines which files will be part of the commit, resolved to absolute paths.
+     * For {@code commitAll=true}: all modified, deleted, and untracked files from
+     * {@code git status --porcelain}. For staged-only: files from
+     * {@code git diff --cached --name-only}.
+     */
+    private Collection<String> resolveFilesToCommit(boolean commitAll) {
+        String basePath = project.getBasePath();
+        Set<String> paths = new java.util.HashSet<>();
+        if (commitAll) {
+            String status = runGitQuiet("status", "--porcelain");
+            if (status != null) {
+                for (String line : status.split("\\r?\\n")) {
+                    if (line.length() < 4) continue;
+                    // porcelain format: XY <path> or XY <orig> -> <path>
+                    String filePart = line.substring(3);
+                    int arrow = filePart.indexOf(" -> ");
+                    String relPath = arrow >= 0 ? filePart.substring(arrow + 4) : filePart;
+                    paths.add(toAbsolutePath(relPath.trim(), basePath));
+                }
+            }
+        } else {
+            String staged = runGitQuiet("diff", "--cached", "--name-only");
+            if (staged != null) {
+                for (String line : staged.split("\\r?\\n")) {
+                    String trimmed = line.trim();
+                    if (!trimmed.isEmpty()) {
+                        paths.add(toAbsolutePath(trimmed, basePath));
+                    }
+                }
+            }
+        }
+        return paths;
+    }
+
+    private static @NotNull String toAbsolutePath(@NotNull String path, @Nullable String basePath) {
+        if (basePath == null || path.startsWith("/")) return path;
+        return basePath + "/" + path;
     }
 
     /**

@@ -821,10 +821,93 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         }
     }
 
+    /**
+     * Like {@link #awaitReviewCompletion} but scoped to a specific set of file paths.
+     * Only PENDING files whose absolute path is in {@code scopedPaths} will block.
+     * Files tracked by the review session but not in {@code scopedPaths} are ignored.
+     * <p>
+     * Use this for operations that only affect specific files (e.g. git commit),
+     * as opposed to worktree-wide operations (branch switch, reset) which should
+     * use the unscoped {@link #awaitReviewCompletion}.
+     *
+     * @param operation   human-readable name for error messages
+     * @param scopedPaths absolute paths of files to check
+     * @return error string if blocked or timed out, {@code null} if clear
+     */
+    public @Nullable String awaitReviewForPaths(
+        @NotNull String operation,
+        @NotNull Collection<String> scopedPaths) {
+        if (!hasPendingIn(scopedPaths)) return null;
+
+        int fileCount = countPendingIn(scopedPaths);
+
+        if (!reviewNotificationFired) {
+            reviewNotificationFired = true;
+            notifyReviewRequired(operation);
+        }
+        ApplicationManager.getApplication().invokeLater(() -> {
+            if (project.isDisposed()) return;
+            com.github.catatafishen.agentbridge.ui.review.ReviewPanelController
+                .getInstance(project).expandReviewPanel();
+        });
+
+        PsiBridgeService psi = PsiBridgeService.getInstance(project);
+        java.util.concurrent.Semaphore writeSemaphore = psi.getWriteToolSemaphore();
+        java.util.concurrent.locks.ReentrantLock syncLock = psi.getCurrentSyncLock();
+
+        if (syncLock != null) syncLock.unlock();
+        writeSemaphore.release();
+        try {
+            while (hasPendingIn(scopedPaths) && pendingGateCancelMessage == null) {
+                java.util.concurrent.CompletableFuture<Void> future = getOrCreateReviewCompletionFuture();
+                if (!hasPendingIn(scopedPaths) || pendingGateCancelMessage != null) break;
+                future.get(REVIEW_WAIT_TIMEOUT_MINUTES, java.util.concurrent.TimeUnit.MINUTES);
+            }
+            String cancelMessage = pendingGateCancelMessage;
+            if (cancelMessage != null) {
+                pendingGateCancelMessage = null;
+                return "Error: " + operation + " cancelled by user revert.\n" + cancelMessage;
+            }
+            flushBufferedRevertsToPendingNudge();
+            return null;
+        } catch (java.util.concurrent.TimeoutException e) {
+            return formatReviewTimeoutError(operation, fileCount);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Error: Interrupted while waiting for agent-edit review.";
+        } catch (java.util.concurrent.ExecutionException e) {
+            return "Error: Review wait failed: " + e.getCause();
+        } finally {
+            writeSemaphore.acquireUninterruptibly();
+            if (syncLock != null) syncLock.lock();
+        }
+    }
+
     private int countPending() {
         int n = 0;
         for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
             if (e.getValue() == ApprovalState.PENDING && pathIsTracked(e.getKey())) n++;
+        }
+        return n;
+    }
+
+    private boolean hasPendingIn(@NotNull Collection<String> scopedPaths) {
+        Set<String> scope = scopedPaths instanceof Set ? (Set<String>) scopedPaths : new HashSet<>(scopedPaths);
+        for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
+            if (e.getValue() == ApprovalState.PENDING && pathIsTracked(e.getKey()) && scope.contains(e.getKey())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int countPendingIn(@NotNull Collection<String> scopedPaths) {
+        Set<String> scope = scopedPaths instanceof Set ? (Set<String>) scopedPaths : new HashSet<>(scopedPaths);
+        int n = 0;
+        for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
+            if (e.getValue() == ApprovalState.PENDING && pathIsTracked(e.getKey()) && scope.contains(e.getKey())) {
+                n++;
+            }
         }
         return n;
     }
@@ -862,11 +945,10 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     }
 
     static @NotNull String formatReviewTimeoutError(@NotNull String operation, int fileCount) {
-        return "Error: Timed out after " + REVIEW_WAIT_TIMEOUT_MINUTES
-            + " minutes waiting for the user to review " + fileCount
-            + (fileCount == 1 ? " agent-edited file" : " agent-edited files")
-            + " before '" + operation
-            + "' could run. Ask the user to accept or revert the pending edits in the"
+        return "Error: " + fileCount + (fileCount == 1 ? " file has" : " files have")
+            + " not been approved or rejected by the user. '"
+            + operation + "' cannot proceed until all pending agent edits are reviewed."
+            + " The user must accept or revert the pending edits in the"
             + " Review panel (left of chat), then retry.";
     }
 
@@ -1234,6 +1316,16 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
                     linesRemoved.put(e.getKey(), Integer.parseInt(e.getValue()));
                 } catch (NumberFormatException ignored) {
                     // skip malformed entries
+                }
+            }
+        }
+
+        // If auto-approve was turned on while PENDING entries existed (or between
+        // IDE restarts), upgrade them now so they don't block future git operations.
+        if (isAutoApproveOn()) {
+            for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
+                if (e.getValue() == ApprovalState.PENDING) {
+                    e.setValue(ApprovalState.APPROVED);
                 }
             }
         }
