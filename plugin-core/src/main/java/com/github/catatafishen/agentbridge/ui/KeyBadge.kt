@@ -16,7 +16,7 @@ import javax.swing.KeyStroke
 class KeyBadge(text: String) : JBLabel(text) {
 
     init {
-        font = JBUI.Fonts.miniFont()
+        font = JBUI.Fonts.smallFont()
         foreground = UIUtil.getLabelForeground()
         border = JBUI.Borders.empty(1, 4, 1, 4)
         isOpaque = false

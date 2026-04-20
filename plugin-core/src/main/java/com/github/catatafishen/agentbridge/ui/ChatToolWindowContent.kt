@@ -90,6 +90,7 @@ class ChatToolWindowContent(
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
+    private var isInputHovered = false
     private var isSending = false
 
     @Volatile
@@ -906,7 +907,7 @@ class ChatToolWindowContent(
         )
 
         // Shortcut hint overlay — initialized here so the focus listener below can reference it.
-        shortcutHintPanel = PromptShortcutHintPanel { dismissShortcutHints() }
+        shortcutHintPanel = PromptShortcutHintPanel()
         shortcutHintPanel.isVisible =
             com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
         // Clicking the panel background (between key badges) focuses the input.
@@ -967,6 +968,21 @@ class ChatToolWindowContent(
         inputContainer.isOpaque = false
         inputContainer.add(shortcutHintPanel) // index 0 = lowest z-order index = painted last = on top
         inputContainer.add(promptTextArea)    // index 1 = behind, visible through transparent shortcutHintPanel
+        inputContainer.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseEntered(e: java.awt.event.MouseEvent) {
+                isInputHovered = true
+                updateShortcutHintVisibility()
+            }
+            override fun mouseExited(e: java.awt.event.MouseEvent) {
+                // Only mark as not-hovered when truly leaving the container.
+                // When moving to a child component, mouseExited fires but the cursor is still inside.
+                val p = e.point
+                if (p.x < 0 || p.y < 0 || p.x > inputContainer.width || p.y > inputContainer.height) {
+                    isInputHovered = false
+                    updateShortcutHintVisibility()
+                }
+            }
+        })
 
         row.add(inputContainer, BorderLayout.CENTER)
 
@@ -1112,21 +1128,14 @@ class ChatToolWindowContent(
         updateShortcutHintVisibility()
     }
 
-    /** Shows or hides the hint overlay based on current focus and text state. */
+    /** Shows or hides the hint overlay based on hover, focus, and text state. */
     private fun updateShortcutHintVisibility() {
         if (!::shortcutHintPanel.isInitialized) return
         val hasText = promptTextArea.text.isNotEmpty()
         val isFocused = promptTextArea.editor?.contentComponent?.hasFocus() == true
         shortcutHintPanel.isVisible =
             com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
-                && !hasText && !isFocused
-    }
-
-    private fun dismissShortcutHints() {
-        com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints = false
-        if (::shortcutHintPanel.isInitialized) {
-            shortcutHintPanel.isVisible = false
-        }
+                && !hasText && !isFocused && !isInputHovered
     }
 
     private fun setSendingState(sending: Boolean) {

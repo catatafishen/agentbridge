@@ -17,19 +17,19 @@ import javax.swing.KeyStroke
 
 /**
  * Footer panel showing keyboard shortcut hints below the chat prompt.
- * Includes a close button that dismisses the panel and persists the
- * preference via [com.github.catatafishen.agentbridge.settings.ChatInputSettings].
+ * Dismisses on hover (and focus); re-appears when the input is empty and idle.
+ * The shortcut hints feature can be disabled in Settings → AgentBridge → Chat Input.
  *
  * Reads actual key bindings from the IntelliJ keymap so customized
  * shortcuts are reflected in the displayed hints.
  */
-class PromptShortcutHintPanel(private val onClose: () -> Unit) : JBPanel<JBPanel<*>>(BorderLayout()) {
+class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
 
     private val sendLabel: JBLabel
 
     init {
         isOpaque = false
-        border = JBUI.Borders.empty(4, 8, 4, 4)
+        border = JBUI.Borders.empty(4, 8, 4, 8)
 
         val inner = JPanel()
         inner.isOpaque = false
@@ -73,21 +73,6 @@ class PromptShortcutHintPanel(private val onClose: () -> Unit) : JBPanel<JBPanel
         inner.add(row2)
 
         add(inner, BorderLayout.CENTER)
-
-        val closeLabel = JBLabel(AllIcons.Actions.Close).apply {
-            toolTipText = "Hide shortcut hints"
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            border = JBUI.Borders.empty(0, 4, 0, 2)
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    onClose()
-                }
-            })
-        }
-        val closeWrapper = JPanel(FlowLayout(FlowLayout.CENTER, 0, 0))
-        closeWrapper.isOpaque = false
-        closeWrapper.add(closeLabel)
-        add(closeWrapper, BorderLayout.EAST)
     }
 
     /** Toggle between "send" and "nudge" label when the agent is working. */
