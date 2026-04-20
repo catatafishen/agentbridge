@@ -174,11 +174,13 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
                 }
             });
             try {
-                //noinspection ResultOfMethodCallIgnored — timeout means EDT is busy; removal will happen when EDT catches up
-                latch.await(200, java.util.concurrent.TimeUnit.MILLISECONDS);
+                boolean removedOnEdt = latch.await(200, java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (!removedOnEdt) {
+                    LOG.debug("FocusGuard EDT removal timed out; will run when EDT catches up");
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                // Timeout or interruption — remove immediately to avoid a leaked listener.
+                // Interrupted while waiting for EDT removal; remove immediately to avoid a leaked listener.
                 remove.run();
             }
         }
