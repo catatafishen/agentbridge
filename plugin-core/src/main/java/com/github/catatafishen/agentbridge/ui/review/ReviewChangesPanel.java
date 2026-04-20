@@ -632,18 +632,20 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     /**
      * Right-hand action column: rollback icon for pending rows (opens reject dialog),
      * X icon for approved rows (removes from list).
+     * <p>Extends {@link DefaultTableCellRenderer} so IntelliJ's table UI sets the
+     * correct hover/selection background automatically.</p>
      */
-    private static final class RejectOrRemoveRenderer extends JLabel implements TableCellRenderer {
+    private static final class RejectOrRemoveRenderer extends DefaultTableCellRenderer {
 
         RejectOrRemoveRenderer() {
             setHorizontalAlignment(CENTER);
-            setOpaque(false);
         }
 
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
                                                        boolean isSelected, boolean hasFocus,
                                                        int row, int column) {
+            super.getTableCellRendererComponent(table, "", isSelected, hasFocus, row, column);
             if (value instanceof ReviewItem item) {
                 if (item.approved()) {
                     setIcon(AllIcons.Actions.Close);

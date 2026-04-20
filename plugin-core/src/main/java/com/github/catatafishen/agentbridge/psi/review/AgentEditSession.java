@@ -236,26 +236,29 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
      */
     public void captureBeforeContent(@NotNull String path, @NotNull String content) {
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
-        snapshots.putIfAbsent(path, content);
-        lastEditedAt.put(path, System.currentTimeMillis());
-        applyDefaultApproval(path);
-        recomputeLineCounts(path);
+        String absPath = ensureAbsolutePath(path);
+        snapshots.putIfAbsent(absPath, content);
+        lastEditedAt.put(absPath, System.currentTimeMillis());
+        applyDefaultApproval(absPath);
+        recomputeLineCounts(absPath);
         enforceTotalSnapshotCap();
         fireReviewStateChanged();
     }
 
     public void registerNewFile(@NotNull String path) {
-        newFiles.add(path);
-        lastEditedAt.put(path, System.currentTimeMillis());
-        applyDefaultApproval(path);
+        String absPath = ensureAbsolutePath(path);
+        newFiles.add(absPath);
+        lastEditedAt.put(absPath, System.currentTimeMillis());
+        applyDefaultApproval(absPath);
         fireReviewStateChanged();
     }
 
     public void registerDeletedFile(@NotNull String path, @NotNull String content) {
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
-        deletedFiles.put(path, content);
-        lastEditedAt.put(path, System.currentTimeMillis());
-        applyDefaultApproval(path);
+        String absPath = ensureAbsolutePath(path);
+        deletedFiles.put(absPath, content);
+        lastEditedAt.put(absPath, System.currentTimeMillis());
+        applyDefaultApproval(absPath);
         enforceTotalSnapshotCap();
         fireReviewStateChanged();
     }
@@ -502,9 +505,18 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
      * Resolves {@code path} to an absolute path. If {@code path} is already absolute it is
      * returned as-is; otherwise it is joined to {@code basePath}.
      */
-    private static @NotNull String toAbsolutePath(@NotNull String path, @Nullable String basePath) {
+    static @NotNull String toAbsolutePath(@NotNull String path, @Nullable String basePath) {
         if (basePath == null || path.startsWith("/")) return path;
         return basePath + "/" + path;
+    }
+
+    /**
+     * Instance-method convenience: resolves a possibly-relative path against the project base.
+     * All map keys must be absolute; callers at the session boundary use this to normalize
+     * incoming paths before storing them.
+     */
+    private @NotNull String ensureAbsolutePath(@NotNull String path) {
+        return toAbsolutePath(path, project.getBasePath());
     }
 
     private void clearTrackedPath(@NotNull String path) {
