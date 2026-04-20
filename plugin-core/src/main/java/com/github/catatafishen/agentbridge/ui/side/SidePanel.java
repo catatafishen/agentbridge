@@ -14,33 +14,33 @@ import java.awt.*;
 /**
  * Tabbed container for the left-hand tool-window pane.
  * Uses {@link PlatformApiCompat#createJBTabsPanel} for native IntelliJ flat tab styling.
- * Hosts five tabs:
+ * Hosts four tabs:
  * <ol>
  *   <li><b>Diff</b> — the existing {@link DiffPanel} with pending agent edits.</li>
- *   <li><b>Files</b> — configuration/agent-definition files for this project.</li>
  *   <li><b>Todo</b> — rendered view of the active agent session's {@code plan.md},
  *       with a {@code (done/total)} badge in the tab title when checkbox-style todos exist.</li>
  *   <li><b>Search</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
- *   <li><b>Session</b> — session statistics: processing timer, usage graph, and billing info.</li>
+ *   <li><b>Session</b> — session statistics, billing info, and a project-files tree.</li>
  * </ol>
  * Tab order is deliberate: review is the most time-sensitive and sits first.
  */
 public final class SidePanel extends JPanel implements Disposable {
 
     private static final int TAB_REVIEW = 0;
-    private static final int TAB_FILES = 1;
-    private static final int TAB_TODOS = 2;
+    private static final int TAB_TODOS = 1;
+    private static final int TAB_SESSION = 3;
 
     private final transient PlatformApiCompat.JBTabsPanel tabsPanel;
+    private final SessionStatsPanel sessionStatsPanel;
 
     public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
                      @NotNull SessionStatsPanel sessionStatsPanel) {
         super(new BorderLayout());
+        this.sessionStatsPanel = sessionStatsPanel;
         DiffPanel reviewPanel = new DiffPanel(project);
         Disposer.register(this, reviewPanel);
         Disposer.register(this, sessionStatsPanel);
 
-        ProjectFilesPanel projectFilesPanel = new ProjectFilesPanel(project);
         TodoPanel todoPanel = new TodoPanel(project);
         Disposer.register(this, todoPanel);
         PromptsPanel promptsPanel = new PromptsPanel(project, chatConsole);
@@ -48,7 +48,6 @@ public final class SidePanel extends JPanel implements Disposable {
 
         tabsPanel = PlatformApiCompat.createJBTabsPanel(project, this);
         tabsPanel.addTab(reviewPanel, "Diff");
-        tabsPanel.addTab(projectFilesPanel, "Files");
         tabsPanel.addTab(todoPanel, "Todo");
         tabsPanel.addTab(promptsPanel, "Search");
         tabsPanel.addTab(sessionStatsPanel, "Session");
@@ -63,8 +62,8 @@ public final class SidePanel extends JPanel implements Disposable {
         // Refresh contextual tabs each time they are selected so changes made elsewhere
         // (new files on disk, the agent editing plan.md) appear without manual refresh.
         tabsPanel.addSelectionListener(idx -> {
-            if (idx == TAB_FILES) projectFilesPanel.refresh();
-            else if (idx == TAB_TODOS) todoPanel.refresh();
+            if (idx == TAB_TODOS) todoPanel.refresh();
+            else if (idx == TAB_SESSION) sessionStatsPanel.refreshFiles();
         }, this);
 
         add(tabsPanel.getComponent(), BorderLayout.CENTER);

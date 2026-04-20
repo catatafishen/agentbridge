@@ -24,4 +24,10 @@ data class SessionStatsSnapshot(
     val sessionCostUsd: Double,
     /** True when the agent uses premium-request multipliers (Copilot) rather than raw tokens. */
     val multiplierMode: Boolean,
+    /**
+     * Weighted premium-request count for this session, accounting for model multipliers
+     * (e.g. Opus counts as 3 requests per turn). Sourced from [BillingManager.localSessionPremiumRequests].
+     * Note: not persisted across session restores — resets to 0.0 after reopening the IDE.
+     */
+    val localSessionPremiumRequests: Double,
 )

@@ -19,6 +19,7 @@ import javax.swing.Timer
 internal class ProcessingTimerPanel(
     private val supportsMultiplier: () -> Boolean,
     private val localSessionRequests: () -> Int,
+    private val localPremiumRequests: () -> Double,
 ) : JBPanel<ProcessingTimerPanel>(), Disposable {
 
     /** Callback fired on every stats change (including timer ticks). */
@@ -305,6 +306,7 @@ internal class ProcessingTimerPanel(
             sessionOutputTokens = totalOutput,
             sessionCostUsd = totalCost,
             multiplierMode = supportsMultiplier(),
+            localSessionPremiumRequests = localPremiumRequests(),
         )
     }
 

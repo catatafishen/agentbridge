@@ -631,7 +631,8 @@ class ChatToolWindowContent(
         // hosted in the side panel's Stats tab instead of above the input area.
         processingTimerPanel = ProcessingTimerPanel(
             supportsMultiplier = { agentManager.client.supportsMultiplier() },
-            localSessionRequests = { billing.localSessionRequests }
+            localSessionRequests = { billing.localSessionRequests },
+            localPremiumRequests = { billing.localSessionPremiumRequests }
         )
         com.intellij.openapi.util.Disposer.register(project, processingTimerPanel)
 
@@ -645,7 +646,7 @@ class ChatToolWindowContent(
         billing.usageGraphPanel = statsUsageGraphPanel
 
         val sessionStatsPanel = com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel(
-            processingTimerPanel, statsUsageGraphPanel, billing
+            project, processingTimerPanel, statsUsageGraphPanel, billing
         )
 
         // chatConsolePanel is now initialised — build the side panel and attach it to
@@ -1634,193 +1635,6 @@ class ChatToolWindowContent(
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             autoScrollEnabled = state
             chatConsolePanel.setAutoScroll(state)
-        }
-    }
-
-    /** Open a project-root file in the editor if it exists. */
-    private fun openProjectFile(fileName: String) {
-        val base = project.basePath ?: return
-        val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
-            .findFileByPath("$base/$fileName") ?: return
-        com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
-    }
-
-    /** Dropdown action for project configuration files. */
-    private inner class ProjectFilesDropdownAction : AnAction(
-        "Project Files", "Open project configuration files",
-        AllIcons.Nodes.Folder
-    ) {
-        override fun getActionUpdateThread() = ActionUpdateThread.BGT
-        override fun actionPerformed(e: AnActionEvent) {
-            val inputEvent = e.inputEvent ?: return
-            val component = inputEvent.source as? Component ?: return
-            showPopup(component)
-        }
-
-        private fun showPopup(owner: Component) {
-            val group = DefaultActionGroup()
-            val base = project.basePath ?: return
-
-            // Shared
-            val sharedGroup = DefaultActionGroup()
-            addFileAction(sharedGroup, base, "TODO.md", "TODO")
-            addFileAction(sharedGroup, base, "AGENTS.md", "AGENTS")
-            if (sharedGroup.childrenCount > 0) {
-                if (group.childrenCount > 0) group.addSeparator()
-                group.addSeparator("Shared")
-                group.addAll(*sharedGroup.childActionsOrStubs)
-            }
-
-            // Copilot CLI
-            val copilotGroup = DefaultActionGroup()
-            addGlobSection(copilotGroup, base, ".agent-work/copilot/agents", "*.md")
-            addGlobSection(copilotGroup, base, ".agent-work/copilot/skills", "*/SKILL.md")
-            addGlobSection(copilotGroup, base, ".agent-work/copilot/instructions", "*.instructions.md")
-            if (copilotGroup.childrenCount > 0) {
-                if (group.childrenCount > 0) group.addSeparator()
-                group.addSeparator("Copilot CLI")
-                group.addAll(*copilotGroup.childActionsOrStubs)
-            }
-
-            // OpenCode
-            val openCodeGroup = DefaultActionGroup()
-            addLabeledGlobSection(openCodeGroup, base, "Project Agents", "*.md", ".opencode/agent", ".opencode/agents")
-            addLabeledGlobSection(openCodeGroup, base, "Skills", "*/SKILL.md", ".opencode/skills")
-            addLabeledGlobSection(openCodeGroup, base, "Commands", "*.md", ".opencode/commands")
-            addLabeledGlobSection(openCodeGroup, base, "Deployed", "*.md", ".agent-work/opencode/agent")
-            if (openCodeGroup.childrenCount > 0) {
-                if (group.childrenCount > 0) group.addSeparator()
-                group.addSeparator("OpenCode")
-                group.addAll(*openCodeGroup.childActionsOrStubs)
-            }
-
-            // Junie
-            val junieGroup = DefaultActionGroup()
-            addFileAction(junieGroup, base, ".agent-work/junie/guidelines.md", "guidelines.md")
-            addGlobSection(junieGroup, base, ".agent-work/junie/agents", "*.md")
-            if (junieGroup.childrenCount > 0) {
-                if (group.childrenCount > 0) group.addSeparator()
-                group.addSeparator("Junie")
-                group.addAll(*junieGroup.childActionsOrStubs)
-            }
-
-            // Kiro
-            val kiroGroup = DefaultActionGroup()
-            addGlobSection(kiroGroup, base, ".agent-work/kiro/agents", "*.json")
-            addGlobSection(kiroGroup, base, ".agent-work/kiro/skills", "*/SKILL.md")
-            if (kiroGroup.childrenCount > 0) {
-                if (group.childrenCount > 0) group.addSeparator()
-                group.addSeparator("Kiro")
-                group.addAll(*kiroGroup.childActionsOrStubs)
-            }
-
-            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
-                .createActionGroupPopup(
-                    null, group, com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext(project),
-                    com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
-                    true
-                )
-            popup.showUnderneathOf(owner)
-        }
-
-        private fun addFileAction(group: DefaultActionGroup, base: String, path: String, label: String) {
-            val file = java.io.File(base, path)
-            val exists = file.exists()
-            val extension = path.substringAfterLast('.', "")
-            val icon = if (exists) {
-                fileIconFor(extension)
-            } else {
-                AllIcons.Actions.IntentionBulbGrey
-            }
-
-            group.add(object : AnAction(
-                label,
-                if (exists) "Open $path" else "Create $path",
-                icon
-            ) {
-                override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                override fun actionPerformed(e: AnActionEvent) {
-                    if (!exists) {
-                        file.parentFile?.mkdirs()
-                        file.writeText("")
-                    }
-                    openProjectFile(path)
-                }
-            })
-        }
-
-        private fun fileIconFor(extension: String): Icon {
-            return com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
-                .getFileTypeByExtension(extension).icon ?: AllIcons.FileTypes.Text
-        }
-
-        private fun addGlobSection(
-            group: DefaultActionGroup,
-            base: String,
-            dirPath: String,
-            pattern: String
-        ) {
-            val dir = java.io.File(base, dirPath)
-            val files = findMatchingFiles(dir, pattern)
-
-            files.forEach { file ->
-                val relPath = file.relativeTo(java.io.File(base)).path
-                val extension = file.extension
-                val icon = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
-                    .getFileTypeByExtension(extension).icon
-
-                group.add(object : AnAction(file.nameWithoutExtension, "Open ${file.name}", icon) {
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                    override fun actionPerformed(e: AnActionEvent) = openProjectFile(relPath)
-                })
-            }
-        }
-
-        private fun addLabeledGlobSection(
-            group: DefaultActionGroup,
-            base: String,
-            label: String,
-            pattern: String,
-            vararg dirPaths: String
-        ) {
-            val baseDir = java.io.File(base)
-            val files = linkedMapOf<String, java.io.File>()
-            dirPaths.forEach { dirPath ->
-                findMatchingFiles(java.io.File(base, dirPath), pattern).forEach { file ->
-                    val relPath = file.relativeTo(baseDir).path
-                    files.putIfAbsent(relPath, file)
-                }
-            }
-            if (files.isEmpty()) return
-
-            group.addSeparator(label)
-            files.values.sortedBy { it.relativeTo(baseDir).path.lowercase() }.forEach { file ->
-                val relPath = file.relativeTo(baseDir).path
-                val extension = file.extension
-                val icon = com.intellij.openapi.fileTypes.FileTypeManager.getInstance()
-                    .getFileTypeByExtension(extension).icon
-
-                group.add(object : AnAction(file.nameWithoutExtension, "Open ${file.name}", icon) {
-                    override fun getActionUpdateThread() = ActionUpdateThread.BGT
-                    override fun actionPerformed(e: AnActionEvent) = openProjectFile(relPath)
-                })
-            }
-        }
-
-        private fun findMatchingFiles(dir: java.io.File, pattern: String): List<java.io.File> {
-            if (!dir.exists()) return emptyList()
-
-            return if (pattern.contains("/")) {
-                // Pattern like "*/SKILL.md" - search subdirectories
-                val parts = pattern.split("/")
-                dir.listFiles()?.filter { it.isDirectory }?.flatMap { subDir ->
-                    subDir.listFiles { f -> f.isFile && f.name == parts[1] }?.toList() ?: emptyList()
-                }?.sortedBy { it.name } ?: emptyList()
-            } else {
-                // Simple pattern like "*.md"
-                val regex = Regex("^" + pattern.replace(".", "\\.").replace("*", ".*") + "$")
-                dir.listFiles { f -> f.isFile && regex.matches(f.name) }?.sortedBy { it.name }?.toList() ?: emptyList()
-            }
         }
     }
 

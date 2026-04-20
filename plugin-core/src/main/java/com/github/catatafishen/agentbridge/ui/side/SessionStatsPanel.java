@@ -1,5 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
+import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.ui.AgentIconProvider;
 import com.github.catatafishen.agentbridge.ui.BillingDisplayData;
 import com.github.catatafishen.agentbridge.ui.BillingManager;
 import com.github.catatafishen.agentbridge.ui.ProcessingTimerPanel;
@@ -8,7 +10,7 @@ import com.github.catatafishen.agentbridge.ui.TimerDisplayFormatter;
 import com.github.catatafishen.agentbridge.ui.UsageGraphPanel;
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers;
 import com.intellij.openapi.Disposable;
-import com.intellij.ui.AnimatedIcon;
+import com.intellij.openapi.project.Project;
 import com.intellij.util.ui.JBUI;
 import org.jetbrains.annotations.NotNull;
 
@@ -20,9 +22,10 @@ import java.time.format.DateTimeParseException;
 
 /**
  * Side panel tab displaying session statistics as labeled rows: an optional
- * "Current turn" section (visible while the agent is processing) and cumulative
- * session totals (time, turns, tools, lines, tokens, cost), followed by a thin
- * billing usage graph with quota information.
+ * "Active turn" section (visible while the agent is processing, with elapsed time
+ * inline in the header) and cumulative session totals (time, turns, tools, lines,
+ * tokens, cost), followed by a thin billing usage graph with quota information,
+ * and a project-files tree at the bottom.
  *
  * <p>Lines-changed values are rendered with colored numbers (green for additions,
  * red for removals) and animate smoothly when the counts update.
@@ -37,17 +40,21 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
     private final ProcessingTimerPanel timerPanel;
     private final BillingManager billing;
+    private final ActiveAgentManager agentManager;
     private final Font smallFont;
     private final Color dimColor;
+    private final Runnable switchListener;
 
     private final SessionDiffAnimator sessionDiffAnimator = new SessionDiffAnimator();
     private final SessionDiffAnimator turnDiffAnimator = new SessionDiffAnimator();
     private final Timer animationTimer;
 
+    // Selected client section
+    private final JLabel clientIconLabel = new JLabel();
+    private final JLabel clientNameLabel = new JLabel();
+
     // Current turn section
-    private final JLabel turnHeaderLabel = new JLabel("Current turn");
-    private final JLabel spinnerLabel = new JLabel(new AnimatedIcon.Default());
-    private final JLabel turnStatusLabel = new JLabel();
+    private final JLabel turnHeaderLabel = new JLabel("Active turn");
     private final JLabel turnToolsValue = new JLabel();
     private final JLabel turnLinesValue = new JLabel();
     private final JLabel turnTokensRowLabel = new JLabel(LABEL_TOKENS);
@@ -80,8 +87,11 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private final JPanel remainingRow;
     private final JPanel resetsRow;
     private final JPanel billingHeader;
+    private final JLabel billingNoteLabel;
+    private final ProjectFilesPanel filesPanel;
 
     public SessionStatsPanel(
+        @NotNull Project project,
         @NotNull ProcessingTimerPanel timerPanel,
         @NotNull UsageGraphPanel usageGraphPanel,
         @NotNull BillingManager billing
@@ -89,21 +99,27 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         super(new BorderLayout());
         this.timerPanel = timerPanel;
         this.billing = billing;
+        this.agentManager = ActiveAgentManager.getInstance(project);
 
         this.smallFont = UIManager.getFont("Label.font").deriveFont((float) JBUI.scale(11));
         this.dimColor = JBUI.CurrentTheme.Label.disabledForeground();
 
+        // Selected client section
+        clientNameLabel.setFont(smallFont);
+        JPanel clientRow = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(6), 0));
+        clientRow.setOpaque(false);
+        clientRow.setBorder(BorderFactory.createEmptyBorder(0, JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
+        clientRow.add(clientIconLabel);
+        clientRow.add(clientNameLabel);
+
+        JPanel clientSection = new JPanel();
+        clientSection.setLayout(new BoxLayout(clientSection, BoxLayout.Y_AXIS));
+        clientSection.setOpaque(false);
+        clientSection.add(createSectionHeader("Selected client"));
+        clientSection.add(clientRow);
+
         // Current turn section
         JPanel turnHeader = createSectionHeader(turnHeaderLabel);
-        JPanel turnStatusRow = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0));
-        turnStatusRow.setOpaque(false);
-        turnStatusRow.setBorder(BorderFactory.createEmptyBorder(
-            JBUI.scale(2), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8)));
-        spinnerLabel.setVisible(false);
-        turnStatusLabel.setFont(smallFont);
-        turnStatusLabel.setForeground(dimColor);
-        turnStatusRow.add(spinnerLabel);
-        turnStatusRow.add(turnStatusLabel);
 
         JPanel turnGrid = new JPanel(new GridBagLayout());
         turnGrid.setOpaque(false);
@@ -120,7 +136,6 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         turnSection.setLayout(new BoxLayout(turnSection, BoxLayout.Y_AXIS));
         turnSection.setOpaque(false);
         turnSection.add(turnHeader);
-        turnSection.add(turnStatusRow);
         turnSection.add(turnGrid);
         turnSection.setVisible(false);
 
@@ -157,25 +172,37 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
             JBUI.scale(2), JBUI.scale(8), JBUI.scale(8), JBUI.scale(8)));
 
         billingHeader = createSectionHeader("Monthly quota");
+        billingNoteLabel = new JLabel("via gh cli");
+        billingNoteLabel.setFont(smallFont);
+        billingNoteLabel.setForeground(dimColor);
+        billingNoteLabel.setBorder(BorderFactory.createEmptyBorder(0, JBUI.scale(8), JBUI.scale(2), JBUI.scale(8)));
+
         int brow = 0;
         usageRow = addStatRow(billingGrid, brow++, "Used", usageValue);
         remainingRow = addStatRow(billingGrid, brow++, "Remaining", remainingValue);
         resetsRow = addStatRow(billingGrid, brow, "Resets", resetsValue);
 
-        // Assemble the content
+        // Assemble the stats content (pinned to the top)
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setOpaque(false);
+        content.add(clientSection);
         content.add(turnSection);
         content.add(createSectionHeader("Session"));
         content.add(statsGrid);
         content.add(billingHeader);
+        content.add(billingNoteLabel);
         content.add(graphSection);
         content.add(billingGrid);
+        content.add(createSectionHeader("Project files"));
+
+        // Project files tree fills remaining height
+        filesPanel = new ProjectFilesPanel(project);
 
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
         wrapper.add(content, BorderLayout.NORTH);
+        wrapper.add(filesPanel, BorderLayout.CENTER);
 
         add(wrapper, BorderLayout.CENTER);
 
@@ -189,13 +216,25 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         });
         animationTimer.setRepeats(true);
 
+        switchListener = () -> SwingUtilities.invokeLater(this::refreshClientSection);
+        agentManager.addSwitchListener(switchListener);
+
         timerPanel.setOnStatsChanged(this::refresh);
         billing.setOnBillingChanged(this::refresh);
+        refreshClientSection();
         refresh();
+    }
+
+    /**
+     * Refreshes the project-files tree. Called when the Session tab is selected.
+     */
+    void refreshFiles() {
+        filesPanel.refresh();
     }
 
     @Override
     public void dispose() {
+        agentManager.removeSwitchListener(switchListener);
         timerPanel.setOnStatsChanged(null);
         billing.setOnBillingChanged(null);
         animationTimer.stop();
@@ -222,7 +261,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
     private JPanel addStatRowWithLabel(JPanel grid, int row, JLabel label, JLabel value) {
         label.setFont(smallFont);
-        label.setForeground(dimColor);
+        label.setForeground(UIManager.getColor("Label.foreground"));
         value.setFont(smallFont);
 
         JPanel rowPanel = new JPanel(new BorderLayout(JBUI.scale(8), 0));
@@ -235,7 +274,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         gbc.gridy = row;
         gbc.weightx = 1.0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(0, 0, JBUI.scale(2), 0);
+        gbc.insets = new Insets(0, 0, JBUI.scale(4), 0);
         grid.add(rowPanel, gbc);
         return rowPanel;
     }
@@ -258,17 +297,21 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         repaint();
     }
 
+    private void refreshClientSection() {
+        String profileId = agentManager.getActiveProfileId();
+        Icon icon = AgentIconProvider.INSTANCE.getIconForProfile(profileId);
+        clientIconLabel.setIcon(icon);
+        clientNameLabel.setText(agentManager.getActiveProfile().getDisplayName());
+    }
+
     private void refreshTurnSection(SessionStatsSnapshot snap) {
         if (!snap.isRunning()) {
-            spinnerLabel.setVisible(false);
             turnSection.setVisible(false);
             return;
         }
 
-        turnHeaderLabel.setText("Current turn");
-        spinnerLabel.setVisible(true);
         String elapsed = TimerDisplayFormatter.INSTANCE.formatElapsedTime(snap.getTurnElapsedSec());
-        turnStatusLabel.setText("Processing… " + elapsed);
+        turnHeaderLabel.setText("Active turn  " + elapsed);
         turnSection.setVisible(true);
 
         turnToolsValue.setText(String.valueOf(snap.getTurnToolCalls()));
@@ -307,7 +350,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         if (snap.getMultiplierMode()) {
             tokensRowLabel.setText("Premium req");
-            tokensValue.setText(String.valueOf(snap.getSessionTurnCount()));
+            tokensValue.setText(String.valueOf((int) snap.getLocalSessionPremiumRequests()));
             tokensRow.setVisible(true);
             costRow.setVisible(false);
         } else {
@@ -358,6 +401,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private void refreshBilling(BillingDisplayData bill) {
         boolean hasBilling = bill.getEntitlement() > 0 || bill.getUnlimited();
         billingHeader.setVisible(hasBilling);
+        billingNoteLabel.setVisible(hasBilling);
 
         if (bill.getUnlimited()) {
             usageValue.setText("Unlimited");
