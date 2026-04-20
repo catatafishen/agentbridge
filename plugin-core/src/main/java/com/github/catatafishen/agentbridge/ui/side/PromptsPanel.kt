@@ -44,6 +44,12 @@ internal class PromptsPanel(
         ApplicationManager.getApplication().invokeLater(::onEntriesChanged)
     }
 
+    private val hierarchyListener = java.awt.event.HierarchyListener { e ->
+        if ((e.changeFlags and HierarchyEvent.SHOWING_CHANGED.toLong()) != 0L && isShowing) {
+            SwingUtilities.invokeLater { scrollToBottom() }
+        }
+    }
+
     private var displayedCount = PAGE_SIZE
     private var lastQuery = ""
 
@@ -97,7 +103,7 @@ internal class PromptsPanel(
                     lastQuery = q
                     displayedCount = PAGE_SIZE
                 }
-                refresh()
+                refresh(scrollToBottom = false)
             }
         })
         searchField.textEditor.emptyText.text = "Search prompts…"
@@ -116,11 +122,7 @@ internal class PromptsPanel(
 
         chatConsole.addEntriesChangeListener(entriesListener)
 
-        addHierarchyListener { e ->
-            if ((e.changeFlags and HierarchyEvent.SHOWING_CHANGED.toLong()) != 0L && isShowing) {
-                SwingUtilities.invokeLater { scrollToBottom() }
-            }
-        }
+        addHierarchyListener(hierarchyListener)
 
         reloadHistoryAsync()
         refresh()
@@ -197,6 +199,7 @@ internal class PromptsPanel(
 
     override fun dispose() {
         chatConsole.removeEntriesChangeListener(entriesListener)
+        removeHierarchyListener(hierarchyListener)
     }
 
     private class BubbleRenderer : ListCellRenderer<PromptItem> {
