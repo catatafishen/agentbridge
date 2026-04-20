@@ -1016,7 +1016,7 @@ class ChatToolWindowContent(
         // Auto-clean approved review rows when a brand-new user turn starts (not nudge / queued follow-up).
         if (com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project).isAutoCleanReviewOnNewPrompt) {
             try {
-                com.github.catatafishen.agentbridge.psi.review.AgentEditSession.getInstance(project)
+                AgentEditSession.getInstance(project)
                     ?.removeAllApproved()
             } catch (_: Throwable) { /* defensive: review session is best-effort */
             }
@@ -1151,7 +1151,7 @@ class ChatToolWindowContent(
                             // Prepend the unhandled nudge to whatever the user is currently typing — do not auto-send.
                             val current = promptTextArea.text
                             promptTextArea.text =
-                                if (current.isNullOrEmpty()) nudgeText else nudgeText + "\n\n" + current
+                                if (current.isEmpty()) nudgeText else nudgeText + "\n\n" + current
                             promptTextArea.requestFocusInWindow()
                         } else {
                             // Default: auto-send the nudge as a fresh prompt.
@@ -1180,6 +1180,8 @@ class ChatToolWindowContent(
         leftGroup.addSeparator()
         restartSessionGroup = RestartSessionGroup()
         leftGroup.add(restartSessionGroup!!)
+        leftGroup.addSeparator()
+        leftGroup.add(PowerOffDropdownAction())
 
         controlsToolbar = ActionManager.getInstance().createActionToolbar(
             "AgentControls", leftGroup, false
@@ -1317,9 +1319,29 @@ class ChatToolWindowContent(
             val inputEvent = e.inputEvent ?: return
             val component = inputEvent.source as? Component ?: return
             val group = DefaultActionGroup()
-            val hasAgents = addAgentSelectionSection(group)
-            val hasOptions = addSessionOptionsSection(group)
-            addSessionManagementSection(group, hasAgents || hasOptions)
+            addAgentSelectionSection(group)
+            addSessionOptionsSection(group)
+            if (group.childrenCount == 0) return
+            val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
+                null, group, e.dataContext,
+                com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
+            )
+            popup.showUnderneathOf(component)
+        }
+    }
+
+    /** Dropdown button for session lifecycle actions: Disconnect and Session sub-group. */
+    private inner class PowerOffDropdownAction : AnAction(
+        "Power Off", "Disconnect or manage the current session",
+        com.intellij.openapi.util.IconLoader.getIcon("/icons/power.svg", PowerOffDropdownAction::class.java)
+    ) {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val inputEvent = e.inputEvent ?: return
+            val component = inputEvent.source as? Component ?: return
+            val group = DefaultActionGroup()
+            addSessionManagementSection(group)
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createActionGroupPopup(
                 null, group, e.dataContext,
                 com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
@@ -1391,8 +1413,7 @@ class ChatToolWindowContent(
         return true
     }
 
-    private fun addSessionManagementSection(group: DefaultActionGroup, hasPreviousSections: Boolean) {
-        if (hasPreviousSections) group.addSeparator()
+    private fun addSessionManagementSection(group: DefaultActionGroup) {
         group.add(object : AnAction(
             "Disconnect",
             "Stop the ACP process and return to the connection screen",
