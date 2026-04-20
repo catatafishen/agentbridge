@@ -18,7 +18,7 @@ class KeyBadge(text: String) : JBLabel(text) {
     init {
         font = JBUI.Fonts.smallFont()
         foreground = UIUtil.getLabelForeground()
-        border = JBUI.Borders.empty(1, 4, 1, 4)
+        border = JBUI.Borders.empty(2, 6, 2, 6)
         isOpaque = false
     }
 

@@ -38,14 +38,14 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
             row1,
             PromptShortcutAction.SEND_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0),
-            "send"
+            "Send"
         )
         addDot(row1)
         addShortcutEntry(
             row1,
             PromptShortcutAction.NEW_LINE_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK),
-            "new line"
+            "New Line"
         )
 
         val row2 = createRow()
@@ -53,7 +53,7 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
             row2,
             PromptShortcutAction.STOP_AND_SEND_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
-            "stop && send"
+            "Stop && Send"
         )
         addDot(row2)
         addShortcutEntry(
@@ -63,7 +63,7 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
                 KeyEvent.VK_ENTER,
                 InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK
             ),
-            "queue"
+            "Queue"
         )
 
         inner.add(row1)
@@ -75,7 +75,7 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
 
     /** Toggle between "send" and "nudge" label when the agent is working. */
     fun setNudgeMode(nudge: Boolean) {
-        sendLabel.text = if (nudge) "nudge" else "send"
+        sendLabel.text = if (nudge) "Nudge" else "Send"
     }
 
     private fun createRow(): JPanel {
