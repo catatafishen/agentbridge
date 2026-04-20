@@ -1,7 +1,7 @@
 # Focus-Stealing Bug — Issue #275
 
 **Issue**: https://github.com/catatafishen/agentbridge/issues/275  
-**Status**: Fixed as of PR #276 + PR #280 + Attempt 11 (VetoableChangeListener FocusGuard)  
+**Status**: Under investigation — mitigations in PR #276, PR #280, Attempt 11 (VetoableChangeListener FocusGuard), not confirmed fixed  
 **Scope**: Broader than the title — affects editor focus, terminal tabs, run/search tool windows
 
 ---

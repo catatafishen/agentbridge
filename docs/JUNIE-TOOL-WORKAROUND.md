@@ -289,4 +289,4 @@ selection in ACP mode.
 - Junie CLI: https://junie.jetbrains.com/
 - Junie GitHub: https://github.com/JetBrains/junie
 - ACP Specification: https://agentclientprotocol.com/
-- Related: `docs/CLI-BUG-556-WORKAROUND.md` (Copilot tool filtering workaround)
+- Related: `docs/bugs/CLI-BUG-556-WORKAROUND.md` (Copilot tool filtering workaround)
