@@ -102,7 +102,7 @@ add("excludedTools",excluded);
 | Agent | Supports `excludedTools` |
 |-------|--------------------------|
 | OpenCode | ✅ Yes — default profile has this enabled |
-| Copilot CLI | ❌ No — ignores it (see [CLI-BUG-556-WORKAROUND.md](CLI-BUG-556-WORKAROUND.md)) |
+| Copilot CLI | ❌ No — ignores it (see [CLI-BUG-556-WORKAROUND.md](bugs/CLI-BUG-556-WORKAROUND.md)) |
 | Claude / others | Depends on ACP implementation |
 
 For Copilot CLI, built-in tool control is handled differently via Layer 3 (CLI flags).
