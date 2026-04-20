@@ -11,6 +11,7 @@ import java.awt.*;
 import java.awt.event.InputEvent;
 import java.beans.PropertyChangeEvent;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
 /**
  * Prevents programmatic focus changes during MCP tool execution from stealing focus
@@ -63,12 +64,7 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
     private final Project project;
     private final KeyboardFocusManager kfm;
     private final Component chatFocusOwner;
-    /**
-     * The IDE main frame window containing the chat tool window. Focus changes to
-     * components in the same window are vetoed; changes to other windows (dialogs,
-     * popups) are allowed through.
-     */
-    private final Window chatWindow;
+    private final Function<Component, Window> windowResolver;
     /**
      * Package-private so tests can simulate the uninstalled state without requiring the IDE platform.
      */
@@ -84,10 +80,17 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
      * Package-private for tests; use {@link #install(Project)} in production code.
      */
     FocusGuard(Project project, KeyboardFocusManager kfm, Component chatFocusOwner) {
+        this(project, kfm, chatFocusOwner, SwingUtilities::getWindowAncestor);
+    }
+
+    FocusGuard(Project project,
+               KeyboardFocusManager kfm,
+               Component chatFocusOwner,
+               Function<Component, Window> windowResolver) {
         this.project = project;
         this.kfm = kfm;
         this.chatFocusOwner = chatFocusOwner;
-        this.chatWindow = SwingUtilities.getWindowAncestor(chatFocusOwner);
+        this.windowResolver = windowResolver;
     }
 
     /**
@@ -180,8 +183,8 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                // Interrupted while waiting for EDT removal; remove immediately to avoid a leaked listener.
-                remove.run();
+                // Waiting is best-effort only; the removal is already queued on the EDT.
+                LOG.debug("FocusGuard EDT removal wait interrupted; queued removal will finish on the EDT");
             }
         }
     }
@@ -205,8 +208,9 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
         // Only veto focus changes within the IDE main frame. Focus changes to dialog
         // windows, popups, completion lookups, and other separate windows are allowed
         // — they are legitimate IDE UI that the user or platform needs to interact with.
-        Window targetWindow = SwingUtilities.getWindowAncestor(newComp);
-        if (chatWindow != null && targetWindow != chatWindow) return;
+        Window chatWindow = windowResolver.apply(chatFocusOwner);
+        Window targetWindow = windowResolver.apply(newComp);
+        if (chatWindow == null || targetWindow == null || targetWindow != chatWindow) return;
 
         // Respect user-initiated focus moves: a click or keystroke that transferred focus
         // should not be fought by the guard. Programmatic focus changes (from navigate(),
