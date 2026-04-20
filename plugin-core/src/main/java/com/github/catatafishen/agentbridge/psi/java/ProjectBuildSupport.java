@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.java;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.intellij.compiler.CompilerMessageImpl;
 import com.intellij.openapi.compiler.CompileContext;
@@ -90,6 +91,9 @@ public class ProjectBuildSupport {
         }
         if (previousEditor == null || previousEditor.getFile() == null) return;
         EdtUtil.invokeLater(() -> {
+            // Don't steal focus from the chat prompt — the build callback fires
+            // asynchronously after the tool completes, outside FocusGuard's lifetime.
+            if (PsiBridgeService.isChatToolWindowActive(project)) return;
             var fem = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project);
             fem.openFile(previousEditor.getFile(), true);
         });

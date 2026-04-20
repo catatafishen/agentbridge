@@ -118,6 +118,7 @@ final class FocusGuard implements PropertyChangeListener {
                 }
             });
             try {
+                //noinspection ResultOfMethodCallIgnored — timeout is best-effort; guard will still install if EDT is slow
                 latch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -128,11 +129,20 @@ final class FocusGuard implements PropertyChangeListener {
 
     /**
      * Removes the focus guard. Safe to call multiple times and from any thread.
+     *
+     * <p>When called from a background thread (the usual case — from {@code callTool}'s
+     * finally block), the actual removal is posted to the EDT via {@code invokeLater} and
+     * the calling thread blocks until it completes.  This ensures that any
+     * {@code invokeLater} callbacks enqueued <em>during</em> tool execution (e.g.
+     * {@code followFileIfEnabled}'s deferred {@code navigate(false)}) are processed
+     * while the guard is still active.  Without this, the eager {@code uninstalled = true}
+     * flag would disable the guard before the EDT-queued focus-stealing operations fire,
+     * leaving a window where {@code navigate(false)} can steal focus with no protection.
      */
     void uninstall() {
-        if (uninstalled) return;
-        uninstalled = true;
         Runnable remove = () -> {
+            if (uninstalled) return;
+            uninstalled = true;
             try {
                 kfm.removePropertyChangeListener("focusOwner", this);
             } catch (Exception e) {
@@ -143,7 +153,22 @@ final class FocusGuard implements PropertyChangeListener {
         if (app.isDispatchThread()) {
             remove.run();
         } else {
-            app.invokeLater(remove);
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            app.invokeLater(() -> {
+                try {
+                    remove.run();
+                } finally {
+                    latch.countDown();
+                }
+            });
+            try {
+                //noinspection ResultOfMethodCallIgnored — timeout means EDT is busy; removal will happen when EDT catches up
+                latch.await(200, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                // Timeout or interruption — remove immediately to avoid a leaked listener.
+                remove.run();
+            }
         }
     }
 
@@ -201,6 +226,8 @@ final class FocusGuard implements PropertyChangeListener {
             var tw = twm.getToolWindow("AgentBridge");
             if (tw == null) return false;
             JComponent twRoot = tw.getComponent();
+            // tw.getComponent() is @NotNull but we keep the defensive check — runtime ≠ compile-time.
+            //noinspection ConstantValue
             if (twRoot == null) return false;
             if (SwingUtilities.isDescendingFrom(comp, twRoot)) return true;
 
