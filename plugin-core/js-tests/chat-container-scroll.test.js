@@ -319,14 +319,14 @@ describe('ChatContainer scroll behavior', () => {
             expect(container.style.scrollBehavior).toBe('smooth');
         });
 
-        it('forceScroll respects CSS scroll-behavior (does not override)', () => {
+        it('forceScroll forces instant scroll regardless of scroll-behavior', () => {
             mockScrollGeometry(container, {scrollHeight: 2000, scrollTop: 0, clientHeight: 500});
             container.style.scrollBehavior = 'smooth';
 
             container.forceScroll();
 
             expect(container.scrollTop).toBe(2000);
-            // forceScroll does NOT temporarily change scroll-behavior — it stays smooth
+            // forceScroll temporarily uses auto internally, then restores the previous value
             expect(container.style.scrollBehavior).toBe('smooth');
         });
     });
