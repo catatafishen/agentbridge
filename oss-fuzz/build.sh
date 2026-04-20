@@ -6,15 +6,29 @@
 
 cd /src/agentbridge
 
-# Build all test classes (includes fuzz targets)
+# Build all test classes (fuzz targets live in the test source sets).
 ./gradlew :plugin-core:testClasses :mcp-server:testClasses --no-daemon --quiet
 
-# Resolve full test runtime classpath for each module
+# Resolve full test runtime classpaths (includes compiled classes + all dep JARs).
 CP_CORE=$(./gradlew :plugin-core:printFuzzClasspath --no-daemon -q | tail -1)
 CP_MCP=$(./gradlew :mcp-server:printFuzzClasspath --no-daemon -q | tail -1)
-FULL_CP="${CP_CORE}:${CP_MCP}"
 
-# Fuzz target classes — each has a fuzzerTestOneInput(FuzzedDataProvider) entry point
+# Copy every JAR from the classpath into $OUT/ and every class directory into
+# $OUT/classes/.  The jazzer_driver wrapper uses "$this_dir/*" (Java wildcard
+# classpath) and "$this_dir/classes" at fuzzing runtime.
+mkdir -p "$OUT/classes"
+for cp in "$CP_CORE" "$CP_MCP"; do
+  IFS=':' read -ra entries <<< "$cp"
+  for entry in "${entries[@]}"; do
+    if [[ -f "$entry" && "$entry" == *.jar ]]; then
+      cp -n "$entry" "$OUT/" 2>/dev/null || true
+    elif [[ -d "$entry" ]]; then
+      cp -rn "$entry/." "$OUT/classes/" 2>/dev/null || true
+    fi
+  done
+done
+
+# Fuzz target classes — each exposes fuzzerTestOneInput(FuzzedDataProvider).
 TARGETS=(
   com.github.catatafishen.agentbridge.fuzz.AgentIdMapperFuzz
   com.github.catatafishen.agentbridge.fuzz.MarkdownRendererFuzz
@@ -27,16 +41,24 @@ TARGETS=(
 
 for target in "${TARGETS[@]}"; do
   short_name="${target##*.}"
-  # $JAZZER_FUZZ_TARGET_CLASS is read by the Jazzer driver
-  cat > "$OUT/${short_name}.sh" <<EOF
-#!/bin/bash
-export JAZZER_FUZZ_TARGET_CLASS=${target}
-this_dir=\$(dirname "\$0")
-"\$this_dir/${short_name}_driver" "\$@"
-EOF
-  chmod +x "$OUT/${short_name}.sh"
 
-  # Package Jazzer driver + classpath into a single archive
-  "$JAVA_HOME/bin/jar" cf "$OUT/${short_name}_seed_corpus.zip" -C /dev/null . 2>/dev/null || true
-  compile_java_fuzzer "$SRC/agentbridge" "$target" "$OUT/${short_name}" "$FULL_CP"
+  # Create the execution wrapper (the file OSS-Fuzz treats as the fuzzer binary).
+  cat > "$OUT/${short_name}" << EOF
+#!/bin/bash
+# LLVMFuzzerTestOneInput for fuzzer detection.
+this_dir=\$(dirname "\$0")
+if [[ "\$@" =~ (^| )-runs=[0-9]+(\$| ) ]]; then
+  mem_settings='-Xmx1900m:-Xss900k'
+else
+  mem_settings='-Xmx2048m:-Xss1024k'
+fi
+LD_LIBRARY_PATH="${JVM_LD_LIBRARY_PATH}:\$this_dir" \\
+ASAN_OPTIONS=\$ASAN_OPTIONS:symbolize=1:external_symbolizer_path=\$this_dir/llvm-symbolizer:detect_leaks=0 \\
+\$this_dir/jazzer_driver --agent_path=\$this_dir/jazzer_agent_deploy.jar \\
+--cp=\$this_dir/classes:\$this_dir/* \\
+--target_class=${target} \\
+--jvm_args="\$mem_settings" \\
+"\$@"
+EOF
+  chmod +x "$OUT/${short_name}"
 done
