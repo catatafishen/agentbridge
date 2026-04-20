@@ -541,7 +541,8 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
         }
 
         private void appendFileName(ReviewItem item, boolean isSelected, Color fg) {
-            String fileName = Path.of(item.path()).getFileName().toString();
+            Path p = Path.of(item.path());
+            String fileName = p.getFileName() != null ? p.getFileName().toString() : item.path();
             Color fileColor = isSelected ? fg : switch (item.status()) {
                 case ADDED -> STATUS_ADDED;
                 case MODIFIED -> STATUS_MODIFIED;
