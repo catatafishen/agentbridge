@@ -1137,16 +1137,14 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             if (vf == null || !vf.isValid()) return;
 
             String path = vf.getPath();
-            // Re-edit of an APPROVED row: rebase the snapshot to the just-approved state
-            // (so the diff shows only the *new* hunks, not the cumulative ones).
+            // Re-edit of an APPROVED row: keep the original snapshot so diffs accumulate
+            // across all agent edits. Only flip the approval state back to PENDING so the
+            // user reviews the new changes (unless auto-approve is on).
             if (approvals.get(path) == ApprovalState.APPROVED && snapshots.containsKey(path)) {
-                String currentText = doc.getText();
-                snapshots.put(path, currentText);
                 if (!isAutoApproveOn()) {
                     approvals.put(path, ApprovalState.PENDING);
                 }
                 lastEditedAt.put(path, System.currentTimeMillis());
-                AgentEditHighlighter.getInstance(project).clearForFile(vf);
                 fireReviewStateChanged();
                 return;
             }

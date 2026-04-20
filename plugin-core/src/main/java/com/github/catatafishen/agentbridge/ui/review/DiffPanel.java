@@ -48,7 +48,7 @@ import java.util.List;
  * approve toggle + remove/reject icon on the right. Click zones are determined by
  * x-position relative to cell bounds.
  */
-public final class ReviewChangesPanel extends JPanel implements Disposable {
+public final class DiffPanel extends JPanel implements Disposable {
 
     private static final String CARD_LIST = "list";
     private static final String CARD_EMPTY = "empty";
@@ -79,7 +79,7 @@ public final class ReviewChangesPanel extends JPanel implements Disposable {
     private final ReviewDiffCountAnimator diffCountAnimator;
     private final Timer diffAnimationTimer;
 
-    public ReviewChangesPanel(@NotNull Project project) {
+    public DiffPanel(@NotNull Project project) {
         super(new BorderLayout());
         this.project = project;
 

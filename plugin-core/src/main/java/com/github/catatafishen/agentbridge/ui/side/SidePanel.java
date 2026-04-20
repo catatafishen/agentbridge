@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
-import com.github.catatafishen.agentbridge.ui.review.ReviewChangesPanel;
+import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Disposer;
@@ -16,7 +16,7 @@ import java.awt.*;
  * Uses {@link PlatformApiCompat#createJBTabsPanel} for native IntelliJ flat tab styling.
  * Hosts five tabs:
  * <ol>
- *   <li><b>Diff</b> — the existing {@link ReviewChangesPanel} with pending agent edits.</li>
+ *   <li><b>Diff</b> — the existing {@link DiffPanel} with pending agent edits.</li>
  *   <li><b>Files</b> — configuration/agent-definition files for this project.</li>
  *   <li><b>Todo</b> — rendered view of the active agent session's {@code plan.md},
  *       with a {@code (done/total)} badge in the tab title when checkbox-style todos exist.</li>
@@ -36,7 +36,7 @@ public final class SidePanel extends JPanel implements Disposable {
     public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
                      @NotNull SessionStatsPanel sessionStatsPanel) {
         super(new BorderLayout());
-        ReviewChangesPanel reviewPanel = new ReviewChangesPanel(project);
+        DiffPanel reviewPanel = new DiffPanel(project);
         Disposer.register(this, reviewPanel);
         Disposer.register(this, sessionStatsPanel);
 
