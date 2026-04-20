@@ -287,6 +287,50 @@ describe('ChatContainer scroll behavior', () => {
         });
     });
 
+    describe('instant scroll bypass (stutter prevention)', () => {
+        it('scrollIfNeeded forces scroll-behavior to auto even when smooth is set', () => {
+            mockScrollGeometry(container, {scrollHeight: 2000, scrollTop: 0, clientHeight: 500});
+            container.style.scrollBehavior = 'smooth';
+
+            container.scrollIfNeeded();
+
+            expect(container.scrollTop).toBe(2000);
+            // scroll-behavior must be restored to smooth after the instant scroll
+            expect(container.style.scrollBehavior).toBe('smooth');
+        });
+
+        it('scrollIfNeeded restores empty scroll-behavior when it was unset', () => {
+            mockScrollGeometry(container, {scrollHeight: 2000, scrollTop: 0, clientHeight: 500});
+            container.style.scrollBehavior = '';
+
+            container.scrollIfNeeded();
+
+            expect(container.scrollTop).toBe(2000);
+            expect(container.style.scrollBehavior).toBe('');
+        });
+
+        it('compensateScroll forces instant scroll regardless of scroll-behavior', () => {
+            mockScrollGeometry(container, {scrollHeight: 2000, scrollTop: 0, clientHeight: 500});
+            container.style.scrollBehavior = 'smooth';
+
+            container.compensateScroll(800);
+
+            expect(container.scrollTop).toBe(800);
+            expect(container.style.scrollBehavior).toBe('smooth');
+        });
+
+        it('forceScroll respects CSS scroll-behavior (does not override)', () => {
+            mockScrollGeometry(container, {scrollHeight: 2000, scrollTop: 0, clientHeight: 500});
+            container.style.scrollBehavior = 'smooth';
+
+            container.forceScroll();
+
+            expect(container.scrollTop).toBe(2000);
+            // forceScroll does NOT temporarily change scroll-behavior — it stays smooth
+            expect(container.style.scrollBehavior).toBe('smooth');
+        });
+    });
+
     describe('disconnectedCallback cleanup', () => {
         it('removes wheel listener after disconnect', () => {
             document.body.removeChild(container);

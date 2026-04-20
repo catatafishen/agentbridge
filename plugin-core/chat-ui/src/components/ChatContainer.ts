@@ -222,9 +222,25 @@ export default class ChatContainer extends HTMLElement {
         this._autoScroll = true;
     }
 
+    /**
+     * Scroll to an exact position instantly, bypassing CSS scroll-behavior.
+     *
+     * When scroll-behavior is 'smooth', setting scrollTop starts an animation
+     * that can be interrupted by the next MutationObserver/ResizeObserver-driven
+     * scrollIfNeeded() call, causing endless stutter as animations keep restarting
+     * without reaching the target. Forcing 'auto' here makes every programmatic
+     * autoscroll atomic and prevents the feedback loop.
+     */
+    private _scrollToInstant(top: number): void {
+        const prev = this.style.scrollBehavior;
+        this.style.scrollBehavior = 'auto';
+        this.scrollTop = top;
+        this.style.scrollBehavior = prev;
+    }
+
     scrollIfNeeded(): void {
         if (this._autoScroll && !this._restoring) {
-            this.scrollTop = this.scrollHeight;
+            this._scrollToInstant(this.scrollHeight);
         }
     }
 
@@ -247,12 +263,19 @@ export default class ChatContainer extends HTMLElement {
     }
 
     compensateScroll(targetY: number): void {
-        this.scrollTop = targetY;
+        this._scrollToInstant(targetY);
     }
 
     /**
-     * Disable smooth scroll during streaming to prevent CSS animation conflicts
-     * with rapid programmatic scrollTop changes in JCEF OSR.
+     * Control CSS scroll-behavior based on streaming state.
+     *
+     * During streaming: always 'auto' (instant) so forceScroll() and the
+     * autoScroll setter jump instantly.
+     * After streaming: 'smooth' if the user preference is enabled, giving
+     * forceScroll() a smooth animation for user-initiated "scroll to bottom".
+     *
+     * Note: scrollIfNeeded() and compensateScroll() always use instant scrolling
+     * via _scrollToInstant() regardless of this CSS property.
      */
     setStreaming(active: boolean, smoothScrollEnabled: boolean): void {
         this.style.scrollBehavior = active ? 'auto' : (smoothScrollEnabled ? 'smooth' : 'auto');
