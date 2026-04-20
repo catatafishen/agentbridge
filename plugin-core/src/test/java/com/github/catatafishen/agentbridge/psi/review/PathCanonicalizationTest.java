@@ -90,4 +90,23 @@ class PathCanonicalizationTest {
         String result = resolve(path, BASE);
         assertFalse(result.startsWith("/home/user/project/src/Foo.java"));
     }
+
+    @Test
+    void windowsDrivePath_returnedAsIs() {
+        String abs = "C:/project/src/Foo.java";
+        assertEquals(abs, resolve(abs, BASE));
+    }
+
+    @Test
+    void windowsDrivePathWithBase_returnedAsIs() {
+        String abs = "C:/project/src/Foo.java";
+        String windowsBase = "C:/Users/dev/project";
+        assertEquals(abs, resolve(abs, windowsBase));
+    }
+
+    @Test
+    void windowsUncPath_returnedAsIs() {
+        String abs = "//server/share/project/src/Foo.java";
+        assertEquals(abs, resolve(abs, BASE));
+    }
 }
