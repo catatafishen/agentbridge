@@ -23,7 +23,7 @@ import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.Key;
-import com.intellij.openapi.util.io.FileUtil;
+import com.intellij.openapi.util.io.OSAgnosticPathUtil;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.openapi.vfs.VirtualFileManager;
@@ -507,7 +507,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
      * returned as-is; otherwise it is joined to {@code basePath}.
      */
     static @NotNull String toAbsolutePath(@NotNull String path, @Nullable String basePath) {
-        if (basePath == null || FileUtil.isAbsolutePlatformIndependent(path)) return path;
+        if (basePath == null || OSAgnosticPathUtil.isAbsolute(path)) return path;
         return basePath + "/" + path;
     }
 

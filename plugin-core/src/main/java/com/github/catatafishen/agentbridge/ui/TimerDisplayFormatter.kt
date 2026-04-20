@@ -76,7 +76,7 @@ object TimerDisplayFormatter {
 
     /**
      * Formats diff counts as colored HTML for use inside a `JLabel` with `<html>` support.
-     * Returns `"<html><font color='#HEX'>+N</font> <font color='#HEX'>-M</font></html>"`
+     * Returns `"<html><font color='#HEX'>+N</font> <font color='#HEX'>−M</font></html>"`
      * with green for additions and red for removals, or empty string when both are zero.
      */
     @JvmStatic

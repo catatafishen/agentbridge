@@ -79,9 +79,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private final JPanel billingHeader;
 
     public SessionStatsPanel(
-        @NotNull ProcessingTimerPanel timerPanel,
-        @NotNull UsageGraphPanel usageGraphPanel,
-        @NotNull BillingManager billing
+            @NotNull ProcessingTimerPanel timerPanel,
+            @NotNull UsageGraphPanel usageGraphPanel,
+            @NotNull BillingManager billing
     ) {
         super(new BorderLayout());
         this.timerPanel = timerPanel;
@@ -95,7 +95,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         JPanel turnStatusRow = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(4), 0));
         turnStatusRow.setOpaque(false);
         turnStatusRow.setBorder(BorderFactory.createEmptyBorder(
-            JBUI.scale(2), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8)));
+                JBUI.scale(2), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8)));
         spinnerLabel.setVisible(false);
         turnStatusLabel.setFont(smallFont);
         turnStatusLabel.setForeground(dimColor);
@@ -105,7 +105,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         JPanel turnGrid = new JPanel(new GridBagLayout());
         turnGrid.setOpaque(false);
         turnGrid.setBorder(BorderFactory.createEmptyBorder(
-            JBUI.scale(2), JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
+                JBUI.scale(2), JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
 
         int tRow = 0;
         addStatRow(turnGrid, tRow++, "Tool calls", turnToolsValue, smallFont, dimColor);
@@ -125,7 +125,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         JPanel statsGrid = new JPanel(new GridBagLayout());
         statsGrid.setOpaque(false);
         statsGrid.setBorder(BorderFactory.createEmptyBorder(
-            JBUI.scale(4), JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
+                JBUI.scale(4), JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
 
         int row = 0;
         addStatRow(statsGrid, row++, "Time", timeValue, smallFont, dimColor);
@@ -140,7 +140,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         JPanel graphSection = new JPanel(new BorderLayout());
         graphSection.setOpaque(false);
         graphSection.setBorder(BorderFactory.createEmptyBorder(
-            JBUI.scale(4), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8)));
+                JBUI.scale(4), JBUI.scale(8), JBUI.scale(2), JBUI.scale(8)));
         int graphH = JBUI.scale(20);
         usageGraphPanel.setPreferredSize(new Dimension(0, graphH));
         usageGraphPanel.setMinimumSize(new Dimension(0, graphH));
@@ -151,7 +151,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         JPanel billingGrid = new JPanel(new GridBagLayout());
         billingGrid.setOpaque(false);
         billingGrid.setBorder(BorderFactory.createEmptyBorder(
-            JBUI.scale(2), JBUI.scale(8), JBUI.scale(8), JBUI.scale(8)));
+                JBUI.scale(2), JBUI.scale(8), JBUI.scale(8), JBUI.scale(8)));
 
         billingHeader = createSectionHeader("Monthly quota", smallFont, dimColor);
         int brow = 0;
@@ -193,6 +193,10 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
     @Override
     public void dispose() {
+        timerPanel.setOnStatsChanged(() -> {
+        });
+        billing.setOnBillingChanged(() -> {
+        });
         animationTimer.stop();
     }
 
@@ -206,7 +210,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         JPanel header = new JPanel(new FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0));
         header.setOpaque(false);
         header.setBorder(BorderFactory.createEmptyBorder(
-            JBUI.scale(6), 0, JBUI.scale(2), 0));
+                JBUI.scale(6), 0, JBUI.scale(2), 0));
         header.add(label);
         return header;
     }
@@ -283,10 +287,10 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
             if (hasTurnUsage) {
                 turnTokensRowLabel.setText(LABEL_TOKENS);
                 turnTokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
-                        " in / " +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
-                        " out");
+                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
+                                " in / " +
+                                TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
+                                " out");
                 turnTokensRow.setVisible(true);
                 turnCostRowLabel.setText("Cost");
                 turnCostValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(turnCost != null ? turnCost : 0.0));
@@ -313,10 +317,10 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
             if (totalTokens > 0 || snap.getSessionCostUsd() > 0.0) {
                 tokensRowLabel.setText(LABEL_TOKENS);
                 tokensValue.setText(
-                    TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
-                        " in / " +
-                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
-                        " out");
+                        TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
+                                " in / " +
+                                TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
+                                " out");
                 tokensRow.setVisible(true);
                 costRowLabel.setText("Cost");
                 costValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(snap.getSessionCostUsd()));
@@ -334,13 +338,13 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         SessionDiffAnimator.DiffCounts sCounts = sessionDiffAnimator.displayCounts(now);
         String sHtml = TimerDisplayFormatter.formatDiffCountHtml(
-            sCounts.added(), sCounts.removed(), addColor, delColor);
+                sCounts.added(), sCounts.removed(), addColor, delColor);
         linesValue.setText(sHtml.isEmpty() ? "—" : sHtml);
 
         if (turnSection.isVisible()) {
             SessionDiffAnimator.DiffCounts tCounts = turnDiffAnimator.displayCounts(now);
             String tHtml = TimerDisplayFormatter.formatDiffCountHtml(
-                tCounts.added(), tCounts.removed(), addColor, delColor);
+                    tCounts.added(), tCounts.removed(), addColor, delColor);
             turnLinesValue.setText(tHtml.isEmpty() ? "—" : tHtml);
         }
     }
