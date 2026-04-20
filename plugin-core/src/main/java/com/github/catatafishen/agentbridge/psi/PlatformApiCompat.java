@@ -489,8 +489,12 @@ public final class PlatformApiCompat {
         // In that case the listener would never fire, so check immediately after registering it.
         if (isCommitIndexed(data, hash) && navigated.compareAndSet(false, true)) {
             data.removeDataPackChangeListener(listener);
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash));
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                // Same guard as the DataPackChangeListener path above — skip VCS Log
+                // navigation when the user is in the chat prompt to avoid focus theft.
+                if (PsiBridgeService.isChatToolWindowActive(project)) return;
+                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash);
+            });
             return;
         }
 

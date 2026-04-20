@@ -290,24 +290,64 @@ the ACP-side path in `PromptOrchestrator` extracted file paths from the ACP even
 
 **Files**: `FileNavigator.kt` (`handleFileLink` method).
 
+### Attempt 10: PlatformApiCompat race-condition path, ProjectBuildSupport guard, FocusGuard uninstall timing
+
+**New incidents observed**:
+- At **19:51**: Focus went to Build tool window, then to Git Log tool window during `git_commit`
+- At **20:48-20:49**: Focus went into editor while user was typing in chat
+
+**Root cause analysis** (comprehensive audit of all focus-changing paths):
+
+1. **`PlatformApiCompat.showRevisionInLogAfterRefresh()`** — The method has two code paths that
+   call `VcsProjectLog.showRevisionInMainLog()`: a `DataPackChangeListener` path and a
+   race-condition early-return path for when the commit is already indexed. The listener path
+   had an `isChatToolWindowActive` guard; the race-condition path at line 490-494 did **not**.
+   When `git_commit` triggers this method and the commit is already indexed (common when
+   IntelliJ auto-refreshes from a filesystem event), the unguarded path fires and activates
+   the Git Log tool window with focus. **This was the 19:51 incident.**
+
+2. **`ProjectBuildSupport.restoreFocusIfNeeded()`** — When `followAgentFiles=false`, this method
+   calls `openFile(file, true)` via `invokeLater` without any `isChatToolWindowActive` check.
+   The CompilerManager callback fires asynchronously after FocusGuard is uninstalled.
+   **Contributing factor to the 19:51 build tool window focus.**
+
+3. **`FocusGuard.uninstall()` timing bug** — When called from a background thread (the normal
+   case from `callTool`'s finally block), `uninstall()` set `uninstalled = true` eagerly on the
+   calling thread, then enqueued the actual listener removal on the EDT via `invokeLater`. But
+   `followFileIfEnabled`'s `invokeLater(navigate)` was enqueued *before* the removal. EDT
+   processes these FIFO, so `navigate` fires first — but `uninstalled = true` makes
+   `propertyChange()` return early, leaving `navigate(false)` free to steal focus with no
+   protection. The 150ms alarm then checks `isChatToolWindowActive`, but the editor already
+   has focus, so it doesn't restore. **This was the 20:48-20:49 incident.**
+
+**Fixes applied**:
+
+1. **PlatformApiCompat line 492**: Added `isChatToolWindowActive` guard to the race-condition
+   early-return path, matching the existing guard on the listener path.
+
+2. **ProjectBuildSupport line 92**: Added `isChatToolWindowActive` guard inside the `invokeLater`,
+   skipping the `openFile(file, true)` call when chat is focused.
+
+3. **FocusGuard.uninstall()**: Changed from eager `uninstalled = true` + async removal to
+   **synchronous EDT removal via CountDownLatch**. When called from a background thread, the
+   removal is posted to EDT and the caller blocks (up to 200ms) until it completes. This ensures
+   all `invokeLater` callbacks enqueued during tool execution (e.g. `followFileIfEnabled`'s
+   `navigate(false)`) are processed while the FocusGuard is still active. The guard can catch
+   and reclaim a transient focus steal from `navigate(false)` before the listener is removed.
+
+**Files**: `PlatformApiCompat.java`, `ProjectBuildSupport.java`, `FocusGuard.java`.
+
+**Known limitation**: FocusGuard's `hasReclaimed` flag limits reclaim to one per tool call. If
+a focus steal during tool execution already consumed the reclaim, a later `navigate(false)` in
+`followFileIfEnabled` won't be caught. This is unlikely for file tools (no EDT focus events
+during background I/O) but possible for build tools. Fix #2 (ProjectBuildSupport guard) provides
+defense-in-depth for that case.
+
 ---
 
 ## Remaining Root Causes
 
-### RC4: `restoreFocusIfNeeded` in ProjectBuildSupport uses `invokeLater` unconditionally
-
-**File**: ProjectBuildSupport.java:92
-```java
-EdtUtil.invokeLater(() -> {
-    fem.openFile(previousEditor.getFile(), true);  // focus=true
-});
-```
-
-This fires after build completes and opens the previous file with focus. But if user has
-already navigated somewhere else, this is an unwanted steal.
-
-**Fix**: Check if the user is still in the same context before restoring — or don't restore
-at all (let user manage their own focus).
+_All previously documented root causes (RC1–RC4) have been fixed. See Attempts 1–10 below._
 
 ---
 
@@ -330,16 +370,16 @@ at all (let user manage their own focus).
 | `PsiBridgeService.java` | 321 | ✅ `chatWasActive` captured at start, completion re-checks |
 | `PsiBridgeService.java` | 469 | ✅ Focus restore requires both start+end active |
 | `ChatToolWindowContent.kt` | 165 | ✅ 150ms alarm checks chat-active before firing |
-| `FocusGuard.java` | all | ✅ Synchronous reclaim with `hasReclaimed` one-shot guard |
+| `FocusGuard.java` | all | ✅ Synchronous reclaim with `hasReclaimed` one-shot guard; synchronous EDT uninstall via latch |
 | `FileTool.java` | 257 | ✅ `navigate(focus)` check is inside `invokeLater` |
 | `FileTool.java` | 286 | ✅ `selectInProjectView` skips if chat active; only scrolls if already open |
 | `GitTool.java` | 400 | ✅ VCS `show()`/`activate()` check is inside `invokeLater` |
 | `BuildProjectTool.java` | 82 | ✅ Build window check is inside `invokeLater` |
 | `Tool.java` | 204 | ✅ Run panel `activateToolWindow` check is inside `invokeLater` |
 | `SearchTextTool.java` | 175 | ✅ Find tool window skipped when chat active |
-| `PlatformApiCompat.java` | ~475 | ✅ VCS log `showRevisionInMainLog` guarded by chat check |
+| `PlatformApiCompat.java` | ~475 | ✅ VCS log `showRevisionInMainLog` guarded (both listener and race-condition paths) |
 | `FileNavigator.kt` | 30 | ✅ `handleFileLink` passes `focus=!isChatToolWindowActive()` |
-| `ProjectBuildSupport.java` | 87 | ⚠️ `restoreFocusIfNeeded` unconditional invokeLater (RC4) |
+| `ProjectBuildSupport.java` | 92 | ✅ `restoreFocusIfNeeded` skips when chat active |
 
 ---
 
