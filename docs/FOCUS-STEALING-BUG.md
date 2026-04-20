@@ -1,7 +1,7 @@
 # Focus-Stealing Bug — Issue #275
 
 **Issue**: https://github.com/catatafishen/agentbridge/issues/275  
-**Status**: Substantially fixed as of PR #276 + PR #280 (see remaining edge cases below)  
+**Status**: Substantially fixed as of PR #276 + PR #280 + Attempt 9 (see remaining edge cases below)  
 **Scope**: Broader than the title — affects editor focus, terminal tabs, run/search tool windows
 
 ---
@@ -261,6 +261,35 @@ the user is focused on a terminal or other panel.
 **Result**: Git log, Find tool window, and Project Explorer no longer force themselves visible
 or steal focus when the user is in the chat prompt.
 
+### Attempt 9: Guard ACP-side "follow agent files" in FileNavigator (current branch)
+
+**What**: `PromptOrchestrator.handleStreamingToolCall()` (line 623) triggers
+`FileNavigator(project).handleFileLink()` via `invokeLater` for **every** tool call with file
+paths — including sub-agent internal tool calls that are NOT our MCP tools (built-in Copilot CLI
+tools like `view`, `read`). Previously, `handleFileLink` always called `navigate(true)`,
+unconditionally stealing focus.
+
+**Root cause**: Two independent file-opening paths exist:
+1. **MCP path** (`PsiBridgeService.callTool()` → `FileTool.followFileIfEnabled()`): Protected by
+   `FocusGuard` + `isChatToolWindowActive` check. ✓
+2. **ACP path** (`PromptOrchestrator` → `FileNavigator.handleFileLink()`): Runs for ALL tool calls
+   regardless of MCP correlation. Previously unprotected. ✗
+
+For sub-agent non-MCP tool calls, only path 2 runs — no `FocusGuard` is installed, and
+`handleFileLink` opens the file with `focus=true`, stealing keyboard focus.
+
+**Fix**: In `FileNavigator.handleFileLink()`, check `PsiBridgeService.isChatToolWindowActive(project)`
+inside the `invokeLater` lambda (fresh EDT value) and pass `focus = !chatActive` to `navigate()`.
+When the user is in the chat prompt, files open without stealing focus.
+
+**Why this also explains the dashed-border correlation**: Sub-agent internal tool calls to built-in
+Copilot CLI tools (e.g. `view`) are never sent to our MCP server, so `ToolChipRegistry` never
+matches them — they remain `PENDING` state with dashed borders. Yet files still opened because
+the ACP-side path in `PromptOrchestrator` extracted file paths from the ACP event and called
+`handleFileLink` regardless.
+
+**Files**: `FileNavigator.kt` (`handleFileLink` method).
+
 ---
 
 ## Remaining Root Causes
@@ -309,6 +338,7 @@ at all (let user manage their own focus).
 | `Tool.java` | 204 | ✅ Run panel `activateToolWindow` check is inside `invokeLater` |
 | `SearchTextTool.java` | 175 | ✅ Find tool window skipped when chat active |
 | `PlatformApiCompat.java` | ~475 | ✅ VCS log `showRevisionInMainLog` guarded by chat check |
+| `FileNavigator.kt` | 30 | ✅ `handleFileLink` passes `focus=!isChatToolWindowActive()` |
 | `ProjectBuildSupport.java` | 87 | ⚠️ `restoreFocusIfNeeded` unconditional invokeLater (RC4) |
 
 ---
@@ -326,3 +356,6 @@ Manual test steps to verify a fix:
 8. Run any file navigation tool while chat is focused
 9. Verify Project Explorer does NOT force itself open
 10. Start a build and switch to terminal — verify terminal retains focus on build complete
+11. Launch a sub-agent (e.g., `explore`) while typing in chat prompt
+12. Verify sub-agent tool calls show dashed borders but do NOT steal focus
+13. Verify files referenced by sub-agent tools open in background (visible but unfocused)

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -26,7 +27,8 @@ class FileNavigator(private val project: Project) {
         val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
         ApplicationManager.getApplication().invokeLater {
             try {
-                OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(true)
+                val focus = !PsiBridgeService.isChatToolWindowActive(project)
+                OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(focus)
             } catch (e: Exception) {
                 log.warn("Failed to navigate to file $normalizedPath:$line", e)
             }
