@@ -17,6 +17,7 @@ import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Cursor
 import java.awt.Dimension
+import java.awt.event.HierarchyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.util.concurrent.atomic.AtomicInteger
@@ -114,8 +115,21 @@ internal class PromptsPanel(
         add(centerPanel, BorderLayout.CENTER)
 
         chatConsole.addEntriesChangeListener(entriesListener)
+
+        addHierarchyListener { e ->
+            if ((e.changeFlags and HierarchyEvent.SHOWING_CHANGED.toLong()) != 0L && isShowing) {
+                SwingUtilities.invokeLater { scrollToBottom() }
+            }
+        }
+
         reloadHistoryAsync()
         refresh()
+    }
+
+    private fun scrollToBottom() {
+        if (listModel.size() > 0) {
+            promptList.ensureIndexIsVisible(listModel.size() - 1)
+        }
     }
 
     private fun onEntriesChanged() {
@@ -149,6 +163,7 @@ internal class PromptsPanel(
         val query = searchField.text.orEmpty()
         val allEntries = mergeEntries(historyEntries, chatConsole.entriesSnapshot())
         val prompts = allEntries.filterIsInstance<EntryData.Prompt>()
+            .sortedBy { it.timestamp }
         val filtered = filterPrompts(prompts, query)
         val turnDataMap = buildTurnDataMap(allEntries)
 
@@ -297,23 +312,15 @@ internal class PromptsPanel(
         }
 
         fun mergeEntries(historyEntries: List<EntryData>, liveEntries: List<EntryData>): List<EntryData> {
-            if (historyEntries.isEmpty()) return liveEntries
             if (liveEntries.isEmpty()) return historyEntries
+            if (historyEntries.isEmpty()) return liveEntries
 
-            val merged = ArrayList<EntryData>(historyEntries.size + liveEntries.size)
-            val seen = LinkedHashSet<String>()
-
-            fun addAll(entries: List<EntryData>) {
-                for (entry in entries) {
-                    if (seen.add(entry.entryId)) {
-                        merged.add(entry)
-                    }
-                }
-            }
-
-            addAll(historyEntries)
-            addAll(liveEntries)
-            return merged
+            // Live entries are the source of truth — they include entries loaded at startup
+            // plus any new entries added during the session. Supplement with history entries
+            // that the live set doesn't have (old entries pruned from bounded chat memory).
+            val liveIds = liveEntries.mapTo(HashSet()) { it.entryId }
+            val supplemental = historyEntries.filter { it.entryId !in liveIds }
+            return supplemental + liveEntries
         }
 
         fun promptEntryId(p: EntryData.Prompt): String = p.id.ifEmpty { p.entryId }
