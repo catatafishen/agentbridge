@@ -265,8 +265,8 @@ public abstract class FileTool extends Tool {
                     return;
                 }
 
-                // Don't steal focus when the chat prompt has focus — prevents keystroke leaks
-                boolean focus = !PsiBridgeService.isChatToolWindowActive(project);
+                // Don't steal focus when the user is actively typing in the chat prompt.
+                boolean focus = !PsiBridgeService.isUserTypingInChat(project);
 
                 FileEditorManager fem = FileEditorManager.getInstance(project);
                 int midLine = (startLine > 0 && endLine > 0)
@@ -295,7 +295,7 @@ public abstract class FileTool extends Tool {
     private static void selectInProjectView(Project project, VirtualFile vf) {
         long now = System.currentTimeMillis();
         if (now - lastProjectViewSelectMs < PROJECT_VIEW_COOLDOWN_MS) return;
-        if (PsiBridgeService.isChatToolWindowActive(project)) return;
+        if (PsiBridgeService.isUserTypingInChat(project)) return;
         lastProjectViewSelectMs = now;
 
         try {

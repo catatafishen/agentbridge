@@ -27,7 +27,7 @@ class FileNavigator(private val project: Project) {
         val vf = LocalFileSystem.getInstance().findFileByPath(normalizedPath) ?: return
         ApplicationManager.getApplication().invokeLater {
             try {
-                val focus = !PsiBridgeService.isChatToolWindowActive(project)
+                val focus = !PsiBridgeService.isUserTypingInChat(project)
                 OpenFileDescriptor(project, vf, maxOf(0, line - 1), 0).navigate(focus)
             } catch (e: Exception) {
                 log.warn("Failed to navigate to file $normalizedPath:$line", e)

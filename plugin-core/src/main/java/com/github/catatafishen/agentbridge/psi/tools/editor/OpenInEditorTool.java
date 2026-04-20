@@ -87,8 +87,8 @@ public final class OpenInEditorTool extends EditorTool {
                     return;
                 }
 
-                // Don't steal focus when the chat prompt has focus — prevents keystroke leaks
-                boolean effectiveFocus = focus && !PsiBridgeService.isChatToolWindowActive(project);
+                // Don't steal focus when the user is actively typing in the chat prompt.
+                boolean effectiveFocus = focus && !PsiBridgeService.isUserTypingInChat(project);
 
                 if (line > 0) {
                     new OpenFileDescriptor(project, vf, line - 1, 0).navigate(effectiveFocus);

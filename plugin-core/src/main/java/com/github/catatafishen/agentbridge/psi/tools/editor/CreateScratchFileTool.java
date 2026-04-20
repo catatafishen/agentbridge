@@ -119,7 +119,7 @@ public final class CreateScratchFileTool extends EditorTool {
 
             if (resultFile[0] != null) {
                 boolean focusScratch = ToolLayerSettings.getInstance(project).getFollowAgentFiles()
-                    && !PsiBridgeService.isChatToolWindowActive(project);
+                    && !PsiBridgeService.isUserTypingInChat(project);
                 FileEditorManager.getInstance(project).openFile(resultFile[0], focusScratch);
                 AgentScratchTracker.getInstance(project).trackScratchFile(resultFile[0].getPath());
             }
