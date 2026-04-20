@@ -1276,16 +1276,17 @@ class ChatToolWindowContent(
 
         override fun update(e: AnActionEvent) {
             val isLoggedIn = authService.pendingAuthError == null
+            val hasText = promptTextArea.text.trim().isNotEmpty()
             if (isSending && !consolePanel.hasPendingAskUserRequest()) {
-                e.presentation.icon = AllIcons.Actions.More
+                e.presentation.icon = sendIcon
                 e.presentation.text = "More"
                 e.presentation.description = "Nudge, queue, or stop and send"
-                e.presentation.isEnabled = true
+                e.presentation.isEnabled = hasText
             } else {
                 e.presentation.icon = sendIcon
                 e.presentation.text = "Send"
                 e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
-                e.presentation.isEnabled = isLoggedIn
+                e.presentation.isEnabled = isLoggedIn && hasText
             }
         }
 
