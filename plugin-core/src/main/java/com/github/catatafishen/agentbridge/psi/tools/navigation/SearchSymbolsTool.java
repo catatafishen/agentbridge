@@ -46,7 +46,10 @@ public final class SearchSymbolsTool extends NavigationTool {
     public @NotNull String description() {
         return "Search for classes, methods, or fields by name using IntelliJ's symbol index. " +
             "Semantic search — finds symbols even if the text doesn't appear literally (e.g. inherited members). " +
-            "For textual/regex search across file contents, use search_text. For all usages of a specific symbol, use find_references.";
+            "Use the 'scope' parameter to look up symbols inside library / JDK sources " +
+            "(after running download_sources). " +
+            "For textual/regex search across file contents, use search_text. " +
+            "For all usages of a specific symbol, use find_references.";
     }
 
     @Override
@@ -63,7 +66,8 @@ public final class SearchSymbolsTool extends NavigationTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required("query", TYPE_STRING, "Symbol name to search for, or '*' to list all symbols in the project"),
-            Param.optional("type", TYPE_STRING, "Optional: filter by type (class, method, field, property). Default: all types", "")
+            Param.optional("type", TYPE_STRING, "Optional: filter by type (class, method, field, property). Default: all types", ""),
+            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT)
         );
     }
 
@@ -76,13 +80,18 @@ public final class SearchSymbolsTool extends NavigationTool {
     public @NotNull String execute(@NotNull JsonObject args) {
         String query = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : "";
         String typeFilter = args.has("type") ? args.get("type").getAsString() : "";
+        String scopeName = readScopeParam(args);
 
         showSearchFeedback("🔍 Searching symbols: " + query);
         String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             if (query.isEmpty() || "*".equals(query)) {
+                if (!SCOPE_PROJECT.equalsIgnoreCase(scopeName)) {
+                    return "Wildcard symbol listing is only supported with scope='project'. "
+                        + "Use an exact query name when searching scope='libraries' or scope='all'.";
+                }
                 return searchWildcard(typeFilter);
             }
-            return searchExact(query, typeFilter);
+            return searchExact(query, typeFilter, resolveScope(scopeName));
         });
         showSearchFeedback("✓ Symbol search complete: " + query);
         return result;
@@ -117,11 +126,10 @@ public final class SearchSymbolsTool extends NavigationTool {
         return results.size() + " " + typeFilter + " symbols:\n" + String.join("\n", results);
     }
 
-    private String searchExact(String query, String typeFilter) {
+    private String searchExact(String query, String typeFilter, GlobalSearchScope scope) {
         List<String> results = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String basePath = project.getBasePath();
-        GlobalSearchScope scope = GlobalSearchScope.projectScope(project);
 
         PsiSearchHelper.getInstance(project).processElementsWithWord(
             (element, offsetInElement) -> {
