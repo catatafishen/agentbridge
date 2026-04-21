@@ -238,6 +238,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     public void captureBeforeContent(@NotNull String path, @NotNull String content) {
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
         String absPath = ensureAbsolutePath(path);
+        if (!isProjectPath(absPath)) return;
         if (newFiles.contains(absPath)) {
             lastEditedAt.put(absPath, System.currentTimeMillis());
             applyDefaultApproval(absPath);
@@ -255,6 +256,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
 
     public void registerNewFile(@NotNull String path) {
         String absPath = ensureAbsolutePath(path);
+        if (!isProjectPath(absPath)) return;
         String deletedContent = deletedFiles.remove(absPath);
         if (deletedContent != null) {
             snapshots.putIfAbsent(absPath, deletedContent);
@@ -271,6 +273,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     public void registerDeletedFile(@NotNull String path, @NotNull String content) {
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
         String absPath = ensureAbsolutePath(path);
+        if (!isProjectPath(absPath)) return;
         if (newFiles.remove(absPath)) {
             clearTrackedPath(absPath);
             fireReviewStateChanged();
@@ -1090,6 +1093,18 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         if (!vf.isValid() || vf.isDirectory()) return false;
         return ApplicationManager.getApplication().runReadAction(
             (Computable<Boolean>) () -> ProjectFileIndex.getInstance(project).isInContent(vf));
+    }
+
+    private boolean isProjectPath(@NotNull String path) {
+        String basePath = project.getBasePath();
+        if (basePath == null) return false;
+        String normalizedBase = basePath.replace('\\', '/');
+        String normalizedPath = path.replace('\\', '/');
+        if (!normalizedPath.equals(normalizedBase) && !normalizedPath.startsWith(normalizedBase + "/")) {
+            return false;
+        }
+        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+        return vf == null || isProjectFile(vf);
     }
 
     private @NotNull String getRelativePath(@NotNull VirtualFile vf) {
