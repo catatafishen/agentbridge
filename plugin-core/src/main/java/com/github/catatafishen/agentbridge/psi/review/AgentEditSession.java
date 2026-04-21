@@ -238,6 +238,13 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     public void captureBeforeContent(@NotNull String path, @NotNull String content) {
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
         String absPath = ensureAbsolutePath(path);
+        if (newFiles.contains(absPath)) {
+            lastEditedAt.put(absPath, System.currentTimeMillis());
+            applyDefaultApproval(absPath);
+            recomputeLineCounts(absPath);
+            fireReviewStateChanged();
+            return;
+        }
         snapshots.putIfAbsent(absPath, content);
         lastEditedAt.put(absPath, System.currentTimeMillis());
         applyDefaultApproval(absPath);
@@ -248,18 +255,31 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
 
     public void registerNewFile(@NotNull String path) {
         String absPath = ensureAbsolutePath(path);
-        newFiles.add(absPath);
+        String deletedContent = deletedFiles.remove(absPath);
+        if (deletedContent != null) {
+            snapshots.putIfAbsent(absPath, deletedContent);
+        } else {
+            newFiles.add(absPath);
+            snapshots.remove(absPath);
+        }
         lastEditedAt.put(absPath, System.currentTimeMillis());
         applyDefaultApproval(absPath);
+        recomputeLineCounts(absPath);
         fireReviewStateChanged();
     }
 
     public void registerDeletedFile(@NotNull String path, @NotNull String content) {
         if (content.length() > MAX_SNAPSHOT_BYTES) return;
         String absPath = ensureAbsolutePath(path);
+        if (newFiles.remove(absPath)) {
+            clearTrackedPath(absPath);
+            fireReviewStateChanged();
+            return;
+        }
         deletedFiles.put(absPath, content);
         lastEditedAt.put(absPath, System.currentTimeMillis());
         applyDefaultApproval(absPath);
+        recomputeLineCounts(absPath);
         enforceTotalSnapshotCap();
         fireReviewStateChanged();
     }
@@ -373,30 +393,61 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     }
 
     public @NotNull List<ReviewItem> getReviewItems() {
-        String basePath = project.getBasePath();
+        normalizeTrackedState();
+        return buildReviewItems(
+            snapshots,
+            newFiles,
+            deletedFiles,
+            approvals,
+            lastEditedAt,
+            linesAdded,
+            linesRemoved,
+            project.getBasePath()
+        );
+    }
+
+    static @NotNull List<ReviewItem> buildReviewItems(
+        @NotNull Map<String, String> snapshots,
+        @NotNull Set<String> newFiles,
+        @NotNull Map<String, String> deletedFiles,
+        @NotNull Map<String, ApprovalState> approvals,
+        @NotNull Map<String, Long> lastEditedAt,
+        @NotNull Map<String, Integer> linesAdded,
+        @NotNull Map<String, Integer> linesRemoved,
+        @Nullable String basePath
+    ) {
         List<ReviewItem> items = new ArrayList<>();
 
         for (Map.Entry<String, String> entry : snapshots.entrySet()) {
             String path = entry.getKey();
-            if (deletedFiles.containsKey(path)) continue;
-            items.add(buildItem(path, basePath, ReviewItem.Status.MODIFIED, entry.getValue()));
+            if (newFiles.contains(path) || deletedFiles.containsKey(path)) continue;
+            items.add(buildItem(path, basePath, ReviewItem.Status.MODIFIED, entry.getValue(),
+                approvals, lastEditedAt, linesAdded, linesRemoved));
         }
         for (String path : newFiles) {
-            items.add(buildItem(path, basePath, ReviewItem.Status.ADDED, null));
+            if (deletedFiles.containsKey(path)) continue;
+            items.add(buildItem(path, basePath, ReviewItem.Status.ADDED, null,
+                approvals, lastEditedAt, linesAdded, linesRemoved));
         }
         for (Map.Entry<String, String> entry : deletedFiles.entrySet()) {
             String path = entry.getKey();
+            if (newFiles.contains(path)) continue;
             String beforeContent = snapshots.getOrDefault(path, entry.getValue());
-            items.add(buildItem(path, basePath, ReviewItem.Status.DELETED, beforeContent));
+            items.add(buildItem(path, basePath, ReviewItem.Status.DELETED, beforeContent,
+                approvals, lastEditedAt, linesAdded, linesRemoved));
         }
 
         items.sort((a, b) -> a.relativePath().compareToIgnoreCase(b.relativePath()));
         return items;
     }
 
-    private @NotNull ReviewItem buildItem(@NotNull String path, @Nullable String basePath,
-                                          @NotNull ReviewItem.Status status,
-                                          @Nullable String beforeContent) {
+    private static @NotNull ReviewItem buildItem(@NotNull String path, @Nullable String basePath,
+                                                 @NotNull ReviewItem.Status status,
+                                                 @Nullable String beforeContent,
+                                                 @NotNull Map<String, ApprovalState> approvals,
+                                                 @NotNull Map<String, Long> lastEditedAt,
+                                                 @NotNull Map<String, Integer> linesAdded,
+                                                 @NotNull Map<String, Integer> linesRemoved) {
         ApprovalState state = approvals.getOrDefault(path, ApprovalState.PENDING);
         long ts = lastEditedAt.getOrDefault(path, 0L);
         int added = linesAdded.getOrDefault(path, 0);
@@ -749,8 +800,20 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
         if (vf == null) return null;
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
-        if (doc == null) return null;
-        return ApplicationManager.getApplication().runReadAction((Computable<String>) doc::getText);
+        if (doc != null) {
+            return ApplicationManager.getApplication().runReadAction((Computable<String>) doc::getText);
+        }
+        try {
+            return new String(vf.contentsToByteArray(), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            LOG.warn("Failed to read current content for review line counts: " + path, e);
+            return null;
+        }
+    }
+
+    static int countLines(@Nullable String content) {
+        if (content == null || content.isEmpty()) return 0;
+        return (int) content.lines().count();
     }
 
     private static @NotNull String buildUnifiedDiff(@NotNull String before, @NotNull String after) {
@@ -1053,14 +1116,49 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         return paths;
     }
 
+    private void normalizeTrackedState() {
+        Set<String> createdThenDeleted = new HashSet<>(newFiles);
+        createdThenDeleted.retainAll(deletedFiles.keySet());
+        for (String path : createdThenDeleted) {
+            snapshots.remove(path);
+            deletedFiles.remove(path);
+            newFiles.remove(path);
+            approvals.remove(path);
+            lastEditedAt.remove(path);
+            linesAdded.remove(path);
+            linesRemoved.remove(path);
+        }
+        for (String path : new ArrayList<>(newFiles)) {
+            snapshots.remove(path);
+            recomputeLineCounts(path);
+        }
+        for (Map.Entry<String, String> entry : deletedFiles.entrySet()) {
+            linesAdded.put(entry.getKey(), 0);
+            linesRemoved.put(entry.getKey(), countLines(entry.getValue()));
+        }
+        Set<String> trackedPaths = collectAllPaths();
+        approvals.keySet().retainAll(trackedPaths);
+        lastEditedAt.keySet().retainAll(trackedPaths);
+        linesAdded.keySet().retainAll(trackedPaths);
+        linesRemoved.keySet().retainAll(trackedPaths);
+    }
+
     private void recomputeLineCounts(@NotNull String path) {
-        VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
+        if (newFiles.contains(path)) {
+            linesAdded.put(path, countLines(readCurrentContent(path)));
+            linesRemoved.put(path, 0);
+            return;
+        }
+        String deletedContent = deletedFiles.get(path);
+        if (deletedContent != null) {
+            linesAdded.put(path, 0);
+            linesRemoved.put(path, countLines(deletedContent));
+            return;
+        }
         String before = snapshots.get(path);
-        if (vf == null || before == null) return;
-        Document doc = FileDocumentManager.getInstance().getDocument(vf);
-        if (doc == null) return;
-        String after = ApplicationManager.getApplication().runReadAction(
-            (Computable<String>) doc::getText);
+        if (before == null) return;
+        String after = readCurrentContent(path);
+        if (after == null) return;
         int added = 0;
         int removed = 0;
         for (ChangeRange r : computeRanges(before, after)) {
@@ -1137,10 +1235,11 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             if (vf == null || !vf.isValid()) return;
 
             String path = vf.getPath();
-            // Re-edit of an APPROVED row: keep the original snapshot so diffs accumulate
-            // across all agent edits. Only flip the approval state back to PENDING so the
-            // user reviews the new changes (unless auto-approve is on).
-            if (approvals.get(path) == ApprovalState.APPROVED && snapshots.containsKey(path)) {
+            // Re-edit of an APPROVED row: keep the existing tracking baseline (snapshot for
+            // modified files, whole-file line count for new files) so the row stays stable.
+            // Only flip the approval state back to PENDING so the user reviews the new change
+            // set again (unless auto-approve is on).
+            if (approvals.get(path) == ApprovalState.APPROVED && pathIsTracked(path)) {
                 if (!isAutoApproveOn()) {
                     approvals.put(path, ApprovalState.PENDING);
                 }
@@ -1158,13 +1257,15 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             VirtualFile vf = FileDocumentManager.getInstance().getFile(doc);
             if (vf == null || !vf.isValid()) return;
 
-            if (snapshots.containsKey(vf.getPath())) {
+            boolean modifiedFile = snapshots.containsKey(vf.getPath());
+            boolean addedFile = newFiles.contains(vf.getPath());
+            if (modifiedFile) {
                 AgentEditHighlighter.getInstance(project).refreshHighlights(vf);
-                if (isAgentEditActive()) {
-                    recomputeLineCounts(vf.getPath());
-                    lastEditedAt.put(vf.getPath(), System.currentTimeMillis());
-                    fireReviewStateChanged();
-                }
+            }
+            if (isAgentEditActive() && (modifiedFile || addedFile)) {
+                recomputeLineCounts(vf.getPath());
+                lastEditedAt.put(vf.getPath(), System.currentTimeMillis());
+                fireReviewStateChanged();
             }
         }
     }
@@ -1340,6 +1441,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
                 }
             }
         }
+        normalizeTrackedState();
     }
 
     /**

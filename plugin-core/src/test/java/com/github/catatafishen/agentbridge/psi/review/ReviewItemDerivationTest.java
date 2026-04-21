@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.psi.review;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -22,44 +23,33 @@ class ReviewItemDerivationTest {
     private static final String BASE = "/project";
 
     /**
-     * Mirrors the derivation logic from AgentEditSession.getReviewItems().
+     * Exercises the shared derivation logic from AgentEditSession.getReviewItems().
      */
     private static List<ReviewItem> deriveItems(
         Map<String, String> snapshots,
         Set<String> newFiles,
         Map<String, String> deletedFiles
     ) {
-        var items = new java.util.ArrayList<ReviewItem>();
-
-        for (var entry : snapshots.entrySet()) {
-            String path = entry.getKey();
-            if (deletedFiles.containsKey(path)) continue;
-            items.add(new ReviewItem(path, relativize(path),
-                ReviewItem.Status.MODIFIED, entry.getValue(),
-                ApprovalState.PENDING, 0L, 0, 0));
-        }
-        for (String path : newFiles) {
-            items.add(new ReviewItem(path, relativize(path),
-                ReviewItem.Status.ADDED, null,
-                ApprovalState.PENDING, 0L, 0, 0));
-        }
-        for (var entry : deletedFiles.entrySet()) {
-            String path = entry.getKey();
-            String beforeContent = snapshots.getOrDefault(path, entry.getValue());
-            items.add(new ReviewItem(path, relativize(path),
-                ReviewItem.Status.DELETED, beforeContent,
-                ApprovalState.PENDING, 0L, 0, 0));
-        }
-
-        items.sort((a, b) -> a.relativePath().compareToIgnoreCase(b.relativePath()));
-        return items;
+        return deriveItems(snapshots, newFiles, deletedFiles, Map.of(), Map.of());
     }
 
-    private static String relativize(String path) {
-        if (path.startsWith(BASE + "/")) {
-            return path.substring(BASE.length() + 1);
-        }
-        return new java.io.File(path).getName();
+    private static List<ReviewItem> deriveItems(
+        Map<String, String> snapshots,
+        Set<String> newFiles,
+        Map<String, String> deletedFiles,
+        Map<String, Integer> linesAdded,
+        Map<String, Integer> linesRemoved
+    ) {
+        return AgentEditSession.buildReviewItems(
+            snapshots,
+            newFiles,
+            deletedFiles,
+            new HashMap<>(),
+            new HashMap<>(),
+            new HashMap<>(linesAdded),
+            new HashMap<>(linesRemoved),
+            BASE
+        );
     }
 
     @Test
@@ -144,5 +134,61 @@ class ReviewItemDerivationTest {
         List<ReviewItem> items = deriveItems(snapshots, Set.of(), Map.of());
         assertEquals(1, items.size());
         assertEquals("File.java", items.getFirst().relativePath());
+    }
+
+    @Test
+    void addedThenEdited_appearsOnceAsAdded() {
+        String path = BASE + "/src/NewFile.java";
+        Map<String, String> snapshots = new ConcurrentHashMap<>();
+        snapshots.put(path, "stale snapshot");
+        Set<String> newFiles = ConcurrentHashMap.newKeySet();
+        newFiles.add(path);
+
+        List<ReviewItem> items = deriveItems(
+            snapshots,
+            newFiles,
+            Map.of(),
+            Map.of(path, 7),
+            Map.of(path, 0)
+        );
+
+        assertEquals(1, items.size(), "New file with a stale snapshot should still render once");
+        ReviewItem item = items.getFirst();
+        assertEquals(ReviewItem.Status.ADDED, item.status());
+        assertNull(item.beforeContent());
+        assertEquals(7, item.linesAdded());
+        assertEquals(0, item.linesRemoved());
+    }
+
+    @Test
+    void createdThenDeleted_sameSession_disappears() {
+        String path = BASE + "/src/Transient.java";
+        Set<String> newFiles = ConcurrentHashMap.newKeySet();
+        newFiles.add(path);
+        Map<String, String> deletedFiles = new ConcurrentHashMap<>();
+        deletedFiles.put(path, "temporary");
+
+        List<ReviewItem> items = deriveItems(Map.of(), newFiles, deletedFiles);
+
+        assertTrue(items.isEmpty(), "Create-then-delete in one session should leave no review row");
+    }
+
+    @Test
+    void deletedFile_keepsRemovedLineCount() {
+        String path = BASE + "/src/Gone.java";
+        Map<String, String> deletedFiles = new ConcurrentHashMap<>();
+        deletedFiles.put(path, "a\nb\nc\n");
+
+        List<ReviewItem> items = deriveItems(
+            Map.of(),
+            Set.of(),
+            deletedFiles,
+            Map.of(path, 0),
+            Map.of(path, 3)
+        );
+
+        assertEquals(1, items.size());
+        assertEquals(ReviewItem.Status.DELETED, items.getFirst().status());
+        assertEquals(3, items.getFirst().linesRemoved());
     }
 }
