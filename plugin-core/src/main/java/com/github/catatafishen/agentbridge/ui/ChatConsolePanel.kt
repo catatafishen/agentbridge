@@ -66,6 +66,9 @@ class ChatConsolePanel(
     private var currentAgent = ""
     private var currentClientType = ""
     private var currentProfileId = ""
+    private var currentModelId = ""
+    private var placeholderText: String? = null
+    private var pendingMonitorReplay = false
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
     private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
     private val toolRegistry = ToolRegistry.getInstance(project)
@@ -314,6 +317,7 @@ class ChatConsolePanel(
         contextFiles: List<Triple<String, String, Int>>?,
         bubbleHtml: String?
     ): String {
+        placeholderText = null
         toolJustCompleted = false
         finalizeCurrentText()
         collapseThinking()
@@ -347,6 +351,7 @@ class ChatConsolePanel(
     }
 
     override fun setCurrentModel(modelId: String) {
+        currentModelId = modelId
         executeJs("ChatController.setCurrentModel('${escJs(modelId)}')")
     }
 
@@ -710,6 +715,7 @@ class ChatConsolePanel(
     }
 
     override fun showPlaceholder(text: String) {
+        placeholderText = text
         entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
@@ -719,6 +725,8 @@ class ChatConsolePanel(
     }
 
     override fun clear() {
+        placeholderText = null
+        pendingMonitorReplay = false
         entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
@@ -744,6 +752,7 @@ class ChatConsolePanel(
         registry.clearTurn()
 
         executeJs("ChatController.finalizeTurn('$currentTurnId',$statsJson)")
+        flushPendingMonitorReplay()
         ChatWebServer.getInstance(project)
             ?.pushNotification("Turn complete", "Agent finished ($toolCallCount tool calls)")
     }
@@ -808,6 +817,7 @@ class ChatConsolePanel(
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         clearPendingAskUserRequest(null)
         executeJs("ChatController.cancelAllRunning()")
+        flushPendingMonitorReplay()
     }
 
     // ── Conversation export ────────────────────────────────────────
@@ -890,6 +900,7 @@ class ChatConsolePanel(
 
     fun appendEntries(entries: List<EntryData>, totalPromptCount: Int = -1) {
         if (entries.isEmpty()) return
+        placeholderText = null
         this.entries.addAll(entries)
         val count = if (totalPromptCount >= 0) totalPromptCount
         else entries.count { it is EntryData.Prompt }
@@ -904,6 +915,7 @@ class ChatConsolePanel(
 
     fun prependEntries(entries: List<EntryData>) {
         if (entries.isEmpty()) return
+        placeholderText = null
         this.entries.addAll(0, entries)
         val json = serializeBatchTurns(entries)
         if (json != "[]") {
@@ -1423,6 +1435,43 @@ class ChatConsolePanel(
         monitorRecovery?.forceRefresh()
     }
 
+    private fun recoverBrowserStateAfterMonitorSwitch() {
+        updateThemeColors()
+        if (repaintTimer.isRunning) {
+            pendingMonitorReplay = true
+            return
+        }
+        pendingMonitorReplay = false
+        executeJs("ChatController.clear()")
+        val placeholder = placeholderText
+        if (placeholder != null) {
+            executeJs("ChatController.showPlaceholder('${escJs(placeholder)}')")
+        } else {
+            toolCallNames.clear()
+            toolCallEntries.clear()
+            batchIdCounter = 0
+            val json = serializeBatchTurns(entries)
+            if (json != "[]") {
+                val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
+                executeJs("ChatController.restoreBatchFinal('${encodeBase64(json)}', $smooth)")
+            }
+        }
+        if (currentProfileId.isNotEmpty()) {
+            executeJs("ChatController.setCurrentProfile('${escJs(currentProfileId)}')")
+        }
+        if (currentAgent.isNotEmpty() || currentProfileId.isNotEmpty() || currentClientType.isNotEmpty()) {
+            setCurrentAgent(currentAgent, currentProfileId, currentClientType)
+        }
+        if (currentModelId.isNotEmpty()) {
+            executeJs("ChatController.setCurrentModel('${escJs(currentModelId)}')")
+        }
+    }
+
+    private fun flushPendingMonitorReplay() {
+        if (!pendingMonitorReplay) return
+        ApplicationManager.getApplication().invokeLater { recoverBrowserStateAfterMonitorSwitch() }
+    }
+
     /**
      * Detects when the panel moves to a different monitor (or the underlying
      * display changes) and forces JCEF's OSR renderer to recover. All logic
@@ -1432,7 +1481,7 @@ class ChatConsolePanel(
         val b = browser ?: return
         monitorRecovery = MonitorSwitchRecovery(
             browser = b,
-            onRecovered = { updateThemeColors() },
+            onRecovered = { recoverBrowserStateAfterMonitorSwitch() },
             parentDisposable = this,
         ).also { it.install() }
     }

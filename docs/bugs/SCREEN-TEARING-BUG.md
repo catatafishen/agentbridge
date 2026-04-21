@@ -157,7 +157,7 @@ scroll is re-enabled after streaming. During streaming this is a noop since beha
 | `ChatContainer.ts` | `_scrollToInstant()` | Temporarily forces `scroll-behavior: auto` for scroll |
 | `ChatController.ts` | `appendAgentText()` | No longer calls synchronous `scrollIfNeeded()` |
 | `MessageBubble.ts` | `appendStreamingText()` | rAF-debounced markdown re-render |
-| `MonitorSwitchRecovery.kt` | `checkAndRecover()` | Calls invalidate/wasResized on monitor change |
+| `MonitorSwitchRecovery.kt` | `triggerRecovery()` | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes |
 
 ---
 
@@ -178,9 +178,10 @@ When modifying the streaming pipeline, watch for:
 4. **CSS `scroll-behavior` changes** — never set `scroll-behavior: smooth` during streaming.
    The `setStreaming(true, false)` call at stream start handles this.
 
-5. **MonitorSwitchRecovery** — if triggered during streaming, it calls `setWindowVisibility`,
-   `notifyScreenInfoChanged`, `wasResized`, `invalidate`. False positives during streaming could
-   be catastrophic. The fingerprint check should prevent this, but verify after changes.
+5. **MonitorSwitchRecovery** — after a confirmed monitor/display change, it refreshes JCEF OSR
+   and the chat panel replays the DOM from Kotlin state once streaming is idle. False positives
+   during streaming could still be catastrophic, so keep the fingerprint gate tight and preserve
+   the deferred replay behavior.
 
 6. **Frame rate changes** — don't lower `STREAMING_FRAME_RATE` (60) or `IDLE_FRAME_RATE` (30)
    without testing for tearing.
