@@ -195,6 +195,77 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
     }
 
     /**
+     * Explicit {@code scope=project} must behave the same as the default and find
+     * a class declared in the project — guards backward compatibility for callers
+     * that always pass the parameter.
+     */
+    public void testSearchSymbolsExplicitProjectScopeFindsProjectSymbol() {
+        myFixture.addFileToProject(
+            "ScopedSymbol_4451.java",
+            """
+                public class ScopedSymbol_4451 {
+                }
+                """);
+
+        String result = searchSymbolsTool.execute(
+            args("query", "ScopedSymbol_4451", "scope", "project"));
+
+        assertFalse("Expected non-error result, got: " + result,
+            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertTrue("Expected class name in search result, got: " + result,
+            result.contains("ScopedSymbol_4451"));
+    }
+
+    /**
+     * When {@code scope=libraries} is requested, the search must skip project
+     * sources entirely. A class declared in the project must therefore NOT
+     * appear in the results — this proves the scope plumbing is honoured even
+     * if no library sources happen to be attached to the test fixture.
+     */
+    public void testSearchSymbolsLibraryScopeExcludesProjectSymbols() {
+        myFixture.addFileToProject(
+            "ProjectOnlyClass_8812.java",
+            """
+                public class ProjectOnlyClass_8812 {
+                }
+                """);
+
+        String result = searchSymbolsTool.execute(
+            args("query", "ProjectOnlyClass_8812", "scope", "libraries"));
+
+        assertFalse("Project symbol must not leak into libraries scope, got: " + result,
+            result.contains("ProjectOnlyClass_8812.java"));
+    }
+
+    /**
+     * Wildcard listing combined with a non-project scope is rejected with an
+     * actionable message instead of silently scanning every library file.
+     */
+    public void testSearchSymbolsWildcardWithLibraryScopeReturnsError() {
+        String result = searchSymbolsTool.execute(
+            args("query", "*", "type", "class", "scope", "libraries"));
+
+        assertTrue("Expected wildcard-scope error, got: " + result,
+            result.contains("Wildcard symbol listing is only supported with scope='project'"));
+    }
+
+    /**
+     * The tool schema must declare the new {@code scope} parameter so MCP clients
+     * can advertise it to agents.
+     */
+    public void testSearchSymbolsSchemaDeclaresScopeParameter() {
+        JsonObject schema = searchSymbolsTool.inputSchema();
+        JsonObject properties = schema.getAsJsonObject("properties");
+
+        assertTrue("Schema must include 'scope' property",
+            properties.has("scope"));
+        assertEquals("string",
+            properties.getAsJsonObject("scope").get("type").getAsString());
+        assertEquals("project",
+            properties.getAsJsonObject("scope").get("default").getAsString());
+    }
+
+    /**
      * When the {@code query} parameter is absent, the tool defaults to an empty
      * query which triggers the wildcard path. Without a {@code type} filter, the
      * tool returns guidance asking for a type filter rather than an empty result.
