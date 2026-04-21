@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.ui.AgentIconProvider;
+import com.github.catatafishen.agentbridge.ui.BillingCalculator;
 import com.github.catatafishen.agentbridge.ui.BillingDisplayData;
 import com.github.catatafishen.agentbridge.ui.BillingManager;
 import com.github.catatafishen.agentbridge.ui.ProcessingTimerPanel;
@@ -350,7 +351,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         if (snap.getMultiplierMode()) {
             tokensRowLabel.setText("Premium req");
-            tokensValue.setText(BillingCalculator.formatPremium(snap.getLocalSessionPremiumRequests()));
+            tokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getLocalSessionPremiumRequests()));
             tokensRow.setVisible(true);
             costRow.setVisible(false);
         } else {
