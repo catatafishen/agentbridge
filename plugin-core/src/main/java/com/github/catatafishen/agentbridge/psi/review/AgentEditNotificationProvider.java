@@ -80,7 +80,8 @@ public final class AgentEditNotificationProvider implements EditorNotificationPr
 
     /**
      * Builds the banner text with file and change counters.
-     * Example: "Review: File 3/7 · 5 changes"
+     * Example:
+     * "REVIEW PENDING — user has not reviewed this file yet. Do not commit or push. File 3/7 · 5 changes"
      */
     private static @NotNull String buildStatusText(@NotNull Project project,
                                                    @NotNull VirtualFile file) {
@@ -100,7 +101,15 @@ public final class AgentEditNotificationProvider implements EditorNotificationPr
         List<ChangeRange> ranges = session.computeRanges(file);
         int changeCount = ranges.size();
 
-        StringBuilder sb = new StringBuilder("Review: ");
+        return formatBannerText(fileIndex, fileTotal, changeCount);
+    }
+
+    static @NotNull String formatBannerText(int fileIndex, int fileTotal, int changeCount) {
+        StringBuilder sb = new StringBuilder(
+            "REVIEW PENDING — user has not reviewed this file yet. Do not commit or push.");
+        if (fileTotal > 0 || changeCount > 0) {
+            sb.append(' ');
+        }
         if (fileTotal > 0) {
             sb.append("File ").append(Math.max(fileIndex, 1)).append('/').append(fileTotal);
         }
