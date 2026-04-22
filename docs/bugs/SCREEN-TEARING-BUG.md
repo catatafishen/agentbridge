@@ -1,6 +1,6 @@
 # Screen Tearing Bug — JCEF OSR
 
-**Status**: Recurring — mitigations applied, not confirmed fixed  
+**Status**: Fix 4 applied — forced OSR invalidation removed (pending user verification on Win/Linux)  
 **Scope**: JCEF Off-Screen Rendering (OSR) mode in the chat panel  
 **Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`
 
@@ -137,16 +137,43 @@ scroll is re-enabled after streaming. During streaming this is a noop since beha
    window). The repaintTimer remains as a 200ms safety net; the per-executeJs invalidation catches
    rapid bursts of JS updates.
 
+### Fix 4 — Remove forced OSR invalidation (this commit)
+
+**Hypothesis revisited.** A new round of bug reports on Windows and Linux confirmed
+tearing/flicker still occurred during streaming despite Fixes 1–3. The user suspected
+"FPS sync issues". A deeper look at JCEF OSR architecture refined the hypothesis:
+
+- `setWindowlessFrameRate` is capped at 60 fps in CEF — matching 120/144 Hz monitors
+  is not possible.
+- `cefBrowser.invalidate()` is **not a vsync primitive**. It schedules CEF to repaint
+  the OSR buffer on the next available tick, which is then composited by Swing on the EDT.
+- The **per-`executeJs` invalidate (50ms throttle)** was being called for every streaming
+  token / tool chip / sub-agent update. This forces an OSR paint **between** the synchronous
+  `appendChild(textNode)` in `MessageBubble.appendStreamingText()` and the deferred
+  `requestAnimationFrame(() => innerHTML = renderMarkdown(...))` — capturing the DOM in a
+  half-rendered state. The user perceives this as "tearing".
+- The **200ms `repaintTimer`** added a second unsynchronized forced-paint source on top
+  of CEF's natural `OnPaint` cycle.
+
+**Fix**: removed both forced invalidation sources. CEF's natural `OnPaint` cycle (capped
+at the windowless frame rate) is left to handle repaints. The `streaming` boolean flag
+that previously gated the per-call invalidate is kept — `MonitorSwitchRecovery` still
+uses it to defer DOM replay until streaming ends.
+
+**What we kept**: 60 fps streaming / 30 fps idle frame rates (still useful for CPU/GPU
+load), smooth-scroll suppression during streaming, the `_scrollRAF` debounce gate, the
+`_setupCodeBlocks()` streaming-bubble skip, and the `_scrollToInstant()` autoscroll
+helper.
+
 ---
 
-## Code Locations
+
 
 | File | Component | Purpose |
 |---|---|---|
-| `ChatConsolePanel.kt` | `startStreaming()` | Sets 60fps, starts repaintTimer, disables smooth scroll |
-| `ChatConsolePanel.kt` | `finishResponse()` | Sets 30fps, stops repaintTimer, restores smooth scroll |
-| `ChatConsolePanel.kt` | `repaintTimer` | 200ms periodic `cef.invalidate()` during streaming |
-| `ChatConsolePanel.kt` | `executeJs()` | Throttled per-call `cef.invalidate()` (50ms) during streaming |
+| `ChatConsolePanel.kt` | `startStreaming()` | Sets 60fps, marks `streaming=true`, disables smooth scroll |
+| `ChatConsolePanel.kt` | `finishResponse()` | Sets 30fps, marks `streaming=false`, restores smooth scroll |
+| `ChatConsolePanel.kt` | `executeJs()` | Plain `executeJavaScript` — no manual `invalidate()` (Fix 4) |
 | `ChatConsolePanel.kt` | `setFrameRate()` | Wraps `setWindowlessFrameRate()` |
 | `ChatContainer.ts` | `_scrollRAF` | rAF debounce gate for scroll writes |
 | `ChatContainer.ts` | `ResizeObserver` | Debounced via `_scrollRAF` — never writes scrollTop directly |
@@ -172,8 +199,9 @@ When modifying the streaming pipeline, watch for:
    the `_scrollRAF` gate. Use `scrollIfNeeded()` for observer-driven autoscroll, or
    `_scrollToInstant()`-backed helpers for explicit snap-to-bottom operations.
 
-3. **New `executeJs` calls during streaming** — each call now triggers throttled invalidation,
-   but excessive calls still add EDT overhead via `pushJsEvent()`. Batch when possible.
+3. **New `executeJs` calls during streaming** — these no longer trigger forced
+   invalidation, but excessive calls still add EDT overhead via `pushJsEvent()`.
+   Batch when possible. Do NOT add a `cef.invalidate()` here — see Fix 4.
 
 4. **CSS `scroll-behavior` changes** — never set `scroll-behavior: smooth` during streaming.
    The `setStreaming(true, false)` call at stream start handles this.
@@ -185,3 +213,7 @@ When modifying the streaming pipeline, watch for:
 
 6. **Frame rate changes** — don't lower `STREAMING_FRAME_RATE` (60) or `IDLE_FRAME_RATE` (30)
    without testing for tearing.
+
+7. **Forced OSR invalidation** — do NOT reintroduce manual `cefBrowser.invalidate()` calls
+   keyed off streaming state (per-token, periodic timer, etc.). They paint mid-rAF and
+   capture half-rendered DOM. This was the root cause uncovered by Fix 4.
