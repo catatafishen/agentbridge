@@ -88,21 +88,28 @@ public final class GitPushTool extends GitTool {
             Param.optional(PARAM_BRANCH, TYPE_STRING, "Branch to push (default: current)"),
             Param.optional(PARAM_FORCE, TYPE_BOOLEAN, "Force push"),
             Param.optional(PARAM_SET_UPSTREAM, TYPE_BOOLEAN, "Set upstream tracking reference"),
-            Param.optional("tags", TYPE_BOOLEAN, "Push all tags")
+            Param.optional("tags", TYPE_BOOLEAN, "Push all tags"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_push");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         boolean forceFlag = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
 
         // Auto-fetch to detect remote divergence before pushing
-        String fetchNote = autoFetchIfStale();
+        String fetchNote = autoFetchIfStaleIn(root);
 
         // Pre-push divergence check (skip for force-push)
         String divergenceWarning = "";
         if (!forceFlag) {
-            String behind = runGitQuiet("rev-list", "--count", "HEAD..@{upstream}");
+            String behind = runGitInQuiet(root, "rev-list", "--count", "HEAD..@{upstream}");
             if (behind != null && !"0".equals(behind)) {
                 divergenceWarning = "\n⚠️ Remote is " + behind
                     + " commit(s) ahead of local. Consider pulling first, or use force: true.";
@@ -129,7 +136,7 @@ public final class GitPushTool extends GitTool {
                 remote = "origin";
             }
             if (branch == null) {
-                branch = runGit("rev-parse", "--abbrev-ref", "HEAD").trim();
+                branch = runGitIn(root, "rev-parse", "--abbrev-ref", "HEAD").trim();
             }
         }
 
@@ -143,7 +150,7 @@ public final class GitPushTool extends GitTool {
             cmdArgs.add("--tags");
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
 
         if (result.startsWith("Error")) return fetchNote + result + divergenceWarning;
 
@@ -154,12 +161,12 @@ public final class GitPushTool extends GitTool {
 
         ctx.append("\n\n--- Context ---\n");
         String actualBranch = branch != null ? branch
-            : runGitQuiet("rev-parse", "--abbrev-ref", "HEAD");
+            : runGitInQuiet(root, "rev-parse", "--abbrev-ref", "HEAD");
         String actualRemote = remote != null ? remote : "origin";
         ctx.append("Pushed ").append(actualBranch).append(" → ")
             .append(actualRemote).append('/').append(actualBranch).append('\n');
 
-        String remoteUrl = runGitQuiet("remote", "get-url", actualRemote);
+        String remoteUrl = runGitInQuiet(root, "remote", "get-url", actualRemote);
         if (remoteUrl != null) {
             ctx.append("Remote: ").append(remoteUrl).append('\n');
         }

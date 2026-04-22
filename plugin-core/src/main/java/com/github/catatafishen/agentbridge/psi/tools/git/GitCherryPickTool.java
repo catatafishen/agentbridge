@@ -53,7 +53,8 @@ public final class GitCherryPickTool extends GitTool {
             Param.optional(PARAM_COMMITS, TYPE_ARRAY, "One or more commit SHAs to cherry-pick"),
             Param.optional(PARAM_NO_COMMIT, TYPE_BOOLEAN, "Apply changes without creating commits"),
             Param.optional(PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress cherry-pick"),
-            Param.optional(PARAM_CONTINUE_PICK, TYPE_BOOLEAN, "Continue cherry-pick after resolving conflicts")
+            Param.optional(PARAM_CONTINUE_PICK, TYPE_BOOLEAN, "Continue cherry-pick after resolving conflicts"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
         addArrayItems(s, PARAM_COMMITS);
         return s;
@@ -63,13 +64,19 @@ public final class GitCherryPickTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_cherry_pick");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         if (args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean()) {
-            return runGit(CHERRY_PICK, "--abort");
+            return runGitIn(root, CHERRY_PICK, "--abort");
         }
 
         if (args.has(PARAM_CONTINUE_PICK) && args.get(PARAM_CONTINUE_PICK).getAsBoolean()) {
             // --no-edit prevents git from opening $EDITOR for the commit message.
-            return runGit(CHERRY_PICK, "--continue", "--no-edit");
+            return runGitIn(root, CHERRY_PICK, "--continue", "--no-edit");
         }
 
         if (!args.has(PARAM_COMMITS) || !args.get(PARAM_COMMITS).isJsonArray()) {
@@ -92,7 +99,7 @@ public final class GitCherryPickTool extends GitTool {
             cmdArgs.add(commit.getAsString());
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         if (!result.startsWith("Error")) {
             AgentEditSession.getInstance(project).invalidateOnWorktreeChange("cherry-pick");
         }

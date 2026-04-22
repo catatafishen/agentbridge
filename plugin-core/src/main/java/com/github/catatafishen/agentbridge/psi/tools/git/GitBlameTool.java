@@ -49,7 +49,8 @@ public final class GitBlameTool extends GitTool {
         return schema(
             Param.required("path", TYPE_STRING, "File path to blame"),
             Param.optional(PARAM_LINE_START, TYPE_INTEGER, "Start line number for partial blame"),
-            Param.optional(PARAM_LINE_END, TYPE_INTEGER, "End line number for partial blame")
+            Param.optional(PARAM_LINE_END, TYPE_INTEGER, "End line number for partial blame"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
@@ -59,6 +60,10 @@ public final class GitBlameTool extends GitTool {
             return "Error: 'path' parameter is required";
         }
         String path = args.get("path").getAsString();
+
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("blame");
@@ -73,7 +78,7 @@ public final class GitBlameTool extends GitTool {
         cmdArgs.add("--");
         cmdArgs.add(path);
 
-        return runGit(cmdArgs.toArray(String[]::new));
+        return runGitIn(root, cmdArgs.toArray(String[]::new));
     }
 
     @Override

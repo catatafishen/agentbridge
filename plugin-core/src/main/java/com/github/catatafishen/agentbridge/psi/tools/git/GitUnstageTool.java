@@ -49,7 +49,8 @@ public final class GitUnstageTool extends GitTool {
     public @NotNull JsonObject inputSchema() {
         JsonObject s = schema(
             Param.optional("path", TYPE_STRING, "Single file path to unstage"),
-            Param.optional(PARAM_PATHS, TYPE_ARRAY, "Multiple file paths to unstage")
+            Param.optional(PARAM_PATHS, TYPE_ARRAY, "Multiple file paths to unstage"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
         addArrayItems(s, PARAM_PATHS);
         return s;
@@ -57,6 +58,12 @@ public final class GitUnstageTool extends GitTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_unstage");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("restore");
         cmdArgs.add("--staged");
@@ -72,9 +79,9 @@ public final class GitUnstageTool extends GitTool {
             return "Error: provide 'path' or 'paths' parameter";
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         if (result.startsWith("Error")) return result;
 
-        return result + getBranchSummary();
+        return result + getBranchSummaryIn(root);
     }
 }

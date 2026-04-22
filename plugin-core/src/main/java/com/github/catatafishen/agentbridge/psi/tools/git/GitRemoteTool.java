@@ -48,41 +48,46 @@ public final class GitRemoteTool extends GitTool {
         return schema(
             Param.optional(PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'add', 'remove', 'set_url', 'get_url'"),
             Param.optional("name", TYPE_STRING, "Remote name (required for add/remove/set_url/get_url)"),
-            Param.optional("url", TYPE_STRING, "Remote URL (required for add/set_url)")
+            Param.optional("url", TYPE_STRING, "Remote URL (required for add/set_url)"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         String action = args.has(PARAM_ACTION)
             ? args.get(PARAM_ACTION).getAsString()
             : "list";
 
         return switch (action) {
-            case "list" -> runGit(GIT_REMOTE, "-v");
+            case "list" -> runGitIn(root, GIT_REMOTE, "-v");
             case "add" -> {
                 String name = requireString(args, "name");
                 String url = requireString(args, "url");
                 if (name == null) yield "Error: 'name' parameter is required for 'add'";
                 if (url == null) yield "Error: 'url' parameter is required for 'add'";
-                yield runGit(GIT_REMOTE, "add", name, url);
+                yield runGitIn(root, GIT_REMOTE, "add", name, url);
             }
             case "remove" -> {
                 String name = requireString(args, "name");
                 if (name == null) yield "Error: 'name' parameter is required for 'remove'";
-                yield runGit(GIT_REMOTE, "remove", name);
+                yield runGitIn(root, GIT_REMOTE, "remove", name);
             }
             case "set_url" -> {
                 String name = requireString(args, "name");
                 String url = requireString(args, "url");
                 if (name == null) yield "Error: 'name' parameter is required for 'set_url'";
                 if (url == null) yield "Error: 'url' parameter is required for 'set_url'";
-                yield runGit(GIT_REMOTE, "set-url", name, url);
+                yield runGitIn(root, GIT_REMOTE, "set-url", name, url);
             }
             case "get_url" -> {
                 String name = requireString(args, "name");
                 if (name == null) yield "Error: 'name' parameter is required for 'get_url'";
-                yield runGit(GIT_REMOTE, "get-url", name);
+                yield runGitIn(root, GIT_REMOTE, "get-url", name);
             }
             default -> "Error: unknown action '" + action + "'. Use: list, add, remove, set_url, get_url";
         };

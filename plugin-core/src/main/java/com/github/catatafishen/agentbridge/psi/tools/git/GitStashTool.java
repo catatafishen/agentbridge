@@ -56,18 +56,25 @@ public final class GitStashTool extends GitTool {
             Param.optional(PARAM_ACTION, TYPE_STRING, "Action: 'list' (default), 'push', 'pop', 'apply', 'drop'"),
             Param.optional(PARAM_MESSAGE, TYPE_STRING, "Stash message (for push action)"),
             Param.optional(PARAM_INDEX, TYPE_STRING, "Stash index (for pop/apply/drop, e.g., 'stash@{0}')"),
-            Param.optional(PARAM_INCLUDE_UNTRACKED, TYPE_BOOLEAN, "For push: include untracked files")
+            Param.optional(PARAM_INCLUDE_UNTRACKED, TYPE_BOOLEAN, "For push: include untracked files"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_stash");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         String action = args.has(PARAM_ACTION)
             ? args.get(PARAM_ACTION).getAsString()
             : "list";
 
         return switch (action) {
-            case "list" -> runGit(CMD_STASH, "list");
+            case "list" -> runGitIn(root, CMD_STASH, "list");
             case "push", "save" -> {
                 List<String> cmdArgs = new ArrayList<>();
                 cmdArgs.add(CMD_STASH);
@@ -82,7 +89,7 @@ public final class GitStashTool extends GitTool {
                     cmdArgs.add("--include-untracked");
                 }
 
-                yield runGit(cmdArgs.toArray(String[]::new));
+                yield runGitIn(root, cmdArgs.toArray(String[]::new));
             }
             case "pop" -> {
                 String reviewError = AgentEditSession.getInstance(project)
@@ -90,8 +97,8 @@ public final class GitStashTool extends GitTool {
                 if (reviewError != null) yield reviewError;
                 String index = stashRef(args);
                 String result = index != null
-                    ? runGit(CMD_STASH, "pop", index)
-                    : runGit(CMD_STASH, "pop");
+                    ? runGitIn(root, CMD_STASH, "pop", index)
+                    : runGitIn(root, CMD_STASH, "pop");
                 AgentEditSession.getInstance(project).invalidateOnWorktreeChange("stash pop");
                 yield result;
             }
@@ -101,16 +108,16 @@ public final class GitStashTool extends GitTool {
                 if (reviewError != null) yield reviewError;
                 String index = stashRef(args);
                 String result = index != null
-                    ? runGit(CMD_STASH, ACTION_APPLY, index)
-                    : runGit(CMD_STASH, ACTION_APPLY);
+                    ? runGitIn(root, CMD_STASH, ACTION_APPLY, index)
+                    : runGitIn(root, CMD_STASH, ACTION_APPLY);
                 AgentEditSession.getInstance(project).invalidateOnWorktreeChange("stash apply");
                 yield result;
             }
             case "drop" -> {
                 String index = stashRef(args);
                 yield index != null
-                    ? runGit(CMD_STASH, "drop", index)
-                    : runGit(CMD_STASH, "drop");
+                    ? runGitIn(root, CMD_STASH, "drop", index)
+                    : runGitIn(root, CMD_STASH, "drop");
             }
             default -> "Error: unknown action '" + action + "'. Use: list, push, pop, apply, drop";
         };

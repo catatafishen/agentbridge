@@ -71,12 +71,19 @@ public final class GitFetchTool extends GitTool {
             Param.optional(PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"),
             Param.optional(PARAM_BRANCH, TYPE_STRING, "Specific branch to fetch"),
             Param.optional(PARAM_PRUNE, TYPE_BOOLEAN, "Remove remote-tracking refs that no longer exist on the remote"),
-            Param.optional("tags", TYPE_BOOLEAN, "Fetch all tags from the remote")
+            Param.optional("tags", TYPE_BOOLEAN, "Fetch all tags from the remote"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_fetch");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("fetch");
 
@@ -96,12 +103,9 @@ public final class GitFetchTool extends GitTool {
             cmdArgs.add(args.get(PARAM_BRANCH).getAsString());
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         String output = result.isBlank() ? "Fetch completed successfully." : result;
 
-        // Reset throttle so subsequent tools see the fresh state
-        lastFetchTime.set(System.currentTimeMillis());
-
-        return output + getBranchContext();
+        return output + getBranchContextIn(root);
     }
 }

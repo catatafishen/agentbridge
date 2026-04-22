@@ -27,7 +27,9 @@ public final class GitStatusTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Show working tree status including branch tracking info and stash count. "
-            + "Use verbose: true for full output including untracked files.";
+            + "Use verbose: true for full output including untracked files. "
+            + "When the project has multiple git repositories, returns an aggregate summary "
+            + "for all repos unless a specific 'repo' path is provided.";
     }
 
     @Override
@@ -43,7 +45,8 @@ public final class GitStatusTool extends GitTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.optional(PARAM_VERBOSE, TYPE_BOOLEAN, "If true, show full 'git status' output including untracked files")
+            Param.optional(PARAM_VERBOSE, TYPE_BOOLEAN, "If true, show full 'git status' output including untracked files"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
@@ -51,18 +54,28 @@ public final class GitStatusTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
-        boolean verbose = args.has(PARAM_VERBOSE)
-            && args.get(PARAM_VERBOSE).getAsBoolean();
+        boolean verbose = args.has(PARAM_VERBOSE) && args.get(PARAM_VERBOSE).getAsBoolean();
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
 
-        String result;
-        if (verbose) {
-            result = runGit("status");
-        } else {
-            result = runGit("status", "--short", "--branch");
+        if (isMultiRepo() && repoParam == null) {
+            return aggregateMultiRepoStatus(verbose);
         }
 
-        // Append stash count if any
-        String stashList = runGitQuiet("stash", "list");
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
+        return statusForRoot(root, verbose);
+    }
+
+    private String statusForRoot(String root, boolean verbose) throws Exception {
+        String result;
+        if (verbose) {
+            result = runGitIn(root, "status");
+        } else {
+            result = runGitIn(root, "status", "--short", "--branch");
+        }
+
+        String stashList = runGitInQuiet(root, "stash", "list");
         if (stashList != null && !stashList.isEmpty()) {
             long count = stashList.chars().filter(c -> c == '\n').count();
             if (!stashList.endsWith("\n")) count++;
@@ -72,6 +85,16 @@ public final class GitStatusTool extends GitTool {
         }
 
         return result;
+    }
+
+    private String aggregateMultiRepoStatus(boolean verbose) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        for (String root : listRepoRoots()) {
+            String relRoot = toRelativePath(root, project.getBasePath() != null ? project.getBasePath() : root);
+            sb.append("=== ").append(relRoot).append(" ===\n");
+            sb.append(statusForRoot(root, verbose)).append('\n');
+        }
+        return sb.toString().stripTrailing();
     }
 
     @Override

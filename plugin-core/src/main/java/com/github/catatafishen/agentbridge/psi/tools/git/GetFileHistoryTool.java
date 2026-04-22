@@ -44,7 +44,8 @@ public final class GetFileHistoryTool extends GitTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required("path", TYPE_STRING, "Path to the file to get history for (absolute or project-relative)"),
-            Param.optional(PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 20)")
+            Param.optional(PARAM_MAX_COUNT, TYPE_INTEGER, "Maximum number of commits to show (default: 20)"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
@@ -55,12 +56,16 @@ public final class GetFileHistoryTool extends GitTool {
         }
         String path = args.get("path").getAsString();
 
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         String maxCount = String.valueOf(
             args.has(PARAM_MAX_COUNT)
                 ? args.get(PARAM_MAX_COUNT).getAsInt()
                 : DEFAULT_MAX_COUNT);
 
-        return runGit("log", "--follow",
+        return runGitIn(root, "log", "--follow",
             "--format=%H %ai %an%n  %s",
             "-n", maxCount, "--", path);
     }

@@ -54,7 +54,8 @@ public final class GitDiffTool extends GitTool {
             Param.optional(PARAM_STAGED, TYPE_BOOLEAN, "If true, show staged (cached) changes only"),
             Param.optional(PARAM_COMMIT, TYPE_STRING, "Compare against this commit (e.g., 'HEAD~1', branch name)"),
             Param.optional("path", TYPE_STRING, "Limit diff to this file path"),
-            Param.optional(PARAM_STAT_ONLY, TYPE_BOOLEAN, "If true, show only file stats (insertions/deletions), not full diff")
+            Param.optional(PARAM_STAT_ONLY, TYPE_BOOLEAN, "If true, show only file stats (insertions/deletions), not full diff"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
@@ -62,9 +63,13 @@ public final class GitDiffTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         // Auto-fetch when comparing against a remote ref
         String commitRef = args.has(PARAM_COMMIT) ? args.get(PARAM_COMMIT).getAsString() : null;
-        String fetchNote = autoFetchForRemoteRef(commitRef);
+        String fetchNote = autoFetchForRemoteRefIn(commitRef, root);
 
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("diff");
@@ -90,7 +95,7 @@ public final class GitDiffTool extends GitTool {
             cmdArgs.add(args.get("path").getAsString());
         }
 
-        return fetchNote + runGit(cmdArgs.toArray(String[]::new));
+        return fetchNote + runGitIn(root, cmdArgs.toArray(String[]::new));
     }
 
     @Override

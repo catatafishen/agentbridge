@@ -58,12 +58,17 @@ public final class GitLogTool extends GitTool {
             Param.optional(PARAM_SINCE, TYPE_STRING, "Show commits after this date (e.g., '2024-01-01', '2 weeks ago')"),
             Param.optional(PARAM_UNTIL, TYPE_STRING, "Show commits before this date (e.g., '2024-12-31', '1 week ago')"),
             Param.optional("path", TYPE_STRING, "Show only commits touching this file"),
-            Param.optional(PARAM_BRANCH, TYPE_STRING, "Show commits from this branch (default: current)")
+            Param.optional(PARAM_BRANCH, TYPE_STRING, "Show commits from this branch (default: current)"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("log");
 
@@ -107,7 +112,7 @@ public final class GitLogTool extends GitTool {
             cmdArgs.add(args.get("path").getAsString());
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         showFirstCommitInLog(result);
         return result;
     }

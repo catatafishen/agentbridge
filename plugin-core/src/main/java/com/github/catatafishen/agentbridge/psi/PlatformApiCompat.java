@@ -547,12 +547,30 @@ public final class PlatformApiCompat {
      */
     public static @Nullable String runIdeGitCommand(@NotNull Project project, @NotNull String[] args) {
         if (args.length == 0) return null;
-
-        git4idea.commands.GitCommand command = IDE_GIT_COMMAND_MAP.get(args[0]);
-        if (command == null) return null;
-
         git4idea.repo.GitRepository repo = getRepository(project);
         if (repo == null) return null;
+        return runIdeGitCommandWithRepo(project, repo, args);
+    }
+
+    /**
+     * Runs a Git command using the repo rooted at {@code rootPath}.
+     * Falls back to {@link #runIdeGitCommand} if no repo is found at that path.
+     */
+    public static @Nullable String runIdeGitCommandIn(
+        @NotNull Project project, @NotNull String rootPath, @NotNull String[] args) {
+        if (args.length == 0) return null;
+        git4idea.repo.GitRepository repo = getRepositoryForRoot(project, rootPath);
+        if (repo == null) {
+            repo = getRepository(project);
+            if (repo == null) return null;
+        }
+        return runIdeGitCommandWithRepo(project, repo, args);
+    }
+
+    private static @Nullable String runIdeGitCommandWithRepo(
+        @NotNull Project project, @NotNull git4idea.repo.GitRepository repo, @NotNull String[] args) {
+        git4idea.commands.GitCommand command = IDE_GIT_COMMAND_MAP.get(args[0]);
+        if (command == null) return null;
 
         git4idea.commands.GitLineHandler handler =
             new git4idea.commands.GitLineHandler(project, repo.getRoot(), command);
@@ -580,8 +598,7 @@ public final class PlatformApiCompat {
      * Returns null if Git4Idea is unavailable or no repositories are registered.
      */
     public static @Nullable git4idea.repo.GitRepository getRepository(@NotNull Project project) {
-        java.util.List<git4idea.repo.GitRepository> repos =
-            git4idea.repo.GitRepositoryManager.getInstance(project).getRepositories();
+        java.util.List<git4idea.repo.GitRepository> repos = getRepositories(project);
         if (repos.isEmpty()) return null;
 
         git4idea.repo.GitRepository repo = repos.getFirst();
@@ -595,12 +612,43 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns all git repositories registered in this project.
+     * Returns an empty list if Git4Idea is unavailable or no repositories are registered.
+     */
+    public static @NotNull java.util.List<git4idea.repo.GitRepository> getRepositories(@NotNull Project project) {
+        try {
+            return git4idea.repo.GitRepositoryManager.getInstance(project).getRepositories();
+        } catch (NoClassDefFoundError e) {
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    /**
+     * Returns the GitRepository whose root is exactly {@code rootPath}, or null if not found.
+     */
+    public static @Nullable git4idea.repo.GitRepository getRepositoryForRoot(
+        @NotNull Project project, @NotNull String rootPath) {
+        for (git4idea.repo.GitRepository r : getRepositories(project)) {
+            if (r.getRoot().getPath().equals(rootPath)) return r;
+        }
+        return null;
+    }
+
+    /**
      * Switches to an existing branch using Git4Idea's high-level checkout API.
      * Uses IntelliJ's configured git executable and properly refreshes the GitRepository state.
      * Returns null to signal that the caller should fall back to CLI.
      */
     public static @Nullable String ideCheckout(@NotNull Project project, @NotNull String branchName) {
-        git4idea.repo.GitRepository repo = getRepository(project);
+        return ideCheckout(project, null, branchName);
+    }
+
+    /** Root-aware variant of {@link #ideCheckout(Project, String)}. */
+    public static @Nullable String ideCheckout(
+            @NotNull Project project, @Nullable String rootPath, @NotNull String branchName) {
+        git4idea.repo.GitRepository repo = rootPath != null
+            ? getRepositoryForRoot(project, rootPath)
+            : getRepository(project);
         if (repo == null) return null;
         git4idea.commands.GitCommandResult result =
             git4idea.commands.Git.getInstance().checkout(repo, branchName, null, false, false);
@@ -617,7 +665,16 @@ public final class PlatformApiCompat {
     public static @Nullable String ideCheckoutNewBranch(@NotNull Project project,
                                                         @NotNull String branchName,
                                                         @Nullable String base) {
-        git4idea.repo.GitRepository repo = getRepository(project);
+        return ideCheckoutNewBranch(project, null, branchName, base);
+    }
+
+    /** Root-aware variant of {@link #ideCheckoutNewBranch(Project, String, String)}. */
+    public static @Nullable String ideCheckoutNewBranch(
+            @NotNull Project project, @Nullable String rootPath,
+            @NotNull String branchName, @Nullable String base) {
+        git4idea.repo.GitRepository repo = rootPath != null
+            ? getRepositoryForRoot(project, rootPath)
+            : getRepository(project);
         if (repo == null) return null;
         git4idea.commands.GitCommandResult result;
         if (base == null) {
@@ -641,7 +698,16 @@ public final class PlatformApiCompat {
     public static @Nullable String ideDeleteBranch(@NotNull Project project,
                                                    @NotNull String branchName,
                                                    boolean force) {
-        git4idea.repo.GitRepository repo = getRepository(project);
+        return ideDeleteBranch(project, null, branchName, force);
+    }
+
+    /** Root-aware variant of {@link #ideDeleteBranch(Project, String, boolean)}. */
+    public static @Nullable String ideDeleteBranch(
+            @NotNull Project project, @Nullable String rootPath,
+            @NotNull String branchName, boolean force) {
+        git4idea.repo.GitRepository repo = rootPath != null
+            ? getRepositoryForRoot(project, rootPath)
+            : getRepository(project);
         if (repo == null) return null;
         git4idea.commands.GitCommandResult result =
             git4idea.commands.Git.getInstance().branchDelete(repo, branchName, force);

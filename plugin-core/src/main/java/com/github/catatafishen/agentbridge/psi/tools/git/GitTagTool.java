@@ -59,12 +59,19 @@ public final class GitTagTool extends GitTool {
             Param.optional(PARAM_MESSAGE, TYPE_STRING, "Tag message (for annotated tags)"),
             Param.optional(PARAM_ANNOTATE, TYPE_BOOLEAN, "Create an annotated tag (requires message)"),
             Param.optional(PARAM_PATTERN, TYPE_STRING, "Glob pattern to filter tags (for list)"),
-            Param.optional("sort", TYPE_STRING, "Sort field for list (e.g., '-creatordate' for newest first)")
+            Param.optional("sort", TYPE_STRING, "Sort field for list (e.g., '-creatordate' for newest first)"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_tag");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         String action = args.has(PARAM_ACTION)
             ? args.get(PARAM_ACTION).getAsString()
             : "list";
@@ -83,7 +90,7 @@ public final class GitTagTool extends GitTool {
                     cmdArgs.add("--sort=" + args.get("sort").getAsString());
                 }
 
-                yield runGit(cmdArgs.toArray(String[]::new));
+                yield runGitIn(root, cmdArgs.toArray(String[]::new));
             }
             case "create" -> {
                 String name = requireName(args);
@@ -114,12 +121,12 @@ public final class GitTagTool extends GitTool {
                     cmdArgs.add(message);
                 }
 
-                yield runGit(cmdArgs.toArray(String[]::new));
+                yield runGitIn(root, cmdArgs.toArray(String[]::new));
             }
             case "delete" -> {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'delete'";
-                yield runGit("tag", "-d", name);
+                yield runGitIn(root, "tag", "-d", name);
             }
             default -> "Error: unknown action '" + action + "'. Use: list, create, delete";
         };

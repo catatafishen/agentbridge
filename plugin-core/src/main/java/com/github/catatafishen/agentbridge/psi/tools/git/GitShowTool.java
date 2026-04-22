@@ -48,12 +48,17 @@ public final class GitShowTool extends GitTool {
         return schema(
             Param.optional("ref", TYPE_STRING, "Commit SHA, branch, tag, or ref (default: HEAD)"),
             Param.optional(PARAM_STAT_ONLY, TYPE_BOOLEAN, "If true, show only file stats, not full diff content"),
-            Param.optional("path", TYPE_STRING, "Limit output to this file path")
+            Param.optional("path", TYPE_STRING, "Limit output to this file path"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("show");
 
@@ -73,7 +78,7 @@ public final class GitShowTool extends GitTool {
             cmdArgs.add(args.get("path").getAsString());
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         showFirstCommitInLog(result);
         return result;
     }

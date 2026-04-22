@@ -56,51 +56,66 @@ public final class GitBranchTool extends GitTool {
             Param.optional(PARAM_NAME, TYPE_STRING, "Branch name (required for create/switch/delete)"),
             Param.optional(PARAM_BASE, TYPE_STRING, "Base ref for create (default: HEAD)"),
             Param.optional(PARAM_ALL, TYPE_BOOLEAN, "For list: include remote branches"),
-            Param.optional(PARAM_FORCE, TYPE_BOOLEAN, "For delete: force delete unmerged branches")
+            Param.optional(PARAM_FORCE, TYPE_BOOLEAN, "For delete: force delete unmerged branches"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        String action = args.has(PARAM_ACTION)
-            ? args.get(PARAM_ACTION).getAsString()
-            : "list";
+        String action = args.has(PARAM_ACTION) ? args.get(PARAM_ACTION).getAsString() : "list";
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
 
         return switch (action) {
             case "list" -> {
+                // List is read-only: no ambiguity guard, no repo required.
+                String root = resolveRepoRootOrError(repoParam);
+                if (root.startsWith("Error")) yield root;
                 boolean all = args.has(PARAM_ALL) && args.get(PARAM_ALL).getAsBoolean();
-                yield runGit(CMD_BRANCH, all ? "--all" : "--list", "-v");
+                yield runGitIn(root, CMD_BRANCH, all ? "--all" : "--list", "-v");
             }
             case "create" -> {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'create'";
+                String ambiError = requireUnambiguousRepo(repoParam, "branch create");
+                if (ambiError != null) yield ambiError;
+                String root = resolveRepoRootOrError(repoParam);
+                if (root.startsWith("Error")) yield root;
                 String reviewError = AgentEditSession.getInstance(project)
                     .awaitReviewCompletion("branch create '" + name + "'");
                 if (reviewError != null) yield reviewError;
                 String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
                     ? args.get(PARAM_BASE).getAsString()
                     : null;
-                String result = ideCreate(name, base);
+                String result = ideCreate(root, name, base);
                 if (result.startsWith("Error")) yield result;
                 AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch create");
-                yield "Created and switched to branch '" + name + "'\n" + getBranchContext();
+                yield "Created and switched to branch '" + name + "'\n" + getBranchContextIn(root);
             }
             case "switch", CMD_CHECKOUT -> {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'switch'";
+                String ambiError = requireUnambiguousRepo(repoParam, "branch switch");
+                if (ambiError != null) yield ambiError;
+                String root = resolveRepoRootOrError(repoParam);
+                if (root.startsWith("Error")) yield root;
                 String reviewError = AgentEditSession.getInstance(project)
                     .awaitReviewCompletion("branch switch '" + name + "'");
                 if (reviewError != null) yield reviewError;
-                String result = ideSwitch(name);
+                String result = ideSwitch(root, name);
                 if (result.startsWith("Error")) yield result;
                 AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch switch");
-                yield "Switched to branch '" + name + "'\n" + getBranchContext();
+                yield "Switched to branch '" + name + "'\n" + getBranchContextIn(root);
             }
             case "delete" -> {
                 String name = requireName(args);
                 if (name == null) yield "Error: 'name' parameter is required for 'delete'";
+                String ambiError = requireUnambiguousRepo(repoParam, "branch delete");
+                if (ambiError != null) yield ambiError;
+                String root = resolveRepoRootOrError(repoParam);
+                if (root.startsWith("Error")) yield root;
                 boolean force = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
-                yield ideDelete(name, force);
+                yield ideDelete(root, name, force);
             }
             default -> "Error: unknown action '" + action + "'. Use: list, create, switch, delete";
         };
@@ -109,9 +124,9 @@ public final class GitBranchTool extends GitTool {
     /**
      * Create a new branch and switch to it. Prefers Git4Idea high-level API; falls back to CLI.
      */
-    private String ideCreate(String name, @Nullable String base) throws Exception {
+    private String ideCreate(String root, String name, @Nullable String base) throws Exception {
         try {
-            String result = PlatformApiCompat.ideCheckoutNewBranch(project, name, base);
+            String result = PlatformApiCompat.ideCheckoutNewBranch(project, root, name, base);
             if (result != null) {
                 refreshVcsState();
                 return result;
@@ -119,18 +134,17 @@ public final class GitBranchTool extends GitTool {
         } catch (NoClassDefFoundError ignored) {
             // Git4Idea unavailable
         }
-        // CLI fallback
         return base != null
-            ? runGit(CMD_CHECKOUT, "-b", name, base)
-            : runGit(CMD_CHECKOUT, "-b", name);
+            ? runGitIn(root, CMD_CHECKOUT, "-b", name, base)
+            : runGitIn(root, CMD_CHECKOUT, "-b", name);
     }
 
     /**
      * Switch to an existing branch. Prefers Git4Idea high-level API; falls back to CLI.
      */
-    private String ideSwitch(String name) throws Exception {
+    private String ideSwitch(String root, String name) throws Exception {
         try {
-            String result = PlatformApiCompat.ideCheckout(project, name);
+            String result = PlatformApiCompat.ideCheckout(project, root, name);
             if (result != null) {
                 refreshVcsState();
                 return result;
@@ -138,15 +152,15 @@ public final class GitBranchTool extends GitTool {
         } catch (NoClassDefFoundError ignored) {
             // Git4Idea unavailable
         }
-        return runGit(CMD_CHECKOUT, name);
+        return runGitIn(root, CMD_CHECKOUT, name);
     }
 
     /**
      * Delete a branch. Prefers Git4Idea high-level API; falls back to CLI.
      */
-    private String ideDelete(String name, boolean force) throws Exception {
+    private String ideDelete(String root, String name, boolean force) throws Exception {
         try {
-            String result = PlatformApiCompat.ideDeleteBranch(project, name, force);
+            String result = PlatformApiCompat.ideDeleteBranch(project, root, name, force);
             if (result != null) {
                 refreshVcsState();
                 return result;
@@ -154,7 +168,7 @@ public final class GitBranchTool extends GitTool {
         } catch (NoClassDefFoundError ignored) {
             // Git4Idea unavailable
         }
-        return runGit(CMD_BRANCH, force ? "-D" : "-d", name);
+        return runGitIn(root, CMD_BRANCH, force ? "-D" : "-d", name);
     }
 
     private static @Nullable String requireName(JsonObject args) {

@@ -56,12 +56,17 @@ public final class GitConfigTool extends GitTool {
             Param.optional(PARAM_VALUE, TYPE_STRING, "The value to set. If omitted and unset/list are false, performs a get operation."),
             Param.optional(PARAM_GLOBAL, TYPE_BOOLEAN, "If true, uses --global flag"),
             Param.optional(PARAM_UNSET, TYPE_BOOLEAN, "If true, unsets the given key"),
-            Param.optional(PARAM_LIST, TYPE_BOOLEAN, "If true, lists all configuration options")
+            Param.optional(PARAM_LIST, TYPE_BOOLEAN, "If true, lists all configuration options"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("config");
 
@@ -71,7 +76,7 @@ public final class GitConfigTool extends GitTool {
 
         if (args.has(PARAM_LIST) && args.get(PARAM_LIST).getAsBoolean()) {
             cmdArgs.add("--list");
-            return runGit(cmdArgs.toArray(new String[0]));
+            return runGitIn(root, cmdArgs.toArray(new String[0]));
         }
 
         if (!args.has(PARAM_KEY)) {
@@ -91,6 +96,6 @@ public final class GitConfigTool extends GitTool {
             cmdArgs.add(key);
         }
 
-        return runGit(cmdArgs.toArray(new String[0]));
+        return runGitIn(root, cmdArgs.toArray(new String[0]));
     }
 }

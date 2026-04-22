@@ -59,7 +59,8 @@ public final class GitMergeTool extends GitTool {
             Param.optional(PARAM_NO_FF, TYPE_BOOLEAN, "Create a merge commit even for fast-forward merges"),
             Param.optional(PARAM_FF_ONLY, TYPE_BOOLEAN, "Only merge if fast-forward is possible"),
             Param.optional(PARAM_SQUASH, TYPE_BOOLEAN, "Squash all commits into a single commit (requires manual commit after)"),
-            Param.optional(PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress merge")
+            Param.optional(PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress merge"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
@@ -72,16 +73,22 @@ public final class GitMergeTool extends GitTool {
             return "Error: 'branch' parameter is required (or use 'abort' to abort an in-progress merge)";
         }
 
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_merge");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         flushAndSave();
 
         if (hasAbort) {
-            return runGit("merge", "--abort");
+            return runGitIn(root, "merge", "--abort");
         }
 
         String branchArg = args.get(PARAM_BRANCH).getAsString();
 
         // Auto-fetch when merging a remote branch
-        String fetchNote = autoFetchForRemoteRef(branchArg);
+        String fetchNote = autoFetchForRemoteRefIn(branchArg, root);
 
         String reviewError = AgentEditSession.getInstance(project)
             .awaitReviewCompletion("git merge '" + branchArg + "'");
@@ -109,10 +116,10 @@ public final class GitMergeTool extends GitTool {
 
         cmdArgs.add(branchArg);
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         if (result.startsWith("Error")) return fetchNote + result;
 
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git merge");
-        return fetchNote + result + getBranchSummary();
+        return fetchNote + result + getBranchSummaryIn(root);
     }
 }

@@ -45,7 +45,8 @@ public final class GitRevertTool extends GitTool {
         return schema(
             Param.required(PARAM_COMMIT, TYPE_STRING, "Commit SHA to revert"),
             Param.optional(PARAM_NO_COMMIT, TYPE_BOOLEAN, "If true, revert changes to working tree without creating a commit"),
-            Param.optional(PARAM_NO_EDIT, TYPE_BOOLEAN, "If true, use the default commit message without editing")
+            Param.optional(PARAM_NO_EDIT, TYPE_BOOLEAN, "If true, use the default commit message without editing"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
@@ -54,6 +55,12 @@ public final class GitRevertTool extends GitTool {
         if (!args.has(PARAM_COMMIT) || args.get(PARAM_COMMIT).getAsString().isEmpty()) {
             return "Error: 'commit' parameter is required";
         }
+
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_revert");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
 
         String reviewError = AgentEditSession.getInstance(project)
             .awaitReviewCompletion("git revert");
@@ -75,7 +82,7 @@ public final class GitRevertTool extends GitTool {
 
         cmdArgs.add(args.get(PARAM_COMMIT).getAsString());
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         if (!result.startsWith("Error")) {
             AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git revert");
         }

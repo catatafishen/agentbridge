@@ -65,7 +65,8 @@ public final class GitRebaseTool extends GitTool {
             Param.optional(PARAM_EXEC, TYPE_STRING, "Shell command to run after each rebase step (e.g. 'make test')"),
             Param.optional(PARAM_ABORT, TYPE_BOOLEAN, "Abort an in-progress rebase"),
             Param.optional(PARAM_CONTINUE_REBASE, TYPE_BOOLEAN, "Continue a paused rebase after resolving conflicts"),
-            Param.optional("skip", TYPE_BOOLEAN, "Skip the current patch and continue rebase")
+            Param.optional("skip", TYPE_BOOLEAN, "Skip the current patch and continue rebase"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
@@ -73,35 +74,41 @@ public final class GitRebaseTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
-        String controlResult = handleControlArgs(args);
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_rebase");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
+        String controlResult = handleControlArgs(args, root);
         if (controlResult != null) return controlResult;
 
         // Auto-fetch when rebasing onto a remote branch
         String branchArg = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
         String ontoArg = args.has("onto") ? args.get("onto").getAsString() : null;
-        String fetchNote = autoFetchForRemoteRef(branchArg);
-        if (fetchNote.isEmpty()) fetchNote = autoFetchForRemoteRef(ontoArg);
+        String fetchNote = autoFetchForRemoteRefIn(branchArg, root);
+        if (fetchNote.isEmpty()) fetchNote = autoFetchForRemoteRefIn(ontoArg, root);
 
         String reviewError = AgentEditSession.getInstance(project)
             .awaitReviewCompletion("git rebase");
         if (reviewError != null) return reviewError;
 
-        String result = runGit(buildRebaseArgs(args).toArray(String[]::new));
+        String result = runGitIn(root, buildRebaseArgs(args).toArray(String[]::new));
         if (result.startsWith("Error")) return fetchNote + result;
 
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git rebase");
-        return fetchNote + result + getBranchContext();
+        return fetchNote + result + getBranchContextIn(root);
     }
 
-    private @Nullable String handleControlArgs(@NotNull JsonObject args) throws Exception {
+    private @Nullable String handleControlArgs(@NotNull JsonObject args, @NotNull String root) throws Exception {
         if (args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean()) {
-            return runGit(CMD_REBASE, "--abort");
+            return runGitIn(root, CMD_REBASE, "--abort");
         }
         if (args.has(PARAM_CONTINUE_REBASE) && args.get(PARAM_CONTINUE_REBASE).getAsBoolean()) {
-            return runGit(CMD_REBASE, "--continue");
+            return runGitIn(root, CMD_REBASE, "--continue");
         }
         if (args.has("skip") && args.get("skip").getAsBoolean()) {
-            return runGit(CMD_REBASE, "--skip");
+            return runGitIn(root, CMD_REBASE, "--skip");
         }
         if (args.has(PARAM_INTERACTIVE) && args.get(PARAM_INTERACTIVE).getAsBoolean()) {
             return "Error: interactive rebase requires a terminal text editor and cannot run in the plugin context. " +

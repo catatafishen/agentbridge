@@ -56,7 +56,8 @@ public final class GitStageTool extends GitTool {
         JsonObject s = schema(
             Param.optional("path", TYPE_STRING, "Single file path to stage"),
             Param.optional(PARAM_PATHS, TYPE_ARRAY, "Multiple file paths to stage"),
-            Param.optional("all", TYPE_BOOLEAN, "If true, stage all changes (including untracked files)")
+            Param.optional("all", TYPE_BOOLEAN, "If true, stage all changes (including untracked files)"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
         addArrayItems(s, PARAM_PATHS);
         return s;
@@ -66,6 +67,12 @@ public final class GitStageTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_stage");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("add");
 
@@ -74,7 +81,7 @@ public final class GitStageTool extends GitTool {
             return "Error: provide 'path', 'paths', or 'all' parameter";
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
 
         refreshAndActivateCommitPanel();
 
@@ -87,7 +94,7 @@ public final class GitStageTool extends GitTool {
 
         if (base.startsWith("Error")) return base;
 
-        return base + getBranchSummary();
+        return base + getBranchSummaryIn(root);
     }
 
     /**

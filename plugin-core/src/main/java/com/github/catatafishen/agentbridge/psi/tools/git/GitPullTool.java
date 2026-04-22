@@ -83,13 +83,20 @@ public final class GitPullTool extends GitTool {
             Param.optional(PARAM_REMOTE, TYPE_STRING, "Remote name (default: origin)"),
             Param.optional(PARAM_BRANCH, TYPE_STRING, "Branch to pull (default: current tracking branch)"),
             Param.optional(PARAM_REBASE, TYPE_BOOLEAN, "If true, rebase instead of merge when pulling"),
-            Param.optional(PARAM_FF_ONLY, TYPE_BOOLEAN, "If true, only fast-forward (abort if not possible)")
+            Param.optional(PARAM_FF_ONLY, TYPE_BOOLEAN, "If true, only fast-forward (abort if not possible)"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
+
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_pull");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
 
         String reviewError = AgentEditSession.getInstance(project)
             .awaitReviewCompletion("git pull");
@@ -114,10 +121,10 @@ public final class GitPullTool extends GitTool {
             cmdArgs.add(args.get(PARAM_BRANCH).getAsString());
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         if (result.startsWith("Error")) return result;
 
         AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git pull");
-        return result + getBranchContext();
+        return result + getBranchContextIn(root);
     }
 }

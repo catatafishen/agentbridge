@@ -57,13 +57,21 @@ public final class GitResetTool extends GitTool {
         return schema(
             Param.optional(PARAM_COMMIT, TYPE_STRING, "Target commit (default: HEAD)"),
             Param.optional("mode", TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"),
-            Param.optional("path", TYPE_STRING, "Reset a specific file path (unstages it)")
+            Param.optional("path", TYPE_STRING, "Reset a specific file path (unstages it)"),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
+
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_reset");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
+
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("reset");
 
@@ -80,7 +88,7 @@ public final class GitResetTool extends GitTool {
             }
         }
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         if (!result.isBlank() && result.startsWith("Error")) return result;
         // Invalidate after hard reset (worktree changed)
         String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";

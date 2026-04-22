@@ -65,13 +65,20 @@ public final class GitCommitTool extends GitTool {
             Param.required(PARAM_MESSAGE, TYPE_STRING, "Commit message (use conventional commit format)"),
             Param.optional(PARAM_AMEND, TYPE_BOOLEAN, "If true, amend the previous commit instead of creating a new one"),
             Param.optional(PARAM_AUTHOR, TYPE_STRING, "Override the commit author (e.g. 'Name <email@example.com>')"),
-            Param.optional("all", TYPE_BOOLEAN, "Stage all changes (modified, deleted, and new untracked files) before committing. Default: true. Set false to commit only already-staged changes.")
+            Param.optional("all", TYPE_BOOLEAN, "Stage all changes (modified, deleted, and new untracked files) before committing. Default: true. Set false to commit only already-staged changes."),
+            Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
     }
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
+
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_commit");
+        if (ambiError != null) return ambiError;
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith("Error")) return root;
 
         if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) {
             return "Error: 'message' parameter is required";
@@ -81,23 +88,23 @@ public final class GitCommitTool extends GitTool {
 
         // Compute which files will be committed, then only gate on those paths.
         // This prevents unrelated PENDING review items from blocking the commit.
-        Collection<String> filesToCommit = resolveFilesToCommit(commitAll);
+        Collection<String> filesToCommit = resolveFilesToCommit(commitAll, root);
         String reviewError = AgentEditSession.getInstance(project)
             .awaitReviewForPaths("git commit", filesToCommit);
         if (reviewError != null) return reviewError;
 
         if (commitAll) {
             // Stage all changes including new untracked files (equivalent to git add -A)
-            runGit("add", "-A");
+            runGitIn(root, "add", "-A");
         }
 
         boolean isAmend = resolveAmend(args);
 
         // Pre-commit check: verify there are staged changes (skip for amend — message-only amends are valid)
         if (!isAmend) {
-            String staged = runGitQuiet("diff", "--cached", "--name-only");
+            String staged = runGitInQuiet(root, "diff", "--cached", "--name-only");
             if (staged != null && staged.isEmpty()) {
-                return buildNothingToCommitHint();
+                return buildNothingToCommitHint(root);
             }
         }
 
@@ -130,7 +137,7 @@ public final class GitCommitTool extends GitTool {
         cmdArgs.add("-m");
         cmdArgs.add(args.get(PARAM_MESSAGE).getAsString());
 
-        String result = runGit(cmdArgs.toArray(String[]::new));
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         showNewCommitInLog();
 
         if (result.startsWith("Error")) return result;
@@ -138,7 +145,7 @@ public final class GitCommitTool extends GitTool {
         // Prune approved review rows for files that are now part of this commit.
         // Run on EDT-safe pool: AgentEditSession mutations + listeners are EDT-safe.
         try {
-            String committedNames = runGitQuiet("show", "--name-only", "--format=", "HEAD");
+            String committedNames = runGitInQuiet(root, "show", "--name-only", "--format=", "HEAD");
             if (committedNames != null && !committedNames.isBlank()) {
                 java.util.List<String> paths = new java.util.ArrayList<>();
                 for (String line : committedNames.split("\\r?\\n")) {
@@ -156,19 +163,19 @@ public final class GitCommitTool extends GitTool {
         }
 
         // Append committed file list so agent can verify what was included
-        String fileStats = runGitQuiet("show", "--stat", "--format=", "HEAD");
+        String fileStats = runGitInQuiet(root, "show", "--stat", "--format=", "HEAD");
         if (fileStats != null && !fileStats.isBlank()) {
             result += "\n\nCommitted files:\n" + fileStats.trim();
         }
 
         // Warn if committing directly to default branch
-        String branch = runGitQuiet("rev-parse", "--abbrev-ref", "HEAD");
+        String branch = runGitInQuiet(root, "rev-parse", "--abbrev-ref", "HEAD");
         if ("main".equals(branch) || "master".equals(branch)) {
             result += "\n\n⚠️ Warning: you committed directly to " + branch
                 + ". Consider using a feature branch instead.";
         }
 
-        return result + getBranchContext();
+        return result + getBranchContextIn(root);
     }
 
     /**
@@ -184,11 +191,11 @@ public final class GitCommitTool extends GitTool {
      * {@code git status --porcelain}. For staged-only: files from
      * {@code git diff --cached --name-only}.
      */
-    private Collection<String> resolveFilesToCommit(boolean commitAll) {
+    private Collection<String> resolveFilesToCommit(boolean commitAll, String root) {
         String basePath = project.getBasePath();
         Set<String> paths = new java.util.HashSet<>();
         if (commitAll) {
-            String status = runGitQuiet("status", "--porcelain");
+            String status = runGitInQuiet(root, "status", "--porcelain");
             if (status != null) {
                 for (String line : status.split("\\r?\\n")) {
                     if (line.length() < 4) continue;
@@ -200,7 +207,7 @@ public final class GitCommitTool extends GitTool {
                 }
             }
         } else {
-            String staged = runGitQuiet("diff", "--cached", "--name-only");
+            String staged = runGitInQuiet(root, "diff", "--cached", "--name-only");
             if (staged != null) {
                 for (String line : staged.split("\\r?\\n")) {
                     String trimmed = line.trim();
@@ -222,10 +229,10 @@ public final class GitCommitTool extends GitTool {
      * Builds a detailed hint for the "nothing to commit" case, listing which paths are
      * unstaged/untracked/ignored so the agent knows exactly what to stage (or force-add).
      */
-    private String buildNothingToCommitHint() {
-        String unstaged = runGitQuiet("diff", "--name-only");
-        String untracked = runGitQuiet("ls-files", "--others", "--exclude-standard");
-        String ignored = runGitQuiet("ls-files", "--others", "--ignored", "--exclude-standard");
+    private String buildNothingToCommitHint(String root) {
+        String unstaged = runGitInQuiet(root, "diff", "--name-only");
+        String untracked = runGitInQuiet(root, "ls-files", "--others", "--exclude-standard");
+        String ignored = runGitInQuiet(root, "ls-files", "--others", "--ignored", "--exclude-standard");
 
         boolean hasUnstaged = unstaged != null && !unstaged.isEmpty();
         boolean hasUntracked = untracked != null && !untracked.isEmpty();
