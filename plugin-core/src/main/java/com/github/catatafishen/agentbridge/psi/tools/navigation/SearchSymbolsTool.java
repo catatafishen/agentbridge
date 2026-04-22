@@ -86,7 +86,7 @@ public final class SearchSymbolsTool extends NavigationTool {
         String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             if (query.isEmpty() || "*".equals(query)) {
                 if (!SCOPE_PROJECT.equalsIgnoreCase(scopeName)) {
-                    return "Wildcard symbol listing is only supported with scope='project'. "
+                    return "Error: Wildcard symbol listing is only supported with scope='project'. "
                         + "Use an exact query name when searching scope='libraries' or scope='all'.";
                 }
                 return searchWildcard(typeFilter);
