@@ -146,4 +146,50 @@ public abstract class NavigationTool extends Tool {
             results.add(String.format(FORMAT_LOCATION, relPath, line, type, lineText));
         }
     }
+
+    protected List<String> collectOutlineEntries(PsiFile psiFile, Document document) {
+        List<String> outline = new java.util.ArrayList<>();
+        psiFile.accept(new com.intellij.psi.PsiRecursiveElementWalkingVisitor() {
+            @Override
+            public void visitElement(@NotNull PsiElement element) {
+                if (element instanceof PsiNamedElement named) {
+                    String name = named.getName();
+                    if (name != null && !name.isEmpty()) {
+                        String type = ToolUtils.classifyElement(element);
+                        if (type != null) {
+                            int line = document.getLineNumber(element.getTextOffset()) + 1;
+                            outline.add(String.format("  %d: %s %s", line, type, name));
+                        }
+                    }
+                }
+                super.visitElement(element);
+            }
+        });
+        return outline;
+    }
+
+    protected void collectSymbolsFromFile(PsiFile psiFile, Document doc, com.intellij.openapi.vfs.VirtualFile vf,
+                                          String typeFilter, String basePath,
+                                          java.util.Set<String> seen, List<String> results) {
+        String relPath = safeRelativize(basePath, vf.getPath());
+        psiFile.accept(new com.intellij.psi.PsiRecursiveElementWalkingVisitor() {
+            @Override
+            public void visitElement(@NotNull PsiElement element) {
+                if (results.size() >= 200) return;
+                if (!(element instanceof PsiNamedElement named)) {
+                    super.visitElement(element);
+                    return;
+                }
+                String name = named.getName();
+                String type = ToolUtils.classifyElement(element);
+                if (name != null && type != null && type.equals(typeFilter)) {
+                    int line = doc.getLineNumber(element.getTextOffset()) + 1;
+                    if (seen.add(relPath + ":" + line)) {
+                        results.add(String.format(FORMAT_LOCATION, relPath, line, type, name));
+                    }
+                }
+                super.visitElement(element);
+            }
+        });
+    }
 }
