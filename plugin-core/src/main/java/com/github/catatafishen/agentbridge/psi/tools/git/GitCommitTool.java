@@ -85,20 +85,27 @@ public final class GitCommitTool extends GitTool {
         }
 
         boolean commitAll = resolveCommitAll(args);
+        boolean isAmend = resolveAmend(args);
 
         // Compute which files will be committed, then only gate on those paths.
         // This prevents unrelated PENDING review items from blocking the commit.
-        Collection<String> filesToCommit = resolveFilesToCommit(commitAll, root);
-        String reviewError = AgentEditSession.getInstance(project)
-            .awaitReviewForPaths("git commit", filesToCommit);
+        // For --amend we don't compute filesToCommit (it's not used for gating) — we
+        // gate unconditionally via awaitReviewCompletion to keep amends safe even when
+        // the staged file set looks empty/irrelevant.
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        String reviewError;
+        if (isAmend) {
+            reviewError = session.awaitReviewCompletion("git commit --amend");
+        } else {
+            Collection<String> filesToCommit = resolveFilesToCommit(commitAll, root);
+            reviewError = session.awaitReviewForPaths("git commit", filesToCommit);
+        }
         if (reviewError != null) return reviewError;
 
         if (commitAll) {
             // Stage all changes including new untracked files (equivalent to git add -A)
             runGitIn(root, "add", "-A");
         }
-
-        boolean isAmend = resolveAmend(args);
 
         // Pre-commit check: verify there are staged changes (skip for amend — message-only amends are valid)
         if (!isAmend) {

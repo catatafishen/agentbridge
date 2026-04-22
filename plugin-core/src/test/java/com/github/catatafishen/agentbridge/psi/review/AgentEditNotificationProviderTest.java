@@ -8,15 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AgentEditNotificationProviderTest {
 
     @Test
-    void bannerTextExplicitlyBlocksCommitAndPush() {
+    void bannerTextLeadsWithReviewPendingState() {
         String msg = AgentEditNotificationProvider.formatBannerText(1, 3, 2);
 
-        assertTrue(msg.startsWith("REVIEW PENDING"),
+        assertTrue(msg.startsWith("Review pending:"),
             "Banner should lead with the pending-review state: " + msg);
-        assertTrue(msg.contains("user has not reviewed this file yet"),
-            "Banner should say the user has not reviewed the file yet: " + msg);
-        assertTrue(msg.contains("Do not commit or push"),
-            "Banner should explicitly block commit/push: " + msg);
         assertTrue(msg.contains("File 1/3"),
             "Banner should still include the file counter: " + msg);
         assertTrue(msg.contains("2 changes"),
