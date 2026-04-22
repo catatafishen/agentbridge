@@ -1,10 +1,12 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
+import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
@@ -40,7 +42,7 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0),
             "Send"
         )
-        addDot(row1)
+        addVerticalSeparator(row1)
         addShortcutEntry(
             row1,
             PromptShortcutAction.NEW_LINE_ID,
@@ -55,7 +57,7 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
             "Stop && Send"
         )
-        addDot(row2)
+        addVerticalSeparator(row2)
         addShortcutEntry(
             row2,
             PromptShortcutAction.QUEUE_ID,
@@ -67,7 +69,7 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
         )
 
         inner.add(row1)
-        inner.add(Box.createVerticalStrut(JBUI.scale(3)))
+        inner.add(Box.createVerticalStrut(JBUI.scale(6)))
         inner.add(row2)
 
         add(inner, BorderLayout.CENTER)
@@ -101,11 +103,18 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
         return lbl
     }
 
-    private fun addDot(row: JPanel) {
-        row.add(JBLabel("\u00B7").apply {
-            font = JBUI.Fonts.smallFont()
-            foreground = UIUtil.getContextHelpForeground()
-            border = JBUI.Borders.empty(0, 2)
-        })
+    private fun addVerticalSeparator(row: JPanel) {
+        val line = JPanel().apply {
+            isOpaque = true
+            background = JBColor.namedColor("Separator.foreground", JBColor(0xcdcdcd, 0x3d3d3d))
+            preferredSize = Dimension(JBUI.scale(1), JBUI.scale(11))
+        }
+        // Wrap in an empty-bordered panel to add symmetric horizontal margins.
+        val wrapper = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(0, JBUI.scale(6))
+            add(line, BorderLayout.CENTER)
+        }
+        row.add(wrapper)
     }
 }
