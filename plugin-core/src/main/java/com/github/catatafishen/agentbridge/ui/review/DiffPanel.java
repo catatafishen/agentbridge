@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.psi.review.RevertReasonDialog;
 import com.github.catatafishen.agentbridge.psi.review.ReviewItem;
 import com.github.catatafishen.agentbridge.psi.review.ReviewSessionTopic;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
+import com.github.catatafishen.agentbridge.ui.util.EmptyStateStyles;
 import com.github.catatafishen.agentbridge.ui.util.TimestampDisplayFormatter;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
@@ -112,6 +113,7 @@ public final class DiffPanel extends JPanel implements Disposable {
 
         emptyLabel = new JBLabel("", SwingConstants.CENTER);
         emptyLabel.setForeground(JBColor.GRAY);
+        emptyLabel.setBorder(EmptyStateStyles.PLACEHOLDER_PADDING);
         JPanel emptyStatePanel = new JPanel(new GridBagLayout());
         JPanel column = new JPanel();
         column.setLayout(new BoxLayout(column, BoxLayout.Y_AXIS));

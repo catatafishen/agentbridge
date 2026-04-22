@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.ui.MarkdownRenderer;
+import com.github.catatafishen.agentbridge.ui.util.EmptyStateStyles;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
@@ -82,6 +83,7 @@ final class TodoPanel extends JPanel implements Disposable {
         );
         emptyLabel.setVerticalAlignment(SwingConstants.CENTER);
         emptyLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        emptyLabel.setBorder(EmptyStateStyles.PLACEHOLDER_PADDING);
 
         contentPanel = new JPanel(new BorderLayout());
         contentPanel.add(emptyLabel, BorderLayout.CENTER);
