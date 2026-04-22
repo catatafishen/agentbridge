@@ -802,10 +802,12 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     private @Nullable String readCurrentContent(@NotNull String path) {
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
         if (vf == null) return null;
-        Document doc = FileDocumentManager.getInstance().getDocument(vf);
-        if (doc != null) {
-            return ApplicationManager.getApplication().runReadAction((Computable<String>) doc::getText);
-        }
+        // getDocument() requires a read action, not just getText().
+        String text = ReadAction.compute(() -> {
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            return doc != null ? doc.getText() : null;
+        });
+        if (text != null) return text;
         try {
             return new String(vf.contentsToByteArray(), StandardCharsets.UTF_8);
         } catch (Exception e) {
