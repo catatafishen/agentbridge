@@ -113,9 +113,7 @@ public final class FindReferencesTool extends NavigationTool {
             (element, offsetInElement) -> {
                 com.intellij.psi.PsiFile file = element.getContainingFile();
                 if (file == null || file.getVirtualFile() == null) return true;
-                String relPath = basePath != null
-                    ? relativize(basePath, file.getVirtualFile().getPath())
-                    : file.getVirtualFile().getPath();
+                String relPath = safeRelativize(basePath, file.getVirtualFile().getPath());
                 if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern, compiledGlob))
                     return true;
 
