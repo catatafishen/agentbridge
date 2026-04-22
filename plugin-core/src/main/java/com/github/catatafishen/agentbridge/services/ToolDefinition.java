@@ -193,6 +193,34 @@ public interface ToolDefinition {
         return null;
     }
 
+    /**
+     * True if this tool depends on the symbol index. When true, the central
+     * pre-flight gate waits briefly for indexing to finish and otherwise
+     * returns an actionable error to the agent (so it can call
+     * {@code get_indexing_status} or retry). Default: false.
+     */
+    default boolean requiresIndex() {
+        return false;
+    }
+
+    /**
+     * True if this tool requires the project to be fully initialised
+     * (post-startup activities completed). Default: false.
+     */
+    default boolean requiresSmartProject() {
+        return false;
+    }
+
+    /**
+     * True if this tool drives interactive UI on the EDT (e.g. opens a file in
+     * the editor, shows a diff viewer). Such tools fail-fast when a modal
+     * dialog is currently blocking the EDT, with a nudge to call
+     * {@code interact_with_modal}. Default: false.
+     */
+    default boolean requiresInteractiveEdt() {
+        return false;
+    }
+
     // ── Schema ───────────────────────────────────────────────
 
     /**

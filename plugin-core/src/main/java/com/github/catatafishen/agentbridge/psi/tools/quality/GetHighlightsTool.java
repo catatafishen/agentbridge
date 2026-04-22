@@ -42,6 +42,11 @@ public final class GetHighlightsTool extends QualityTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Get Highlights";
     }

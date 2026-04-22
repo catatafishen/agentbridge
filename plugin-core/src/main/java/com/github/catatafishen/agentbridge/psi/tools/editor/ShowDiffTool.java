@@ -31,6 +31,11 @@ public final class ShowDiffTool extends EditorTool {
     }
 
     @Override
+    public boolean requiresInteractiveEdt() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Show Diff";
     }
