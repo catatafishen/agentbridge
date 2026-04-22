@@ -24,6 +24,11 @@ public final class RunConfigurationTool extends ProjectTool {
     }
 
     @Override
+    public boolean requiresInteractiveEdt() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Run Configuration";
     }

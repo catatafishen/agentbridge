@@ -38,6 +38,11 @@ public final class GetSymbolInfoTool extends RefactoringTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Get Symbol Info";
     }

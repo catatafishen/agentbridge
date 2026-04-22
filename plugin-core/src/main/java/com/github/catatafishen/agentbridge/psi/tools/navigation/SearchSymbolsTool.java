@@ -38,6 +38,11 @@ public final class SearchSymbolsTool extends NavigationTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Search Symbols";
     }

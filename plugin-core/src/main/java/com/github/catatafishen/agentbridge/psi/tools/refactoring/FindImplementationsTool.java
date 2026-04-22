@@ -35,6 +35,11 @@ public final class FindImplementationsTool extends RefactoringTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Find Implementations";
     }

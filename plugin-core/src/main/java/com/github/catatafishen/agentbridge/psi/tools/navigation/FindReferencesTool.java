@@ -32,6 +32,11 @@ public final class FindReferencesTool extends NavigationTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Find References";
     }

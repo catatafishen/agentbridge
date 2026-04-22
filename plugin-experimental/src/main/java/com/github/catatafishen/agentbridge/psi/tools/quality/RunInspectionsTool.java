@@ -61,6 +61,11 @@ public final class RunInspectionsTool extends QualityTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Run Inspections";
     }
@@ -99,9 +104,6 @@ public final class RunInspectionsTool extends QualityTool {
 
         if (!project.isInitialized()) {
             return ERROR_IDE_INITIALIZING;
-        }
-        if (DumbService.isDumb(project)) {
-            return "IDE is currently indexing the project. Please wait for indexing to finish and try again.";
         }
 
         // Serve from cache if available and fresh (5 min TTL)

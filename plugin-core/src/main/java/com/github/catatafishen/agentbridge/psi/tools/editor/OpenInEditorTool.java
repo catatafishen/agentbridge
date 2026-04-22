@@ -34,6 +34,11 @@ public final class OpenInEditorTool extends EditorTool {
     }
 
     @Override
+    public boolean requiresInteractiveEdt() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Open in Editor";
     }
