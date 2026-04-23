@@ -55,10 +55,13 @@
     --tool-a08: rgba(180, 160, 220, 0.08);
     --tool-a16: rgba(180, 160, 220, 0.16);
     --tool-a40: rgba(180, 160, 220, 0.40);
-    /* Tool kind colors */
-    --kind-read: rgb(100, 185, 185);
+    /* Tool kind colors — semantic:
+       read/search = safe (green/blue), edit/write/move = local mutate (amber),
+       delete/execute = destructive or remote (red). */
+    --kind-read: rgb(120, 190, 120);
     --kind-edit: rgb(205, 155, 95);
-    --kind-execute: rgb(130, 190, 130);
+    --kind-execute: rgb(210, 105, 105);
+    --kind-destructive: rgb(210, 105, 105);
     --kind-think: rgb(170, 155, 210);
     --kind-search: rgb(110, 165, 210);
     --kind-other: rgb(160, 165, 170);
@@ -394,6 +397,11 @@ working-indicator .working-text {
     flex-shrink: 0;
 }
 
+/* Hide redundant timestamps when the previous message shares the same minute */
+.ts.ts-hidden {
+    display: none;
+}
+
 /* User message timestamp: push to the right edge of the meta strip */
 .prompt-row .meta .ts {
     order: 10;
@@ -539,13 +547,24 @@ working-indicator .working-text {
     border-color: color-mix(in srgb, var(--kind-edit) 22%, transparent);
 }
 
-/* write, delete, move share the edit color */
+/* write, move share the edit (local mutate) color.
+   delete is destructive — separate mapping below. */
 .turn-chip.kind-write,
-.turn-chip.kind-delete,
 .turn-chip.kind-move {
     color: var(--kind-edit);
     background: color-mix(in srgb, var(--kind-edit) 10%, transparent);
     border-color: color-mix(in srgb, var(--kind-edit) 22%, transparent);
+}
+
+.turn-chip.kind-delete {
+    color: var(--kind-destructive);
+    background: color-mix(in srgb, var(--kind-destructive) 10%, transparent);
+    border-color: color-mix(in srgb, var(--kind-destructive) 22%, transparent);
+}
+
+.turn-chip.kind-delete:hover {
+    background: color-mix(in srgb, var(--kind-destructive) 18%, transparent);
+    border-color: color-mix(in srgb, var(--kind-destructive) 32%, transparent);
 }
 
 .turn-chip.kind-execute {
@@ -784,11 +803,18 @@ thinking-chip.thinking-active .thought-bubble {
 }
 
 /* ── Session separator ───────────────────────────────── */
+session-divider {
+    display: block;
+    width: 100%;
+}
+
 .session-sep {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: var(--sp-5);
     margin: var(--sp-8) 0;
+    width: 100%;
     opacity: 0.6;
 }
 

@@ -5,7 +5,7 @@
  * sends structured JSON with pre-rendered markdown, and this module creates
  * the DOM programmatically using custom elements.
  */
-import {decodeBase64} from './helpers';
+import {decodeBase64, hideRedundantTimestamp} from './helpers';
 
 // ── Batch data types (matching Kotlin serialization) ────────
 
@@ -94,20 +94,28 @@ export function renderBatchFragment(encodedJson: string): DocumentFragment {
 
     for (const turn of turns) {
         switch (turn.type) {
-            case 'user':
-                fragment.appendChild(_renderUserTurn(turn));
+            case 'user': {
+                const el = _renderUserTurn(turn);
+                fragment.appendChild(el);
+                hideRedundantTimestamp(el);
                 break;
+            }
             case 'agent':
                 for (const segment of turn.segments) {
-                    fragment.appendChild(_renderAgentSegment(turn.agent, segment));
+                    const el = _renderAgentSegment(turn.agent, segment);
+                    fragment.appendChild(el);
+                    hideRedundantTimestamp(el);
                 }
                 break;
             case 'separator':
                 fragment.appendChild(_renderSeparator(turn));
                 break;
-            case 'nudge_sent':
-                fragment.appendChild(_renderNudgeSentTurn(turn));
+            case 'nudge_sent': {
+                const el = _renderNudgeSentTurn(turn);
+                fragment.appendChild(el);
+                hideRedundantTimestamp(el);
                 break;
+            }
             case 'stats':
                 _appendStatsToLastAgent(fragment, turn);
                 break;
