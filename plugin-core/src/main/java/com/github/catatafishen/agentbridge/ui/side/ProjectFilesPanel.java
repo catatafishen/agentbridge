@@ -361,8 +361,11 @@ final class ProjectFilesPanel extends JPanel {
             // every other row is fully transparent so the side-panel background shows through.
             setOpaque(sel);
             if (sel) {
-                setBackground(com.intellij.util.ui.UIUtil.getTreeSelectionBackground(true));
-                setForeground(com.intellij.util.ui.UIUtil.getTreeSelectionForeground(true));
+                // Use the focused/unfocused selection palette based on actual tree focus —
+                // otherwise unfocused selections incorrectly look focused, which breaks the
+                // IDE's standard selection semantics (focused = vivid, unfocused = muted).
+                setBackground(com.intellij.util.ui.UIUtil.getTreeSelectionBackground(hasFocus));
+                setForeground(com.intellij.util.ui.UIUtil.getTreeSelectionForeground(hasFocus));
             } else {
                 setBackground(null);
                 setForeground(com.intellij.util.ui.UIUtil.getTreeForeground());

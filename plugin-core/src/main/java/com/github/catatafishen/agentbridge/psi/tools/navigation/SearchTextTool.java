@@ -192,13 +192,27 @@ public final class SearchTextTool extends NavigationTool {
             AgentTabTracker.getInstance(project).trackTab("Find", tabText);
             // Auto-expand all groups so the agent's results are immediately visible —
             // by default the Find tool window collapses every file group, requiring an
-            // extra click before any usages are shown. expandAll() lives on UsageViewImpl,
-            // so cast cautiously and schedule on a later EDT pump because usage nodes are
-            // appended asynchronously after showUsages returns.
-            if (view instanceof com.intellij.usages.impl.UsageViewImpl impl) {
-                ApplicationManager.getApplication().invokeLater(impl::expandAll);
-            }
+            // extra click before any usages are shown. Schedule expansion on a later EDT
+            // pump because usage nodes are appended asynchronously after showUsages returns.
+            ApplicationManager.getApplication().invokeLater(() -> expandUsageViewIfSupported(view));
         });
+    }
+
+    /**
+     * Expands all groups in a {@link com.intellij.usages.UsageView} by reflection, so we
+     * don't take a compile-time dependency on {@code com.intellij.usages.impl.UsageViewImpl}
+     * — that's an internal implementation class whose presence/signature can shift across
+     * IDE versions and break Marketplace verification.
+     */
+    private static void expandUsageViewIfSupported(@Nullable com.intellij.usages.UsageView view) {
+        if (view == null) return;
+        try {
+            java.lang.reflect.Method expandAllMethod = view.getClass().getMethod("expandAll");
+            expandAllMethod.invoke(view);
+        } catch (ReflectiveOperationException ignored) {
+            // Older/newer IDEs may use a different impl or omit expandAll() — auto-expand
+            // is a UX nicety, not a correctness requirement, so silently skip.
+        }
     }
 
     private boolean processFile(VirtualFile vf, SearchParams p) {

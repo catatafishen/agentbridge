@@ -906,7 +906,14 @@ class ChatToolWindowContent(
                 restorePromptText = ::restorePromptText,
                 onTurnMineEntries = ::mineEntriesAfterTurn,
                 onQueuedMessageConsumed = { text ->
-                    queuedTexts.remove(text)
+                    // Mirror the cancel path: remove the LAST matching entry so that when
+                    // the same text was queued multiple times, "recall most recent queued
+                    // message" ordering remains intact (Up-arrow restores the oldest copies
+                    // first, newest copies last).
+                    val lastMatchingIndex = queuedTexts.lastIndexOf(text)
+                    if (lastMatchingIndex >= 0) {
+                        queuedTexts.removeAt(lastMatchingIndex)
+                    }
                     ApplicationManager.getApplication().invokeLater { refreshShortcutHints() }
                 },
             )
@@ -936,6 +943,12 @@ class ChatToolWindowContent(
                 ApplicationManager.getApplication().invokeLater {
                     promptTextArea.revalidate()
                     checkSlashCommandAutocomplete()
+                    // Refresh Send button enabled-state immediately on every keystroke.
+                    // ActionToolbar's default polling cycle (~500ms) makes the button feel
+                    // sluggish to enable/disable when text appears/disappears.
+                    if (::innerInputToolbar.isInitialized) {
+                        innerInputToolbar.updateActionsAsync()
+                    }
                 }
             }
         })
@@ -1294,8 +1307,9 @@ class ChatToolWindowContent(
 
         override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
             // Primary-styled labeled button so the Send action reads as the dominant CTA.
-            // Icon on the left, "Send" text on the right — text is updated dynamically via
-            // updateCustomComponent when the agent is running ("More" with dropdown).
+            // Icon on the left, "Send" text on the right. The label stays "Send" in all
+            // states; the button's behavior (direct send vs. nudge/queue/stop dropdown)
+            // depends on isSending and is handled in the action listener below.
             val button = JButton(presentation.text ?: "Send", sendIcon)
             button.putClientProperty("JButton.buttonType", "primary")
             button.isFocusable = false
@@ -1326,7 +1340,7 @@ class ChatToolWindowContent(
             val hasText = promptTextArea.text.trim().isNotEmpty()
             if (isSending && !consolePanel.hasPendingAskUserRequest()) {
                 e.presentation.icon = sendIcon
-                e.presentation.text = "More"
+                e.presentation.text = "Send"
                 e.presentation.description = "Nudge, queue, or stop and send"
                 e.presentation.isEnabled = hasText
             } else {

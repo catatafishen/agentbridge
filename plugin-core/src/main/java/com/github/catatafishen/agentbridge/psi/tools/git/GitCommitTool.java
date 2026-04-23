@@ -241,17 +241,26 @@ public final class GitCommitTool extends GitTool {
      * into a single "... and N more files" suffix.
      */
     private static String formatPathList(String rawNewlineSeparated) {
-        if (rawNewlineSeparated == null || rawNewlineSeparated.isEmpty()) return "";
-        String[] parts = rawNewlineSeparated.split("\n");
-        if (parts.length <= PATH_LIST_LIMIT) {
+        if (rawNewlineSeparated == null || rawNewlineSeparated.isBlank()) return "";
+        // Split on \r?\n and trim each entry — git output on Windows uses CRLF, and a
+        // raw "\n"-only split would leave stray \r characters in the rendered hint.
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        for (String line : rawNewlineSeparated.split("\\r?\\n")) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                parts.add(trimmed);
+            }
+        }
+        if (parts.isEmpty()) return "";
+        if (parts.size() <= PATH_LIST_LIMIT) {
             return String.join(", ", parts);
         }
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < PATH_LIST_LIMIT; i++) {
             if (i > 0) sb.append(", ");
-            sb.append(parts[i]);
+            sb.append(parts.get(i));
         }
-        sb.append(", ... and ").append(parts.length - PATH_LIST_LIMIT).append(" more files");
+        sb.append(", ... and ").append(parts.size() - PATH_LIST_LIMIT).append(" more files");
         return sb.toString();
     }
 

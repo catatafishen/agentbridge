@@ -658,7 +658,17 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                     TodayTotals totals = new TodayTotals(turns, tools, inTok, outTok,
                         linesAdded, linesRemoved, durMs, premium);
                     todayTotalsRef.set(totals);
-                    SwingUtilities.invokeLater(() -> applyTodayTotals(totals, snap.getMultiplierMode()));
+                    SwingUtilities.invokeLater(() -> {
+                        // Read multiplier mode on the EDT at apply time. The pooled-thread
+                        // DB query may take long enough that the user has switched providers
+                        // by the time we repaint — using the *current* snapshot avoids
+                        // rendering "Today" totals in the stale mode.
+                        SessionStatsSnapshot currentSnap = timerPanel.getSessionSnapshot();
+                        boolean multiplierMode = currentSnap != null
+                            ? currentSnap.getMultiplierMode()
+                            : snap.getMultiplierMode();
+                        applyTodayTotals(totals, multiplierMode);
+                    });
                 } catch (Exception ignored) {
                     // Stats are advisory — never let a query failure crash the UI refresh loop.
                 }

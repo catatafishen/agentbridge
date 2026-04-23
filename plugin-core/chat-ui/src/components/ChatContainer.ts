@@ -17,6 +17,11 @@ export default class ChatContainer extends HTMLElement {
     private _touchStartY = 0;
     private _wheelRAF: number | null = null;
     private _resizeObs: ResizeObserver | null = null;
+    // Per-instance shared ResizeObserver for table overflow detection. Reusing one
+    // observer across all tables avoids the per-table overhead and reference retention
+    // that would accumulate in long chats.
+    private _tableResizeObs: ResizeObserver | null = null;
+    private _tableOverflowCallbacks: WeakMap<Element, () => void> = new WeakMap();
 
     connectedCallback(): void {
         if (this._init) return;
@@ -217,7 +222,20 @@ export default class ChatContainer extends HTMLElement {
                 wrap.classList.toggle('table-overflow', table.scrollWidth > table.clientWidth + 1);
             };
             updateOverflow();
-            new ResizeObserver(updateOverflow).observe(table);
+            // Lazily create a single shared observer for *all* tables in this container,
+            // and dispatch resize events to the per-table callback via a WeakMap. Avoids
+            // creating a fresh observer per table (which would also retain references to
+            // tables removed from the DOM until GC).
+            if (!this._tableResizeObs) {
+                this._tableResizeObs = new ResizeObserver((entries) => {
+                    for (const entry of entries) {
+                        const cb = this._tableOverflowCallbacks.get(entry.target);
+                        if (cb) cb();
+                    }
+                });
+            }
+            this._tableOverflowCallbacks.set(table, updateOverflow);
+            this._tableResizeObs.observe(table);
         });
     }
 
@@ -349,6 +367,8 @@ export default class ChatContainer extends HTMLElement {
         this._observer?.disconnect();
         this._copyObs?.disconnect();
         this._resizeObs?.disconnect();
+        this._tableResizeObs?.disconnect();
+        this._tableResizeObs = null;
         if (this._onScroll) this.removeEventListener('scroll', this._onScroll);
         if (this._onWheel) this.removeEventListener('wheel', this._onWheel);
         if (this._onTouchStart) this.removeEventListener('touchstart', this._onTouchStart);

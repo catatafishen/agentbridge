@@ -586,9 +586,28 @@ public class GitToolsTest extends BasePlatformTestCase {
         // Add an entry to .gitignore so we can create many tracked-as-ignored files.
         Path gitignore = Path.of(basePath, ".gitignore");
         String existing = Files.exists(gitignore) ? Files.readString(gitignore) : "";
-        Files.writeString(gitignore, existing + "\nignored-dir/\n");
-        // Stage and commit the .gitignore update so the dir creation that follows
-        // is the only "untracked + ignored" change in the working tree.
+        String updated = existing.contains("ignored-dir/")
+            ? existing
+            : existing + (existing.isEmpty() || existing.endsWith("\n") ? "" : "\n") + "ignored-dir/\n";
+        if (!updated.equals(existing)) {
+            Files.writeString(gitignore, updated);
+            // Stage and commit the .gitignore update so the dir creation that follows
+            // is the only "untracked + ignored" change in the working tree — otherwise the
+            // .gitignore edit itself shows up as Modified/Untracked and pollutes the hint.
+            ProcessBuilder addBuilder = new ProcessBuilder("git", "add", ".gitignore");
+            addBuilder.directory(new File(basePath));
+            addBuilder.redirectErrorStream(true);
+            Process addProcess = addBuilder.start();
+            String addOutput = new String(addProcess.getInputStream().readAllBytes());
+            assertEquals("git add .gitignore failed: " + addOutput, 0, addProcess.waitFor());
+
+            ProcessBuilder commitBuilder = new ProcessBuilder("git", "commit", "-m", "test: track ignored dir");
+            commitBuilder.directory(new File(basePath));
+            commitBuilder.redirectErrorStream(true);
+            Process commitProcess = commitBuilder.start();
+            String commitOutput = new String(commitProcess.getInputStream().readAllBytes());
+            assertEquals("git commit for .gitignore failed: " + commitOutput, 0, commitProcess.waitFor());
+        }
         Path ignoredDir = Path.of(basePath, "ignored-dir");
         Files.createDirectories(ignoredDir);
         // 25 ignored files — well above the cap of 10.
