@@ -1276,12 +1276,39 @@ class ChatToolWindowContent(
      * Enter key handling is separate (keyboard shortcuts route to the same underlying functions)
      * and is unchanged by this class.
      */
-    private inner class SendAction : AnAction() {
+    private inner class SendAction : AnAction(), com.intellij.openapi.actionSystem.ex.CustomComponentAction {
         private val sendIcon = com.intellij.openapi.util.IconLoader.getIcon(
             "/icons/send.svg", SendAction::class.java
         )
 
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+            // Primary-styled button so the "Send" action reads as the dominant CTA in the
+            // input toolbar, matching JetBrains primary buttons (blue fill).
+            // The ActionToolbar's ActionButton renders as a flat icon which doesn't
+            // communicate "this is the main action" — the primary style fixes that.
+            val button = JButton(sendIcon)
+            button.putClientProperty("JButton.buttonType", "primary")
+            button.isFocusable = false
+            button.margin = JBUI.insets(2, 6)
+            button.toolTipText = presentation.description
+            button.addActionListener {
+                val event = AnActionEvent.createFromAnAction(
+                    this, null, place,
+                    com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext(project)
+                )
+                actionPerformed(event)
+            }
+            return button
+        }
+
+        override fun updateCustomComponent(component: JComponent, presentation: Presentation) {
+            (component as? JButton)?.let { btn ->
+                btn.isEnabled = presentation.isEnabled
+                btn.toolTipText = presentation.description
+            }
+        }
 
         override fun update(e: AnActionEvent) {
             val isLoggedIn = authService.pendingAuthError == null
@@ -1306,8 +1333,10 @@ class ChatToolWindowContent(
                 return
             }
             // Agent is running: show nudge/queue/stop-and-send dropdown.
-            val inputEvent = e.inputEvent ?: return
-            val component = inputEvent.source as? Component ?: return
+            val inputEvent = e.inputEvent
+            val component = (inputEvent?.source as? Component)
+                ?: (e.presentation.getClientProperty(com.intellij.openapi.actionSystem.ex.CustomComponentAction.COMPONENT_KEY) as? Component)
+                ?: return
             val hasText = promptTextArea.text.trim().isNotEmpty()
 
             val group = DefaultActionGroup()
