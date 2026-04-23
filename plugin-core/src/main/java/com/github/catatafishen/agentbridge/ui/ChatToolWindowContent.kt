@@ -957,23 +957,30 @@ class ChatToolWindowContent(
         val innerBar = JBPanel<JBPanel<*>>(BorderLayout())
         innerBar.isOpaque = false
         innerBar.border = JBUI.Borders.empty(0, 2, 0, 2)
-        // Wrap both sides in BorderLayout.SOUTH so they share the same bottom edge,
-        // regardless of their intrinsic heights (badges are shorter than buttons).
-        val leftWrapper = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+        // Layout strategy: a single horizontal row with all three groups vertically
+        // centered via FlowLayout. Centering (rather than BorderLayout.SOUTH wrappers)
+        // is what produces the perceived "same bottom" alignment — the model selector
+        // and Send button have internal padding that makes their content sit above
+        // their bounding-box bottom, so SOUTH-anchoring the bounding boxes leaves the
+        // shortcut text visually below the buttons. Centering aligns all three on the
+        // same eye-line, which reads as bottom-aligned for the visible content.
+        //
+        // Shortcut hints live in CENTER, FlowLayout.CENTER, so they sit centered in
+        // the horizontal gap between the left side-buttons (+, power) and the
+        // right-side model+Send group.
+        val centerWrapper = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.CENTER, 0, 0)).apply {
             isOpaque = false
-            add(shortcutHintPanel, BorderLayout.SOUTH)
+            add(shortcutHintPanel)
         }
-        innerBar.add(leftWrapper, BorderLayout.WEST)
-        // Model selector and Send button grouped together on the right
-        val rightSide = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(2), 0))
-        rightSide.isOpaque = false
-        rightSide.add(modelToolbar.component, BorderLayout.WEST)
-        rightSide.add(innerInputToolbar.component, BorderLayout.EAST)
-        val rightWrapper = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+        innerBar.add(centerWrapper, BorderLayout.CENTER)
+        // Model selector and Send button grouped together on the right, vertically
+        // centered via FlowLayout so they share the same eye-line as the hints.
+        val rightSide = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0)).apply {
             isOpaque = false
-            add(rightSide, BorderLayout.SOUTH)
         }
-        innerBar.add(rightWrapper, BorderLayout.EAST)
+        rightSide.add(modelToolbar.component)
+        rightSide.add(innerInputToolbar.component)
+        innerBar.add(rightSide, BorderLayout.EAST)
         row.add(innerBar, BorderLayout.SOUTH)
 
         refreshShortcutHints()
