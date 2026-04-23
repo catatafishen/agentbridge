@@ -442,7 +442,11 @@ public final class PsiBridgeService implements Disposable {
                 success = false;
                 errorMessage = readinessError;
                 outputSize = readinessError.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-                ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), readinessError);
+                // Register the chip first so the result is correlated with a real chip,
+                // matching the normal execution path in executeWithSyncLock().
+                ToolChipRegistry registry = ToolChipRegistry.getInstance(project);
+                registry.registerMcp(req.toolName(), req.arguments(), req.def().kind().value(), req.toolUseId());
+                registry.storeMcpResult(req.toolName(), req.arguments(), readinessError);
                 return readinessError;
             }
 

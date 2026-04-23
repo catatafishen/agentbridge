@@ -5,7 +5,6 @@ import com.intellij.openapi.compiler.CompilerManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.DumbService;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.startup.StartupManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -35,6 +34,9 @@ public final class ToolReadinessGate {
     /** How long we opportunistically wait for project initialisation. */
     static final long PROJECT_INIT_WAIT_MS = 2_000L;
 
+    /** Polling interval while waiting for project initialisation. */
+    private static final long PROJECT_INIT_POLL_MS = 50L;
+
     private ToolReadinessGate() { }
 
     /**
@@ -60,34 +62,65 @@ public final class ToolReadinessGate {
         return null;
     }
 
+    // ── Message builders ───────────────────────────────────────────────────────
+    // Public so unit tests assert against the real production messages instead
+    // of duplicating hard-coded strings that would silently drift.
+
+    @NotNull
+    public static String projectInitErrorMessage(@NotNull String toolName) {
+        return "Error: Project is still initialising. Tool '" + toolName
+            + "' depends on the project being fully opened. Retry shortly.";
+    }
+
+    @NotNull
+    public static String indexingErrorMessage(@NotNull String toolName) {
+        return "Error: IDE is indexing. Tool '" + toolName
+            + "' depends on the symbol index, which is not yet ready. "
+            + "Call get_indexing_status with wait=true to be notified when indexing finishes, then retry.";
+    }
+
+    @NotNull
+    public static String modalErrorMessage(@NotNull String toolName, @NotNull String detail) {
+        return "Error: A modal dialog is open and blocks tool '" + toolName + "'."
+            + detail
+            + " Use the interact_with_modal tool to inspect or dismiss the dialog, then retry.";
+    }
+
+    @NotNull
+    public static String buildInProgressErrorMessage(@NotNull String toolName) {
+        return "Error: A project build is already in progress. Tool '" + toolName
+            + "' cannot run concurrently. Wait for the current build to finish and retry.";
+    }
+
     /**
      * Returns null if the project is already initialised, or once it becomes
      * initialised within the timeout. Otherwise returns an error message.
+     * <p>
+     * Uses simple polling instead of {@code StartupManager.runAfterOpened()},
+     * which is marked {@code @ApiStatus.Internal} and flagged by the plugin
+     * verifier.
      */
     @Nullable
     static String awaitProjectInitialised(@NotNull Project project, @NotNull String toolName, long timeoutMs) {
         if (project.isDisposed()) {
             return "Error: Project is disposed. Tool '" + toolName + "' cannot run.";
         }
-        if (project.isInitialized()) return null;
-
-        StartupManager startup = StartupManager.getInstance(project);
-        CompletableFuture<Void> ready = new CompletableFuture<>();
-        startup.runAfterOpened(() -> ready.complete(null));
-
-        try {
-            ready.get(timeoutMs, TimeUnit.MILLISECONDS);
-            return null;
-        } catch (TimeoutException e) {
-            return "Error: Project is still initialising. Tool '" + toolName
-                + "' depends on the project being fully opened. Retry shortly.";
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "Error: Interrupted while waiting for project initialisation.";
-        } catch (Exception e) {
-            LOG.debug("Project init wait failed", e);
-            return null; // be permissive on unexpected failure
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (!project.isInitialized()) {
+            if (project.isDisposed()) {
+                return "Error: Project is disposed. Tool '" + toolName + "' cannot run.";
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                return projectInitErrorMessage(toolName);
+            }
+            try {
+                Thread.sleep(PROJECT_INIT_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return "Error: Interrupted while waiting for project initialisation.";
+            }
         }
+        return null;
     }
 
     /**
@@ -108,9 +141,7 @@ public final class ToolReadinessGate {
             smart.get(timeoutMs, TimeUnit.MILLISECONDS);
             return null;
         } catch (TimeoutException e) {
-            return "Error: IDE is indexing. Tool '" + toolName
-                + "' depends on the symbol index, which is not yet ready. "
-                + "Call get_indexing_status with wait=true to be notified when indexing finishes, then retry.";
+            return indexingErrorMessage(toolName);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return "Error: Interrupted while waiting for indexing to finish.";
@@ -128,9 +159,7 @@ public final class ToolReadinessGate {
     static String checkNoModal(@NotNull String toolName) {
         String detail = EdtUtil.describeModalBlocker();
         if (detail == null || detail.isEmpty()) return null;
-        return "Error: A modal dialog is open and blocks tool '" + toolName + "'."
-            + detail
-            + " Use the interact_with_modal tool to inspect or dismiss the dialog, then retry.";
+        return modalErrorMessage(toolName, detail);
     }
 
     /**
@@ -143,8 +172,7 @@ public final class ToolReadinessGate {
         try {
             CompilerManager cm = CompilerManager.getInstance(project);
             if (cm != null && cm.isCompilationActive()) {
-                return "Error: A project build is already in progress. Tool '" + toolName
-                    + "' cannot run concurrently. Wait for the current build to finish and retry.";
+                return buildInProgressErrorMessage(toolName);
             }
         } catch (Exception e) {
             LOG.debug("Build-in-progress check failed", e);
