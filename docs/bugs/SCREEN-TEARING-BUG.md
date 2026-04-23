@@ -1,6 +1,6 @@
 # Screen Tearing Bug — JCEF OSR
 
-**Status**: Recurring — mitigations applied, not confirmed fixed  
+**Status**: Fix 5 applied — synchronous `scrollIfNeeded()` removed from `upsertToolChip()`  
 **Scope**: JCEF Off-Screen Rendering (OSR) mode in the chat panel  
 **Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`
 
@@ -137,6 +137,22 @@ scroll is re-enabled after streaming. During streaming this is a noop since beha
    window). The repaintTimer remains as a 200ms safety net; the per-executeJs invalidation catches
    rapid bursts of JS updates.
 
+### Fix 5 — Remove synchronous `scrollIfNeeded()` from `upsertToolChip()` (this commit)
+
+**Observation**: Tearing persisted specifically when tool chips were added to the chat panel during
+streaming.
+
+**Root cause**: `upsertToolChip()` in `ChatController.ts` called `this._container()?.scrollIfNeeded()`
+synchronously immediately after `ctx.meta!.appendChild(chip)`. This writes `scrollTop = scrollHeight`,
+which forces a synchronous layout reflow. In JCEF OSR, a forced reflow during streaming can trigger an
+intermediate OSR paint that captures the DOM in a half-rendered state (chip appended, but its
+`connectedCallback` layout is not yet computed). The `scrollHeight` is also stale at this point for the
+same reason. The `MutationObserver` + `ResizeObserver` on `ChatContainer` already schedule a
+rAF-debounced `scrollIfNeeded()` for the same mutation, so the synchronous call was redundant.
+
+**Fix**: Removed the synchronous `scrollIfNeeded()` call from `upsertToolChip()`. The observers handle
+auto-scroll via rAF after layout is computed, identical to the Fix 3 fix for `appendAgentText()`.
+
 ---
 
 ## Code Locations
@@ -155,7 +171,8 @@ scroll is re-enabled after streaming. During streaming this is a noop since beha
 | `ChatContainer.ts` | `_setupCodeBlocks()` | Checks `pre.closest('message-bubble[streaming]')` |
 | `ChatContainer.ts` | `setStreaming()` | Toggles CSS smooth-scroll policy between streaming and idle |
 | `ChatContainer.ts` | `_scrollToInstant()` | Temporarily forces `scroll-behavior: auto` for scroll |
-| `ChatController.ts` | `appendAgentText()` | No longer calls synchronous `scrollIfNeeded()` |
+| `ChatController.ts` | `appendAgentText()` | No longer calls synchronous `scrollIfNeeded()` (Fix 3) |
+| `ChatController.ts` | `upsertToolChip()` | No longer calls synchronous `scrollIfNeeded()` (Fix 5) |
 | `MessageBubble.ts` | `appendStreamingText()` | rAF-debounced markdown re-render |
 | `MonitorSwitchRecovery.kt` | `triggerRecovery()` | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes |
 

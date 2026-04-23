@@ -371,7 +371,9 @@ const ChatController = {
             chip.dataset.chipFor = id;
             ctx.meta!.appendChild(chip);
             ctx.meta!.classList.add('show');
-            this._container()?.scrollIfNeeded();
+            // scrollIfNeeded() removed — chip hasn't laid out yet (connectedCallback pending),
+            // so scrollHeight is stale. MutationObserver + ResizeObserver on ChatContainer
+            // already handle post-render auto-scroll via rAF. Same rationale as appendAgentText().
         }
         chip.setAttribute('label', title);
         chip.setAttribute('status', options?.status || 'pending');
