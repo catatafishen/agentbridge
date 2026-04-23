@@ -118,11 +118,6 @@ class AbstractAgentClientTest {
         void checkAuthenticationReturnsErrorWhenNotConnected() {
             assertEquals("Agent not started", client.checkAuthentication());
         }
-
-        @Test
-        void checkAuthenticationPreStartReturnsNullByDefault() {
-            assertNull(client.checkAuthenticationPreStart());
-        }
     }
 
     // getEffectiveModeSlug

@@ -153,25 +153,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     public void start() throws AgentException {
         resolvedBinaryPath = resolveBinary();
         started = true;
-        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
-        String name = creds.getDisplayName();
-        if (!creds.isLoggedIn()) {
-            LOG.warn("Claude CLI credentials not found or expired — prompts will fail until 'claude auth login' is run");
-        }
-        LOG.info("ClaudeCliClient started for profile: " + profile.getDisplayName()
-            + (name != null ? " (account: " + name + ")" : ""));
+        LOG.info("ClaudeCliClient started for profile: " + profile.getDisplayName());
     }
 
     @Override
     public boolean isHealthy() {
         return started;
-    }
-
-    @Override
-    public @org.jetbrains.annotations.Nullable String checkAuthentication() {
-        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
-        return creds.isLoggedIn() ? null
-            : "Not authenticated with Claude. Run 'claude auth login' in a terminal, then retry.";
     }
 
     @Override
@@ -469,6 +456,14 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             }
 
             return stopReason;
+        } catch (ClaudeAuthRequiredException e) {
+            activeProcesses.remove(sessionId);
+            // Message includes "authenticated" so AuthCommandBuilder.isAuthenticationError
+            // recognises it and PromptOrchestrator triggers the SetupBanner.
+            throw new AgentException(
+                "Claude not authenticated: " + e.getMessage()
+                    + " — run 'claude /login' in a terminal, then retry.",
+                e, false);
         } catch (IOException e) {
             throw new AgentException("Failed to start claude process: " + e.getMessage(), e, true);
         } catch (InterruptedException e) {
@@ -478,6 +473,33 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     }
 
     // ── stream-json parsing ──────────────────────────────────────────────────
+
+    /**
+     * Thrown from {@link #handleStreamEvent} when Claude reports an authentication failure
+     * (e.g. "Invalid API key", "Please run /login"). Caught at the {@link #runClaude} level and
+     * translated to {@link AgentException} so {@code PromptOrchestrator} can fire the auth banner.
+     * <p>The plugin never inspects local credential stores; auth state is observed from this
+     * runtime signal only. See {@code docs/AUTH-HANDLING.md}.
+     */
+    private static final class ClaudeAuthRequiredException extends RuntimeException {
+        ClaudeAuthRequiredException(@NotNull String message) { super(message); }
+    }
+
+    /**
+     * Heuristic check for Claude's various auth-failure messages. Patterns include:
+     * "Invalid API key", "Please run /login", "Not authenticated", "Unauthorized", "401".
+     */
+    static boolean isClaudeAuthError(@Nullable String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("invalid api key")
+            || lower.contains("please run /login")
+            || lower.contains("please run `/login`")
+            || lower.contains("not authenticated")
+            || lower.contains("unauthorized")
+            || lower.contains("authentication required")
+            || lower.contains("401");
+    }
 
     @NotNull
     private String parseStreamOutput(@NotNull String sessionId,
@@ -503,6 +525,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                         LOG.trace("stream-json [" + eventCount + "] raw=" + line);
                     }
                     stopReason = handleStreamEvent(sessionId, event, stopReason, stdin, onChunk, onUpdate);
+                } catch (ClaudeAuthRequiredException e) {
+                    // Re-throw so the surrounding runClaude(...) translates it to AgentException
+                    // and PromptOrchestrator can fire markAuthError. Don't let the generic
+                    // RuntimeException catch below swallow it.
+                    throw e;
                 } catch (RuntimeException e) {
                     LOG.debug("Could not parse stream-json line: " + line, e);
                 }
@@ -588,6 +615,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                     }
                     if (onChunk != null) onChunk.accept("\n[Error: " + errorText + "]");
                     if (isRateLimitError(errorText)) emitRateLimitBanner(errorText, onUpdate);
+                    if (isClaudeAuthError(errorText)) {
+                        // Surface auth errors as exceptions so PromptOrchestrator's existing
+                        // auth-error pipeline (markAuthError → SetupBanner) fires.
+                        // See docs/AUTH-HANDLING.md.
+                        throw new ClaudeAuthRequiredException(errorText);
+                    }
                 }
                 // Emit token/cost usage so the UI can display it in the toolbar
                 if (!isError) emitUsageStats(event, onUpdate);

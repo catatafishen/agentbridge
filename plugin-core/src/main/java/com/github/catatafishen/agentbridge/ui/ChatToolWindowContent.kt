@@ -1600,6 +1600,13 @@ class ChatToolWindowContent(
             AllIcons.Actions.Exit
         ) {
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                // The plugin no longer manages Claude credentials — there is no programmatic
+                // logout for Claude CLI. Hide the button so users aren't misled.
+                // See docs/AUTH-HANDLING.md.
+                val agentId = agentManager.getActiveProfile().id
+                e.presentation.isEnabledAndVisible = agentId != com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient.PROFILE_ID
+            }
             override fun actionPerformed(e: AnActionEvent) {
                 LOG.info("Logout: disabling auto-connect and disconnecting")
                 agentManager.isAutoConnect = false

@@ -240,19 +240,8 @@ public final class ActiveAgentManager implements Disposable {
         if (started && acpClient != null && acpClient.isHealthy()) {
             return acpClient.checkAuthentication();
         }
-        return resolvePreStartAuth(getActiveProfileId());
-    }
-
-    /**
-     * Returns an auth error for pre-start credential checks, or {@code null} when no check is
-     * possible without a running process. Only Codex has a synchronous credential check; all other
-     * agent types defer auth errors until the agent is actually started.
-     * <p>Static and package-private so it can be exercised in unit tests without a live platform.
-     */
-    static @Nullable String resolvePreStartAuth(@Nullable String agentId) {
-        if (CodexAppServerClient.PROFILE_ID.equals(agentId)) {
-            return CodexAppServerClient.checkCredentials();
-        }
+        // No pre-start credential probing — auth state is observed at runtime from the
+        // agent's own error responses. See docs/AUTH-HANDLING.md.
         return null;
     }
 

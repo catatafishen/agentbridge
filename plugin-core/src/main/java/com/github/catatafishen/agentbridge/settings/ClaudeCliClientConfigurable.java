@@ -4,7 +4,6 @@ import com.github.catatafishen.agentbridge.acp.client.AcpClient;
 import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.ui.ThemeColor;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBLabel;
@@ -39,7 +38,6 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         return "Claude CLI";
     }
 
-    private JBLabel authStatusLabel;
     private JBTextField binaryPathField;
     private JBTextField instructionsFileField;
     private JBTextArea customModelsArea;
@@ -48,8 +46,6 @@ public final class ClaudeCliClientConfigurable implements Configurable {
 
     @Override
     public @NotNull JComponent createComponent() {
-        authStatusLabel = new JBLabel();
-
         binaryPathField = new JBTextField();
         binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
         binaryPathField.setToolTipText("Absolute path to the claude binary. Leave empty to find it on PATH.");
@@ -68,12 +64,12 @@ public final class ClaudeCliClientConfigurable implements Configurable {
         bubbleColorCombo = new ThemeColorComboBox();
 
         JBLabel authNote = new JBLabel(
-            "<html>Run <code>claude auth login</code> in a terminal to authenticate.</html>");
+            "<html>Run <code>claude /login</code> in a terminal to authenticate. "
+                + "Authentication problems are reported by Claude itself when you send a prompt.</html>");
         authNote.setForeground(UIUtil.getContextHelpForeground());
         authNote.setFont(JBUI.Fonts.smallFont());
 
         panel = FormBuilder.createFormBuilder()
-            .addLabeledComponent("Status:", authStatusLabel)
             .addComponent(authNote, 2)
             .addSeparator(8)
             .addLabeledComponent("Claude binary:", binaryPathField)
@@ -126,7 +122,6 @@ public final class ClaudeCliClientConfigurable implements Configurable {
     @Override
     public void reset() {
         if (customModelsArea == null) return;
-        refreshAuthStatusAsync();
         AgentProfile p = AgentProfileManager.getInstance().getProfile(AgentProfileManager.CLAUDE_CLI_PROFILE_ID);
         if (p == null) return;
         binaryPathField.setText(p.getCustomBinaryPath());
@@ -140,32 +135,11 @@ public final class ClaudeCliClientConfigurable implements Configurable {
 
     @Override
     public void disposeUIResources() {
-        authStatusLabel = null;
         binaryPathField = null;
         instructionsFileField = null;
         customModelsArea = null;
         bubbleColorCombo = null;
         panel = null;
-    }
-
-    private void refreshAuthStatusAsync() {
-        if (authStatusLabel == null) return;
-        authStatusLabel.setText("Checking...");
-        authStatusLabel.setForeground(UIUtil.getLabelForeground());
-
-        ApplicationManager.getApplication().executeOnPooledThread(() -> {
-            String status = AgentProfileManager.getClaudeCliAuthStatus();
-            SwingUtilities.invokeLater(() -> {
-                if (authStatusLabel == null) return;
-                if (status != null) {
-                    authStatusLabel.setText("✓ Logged in — " + status);
-                    authStatusLabel.setForeground(new Color(0, 128, 0));
-                } else {
-                    authStatusLabel.setText("Not logged in — run 'claude auth login' in a terminal");
-                    authStatusLabel.setForeground(Color.RED);
-                }
-            });
-        });
     }
 
     @NotNull
