@@ -42,7 +42,24 @@ for _p in "${_path_parts[@]}"; do
 done
 
 exec_real() {
-    PATH="$real_path" exec "$real_name" "$@"
+    # Find the real binary via real_path so we don't recurse into ourselves,
+    # but exec it with the ORIGINAL PATH (still containing shim_dir) so
+    # downstream commands and shebang lookups (e.g. /usr/bin/env node) can
+    # still resolve through the shims. If lookup fails, fall back to
+    # PATH-stripping to guarantee non-recursion.
+    real_bin=""
+    IFS=':' read -ra _real_parts <<< "$real_path"
+    for _p in "${_real_parts[@]}"; do
+        if [ -x "$_p/$real_name" ]; then
+            real_bin="$_p/$real_name"
+            break
+        fi
+    done
+    if [ -n "$real_bin" ]; then
+        exec "$real_bin" "$@"
+    else
+        PATH="$real_path" exec "$real_name" "$@"
+    fi
 }
 
 port="${AGENTBRIDGE_SHIM_PORT:-}"

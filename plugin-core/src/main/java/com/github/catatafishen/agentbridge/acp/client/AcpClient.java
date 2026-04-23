@@ -1169,9 +1169,16 @@ public abstract class AcpClient extends AbstractAgentClient {
         try {
             com.github.catatafishen.agentbridge.shim.ShimManager.EnvSnapshot snap =
                 com.github.catatafishen.agentbridge.shim.ShimManager.getInstance(project).snapshot();
-            if (snap == null) return resolvedCommand;
+            if (snap == null) {
+                LOG.warn("wrapInShimLauncher: snapshot=null for " + displayName() + " — running unwrapped");
+                return resolvedCommand;
+            }
             Path launcher = snap.launcherPath();
-            if (!Files.isExecutable(launcher)) return resolvedCommand;
+            if (!Files.isExecutable(launcher)) {
+                LOG.warn("wrapInShimLauncher: launcher not executable at " + launcher
+                    + " for " + displayName() + " — running unwrapped");
+                return resolvedCommand;
+            }
             List<String> wrapped = new ArrayList<>(resolvedCommand.size() + 1);
             wrapped.add(launcher.toString());
             wrapped.addAll(resolvedCommand);
