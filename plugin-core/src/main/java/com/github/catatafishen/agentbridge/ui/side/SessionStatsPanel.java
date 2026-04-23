@@ -151,6 +151,10 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         clientSection.add(createSectionHeader("Selected client"));
         clientSection.add(clientRow);
         leftAlignSection(clientSection);
+        // Populate the icon + name BEFORE measuring preferred size in leftAlignChild —
+        // otherwise the row is capped at the empty-label height (≈0px) and the value
+        // becomes invisible after the asynchronous refreshClientSection() updates it.
+        refreshClientSection();
         leftAlignChild(clientRow);
 
         // Current turn section — mirrors the Session grid layout (Time row first) so the
