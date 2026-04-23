@@ -897,6 +897,9 @@ class ChatToolWindowContent(
                 onTimerRecordUsage = { i, o, c ->
                     if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c)
                 },
+                onTimerSetLastTurnMultiplier = { mult ->
+                    if (::processingTimerPanel.isInitialized) processingTimerPanel.setLastTurnMultiplier(mult)
+                },
                 onTimerSetCodeChangeStats = { a, r ->
                     if (::processingTimerPanel.isInitialized) processingTimerPanel.setCodeChangeStats(a, r)
                 },
@@ -2184,7 +2187,15 @@ class ChatToolWindowContent(
                     if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
                     val lastStats = entries.filterIsInstance<EntryData.TurnStats>().lastOrNull()
                     if (lastStats != null && ::processingTimerPanel.isInitialized) {
-                        val turnCount = entries.count { it is EntryData.TurnStats }
+                        val turnStatsList = entries.filterIsInstance<EntryData.TurnStats>()
+                        val turnCount = turnStatsList.size
+                        // Sum each turn's premium-request weight so the side panel's "Premium req"
+                        // total reflects the entire restored session — not just turns since IDE start.
+                        // Aligns with the restored "Turns" count above (both span the whole session).
+                        val totalPremium = turnStatsList.sumOf {
+                            BillingCalculator.parseMultiplier(it.multiplier.ifEmpty { "1x" })
+                        }
+                        billing.restoreSessionCounters(turnCount, totalPremium)
                         processingTimerPanel.restoreSessionStats(
                             lastStats.totalDurationMs, lastStats.totalInputTokens,
                             lastStats.totalOutputTokens, lastStats.totalCostUsd,
@@ -2198,7 +2209,8 @@ class ChatToolWindowContent(
                             if (lastStats.costUsd > 0.0) lastStats.costUsd else null,
                             lastStats.toolCallCount,
                             lastStats.linesAdded,
-                            lastStats.linesRemoved
+                            lastStats.linesRemoved,
+                            lastStats.multiplier
                         )
                     }
                     persistedEntryCount = conversationReplayer.totalLoadedCount()

@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService;
 import com.github.catatafishen.agentbridge.ui.AgentIconProvider;
 import com.github.catatafishen.agentbridge.ui.BillingCalculator;
 import com.github.catatafishen.agentbridge.ui.BillingDisplayData;
@@ -11,6 +12,7 @@ import com.github.catatafishen.agentbridge.ui.TimerDisplayFormatter;
 import com.github.catatafishen.agentbridge.ui.UsageGraphPanel;
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
@@ -21,6 +23,8 @@ import java.awt.*;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Side panel tab displaying session statistics as labeled rows: an optional
@@ -39,6 +43,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
     private static final DateTimeFormatter RESET_DATE_FMT = DateTimeFormatter.ofPattern("MMM d, yyyy");
     private static final String LABEL_TOKENS = "Tokens";
+    private static final String LABEL_PREMIUM_REQ = "Premium req";
+    private static final String TOKENS_IN_OUT_SEP = " in / ";
+    private static final String TOKENS_OUT_SUFFIX = " out";
 
     private final ProcessingTimerPanel timerPanel;
     private final BillingManager billing;
@@ -97,6 +104,24 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private final JPanel billingSection;
     private final ProjectFilesPanel filesPanel;
 
+    // "Today" section — aggregates persisted turn_stats rows for the current local date,
+    // across all agents. Independent of the in-memory Session totals (which only track
+    // the current chat session).
+    private final Project project;
+    private final JLabel todayTimeValue = new JLabel();
+    private final JLabel todayTurnsValue = new JLabel();
+    private final JLabel todayToolsValue = new JLabel();
+    private final JLabel todayLinesValue = new JLabel();
+    private final JLabel todayTokensRowLabel = new JLabel(LABEL_TOKENS);
+    private final JLabel todayTokensValue = new JLabel();
+    private final JPanel todayToolsRow;
+    private final JPanel todayLinesRow;
+    private final JPanel todayTokensRow;
+    private final JPanel todaySection;
+    private final AtomicReference<TodayTotals> todayTotalsRef = new AtomicReference<>(TodayTotals.EMPTY);
+    private long lastTodayQueryNanos = 0L;
+    private static final long TODAY_REFRESH_INTERVAL_NANOS = 5_000_000_000L;
+
     public SessionStatsPanel(
         @NotNull Project project,
         @NotNull ProcessingTimerPanel timerPanel,
@@ -104,6 +129,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         @NotNull BillingManager billing
     ) {
         super(new BorderLayout());
+        this.project = project;
         this.timerPanel = timerPanel;
         this.billing = billing;
         this.agentManager = ActiveAgentManager.getInstance(project);
@@ -163,6 +189,27 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         tokensRow = addStatRowWithLabel(statsGrid, row++, tokensRowLabel, tokensValue);
         costRow = addStatRowWithLabel(statsGrid, row, costRowLabel, costValue);
 
+        // Today section — same row layout as Session, sourced from the persistent turn_stats DB.
+        // Spans across all chat sessions for the current local date so users see how much they've
+        // used the assistant today regardless of how many times they've reopened the IDE.
+        JPanel todayGrid = new JPanel(new GridBagLayout());
+        todayGrid.setOpaque(false);
+        todayGrid.setBorder(BorderFactory.createEmptyBorder(
+            JBUI.scale(2), JBUI.scale(8), JBUI.scale(4), JBUI.scale(8)));
+        int dRow = 0;
+        addStatRow(todayGrid, dRow++, "Time", todayTimeValue);
+        addStatRow(todayGrid, dRow++, "Turns", todayTurnsValue);
+        todayToolsRow = addStatRow(todayGrid, dRow++, "Tool calls", todayToolsValue);
+        todayLinesRow = addStatRow(todayGrid, dRow++, "Lines changed", todayLinesValue);
+        todayTokensRow = addStatRowWithLabel(todayGrid, dRow, todayTokensRowLabel, todayTokensValue);
+
+        todaySection = new JPanel();
+        todaySection.setLayout(new BoxLayout(todaySection, BoxLayout.Y_AXIS));
+        todaySection.setOpaque(false);
+        todaySection.add(createSectionHeader("Today"));
+        todaySection.add(todayGrid);
+        todaySection.setVisible(false);
+
         // Usage graph — full-width sparkline rendered last in the Monthly quota section.
         // 5x taller than the original 20px to make trends visually readable at a glance.
         JPanel graphSection = new JPanel(new BorderLayout());
@@ -207,6 +254,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         content.add(turnSection);
         content.add(createSectionHeader("Session"));
         content.add(statsGrid);
+        content.add(todaySection);
         content.add(billingSection);
         content.add(createSectionHeader("Project files"));
 
@@ -357,6 +405,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         refreshTurnSection(snap);
         refreshSessionStats(snap);
+        refreshTodayStats(snap);
         refreshBilling(bill);
         updateDiffLabels(now);
         startAnimationTimerIfNeeded(now);
@@ -395,8 +444,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         turnLinesRow.setVisible(turnLines > 0);
 
         if (snap.getMultiplierMode()) {
-            turnTokensRowLabel.setText("Premium req");
-            turnTokensValue.setText("1");
+            turnTokensRowLabel.setText(LABEL_PREMIUM_REQ);
+            turnTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getTurnPremiumRequests()));
             turnTokensRow.setVisible(true);
             turnCostRow.setVisible(false);
         } else {
@@ -407,9 +456,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                 turnTokensRowLabel.setText(LABEL_TOKENS);
                 turnTokensValue.setText(
                     TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnInputTokens()) +
-                        " in / " +
+                        TOKENS_IN_OUT_SEP +
                         TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getTurnOutputTokens()) +
-                        " out");
+                        TOKENS_OUT_SUFFIX);
                 turnTokensRow.setVisible(true);
                 turnCostRowLabel.setText("Cost");
                 turnCostValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(turnCost != null ? turnCost : 0.0));
@@ -433,7 +482,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         linesRow.setVisible(sessionLines > 0);
 
         if (snap.getMultiplierMode()) {
-            tokensRowLabel.setText("Premium req");
+            tokensRowLabel.setText(LABEL_PREMIUM_REQ);
             tokensValue.setText(BillingCalculator.INSTANCE.formatPremium(snap.getLocalSessionPremiumRequests()));
             tokensRow.setVisible(true);
             costRow.setVisible(false);
@@ -443,9 +492,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                 tokensRowLabel.setText(LABEL_TOKENS);
                 tokensValue.setText(
                     TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionInputTokens()) +
-                        " in / " +
+                        TOKENS_IN_OUT_SEP +
                         TimerDisplayFormatter.INSTANCE.formatTokenCount(snap.getSessionOutputTokens()) +
-                        " out");
+                        TOKENS_OUT_SUFFIX);
                 tokensRow.setVisible(true);
                 costRowLabel.setText("Cost");
                 costValue.setText(TimerDisplayFormatter.INSTANCE.formatCost(snap.getSessionCostUsd()));
@@ -520,6 +569,107 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         } else {
             resetsRow.setVisible(false);
         }
+    }
+
+    /**
+     * Aggregates today's persisted turn_stats rows across all agents and updates the
+     * Today section. Throttled — at most one DB query every {@code TODAY_REFRESH_INTERVAL_NANOS}
+     * nanoseconds, executed on a pooled thread; UI updates are marshalled to the EDT.
+     * The cached {@link TodayTotals} is rendered immediately so the panel stays responsive
+     * even when no fresh query has fired yet.
+     */
+    private void refreshTodayStats(SessionStatsSnapshot snap) {
+        long nowNanos = System.nanoTime();
+        if (nowNanos - lastTodayQueryNanos > TODAY_REFRESH_INTERVAL_NANOS) {
+            lastTodayQueryNanos = nowNanos;
+            ApplicationManager.getApplication().executeOnPooledThread(() -> {
+                try {
+                    LocalDate today = LocalDate.now();
+                    String iso = today.format(DateTimeFormatter.ISO_LOCAL_DATE);
+                    List<ToolCallStatisticsService.DailyTurnAggregate> rows =
+                        ToolCallStatisticsService.getInstance(project).queryDailyTurnStats(iso, iso);
+                    int turns = 0;
+                    int tools = 0;
+                    long inTok = 0;
+                    long outTok = 0;
+                    long linesAdded = 0;
+                    long linesRemoved = 0;
+                    long durMs = 0;
+                    double premium = 0.0;
+                    for (ToolCallStatisticsService.DailyTurnAggregate r : rows) {
+                        turns += r.turns();
+                        tools += r.toolCalls();
+                        inTok += r.inputTokens();
+                        outTok += r.outputTokens();
+                        linesAdded += r.linesAdded();
+                        linesRemoved += r.linesRemoved();
+                        durMs += r.durationMs();
+                        premium += r.premiumRequests();
+                    }
+                    TodayTotals totals = new TodayTotals(turns, tools, inTok, outTok,
+                        linesAdded, linesRemoved, durMs, premium);
+                    todayTotalsRef.set(totals);
+                    SwingUtilities.invokeLater(() -> applyTodayTotals(totals, snap.getMultiplierMode()));
+                } catch (Exception ignored) {
+                    // Stats are advisory — never let a query failure crash the UI refresh loop.
+                }
+            });
+        }
+        applyTodayTotals(todayTotalsRef.get(), snap.getMultiplierMode());
+    }
+
+    private void applyTodayTotals(TodayTotals t, boolean multiplierMode) {
+        if (t.turns() <= 0) {
+            todaySection.setVisible(false);
+            return;
+        }
+        todaySection.setVisible(true);
+        todayTimeValue.setText(TimerDisplayFormatter.INSTANCE.formatElapsedTime(t.durationMs() / 1000));
+        todayTurnsValue.setText(String.valueOf(t.turns()));
+        todayToolsValue.setText(String.valueOf(t.toolCalls()));
+        todayToolsRow.setVisible(t.toolCalls() > 0);
+        long lines = t.linesAdded() + t.linesRemoved();
+        todayLinesValue.setText(lines > 0
+            ? "+" + t.linesAdded() + " / -" + t.linesRemoved()
+            : "0");
+        todayLinesRow.setVisible(lines > 0);
+
+        if (multiplierMode) {
+            todayTokensRowLabel.setText(LABEL_PREMIUM_REQ);
+            todayTokensValue.setText(BillingCalculator.INSTANCE.formatPremium(t.premiumRequests()));
+            todayTokensRow.setVisible(true);
+        } else {
+            long totalTokens = t.inputTokens() + t.outputTokens();
+            if (totalTokens > 0) {
+                todayTokensRowLabel.setText(LABEL_TOKENS);
+                todayTokensValue.setText(
+                    TimerDisplayFormatter.INSTANCE.formatTokenCount(t.inputTokens()) +
+                        TOKENS_IN_OUT_SEP +
+                        TimerDisplayFormatter.INSTANCE.formatTokenCount(t.outputTokens()) +
+                        TOKENS_OUT_SUFFIX);
+                todayTokensRow.setVisible(true);
+            } else {
+                todayTokensRow.setVisible(false);
+            }
+        }
+    }
+
+    /**
+     * Snapshot of today's aggregated turn stats across all agents. Held in an
+     * {@link AtomicReference} so the pooled-thread query and the EDT render path
+     * never trip over each other.
+     */
+    private record TodayTotals(
+        int turns,
+        int toolCalls,
+        long inputTokens,
+        long outputTokens,
+        long linesAdded,
+        long linesRemoved,
+        long durationMs,
+        double premiumRequests
+    ) {
+        static final TodayTotals EMPTY = new TodayTotals(0, 0, 0, 0, 0, 0, 0, 0.0);
     }
 
     /**

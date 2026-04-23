@@ -14,6 +14,12 @@ data class SessionStatsSnapshot(
     val turnInputTokens: Int,
     val turnOutputTokens: Int,
     val turnCostUsd: Double?,
+    /**
+     * Premium-request weight of the most recent turn (e.g. 3.0 for an Opus turn, 1.0 default).
+     * Used by the side panel's "Last turn — Premium req" row to show the actual multiplier
+     * instead of a hardcoded "1". Defaults to 1.0 when no multiplier is known.
+     */
+    val turnPremiumRequests: Double = 1.0,
     val sessionTotalTimeSec: Long,
     val sessionTurnCount: Int,
     val sessionToolCalls: Int,

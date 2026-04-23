@@ -52,6 +52,22 @@ class BillingManager {
         localSessionPremiumRequests = 0.0
     }
 
+    /**
+     * Restores session-level counters from persisted turn history.
+     * Called once during conversation replay so the side-panel "Premium req" total reflects
+     * the entire session (matching the restored "Turns" count) instead of starting at 0
+     * after each IDE restart.
+     */
+    fun restoreSessionCounters(turns: Int, premium: Double) {
+        localSessionRequests = turns
+        localSessionPremiumRequests = premium
+        previousUsedCount = estimatedUsed()
+        ApplicationManager.getApplication().invokeLater {
+            refreshUsageDisplay()
+            updateUsageGraph(estimatedUsed(), lastBillingEntitlement, lastBillingUnlimited, lastBillingResetDate)
+        }
+    }
+
     private var previousUsedCount = -1
     private var usageAnimationTimer: javax.swing.Timer? = null
 

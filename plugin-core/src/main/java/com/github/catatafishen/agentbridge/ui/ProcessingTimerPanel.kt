@@ -53,6 +53,12 @@ internal class ProcessingTimerPanel(
     // can stay populated between turns. The per-turn mutable fields above are reset on the next
     // start(); this field captures the final elapsed time at stop() so the display doesn't lose it.
     private var lastTurnElapsedSec = 0L
+    /**
+     * Premium-request weight of the most recently completed turn. Sourced from the model's
+     * cost multiplier (e.g. "3x" → 3.0). 1.0 is the safe default; resets on each new turn.
+     * Distinct from session-wide premium counts which live on [BillingManager].
+     */
+    private var lastTurnPremium = 1.0
     private var sessionTotalInputTokens = 0L
     private var sessionTotalOutputTokens = 0L
     private var sessionTotalCostUsd = 0.0
@@ -119,6 +125,7 @@ internal class ProcessingTimerPanel(
         turnInputTokens = 0
         turnOutputTokens = 0
         turnCostUsd = null
+        lastTurnPremium = 1.0
         isRunning = true
         displayMode = modeTurn
         timerLabel.text = "0s"
@@ -182,6 +189,7 @@ internal class ProcessingTimerPanel(
         turnOutputTokens = 0
         turnCostUsd = null
         lastTurnElapsedSec = 0L
+        lastTurnPremium = 1.0
         displayMode = modeTurn
         refreshDisplay()
     }
@@ -209,7 +217,7 @@ internal class ProcessingTimerPanel(
      */
     fun restoreLastTurnStats(
         elapsedSec: Long, inputTokens: Int, outputTokens: Int, costUsd: Double?,
-        toolCalls: Int, linesAdded: Int, linesRemoved: Int
+        toolCalls: Int, linesAdded: Int, linesRemoved: Int, multiplier: String = ""
     ) {
         lastTurnElapsedSec = elapsedSec
         turnInputTokens = inputTokens
@@ -218,6 +226,18 @@ internal class ProcessingTimerPanel(
         toolCallCount = toolCalls
         addedLineCount = linesAdded
         removedLineCount = linesRemoved
+        lastTurnPremium = BillingCalculator.parseMultiplier(multiplier.ifEmpty { "1x" })
+        refreshDisplay()
+    }
+
+    /**
+     * Records the premium-request multiplier of the just-completed turn so the side panel's
+     * "Last turn — Premium req" row can display the actual weight (e.g. "3" for Opus) instead
+     * of the previous hardcoded "1". Called from [PromptOrchestrator] right after the model
+     * finishes responding, regardless of whether the agent supports multipliers (defaults to 1.0).
+     */
+    fun setLastTurnMultiplier(multiplier: String?) {
+        lastTurnPremium = BillingCalculator.parseMultiplier(multiplier?.ifEmpty { "1x" } ?: "1x")
         refreshDisplay()
     }
 
@@ -331,6 +351,7 @@ internal class ProcessingTimerPanel(
             turnInputTokens = turnInputTokens,
             turnOutputTokens = turnOutputTokens,
             turnCostUsd = turnCostUsd,
+            turnPremiumRequests = lastTurnPremium,
             sessionTotalTimeSec = totalMs / 1000,
             sessionTurnCount = totalTurns,
             sessionToolCalls = totalTools,
