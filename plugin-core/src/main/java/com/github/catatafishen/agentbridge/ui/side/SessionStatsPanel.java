@@ -150,6 +150,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         clientSection.setOpaque(false);
         clientSection.add(createSectionHeader("Selected client"));
         clientSection.add(clientRow);
+        leftAlignSection(clientSection);
+        leftAlignChild(clientRow);
 
         // Current turn section — mirrors the Session grid layout (Time row first) so the
         // two visually align. Stays visible after the turn ends, then re-labels as "Last turn".
@@ -173,6 +175,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         turnSection.add(turnHeader);
         turnSection.add(turnGrid);
         turnSection.setVisible(false);
+        leftAlignSection(turnSection);
+        leftAlignChild(turnGrid);
 
         // Session stats grid
         JPanel statsGrid = new JPanel(new GridBagLayout());
@@ -209,6 +213,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         todaySection.add(createSectionHeader("Today"));
         todaySection.add(todayGrid);
         todaySection.setVisible(false);
+        leftAlignSection(todaySection);
+        leftAlignChild(todayGrid);
 
         // Usage graph — full-width sparkline rendered last in the Monthly quota section.
         // 5x taller than the original 20px to make trends visually readable at a glance.
@@ -245,18 +251,30 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         billingSection.add(billingHeader);
         billingSection.add(billingGrid);
         billingSection.add(graphSection);
+        leftAlignSection(billingSection);
+        leftAlignChild(billingGrid);
+        leftAlignChild(graphSection);
 
         // Assemble the stats content (pinned to the top)
         JPanel content = new JPanel();
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setOpaque(false);
+        JPanel sessionHeader = createSectionHeader("Session");
+        JPanel filesHeader = createSectionHeader("Project files");
         content.add(clientSection);
         content.add(turnSection);
-        content.add(createSectionHeader("Session"));
+        content.add(sessionHeader);
         content.add(statsGrid);
         content.add(todaySection);
         content.add(billingSection);
-        content.add(createSectionHeader("Project files"));
+        content.add(filesHeader);
+        // BoxLayout.Y_AXIS centers children with default CENTER_ALIGNMENT and sizes them
+        // to their preferredWidth — section panels would visually float in the middle of
+        // the side panel. Anchor each direct child of `content` at the left edge and let
+        // it grow to the full width.
+        leftAlignChild(sessionHeader);
+        leftAlignChild(statsGrid);
+        leftAlignChild(filesHeader);
 
         // Project files tree expands to its full preferred height; the outer
         // scroll pane (below) handles scrolling for the entire side panel.
@@ -313,6 +331,27 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         timerPanel.setOnStatsChanged(null);
         billing.setOnBillingChanged(null);
         animationTimer.stop();
+    }
+
+    /**
+     * Anchors a section wrapper panel (BoxLayout.Y_AXIS) at the left edge of its parent
+     * BoxLayout.Y_AXIS container and stretches it horizontally so its left-aligned children
+     * read against the side panel's left margin instead of being centered.
+     */
+    private static void leftAlignSection(JComponent section) {
+        section.setAlignmentX(Component.LEFT_ALIGNMENT);
+        section.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+    }
+
+    /**
+     * Anchors a single child component within a BoxLayout.Y_AXIS parent at the left edge
+     * and lets it grow to full width while keeping its preferred height. Used for grids
+     * and rows whose preferredWidth is less than the panel's width.
+     */
+    private static void leftAlignChild(JComponent child) {
+        child.setAlignmentX(Component.LEFT_ALIGNMENT);
+        Dimension pref = child.getPreferredSize();
+        child.setMaximumSize(new Dimension(Integer.MAX_VALUE, pref.height));
     }
 
     private JPanel createSectionHeader(String title) {
@@ -635,9 +674,10 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         todayToolsValue.setText(String.valueOf(t.toolCalls()));
         todayToolsRow.setVisible(t.toolCalls() > 0);
         long lines = t.linesAdded() + t.linesRemoved();
-        todayLinesValue.setText(lines > 0
-            ? "+" + t.linesAdded() + " / -" + t.linesRemoved()
-            : "0");
+        String linesHtml = TimerDisplayFormatter.formatDiffCountHtml(
+            (int) t.linesAdded(), (int) t.linesRemoved(),
+            ToolRenderers.INSTANCE.getADD_COLOR(), ToolRenderers.INSTANCE.getDEL_COLOR());
+        todayLinesValue.setText(lines > 0 ? linesHtml : "0");
         todayLinesRow.setVisible(lines > 0);
 
         if (multiplierMode) {

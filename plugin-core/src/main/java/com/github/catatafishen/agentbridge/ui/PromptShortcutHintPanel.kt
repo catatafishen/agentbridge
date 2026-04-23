@@ -4,79 +4,60 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.BorderLayout
 import java.awt.FlowLayout
-import java.awt.event.InputEvent
-import java.awt.event.KeyEvent
+import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.KeyStroke
 
 /**
- * Footer panel showing a single, context-appropriate keyboard shortcut hint
- * below the chat prompt:
- *  - Idle  → `Enter` Send
- *  - Busy  → `Ctrl+Enter` Stop && Send
+ * Bottom-toolbar panel that lists the keyboard shortcuts relevant to the
+ * current chat-input state, left-aligned alongside the model selector and
+ * Send button.
  *
- * The previous 2×2 hint grid listed four shortcuts at once, which added
- * visual weight without providing information the user needed right now.
- * Users can still see the full list in Settings → AgentBridge → Chat Input
- * documentation, and all shortcuts continue to work regardless of what is
- * displayed here.
+ *  - Idle  → Enter ▸ Send,  Shift+Enter ▸ New line
+ *  - Busy  → Enter ▸ Nudge,  Ctrl+Enter ▸ Stop && send,  Ctrl+Shift+Enter ▸ Queue,  Shift+Enter ▸ New line
+ *  - When a nudge or queued message is pending, an extra `↑ ▸ Edit last` hint
+ *    is appended.
  *
- * Reads actual key bindings from the IntelliJ keymap so customized
- * shortcuts are reflected in the displayed hints.
+ * Each entry renders as one or more [KeyBadge]s followed by a small action
+ * label. Reads actual key bindings from the IntelliJ keymap so customized
+ * shortcuts are reflected.
  *
- * The shortcut hints feature can be disabled in Settings → AgentBridge → Chat Input.
+ * Visibility honours the *Show shortcut hints* toggle in
+ * Settings → AgentBridge → Chat Input.
  */
-class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
-
-    private val cell: JPanel = JPanel(FlowLayout(FlowLayout.CENTER, JBUI.scale(4), 0)).apply {
-        isOpaque = false
-    }
-    private val actionLabel: JBLabel = JBLabel().apply {
-        font = JBUI.Fonts.smallFont()
-        foreground = UIUtil.getContextHelpForeground()
-    }
+class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0)) {
 
     init {
         isOpaque = false
-        border = JBUI.Borders.empty(4, 8, 4, 8)
-        add(cell, BorderLayout.CENTER)
-        setRunning(false)
+        border = JBUI.Borders.empty(0, 4, 0, 4)
     }
 
     /**
-     * Switch the displayed shortcut to match the most relevant action for the
-     * current state:
-     *  - `false` → Enter ▸ Send
-     *  - `true`  → Ctrl+Enter ▸ Stop && Send
+     * Replace the displayed hints with the given keystroke/label pairs. The
+     * order of [shortcuts] is preserved, rendered left-to-right.
      */
-    fun setRunning(running: Boolean) {
-        val (actionId, fallbackStroke, label) = if (running) {
-            Triple(
-                PromptShortcutAction.STOP_AND_SEND_ID,
-                KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
-                "Stop && Send"
-            )
-        } else {
-            Triple(
-                PromptShortcutAction.SEND_ID,
-                KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0),
-                "Send"
-            )
+    fun setShortcuts(shortcuts: List<Pair<KeyStroke, String>>) {
+        removeAll()
+        for ((stroke, label) in shortcuts) {
+            add(buildEntry(stroke, label))
         }
-        cell.removeAll()
-        val stroke = PromptShortcutAction.resolveKeystroke(actionId, fallbackStroke)
-        KeyBadge.keystrokeTokens(stroke).forEach { cell.add(KeyBadge(it)) }
-        actionLabel.text = label
-        cell.add(actionLabel)
-        cell.revalidate()
-        cell.repaint()
+        revalidate()
+        repaint()
     }
 
-    /**
-     * Legacy entry point — now delegates to [setRunning]. Kept so callers that
-     * were toggling "send/nudge" don't need to change signature.
-     */
-    fun setNudgeMode(nudge: Boolean) = setRunning(nudge)
+    private fun buildEntry(stroke: KeyStroke, label: String): JComponent {
+        val cell = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty()
+        }
+        KeyBadge.keystrokeTokens(stroke).forEach { cell.add(KeyBadge(it)) }
+        val text = JBLabel(label).apply {
+            font = JBUI.Fonts.smallFont()
+            foreground = UIUtil.getContextHelpForeground()
+            border = JBUI.Borders.emptyLeft(2)
+        }
+        cell.add(text)
+        return cell
+    }
 }

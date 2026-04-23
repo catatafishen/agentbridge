@@ -45,9 +45,10 @@ import java.util.List;
  * Side panel listing files the agent has touched in the current {@link AgentEditSession}.
  * <p>
  * Uses a {@link JBList} with a single row renderer instead of a multi-column table.
- * Each row shows: timestamp + status-colored filename + diff counts on the left,
- * approve toggle + remove/reject icon on the right. Click zones are determined by
- * x-position relative to cell bounds.
+ * Each row shows: file-type icon + status-colored filename on the left,
+ * a +N -M diff-counts column, and approve/remove icons on the right. Full
+ * relative path and last-edit timestamp are shown in the row tooltip. Click
+ * zones are determined by x-position relative to cell bounds.
  */
 public final class DiffPanel extends JPanel implements Disposable {
 
@@ -492,18 +493,21 @@ public final class DiffPanel extends JPanel implements Disposable {
     }
 
     /**
-     * Renders a single review row in the same compact "file-row" style as the
-     * session-tab project files list:
+     * Renders a single review row in a compact three-column layout:
      * <ul>
-     *   <li>LEFT: file-type icon</li>
-     *   <li>CENTER: status-colored filename + dim path suffix + animated diff counts</li>
-     *   <li>RIGHT: small approve toggle and reject/remove icons</li>
+     *   <li>LEFT: file-type icon + status-colored filename only (no inline path —
+     *       full relative path moved to the row tooltip together with the last-edit
+     *       timestamp).</li>
+     *   <li>MIDDLE-RIGHT: dedicated column with animated +N -M diff counts.</li>
+     *   <li>RIGHT: small approve toggle and reject/remove icons.</li>
      * </ul>
-     * Per-row timestamp moved to the tooltip so each row stays single-line.
+     * Removing the inline path keeps the row narrow enough for the side panel
+     * width; the path remains discoverable via tooltip.
      */
     private final class ReviewRowRenderer extends JPanel implements ListCellRenderer<ReviewItem> {
         private final JLabel fileIconLabel = new JLabel();
         private final SimpleColoredComponent fileText = new SimpleColoredComponent();
+        private final SimpleColoredComponent diffCountsText = new SimpleColoredComponent();
         private final BadgeLabel approveLabel = new BadgeLabel();
         private final JLabel removeLabel = new JLabel();
 
@@ -517,12 +521,18 @@ public final class DiffPanel extends JPanel implements Disposable {
             fileIconLabel.setBorder(JBUI.Borders.emptyRight(6));
             add(fileIconLabel, BorderLayout.WEST);
 
-            // CENTER: filename + path suffix + diff counts on a single line.
+            // CENTER: filename only on a single line.
             fileText.setOpaque(false);
             fileText.setIpad(JBUI.emptyInsets());
             add(fileText, BorderLayout.CENTER);
 
-            // RIGHT: compact approve + reject icons in a small panel.
+            // RIGHT: diff counts column + compact approve + reject icons.
+            // BorderLayout pins actions to the far right; diff counts get their own
+            // column to the left of the action buttons.
+            diffCountsText.setOpaque(false);
+            diffCountsText.setIpad(JBUI.emptyInsets());
+            diffCountsText.setBorder(JBUI.Borders.emptyRight(8));
+
             JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0));
             actions.setOpaque(false);
             approveLabel.setHorizontalAlignment(SwingConstants.CENTER);
@@ -533,7 +543,12 @@ public final class DiffPanel extends JPanel implements Disposable {
             removeLabel.setPreferredSize(btnDim);
             actions.add(approveLabel);
             actions.add(removeLabel);
-            add(actions, BorderLayout.EAST);
+
+            JPanel east = new JPanel(new BorderLayout());
+            east.setOpaque(false);
+            east.add(diffCountsText, BorderLayout.CENTER);
+            east.add(actions, BorderLayout.EAST);
+            add(east, BorderLayout.EAST);
         }
 
         @Override
@@ -554,7 +569,7 @@ public final class DiffPanel extends JPanel implements Disposable {
                 .getInstance().getFileTypeByFileName(fileName).getIcon();
             fileIconLabel.setIcon(icon != null ? icon : AllIcons.FileTypes.Text);
 
-            // Filename + dim path suffix + animated diff counts on one line.
+            // Filename only — full path is in the tooltip.
             fileText.clear();
             fileText.setFont(jList.getFont());
             Color fileColor = isSelected ? fg : switch (item.status()) {
@@ -564,24 +579,20 @@ public final class DiffPanel extends JPanel implements Disposable {
             };
             fileText.append(fileName, new SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, fileColor));
 
-            String relPath = item.relativePath();
-            String parentPath = parentPathOf(relPath);
-            if (!parentPath.isEmpty()) {
-                fileText.append("  " + parentPath,
-                    new SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER,
-                        isSelected ? fg : JBColor.GRAY));
-            }
-
+            // Diff counts column.
+            diffCountsText.clear();
+            diffCountsText.setFont(jList.getFont());
             long now = System.currentTimeMillis();
             ReviewDiffCountAnimator.DiffCounts counts = diffCountAnimator.displayCounts(item, now);
             if (counts.added() > 0) {
                 Color c = isSelected ? fg : DIFF_GREEN;
-                fileText.append("  +" + counts.added(),
+                diffCountsText.append("+" + counts.added(),
                     new SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER, c));
             }
             if (counts.removed() > 0) {
                 Color c = isSelected ? fg : DIFF_RED;
-                fileText.append(" -" + counts.removed(),
+                String prefix = counts.added() > 0 ? " " : "";
+                diffCountsText.append(prefix + "-" + counts.removed(),
                     new SimpleTextAttributes(SimpleTextAttributes.STYLE_SMALLER, c));
             }
 
@@ -590,12 +601,6 @@ public final class DiffPanel extends JPanel implements Disposable {
             removeLabel.setIcon(item.approved() ? AllIcons.Actions.Close : AllIcons.Actions.Rollback);
 
             return this;
-        }
-
-        private static @NotNull String parentPathOf(@NotNull String relPath) {
-            int slash = relPath.lastIndexOf('/');
-            if (slash < 0) slash = relPath.lastIndexOf('\\');
-            return slash > 0 ? relPath.substring(0, slash) : "";
         }
     }
 
