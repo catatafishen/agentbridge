@@ -72,8 +72,22 @@ real `fsHandler` — so a bug in our MCP layer never breaks the agent.
 | `fs/read_text_file` | `view` / `read` | MCP `read_file` | Sees unsaved editor edits |
 | `fs/write_text_file` | `edit` / `write` / `create` | MCP `write_file` | Undo stack + format + VCS sync |
 | `terminal/create cat <file>` | `bash cat` | MCP `read_file` | Editor buffer sync |
-| `terminal/create head <file>` | `bash head` | MCP `read_file` (lines 1..10) | Same |
+| `terminal/create head [-n N] <file>` | `bash head` | MCP `read_file` (lines 1..N, default 10) | Same |
+| `terminal/create grep -F/-E <pat> [file]`, `egrep`, `fgrep` | `bash grep` | MCP `search_text` | Regex + IDE index, POSIX exit codes |
+| `terminal/create rg <pat>` (with `-F`/`-i`/`--glob`) | `bash rg` | MCP `search_text` | Same |
 | `terminal/create git status` | `bash git status` | MCP `git_status` | Branch context, no shell parse |
+| `terminal/create git diff [--staged] [--stat] [path]` | `bash git diff` | MCP `git_diff` | Auto-fetch on `origin/*` refs |
+| `terminal/create git log [--oneline] [-n N] [path]` | `bash git log` | MCP `git_log` | Same |
+| `terminal/create git branch [-a]` | `bash git branch` | MCP `git_branch` | List remote/local |
+
+Plain `grep` (without `-F` or `-E`) is **not** intercepted — POSIX BRE has
+incompatible semantics with Java regex (used by `search_text`). Agents that
+run plain `grep` get the real OS process via the visible terminal.
+
+`ls`, `find`, and `tail` are **not** intercepted: `list_project_files` is
+recursive and file-only (can't model `ls file`), `find` has a huge flag
+surface, and `tail` would need a 2-step read (file length, then range)
+because `read_file` truncates large files. All three fall through cleanly.
 
 ## What deliberately falls through
 
@@ -100,8 +114,10 @@ back transparently to a daemon stream-reader thread.
 
 | Path | Role |
 |---|---|
-| `acp/client/intercept/AcpToolInterceptor.java` | Central interception logic. `@Nullable` returns so AcpClient can fall back to `fsHandler`. |
-| `acp/client/intercept/ShellCommandSplitter.java` | Argv tokenizer rejecting unsafe metacharacters; supports single/double quotes and backslash escapes. |
+| `acp/client/intercept/AcpToolInterceptor.java` | Central interception logic. `@Nullable` returns so AcpClient can fall back to `fsHandler`. Uses ACP `args[]` array directly when present (no re-tokenization). |
+| `acp/client/intercept/ShellRedirectPlanner.java` | Pure static classifier: `argv → RedirectPlan?`. All per-command flag parsing lives here. Project-free for testability. |
+| `acp/client/intercept/RedirectPlan.java` | Immutable record carrying tool name, args, optional post-processor (e.g. strip `search_text` header), and exit-code function (e.g. grep returns 1 on no matches). |
+| `acp/client/intercept/ShellCommandSplitter.java` | Argv tokenizer rejecting unsafe metacharacters; supports single/double quotes and backslash escapes. Used as fallback when ACP only sends `command` (no `args[]`). |
 | `acp/client/intercept/VisibleProcessRunner.java` | Wraps `OSProcessHandler` + `ConsoleViewImpl` + `RunContentDescriptor`; degrades to daemon reader when no `Application`/`Project`. |
 | `acp/client/AcpTerminalHandler.java` | Always uses `VisibleProcessRunner`. `ManagedTerminal` no longer owns its own reader thread. |
 | `acp/client/AcpClient.java` | Holds the interceptor; `handleAgentRequest()` switch uses `redirected != null ? redirected : fsHandler.xxx()`. |
@@ -111,7 +127,10 @@ back transparently to a daemon stream-reader thread.
 - 14 `ShellCommandSplitterTest` cases covering quoting, escaping, every
   rejected metacharacter, blank input, and trailing whitespace.
 - 3 `AcpToolInterceptorTest` cases for `isMcpError`.
-- All 622 ACP tests pass; full plugin-core suite unchanged (one pre-existing
+- 51 `ShellRedirectPlannerTest` cases covering happy paths, fall-throughs,
+  flag-parsing edge cases (combined short flags, `--lines=N`, `--glob=`,
+  `--` separator), exit-code semantics, and `search_text` header stripping.
+- All ACP tests pass; full plugin-core suite unchanged (one pre-existing
   flaky `EmbeddingServiceTest` on master, unrelated).
 
 ---
@@ -192,17 +211,27 @@ interception in place these layers are largely (sometimes wholly) obsolete:
 
 ### B. Expanding the interception surface
 
-- **More git read ops:** `git log`, `git diff`, `git show`, `git branch`,
-  `git remote`, `git tag`, `git stash list`, `git status --short`. Each maps
-  cleanly to an existing MCP `git_*` tool.
-- **`grep` / `rg` → MCP `search_text`.** Needs a small flag-parser (the agent
-  passes `-i`, `-n`, `-C`, glob via `--include`, etc.). Higher payoff than
-  `cat` because it gives us regex + IDE indexing.
+Already shipped in the follow-up commit:
+- ✅ `git diff`, `git log`, `git branch` (read-only forms)
+- ✅ `head -n N <file>`
+- ✅ `grep -F/-E`, `egrep`, `fgrep`, `rg` → `search_text`
+
+Still on the list:
+- **More git read ops:** `git show`, `git remote -v`, `git tag`,
+  `git stash list`, `git status --short`. Each maps cleanly to an existing
+  MCP `git_*` tool.
+- **`rg <pat> <path>`** — currently rejected because `search_text` doesn't
+  accept a directory scope. Could map `<path>` to a `file_pattern` glob like
+  `<path>/**` if telemetry shows agents commonly write the path form.
+- **Plain `grep`** — needs BRE → Java-regex translation (`\(` → `(`, `+`/`?`
+  literal vs metachar). Doable but brittle; defer until we see a real demand.
 - **`find` / `fd` → MCP `list_project_files` (glob).** Trickier flag surface;
   start with `find <dir> -name <pattern>`.
-- **`ls` → MCP `list_directory_tree`.** Only intercept the no-flag form.
-- **`tail -n N <file>` → MCP `read_file` (last N lines).** Currently falls
-  through because there's no sensible default; with `-n N` it's a 1:1 mapping.
+- **`ls` → MCP `list_directory_tree`.** Only the no-flag form, and only when
+  the target is a directory (semantics differ for `ls file`).
+- **`tail -n N <file>` → MCP `read_file` (last N lines).** Requires a
+  2-step approach because `read_file` truncates large files to the first
+  ~2000 lines; need to fetch the line count first, then request the range.
 - **`wc -l <file>` → MCP `read_file` + linecount.** Marginal.
 - **OpenCode validation.** OpenCode's ACP semantics are slightly different
   (its agents auto-execute more eagerly). Run the four-client matrix to
