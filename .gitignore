@@ -43,6 +43,10 @@ Thumbs.db
 *.dylib
 *.class
 
+# Exceptions: prebuilt cross-platform shim binaries shipped inside the plugin JAR
+!plugin-core/src/main/resources/agentbridge/shim/bin/**/agentbridge-shim
+!plugin-core/src/main/resources/agentbridge/shim/bin/**/agentbridge-shim.exe
+
 # Logs
 *.log
 ide_launch.log
