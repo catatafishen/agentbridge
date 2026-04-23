@@ -954,33 +954,34 @@ class ChatToolWindowContent(
         innerInputToolbar.isReservePlaceAutoPopupIcon = false
         innerInputToolbar.component.isOpaque = false
 
-        val innerBar = JBPanel<JBPanel<*>>(BorderLayout())
-        innerBar.isOpaque = false
-        innerBar.border = JBUI.Borders.empty(0, 2, 0, 2)
-        // Layout strategy: a single horizontal row with all three groups vertically
-        // centered via FlowLayout. Centering (rather than BorderLayout.SOUTH wrappers)
-        // is what produces the perceived "same bottom" alignment — the model selector
-        // and Send button have internal padding that makes their content sit above
-        // their bounding-box bottom, so SOUTH-anchoring the bounding boxes leaves the
-        // shortcut text visually below the buttons. Centering aligns all three on the
-        // same eye-line, which reads as bottom-aligned for the visible content.
-        //
-        // Shortcut hints live in CENTER, FlowLayout.CENTER, so they sit centered in
-        // the horizontal gap between the left side-buttons (+, power) and the
-        // right-side model+Send group.
-        val centerWrapper = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.CENTER, 0, 0)).apply {
+        // Layout strategy: a single horizontal BoxLayout row where every child has
+        // alignmentY = CENTER_ALIGNMENT. This is what produces a true visual midline
+        // alignment across heterogeneous components. Earlier attempts using
+        // BorderLayout.CENTER + FlowLayout failed because BorderLayout.CENTER stretches
+        // its cell to the full container height, but FlowLayout still positions its
+        // single row at the *top* of that stretched cell — so the shortcut hints
+        // ended up visually anchored to the top while the Send / Model toolbars
+        // (added via BorderLayout.EAST, which respects preferred size and vertically
+        // centers) sat in the middle. BoxLayout X_AXIS with alignmentY=0.5 on every
+        // child centers each one independently on the row's midline regardless of
+        // its preferred height or internal padding.
+        val innerBar = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
             isOpaque = false
-            add(shortcutHintPanel)
+            border = JBUI.Borders.empty(0, 2, 0, 2)
         }
-        innerBar.add(centerWrapper, BorderLayout.CENTER)
-        // Model selector and Send button grouped together on the right, vertically
-        // centered via FlowLayout so they share the same eye-line as the hints.
-        val rightSide = JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0)).apply {
-            isOpaque = false
-        }
-        rightSide.add(modelToolbar.component)
-        rightSide.add(innerInputToolbar.component)
-        innerBar.add(rightSide, BorderLayout.EAST)
+        shortcutHintPanel.alignmentY = Component.CENTER_ALIGNMENT
+        modelToolbar.component.alignmentY = Component.CENTER_ALIGNMENT
+        innerInputToolbar.component.alignmentY = Component.CENTER_ALIGNMENT
+        // Glue on both sides of the hints centers them in the horizontal gap
+        // between the left side-buttons (+, power, attachments) and the right-side
+        // model + Send group.
+        innerBar.add(Box.createHorizontalGlue())
+        innerBar.add(shortcutHintPanel)
+        innerBar.add(Box.createHorizontalGlue())
+        innerBar.add(modelToolbar.component)
+        innerBar.add(Box.createHorizontalStrut(JBUI.scale(2)))
+        innerBar.add(innerInputToolbar.component)
         row.add(innerBar, BorderLayout.SOUTH)
 
         refreshShortcutHints()
