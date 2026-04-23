@@ -8,11 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AgentEditNotificationProviderTest {
 
     @Test
-    void bannerTextLeadsWithReviewPendingState() {
+    void bannerTextLeadsWithEditedByAgent() {
         String msg = AgentEditNotificationProvider.formatBannerText(1, 3, 2);
 
-        assertTrue(msg.startsWith("Review pending:"),
-            "Banner should lead with the pending-review state: " + msg);
+        assertTrue(msg.startsWith("Edited by agent:"),
+            "Banner should lead with the agent-edit state: " + msg);
         assertTrue(msg.contains("File 1/3"),
             "Banner should still include the file counter: " + msg);
         assertTrue(msg.contains("2 changes"),

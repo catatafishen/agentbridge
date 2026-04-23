@@ -29,9 +29,17 @@ import java.util.concurrent.TimeoutException;
 public final class GetHighlightsTool extends QualityTool {
 
     private static final Logger LOG = Logger.getInstance(GetHighlightsTool.class);
-    private static final String REVIEW_PENDING_AGENT_NOTE =
-        "[REVIEW_PENDING] User review is still pending for this file. "
-            + "Agent git commit/push/amend must wait for approval or rejection in the Review panel.";
+    /**
+     * Editor banners that are produced by AgentBridge itself (e.g. the agent-edit review
+     * banner) are noise for the agent — the agent generated the edit and the human-facing
+     * banner exists purely so the user can review later. Filter them out by prefix.
+     * Git-side gates (AgentEditSession.isGateActive) still enforce commit/push blocking
+     * when there are pending changes, so the agent doesn't need the banner to behave correctly.
+     */
+    static final String[] AGENT_EDIT_BANNER_PREFIXES = {
+        "[BANNER] Review pending:",
+        "[BANNER] Edited by agent:",
+    };
 
     private static final String PARAM_INCLUDE_UNINDEXED = "include_unindexed";
 
@@ -305,7 +313,7 @@ public final class GetHighlightsTool extends QualityTool {
                 var editor = editors[0];
                 List<String> notifications = PlatformApiCompat.collectEditorNotificationTexts(project, vf, editor)
                     .stream()
-                    .map(GetHighlightsTool::formatEditorNotificationForAgent)
+                    .filter(GetHighlightsTool::isVisibleToAgent)
                     .toList();
 
                 future.complete(notifications);
@@ -316,10 +324,14 @@ public final class GetHighlightsTool extends QualityTool {
         return future.get(10, TimeUnit.SECONDS);
     }
 
-    static @NotNull String formatEditorNotificationForAgent(@NotNull String notification) {
-        if (!notification.startsWith("[BANNER] Review pending:")) {
-            return notification;
+    /**
+     * Filters editor notifications to those the agent should actually see.
+     * AgentBridge's own agent-edit review banner is suppressed — see AGENT_EDIT_BANNER_PREFIXES.
+     */
+    static boolean isVisibleToAgent(@NotNull String notification) {
+        for (String prefix : AGENT_EDIT_BANNER_PREFIXES) {
+            if (notification.startsWith(prefix)) return false;
         }
-        return notification + "\n" + REVIEW_PENDING_AGENT_NOTE;
+        return true;
     }
 }
