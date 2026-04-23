@@ -1,17 +1,18 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
+import com.github.catatafishen.agentbridge.acp.client.intercept.VisibleProcessRunner;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.intellij.execution.ExecutionException;
+import com.intellij.execution.configurations.GeneralCommandLine;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.UUID;
@@ -20,10 +21,14 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Handles ACP terminal methods: {@code terminal/create}, {@code terminal/output},
  * {@code terminal/wait_for_exit}, {@code terminal/kill}, and {@code terminal/release}.
- * <p>
- * Per the ACP spec, terminals represent shell command executions that the agent
+ *
+ * <p>Per the ACP spec, terminals represent shell command executions that the agent
  * can create and manage. Each terminal has a unique ID, captures output, and
  * tracks exit status.
+ *
+ * <p>Fall-through commands (those not redirected to MCP equivalents by
+ * {@code AcpToolInterceptor}) are launched via {@link VisibleProcessRunner} so the
+ * user can see them live in the Run tool window — there is no hidden execution path.
  *
  * @see <a href="https://agentclientprotocol.com/protocol/terminals">ACP Terminals</a>
  */
@@ -33,14 +38,19 @@ final class AcpTerminalHandler {
     private static final int DEFAULT_OUTPUT_BYTE_LIMIT = 1_048_576; // 1 MB
 
     private final Project project;
+    private final VisibleProcessRunner visibleRunner;
     private final Map<String, ManagedTerminal> terminals = new ConcurrentHashMap<>();
 
     AcpTerminalHandler(Project project) {
         this.project = project;
+        this.visibleRunner = new VisibleProcessRunner(project);
     }
 
     /**
-     * {@code terminal/create} — start a command in a new terminal.
+     * {@code terminal/create} — start a command in a new terminal that the user can see in
+     * the IDE Run tool window. Output is mirrored to both the visible console and the ACP
+     * output buffer so the agent observes a normal stdout stream while the user can watch
+     * the process run.
      *
      * @return result with {@code terminalId}
      */
@@ -52,20 +62,8 @@ final class AcpTerminalHandler {
         int outputByteLimit = params.has("outputByteLimit") && params.get("outputByteLimit").isJsonPrimitive()
             ? params.get("outputByteLimit").getAsInt() : DEFAULT_OUTPUT_BYTE_LIMIT;
 
-        // Build command line: [command, ...args]
-        String[] cmdArray = new String[1 + args.length];
-        cmdArray[0] = command;
-        System.arraycopy(args, 0, cmdArray, 1, args.length);
-
-        ProcessBuilder pb = new ProcessBuilder(cmdArray);
-        pb.redirectErrorStream(true);
-        if (cwd != null) {
-            pb.directory(new File(cwd));
-        }
-
-        // Apply environment variables from params
+        Map<String, String> env = new HashMap<>(ShellEnvironment.getEnvironment());
         if (params.has("env") && params.get("env").isJsonArray()) {
-            Map<String, String> env = pb.environment();
             for (JsonElement el : params.getAsJsonArray("env")) {
                 if (el.isJsonObject()) {
                     JsonObject envVar = el.getAsJsonObject();
@@ -78,22 +76,30 @@ final class AcpTerminalHandler {
             }
         }
 
-        // Merge shell environment for PATH resolution
-        pb.environment().putAll(
-            ShellEnvironment.getEnvironment());
-
         String terminalId = "term_" + UUID.randomUUID().toString().substring(0, 12);
-        Process process = pb.start();
+        ManagedTerminal terminal = new ManagedTerminal(terminalId, outputByteLimit);
 
-        ManagedTerminal terminal = new ManagedTerminal(terminalId, process, outputByteLimit);
-        terminal.startOutputCapture();
+        GeneralCommandLine cmd = VisibleProcessRunner.buildCommandLine(command, args, cwd, env);
+
+        String tabTitle = "Agent: " + truncate(command + " " + String.join(" ", args), 60);
+        Process process;
+        try {
+            process = visibleRunner.start(cmd, tabTitle, terminal::appendOutput);
+        } catch (ExecutionException e) {
+            throw new IOException("Failed to start terminal command: " + e.getMessage(), e);
+        }
+        terminal.attachProcess(process);
         terminals.put(terminalId, terminal);
 
-        LOG.info("Created terminal " + terminalId + ": " + String.join(" ", cmdArray));
+        LOG.info("Created visible terminal " + terminalId + ": " + cmd.getCommandLineString());
 
         JsonObject result = new JsonObject();
         result.addProperty("terminalId", terminalId);
         return result;
+    }
+
+    private static String truncate(String s, int max) {
+        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
     }
 
     /**
@@ -131,7 +137,6 @@ final class AcpTerminalHandler {
         boolean exited = terminal.process.waitFor(WAIT_FOR_EXIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         if (!exited) {
             terminal.process.destroyForcibly();
-            terminal.stopOutputCapture();
             terminals.remove(terminalId);
             LOG.warn("terminal/wait_for_exit timed out after " + WAIT_FOR_EXIT_TIMEOUT_SECONDS
                 + "s for terminal " + terminalId + " — process forcibly destroyed and resources released");
@@ -173,7 +178,6 @@ final class AcpTerminalHandler {
         if (terminal.process.isAlive()) {
             terminal.process.destroyForcibly();
         }
-        terminal.stopOutputCapture();
         LOG.info("Released terminal " + terminalId);
 
         return new JsonObject();
@@ -188,7 +192,6 @@ final class AcpTerminalHandler {
             if (terminal.process.isAlive()) {
                 terminal.process.destroyForcibly();
             }
-            terminal.stopOutputCapture();
         }
         terminals.clear();
     }
@@ -233,54 +236,32 @@ final class AcpTerminalHandler {
     // ── Managed terminal ─────────────────────────────────────────────────
 
     /**
-     * Tracks a running process with its captured output.
+     * Tracks a running process with its captured output. Output is fed in by
+     * {@link VisibleProcessRunner}'s {@code OutputSink} so there is exactly one
+     * reader on the process input stream (the {@link com.intellij.execution.process.OSProcessHandler}
+     * inside the runner).
      */
     private static final class ManagedTerminal {
         final String id;
-        final Process process;
         final int outputByteLimit;
+        volatile Process process;
 
         private final StringBuilder outputBuffer = new StringBuilder();
         private volatile boolean truncated;
-        private volatile Thread captureThread;
 
-        ManagedTerminal(String id, Process process, int outputByteLimit) {
+        ManagedTerminal(String id, int outputByteLimit) {
             this.id = id;
-            this.process = process;
             this.outputByteLimit = outputByteLimit;
         }
 
-        void startOutputCapture() {
-            captureThread = Thread.ofVirtual().name("acp-terminal-" + id).start(() -> {
-                try (InputStream is = process.getInputStream()) {
-                    byte[] buf = new byte[4096];
-                    int n;
-                    while ((n = is.read(buf)) != -1) {
-                        String chunk = new String(buf, 0, n, StandardCharsets.UTF_8);
-                        appendOutput(chunk);
-                    }
-                } catch (IOException e) {
-                    if (process.isAlive()) {
-                        LOG.warn("Output capture error for terminal " + id + ": " + e.getMessage());
-                    }
-                }
-            });
-        }
-
-        void stopOutputCapture() {
-            Thread t = captureThread;
-            if (t != null) {
-                t.interrupt();
-                captureThread = null;
-            }
+        void attachProcess(Process process) {
+            this.process = process;
         }
 
         synchronized void appendOutput(String chunk) {
             outputBuffer.append(chunk);
-            // Truncate from beginning if over limit (per ACP spec)
             if (outputBuffer.length() > outputByteLimit) {
                 int excess = outputBuffer.length() - outputByteLimit;
-                // Find next character boundary (ensure valid UTF-8)
                 outputBuffer.delete(0, excess);
                 truncated = true;
             }

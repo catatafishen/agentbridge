@@ -98,6 +98,7 @@ public abstract class AcpClient extends AbstractAgentClient {
     protected final Project project;
     private final AcpFileSystemHandler fsHandler;
     private final AcpTerminalHandler terminalHandler;
+    private final com.github.catatafishen.agentbridge.acp.client.intercept.AcpToolInterceptor interceptor;
 
     private @Nullable Process agentProcess;
     private @Nullable InitializeResponse capabilities;
@@ -167,6 +168,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         this.project = project;
         this.fsHandler = new AcpFileSystemHandler(project);
         this.terminalHandler = new AcpTerminalHandler(project);
+        this.interceptor = new com.github.catatafishen.agentbridge.acp.client.intercept.AcpToolInterceptor(project);
     }
 
     // ═══════════════════════════════════════════════════
@@ -308,6 +310,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             availableConfigOptions.clear();
             pendingPermissionRequests.clear();
             terminalHandler.releaseAll();
+            interceptor.releaseAll();
             loadedSessionHistory = null;
             updateConsumer = null;
         }
@@ -1488,14 +1491,42 @@ public abstract class AcpClient extends AbstractAgentClient {
     protected void handleAgentRequest(JsonElement id, JsonRpcTransport.IncomingRequest request) {
         switch (request.method()) {
             case "session/request_permission" -> handlePermissionRequest(id, request.params());
-            case "fs/read_text_file" -> handleFsRequest(id, () -> fsHandler.readTextFile(request.params()));
-            case "fs/write_text_file" -> handleFsRequest(id, () -> fsHandler.writeTextFile(request.params()));
-            case "terminal/create" -> handleTerminalRequest(id, () -> terminalHandler.create(request.params()));
-            case "terminal/output" -> handleTerminalRequest(id, () -> terminalHandler.output(request.params()));
-            case "terminal/wait_for_exit" ->
-                handleTerminalRequest(id, () -> terminalHandler.waitForExit(request.params()));
-            case "terminal/kill" -> handleTerminalRequest(id, () -> terminalHandler.kill(request.params()));
-            case "terminal/release" -> handleTerminalRequest(id, () -> terminalHandler.release(request.params()));
+            case "fs/read_text_file" -> handleFsRequest(id, () -> {
+                JsonObject redirected = interceptor.interceptRead(request.params());
+                return redirected != null ? redirected : fsHandler.readTextFile(request.params());
+            });
+            case "fs/write_text_file" -> handleFsRequest(id, () -> {
+                JsonObject redirected = interceptor.interceptWrite(request.params());
+                return redirected != null ? redirected : fsHandler.writeTextFile(request.params());
+            });
+            case "terminal/create" -> handleTerminalRequest(id, () -> {
+                JsonObject intercepted = interceptor.tryInterceptTerminalCreate(request.params());
+                return intercepted != null ? intercepted : terminalHandler.create(request.params());
+            });
+            case "terminal/output" -> handleTerminalRequest(id, () -> {
+                String tid = request.params().get("terminalId").getAsString();
+                return interceptor.ownsTerminal(tid)
+                    ? interceptor.output(tid)
+                    : terminalHandler.output(request.params());
+            });
+            case "terminal/wait_for_exit" -> handleTerminalRequest(id, () -> {
+                String tid = request.params().get("terminalId").getAsString();
+                return interceptor.ownsTerminal(tid)
+                    ? interceptor.waitForExit(tid)
+                    : terminalHandler.waitForExit(request.params());
+            });
+            case "terminal/kill" -> handleTerminalRequest(id, () -> {
+                String tid = request.params().get("terminalId").getAsString();
+                return interceptor.ownsTerminal(tid)
+                    ? interceptor.kill(tid)
+                    : terminalHandler.kill(request.params());
+            });
+            case "terminal/release" -> handleTerminalRequest(id, () -> {
+                String tid = request.params().get("terminalId").getAsString();
+                return interceptor.ownsTerminal(tid)
+                    ? interceptor.release(tid)
+                    : terminalHandler.release(request.params());
+            });
             default -> {
                 LOG.warn("Unknown agent request: " + request.method());
                 transport.sendError(id, JsonRpcErrorCodes.METHOD_NOT_FOUND, "Method not found: " + request.method());
