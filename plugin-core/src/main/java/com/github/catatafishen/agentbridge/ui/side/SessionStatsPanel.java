@@ -64,6 +64,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private final JLabel turnTokensValue = new JLabel();
     private final JLabel turnCostRowLabel = new JLabel("Cost");
     private final JLabel turnCostValue = new JLabel();
+    private final JPanel turnToolsRow;
+    private final JPanel turnLinesRow;
     private final JPanel turnTokensRow;
     private final JPanel turnCostRow;
     private final JPanel turnSection;
@@ -79,6 +81,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     // Dynamic labels whose text changes based on provider mode
     private final JLabel tokensRowLabel = new JLabel(LABEL_TOKENS);
     private final JLabel costRowLabel = new JLabel("Cost");
+    private final JPanel turnsRow;
+    private final JPanel sessionToolsRow;
+    private final JPanel linesRow;
     private final JPanel tokensRow;
     private final JPanel costRow;
 
@@ -131,8 +136,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         int tRow = 0;
         addStatRow(turnGrid, tRow++, "Time", turnTimeValue);
-        addStatRow(turnGrid, tRow++, "Tool calls", turnToolsValue);
-        addStatRow(turnGrid, tRow++, "Lines changed", turnLinesValue);
+        turnToolsRow = addStatRow(turnGrid, tRow++, "Tool calls", turnToolsValue);
+        turnLinesRow = addStatRow(turnGrid, tRow++, "Lines changed", turnLinesValue);
         turnTokensRow = addStatRowWithLabel(turnGrid, tRow++, turnTokensRowLabel, turnTokensValue);
         turnCostRow = addStatRowWithLabel(turnGrid, tRow, turnCostRowLabel, turnCostValue);
 
@@ -151,9 +156,9 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
         int row = 0;
         addStatRow(statsGrid, row++, "Time", timeValue);
-        addStatRow(statsGrid, row++, "Turns", turnsValue);
-        addStatRow(statsGrid, row++, "Tool calls", toolsValue);
-        addStatRow(statsGrid, row++, "Lines changed", linesValue);
+        turnsRow = addStatRow(statsGrid, row++, "Turns", turnsValue);
+        sessionToolsRow = addStatRow(statsGrid, row++, "Tool calls", toolsValue);
+        linesRow = addStatRow(statsGrid, row++, "Lines changed", linesValue);
 
         tokensRow = addStatRowWithLabel(statsGrid, row++, tokensRowLabel, tokensValue);
         costRow = addStatRowWithLabel(statsGrid, row, costRowLabel, costValue);
@@ -299,6 +304,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         label.setFont(smallFont);
         label.setForeground(UIManager.getColor("Label.foreground"));
         value.setFont(smallFont);
+        // Right-align values so columns line up cleanly across sections; label stays left.
+        value.setHorizontalAlignment(SwingConstants.RIGHT);
 
         JPanel rowPanel = new JPanel(new BorderLayout(JBUI.scale(8), 0));
         rowPanel.setOpaque(false);
@@ -355,7 +362,12 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         // Time as a labeled row (mirrors the Session section) instead of inline in the
         // header — the two sections now align visually.
         turnTimeValue.setText(TimerDisplayFormatter.INSTANCE.formatElapsedTime(snap.getTurnElapsedSec()));
-        turnToolsValue.setText(String.valueOf(snap.getTurnToolCalls()));
+        int turnTools = snap.getTurnToolCalls();
+        turnToolsValue.setText(String.valueOf(turnTools));
+        // Hide zero-value rows to reduce visual noise — a row of "0"s conveys no signal.
+        turnToolsRow.setVisible(turnTools > 0);
+        long turnLines = snap.getTurnLinesAdded() + snap.getTurnLinesRemoved();
+        turnLinesRow.setVisible(turnLines > 0);
 
         if (snap.getMultiplierMode()) {
             turnTokensRowLabel.setText("Premium req");
@@ -386,8 +398,14 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
     private void refreshSessionStats(SessionStatsSnapshot snap) {
         timeValue.setText(TimerDisplayFormatter.INSTANCE.formatElapsedTime(snap.getSessionTotalTimeSec()));
-        turnsValue.setText(String.valueOf(snap.getSessionTurnCount()));
-        toolsValue.setText(String.valueOf(snap.getSessionToolCalls()));
+        int turns = snap.getSessionTurnCount();
+        turnsValue.setText(String.valueOf(turns));
+        turnsRow.setVisible(turns > 0);
+        int sessionTools = snap.getSessionToolCalls();
+        toolsValue.setText(String.valueOf(sessionTools));
+        sessionToolsRow.setVisible(sessionTools > 0);
+        long sessionLines = snap.getSessionLinesAdded() + snap.getSessionLinesRemoved();
+        linesRow.setVisible(sessionLines > 0);
 
         if (snap.getMultiplierMode()) {
             tokensRowLabel.setText("Premium req");
