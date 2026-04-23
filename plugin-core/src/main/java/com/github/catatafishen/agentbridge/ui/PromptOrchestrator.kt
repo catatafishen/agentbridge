@@ -45,6 +45,11 @@ data class PromptOrchestratorCallbacks(
     val restorePromptText: (rawText: String) -> Unit,
     /** Called after turn completion to mine entries into semantic memory (async, non-blocking). */
     val onTurnMineEntries: (sessionId: String, agentName: String) -> Unit,
+    /**
+     * Called when a queued message is auto-dequeued by the orchestrator at the end
+     * of a turn so the UI layer can drop it from its recall stack.
+     */
+    val onQueuedMessageConsumed: (text: String) -> Unit,
 )
 
 /** Stored banner message to re-display at the start of the next prompt turn. */
@@ -464,6 +469,7 @@ class PromptOrchestrator(
 
         val nextMsg = PsiBridgeService.getInstance(project).nextQueuedMessage
         if (nextMsg != null) {
+            callbacks.onQueuedMessageConsumed(nextMsg)
             ApplicationManager.getApplication().invokeLater {
                 consolePanel().removeQueuedMessageByText(nextMsg)
                 callbacks.sendPromptDirectly(nextMsg)
