@@ -476,7 +476,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
 
     /**
      * Thrown from {@link #handleStreamEvent} when Claude reports an authentication failure
-     * (e.g. "Invalid API key", "Please run /login"). Caught at the {@link #runClaude} level and
+     * (e.g. "Invalid API key", "Please run /login"). Caught at the {@link #runSubprocess} level and
      * translated to {@link AgentException} so {@code PromptOrchestrator} can fire the auth banner.
      * <p>The plugin never inspects local credential stores; auth state is observed from this
      * runtime signal only. See {@code docs/AUTH-HANDLING.md}.
