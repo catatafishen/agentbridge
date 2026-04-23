@@ -712,6 +712,9 @@ class ChatConsolePanel(
         entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
+        // Reset streaming flag — if a session reset happens mid-stream, leaving
+        // streaming=true would make MonitorSwitchRecovery defer DOM replay forever.
+        streaming = false
         executeJs("ChatController.showPlaceholder('${escJs(text)}')")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = text } }
         fireEntriesChanged()
@@ -723,6 +726,8 @@ class ChatConsolePanel(
         entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
+        // Reset streaming flag — same reason as showPlaceholder() above.
+        streaming = false
         toolCallNames.clear(); toolCallEntries.clear()
         registry.clear()
         clearPendingAskUserRequest(null)

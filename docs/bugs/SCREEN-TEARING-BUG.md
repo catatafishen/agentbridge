@@ -47,9 +47,14 @@ JCEF OSR tearing happens when:
 startStreaming()                               finishResponse()
      │                                              │
      ├── setFrameRate(60)                           ├── setFrameRate(30)
-     ├── repaintTimer.start()  (200ms invalidate)   ├── repaintTimer.stop()
-     └── setStreaming(true, false)  [disable smooth] └── restore smooth-scroll preference
+     └── setStreaming(true, false)  [disable        └── restore smooth-scroll preference
+            smooth + arms streaming flag]
 ```
+
+> **Note**: `repaintTimer.start()/stop()` was removed in **Fix 4** — there is no longer a
+> periodic forced OSR invalidation. CEF's natural `OnPaint` cycle (capped at the windowless
+> frame rate) handles repaints. The `streaming` flag is still maintained because
+> `MonitorSwitchRecovery` uses it to defer DOM replay until streaming ends.
 
 ### Per-token flow
 
@@ -69,8 +74,10 @@ Kotlin appendText()
 - **No smooth scroll during streaming** — `setStreaming(true, false)` disables CSS smooth scroll.
 - **Programmatic bottom-lock is always instant** — `scrollIfNeeded()`, `forceScroll()`, and
   `compensateScroll()` all go through `_scrollToInstant()` even when smooth scrolling is enabled.
-- **CEF invalidation safety net** — `repaintTimer` fires `cef.invalidate()` every 200ms during
-  streaming, plus throttled per-`executeJs` invalidation (50ms) catches inter-timer gaps.
+- **CEF invalidation removed** — Fix 4 removed both the periodic `repaintTimer` and the
+  per-`executeJs` `cef.invalidate()` calls. CEF's native `OnPaint` cycle (capped at the
+  windowless frame rate) handles repaints. Do not reintroduce manual invalidation —
+  see Fix 4 for the rationale.
 - **No code block decoration during streaming** — `_setupCodeBlocks()` skips `<pre>` elements
   inside `message-bubble[streaming]` to avoid DOM churn.
 
@@ -167,7 +174,7 @@ helper.
 
 ---
 
-
+## Code Locations
 
 | File | Component | Purpose |
 |---|---|---|
