@@ -973,7 +973,14 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         return n;
     }
 
-    private boolean hasPendingIn(@NotNull Collection<String> scopedPaths) {
+    /**
+     * Whether any PENDING tracked path lies inside {@code scopedPaths}. Used by
+     * {@link #awaitReviewForPaths} for scope-limited gating.
+     * <p>Package-private so regression tests can assert the contract that
+     * git-amend must rely on (an empty {@code scopedPaths} never reports pending,
+     * even when the unscoped session has pending changes).
+     */
+    boolean hasPendingIn(@NotNull Collection<String> scopedPaths) {
         Set<String> scope = scopedPaths instanceof Set ? (Set<String>) scopedPaths : new HashSet<>(scopedPaths);
         for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
             if (e.getValue() == ApprovalState.PENDING && pathIsTracked(e.getKey()) && scope.contains(e.getKey())) {
