@@ -780,8 +780,10 @@ class ChatToolWindowContent(
             }
         }
         inputSection.isOpaque = false
-        // 8px top inset doubles as the resize drag zone (see resizeHandler below)
-        inputSection.border = JBUI.Borders.empty(8, 0, 4, 4)
+        // 8px top inset doubles as the resize drag zone (see resizeHandler below).
+        // Bottom inset is 2 (not 4) so the model selector / send button sit close
+        // to the rounded bottom border instead of leaving a wide empty band.
+        inputSection.border = JBUI.Borders.empty(8, 0, 2, 4)
         inputSection.add(sideButtonsPanel, BorderLayout.WEST)
         inputSection.add(inputRow, BorderLayout.CENTER)
 
@@ -790,8 +792,11 @@ class ChatToolWindowContent(
 
         val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
         bottomSection.isOpaque = false
-        // Symmetric 4px side padding mirrors the chat panel above so columns align.
-        bottomSection.border = JBUI.Borders.empty(0, 4, 4, 4)
+        // 12px side padding aligns the input-frame edges with the chat-message
+        // bubbles above (responsePanelContainer's 4px outer margin + chat-container's
+        // 8px CSS padding = 12px from the tool-window edge). 2px bottom keeps the
+        // frame close to the tool-window bottom without touching the IDE status bar.
+        bottomSection.border = JBUI.Borders.empty(0, 12, 2, 12)
         bottomSection.add(inputSection, BorderLayout.CENTER)
 
         // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
@@ -1022,7 +1027,7 @@ class ChatToolWindowContent(
 
         val innerBar = JBPanel<JBPanel<*>>(BorderLayout())
         innerBar.isOpaque = false
-        innerBar.border = JBUI.Borders.empty(0, 2, 1, 2)
+        innerBar.border = JBUI.Borders.empty(0, 2, 0, 2)
         // Model selector and Send button grouped together on the right
         val rightSide = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(2), 0))
         rightSide.isOpaque = false

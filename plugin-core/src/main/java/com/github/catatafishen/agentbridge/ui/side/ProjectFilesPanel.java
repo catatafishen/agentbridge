@@ -55,6 +55,15 @@ final class ProjectFilesPanel extends JPanel {
         tree.setRootVisible(false);
         tree.setShowsRootHandles(true);
         tree.setCellRenderer(new FileNodeRenderer());
+        // Single-selection only — discontiguous selection (the JTree default) was
+        // letting the selection model report multiple paths after expand/collapse,
+        // which lit every file row blue as if all were selected.
+        tree.getSelectionModel().setSelectionMode(
+            javax.swing.tree.TreeSelectionModel.SINGLE_TREE_SELECTION);
+        // Disable the connector/branch guide line: in some L&Fs it paints a thin
+        // selection-tinted band down through the selected node's descendants,
+        // which read as "child rows are selected too".
+        tree.putClientProperty("JTree.lineStyle", "None");
         // Let the parent's background show through so dark mode doesn't
         // paint a gray rectangle behind the file rows.
         tree.setOpaque(false);
@@ -316,39 +325,65 @@ final class ProjectFilesPanel extends JPanel {
         }
     }
 
+    /**
+     * Tree cell renderer that paints a selection background only on the actually-selected
+     * row and stays fully transparent otherwise. {@link DefaultTreeCellRenderer}'s default
+     * {@code paint()} fills with {@code backgroundNonSelectionColor} (which inherits a
+     * panel-grey from the L&F) before drawing icon and text, leaving a visible grey rect
+     * behind every row even with {@code setOpaque(false)}. We override {@code paintComponent}
+     * to skip the fill entirely when not selected.
+     */
     private static final class FileNodeRenderer extends DefaultTreeCellRenderer {
+        private boolean rowSelected;
+
         FileNodeRenderer() {
-            // DefaultTreeCellRenderer.paint() fills the cell with this color even when
-            // setOpaque(false). Null it out so the tree (and parent) background shows through.
+            // Belt-and-braces: also clear the field DefaultTreeCellRenderer.paint reads from.
             setBackgroundNonSelectionColor(null);
+            setBorderSelectionColor(null);
         }
 
         @Override
         public void updateUI() {
             super.updateUI();
-            // L&F change can reset backgroundNonSelectionColor; re-apply the null so that
-            // the transparent background survives theme switches.
+            // L&F change can reset both colors; re-clear so the transparent background
+            // and missing focus rectangle survive theme switches.
             setBackgroundNonSelectionColor(null);
+            setBorderSelectionColor(null);
         }
 
         @Override
         public Component getTreeCellRendererComponent(JTree tree, Object value, boolean sel,
                                                       boolean expanded, boolean leaf, int row,
                                                       boolean hasFocus) {
-            Component c = super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
-            if (!sel) {
+            super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
+            this.rowSelected = sel;
+            // Selected row gets an opaque label painted with the L&F's tree selection color;
+            // every other row is fully transparent so the side-panel background shows through.
+            setOpaque(sel);
+            if (sel) {
+                setBackground(com.intellij.util.ui.UIUtil.getTreeSelectionBackground(true));
+                setForeground(com.intellij.util.ui.UIUtil.getTreeSelectionForeground(true));
+            } else {
+                setBackground(null);
+                setForeground(com.intellij.util.ui.UIUtil.getTreeForeground());
+            }
+            if (value instanceof DefaultMutableTreeNode node && node.getUserObject() instanceof FileNode fn) {
+                setIcon(fn.icon());
+                setText(fn.label);
+                setToolTipText(fn.relativePath);
+            }
+            return this;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            // When unselected, skip the background fill that DefaultTreeCellRenderer (via
+            // JLabel) would otherwise paint. When selected, fall through to the default
+            // opaque paint so the row gets the proper selection band.
+            if (!rowSelected) {
                 setOpaque(false);
-                if (c instanceof JLabel label) {
-                    label.setOpaque(false);
-                }
             }
-            if (value instanceof DefaultMutableTreeNode node && node.getUserObject() instanceof FileNode fn
-                && c instanceof JLabel label) {
-                label.setIcon(fn.icon());
-                label.setText(fn.label);
-                label.setToolTipText(fn.relativePath);
-            }
-            return c;
+            super.paintComponent(g);
         }
     }
 }
