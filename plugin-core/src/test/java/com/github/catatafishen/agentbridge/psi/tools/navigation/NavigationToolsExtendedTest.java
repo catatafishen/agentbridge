@@ -323,7 +323,11 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
         String result = findReferencesTool.execute(
             args("symbol", "projectMethod", "scope", "libraries"));
 
-        assertFalse("Project symbol must not appear in libraries scope results, got: " + result,
-            result.contains("RefCaller_5522.java") || result.contains("projectMethod"));
+        // The "no references found" message naturally echoes the symbol name —
+        // assert only that no project file reference leaked through.
+        assertFalse("Project file must not appear in libraries scope results, got: " + result,
+            result.contains("RefCaller_5522.java") || result.contains("RefTarget_5522.java"));
+        assertTrue("Expected a 'no references' message, got: " + result,
+            result.contains("No references found"));
     }
 }
