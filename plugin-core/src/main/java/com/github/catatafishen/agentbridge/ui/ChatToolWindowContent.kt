@@ -954,34 +954,46 @@ class ChatToolWindowContent(
         innerInputToolbar.isReservePlaceAutoPopupIcon = false
         innerInputToolbar.component.isOpaque = false
 
-        // Layout strategy: a single horizontal BoxLayout row where every child has
-        // alignmentY = CENTER_ALIGNMENT. This is what produces a true visual midline
-        // alignment across heterogeneous components. Earlier attempts using
-        // BorderLayout.CENTER + FlowLayout failed because BorderLayout.CENTER stretches
-        // its cell to the full container height, but FlowLayout still positions its
-        // single row at the *top* of that stretched cell — so the shortcut hints
-        // ended up visually anchored to the top while the Send / Model toolbars
-        // (added via BorderLayout.EAST, which respects preferred size and vertically
-        // centers) sat in the middle. BoxLayout X_AXIS with alignmentY=0.5 on every
-        // child centers each one independently on the row's midline regardless of
-        // its preferred height or internal padding.
+        // Right-side group: model selector + Send button, packed tightly with FlowLayout
+        // so the right edge anchors to the EAST cell. FlowLayout vertically centers its
+        // row within the panel, but since the panel's preferred height matches the row
+        // exactly, that centering only matters once GridBagLayout (below) gives the cell
+        // its row height — which it does via anchor=EAST (vertical-center anchor).
+        val rightGroup = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0)).apply {
+            isOpaque = false
+        }
+        rightGroup.add(modelToolbar.component)
+        rightGroup.add(innerInputToolbar.component)
+
+        // Layout strategy: GridBagLayout with two cells.
+        //   cell 0: shortcutHintPanel    weightx=1.0  anchor=CENTER  fill=NONE
+        //   cell 1: rightGroup           weightx=0.0  anchor=EAST    fill=NONE
+        //
+        // GridBagLayout sizes the row to the tallest child's preferred height, then
+        // positions every cell's component using its anchor *within that row height*.
+        // Both CENTER and EAST anchors are vertically centered, so all three groups
+        // (hints, model toolbar, send button) land on the same horizontal midline
+        // regardless of their individual heights — solving the alignment problem that
+        // BorderLayout+FlowLayout and BoxLayout+alignmentY both failed to solve.
+        // weightx=1.0 on cell 0 absorbs all extra horizontal space, pushing the
+        // rightGroup hard against the right edge.
         val innerBar = JBPanel<JBPanel<*>>().apply {
-            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            layout = GridBagLayout()
             isOpaque = false
             border = JBUI.Borders.empty(0, 2, 0, 2)
         }
-        shortcutHintPanel.alignmentY = Component.CENTER_ALIGNMENT
-        modelToolbar.component.alignmentY = Component.CENTER_ALIGNMENT
-        innerInputToolbar.component.alignmentY = Component.CENTER_ALIGNMENT
-        // Glue on both sides of the hints centers them in the horizontal gap
-        // between the left side-buttons (+, power, attachments) and the right-side
-        // model + Send group.
-        innerBar.add(Box.createHorizontalGlue())
-        innerBar.add(shortcutHintPanel)
-        innerBar.add(Box.createHorizontalGlue())
-        innerBar.add(modelToolbar.component)
-        innerBar.add(Box.createHorizontalStrut(JBUI.scale(2)))
-        innerBar.add(innerInputToolbar.component)
+        innerBar.add(shortcutHintPanel, GridBagConstraints().apply {
+            gridx = 0; gridy = 0
+            weightx = 1.0; weighty = 0.0
+            fill = GridBagConstraints.NONE
+            anchor = GridBagConstraints.CENTER
+        })
+        innerBar.add(rightGroup, GridBagConstraints().apply {
+            gridx = 1; gridy = 0
+            weightx = 0.0; weighty = 0.0
+            fill = GridBagConstraints.NONE
+            anchor = GridBagConstraints.EAST
+        })
         row.add(innerBar, BorderLayout.SOUTH)
 
         refreshShortcutHints()
