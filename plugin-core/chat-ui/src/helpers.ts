@@ -23,3 +23,32 @@ export function collapseAllChips(container: Element | null, except?: Element): v
 export function escHtml(s: string | null | undefined): string {
     return s ? s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;') : '';
 }
+
+/**
+ * Collapse a bubble's timestamp when the previous chat-message shares the same minute
+ * (timestamps are rendered as "HH:MM"). Reduces visual noise in streams of close messages
+ * while still marking the first bubble of each minute.
+ *
+ * Call *after* the message's .ts span has been populated and the message has been
+ * inserted into the DOM. A session-divider between two messages always re-shows the
+ * next timestamp, since a new session is a natural break regardless of minute.
+ */
+export function hideRedundantTimestamp(msg: Element): void {
+    const tsEl = msg.querySelector('.ts');
+    if (!tsEl || !tsEl.textContent) return;
+    const current = tsEl.textContent.trim();
+    if (!current) return;
+    let prev = msg.previousElementSibling;
+    while (prev) {
+        const tag = prev.tagName;
+        if (tag === 'SESSION-DIVIDER') return;
+        if (tag === 'CHAT-MESSAGE') {
+            const prevTs = prev.querySelector('.ts');
+            if (prevTs && prevTs.textContent?.trim() === current) {
+                tsEl.classList.add('ts-hidden');
+            }
+            return;
+        }
+        prev = prev.previousElementSibling;
+    }
+}
