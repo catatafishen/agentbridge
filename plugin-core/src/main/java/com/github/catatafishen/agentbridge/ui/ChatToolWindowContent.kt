@@ -744,6 +744,12 @@ class ChatToolWindowContent(
 
         val inputRow = createInputRow()
 
+        val sideButtonsPanel = createSideButtonsPanel()
+
+        // Single rounded white frame that contains BOTH the side-button rail and the editor row —
+        // visually unifies the input area so there is no grey gutter around the side buttons.
+        // A 1px vertical divider is painted between the rail and the editor column.
+        val sideRailWidth = { sideButtonsPanel.preferredSize.width }
         val inputSection = object : JBPanel<JBPanel<*>>(BorderLayout()) {
             override fun paintComponent(g: Graphics) {
                 // Non-opaque components must call super so Swing can satisfy dirty-region
@@ -755,6 +761,14 @@ class ChatToolWindowContent(
                     val arc = JBUI.scale(8)
                     g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
                     g2.fillRoundRect(0, 0, width, height, arc, arc)
+                    // Subtle vertical divider between the side-button rail and the editor column.
+                    // Uses the tool-window separator color so it reads as a seam, not a hard border.
+                    val insets = insets
+                    val dividerX = insets.left + sideRailWidth()
+                    if (dividerX > insets.left && dividerX < width - insets.right) {
+                        g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
+                        g2.drawLine(dividerX, insets.top + JBUI.scale(2), dividerX, height - insets.bottom - JBUI.scale(2))
+                    }
                     // Use the component border color (typically ~#ADADAD light / #5A5D63 dark),
                     // which is more visible than the tool-window separator color.
                     g2.color = UIManager.getColor("Component.borderColor")
@@ -767,24 +781,18 @@ class ChatToolWindowContent(
         }
         inputSection.isOpaque = false
         // 8px top inset doubles as the resize drag zone (see resizeHandler below)
-        inputSection.border = JBUI.Borders.empty(8, 4, 4, 4)
+        inputSection.border = JBUI.Borders.empty(8, 0, 4, 4)
+        inputSection.add(sideButtonsPanel, BorderLayout.WEST)
         inputSection.add(inputRow, BorderLayout.CENTER)
 
-        val sideButtonsPanel = createSideButtonsPanel()
         controlsToolbar.targetComponent = inputSection
         innerInputToolbar.targetComponent = inputSection
 
-        val inputWithSidebar = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(4), 0))
-        inputWithSidebar.isOpaque = false
-        inputWithSidebar.add(sideButtonsPanel, BorderLayout.WEST)
-        inputWithSidebar.add(inputSection, BorderLayout.CENTER)
-
         val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
         bottomSection.isOpaque = false
-        // Left/right padding mirrors responsePanelContainer's compound(empty(4),...) so columns align.
-        // Right gets extra padding to match the chat bubble right margin; left gets 5px more.
-        bottomSection.border = JBUI.Borders.empty(0, 9, 8, 17)
-        bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
+        // Symmetric 4px side padding mirrors the chat panel above so columns align.
+        bottomSection.border = JBUI.Borders.empty(0, 4, 4, 4)
+        bottomSection.add(inputSection, BorderLayout.CENTER)
 
         // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
         // We replace OnePixelSplitter (which draws a visible 1px divider) with a plain BorderLayout
