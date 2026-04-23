@@ -16,19 +16,18 @@
 //     after removing our own directory. Argv and stdin/stdout/stderr are
 //     forwarded unchanged; the child's exit code is propagated.
 //
-// This binary is bundled per OS+arch under
-// plugin-core/src/main/resources/agentbridge/shim/bin/<goos>-<goarch>/
-// and extracted at runtime by ShimManager, which copies one .exe per shimmed
-// command name (cat.exe, head.exe, grep.exe, …).
+// Implementation note: we deliberately avoid net/http and net/url to keep the
+// statically-linked binary small (~1.5 MB instead of ~5 MB). The shim talks to
+// 127.0.0.1 only — no TLS, no redirects, no proxies — so a hand-rolled
+// HTTP/1.1 client over net.Dial is plenty.
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,18 +37,19 @@ import (
 	"time"
 )
 
-const exitFallthroughError = 127
+const (
+	exitFallthroughError = 127
+	dialTimeout          = 2 * time.Second
+	totalTimeout         = 30 * time.Second
+)
 
 func main() {
 	cmdName := commandName()
 	args := os.Args[1:]
 
-	// Try the IDE round-trip. If it returns (handled, exitCode), we're done.
 	if handled, exitCode := tryRedirect(cmdName, args); handled {
 		os.Exit(exitCode)
 	}
-
-	// Fall through: re-exec the real binary from a PATH that excludes us.
 	os.Exit(execReal(cmdName, args))
 }
 
@@ -73,68 +73,200 @@ func tryRedirect(cmdName string, args []string) (bool, int) {
 		return false, 0
 	}
 
-	form := url.Values{}
-	form.Add("argv", cmdName)
-	for _, a := range args {
-		form.Add("argv", a)
-	}
-	body := form.Encode()
+	body := encodeArgvForm(cmdName, args)
 
-	endpoint := "http://127.0.0.1:" + port + "/shim-exec"
-	req, err := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(body))
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, dialTimeout)
 	if err != nil {
 		return false, 0
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("X-Shim-Token", token)
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(totalTimeout))
 
-	// Loopback only — short timeouts. We deliberately do NOT follow redirects;
-	// the protocol is one-shot.
-	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				Timeout:   2 * time.Second,
-				KeepAlive: -1,
-			}).DialContext,
-			DisableKeepAlives: true,
-		},
+	req := buildRequest(port, token, body)
+	if _, err := conn.Write(req); err != nil {
+		return false, 0
 	}
-	resp, err := client.Do(req)
+
+	status, respBody, err := readResponse(conn)
 	if err != nil {
 		return false, 0
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNoContent {
-		// Explicit fall-through.
-		return false, 0
-	}
-	if resp.StatusCode != http.StatusOK {
-		// Bad token (401), malformed (400), server error (5xx) — fall through
-		// so the agent still gets a working command.
-		return false, 0
-	}
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
+	if status == 204 || status != 200 {
 		return false, 0
 	}
 
 	exitCode, payload, ok := parseExitFrame(respBody)
 	if !ok {
-		// Malformed body — fall through rather than emit garbage.
 		return false, 0
 	}
-
-	// Write payload to stdout. Errors here are unrecoverable; mirror what the
-	// real binary would do.
 	_, _ = os.Stdout.Write(payload)
 	return true, exitCode
 }
 
+// encodeArgvForm builds the application/x-www-form-urlencoded body
+// "argv=<cmd>&argv=<arg1>&argv=<arg2>…". Implements RFC 3986 percent-encoding
+// inline so we don't need net/url.
+func encodeArgvForm(cmdName string, args []string) []byte {
+	var buf bytes.Buffer
+	writePair := func(v string) {
+		if buf.Len() > 0 {
+			buf.WriteByte('&')
+		}
+		buf.WriteString("argv=")
+		percentEncode(&buf, v)
+	}
+	writePair(cmdName)
+	for _, a := range args {
+		writePair(a)
+	}
+	return buf.Bytes()
+}
+
+// percentEncode writes s to buf using application/x-www-form-urlencoded
+// rules: space becomes '+', unreserved characters pass through, everything
+// else becomes %HH.
+func percentEncode(buf *bytes.Buffer, s string) {
+	const hex = "0123456789ABCDEF"
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == ' ':
+			buf.WriteByte('+')
+		case (c >= 'A' && c <= 'Z') ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' || c == '_' || c == '.' || c == '~':
+			buf.WriteByte(c)
+		default:
+			buf.WriteByte('%')
+			buf.WriteByte(hex[c>>4])
+			buf.WriteByte(hex[c&0x0F])
+		}
+	}
+}
+
+// buildRequest serialises the HTTP/1.1 POST as bytes.
+func buildRequest(port, token string, body []byte) []byte {
+	var b bytes.Buffer
+	b.WriteString("POST /shim-exec HTTP/1.1\r\n")
+	b.WriteString("Host: 127.0.0.1:")
+	b.WriteString(port)
+	b.WriteString("\r\n")
+	b.WriteString("X-Shim-Token: ")
+	b.WriteString(token)
+	b.WriteString("\r\n")
+	b.WriteString("Content-Type: application/x-www-form-urlencoded\r\n")
+	b.WriteString("Content-Length: ")
+	b.WriteString(strconv.Itoa(len(body)))
+	b.WriteString("\r\n")
+	b.WriteString("Connection: close\r\n")
+	b.WriteString("\r\n")
+	b.Write(body)
+	return b.Bytes()
+}
+
+// readResponse reads and parses an HTTP/1.1 response. Supports both
+// Content-Length and chunked transfer encoding (Java's HttpServer always
+// uses one or the other). Returns (status, body, error).
+func readResponse(r io.Reader) (int, []byte, error) {
+	br := bufio.NewReader(r)
+
+	// Status line: "HTTP/1.1 200 OK\r\n"
+	statusLine, err := br.ReadString('\n')
+	if err != nil {
+		return 0, nil, err
+	}
+	parts := strings.SplitN(strings.TrimRight(statusLine, "\r\n"), " ", 3)
+	if len(parts) < 2 {
+		return 0, nil, fmt.Errorf("malformed status line")
+	}
+	status, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// Headers
+	contentLength := -1
+	chunked := false
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return 0, nil, err
+		}
+		line = strings.TrimRight(line, "\r\n")
+		if line == "" {
+			break
+		}
+		colon := strings.IndexByte(line, ':')
+		if colon < 0 {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(line[:colon]))
+		value := strings.TrimSpace(line[colon+1:])
+		switch name {
+		case "content-length":
+			if n, err := strconv.Atoi(value); err == nil {
+				contentLength = n
+			}
+		case "transfer-encoding":
+			if strings.EqualFold(value, "chunked") {
+				chunked = true
+			}
+		}
+	}
+
+	if status == 204 {
+		return status, nil, nil
+	}
+
+	if chunked {
+		body, err := readChunkedBody(br)
+		return status, body, err
+	}
+	if contentLength >= 0 {
+		body := make([]byte, contentLength)
+		if _, err := io.ReadFull(br, body); err != nil {
+			return 0, nil, err
+		}
+		return status, body, nil
+	}
+	// No length given — read until EOF (Connection: close).
+	body, err := io.ReadAll(br)
+	return status, body, err
+}
+
+func readChunkedBody(br *bufio.Reader) ([]byte, error) {
+	var out bytes.Buffer
+	for {
+		line, err := br.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		sizeStr := strings.TrimRight(line, "\r\n")
+		if i := strings.IndexByte(sizeStr, ';'); i >= 0 {
+			sizeStr = sizeStr[:i]
+		}
+		size, err := strconv.ParseInt(strings.TrimSpace(sizeStr), 16, 64)
+		if err != nil {
+			return nil, err
+		}
+		if size == 0 {
+			// Trailer / CRLF
+			_, _ = br.ReadString('\n')
+			return out.Bytes(), nil
+		}
+		chunk := make([]byte, size)
+		if _, err := io.ReadFull(br, chunk); err != nil {
+			return nil, err
+		}
+		out.Write(chunk)
+		if _, err := br.ReadString('\n'); err != nil {
+			return nil, err
+		}
+	}
+}
+
 // parseExitFrame validates and splits the wire format "EXIT <n>\n<bytes>".
-// Returns (exitCode, payload, true) on success, (_, _, false) otherwise.
 func parseExitFrame(body []byte) (int, []byte, bool) {
 	const prefix = "EXIT "
 	if !bytes.HasPrefix(body, []byte(prefix)) {
@@ -152,9 +284,8 @@ func parseExitFrame(body []byte) (int, []byte, bool) {
 	return n, rest[nl+1:], true
 }
 
-// execReal locates the real cmdName on PATH, with the directory containing
-// this shim removed (to prevent infinite recursion), and runs it with the
-// original argv + stdio. Returns the child's exit code, or
+// execReal locates the real cmdName on PATH (with our directory removed) and
+// runs it forwarding stdio. Returns the child's exit code, or
 // exitFallthroughError when no real binary is found.
 func execReal(cmdName string, args []string) int {
 	stripped := pathWithoutSelf()
@@ -182,8 +313,7 @@ func execReal(cmdName string, args []string) int {
 }
 
 // pathWithoutSelf returns $PATH with the directory containing os.Args[0]
-// removed (case-insensitive on Windows). This is what the spawned real
-// binary sees, and is what lookPathWith uses to find it.
+// removed (case-insensitive on Windows).
 func pathWithoutSelf() string {
 	selfDir, err := selfDir()
 	if err != nil {
@@ -201,9 +331,7 @@ func pathWithoutSelf() string {
 	return strings.Join(out, sep)
 }
 
-// selfDir returns the absolute directory of the running shim binary,
-// resolving symlinks. Falls back to filepath.Dir(os.Args[0]) when the
-// executable cannot be located.
+// selfDir returns the absolute directory of the running shim binary.
 func selfDir() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -216,7 +344,6 @@ func selfDir() (string, error) {
 	return filepath.Dir(resolved), nil
 }
 
-// pathsEqual compares two filesystem paths, case-insensitively on Windows.
 func pathsEqual(a, b string) bool {
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
@@ -225,11 +352,8 @@ func pathsEqual(a, b string) bool {
 }
 
 // lookPathWith mimics exec.LookPath but uses the supplied PATH instead of
-// the process environment. Implemented locally because exec.LookPath has no
-// "alternative PATH" overload and we cannot mutate the parent env.
+// the process environment.
 func lookPathWith(name, path string) (string, error) {
-	// Windows: exec.LookPath honours PATHEXT only when scanning os.Getenv("PATH").
-	// We swap PATH temporarily, restore on return.
 	oldPath := os.Getenv("PATH")
 	if err := os.Setenv("PATH", path); err != nil {
 		return "", err
