@@ -483,13 +483,15 @@ class ChatConsolePanel(
             )
         )
 
+        // Update kind if provided (OpenCode sends kind in tool_call_update with status=completed)
+        if (update.kind != null) {
+            val jsKind = update.kind.replace("'", "\\'")
+            executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
+        }
+
         // For intermediate running state, update DOM immediately
         if (status == "running") {
             executeJs("ChatController.setToolChipState('$did','running')")
-            if (update.kind != null) {
-                val jsKind = update.kind.replace("'", "\\'")
-                executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
-            }
             return
         }
 
