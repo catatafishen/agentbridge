@@ -434,7 +434,9 @@ class ChatConsolePanel(
         }
 
         finalizeCurrentText()
-        val resolvedKind = kind ?: "other"
+        val resolvedKind = kind?.takeIf { it != "other" }
+            ?: toolRegistry?.findById(cleanTitle)?.kind()?.value()
+            ?: "other"
 
         // Extract file path from arguments for edit tools
         val filePath = extractFilePathFromArgs(arguments)
@@ -583,8 +585,10 @@ class ChatConsolePanel(
         kind: String?
     ) {
         val saDid = domId(subAgentId)
-        val resolvedKind = kind ?: "other"
         val cleanTitle = title.trim('\'', '"')
+        val resolvedKind = kind?.takeIf { it != "other" }
+            ?: toolRegistry?.findById(cleanTitle)?.kind()?.value()
+            ?: "other"
 
         val reg = registerToolChip(cleanTitle, arguments, resolvedKind, toolId)
         val isExternal = !reg.isMcpHandled
