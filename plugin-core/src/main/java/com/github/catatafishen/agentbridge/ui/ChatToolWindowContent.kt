@@ -628,7 +628,7 @@ class ChatToolWindowContent(
         // Create processing timer and usage graph panels directly so they can be
         // hosted in the side panel's Stats tab instead of above the input area.
         processingTimerPanel = ProcessingTimerPanel(
-            supportsMultiplier = { agentManager.client.supportsMultiplier() },
+            supportsMultiplier = { agentManager.isClientHealthy && agentManager.client.supportsMultiplier() },
             localSessionRequests = { billing.localSessionRequests },
             localPremiumRequests = { billing.localSessionPremiumRequests }
         )
@@ -1607,10 +1607,12 @@ class ChatToolWindowContent(
                 // so users aren't misled into thinking it does anything.
                 // See docs/AUTH-HANDLING.md.
                 val agentId = agentManager.getActiveProfile().id
-                val isClaudeOrCodex = agentId == com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient.PROFILE_ID
-                    || agentId == com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient.PROFILE_ID
+                val isClaudeOrCodex =
+                    agentId == com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient.PROFILE_ID
+                        || agentId == com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient.PROFILE_ID
                 e.presentation.isEnabledAndVisible = !isClaudeOrCodex
             }
+
             override fun actionPerformed(e: AnActionEvent) {
                 LOG.info("Logout: disabling auto-connect and disconnecting")
                 agentManager.isAutoConnect = false
