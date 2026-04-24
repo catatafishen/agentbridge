@@ -29,6 +29,9 @@ import java.util.concurrent.TimeoutException;
 public final class GetHighlightsTool extends QualityTool {
 
     private static final Logger LOG = Logger.getInstance(GetHighlightsTool.class);
+    private static final String REVIEW_PENDING_AGENT_NOTE =
+        "[REVIEW_PENDING] User review is still pending for this file. "
+            + "Agent git commit/push/amend must wait for approval or rejection in the Review panel.";
 
     private static final String PARAM_INCLUDE_UNINDEXED = "include_unindexed";
 
@@ -39,6 +42,11 @@ public final class GetHighlightsTool extends QualityTool {
     @Override
     public @NotNull String id() {
         return "get_highlights";
+    }
+
+    @Override
+    public boolean requiresIndex() {
+        return true;
     }
 
     @Override
@@ -295,7 +303,10 @@ public final class GetHighlightsTool extends QualityTool {
                 }
 
                 var editor = editors[0];
-                List<String> notifications = PlatformApiCompat.collectEditorNotificationTexts(project, vf, editor);
+                List<String> notifications = PlatformApiCompat.collectEditorNotificationTexts(project, vf, editor)
+                    .stream()
+                    .map(GetHighlightsTool::formatEditorNotificationForAgent)
+                    .toList();
 
                 future.complete(notifications);
             } catch (Exception e) {
@@ -303,5 +314,12 @@ public final class GetHighlightsTool extends QualityTool {
             }
         });
         return future.get(10, TimeUnit.SECONDS);
+    }
+
+    static @NotNull String formatEditorNotificationForAgent(@NotNull String notification) {
+        if (!notification.startsWith("[BANNER] Review pending:")) {
+            return notification;
+        }
+        return notification + "\n" + REVIEW_PENDING_AGENT_NOTE;
     }
 }

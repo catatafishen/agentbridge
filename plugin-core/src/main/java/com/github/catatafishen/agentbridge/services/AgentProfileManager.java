@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient;
-import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliCredentials;
 import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
 import com.intellij.openapi.application.ApplicationManager;
@@ -194,26 +193,6 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     }
 
     // ── Public API ─────────────────────────────────────────────────
-
-    /**
-     * Returns a human-readable Claude CLI authentication status string for display in settings UI.
-     * Returns {@code null} if the credentials file cannot be read.
-     */
-    @Nullable
-    public static String getClaudeCliAuthStatus() {
-        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
-        return formatAuthStatus(creds.isLoggedIn(), creds.getDisplayName());
-    }
-
-    /**
-     * Formats a human-readable authentication status string.
-     * Returns {@code null} if not logged in.
-     */
-    @Nullable
-    static String formatAuthStatus(boolean loggedIn, @Nullable String displayName) {
-        if (!loggedIn) return null;
-        return "✓ Logged in" + (displayName != null ? " as " + displayName : "");
-    }
 
     @NotNull
     public synchronized List<AgentProfile> getAllProfiles() {

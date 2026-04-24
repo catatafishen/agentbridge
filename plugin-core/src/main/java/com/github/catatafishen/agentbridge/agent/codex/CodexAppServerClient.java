@@ -266,15 +266,8 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     @Override
     public void start() throws AgentException {
         resolvedBinaryPath = resolveBinary();
-        CodexCredentials creds = CodexCredentials.read();
-        if (!creds.isLoggedIn()) {
-            throw new AgentException(
-                "Not authenticated with Codex. Run 'codex login --device-auth' in a terminal, then retry.",
-                null, false);
-        }
         launchAppServer();
-        LOG.info("CodexAppServerClient started" +
-            (creds.getDisplayName() != null ? " (account: " + creds.getDisplayName() + ")" : ""));
+        LOG.info("CodexAppServerClient started");
     }
 
     @Override
@@ -310,27 +303,6 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     @Override
     public boolean isHealthy() {
         return isConnected() && appServerProcess.get() != null && appServerProcess.get().isAlive();
-    }
-
-    @Override
-    public @Nullable String checkAuthentication() {
-        return checkAuthenticationPreStart();
-    }
-
-    @Override
-    public @Nullable String checkAuthenticationPreStart() {
-        return checkCredentials();
-    }
-
-    /**
-     * Static credential check — usable without instantiating the client.
-     * Reads {@code ~/.codex/auth.json} to determine login state.
-     */
-    @Nullable
-    public static String checkCredentials() {
-        CodexCredentials creds = CodexCredentials.read();
-        return creds.isLoggedIn() ? null
-            : "Not authenticated with Codex. Run 'codex login --device-auth' in a terminal, then retry.";
     }
 
     // ── Sessions ─────────────────────────────────────────────────────────────
@@ -906,7 +878,19 @@ public final class CodexAppServerClient extends AbstractAgentClient {
                                         @NotNull JsonObject msg) {
         if (msg.has(F_ERROR)) {
             JsonObject err = msg.getAsJsonObject(F_ERROR);
-            f.completeExceptionally(new AgentException("JSON-RPC error: " + extractJsonRpcErrorMessage(err), null, false));
+            String errMsg = extractJsonRpcErrorMessage(err);
+            if (isCodexAuthError(errMsg)) {
+                // Wording must trigger AuthCommandBuilder.isAuthenticationError so
+                // PromptOrchestrator fires the SetupBanner. The plugin never reads
+                // local credential stores; auth state is observed only from runtime
+                // signals like this one. See docs/AUTH-HANDLING.md.
+                f.completeExceptionally(new AgentException(
+                    "Codex not authenticated: " + errMsg
+                        + " — run 'codex login' in a terminal, then retry.",
+                    null, false));
+            } else {
+                f.completeExceptionally(new AgentException("JSON-RPC error: " + errMsg, null, false));
+            }
         } else {
             JsonElement result = msg.get(F_RESULT);
             f.complete(result.isJsonObject() ? result.getAsJsonObject() : new JsonObject());
@@ -915,6 +899,22 @@ public final class CodexAppServerClient extends AbstractAgentClient {
 
     static String extractJsonRpcErrorMessage(@NotNull JsonObject errorObj) {
         return errorObj.has(F_MESSAGE) ? errorObj.get(F_MESSAGE).getAsString() : errorObj.toString();
+    }
+
+    /**
+     * Heuristic check for Codex auth-failure messages. Patterns include:
+     * "not authenticated", "Unauthorized", "401", "Invalid API key", "Please run codex login".
+     */
+    static boolean isCodexAuthError(@Nullable String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("not authenticated")
+            || lower.contains("unauthorized")
+            || lower.contains("authentication required")
+            || lower.contains("invalid api key")
+            || lower.contains("please run codex login")
+            || lower.contains("please log in")
+            || lower.contains("401");
     }
 
     // ── Server-initiated request handling ────────────────────────────────────

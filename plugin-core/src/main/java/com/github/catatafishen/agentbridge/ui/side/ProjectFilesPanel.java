@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileTypes.FileTypeManager;
+import com.intellij.openapi.fileTypes.UnknownFileType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -54,6 +55,15 @@ final class ProjectFilesPanel extends JPanel {
         tree.setRootVisible(false);
         tree.setShowsRootHandles(true);
         tree.setCellRenderer(new FileNodeRenderer());
+        // Single-selection only — discontiguous selection (the JTree default) was
+        // letting the selection model report multiple paths after expand/collapse,
+        // which lit every file row blue as if all were selected.
+        tree.getSelectionModel().setSelectionMode(
+            javax.swing.tree.TreeSelectionModel.SINGLE_TREE_SELECTION);
+        // Disable the connector/branch guide line: in some L&Fs it paints a thin
+        // selection-tinted band down through the selected node's descendants,
+        // which read as "child rows are selected too".
+        tree.putClientProperty("JTree.lineStyle", "None");
         // Let the parent's background show through so dark mode doesn't
         // paint a gray rectangle behind the file rows.
         tree.setOpaque(false);
@@ -147,6 +157,9 @@ final class ProjectFilesPanel extends JPanel {
 
     /**
      * Recursively lists files under the session directory, using relative paths as labels.
+     * Files with unrecognized file types (rendered with the generic "?" icon) are skipped
+     * — they're almost always noise (temp files, internal state) rather than content the
+     * user wants to open.
      */
     private static @NotNull List<FileNode> listSessionFiles(@NotNull File root, @NotNull File dir) {
         List<FileNode> results = new ArrayList<>();
@@ -155,12 +168,16 @@ final class ProjectFilesPanel extends JPanel {
         for (File child : children) {
             if (child.isDirectory()) {
                 results.addAll(listSessionFiles(root, child));
-            } else {
+            } else if (isRecognizedFileType(child.getName())) {
                 String rel = root.toURI().relativize(child.toURI()).getPath();
                 results.add(new FileNode(root.getAbsolutePath(), rel, rel, false));
             }
         }
         return results;
+    }
+
+    private static boolean isRecognizedFileType(@NotNull String fileName) {
+        return !(FileTypeManager.getInstance().getFileTypeByFileName(fileName) instanceof UnknownFileType);
     }
 
     /**
@@ -308,39 +325,86 @@ final class ProjectFilesPanel extends JPanel {
         }
     }
 
+    /**
+     * Tree cell renderer that paints a selection background only on the actually-selected
+     * row and stays fully transparent otherwise. {@link DefaultTreeCellRenderer}'s default
+     * {@code paint()} fills with {@code backgroundNonSelectionColor} (which inherits a
+     * panel-grey from the L&F) before drawing icon and text, leaving a visible grey rect
+     * behind every row even with {@code setOpaque(false)}. We override {@code paintComponent}
+     * to skip the fill entirely when not selected.
+     */
     private static final class FileNodeRenderer extends DefaultTreeCellRenderer {
+        private boolean rowSelected;
+
         FileNodeRenderer() {
-            // DefaultTreeCellRenderer.paint() fills the cell with this color even when
-            // setOpaque(false). Null it out so the tree (and parent) background shows through.
+            // Belt-and-braces: also clear the field DefaultTreeCellRenderer.paint reads from.
             setBackgroundNonSelectionColor(null);
+            setBorderSelectionColor(null);
         }
 
         @Override
         public void updateUI() {
             super.updateUI();
-            // L&F change can reset backgroundNonSelectionColor; re-apply the null so that
-            // the transparent background survives theme switches.
+            // L&F change can reset both colors; re-clear so the transparent background
+            // and missing focus rectangle survive theme switches.
             setBackgroundNonSelectionColor(null);
+            setBorderSelectionColor(null);
         }
 
         @Override
         public Component getTreeCellRendererComponent(JTree tree, Object value, boolean sel,
                                                       boolean expanded, boolean leaf, int row,
                                                       boolean hasFocus) {
-            Component c = super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
-            if (!sel) {
-                setOpaque(false);
-                if (c instanceof JLabel label) {
-                    label.setOpaque(false);
+            super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
+            this.rowSelected = sel;
+            // Selected row gets an opaque label painted with the L&F's tree selection color;
+            // every other row is fully transparent so the side-panel background shows through.
+            setOpaque(sel);
+            if (sel) {
+                // Use the focused/unfocused selection palette based on actual tree focus —
+                // otherwise unfocused selections incorrectly look focused, which breaks the
+                // IDE's standard selection semantics (focused = vivid, unfocused = muted).
+                setBackground(com.intellij.util.ui.UIUtil.getTreeSelectionBackground(hasFocus));
+                setForeground(com.intellij.util.ui.UIUtil.getTreeSelectionForeground(hasFocus));
+            } else {
+                setBackground(null);
+                setForeground(com.intellij.util.ui.UIUtil.getTreeForeground());
+            }
+            // Reset font + icon each call — JTree reuses a single renderer instance, so
+            // a section node painted right after a file node must not inherit its bold/dim
+            // styling, and vice versa.
+            setFont(tree.getFont());
+            if (value instanceof DefaultMutableTreeNode node) {
+                Object userObject = node.getUserObject();
+                if (userObject instanceof FileNode fn) {
+                    setIcon(fn.icon());
+                    setText(fn.label);
+                    setToolTipText(fn.relativePath);
+                } else if (userObject instanceof String label) {
+                    // Section header node (e.g. "Shared", "Copilot CLI"): render dim + bold
+                    // with no icon to match the SessionStatsPanel section-header style above.
+                    setIcon(null);
+                    setText(label);
+                    setToolTipText(null);
+                    setFont(tree.getFont().deriveFont(Font.BOLD));
+                    if (!sel) {
+                        setForeground(com.intellij.util.ui.JBUI.CurrentTheme
+                            .Label.disabledForeground());
+                    }
                 }
             }
-            if (value instanceof DefaultMutableTreeNode node && node.getUserObject() instanceof FileNode fn
-                && c instanceof JLabel label) {
-                label.setIcon(fn.icon());
-                label.setText(fn.label);
-                label.setToolTipText(fn.relativePath);
+            return this;
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            // When unselected, skip the background fill that DefaultTreeCellRenderer (via
+            // JLabel) would otherwise paint. When selected, fall through to the default
+            // opaque paint so the row gets the proper selection band.
+            if (!rowSelected) {
+                setOpaque(false);
             }
-            return c;
+            super.paintComponent(g);
         }
     }
 }

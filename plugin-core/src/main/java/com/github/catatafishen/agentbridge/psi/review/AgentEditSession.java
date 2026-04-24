@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.services.ChatWebServer;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.Service;
@@ -802,10 +803,12 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     private @Nullable String readCurrentContent(@NotNull String path) {
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
         if (vf == null) return null;
-        Document doc = FileDocumentManager.getInstance().getDocument(vf);
-        if (doc != null) {
-            return ApplicationManager.getApplication().runReadAction((Computable<String>) doc::getText);
-        }
+        // getDocument() requires a read action, not just getText().
+        String text = ReadAction.compute(() -> {
+            Document doc = FileDocumentManager.getInstance().getDocument(vf);
+            return doc != null ? doc.getText() : null;
+        });
+        if (text != null) return text;
         try {
             return new String(vf.contentsToByteArray(), StandardCharsets.UTF_8);
         } catch (Exception e) {
@@ -970,7 +973,14 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         return n;
     }
 
-    private boolean hasPendingIn(@NotNull Collection<String> scopedPaths) {
+    /**
+     * Whether any PENDING tracked path lies inside {@code scopedPaths}. Used by
+     * {@link #awaitReviewForPaths} for scope-limited gating.
+     * <p>Package-private so regression tests can assert the contract that
+     * git-amend must rely on (an empty {@code scopedPaths} never reports pending,
+     * even when the unscoped session has pending changes).
+     */
+    boolean hasPendingIn(@NotNull Collection<String> scopedPaths) {
         Set<String> scope = scopedPaths instanceof Set ? (Set<String>) scopedPaths : new HashSet<>(scopedPaths);
         for (Map.Entry<String, ApprovalState> e : approvals.entrySet()) {
             if (e.getValue() == ApprovalState.PENDING && pathIsTracked(e.getKey()) && scope.contains(e.getKey())) {

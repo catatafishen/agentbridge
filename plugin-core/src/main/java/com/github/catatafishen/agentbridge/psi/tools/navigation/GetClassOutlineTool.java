@@ -22,6 +22,11 @@ public final class GetClassOutlineTool extends NavigationTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Get Class Outline";
     }

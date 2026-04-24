@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient
-import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliCredentials
 import com.github.catatafishen.agentbridge.bridge.ProfileBasedAgentConfig
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
@@ -46,8 +45,15 @@ class AuthLoginService(private val project: Project) {
         val agentManager = ActiveAgentManager.getInstance(project)
         return try {
             val authCheck = agentManager.checkAuthentication()
-            if (authCheck == null) pendingAuthError = null
-            authCheck
+            // checkAuthentication() returns null both when the agent is verified-OK AND
+            // when there's no live agent to probe (not started / unhealthy). We must NOT
+            // treat the second case as "authenticated" — otherwise a previous runtime
+            // auth failure (Claude/Codex, observed from a failed prompt) would have its
+            // sticky pendingAuthError cleared here, hiding the setup banner and re-enabling
+            // sending while auth is still broken. pendingAuthError is cleared explicitly by
+            // the login flows (and by the banner Retry handler), so we just preserve it
+            // whenever the runtime check has nothing concrete to report.
+            authCheck ?: pendingAuthError
         } catch (e: Exception) {
             val errorMsg = e.message ?: "Failed to connect to agent"
             if (errorMsg.lowercase().contains("auth") || errorMsg.lowercase().contains("sign in")) {
@@ -253,12 +259,15 @@ class AuthLoginService(private val project: Project) {
      * Logs out the active agent by cleaning up its authentication data.
      * Always clears pending auth errors.
      *
-     * - **Claude CLI**: deletes `~/.claude/.credentials.json` and the macOS Keychain entry used
-     *   by newer Claude Code versions
+     * - **Claude CLI**: no-op — the plugin does not manage Claude credentials.
+     *   Users must run `claude /logout` themselves or remove `~/.claude/.credentials.json`
+     *   (and the macOS Keychain entry on newer Claude versions) manually
      * - **Kiro CLI**: delegates to `kiro-cli logout`
      * - **Copilot CLI**: runs `gh auth logout` because Copilot CLI authenticates
      *   via the `gh` token stored in the system keyring — there is no
      *   `copilot logout` subcommand
+     * - **Codex**: not invoked — there is no `codex logout` subcommand. The Logout
+     *   button is hidden when Codex is the active agent (see ChatToolWindowContent).
      * - **Others**: deletes `.agent-work/<agentId>/` if it exists
      *
      * The caller is responsible for stopping the agent process
@@ -270,10 +279,11 @@ class AuthLoginService(private val project: Project) {
             val profile = agentManager.getActiveProfile()
             val agentId = profile.id
 
-            // Claude CLI stores credentials outside .agent-work/ (file on most platforms, Keychain on macOS)
+            // Claude CLI: no programmatic logout. The plugin does not touch credential stores
+            // (files, OS keychain). Users must run `claude /logout` themselves or delete their
+            // credentials manually. See docs/AUTH-HANDLING.md.
             if (agentId == ClaudeCliClient.PROFILE_ID) {
-                val deleted = ClaudeCliCredentials.logout()
-                LOG.info("Claude CLI logout: credentials deleted=$deleted")
+                LOG.info("Claude CLI logout: no-op (plugin does not manage Claude credentials)")
                 clearPendingAuthError()
                 return
             }

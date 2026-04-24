@@ -4,89 +4,60 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
-import java.awt.BorderLayout
 import java.awt.FlowLayout
-import java.awt.GridLayout
-import java.awt.event.InputEvent
-import java.awt.event.KeyEvent
+import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.KeyStroke
 
 /**
- * Footer panel showing keyboard shortcut hints below the chat prompt.
- * Dismisses on hover (and focus); re-appears when the input is empty and idle.
- * The shortcut hints feature can be disabled in Settings → AgentBridge → Chat Input.
+ * Bottom-toolbar panel that lists the keyboard shortcuts relevant to the
+ * current chat-input state, left-aligned alongside the model selector and
+ * Send button.
  *
- * Reads actual key bindings from the IntelliJ keymap so customized
- * shortcuts are reflected in the displayed hints.
+ *  - Idle  → Enter ▸ Send,  Shift+Enter ▸ New line
+ *  - Busy  → Enter ▸ Nudge,  Ctrl+Enter ▸ Stop && send,  Ctrl+Shift+Enter ▸ Queue,  Shift+Enter ▸ New line
+ *  - When a nudge or queued message is pending, an extra `↑ ▸ Edit last` hint
+ *    is appended.
  *
- * The four hints are arranged in a 2×2 grid so items in the same column
- * are vertically aligned across rows.
+ * Each entry renders as one or more [KeyBadge]s followed by a small action
+ * label. Reads actual key bindings from the IntelliJ keymap so customized
+ * shortcuts are reflected.
+ *
+ * Visibility honours the *Show shortcut hints* toggle in
+ * Settings → AgentBridge → Chat Input.
  */
-class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(BorderLayout()) {
-
-    private val sendLabel: JBLabel
+class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0)) {
 
     init {
         isOpaque = false
-        border = JBUI.Borders.empty(4, 8, 4, 8)
-
-        // 2×2 grid — equal-width columns keep entries vertically aligned.
-        val grid = JPanel(GridLayout(2, 2, JBUI.scale(16), JBUI.scale(6)))
-        grid.isOpaque = false
-
-        sendLabel = addShortcutEntry(
-            grid,
-            PromptShortcutAction.SEND_ID,
-            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0),
-            "Send"
-        )
-        addShortcutEntry(
-            grid,
-            PromptShortcutAction.NEW_LINE_ID,
-            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK),
-            "New Line"
-        )
-        addShortcutEntry(
-            grid,
-            PromptShortcutAction.STOP_AND_SEND_ID,
-            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
-            "Stop && Send"
-        )
-        addShortcutEntry(
-            grid,
-            PromptShortcutAction.QUEUE_ID,
-            KeyStroke.getKeyStroke(
-                KeyEvent.VK_ENTER,
-                InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK
-            ),
-            "Queue"
-        )
-
-        add(grid, BorderLayout.CENTER)
+        border = JBUI.Borders.empty(0, 4, 0, 4)
     }
 
-    /** Toggle between "send" and "nudge" label when the agent is working. */
-    fun setNudgeMode(nudge: Boolean) {
-        sendLabel.text = if (nudge) "Nudge" else "Send"
+    /**
+     * Replace the displayed hints with the given keystroke/label pairs. The
+     * order of [shortcuts] is preserved, rendered left-to-right.
+     */
+    fun setShortcuts(shortcuts: List<Pair<KeyStroke, String>>) {
+        removeAll()
+        for ((stroke, label) in shortcuts) {
+            add(buildEntry(stroke, label))
+        }
+        revalidate()
+        repaint()
     }
 
-    private fun addShortcutEntry(
-        grid: JPanel,
-        actionId: String,
-        fallbackStroke: KeyStroke,
-        label: String
-    ): JBLabel {
-        val cell = JPanel(FlowLayout(FlowLayout.CENTER, JBUI.scale(4), 0))
-        cell.isOpaque = false
-        val stroke = PromptShortcutAction.resolveKeystroke(actionId, fallbackStroke)
+    private fun buildEntry(stroke: KeyStroke, label: String): JComponent {
+        val cell = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty()
+        }
         KeyBadge.keystrokeTokens(stroke).forEach { cell.add(KeyBadge(it)) }
-        val lbl = JBLabel(label).apply {
+        val text = JBLabel(label).apply {
             font = JBUI.Fonts.smallFont()
             foreground = UIUtil.getContextHelpForeground()
+            border = JBUI.Borders.emptyLeft(2)
         }
-        cell.add(lbl)
-        grid.add(cell)
-        return lbl
+        cell.add(text)
+        return cell
     }
 }

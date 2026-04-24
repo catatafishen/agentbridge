@@ -15,7 +15,7 @@ public enum TransportType {
      * Subprocess calls to the {@code claude} CLI binary in {@code --print} mode with
      * {@code --output-format stream-json}. Uses the Claude subscription stored by the CLI
      * ({@code ~/.claude/.credentials.json}) — no Anthropic API key required.
-     * Requires {@code claude} to be installed and logged in ({@code claude auth login}).
+     * Requires {@code claude} to be installed and logged in ({@code claude /login}).
      */
     CLAUDE_CLI,
 

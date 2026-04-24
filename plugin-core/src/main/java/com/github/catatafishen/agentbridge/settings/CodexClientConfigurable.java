@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.settings;
 
 import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient;
-import com.github.catatafishen.agentbridge.agent.codex.CodexCredentials;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.ui.AuthTerminalHelperKt;
 import com.github.catatafishen.agentbridge.ui.ThemeColor;
@@ -28,7 +27,6 @@ public final class CodexClientConfigurable implements Configurable {
     private final Project project;
 
     private JBLabel binaryStatusLabel;
-    private JBLabel authStatusLabel;
     private JBTextField binaryPathField;
     private @Nullable ThemeColorComboBox bubbleColorCombo;
     private JPanel mainPanel;
@@ -45,7 +43,6 @@ public final class CodexClientConfigurable implements Configurable {
     @Override
     public @NotNull JComponent createComponent() {
         binaryStatusLabel = new JBLabel(CHECKING);
-        authStatusLabel = new JBLabel(CHECKING);
 
         binaryPathField = new JBTextField();
         binaryPathField.getEmptyText().setText("Auto-detect (leave empty)");
@@ -57,7 +54,8 @@ public final class CodexClientConfigurable implements Configurable {
         installLink.setHyperlinkTarget("https://www.npmjs.com/package/@openai/codex");
 
         JBLabel installNote = new JBLabel(
-            "<html>Install with <code>npm install -g @openai/codex</code>, then run <code>codex login</code>.</html>");
+            "<html>Install with <code>npm install -g @openai/codex</code>, then run <code>codex login</code>. "
+                + "Authentication problems are reported by Codex itself when you send a prompt.</html>");
         installNote.setForeground(UIUtil.getContextHelpForeground());
         installNote.setFont(JBUI.Fonts.smallFont());
 
@@ -74,7 +72,6 @@ public final class CodexClientConfigurable implements Configurable {
 
         mainPanel = FormBuilder.createFormBuilder()
             .addLabeledComponent("Binary:", binaryStatusLabel)
-            .addLabeledComponent("Auth:", authStatusLabel)
             .addComponent(installNote, 2)
             .addComponent(installLink, 2)
             .addSeparator(8)
@@ -128,7 +125,6 @@ public final class CodexClientConfigurable implements Configurable {
     @Override
     public void disposeUIResources() {
         binaryStatusLabel = null;
-        authStatusLabel = null;
         binaryPathField = null;
         bubbleColorCombo = null;
         mainPanel = null;
@@ -140,17 +136,14 @@ public final class CodexClientConfigurable implements Configurable {
         if (binaryStatusLabel == null) return;
         binaryStatusLabel.setText(CHECKING);
         binaryStatusLabel.setForeground(UIUtil.getLabelForeground());
-        authStatusLabel.setText(CHECKING);
-        authStatusLabel.setForeground(UIUtil.getLabelForeground());
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             String version = new AcpClientBinaryResolver(CodexAppServerClient.PROFILE_ID, "codex").detectVersion();
-            CodexCredentials creds = CodexCredentials.read();
-            SwingUtilities.invokeLater(() -> applyStatusResults(version, creds));
+            SwingUtilities.invokeLater(() -> applyStatusResults(version));
         });
     }
 
-    private void applyStatusResults(String version, CodexCredentials creds) {
+    private void applyStatusResults(String version) {
         if (binaryStatusLabel == null) return;
         if (version != null) {
             binaryStatusLabel.setText("✓ Codex CLI found — " + version);
@@ -158,16 +151,6 @@ public final class CodexClientConfigurable implements Configurable {
         } else {
             binaryStatusLabel.setText("Codex CLI not found on PATH — install with npm install -g @openai/codex");
             binaryStatusLabel.setForeground(Color.RED);
-        }
-
-        if (authStatusLabel == null) return;
-        if (creds.isLoggedIn()) {
-            String name = creds.getDisplayName();
-            authStatusLabel.setText("✓ Authenticated" + (name != null ? " — " + name : ""));
-            authStatusLabel.setForeground(new Color(0, 128, 0));
-        } else {
-            authStatusLabel.setText("Not authenticated — run 'codex login' or click Sign In below");
-            authStatusLabel.setForeground(Color.RED);
         }
     }
 

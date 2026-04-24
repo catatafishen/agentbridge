@@ -90,7 +90,7 @@ class ChatToolWindowContent(
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
-    private var isInputHovered = false
+    private val queuedTexts = ArrayDeque<String>()
 
     @Volatile
     private var isSending = false
@@ -339,9 +339,7 @@ class ChatToolWindowContent(
     private fun updatePromptPlaceholder() {
         val editor = promptTextArea.editor as? EditorEx ?: return
         editor.setPlaceholder(promptPlaceholder())
-        if (::shortcutHintPanel.isInitialized) {
-            shortcutHintPanel.setNudgeMode(isSending)
-        }
+        refreshShortcutHints()
     }
 
     fun disconnectFromAgent() {
@@ -703,34 +701,11 @@ class ChatToolWindowContent(
         statusBanner = sb
         northStack.add(sb)
 
-        // Rounded border makes the chat area a distinct panel matching the side panel and input row,
-        // styled like the IDE's own tool-window frames.
-        // Custom border with 0 bottom inset: the rounded rect is drawn taller than the component so
-        // the bottom arc is clipped away, leaving only top, left, and right sides visible. This
-        // eliminates the 1px gap that RoundedLineBorder's bottom inset would otherwise create between
-        // the chat output and the input box.
-        responsePanelContainer.border = JBUI.Borders.compound(
-            JBUI.Borders.empty(4, 4, 0, 4),
-            object : javax.swing.border.AbstractBorder() {
-                override fun getBorderInsets(c: Component, insets: Insets): Insets {
-                    insets.set(1, 1, 0, 1)
-                    return insets
-                }
-
-                override fun paintBorder(c: Component, g: Graphics, x: Int, y: Int, width: Int, height: Int) {
-                    val g2 = g.create() as Graphics2D
-                    try {
-                        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                        g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
-                        val arc = JBUI.scale(8)
-                        // Extend height by arc so the bottom arc falls outside the clip and is not painted.
-                        g2.drawRoundRect(x, y, width - 1, height - 1 + arc, arc, arc)
-                    } finally {
-                        g2.dispose()
-                    }
-                }
-            }
-        )
+        // Edge-to-edge chat panel: no outer margin and no rounded frame so the JCEF
+        // browser fills the entire tool-window width and its scrollbar can sit flush
+        // against the right edge (chat-container's CSS drops right padding to match).
+        // The input frame below provides its own rounded styling for visual grouping.
+        responsePanelContainer.border = JBUI.Borders.empty()
 
         consolePanel.onStatusMessage = { type, message ->
             when (type) {
@@ -744,6 +719,12 @@ class ChatToolWindowContent(
 
         val inputRow = createInputRow()
 
+        val sideButtonsPanel = createSideButtonsPanel()
+
+        // Single rounded white frame that contains BOTH the side-button rail and the editor row —
+        // visually unifies the input area so there is no grey gutter around the side buttons.
+        // A 1px vertical divider is painted between the rail and the editor column.
+        val sideRailWidth = { sideButtonsPanel.preferredSize.width }
         val inputSection = object : JBPanel<JBPanel<*>>(BorderLayout()) {
             override fun paintComponent(g: Graphics) {
                 // Non-opaque components must call super so Swing can satisfy dirty-region
@@ -755,6 +736,19 @@ class ChatToolWindowContent(
                     val arc = JBUI.scale(8)
                     g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
                     g2.fillRoundRect(0, 0, width, height, arc, arc)
+                    // Subtle vertical divider between the side-button rail and the editor column.
+                    // Uses the tool-window separator color so it reads as a seam, not a hard border.
+                    val insets = insets
+                    val dividerX = insets.left + sideRailWidth()
+                    if (dividerX > insets.left && dividerX < width - insets.right) {
+                        g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
+                        g2.drawLine(
+                            dividerX,
+                            insets.top + JBUI.scale(2),
+                            dividerX,
+                            height - insets.bottom - JBUI.scale(2)
+                        )
+                    }
                     // Use the component border color (typically ~#ADADAD light / #5A5D63 dark),
                     // which is more visible than the tool-window separator color.
                     g2.color = UIManager.getColor("Component.borderColor")
@@ -766,25 +760,27 @@ class ChatToolWindowContent(
             }
         }
         inputSection.isOpaque = false
-        // 8px top inset doubles as the resize drag zone (see resizeHandler below)
-        inputSection.border = JBUI.Borders.empty(8, 4, 4, 4)
+        // 8px top inset doubles as the resize drag zone (see resizeHandler below).
+        // Bottom inset is 2 (not 4) so the model selector / send button sit close
+        // to the rounded bottom border instead of leaving a wide empty band.
+        inputSection.border = JBUI.Borders.empty(8, 0, 2, 4)
+        inputSection.add(sideButtonsPanel, BorderLayout.WEST)
         inputSection.add(inputRow, BorderLayout.CENTER)
 
-        val sideButtonsPanel = createSideButtonsPanel()
         controlsToolbar.targetComponent = inputSection
         innerInputToolbar.targetComponent = inputSection
 
-        val inputWithSidebar = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(4), 0))
-        inputWithSidebar.isOpaque = false
-        inputWithSidebar.add(sideButtonsPanel, BorderLayout.WEST)
-        inputWithSidebar.add(inputSection, BorderLayout.CENTER)
-
         val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
         bottomSection.isOpaque = false
-        // Left/right padding mirrors responsePanelContainer's compound(empty(4),...) so columns align.
-        // Right gets extra padding to match the chat bubble right margin; left gets 5px more.
-        bottomSection.border = JBUI.Borders.empty(0, 9, 8, 17)
-        bottomSection.add(inputWithSidebar, BorderLayout.CENTER)
+        // 8px left padding aligns the input-frame edge with the chat-message bubbles
+        // above (chat-container's 8px CSS left padding = 8px from the tool-window edge).
+        // The right side keeps an 8px gap too — the chat scrollbar sits flush against
+        // the tool-window right edge, but symmetric padding here prevents the input
+        // frame from overlapping that vertical scrollbar lane visually.
+        // 2px bottom keeps the frame close to the tool-window bottom without touching
+        // the IDE status bar.
+        bottomSection.border = JBUI.Borders.empty(0, 8, 2, 8)
+        bottomSection.add(inputSection, BorderLayout.CENTER)
 
         // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
         // We replace OnePixelSplitter (which draws a visible 1px divider) with a plain BorderLayout
@@ -899,6 +895,9 @@ class ChatToolWindowContent(
                 onTimerRecordUsage = { i, o, c ->
                     if (::processingTimerPanel.isInitialized) processingTimerPanel.recordUsage(i, o, c)
                 },
+                onTimerSetLastTurnMultiplier = { mult ->
+                    if (::processingTimerPanel.isInitialized) processingTimerPanel.setLastTurnMultiplier(mult)
+                },
                 onTimerSetCodeChangeStats = { a, r ->
                     if (::processingTimerPanel.isInitialized) processingTimerPanel.setCodeChangeStats(a, r)
                 },
@@ -906,20 +905,24 @@ class ChatToolWindowContent(
                 sendPromptDirectly = ::sendPromptDirectly,
                 restorePromptText = ::restorePromptText,
                 onTurnMineEntries = ::mineEntriesAfterTurn,
+                onQueuedMessageConsumed = { text ->
+                    // Mirror the cancel path: remove the LAST matching entry so that when
+                    // the same text was queued multiple times, "recall most recent queued
+                    // message" ordering remains intact (Up-arrow restores the oldest copies
+                    // first, newest copies last).
+                    val lastMatchingIndex = queuedTexts.lastIndexOf(text)
+                    if (lastMatchingIndex >= 0) {
+                        queuedTexts.removeAt(lastMatchingIndex)
+                    }
+                    ApplicationManager.getApplication().invokeLater { refreshShortcutHints() }
+                },
             )
         )
 
-        // Shortcut hint overlay — initialized here so the focus listener below can reference it.
+        // Shortcut hint bar — initialized here so input wiring below can reference it.
         shortcutHintPanel = PromptShortcutHintPanel()
         shortcutHintPanel.isVisible =
             com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
-        // Clicking the panel background (between key badges) focuses the input.
-        shortcutHintPanel.addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mouseClicked(e: java.awt.event.MouseEvent) {
-                promptTextArea.requestFocusInWindow()
-            }
-        })
-        shortcutHintPanel.cursor = Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR)
 
         setupPromptDragDrop(promptTextArea)
         promptTextArea.addSettingsProvider { editor ->
@@ -930,11 +933,6 @@ class ChatToolWindowContent(
             editor.settings.isUseSoftWraps =
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isSoftWrapsEnabled
             editor.setBorder(null)
-            // Overlay hides while the user types; reappears when the input is idle and empty.
-            editor.contentComponent.addFocusListener(object : java.awt.event.FocusAdapter() {
-                override fun focusGained(e: java.awt.event.FocusEvent) = updateShortcutHintVisibility()
-                override fun focusLost(e: java.awt.event.FocusEvent) = updateShortcutHintVisibility()
-            })
         }
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
@@ -945,60 +943,17 @@ class ChatToolWindowContent(
                 ApplicationManager.getApplication().invokeLater {
                     promptTextArea.revalidate()
                     checkSlashCommandAutocomplete()
-                    updateShortcutHintVisibility()
+                    // Refresh Send button enabled-state immediately on every keystroke.
+                    // ActionToolbar's default polling cycle (~500ms) makes the button feel
+                    // sluggish to enable/disable when text appears/disappears.
+                    if (::innerInputToolbar.isInitialized) {
+                        innerInputToolbar.updateActionsAsync()
+                    }
                 }
             }
         })
 
-        // Overlay container: promptTextArea fills all bounds; shortcutHintPanel is centered on top.
-        // null layout with doLayout() gives precise control without resize listeners.
-        val inputContainer = object : JPanel(null) {
-            override fun doLayout() {
-                promptTextArea.setBounds(0, 0, width, height)
-                if (shortcutHintPanel.isVisible) {
-                    val pref = shortcutHintPanel.preferredSize
-                    shortcutHintPanel.setBounds(
-                        (width - pref.width) / 2,
-                        (height - pref.height) / 2,
-                        pref.width, pref.height
-                    )
-                }
-            }
-
-            override fun getPreferredSize(): Dimension = promptTextArea.preferredSize
-            override fun getMinimumSize(): Dimension = promptTextArea.minimumSize
-        }
-        inputContainer.isOpaque = false
-        inputContainer.add(shortcutHintPanel) // index 0 = lowest z-order index = painted last = on top
-        inputContainer.add(promptTextArea)    // index 1 = behind, visible through transparent shortcutHintPanel
-        // exitCheck defers to the next EDT cycle so getMousePosition(true) reflects the cursor's
-        // new location after the event. This correctly distinguishes "moved to child" (returns
-        // non-null → still hovered) from "left the container" (returns null → not hovered).
-        // The listener is also attached to promptTextArea because Swing only fires mouseExited on
-        // a parent when the cursor moves from the parent's own area to a child — not when the
-        // cursor exits a child directly to outside the parent. Without the child listener,
-        // fast movements leave isInputHovered stuck at true.
-        val exitCheckRun = Runnable {
-            SwingUtilities.invokeLater {
-                if (inputContainer.getMousePosition(true) == null) {
-                    isInputHovered = false
-                    updateShortcutHintVisibility()
-                }
-            }
-        }
-        inputContainer.addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mouseEntered(e: java.awt.event.MouseEvent) {
-                isInputHovered = true
-                updateShortcutHintVisibility()
-            }
-
-            override fun mouseExited(e: java.awt.event.MouseEvent) = exitCheckRun.run()
-        })
-        promptTextArea.addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mouseExited(e: java.awt.event.MouseEvent) = exitCheckRun.run()
-        })
-
-        row.add(inputContainer, BorderLayout.CENTER)
+        row.add(promptTextArea, BorderLayout.CENTER)
 
         val modelGroup = DefaultActionGroup()
         modelGroup.add(ModelSelectorAction())
@@ -1012,16 +967,49 @@ class ChatToolWindowContent(
         innerInputToolbar.isReservePlaceAutoPopupIcon = false
         innerInputToolbar.component.isOpaque = false
 
-        val innerBar = JBPanel<JBPanel<*>>(BorderLayout())
-        innerBar.isOpaque = false
-        innerBar.border = JBUI.Borders.empty(0, 2, 1, 2)
-        // Model selector and Send button grouped together on the right
-        val rightSide = JBPanel<JBPanel<*>>(BorderLayout(JBUI.scale(2), 0))
-        rightSide.isOpaque = false
-        rightSide.add(modelToolbar.component, BorderLayout.WEST)
-        rightSide.add(innerInputToolbar.component, BorderLayout.EAST)
-        innerBar.add(rightSide, BorderLayout.EAST)
+        // Right-side group: model selector + Send button, packed tightly with FlowLayout
+        // so the right edge anchors to the EAST cell. FlowLayout vertically centers its
+        // row within the panel, but since the panel's preferred height matches the row
+        // exactly, that centering only matters once GridBagLayout (below) gives the cell
+        // its row height — which it does via anchor=EAST (vertical-center anchor).
+        val rightGroup = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0)).apply {
+            isOpaque = false
+        }
+        rightGroup.add(modelToolbar.component)
+        rightGroup.add(innerInputToolbar.component)
+
+        // Layout strategy: GridBagLayout with two cells.
+        //   cell 0: shortcutHintPanel    weightx=1.0  anchor=CENTER  fill=NONE
+        //   cell 1: rightGroup           weightx=0.0  anchor=EAST    fill=NONE
+        //
+        // GridBagLayout sizes the row to the tallest child's preferred height, then
+        // positions every cell's component using its anchor *within that row height*.
+        // Both CENTER and EAST anchors are vertically centered, so all three groups
+        // (hints, model toolbar, send button) land on the same horizontal midline
+        // regardless of their individual heights — solving the alignment problem that
+        // BorderLayout+FlowLayout and BoxLayout+alignmentY both failed to solve.
+        // weightx=1.0 on cell 0 absorbs all extra horizontal space, pushing the
+        // rightGroup hard against the right edge.
+        val innerBar = JBPanel<JBPanel<*>>().apply {
+            layout = GridBagLayout()
+            isOpaque = false
+            border = JBUI.Borders.empty(0, 2, 0, 2)
+        }
+        innerBar.add(shortcutHintPanel, GridBagConstraints().apply {
+            gridx = 0; gridy = 0
+            weightx = 1.0; weighty = 0.0
+            fill = GridBagConstraints.NONE
+            anchor = GridBagConstraints.CENTER
+        })
+        innerBar.add(rightGroup, GridBagConstraints().apply {
+            gridx = 1; gridy = 0
+            weightx = 0.0; weighty = 0.0
+            fill = GridBagConstraints.NONE
+            anchor = GridBagConstraints.EAST
+        })
         row.add(innerBar, BorderLayout.SOUTH)
+
+        refreshShortcutHints()
 
         return row
     }
@@ -1116,8 +1104,10 @@ class ChatToolWindowContent(
                     consolePanel.addNudgeEntry(resolveId, capturedText)
                     appendNewEntries()
                 }
+                refreshShortcutHints()
             }
         }
+        refreshShortcutHints()
     }
 
     /** Clears pending nudge state and removes the nudge bubble from the chat panel. */
@@ -1127,7 +1117,10 @@ class ChatToolWindowContent(
         val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
         psiBridge.setPendingNudge(null)
         psiBridge.setOnNudgeConsumed(null)
-        ApplicationManager.getApplication().invokeLater { consolePanel.removeNudgeBubble(nudgeId) }
+        ApplicationManager.getApplication().invokeLater {
+            consolePanel.removeNudgeBubble(nudgeId)
+            refreshShortcutHints()
+        }
     }
 
     private fun buildBubbleHtml(rawText: String, items: List<ContextItemData>): String? =
@@ -1139,17 +1132,60 @@ class ChatToolWindowContent(
 
     fun setShortcutHintsVisible() {
         if (!::shortcutHintPanel.isInitialized) return
-        updateShortcutHintVisibility()
-    }
-
-    /** Shows or hides the hint overlay based on hover, focus, and text state. */
-    private fun updateShortcutHintVisibility() {
-        if (!::shortcutHintPanel.isInitialized) return
-        val hasText = promptTextArea.text.isNotEmpty()
-        val isFocused = promptTextArea.editor?.contentComponent?.hasFocus() == true
         shortcutHintPanel.isVisible =
             com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
-                && !hasText && !isFocused && !isInputHovered
+        refreshShortcutHints()
+    }
+
+    /**
+     * Rebuilds the shortcut hint bar based on the current input/turn state.
+     *
+     * - Idle: Enter ▸ Send, Shift+Enter ▸ New line.
+     * - Busy: Enter ▸ Nudge, Ctrl+Enter ▸ Stop && send, Ctrl+Shift+Enter ▸ Queue,
+     *         Shift+Enter ▸ New line — all four are relevant during a turn.
+     * - When a nudge or queued message is pending, an extra `↑ ▸ Edit last`
+     *   hint is appended so the user knows they can recall it.
+     */
+    private fun refreshShortcutHints() {
+        if (!::shortcutHintPanel.isInitialized) return
+        if (!shortcutHintPanel.isVisible) return
+        val list = mutableListOf<Pair<KeyStroke, String>>()
+        if (isSending) {
+            list += PromptShortcutAction.resolveKeystroke(
+                PromptShortcutAction.SEND_ID,
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0)
+            ) to "Nudge"
+            list += PromptShortcutAction.resolveKeystroke(
+                PromptShortcutAction.STOP_AND_SEND_ID,
+                KeyStroke.getKeyStroke(
+                    java.awt.event.KeyEvent.VK_ENTER,
+                    java.awt.event.InputEvent.CTRL_DOWN_MASK
+                )
+            ) to "Stop && send"
+            list += PromptShortcutAction.resolveKeystroke(
+                PromptShortcutAction.QUEUE_ID,
+                KeyStroke.getKeyStroke(
+                    java.awt.event.KeyEvent.VK_ENTER,
+                    java.awt.event.InputEvent.CTRL_DOWN_MASK or java.awt.event.InputEvent.SHIFT_DOWN_MASK
+                )
+            ) to "Queue"
+        } else {
+            list += PromptShortcutAction.resolveKeystroke(
+                PromptShortcutAction.SEND_ID,
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0)
+            ) to "Send"
+        }
+        list += PromptShortcutAction.resolveKeystroke(
+            PromptShortcutAction.NEW_LINE_ID,
+            KeyStroke.getKeyStroke(
+                java.awt.event.KeyEvent.VK_ENTER,
+                java.awt.event.InputEvent.SHIFT_DOWN_MASK
+            )
+        ) to "New line"
+        if (pendingNudgeId != null || queuedTexts.isNotEmpty()) {
+            list += KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0) to "Edit last"
+        }
+        shortcutHintPanel.setShortcuts(list)
     }
 
     private fun setSendingState(sending: Boolean) {
@@ -1189,6 +1225,7 @@ class ChatToolWindowContent(
             updatePromptPlaceholder()
             controlsToolbar.updateActionsAsync()
             innerInputToolbar.updateActionsAsync()
+            refreshShortcutHints()
             if (::processingTimerPanel.isInitialized) {
                 if (sending) processingTimerPanel.start() else processingTimerPanel.stop()
             }
@@ -1258,29 +1295,52 @@ class ChatToolWindowContent(
         }
     }
 
-    /**
-     * Send button inside the input box.
-     *
-     * - Idle: sends the prompt (enabled only when logged in).
-     * - Pending ask-user: submits the user's answer (same as idle path).
-     * - Agent running: opens a popup with Nudge / Queue / Stop and Send.
-     *
-     * Enter key handling is separate (keyboard shortcuts route to the same underlying functions)
-     * and is unchanged by this class.
-     */
-    private inner class SendAction : AnAction() {
+    private inner class SendAction : AnAction(), com.intellij.openapi.actionSystem.ex.CustomComponentAction {
         private val sendIcon = com.intellij.openapi.util.IconLoader.getIcon(
             "/icons/send.svg", SendAction::class.java
         )
 
+        // Captured at createCustomComponent time so showSendDropdown has a stable popup anchor.
+        private var sendButton: JButton? = null
+
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
+            // Primary-styled labeled button so the Send action reads as the dominant CTA.
+            // Icon on the left, "Send" text on the right. The label stays "Send" in all
+            // states; the button's behavior (direct send vs. nudge/queue/stop dropdown)
+            // depends on isSending and is handled in the action listener below.
+            val button = JButton(presentation.text ?: "Send", sendIcon)
+            button.putClientProperty("JButton.buttonType", "primary")
+            button.isFocusable = false
+            button.margin = JBUI.insets(2, 8)
+            button.toolTipText = presentation.description
+            // Direct routing avoids the deprecated AnActionEvent.createFromAnAction.
+            button.addActionListener {
+                if (!isSending || consolePanel.hasPendingAskUserRequest()) {
+                    onSendStopClicked()
+                } else {
+                    showSendDropdown(button)
+                }
+            }
+            sendButton = button
+            return button
+        }
+
+        override fun updateCustomComponent(component: JComponent, presentation: Presentation) {
+            (component as? JButton)?.let { btn ->
+                btn.isEnabled = presentation.isEnabled
+                btn.text = presentation.text
+                btn.toolTipText = presentation.description
+            }
+        }
 
         override fun update(e: AnActionEvent) {
             val isLoggedIn = authService.pendingAuthError == null
             val hasText = promptTextArea.text.trim().isNotEmpty()
             if (isSending && !consolePanel.hasPendingAskUserRequest()) {
                 e.presentation.icon = sendIcon
-                e.presentation.text = "More"
+                e.presentation.text = "Send"
                 e.presentation.description = "Nudge, queue, or stop and send"
                 e.presentation.isEnabled = hasText
             } else {
@@ -1292,16 +1352,15 @@ class ChatToolWindowContent(
         }
 
         override fun actionPerformed(e: AnActionEvent) {
-            // Pending ask-user or idle: normal send/answer flow.
             if (!isSending || consolePanel.hasPendingAskUserRequest()) {
                 onSendStopClicked()
                 return
             }
-            // Agent is running: show nudge/queue/stop-and-send dropdown.
-            val inputEvent = e.inputEvent ?: return
-            val component = inputEvent.source as? Component ?: return
-            val hasText = promptTextArea.text.trim().isNotEmpty()
+            showSendDropdown(sendButton ?: return)
+        }
 
+        private fun showSendDropdown(anchor: Component) {
+            val hasText = promptTextArea.text.trim().isNotEmpty()
             val group = DefaultActionGroup()
             group.add(object : AnAction("Nudge", "Send a nudge to the running agent", AllIcons.Actions.Forward) {
                 override fun getActionUpdateThread() = ActionUpdateThread.EDT
@@ -1332,10 +1391,11 @@ class ChatToolWindowContent(
 
             val popup = com.intellij.openapi.ui.popup.JBPopupFactory.getInstance()
                 .createActionGroupPopup(
-                    null, group, e.dataContext,
+                    null, group,
+                    com.intellij.openapi.actionSystem.impl.SimpleDataContext.getProjectContext(project),
                     com.intellij.openapi.ui.popup.JBPopupFactory.ActionSelectionAid.SPEEDSEARCH, false
                 )
-            popup.showUnderneathOf(component)
+            popup.showUnderneathOf(anchor)
         }
     }
 
@@ -1540,6 +1600,17 @@ class ChatToolWindowContent(
             AllIcons.Actions.Exit
         ) {
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                // The plugin no longer manages credentials for Claude or Codex — there is
+                // no programmatic logout for either CLI (Claude has no clean revoke command;
+                // Codex has no `codex logout` subcommand at all). Hide the button for both
+                // so users aren't misled into thinking it does anything.
+                // See docs/AUTH-HANDLING.md.
+                val agentId = agentManager.getActiveProfile().id
+                val isClaudeOrCodex = agentId == com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient.PROFILE_ID
+                    || agentId == com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient.PROFILE_ID
+                e.presentation.isEnabledAndVisible = !isClaudeOrCodex
+            }
             override fun actionPerformed(e: AnActionEvent) {
                 LOG.info("Logout: disabling auto-connect and disconnecting")
                 agentManager.isAutoConnect = false
@@ -1735,7 +1806,13 @@ class ChatToolWindowContent(
         chatConsolePanel.onCancelQueuedMessage = { id, text ->
             val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
             psiBridge.removeQueuedMessage(text)
-            ApplicationManager.getApplication().invokeLater { consolePanel.removeQueuedMessage(id) }
+            // Drop the most-recent matching entry so Up-arrow recall reflects what's still queued.
+            val lastIdx = queuedTexts.indexOfLast { it == text }
+            if (lastIdx >= 0) queuedTexts.removeAt(lastIdx)
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel.removeQueuedMessage(id)
+                refreshShortcutHints()
+            }
         }
         chatConsolePanel.onAutoScrollDisabled = {
             autoScrollEnabled = false
@@ -1812,6 +1889,7 @@ class ChatToolWindowContent(
         registerCtrlEnterNudge(contentComponent)
         registerCtrlShiftEnterQueue(contentComponent)
         registerShowShortcutsPopup(contentComponent)
+        registerUpArrowRecall(contentComponent)
         registerPasteIntercept(editor, contentComponent)
         registerTriggerCharDetection(editor)
     }
@@ -1901,6 +1979,54 @@ class ChatToolWindowContent(
         )
     }
 
+    /**
+     * Up-arrow recall: when the prompt is empty and a nudge or queued message
+     * is pending, pop the most recent one back into the input box for editing.
+     * Pending nudge takes priority over queued messages (it's the more recent
+     * pending action). The Up-arrow is only consumed when the input is empty
+     * so multi-line caret navigation still works once the user starts typing.
+     */
+    private fun registerUpArrowRecall(contentComponent: JComponent) {
+        object : AnAction() {
+            override fun getActionUpdateThread(): com.intellij.openapi.actionSystem.ActionUpdateThread =
+                com.intellij.openapi.actionSystem.ActionUpdateThread.EDT
+
+            override fun update(e: AnActionEvent) {
+                // Only consume Up when the prompt is empty AND something is pending to recall.
+                // When disabled, the keystroke falls through to the editor's default
+                // caret-up behavior so multi-line navigation isn't blocked.
+                val empty = promptTextArea.text.isEmpty()
+                val hasPending = pendingNudgeId != null || queuedTexts.isNotEmpty()
+                e.presentation.isEnabledAndVisible = empty && hasPending
+            }
+
+            override fun actionPerformed(e: AnActionEvent) {
+                if (promptTextArea.text.isNotEmpty()) return
+                val nudgeId = pendingNudgeId
+                val nudgeText = pendingNudgeText
+                if (nudgeId != null && nudgeText != null) {
+                    promptTextArea.text = nudgeText
+                    clearAndRemoveNudge(nudgeId)
+                    refreshShortcutHints()
+                    return
+                }
+                val lastQueued = queuedTexts.removeLastOrNull() ?: return
+                promptTextArea.text = lastQueued
+                val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
+                psiBridge.removeQueuedMessage(lastQueued)
+                ApplicationManager.getApplication().invokeLater {
+                    consolePanel.removeQueuedMessageByText(lastQueued)
+                    refreshShortcutHints()
+                }
+            }
+        }.registerCustomShortcutSet(
+            com.intellij.openapi.actionSystem.CustomShortcutSet(
+                KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0)
+            ),
+            contentComponent
+        )
+    }
+
     private fun onQueueMessageClicked() {
         val rawText = promptTextArea.text.trim()
         if (rawText.isEmpty()) return
@@ -1910,6 +2036,8 @@ class ChatToolWindowContent(
         consolePanel.showQueuedMessage(id, rawText)
         com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
             .enqueueMessage(rawText)
+        queuedTexts.addLast(rawText)
+        refreshShortcutHints()
     }
 
     private fun onForceStopAndSend() {
@@ -2157,12 +2285,30 @@ class ChatToolWindowContent(
                     if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
                     val lastStats = entries.filterIsInstance<EntryData.TurnStats>().lastOrNull()
                     if (lastStats != null && ::processingTimerPanel.isInitialized) {
-                        val turnCount = entries.count { it is EntryData.TurnStats }
+                        val turnStatsList = entries.filterIsInstance<EntryData.TurnStats>()
+                        val turnCount = turnStatsList.size
+                        // Sum each turn's premium-request weight so the side panel's "Premium req"
+                        // total reflects the entire restored session — not just turns since IDE start.
+                        // Aligns with the restored "Turns" count above (both span the whole session).
+                        val totalPremium = turnStatsList.sumOf {
+                            BillingCalculator.parseMultiplier(it.multiplier.ifEmpty { "1x" })
+                        }
+                        billing.restoreSessionCounters(turnCount, totalPremium)
                         processingTimerPanel.restoreSessionStats(
                             lastStats.totalDurationMs, lastStats.totalInputTokens,
                             lastStats.totalOutputTokens, lastStats.totalCostUsd,
                             lastStats.totalToolCalls, lastStats.totalLinesAdded,
                             lastStats.totalLinesRemoved, turnCount
+                        )
+                        processingTimerPanel.restoreLastTurnStats(
+                            lastStats.durationMs / 1000,
+                            lastStats.inputTokens.toInt(),
+                            lastStats.outputTokens.toInt(),
+                            if (lastStats.costUsd > 0.0) lastStats.costUsd else null,
+                            lastStats.toolCallCount,
+                            lastStats.linesAdded,
+                            lastStats.linesRemoved,
+                            lastStats.multiplier
                         )
                     }
                     persistedEntryCount = conversationReplayer.totalLoadedCount()

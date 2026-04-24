@@ -17,6 +17,11 @@ export default class ChatContainer extends HTMLElement {
     private _touchStartY = 0;
     private _wheelRAF: number | null = null;
     private _resizeObs: ResizeObserver | null = null;
+    // Per-instance shared ResizeObserver for table overflow detection. Reusing one
+    // observer across all tables avoids the per-table overhead and reference retention
+    // that would accumulate in long chats.
+    private _tableResizeObs: ResizeObserver | null = null;
+    private _tableOverflowCallbacks: WeakMap<Element, () => void> = new WeakMap();
 
     connectedCallback(): void {
         if (this._init) return;
@@ -122,6 +127,7 @@ export default class ChatContainer extends HTMLElement {
                 this._copyRAF = requestAnimationFrame(() => {
                     this._copyRAF = null;
                     this._setupCodeBlocks();
+                    this._setupTables();
                 });
             }
         });
@@ -187,6 +193,77 @@ export default class ChatContainer extends HTMLElement {
             toolbar.append(scratchBtn, wrapBtn, copyBtn);
             pre.prepend(toolbar);
         });
+    }
+
+    private _setupTables(): void {
+        this._messages.querySelectorAll('table:not([data-table-btn])').forEach(tableEl => {
+            const table = tableEl as HTMLTableElement;
+            if (table.closest('message-bubble[streaming]')) return;
+            table.dataset.tableBtn = '1';
+
+            const btn = document.createElement('button');
+            btn.className = 'table-open-btn';
+            btn.type = 'button';
+            btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 1.5H4a1.5 1.5 0 0 0-1.5 1.5v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V6L9 1.5z"/><polyline points="9 1.5 9 6 13.5 6"/></svg><span>Open in editor</span>';
+            btn.title = 'Open full table in a scratch editor';
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                globalThis._bridge?.openScratch('md', this._tableToMarkdown(table));
+            });
+
+            const wrap = document.createElement('div');
+            wrap.className = 'table-wrap';
+            table.parentNode?.insertBefore(wrap, table);
+            wrap.appendChild(table);
+            wrap.appendChild(btn);
+
+            const updateOverflow = () => {
+                wrap.classList.toggle('table-overflow', table.scrollWidth > table.clientWidth + 1);
+            };
+            updateOverflow();
+            // Lazily create a single shared observer for *all* tables in this container,
+            // and dispatch resize events to the per-table callback via a WeakMap. Avoids
+            // creating a fresh observer per table (which would also retain references to
+            // tables removed from the DOM until GC).
+            if (!this._tableResizeObs) {
+                this._tableResizeObs = new ResizeObserver((entries) => {
+                    for (const entry of entries) {
+                        const cb = this._tableOverflowCallbacks.get(entry.target);
+                        if (cb) cb();
+                    }
+                });
+            }
+            this._tableOverflowCallbacks.set(table, updateOverflow);
+            this._tableResizeObs.observe(table);
+        });
+    }
+
+    private _tableToMarkdown(table: HTMLTableElement): string {
+        const rows: string[][] = [];
+        table.querySelectorAll('tr').forEach(tr => {
+            const cells: string[] = [];
+            tr.querySelectorAll('th, td').forEach(cell => {
+                cells.push((cell.textContent ?? '').replaceAll(/\s+/g, ' ').replaceAll('|', String.raw`\|`).trim());
+            });
+            if (cells.length > 0) rows.push(cells);
+        });
+        if (rows.length === 0) return '';
+        const width = Math.max(...rows.map(r => r.length));
+        const pad = (r: string[]) => {
+            while (r.length < width) r.push('');
+            return r;
+        };
+        const lines: string[] = [];
+        const header = pad(rows[0]);
+        lines.push(
+            '| ' + header.join(' | ') + ' |',
+            '| ' + header.map(() => '---').join(' | ') + ' |',
+        );
+        for (let i = 1; i < rows.length; i++) {
+            lines.push('| ' + pad(rows[i]).join(' | ') + ' |');
+        }
+        return lines.join('\n') + '\n';
     }
 
     private _resetCopyButton(btn: HTMLButtonElement): void {
@@ -290,6 +367,8 @@ export default class ChatContainer extends HTMLElement {
         this._observer?.disconnect();
         this._copyObs?.disconnect();
         this._resizeObs?.disconnect();
+        this._tableResizeObs?.disconnect();
+        this._tableResizeObs = null;
         if (this._onScroll) this.removeEventListener('scroll', this._onScroll);
         if (this._onWheel) this.removeEventListener('wheel', this._onWheel);
         if (this._onTouchStart) this.removeEventListener('touchstart', this._onTouchStart);

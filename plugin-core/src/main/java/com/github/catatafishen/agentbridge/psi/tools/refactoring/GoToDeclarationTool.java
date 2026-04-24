@@ -41,6 +41,11 @@ public final class GoToDeclarationTool extends RefactoringTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Go to Declaration";
     }

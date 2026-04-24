@@ -436,6 +436,20 @@ public final class PsiBridgeService implements Disposable {
         try (DaemonWaiter daemonWaiter = filePathForHighlights != null
             ? new DaemonWaiter(project, vfForHighlights, preWriteStamp) : null) {
 
+            String readinessError = ToolReadinessGate.checkReady(project, req.def());
+            if (readinessError != null) {
+                if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
+                success = false;
+                errorMessage = readinessError;
+                outputSize = readinessError.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+                // Register the chip first so the result is correlated with a real chip,
+                // matching the normal execution path in executeWithSyncLock().
+                ToolChipRegistry registry = ToolChipRegistry.getInstance(project);
+                registry.registerMcp(req.toolName(), req.arguments(), req.def().kind().value(), req.toolUseId());
+                registry.storeMcpResult(req.toolName(), req.arguments(), readinessError);
+                return readinessError;
+            }
+
             String result = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), req.toolUseId(), requiresSync);
             if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
 

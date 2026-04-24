@@ -30,6 +30,12 @@ data class PromptOrchestratorCallbacks(
     val requestFocusAfterTurn: () -> Unit,
     val onTimerIncrementToolCalls: () -> Unit,
     val onTimerRecordUsage: (inputTokens: Int, outputTokens: Int, costUsd: Double?) -> Unit,
+    /**
+     * Reports the multiplier of the just-completed turn so the side panel's "Last turn"
+     * section can display the correct premium-request weight. Always called once at turn
+     * completion; the multiplier may be null/empty when unknown (handled as 1.0 downstream).
+     */
+    val onTimerSetLastTurnMultiplier: (multiplier: String?) -> Unit,
     val onTimerSetCodeChangeStats: (added: Int, removed: Int) -> Unit,
     /** Called for plan-tree and file-tracking side-effects (remains in ChatToolWindowContent). */
     val onClientUpdate: (SessionUpdate) -> Unit,
@@ -39,6 +45,11 @@ data class PromptOrchestratorCallbacks(
     val restorePromptText: (rawText: String) -> Unit,
     /** Called after turn completion to mine entries into semantic memory (async, non-blocking). */
     val onTurnMineEntries: (sessionId: String, agentName: String) -> Unit,
+    /**
+     * Called when a queued message is auto-dequeued by the orchestrator at the end
+     * of a turn so the UI layer can drop it from its recall stack.
+     */
+    val onQueuedMessageConsumed: (text: String) -> Unit,
 )
 
 /** Stored banner message to re-display at the start of the next prompt turn. */
@@ -413,9 +424,11 @@ class PromptOrchestrator(
             val multiplier = getModelMultiplier(turnModelId)
             consolePanel().finishResponse(turnToolCallCount, turnModelId, multiplier ?: "")
             billing.recordTurnCompleted(multiplier)
+            callbacks.onTimerSetLastTurnMultiplier(multiplier)
             callbacks.onTimerRecordUsage(0, 0, 0.0)
         } else {
             consolePanel().finishResponse(turnToolCallCount, turnModelId, "")
+            callbacks.onTimerSetLastTurnMultiplier(null)
             callbacks.onTimerRecordUsage(turnInputTokens, turnOutputTokens, turnCostUsd)
         }
 
@@ -456,6 +469,7 @@ class PromptOrchestrator(
 
         val nextMsg = PsiBridgeService.getInstance(project).nextQueuedMessage
         if (nextMsg != null) {
+            callbacks.onQueuedMessageConsumed(nextMsg)
             ApplicationManager.getApplication().invokeLater {
                 consolePanel().removeQueuedMessageByText(nextMsg)
                 callbacks.sendPromptDirectly(nextMsg)

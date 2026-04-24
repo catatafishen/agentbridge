@@ -387,4 +387,75 @@ class CodexAppServerClientTest {
             assertEquals(err.toString(), CodexAppServerClient.extractJsonRpcErrorMessage(err));
         }
     }
+
+    // ── isCodexAuthError (package-private static) ───────────────────────
+
+    @Nested
+    class IsCodexAuthError {
+
+        @Test
+        void nullInput_returnsFalse() {
+            assertFalse(CodexAppServerClient.isCodexAuthError(null));
+        }
+
+        @Test
+        void emptyInput_returnsFalse() {
+            assertFalse(CodexAppServerClient.isCodexAuthError(""));
+        }
+
+        @Test
+        void notAuthenticated_returnsTrue() {
+            assertTrue(CodexAppServerClient.isCodexAuthError("Not authenticated with Codex"));
+        }
+
+        @Test
+        void notAuthenticated_caseInsensitive() {
+            assertTrue(CodexAppServerClient.isCodexAuthError("NOT AUTHENTICATED"));
+        }
+
+        @Test
+        void unauthorized_returnsTrue() {
+            assertTrue(CodexAppServerClient.isCodexAuthError("Unauthorized request"));
+        }
+
+        @Test
+        void authenticationRequired_returnsTrue() {
+            assertTrue(CodexAppServerClient.isCodexAuthError("Authentication required"));
+        }
+
+        @Test
+        void invalidApiKey_returnsTrue() {
+            assertTrue(CodexAppServerClient.isCodexAuthError("Invalid API key supplied"));
+        }
+
+        @Test
+        void pleaseRunCodexLogin_returnsTrue() {
+            assertTrue(CodexAppServerClient.isCodexAuthError("Please run codex login to continue"));
+        }
+
+        @Test
+        void pleaseLogIn_returnsTrue() {
+            assertTrue(CodexAppServerClient.isCodexAuthError("Please log in via the CLI"));
+        }
+
+        @Test
+        void http401_returnsTrue() {
+            assertTrue(CodexAppServerClient.isCodexAuthError("HTTP 401 returned"));
+        }
+
+        @Test
+        void unrelatedError_returnsFalse() {
+            assertFalse(CodexAppServerClient.isCodexAuthError("Tool 'apply_patch' failed: bad diff"));
+        }
+
+        @Test
+        void rateLimit_returnsFalse() {
+            assertFalse(CodexAppServerClient.isCodexAuthError("Rate limit exceeded"));
+        }
+
+        @Test
+        void networkError_returnsFalse() {
+            assertFalse(CodexAppServerClient.isCodexAuthError("Connection refused"));
+        }
+    }
 }

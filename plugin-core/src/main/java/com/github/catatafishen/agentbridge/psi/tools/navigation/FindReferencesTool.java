@@ -32,6 +32,11 @@ public final class FindReferencesTool extends NavigationTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Find References";
     }
@@ -39,7 +44,9 @@ public final class FindReferencesTool extends NavigationTool {
     @Override
     public @NotNull String description() {
         return "Find all usages of a symbol throughout the project. Semantic — finds references even through renames and imports. " +
-            "Returns file paths and line numbers. For textual search, use search_text. For finding symbol definitions, use search_symbols.";
+            "Returns file paths and line numbers. Use the 'scope' parameter to also search inside library / JDK sources " +
+            "(after running download_sources). " +
+            "For textual search, use search_text. For finding symbol definitions, use search_symbols.";
     }
 
     @Override
@@ -56,7 +63,8 @@ public final class FindReferencesTool extends NavigationTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required("symbol", TYPE_STRING, "The exact symbol name to search for"),
-            Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.java')", "")
+            Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.java')", ""),
+            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT)
         );
     }
 
@@ -71,12 +79,13 @@ public final class FindReferencesTool extends NavigationTool {
             return "Error: 'symbol' parameter is required";
         String symbol = args.get(PARAM_SYMBOL).getAsString();
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
+        String scopeName = readScopeParam(args);
 
         showSearchFeedback("🔍 Finding references: " + symbol);
         String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             List<String> results = new ArrayList<>();
             String basePath = project.getBasePath();
-            GlobalSearchScope scope = GlobalSearchScope.projectScope(project);
+            GlobalSearchScope scope = resolveScope(scopeName);
 
             PsiElement definition = findDefinition(symbol, scope);
             if (definition != null) {
@@ -109,9 +118,7 @@ public final class FindReferencesTool extends NavigationTool {
             (element, offsetInElement) -> {
                 com.intellij.psi.PsiFile file = element.getContainingFile();
                 if (file == null || file.getVirtualFile() == null) return true;
-                String relPath = basePath != null
-                    ? relativize(basePath, file.getVirtualFile().getPath())
-                    : file.getVirtualFile().getPath();
+                String relPath = safeRelativize(basePath, file.getVirtualFile().getPath());
                 if (!filePattern.isEmpty() && ToolUtils.doesNotMatchGlob(relPath, filePattern, compiledGlob))
                     return true;
 

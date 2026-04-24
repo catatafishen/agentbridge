@@ -49,6 +49,11 @@ public final class ApplyActionTool extends QualityTool {
     }
 
     @Override
+    public boolean requiresInteractiveEdt() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Apply Action";
     }

@@ -43,6 +43,7 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
 
     private GetFileOutlineTool getFileOutlineTool;
     private SearchSymbolsTool searchSymbolsTool;
+    private FindReferencesTool findReferencesTool;
     /**
      * Real temp directory for tests that need {@code LocalFileSystem#findFileByPath}.
      */
@@ -57,6 +58,7 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
             .setValue(ToolLayerSettings.FOLLOW_AGENT_FILES_KEY, "false");
         getFileOutlineTool = new GetFileOutlineTool(getProject());
         searchSymbolsTool = new SearchSymbolsTool(getProject());
+        findReferencesTool = new FindReferencesTool(getProject());
         tempDir = Files.createTempDirectory("nav-tools-test");
     }
 
@@ -71,8 +73,13 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
             // Remove temp files created during this test.
             try (var paths = Files.walk(tempDir)) {
                 paths.sorted(java.util.Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(java.io.File::delete);
+                    .forEach(p -> {
+                        try {
+                            Files.deleteIfExists(p);
+                        } catch (IOException ignored) {
+                            // Best-effort cleanup — not a test failure
+                        }
+                    });
             }
         } finally {
             super.tearDown();
@@ -80,18 +87,6 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /**
-     * Creates a real file on disk and registers it in the VFS so that
-     * {@code LocalFileSystem#findFileByPath} can find it during {@code execute()}.
-     */
-    private String createTestFile(String name, String content) throws IOException {
-        Path file = tempDir.resolve(name);
-        Files.writeString(file, content);
-        VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(file.toString());
-        assertNotNull("Failed to register test file in VFS: " + file, vf);
-        return file.toString();
-    }
 
     /**
      * Builds a {@link JsonObject} from alternating key/value String pairs.
@@ -114,13 +109,18 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
      * via {@code LocalFileSystem#findFileByPath}.
      */
     public void testGetFileOutlineWithJavaFile() throws Exception {
-        String path = createTestFile("OutlineClass.java", """
+        // Create a real disk file and register it in the VFS so LocalFileSystem can find it.
+        Path filePath = tempDir.resolve("OutlineClass.java");
+        Files.writeString(filePath, """
             public class OutlineClass {
                 public String greet() {
                     return "hello";
                 }
             }
             """);
+        VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath.toString());
+        assertNotNull("Failed to register test file in VFS: " + filePath, vf);
+        String path = filePath.toString();
 
         String result = getFileOutlineTool.execute(args("path", path));
 
@@ -195,6 +195,77 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
     }
 
     /**
+     * Explicit {@code scope=project} must behave the same as the default and find
+     * a class declared in the project — guards backward compatibility for callers
+     * that always pass the parameter.
+     */
+    public void testSearchSymbolsExplicitProjectScopeFindsProjectSymbol() {
+        myFixture.addFileToProject(
+            "ScopedSymbol_4451.java",
+            """
+                public class ScopedSymbol_4451 {
+                }
+                """);
+
+        String result = searchSymbolsTool.execute(
+            args("query", "ScopedSymbol_4451", "scope", "project"));
+
+        assertFalse("Expected non-error result, got: " + result,
+            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertTrue("Expected class name in search result, got: " + result,
+            result.contains("ScopedSymbol_4451"));
+    }
+
+    /**
+     * When {@code scope=libraries} is requested, the search must skip project
+     * sources entirely. A class declared in the project must therefore NOT
+     * appear in the results — this proves the scope plumbing is honoured even
+     * if no library sources happen to be attached to the test fixture.
+     */
+    public void testSearchSymbolsLibraryScopeExcludesProjectSymbols() {
+        myFixture.addFileToProject(
+            "ProjectOnlyClass_8812.java",
+            """
+                public class ProjectOnlyClass_8812 {
+                }
+                """);
+
+        String result = searchSymbolsTool.execute(
+            args("query", "ProjectOnlyClass_8812", "scope", "libraries"));
+
+        assertFalse("Project symbol must not leak into libraries scope, got: " + result,
+            result.contains("ProjectOnlyClass_8812.java"));
+    }
+
+    /**
+     * Wildcard listing combined with a non-project scope is rejected with an
+     * actionable message instead of silently scanning every library file.
+     */
+    public void testSearchSymbolsWildcardWithLibraryScopeReturnsError() {
+        String result = searchSymbolsTool.execute(
+            args("query", "*", "type", "class", "scope", "libraries"));
+
+        assertTrue("Expected wildcard-scope error, got: " + result,
+            result.contains("Wildcard symbol listing is only supported with scope='project'"));
+    }
+
+    /**
+     * The tool schema must declare the new {@code scope} parameter so MCP clients
+     * can advertise it to agents.
+     */
+    public void testSearchSymbolsSchemaDeclaresScopeParameter() {
+        JsonObject schema = searchSymbolsTool.inputSchema();
+        JsonObject properties = schema.getAsJsonObject("properties");
+
+        assertTrue("Schema must include 'scope' property",
+            properties.has("scope"));
+        assertEquals("string",
+            properties.getAsJsonObject("scope").get("type").getAsString());
+        assertEquals("project",
+            properties.getAsJsonObject("scope").get("default").getAsString());
+    }
+
+    /**
      * When the {@code query} parameter is absent, the tool defaults to an empty
      * query which triggers the wildcard path. Without a {@code type} filter, the
      * tool returns guidance asking for a type filter rather than an empty result.
@@ -209,5 +280,54 @@ public class NavigationToolsExtendedTest extends BasePlatformTestCase {
         // The wildcard path without a type filter returns a guidance message.
         assertTrue("Expected guidance about 'type' filter, got: " + result,
             result.contains("type"));
+    }
+
+    // ── FindReferencesTool ────────────────────────────────────────────────────
+
+    /**
+     * The tool schema must declare the {@code scope} parameter so MCP clients
+     * can advertise it to agents.
+     */
+    public void testFindReferencesToolSchemaDeclaresScopeParameter() {
+        JsonObject schema = findReferencesTool.inputSchema();
+        JsonObject properties = schema.getAsJsonObject("properties");
+
+        assertTrue("Schema must include 'scope' property", properties.has("scope"));
+        assertEquals("string",
+            properties.getAsJsonObject("scope").get("type").getAsString());
+    }
+
+    /**
+     * When {@code scope=libraries} is requested, the search must skip project
+     * sources entirely. A symbol declared in the project must therefore NOT
+     * appear in the results — proves the scope plumbing is honoured.
+     */
+    public void testFindReferencesLibraryScopeExcludesProjectSymbols() {
+        myFixture.addFileToProject(
+            "RefTarget_5522.java",
+            """
+                public class RefTarget_5522 {
+                    public void projectMethod() {}
+                }
+                """);
+        myFixture.addFileToProject(
+            "RefCaller_5522.java",
+            """
+                public class RefCaller_5522 {
+                    public void call() {
+                        new RefTarget_5522().projectMethod();
+                    }
+                }
+                """);
+
+        String result = findReferencesTool.execute(
+            args("symbol", "projectMethod", "scope", "libraries"));
+
+        // The "no references found" message naturally echoes the symbol name —
+        // assert only that no project file reference leaked through.
+        assertFalse("Project file must not appear in libraries scope results, got: " + result,
+            result.contains("RefCaller_5522.java") || result.contains("RefTarget_5522.java"));
+        assertTrue("Expected a 'no references' message, got: " + result,
+            result.contains("No references found"));
     }
 }

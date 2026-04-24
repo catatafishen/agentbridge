@@ -1,4 +1,4 @@
-import {decodeBase64, escHtml} from './helpers';
+import {decodeBase64, escHtml, hideRedundantTimestamp} from './helpers';
 import {renderBatchFragment} from './BatchRenderer';
 import type {TurnContext} from './types';
 
@@ -211,6 +211,7 @@ const ChatController = {
         } else {
             msgs.appendChild(msg);
         }
+        if (msg.tagName === 'CHAT-MESSAGE') hideRedundantTimestamp(msg);
     },
 
     _collapseThinkingFor(ctx: TurnContext & {

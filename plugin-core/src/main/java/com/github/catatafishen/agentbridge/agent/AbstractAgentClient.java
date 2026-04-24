@@ -330,25 +330,16 @@ public abstract class AbstractAgentClient {
 
     /**
      * Checks whether this agent is authenticated and ready to accept prompts.
-     * Default implementation uses {@link #isHealthy()}.
      *
-     * @return {@code null} if authenticated and ready, or a human-readable error message otherwise
+     * <p>This is a liveness check only — the plugin never inspects local credential
+     * stores (files, OS keychain, etc.). Authentication state is observed at runtime
+     * from the agent's own error responses; see {@code docs/AUTH-HANDLING.md}.</p>
+     *
+     * @return {@code null} if the agent is started, or a human-readable error message otherwise
      */
     @Nullable
     public String checkAuthentication() {
         return isHealthy() ? null : "Agent not started";
-    }
-
-    /**
-     * Checks authentication state without requiring the agent process to be started.
-     * Override in subclasses that can determine auth state from local credential files.
-     * Default returns {@code null} (no pre-start check available).
-     *
-     * @return {@code null} if credentials look valid (or unknown), or a human-readable error message
-     */
-    @Nullable
-    public String checkAuthenticationPreStart() {
-        return null;
     }
 
     // ─── Auth ────────────────────────────────────────

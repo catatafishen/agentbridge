@@ -8,13 +8,27 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
+import com.intellij.util.concurrency.AppExecutorUtil
+import com.intellij.vcs.log.impl.HashImpl
+import com.intellij.vcs.log.impl.VcsProjectLog
+import git4idea.repo.GitRepositoryManager
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /** Handles file and git-commit link navigation from the chat JCEF panel. */
 class FileNavigator(private val project: Project) {
 
     private val log = Logger.getInstance(FileNavigator::class.java)
+
+    /**
+     * Cache of SHA → isCommit results. Populated by background checks; EDT only reads.
+     * Negative results are also cached to avoid repeated background submissions.
+     */
+    private val commitCache = ConcurrentHashMap<String, Boolean>()
+
+    /** SHAs currently being checked in the background — prevents duplicate submissions. */
+    private val pendingChecks: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     fun handleFileLink(href: String) {
         if (href.startsWith("gitshow://")) {
@@ -50,21 +64,28 @@ class FileNavigator(private val project: Project) {
     }
 
     private fun handleGitShowLink(hash: String) {
-        ApplicationManager.getApplication().invokeLater {
+        // Resolve full hash off EDT — git rev-parse blocks otherwise.
+        AppExecutorUtil.getAppExecutorService().submit {
             try {
-                val repos = git4idea.repo.GitRepositoryManager.getInstance(project).repositories.toList()
+                val repos = GitRepositoryManager.getInstance(project).repositories.toList()
                 val root = repos.firstOrNull()?.root
                 if (root == null) {
                     log.warn("No VCS root found for git commit link $hash")
-                    return@invokeLater
+                    return@submit
                 }
                 val fullHash = resolveFullHash(hash) ?: hash
-                val hashObj = com.intellij.vcs.log.impl.HashImpl.build(fullHash)
-                val vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project)
-                vcsLog.dataManager?.refresh(listOf(root))
-                showRevisionWhenIndexed(root, hashObj, attemptsLeft = 25, delayMs = 200)
+                val hashObj = HashImpl.build(fullHash)
+                ApplicationManager.getApplication().invokeLater {
+                    try {
+                        val vcsLog = VcsProjectLog.getInstance(project)
+                        vcsLog.dataManager?.refresh(listOf(root))
+                        showRevisionWhenIndexed(root, hashObj, attemptsLeft = 25, delayMs = 200)
+                    } catch (e: Exception) {
+                        log.warn("Failed to open git commit $hash", e)
+                    }
+                }
             } catch (e: Exception) {
-                log.warn("Failed to open git commit $hash", e)
+                log.warn("Failed to resolve git commit $hash", e)
             }
         }
     }
@@ -75,7 +96,7 @@ class FileNavigator(private val project: Project) {
         attemptsLeft: Int,
         delayMs: Long,
     ) {
-        val dm = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project).dataManager
+        val dm = VcsProjectLog.getInstance(project).dataManager
         val commitId = com.intellij.vcs.log.CommitId(hash, root)
         val indexed = dm != null && dm.storage.containsCommit(commitId)
         if (indexed || attemptsLeft <= 0) {
@@ -91,8 +112,9 @@ class FileNavigator(private val project: Project) {
 
     private fun resolveFullHash(shortHash: String): String? {
         val basePath = project.basePath ?: return null
+        var process: Process? = null
         return try {
-            val process = ProcessBuilder("git", "rev-parse", shortHash)
+            process = ProcessBuilder("git", "rev-parse", shortHash)
                 .directory(File(basePath))
                 .redirectErrorStream(true)
                 .start()
@@ -101,13 +123,42 @@ class FileNavigator(private val project: Project) {
             else null
         } catch (_: Exception) {
             null
+        } finally {
+            process?.destroyForcibly()
         }
     }
 
+    /**
+     * Returns whether [sha] is a known git commit. EDT-safe: returns the cached result immediately,
+     * or `false` while scheduling a single background check that populates the cache.
+     *
+     * During streaming the same SHA appears across many render cycles, so the cache is warm by the
+     * time streaming completes. On cold cache (e.g. after IDE restart followed by monitor recovery)
+     * short SHAs may not be linkified on the very first render — this is acceptable and avoids
+     * blocking the EDT.
+     */
     private fun isGitCommit(sha: String): Boolean {
+        commitCache[sha]?.let { return it }
+        // Deduplicated: only one background task per SHA at a time.
+        if (pendingChecks.add(sha)) {
+            AppExecutorUtil.getAppExecutorService().submit {
+                try {
+                    if (!project.isDisposed) {
+                        commitCache[sha] = checkGitProcess(sha)
+                    }
+                } finally {
+                    pendingChecks.remove(sha)
+                }
+            }
+        }
+        return false
+    }
+
+    private fun checkGitProcess(sha: String): Boolean {
         val basePath = project.basePath ?: return false
+        var process: Process? = null
         return try {
-            val process = ProcessBuilder("git", "cat-file", "-t", sha)
+            process = ProcessBuilder("git", "cat-file", "-t", sha)
                 .directory(File(basePath))
                 .redirectErrorStream(true)
                 .start()
@@ -115,6 +166,8 @@ class FileNavigator(private val project: Project) {
             exited && process.exitValue() == 0
         } catch (_: Exception) {
             false
+        } finally {
+            process?.destroyForcibly()
         }
     }
 

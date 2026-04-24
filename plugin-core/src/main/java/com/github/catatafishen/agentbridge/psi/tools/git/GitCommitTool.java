@@ -85,20 +85,27 @@ public final class GitCommitTool extends GitTool {
         }
 
         boolean commitAll = resolveCommitAll(args);
+        boolean isAmend = resolveAmend(args);
 
         // Compute which files will be committed, then only gate on those paths.
         // This prevents unrelated PENDING review items from blocking the commit.
-        Collection<String> filesToCommit = resolveFilesToCommit(commitAll, root);
-        String reviewError = AgentEditSession.getInstance(project)
-            .awaitReviewForPaths("git commit", filesToCommit);
+        // For --amend we don't compute filesToCommit (it's not used for gating) — we
+        // gate unconditionally via awaitReviewCompletion to keep amends safe even when
+        // the staged file set looks empty/irrelevant.
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        String reviewError;
+        if (isAmend) {
+            reviewError = session.awaitReviewCompletion("git commit --amend");
+        } else {
+            Collection<String> filesToCommit = resolveFilesToCommit(commitAll, root);
+            reviewError = session.awaitReviewForPaths("git commit", filesToCommit);
+        }
         if (reviewError != null) return reviewError;
 
         if (commitAll) {
             // Stage all changes including new untracked files (equivalent to git add -A)
             runGitIn(root, "add", "-A");
         }
-
-        boolean isAmend = resolveAmend(args);
 
         // Pre-commit check: verify there are staged changes (skip for amend — message-only amends are valid)
         if (!isAmend) {
@@ -153,9 +160,9 @@ public final class GitCommitTool extends GitTool {
                     if (!trimmed.isEmpty()) paths.add(trimmed);
                 }
                 if (!paths.isEmpty()) {
-                    var session = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
+                    var pruneSession = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
                         .getService(project, com.github.catatafishen.agentbridge.psi.review.AgentEditSession.class);
-                    if (session != null) session.removeApprovedForCommit(paths);
+                    if (pruneSession != null) pruneSession.removeApprovedForCommit(paths);
                 }
             }
         } catch (Throwable ignored) {
@@ -225,6 +232,38 @@ public final class GitCommitTool extends GitTool {
         return basePath + "/" + path;
     }
 
+    private static final int PATH_LIST_LIMIT = 10;
+
+    /**
+     * Caps a newline-separated path list so the "nothing to commit" hint stays
+     * readable when a sub-directory like {@code .agent-work/} contains hundreds of
+     * gitignored files. Anything beyond {@value #PATH_LIST_LIMIT} entries is folded
+     * into a single "... and N more files" suffix.
+     */
+    private static String formatPathList(String rawNewlineSeparated) {
+        if (rawNewlineSeparated == null || rawNewlineSeparated.isBlank()) return "";
+        // Split on \r?\n and trim each entry — git output on Windows uses CRLF, and a
+        // raw "\n"-only split would leave stray \r characters in the rendered hint.
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        for (String line : rawNewlineSeparated.split("\\r?\\n")) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                parts.add(trimmed);
+            }
+        }
+        if (parts.isEmpty()) return "";
+        if (parts.size() <= PATH_LIST_LIMIT) {
+            return String.join(", ", parts);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < PATH_LIST_LIMIT; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(parts.get(i));
+        }
+        sb.append(", ... and ").append(parts.size() - PATH_LIST_LIMIT).append(" more files");
+        return sb.toString();
+    }
+
     /**
      * Builds a detailed hint for the "nothing to commit" case, listing which paths are
      * unstaged/untracked/ignored so the agent knows exactly what to stage (or force-add).
@@ -246,13 +285,13 @@ public final class GitCommitTool extends GitTool {
 
         hint.append(" Changes exist but were not staged by --all:");
         if (hasUnstaged) {
-            hint.append("\n  Modified (not staged): ").append(unstaged.replace("\n", ", "));
+            hint.append("\n  Modified (not staged): ").append(formatPathList(unstaged));
         }
         if (hasUntracked) {
-            hint.append("\n  Untracked: ").append(untracked.replace("\n", ", "));
+            hint.append("\n  Untracked: ").append(formatPathList(untracked));
         }
         if (hasIgnored) {
-            hint.append("\n  Gitignored: ").append(ignored.replace("\n", ", "))
+            hint.append("\n  Gitignored: ").append(formatPathList(ignored))
                 .append("\n  (ignored files require explicit `git add -f <path>` — git_stage will not force-add them)");
         }
         hint.append("\nUse git_stage with an explicit path to include specific files, "

@@ -51,7 +51,7 @@ import java.util.function.Consumer;
  * bidirectional {@code --input-format stream-json --output-format stream-json} mode.
  *
  * <p>Authentication is handled entirely by the {@code claude} subprocess using the
- * OAuth credentials stored by {@code claude auth login} — no Anthropic API key is
+ * OAuth credentials stored by {@code claude /login} — no Anthropic API key is
  * required. Multi-turn conversations are maintained via {@code --resume <session-id>},
  * where the session ID is extracted from the CLI's {@code stream-json} output.</p>
  *
@@ -104,10 +104,10 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             Claude Code CLI profile — experimental support. Drives the locally-installed \
             'claude' binary in --print mode via subprocess. \
             Uses your Claude subscription — no Anthropic API key required. \
-            Install the CLI from code.claude.com and run 'claude auth login' once to set up.""");
+            Install the CLI from code.claude.com and run 'claude /login' once to set up.""");
         p.setBinaryName("claude");
         p.setAlternateNames(List.of());
-        p.setInstallHint("Install the Claude CLI from code.claude.com and run 'claude auth login'.");
+        p.setInstallHint("Install the Claude CLI from code.claude.com and run 'claude /login'.");
         p.setInstallUrl("https://code.claude.com");
         p.setSupportsOAuthSignIn(false);
         p.setAcpArgs(List.of());
@@ -153,25 +153,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
     public void start() throws AgentException {
         resolvedBinaryPath = resolveBinary();
         started = true;
-        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
-        String name = creds.getDisplayName();
-        if (!creds.isLoggedIn()) {
-            LOG.warn("Claude CLI credentials not found or expired — prompts will fail until 'claude auth login' is run");
-        }
-        LOG.info("ClaudeCliClient started for profile: " + profile.getDisplayName()
-            + (name != null ? " (account: " + name + ")" : ""));
+        LOG.info("ClaudeCliClient started for profile: " + profile.getDisplayName());
     }
 
     @Override
     public boolean isHealthy() {
         return started;
-    }
-
-    @Override
-    public @org.jetbrains.annotations.Nullable String checkAuthentication() {
-        ClaudeCliCredentials creds = ClaudeCliCredentials.read();
-        return creds.isLoggedIn() ? null
-            : "Not authenticated with Claude. Run 'claude auth login' in a terminal, then retry.";
     }
 
     @Override
@@ -423,6 +410,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                                  @Nullable Consumer<String> onChunk,
                                  @Nullable Consumer<SessionUpdate> onUpdate,
                                  @NotNull AtomicBoolean cancelled) throws AgentException {
+        // Hoisted out of try so the auth-error catch can clean them up — otherwise a
+        // ClaudeAuthRequiredException raised mid-stream would leak the running `claude`
+        // subprocess and the stderr-drainer thread.
+        Process proc = null;
+        Thread stderrThread = null;
         try {
             LOG.info("Executing Claude CLI command: " + String.join(" ", cmd));
             ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -436,12 +428,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             }
 
             pb.redirectErrorStream(false);
-            Process proc = pb.start();
+            proc = pb.start();
             activeProcesses.put(sessionId, proc);
 
             // Drain stderr on a background thread to prevent buffer deadlock
             StringBuilder stderrBuf = new StringBuilder();
-            Thread stderrThread = startStderrDrainer(proc, stderrBuf);
+            stderrThread = startStderrDrainer(proc, stderrBuf);
 
             // Write JSON user message; stdin is kept open for bidirectional control_response exchange.
             // handleStreamEvent closes stdin when the result event arrives; parseStreamOutput's
@@ -469,6 +461,18 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             }
 
             return stopReason;
+        } catch (ClaudeAuthRequiredException e) {
+            // Tear down the still-running `claude` process and the stderr drainer thread
+            // before propagating — otherwise the subprocess would keep running until the JVM
+            // exits and the drainer thread would leak indefinitely.
+            cleanupSubprocess(proc, stderrThread);
+            activeProcesses.remove(sessionId);
+            // Message includes "authenticated" so AuthCommandBuilder.isAuthenticationError
+            // recognises it and PromptOrchestrator triggers the SetupBanner.
+            throw new AgentException(
+                "Claude not authenticated: " + e.getMessage()
+                    + " — run 'claude /login' in a terminal, then retry.",
+                e, false);
         } catch (IOException e) {
             throw new AgentException("Failed to start claude process: " + e.getMessage(), e, true);
         } catch (InterruptedException e) {
@@ -477,7 +481,56 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         }
     }
 
+    /** Best-effort termination + join — silently swallows further interruption. */
+    private static void cleanupSubprocess(@Nullable Process proc, @Nullable Thread stderrThread) {
+        if (proc != null && proc.isAlive()) {
+            proc.destroy();
+            try {
+                if (!proc.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                    proc.destroyForcibly();
+                }
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                proc.destroyForcibly();
+            }
+        }
+        if (stderrThread != null) {
+            try {
+                stderrThread.join(2000);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
     // ── stream-json parsing ──────────────────────────────────────────────────
+
+    /**
+     * Thrown from {@link #handleStreamEvent} when Claude reports an authentication failure
+     * (e.g. "Invalid API key", "Please run /login"). Caught at the {@link #runSubprocess} level and
+     * translated to {@link AgentException} so {@code PromptOrchestrator} can fire the auth banner.
+     * <p>The plugin never inspects local credential stores; auth state is observed from this
+     * runtime signal only. See {@code docs/AUTH-HANDLING.md}.
+     */
+    private static final class ClaudeAuthRequiredException extends RuntimeException {
+        ClaudeAuthRequiredException(@NotNull String message) { super(message); }
+    }
+
+    /**
+     * Heuristic check for Claude's various auth-failure messages. Patterns include:
+     * "Invalid API key", "Please run /login", "Not authenticated", "Unauthorized", "401".
+     */
+    static boolean isClaudeAuthError(@Nullable String text) {
+        if (text == null) return false;
+        String lower = text.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("invalid api key")
+            || lower.contains("please run /login")
+            || lower.contains("please run `/login`")
+            || lower.contains("not authenticated")
+            || lower.contains("unauthorized")
+            || lower.contains("authentication required")
+            || lower.contains("401");
+    }
 
     @NotNull
     private String parseStreamOutput(@NotNull String sessionId,
@@ -503,6 +556,11 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                         LOG.trace("stream-json [" + eventCount + "] raw=" + line);
                     }
                     stopReason = handleStreamEvent(sessionId, event, stopReason, stdin, onChunk, onUpdate);
+                } catch (ClaudeAuthRequiredException e) {
+                    // Re-throw so the surrounding runClaude(...) translates it to AgentException
+                    // and PromptOrchestrator can fire markAuthError. Don't let the generic
+                    // RuntimeException catch below swallow it.
+                    throw e;
                 } catch (RuntimeException e) {
                     LOG.debug("Could not parse stream-json line: " + line, e);
                 }
@@ -588,6 +646,12 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
                     }
                     if (onChunk != null) onChunk.accept("\n[Error: " + errorText + "]");
                     if (isRateLimitError(errorText)) emitRateLimitBanner(errorText, onUpdate);
+                    if (isClaudeAuthError(errorText)) {
+                        // Surface auth errors as exceptions so PromptOrchestrator's existing
+                        // auth-error pipeline (markAuthError → SetupBanner) fires.
+                        // See docs/AUTH-HANDLING.md.
+                        throw new ClaudeAuthRequiredException(errorText);
+                    }
                 }
                 // Emit token/cost usage so the UI can display it in the toolbar
                 if (!isError) emitUsageStats(event, onUpdate);
@@ -873,7 +937,7 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
         String found = detector.resolve("claude");
         if (found != null) return found;
         throw new AgentException(
-            "Claude CLI not found. Install it from code.claude.com and run 'claude auth login'.",
+            "Claude CLI not found. Install it from code.claude.com and run 'claude /login'.",
             null, false);
     }
 

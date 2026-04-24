@@ -454,6 +454,83 @@ class ClaudeCliClientTest {
         }
     }
 
+    // ── isClaudeAuthError (package-private static) ──────────────────────
+
+    @Nested
+    class IsClaudeAuthError {
+
+        @Test
+        void nullInput_returnsFalse() {
+            assertFalse(ClaudeCliClient.isClaudeAuthError(null));
+        }
+
+        @Test
+        void emptyInput_returnsFalse() {
+            assertFalse(ClaudeCliClient.isClaudeAuthError(""));
+        }
+
+        @Test
+        void invalidApiKey_returnsTrue() {
+            assertTrue(ClaudeCliClient.isClaudeAuthError("Invalid API key provided"));
+        }
+
+        @Test
+        void invalidApiKey_caseInsensitive() {
+            assertTrue(ClaudeCliClient.isClaudeAuthError("INVALID API KEY"));
+        }
+
+        @Test
+        void pleaseRunSlashLogin_returnsTrue() {
+            assertTrue(ClaudeCliClient.isClaudeAuthError("Please run /login to continue"));
+        }
+
+        @Test
+        void pleaseRunBacktickedSlashLogin_returnsTrue() {
+            assertTrue(ClaudeCliClient.isClaudeAuthError("Please run `/login` first"));
+        }
+
+        @Test
+        void notAuthenticated_returnsTrue() {
+            assertTrue(ClaudeCliClient.isClaudeAuthError("Not authenticated with Claude"));
+        }
+
+        @Test
+        void unauthorized_returnsTrue() {
+            assertTrue(ClaudeCliClient.isClaudeAuthError("Unauthorized: missing token"));
+        }
+
+        @Test
+        void authenticationRequired_returnsTrue() {
+            assertTrue(ClaudeCliClient.isClaudeAuthError("Authentication required to access Claude"));
+        }
+
+        @Test
+        void http401_returnsTrue() {
+            assertTrue(ClaudeCliClient.isClaudeAuthError("Got HTTP 401 from API"));
+        }
+
+        @Test
+        void unrelatedError_returnsFalse() {
+            assertFalse(ClaudeCliClient.isClaudeAuthError("Tool 'read_file' failed: file not found"));
+        }
+
+        @Test
+        void rateLimit_returnsFalse() {
+            assertFalse(ClaudeCliClient.isClaudeAuthError("Rate limit exceeded — try again later"));
+        }
+
+        @Test
+        void networkError_returnsFalse() {
+            assertFalse(ClaudeCliClient.isClaudeAuthError("Connection refused: ECONNREFUSED 127.0.0.1:5000"));
+        }
+
+        @Test
+        void wordContainingAuth_butNotAuthError_returnsFalse() {
+            // "auth" alone is not a substring we match; only specific phrases trigger.
+            assertFalse(ClaudeCliClient.isClaudeAuthError("Author of commit not found"));
+        }
+    }
+
     // ── Reflection helpers ──────────────────────────────────────────────
 
     private static String invokeExtractErrorText(com.google.gson.JsonElement el) throws Exception {

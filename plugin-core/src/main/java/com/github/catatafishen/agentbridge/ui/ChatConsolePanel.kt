@@ -130,18 +130,11 @@ class ChatConsolePanel(
         browser?.cefBrowser?.setWindowlessFrameRate(fps)
     }
 
-    // Periodic CEF invalidation during streaming — forces OSR buffer refresh
-    // as a safety net against compositor desync during rapid content changes.
-    private val repaintTimer = javax.swing.Timer(200) {
-        browser?.cefBrowser?.invalidate()
-    }.apply { isRepeats = true }
-
-    // Throttled per-executeJs invalidation during streaming. The repaintTimer
-    // provides a 200ms safety net, but individual executeJs calls (tool chips,
-    // sub-agent updates, etc.) can bunch between timer ticks. This ensures a
-    // forced repaint within 50ms of any JS execution during streaming.
-    private var lastStreamingInvalidateMs = 0L
-    private val streamingInvalidateThrottleMs = 50L
+    // Tracks whether the agent is actively streaming a response. Used by
+    // monitor-switch recovery to defer DOM replay until streaming ends, so
+    // the replay does not race with in-flight token updates.
+    @Volatile
+    private var streaming = false
 
     // ── Swing fallback ─────────────────────────────────────────────
     private val fallbackArea: JBTextArea?
@@ -340,7 +333,7 @@ class ChatConsolePanel(
 
     override fun startStreaming() {
         setFrameRate(STREAMING_FRAME_RATE)
-        repaintTimer.start()
+        streaming = true
         // Disable smooth scroll during streaming — CSS scroll animations conflict
         // with rapid programmatic scrollTop changes, causing JCEF OSR tearing.
         executeJs("document.querySelector('chat-container')?.setStreaming(true, false)")
@@ -719,6 +712,9 @@ class ChatConsolePanel(
         entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
+        // Reset streaming flag — if a session reset happens mid-stream, leaving
+        // streaming=true would make MonitorSwitchRecovery defer DOM replay forever.
+        streaming = false
         executeJs("ChatController.showPlaceholder('${escJs(text)}')")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = text } }
         fireEntriesChanged()
@@ -730,6 +726,8 @@ class ChatConsolePanel(
         entries.clear()
         currentTextData = null; currentThinkingData = null; nextSubAgentColor = 0
         turnCounter = 0; currentTurnId = ""; toolJustCompleted = false
+        // Reset streaming flag — same reason as showPlaceholder() above.
+        streaming = false
         toolCallNames.clear(); toolCallEntries.clear()
         registry.clear()
         clearPendingAskUserRequest(null)
@@ -740,7 +738,7 @@ class ChatConsolePanel(
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
         setFrameRate(IDLE_FRAME_RATE)
-        repaintTimer.stop()
+        streaming = false
         val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         toolJustCompleted = false
@@ -812,7 +810,7 @@ class ChatConsolePanel(
 
     override fun cancelAllRunning() {
         setFrameRate(IDLE_FRAME_RATE)
-        repaintTimer.stop()
+        streaming = false
         val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         clearPendingAskUserRequest(null)
@@ -1183,7 +1181,7 @@ class ChatConsolePanel(
 
     override fun dispose() {
         registry.removeKindStateListener(kindStateListener)
-        repaintTimer.stop()
+        streaming = false
         if (registerAsMain) instances.remove(project)
     }
 
@@ -1218,13 +1216,11 @@ class ChatConsolePanel(
             com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
                 .info("executeJs (ready): $short")
             browser?.cefBrowser?.executeJavaScript(js, "", 0)
-            if (repaintTimer.isRunning) {
-                val now = System.currentTimeMillis()
-                if (now - lastStreamingInvalidateMs >= streamingInvalidateThrottleMs) {
-                    lastStreamingInvalidateMs = now
-                    browser?.cefBrowser?.invalidate()
-                }
-            }
+            // Note: do NOT call cefBrowser.invalidate() here. Forcing OSR repaints
+            // mid-token paints intermediate DOM states (sync textNode append before
+            // the rAF markdown render) and was the actual cause of the recurring
+            // tearing/flicker. CEF's natural OnPaint cycle handles repaints
+            // correctly. See docs/bugs/SCREEN-TEARING-BUG.md (Fix 4).
         } else {
             com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
                 .info("executeJs (queued): $short")
@@ -1437,7 +1433,7 @@ class ChatConsolePanel(
 
     private fun recoverBrowserStateAfterMonitorSwitch() {
         updateThemeColors()
-        if (repaintTimer.isRunning) {
+        if (streaming) {
             pendingMonitorReplay = true
             return
         }

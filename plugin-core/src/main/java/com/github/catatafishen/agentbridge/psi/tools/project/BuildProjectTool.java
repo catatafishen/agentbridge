@@ -68,8 +68,12 @@ public final class BuildProjectTool extends ProjectTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        String externalBuildErr = com.github.catatafishen.agentbridge.psi.ToolReadinessGate
+            .checkNoBuildInProgress(project, id());
+        if (externalBuildErr != null) return externalBuildErr;
+
         if (!buildInProgress.compareAndSet(false, true)) {
-            return "Build already in progress. Please wait for the current build to complete before requesting another.";
+            return "Error: Build already in progress. Please wait for the current build to complete before requesting another.";
         }
 
         String moduleName = args.has(JSON_MODULE) ? args.get(JSON_MODULE).getAsString() : "";

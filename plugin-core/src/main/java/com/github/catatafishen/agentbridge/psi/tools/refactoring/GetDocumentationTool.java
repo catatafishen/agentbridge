@@ -32,6 +32,11 @@ public final class GetDocumentationTool extends RefactoringTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Get Documentation";
     }

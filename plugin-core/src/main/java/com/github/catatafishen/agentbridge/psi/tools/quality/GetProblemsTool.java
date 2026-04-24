@@ -32,6 +32,11 @@ public final class GetProblemsTool extends QualityTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Get Problems";
     }
