@@ -629,7 +629,6 @@ class ChatToolWindowContent(
         // hosted in the side panel's Stats tab instead of above the input area.
         processingTimerPanel = ProcessingTimerPanel(
             supportsMultiplier = { agentManager.isClientHealthy && agentManager.client.supportsMultiplier() },
-            localSessionRequests = { billing.localSessionRequests },
             localPremiumRequests = { billing.localSessionPremiumRequests }
         )
         com.intellij.openapi.util.Disposer.register(project, processingTimerPanel)

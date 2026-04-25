@@ -311,6 +311,105 @@ to `java.awt.Cursor` constants:
    `globalThis._bridge?.setCursor()` directly from the component's event handlers
 3. Add the string → `java.awt.Cursor` mapping in `ChatConsolePanel.kt`
 
+### Jewel Compose Components
+
+IntelliJ 2024.2+ bundles [Jewel](https://github.com/JetBrains/jewel) — JetBrains' Compose for Desktop
+UI toolkit. Use it for new UI components to get **IDE Compose UI Preview** support and automatic
+light/dark theme integration.
+
+#### Setup
+
+Add both declarations to `build.gradle.kts` if not already present:
+
+```kotlin
+// plugins block
+kotlin("plugin.compose") version "2.3.20"
+
+// intellijPlatform { } dependencies block
+composeUI()
+```
+
+#### Wrapping Swing with Jewel: JewelComposePanel
+
+Jewel components can't be placed directly in Swing layouts. Wrap them with `JewelComposePanel`:
+
+```kotlin
+// The JPanel is the Swing-compatible container your existing code sees.
+// JewelComposePanel provides the Compose runtime inside it.
+class MyWidget : JPanel(BorderLayout()) {
+    private var widgetState by mutableStateOf(MyState())
+
+    init {
+        isOpaque = false
+        add(JewelComposePanel(focusOnClickInside = false) {
+            MyComposable(state = widgetState)
+        })
+    }
+
+    fun update(newState: MyState) {
+        widgetState = newState  // triggers Compose recomposition automatically
+    }
+}
+```
+
+Key properties of `JewelComposePanel`:
+- `focusOnClickInside = false` — prevents the panel from stealing keyboard focus on click
+  (appropriate for toolbar widgets and read-only panels)
+- `mutableStateOf` from `androidx.compose.runtime` wires Swing setters to Compose recomposition
+
+#### Theme-Aware Colors
+
+Never hardcode colors — use these helpers so components adapt to light/dark themes:
+
+| Source                  | Code                                                                    |
+|-------------------------|-------------------------------------------------------------------------|
+| JCEF token              | `retrieveColor("Label.infoForeground", isDark = JewelTheme.isDark, default = ..., defaultDark = ...)` |
+| IntelliJ AWT Color      | `myAwtColor.toComposeColor()`                                           |
+| `ToolRenderers` colors  | `ToolRenderers.SUCCESS_COLOR.toComposeColor()`                          |
+| Jewel semantic color    | `JewelTheme.globalColors.text`                                          |
+
+Always read `JewelTheme.isDark` **inside** the composable — it's a Compose state that triggers
+recomposition on theme switch.
+
+#### Preview Organization
+
+**Co-locate `@Preview` functions with the component they preview** — this is the JetBrains/Jewel
+convention. Keep them `private` (they're documentation, not API):
+
+```kotlin
+// In the same file as MyComposable:
+@Preview
+@Composable
+private fun PreviewMyComposableIdle() {
+    MyComposable(state = MyState(isRunning = false, text = "42s"))
+}
+
+@Preview
+@Composable
+private fun PreviewMyComposableRunning() {
+    MyComposable(state = MyState(isRunning = true, text = "3s"))
+}
+```
+
+Guidelines:
+- **One preview per meaningful state** (idle, running, error, empty, overflow, etc.)
+- **Name by component + state**: `Preview<ComponentName><State>` (e.g. `PreviewTimerStatsRunning`)
+- **Use realistic sample data** — the preview is the component's visual documentation
+- **Nested/full-view previews** are fully supported: any composable that takes sample data can be
+  previewed, including ones that compose many sub-components together
+- `@Preview` functions are compiled into production code but have zero runtime cost — no need for
+  a separate source set
+
+#### What to Migrate (and What Not To)
+
+| Component type                      | Migrate to Jewel? | Reason                                     |
+|-------------------------------------|-------------------|--------------------------------------------|
+| Custom Swing panels with show/hide  | ✅ Yes             | Compose state replaces manual visibility   |
+| `JBLabel`-based display widgets     | ✅ Yes             | `Text` + `mutableStateOf` is cleaner       |
+| IntelliJ `ActionToolbar`            | ❌ No              | Actions must stay as `AnAction` subclasses |
+| `EditorTextField` / `EditorImpl`    | ❌ No              | Deeply platform-integrated Swing component |
+| `InlineBanner` / `EditorNotificationPanel` | ❌ No     | Already a native JB component              |
+
 ## Key Files
 
 | File                                                    | Purpose                                     |
