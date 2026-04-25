@@ -1,9 +1,9 @@
 package com.github.catatafishen.agentbridge.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,7 +17,6 @@ import com.intellij.util.ui.JBUI
 import org.jetbrains.compose.ui.tooling.preview.Preview
 import org.jetbrains.jewel.bridge.JewelComposePanel
 import org.jetbrains.jewel.bridge.retrieveColor
-import org.jetbrains.jewel.bridge.toComposeColor
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.component.Text
 import java.awt.BorderLayout
@@ -97,27 +96,6 @@ private fun ShortcutEntry(stroke: KeyStroke, label: String, helpForeground: Colo
         KeyBadge.keystrokeTokens(stroke).forEach { token -> KeyToken(token) }
         Text(text = label, color = helpForeground, fontSize = 11.sp)
     }
-}
-
-@Composable
-private fun KeyToken(token: String) {
-    val background = KeyBadge.BACKGROUND.toComposeColor()
-    val borderColor = KeyBadge.BORDER.toComposeColor()
-    val labelForeground = retrieveColor(
-        key = "Label.foreground",
-        isDark = JewelTheme.isDark,
-        default = Color.Black,
-        defaultDark = Color(0xFFBBBBBB),
-    )
-    Text(
-        text = token,
-        color = labelForeground,
-        fontSize = 10.sp,
-        modifier = Modifier
-            .background(color = background, shape = RoundedCornerShape(4.dp))
-            .border(width = 1.dp, color = borderColor, shape = RoundedCornerShape(4.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
 }
 
 @Preview
