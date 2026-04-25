@@ -1,12 +1,30 @@
 package com.github.catatafishen.agentbridge.ui
 
-import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.JBPanel
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
-import java.awt.Component
-import java.awt.FlowLayout
-import javax.swing.*
+import org.jetbrains.compose.ui.tooling.preview.Preview
+import org.jetbrains.jewel.bridge.JewelComposePanel
+import org.jetbrains.jewel.bridge.retrieveColor
+import org.jetbrains.jewel.bridge.toComposeColor
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.ui.component.Text
+import java.awt.BorderLayout
+import java.awt.event.InputEvent
+import java.awt.event.KeyEvent
+import javax.swing.JPanel
+import javax.swing.KeyStroke
 
 /**
  * Bottom-toolbar panel that lists the keyboard shortcuts relevant to the
@@ -18,23 +36,27 @@ import javax.swing.*
  *  - When a nudge or queued message is pending, an extra `↑ ▸ Edit last` hint
  *    is appended.
  *
- * Each entry renders as one or more [KeyBadge]s followed by a small action
- * label. Reads actual key bindings from the IntelliJ keymap so customized
- * shortcuts are reflected.
+ * Each entry renders as one or more [KeyBadge] tokens followed by a small
+ * action label. Reads actual key bindings from the IntelliJ keymap so
+ * customized shortcuts are reflected.
  *
- * Uses [BoxLayout] (X_AXIS) so entries clip from the right when space is
- * tight, rather than wrapping to a second row (which would change the panel
- * height and push the editor up).
+ * Rendered as a [JewelComposePanel] for theme-aware coloring and IDE Compose
+ * UI Preview support. Items clip from the right when space is tight rather
+ * than wrapping to a second row.
  *
  * Visibility honours the *Show shortcut hints* toggle in
  * Settings → AgentBridge → Chat Input.
  */
-class PromptShortcutHintPanel : JBPanel<JBPanel<*>>() {
+class PromptShortcutHintPanel : JPanel(BorderLayout()) {
+
+    private var shortcutsState by mutableStateOf<List<Pair<KeyStroke, String>>>(emptyList())
 
     init {
-        layout = BoxLayout(this, BoxLayout.X_AXIS)
         isOpaque = false
         border = JBUI.Borders.empty()
+        add(JewelComposePanel(focusOnClickInside = false) {
+            ShortcutHintStrip(shortcutsState)
+        })
     }
 
     /**
@@ -42,28 +64,69 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>() {
      * order of [shortcuts] is preserved, rendered left-to-right.
      */
     fun setShortcuts(shortcuts: List<Pair<KeyStroke, String>>) {
-        removeAll()
-        shortcuts.forEachIndexed { i, (stroke, label) ->
-            if (i > 0) add(Box.createHorizontalStrut(JBUI.scale(8)))
-            add(buildEntry(stroke, label))
-        }
-        revalidate()
-        repaint()
+        shortcutsState = shortcuts
     }
+}
 
-    private fun buildEntry(stroke: KeyStroke, label: String): JComponent {
-        val cell = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(2), 0)).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty()
-            alignmentY = Component.CENTER_ALIGNMENT
+@Composable
+private fun ShortcutHintStrip(shortcuts: List<Pair<KeyStroke, String>>) {
+    val isDark = JewelTheme.isDark
+    val helpForeground = retrieveColor(
+        key = "Label.infoForeground",
+        isDark = isDark,
+        default = Color(0xFF6E6E6E),
+        defaultDark = Color(0xFF8C8C8C),
+    )
+    Row(
+        modifier = Modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        shortcuts.forEach { (stroke, label) ->
+            ShortcutEntry(stroke = stroke, label = label, helpForeground = helpForeground)
         }
-        KeyBadge.keystrokeTokens(stroke).forEach { cell.add(KeyBadge(it)) }
-        val text = JBLabel(label).apply {
-            font = JBUI.Fonts.smallFont()
-            foreground = UIUtil.getContextHelpForeground()
-            border = JBUI.Borders.emptyLeft(2)
-        }
-        cell.add(text)
-        return cell
     }
+}
+
+@Composable
+private fun ShortcutEntry(stroke: KeyStroke, label: String, helpForeground: Color) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        KeyBadge.keystrokeTokens(stroke).forEach { token -> KeyToken(token) }
+        Text(text = label, color = helpForeground, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun KeyToken(token: String) {
+    val background = KeyBadge.BACKGROUND.toComposeColor()
+    val borderColor = KeyBadge.BORDER.toComposeColor()
+    val labelForeground = retrieveColor(
+        key = "Label.foreground",
+        isDark = JewelTheme.isDark,
+        default = Color.Black,
+        defaultDark = Color(0xFFBBBBBB),
+    )
+    Text(
+        text = token,
+        color = labelForeground,
+        fontSize = 10.sp,
+        modifier = Modifier
+            .background(color = background, shape = RoundedCornerShape(4.dp))
+            .border(width = 1.dp, color = borderColor, shape = RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+@Preview
+@Composable
+private fun PreviewShortcutHintStrip() {
+    ShortcutHintStrip(
+        shortcuts = listOf(
+            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0) to "Send",
+            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK) to "New line",
+        ),
+    )
 }

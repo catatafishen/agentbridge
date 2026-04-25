@@ -5,6 +5,7 @@ import java.util.zip.ZipInputStream
 plugins {
     id("java")
     kotlin("jvm") version "2.3.20"
+    kotlin("plugin.compose") version "2.3.20"
     id("org.jetbrains.intellij.platform") version "2.14.0"
     jacoco
 }
@@ -43,6 +44,7 @@ dependencies {
         bundledPlugin("Git4Idea")
         bundledPlugin("org.jetbrains.plugins.terminal")
         bundledPlugin("com.intellij.database")
+        composeUI()
     }
 
     // Kotlin stdlib for UI layer
