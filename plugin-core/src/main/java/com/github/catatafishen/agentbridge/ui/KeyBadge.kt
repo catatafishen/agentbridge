@@ -17,7 +17,7 @@ class KeyBadge(text: String) : JBLabel(text) {
     init {
         font = JBUI.Fonts.smallFont()
         foreground = UIUtil.getLabelForeground()
-        border = JBUI.Borders.empty(2, 6, 2, 6)
+        border = JBUI.Borders.empty(2, 6)
         isOpaque = false
     }
 
@@ -72,6 +72,7 @@ class KeyBadge(text: String) : JBLabel(text) {
                         KeyEvent.VK_BACK_SPACE -> "⌫"
                         KeyEvent.VK_ESCAPE -> "Esc"
                         KeyEvent.VK_TAB -> "⇥"
+                        KeyEvent.VK_UP -> "↑"
                         else -> KeyEvent.getKeyText(stroke.keyCode)
                     }
                 )

@@ -30,7 +30,7 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(FlowLayout(FlowLayout.LEFT, 
 
     init {
         isOpaque = false
-        border = JBUI.Borders.empty(0, 4, 0, 4)
+        border = JBUI.Borders.empty()
     }
 
     /**

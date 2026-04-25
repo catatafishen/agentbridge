@@ -90,6 +90,8 @@ class ChatToolWindowContent(
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
+    private lateinit var shortcutHintBar: JPanel
+    private lateinit var shortcutHintRightGroup: JPanel
     private val queuedTexts = ArrayDeque<String>()
 
     @Volatile
@@ -761,9 +763,8 @@ class ChatToolWindowContent(
         }
         inputSection.isOpaque = false
         // 8px top inset doubles as the resize drag zone (see resizeHandler below).
-        // Bottom inset is 2 (not 4) so the model selector / send button sit close
-        // to the rounded bottom border instead of leaving a wide empty band.
-        inputSection.border = JBUI.Borders.empty(8, 0, 2, 4)
+        // The surrounding padding is kept tight so the footer reads as one compact unit.
+        inputSection.border = JBUI.Borders.empty(6, 0, 1, 2)
         inputSection.add(sideButtonsPanel, BorderLayout.WEST)
         inputSection.add(inputRow, BorderLayout.CENTER)
 
@@ -772,14 +773,8 @@ class ChatToolWindowContent(
 
         val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
         bottomSection.isOpaque = false
-        // 8px left padding aligns the input-frame edge with the chat-message bubbles
-        // above (chat-container's 8px CSS left padding = 8px from the tool-window edge).
-        // The right side keeps an 8px gap too — the chat scrollbar sits flush against
-        // the tool-window right edge, but symmetric padding here prevents the input
-        // frame from overlapping that vertical scrollbar lane visually.
-        // 2px bottom keeps the frame close to the tool-window bottom without touching
-        // the IDE status bar.
-        bottomSection.border = JBUI.Borders.empty(0, 8, 2, 8)
+        // Keep the footer close to the tool window edges without adding dead space.
+        bottomSection.border = JBUI.Borders.empty(0, 6, 1, 6)
         bottomSection.add(inputSection, BorderLayout.CENTER)
 
         // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
@@ -993,8 +988,10 @@ class ChatToolWindowContent(
         val innerBar = JBPanel<JBPanel<*>>().apply {
             layout = GridBagLayout()
             isOpaque = false
-            border = JBUI.Borders.empty(0, 2, 0, 2)
+            border = JBUI.Borders.empty(0, 1)
         }
+        shortcutHintBar = innerBar
+        shortcutHintRightGroup = rightGroup
         innerBar.add(shortcutHintPanel, GridBagConstraints().apply {
             gridx = 0; gridy = 0
             weightx = 1.0; weighty = 0.0
@@ -1007,9 +1004,15 @@ class ChatToolWindowContent(
             fill = GridBagConstraints.NONE
             anchor = GridBagConstraints.EAST
         })
+        innerBar.addComponentListener(object : java.awt.event.ComponentAdapter() {
+            override fun componentResized(e: java.awt.event.ComponentEvent) {
+                updateShortcutHintVisibility()
+            }
+        })
         row.add(innerBar, BorderLayout.SOUTH)
 
         refreshShortcutHints()
+        updateShortcutHintVisibility()
 
         return row
     }
@@ -1132,9 +1135,8 @@ class ChatToolWindowContent(
 
     fun setShortcutHintsVisible() {
         if (!::shortcutHintPanel.isInitialized) return
-        shortcutHintPanel.isVisible =
-            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
         refreshShortcutHints()
+        updateShortcutHintVisibility()
     }
 
     /**
@@ -1148,7 +1150,6 @@ class ChatToolWindowContent(
      */
     private fun refreshShortcutHints() {
         if (!::shortcutHintPanel.isInitialized) return
-        if (!shortcutHintPanel.isVisible) return
         val list = mutableListOf<Pair<KeyStroke, String>>()
         if (isSending) {
             list += PromptShortcutAction.resolveKeystroke(
@@ -1186,6 +1187,26 @@ class ChatToolWindowContent(
             list += KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0) to "Edit last"
         }
         shortcutHintPanel.setShortcuts(list)
+        updateShortcutHintVisibility()
+    }
+
+    private fun updateShortcutHintVisibility() {
+        if (!::shortcutHintPanel.isInitialized || !::shortcutHintBar.isInitialized || !::shortcutHintRightGroup.isInitialized) {
+            return
+        }
+        val settingsVisible =
+            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
+        val availableWidth = shortcutHintBar.width
+        if (availableWidth <= 0) return
+        val gap = JBUI.scale(8)
+        val requiredWidth = shortcutHintRightGroup.preferredSize.width +
+            if (settingsVisible) shortcutHintPanel.preferredSize.width + gap else 0
+        val showHints = settingsVisible && availableWidth >= requiredWidth
+        if (shortcutHintPanel.isVisible != showHints) {
+            shortcutHintPanel.isVisible = showHints
+            shortcutHintBar.revalidate()
+            shortcutHintBar.repaint()
+        }
     }
 
     private fun setSendingState(sending: Boolean) {
@@ -1306,14 +1327,13 @@ class ChatToolWindowContent(
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
 
         override fun createCustomComponent(presentation: Presentation, place: String): JComponent {
-            // Primary-styled labeled button so the Send action reads as the dominant CTA.
-            // Icon on the left, "Send" text on the right. The label stays "Send" in all
-            // states; the button's behavior (direct send vs. nudge/queue/stop dropdown)
-            // depends on isSending and is handled in the action listener below.
-            val button = JButton(presentation.text ?: "Send", sendIcon)
+            // Compact icon-only button keeps the footer from growing taller than the
+            // dropdowns beside it while still exposing the action through the tooltip.
+            val button = JButton(sendIcon)
             button.putClientProperty("JButton.buttonType", "primary")
             button.isFocusable = false
-            button.margin = JBUI.insets(2, 8)
+            button.margin = JBUI.insets(0, 6)
+            button.iconTextGap = 0
             button.toolTipText = presentation.description
             // Direct routing avoids the deprecated AnActionEvent.createFromAnAction.
             button.addActionListener {
@@ -1330,7 +1350,8 @@ class ChatToolWindowContent(
         override fun updateCustomComponent(component: JComponent, presentation: Presentation) {
             (component as? JButton)?.let { btn ->
                 btn.isEnabled = presentation.isEnabled
-                btn.text = presentation.text
+                btn.text = ""
+                btn.icon = presentation.icon ?: sendIcon
                 btn.toolTipText = presentation.description
             }
         }
@@ -1340,12 +1361,12 @@ class ChatToolWindowContent(
             val hasText = promptTextArea.text.trim().isNotEmpty()
             if (isSending && !consolePanel.hasPendingAskUserRequest()) {
                 e.presentation.icon = sendIcon
-                e.presentation.text = "Send"
+                e.presentation.text = ""
                 e.presentation.description = "Nudge, queue, or stop and send"
                 e.presentation.isEnabled = hasText
             } else {
                 e.presentation.icon = sendIcon
-                e.presentation.text = "Send"
+                e.presentation.text = ""
                 e.presentation.description = if (isLoggedIn) "Send prompt (Enter)" else "Sign in to Copilot first"
                 e.presentation.isEnabled = isLoggedIn && hasText
             }
