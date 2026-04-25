@@ -56,6 +56,13 @@ public abstract class FileTool extends Tool {
 
     // ── Deferred auto-format (per-project) ────────────────────────────────────
 
+    /**
+     * Maximum number of files to process in a single auto-format flush.
+     * Prevents EDT saturation when many files are queued: each file's format
+     * runs inside a WriteCommandAction (blocking EDT). Overflow is requeued.
+     */
+    private static final int MAX_AUTO_FORMAT_FILES = 10;
+
     private static final ConcurrentHashMap<Project, Set<String>> PENDING_AUTO_FORMAT =
         new ConcurrentHashMap<>();
 
@@ -70,6 +77,21 @@ public abstract class FileTool extends Tool {
 
         List<String> paths = new ArrayList<>(pathSet);
 
+        // Safety cap: if too many files are queued, process only the first batch and requeue
+        // the rest. This prevents EDT saturation from blocking the editor for 30+ seconds.
+        if (paths.size() > MAX_AUTO_FORMAT_FILES) {
+            LOG.warn("Auto-format batch capped at " + MAX_AUTO_FORMAT_FILES + " of " + paths.size()
+                + " files; requeueing overflow for the next turn");
+            List<String> overflow = paths.subList(MAX_AUTO_FORMAT_FILES, paths.size());
+            PENDING_AUTO_FORMAT.merge(project,
+                Collections.synchronizedSet(new LinkedHashSet<>(overflow)),
+                (existing, added) -> {
+                    existing.addAll(added);
+                    return existing;
+                });
+            paths = new ArrayList<>(paths.subList(0, MAX_AUTO_FORMAT_FILES));
+        }
+
         if (com.intellij.openapi.application.ApplicationManager.getApplication().isDispatchThread()) {
             for (String pathStr : paths) {
                 formatSingleFile(project, pathStr);
@@ -79,26 +101,50 @@ public abstract class FileTool extends Tool {
         }
 
         java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
-        java.util.concurrent.atomic.AtomicInteger remaining = new java.util.concurrent.atomic.AtomicInteger(paths.size());
+        AtomicBoolean cancelled = new AtomicBoolean(false);
 
-        for (String pathStr : paths) {
-            EdtUtil.invokeLater(() -> {
-                formatSingleFile(project, pathStr);
-                if (remaining.decrementAndGet() == 0) {
-                    saveAllDocuments();
-                    latch.countDown();
-                }
-            });
-        }
+        scheduleNextFormat(project, paths, 0, latch, cancelled);
 
         try {
             if (!latch.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                // Stop the EDT chain — without this, remaining invokeLater tasks would keep running
+                // after we return, blocking the EDT and causing subsequent invokeAndWait calls to time out.
+                cancelled.set(true);
                 LOG.warn("flushPendingAutoFormat timed out after 30 seconds");
             }
         } catch (InterruptedException e) {
+            cancelled.set(true);
             Thread.currentThread().interrupt();
             LOG.warn("flushPendingAutoFormat interrupted");
         }
+    }
+
+    /**
+     * Chains auto-format operations sequentially via {@code invokeLater}, one file per EDT event.
+     * <p>
+     * Unlike bulk-dispatching all files at once, chaining allows the EDT to process paint and
+     * input events between each file — keeping the editor responsive during multi-file formatting.
+     * The {@code cancelled} flag is checked before each step so that a background-thread timeout
+     * in {@link #flushPendingAutoFormat} immediately stops further scheduling.
+     */
+    private static void scheduleNextFormat(Project project, List<String> paths, int index,
+                                           java.util.concurrent.CountDownLatch latch,
+                                           AtomicBoolean cancelled) {
+        if (cancelled.get() || project.isDisposed()) {
+            latch.countDown(); // no-op if background thread already timed out
+            return;
+        }
+        if (index >= paths.size()) {
+            saveAllDocuments();
+            latch.countDown();
+            return;
+        }
+        EdtUtil.invokeLater(() -> {
+            if (!cancelled.get() && !project.isDisposed()) {
+                formatSingleFile(project, paths.get(index));
+            }
+            scheduleNextFormat(project, paths, index + 1, latch, cancelled);
+        });
     }
 
     /**

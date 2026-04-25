@@ -463,13 +463,15 @@ public final class PsiBridgeService implements Disposable {
             outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
             ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), result);
             return result;
-        } catch (com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException e) {
-            success = false;
-            errorMessage = "Error: IDE is busy, please retry. " + e.getMessage();
-            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), errorMessage);
-            return errorMessage;
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
-            // Must not be swallowed — signals IDE shutdown or project disposal.
+            if (e instanceof com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException) {
+                // IDE was temporarily busy — not a shutdown signal; return a retryable error.
+                success = false;
+                errorMessage = "Error: IDE is busy, please retry. " + e.getMessage();
+                ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), errorMessage);
+                return errorMessage;
+            }
+            // All other PCE variants signal IDE shutdown or project disposal — must rethrow.
             throw e;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
