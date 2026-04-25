@@ -92,6 +92,7 @@ class ChatToolWindowContent(
     private lateinit var shortcutHintPanel: PromptShortcutHintPanel
     private lateinit var shortcutHintBar: JPanel
     private lateinit var shortcutHintRightGroup: JPanel
+    private lateinit var modelToolbarComponent: JComponent
     private val queuedTexts = ArrayDeque<String>()
 
     @Volatile
@@ -928,6 +929,8 @@ class ChatToolWindowContent(
             editor.settings.isUseSoftWraps =
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isSoftWrapsEnabled
             editor.setBorder(null)
+            editor.scrollPane.verticalScrollBar.preferredSize =
+                Dimension(JBUI.scale(10), editor.scrollPane.verticalScrollBar.preferredSize.height)
         }
 
         promptTextArea.addDocumentListener(object : com.intellij.openapi.editor.event.DocumentListener {
@@ -962,15 +965,18 @@ class ChatToolWindowContent(
         innerInputToolbar.isReservePlaceAutoPopupIcon = false
         innerInputToolbar.component.isOpaque = false
 
-        // Right-side group: model selector + Send button, packed tightly with FlowLayout
-        // so the right edge anchors to the EAST cell. FlowLayout vertically centers its
-        // row within the panel, but since the panel's preferred height matches the row
-        // exactly, that centering only matters once GridBagLayout (below) gives the cell
-        // its row height — which it does via anchor=EAST (vertical-center anchor).
-        val rightGroup = JPanel(FlowLayout(FlowLayout.RIGHT, JBUI.scale(2), 0)).apply {
+        // Right-side group: model selector + Send button. Uses BoxLayout(X_AXIS) instead of
+        // FlowLayout to prevent wrapping — FlowLayout wraps to a second row when the bar is
+        // very narrow, which pushes the send button below the visible area. BoxLayout clips
+        // instead of wrapping, and our visibility logic hides lower-priority components before
+        // any clipping occurs (send button always stays visible).
+        val rightGroup = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
             isOpaque = false
         }
+        modelToolbarComponent = modelToolbar.component
         rightGroup.add(modelToolbar.component)
+        rightGroup.add(Box.createHorizontalStrut(JBUI.scale(2)))
         rightGroup.add(innerInputToolbar.component)
 
         // Layout strategy: GridBagLayout with two cells.
@@ -1191,19 +1197,40 @@ class ChatToolWindowContent(
     }
 
     private fun updateShortcutHintVisibility() {
-        if (!::shortcutHintPanel.isInitialized || !::shortcutHintBar.isInitialized || !::shortcutHintRightGroup.isInitialized) {
+        if (!::shortcutHintPanel.isInitialized || !::shortcutHintBar.isInitialized
+            || !::shortcutHintRightGroup.isInitialized || !::modelToolbarComponent.isInitialized
+        ) {
             return
         }
         val settingsVisible =
             com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
         val availableWidth = shortcutHintBar.width
         if (availableWidth <= 0) return
-        val gap = JBUI.scale(8)
-        val requiredWidth = shortcutHintRightGroup.preferredSize.width +
-            if (settingsVisible) shortcutHintPanel.preferredSize.width + gap else 0
-        val showHints = settingsVisible && availableWidth >= requiredWidth
+
+        // Compute widths from individual components so the thresholds are independent of
+        // current visibility state (avoiding stale measurements when this is called repeatedly).
+        val sendWidth = innerInputToolbar.component.preferredSize.width
+        val modelWidth = modelToolbarComponent.preferredSize.width
+        val strutWidth = JBUI.scale(2)  // Box.createHorizontalStrut between model and send
+        val fullRightWidth = modelWidth + strutWidth + sendWidth
+
+        // Priority: send button > model toolbar > shortcut hints.
+        // Model toolbar is hidden first; send button is always preserved.
+        val showModelToolbar = availableWidth >= fullRightWidth
+        val effectiveRightWidth = if (showModelToolbar) fullRightWidth else sendWidth
+        val showHints = settingsVisible &&
+            availableWidth >= effectiveRightWidth + JBUI.scale(8) + shortcutHintPanel.preferredSize.width
+
+        var changed = false
+        if (modelToolbarComponent.isVisible != showModelToolbar) {
+            modelToolbarComponent.isVisible = showModelToolbar
+            changed = true
+        }
         if (shortcutHintPanel.isVisible != showHints) {
             shortcutHintPanel.isVisible = showHints
+            changed = true
+        }
+        if (changed) {
             shortcutHintBar.revalidate()
             shortcutHintBar.repaint()
         }
