@@ -48,7 +48,16 @@ import javax.swing.KeyStroke
  */
 class PromptShortcutHintPanel : JPanel(BorderLayout()) {
 
-    private var shortcutsState by mutableStateOf<List<Pair<KeyStroke, String>>>(emptyList())
+    internal var shortcutsState by mutableStateOf<List<Pair<KeyStroke, String>>>(emptyList())
+        private set
+
+    internal var isHintsVisible by mutableStateOf(true)
+        private set
+
+    override fun setVisible(visible: Boolean) {
+        super.setVisible(visible)
+        isHintsVisible = visible
+    }
 
     init {
         isOpaque = false
@@ -68,7 +77,7 @@ class PromptShortcutHintPanel : JPanel(BorderLayout()) {
 }
 
 @Composable
-private fun ShortcutHintStrip(shortcuts: List<Pair<KeyStroke, String>>) {
+internal fun ShortcutHintStrip(shortcuts: List<Pair<KeyStroke, String>>, modifier: Modifier = Modifier) {
     val isDark = JewelTheme.isDark
     val helpForeground = retrieveColor(
         key = "Label.infoForeground",
@@ -77,7 +86,7 @@ private fun ShortcutHintStrip(shortcuts: List<Pair<KeyStroke, String>>) {
         defaultDark = Color(0xFF8C8C8C),
     )
     Row(
-        modifier = Modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically),
+        modifier = modifier.fillMaxHeight().wrapContentHeight(Alignment.CenterVertically),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
