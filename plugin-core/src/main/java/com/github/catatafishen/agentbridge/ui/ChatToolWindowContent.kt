@@ -985,7 +985,10 @@ class ChatToolWindowContent(
         innerBar.add(shortcutHintPanel, GridBagConstraints().apply {
             gridx = 0; gridy = 0
             weightx = 1.0; weighty = 0.0
-            fill = GridBagConstraints.BOTH  // stretch to the row height so hints align with buttons
+            // HORIZONTAL fills cell width (lets panel shrink when narrow) but keeps preferred height,
+            // so BoxLayout children are not stretched taller than they need to be.
+            // anchor=CENTER then positions the panel at the vertical midpoint of the row.
+            fill = GridBagConstraints.HORIZONTAL
             anchor = GridBagConstraints.CENTER
         })
         innerBar.add(rightGroup, GridBagConstraints().apply {
