@@ -1080,7 +1080,11 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     }
 
     private void wipeAllTrackedState() {
-        AgentEditHighlighter.getInstance(project).clearAll();
+        // Guard project-service calls: AgentEditHighlighter may have never been instantiated,
+        // so calling getInstance() during disposal triggers lazy creation against a disposed project.
+        if (!project.isDisposed()) {
+            AgentEditHighlighter.getInstance(project).clearAll();
+        }
         snapshots.clear();
         deletedFiles.clear();
         newFiles.clear();
@@ -1093,7 +1097,9 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         }
         pendingGateCancelMessage = null;
         reviewNotificationFired = false;
-        com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+        if (!project.isDisposed()) {
+            com.intellij.ui.EditorNotifications.getInstance(project).updateAllNotifications();
+        }
         fireReviewStateChanged();
     }
 
