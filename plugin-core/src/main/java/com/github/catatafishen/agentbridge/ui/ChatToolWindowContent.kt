@@ -9,6 +9,7 @@ import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
 import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
+import com.github.catatafishen.agentbridge.settings.ChatInputSettings
 import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
@@ -761,7 +762,7 @@ class ChatToolWindowContent(
         inputSection.isOpaque = false
         // 8px top inset doubles as the resize drag zone (see resizeHandler below).
         // The surrounding padding is kept tight so the footer reads as one compact unit.
-        inputSection.border = JBUI.Borders.empty(6, 0, 1, 2)
+        inputSection.border = JBUI.Borders.empty(8, 0, 1, 4)
         inputSection.add(sideButtonsPanel, BorderLayout.WEST)
         inputSection.add(inputRow, BorderLayout.CENTER)
 
@@ -771,7 +772,7 @@ class ChatToolWindowContent(
         val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
         bottomSection.isOpaque = false
         // Keep the footer close to the tool window edges without adding dead space.
-        bottomSection.border = JBUI.Borders.empty(0, 6, 1, 6)
+        bottomSection.border = JBUI.Borders.empty(0, 8, 1, 8)
         bottomSection.add(inputSection, BorderLayout.CENTER)
 
         // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
@@ -964,7 +965,13 @@ class ChatToolWindowContent(
         // Right-side group: model selector and Send button. BorderLayout gives the send
         // button (EAST) its preferred width always; the model selector (CENTER) clips
         // naturally when space is tight, ensuring send is never pushed off-screen.
-        val rightGroup = JPanel(BorderLayout(JBUI.scale(2), 0)).apply { isOpaque = false }
+        // Fixed height caps the send-button toolbar (which can report a taller preferred height
+        // than the model-selector toolbar) so all three bottom-bar items share one visual baseline.
+        val rightGroup = object : JPanel(BorderLayout(JBUI.scale(2), 0)) {
+            override fun getPreferredSize() = Dimension(super.getPreferredSize().width, JBUI.scale(24))
+            override fun getMinimumSize() = Dimension(super.getMinimumSize().width, JBUI.scale(24))
+            override fun getMaximumSize() = Dimension(super.getMaximumSize().width, JBUI.scale(24))
+        }.apply { isOpaque = false }
         rightGroup.add(modelToolbar.component, BorderLayout.CENTER)
         rightGroup.add(innerInputToolbar.component, BorderLayout.EAST)
 
@@ -982,7 +989,7 @@ class ChatToolWindowContent(
         innerBar.add(shortcutHintPanel, GridBagConstraints().apply {
             gridx = 0; gridy = 0
             weightx = 1.0; weighty = 0.0
-            fill = GridBagConstraints.HORIZONTAL
+            fill = GridBagConstraints.BOTH  // stretch to the row height so hints align with buttons
             anchor = GridBagConstraints.CENTER
         })
         innerBar.add(rightGroup, GridBagConstraints().apply {
