@@ -964,10 +964,8 @@ class ChatToolWindowContent(
         innerInputToolbar.component.isOpaque = false
 
         // Right-side group: model selector and Send button. BorderLayout gives the send
-        // button (EAST) its preferred width always; the model selector (CENTER) clips
-        // naturally when space is tight, ensuring send is never pushed off-screen.
-        // Both toolbars get the same height (rightGroup's natural height) via BorderLayout,
-        // and shortcutHintPanel uses fill=BOTH to stretch to the same row height.
+        // button (EAST) its preferred width always; the model selector (CENTER) absorbs
+        // any space reduction when the window is narrow.
         val rightGroup = JPanel(BorderLayout(JBUI.scale(2), 0)).apply { isOpaque = false }
         rightGroup.add(modelToolbar.component, BorderLayout.CENTER)
         rightGroup.add(innerInputToolbar.component, BorderLayout.EAST)
@@ -975,9 +973,9 @@ class ChatToolWindowContent(
         // GridBagLayout with two cells keeps all items vertically centred on the same
         // horizontal midline regardless of their individual heights — a property that
         // plain BorderLayout and BoxLayout with alignmentY both fail to provide.
-        //   cell 0: shortcutHintPanel  weightx=1.0  fill=HORIZONTAL  → clips from right when narrow
-        //   cell 1: rightGroup         weightx=0.0  fill=NONE         → gets preferred width; internally
-        //                                                                BorderLayout protects the send button
+        //   cell 0: shortcutHintPanel  weightx=1.0  fill=HORIZONTAL  → shrinks first; ActionToolbar shows '>>' overflow
+        //   cell 1: rightGroup         weightx=0.0  fill=HORIZONTAL  → sized to cell; BorderLayout inside
+        //                                                                keeps send button (EAST) at preferred width
         val innerBar = JBPanel<JBPanel<*>>().apply {
             layout = GridBagLayout()
             isOpaque = false
@@ -986,16 +984,15 @@ class ChatToolWindowContent(
         innerBar.add(shortcutHintPanel, GridBagConstraints().apply {
             gridx = 0; gridy = 0
             weightx = 1.0; weighty = 0.0
-            // HORIZONTAL fills cell width (lets panel shrink when narrow) but keeps preferred height,
-            // so BoxLayout children are not stretched taller than they need to be.
-            // anchor=CENTER then positions the panel at the vertical midpoint of the row.
+            // HORIZONTAL fills the cell (lets panel shrink when narrow via its getMinimumSize=0).
+            // anchor=CENTER positions the panel at the vertical midpoint of the row.
             fill = GridBagConstraints.HORIZONTAL
             anchor = GridBagConstraints.CENTER
         })
         innerBar.add(rightGroup, GridBagConstraints().apply {
             gridx = 1; gridy = 0
             weightx = 0.0; weighty = 0.0
-            fill = GridBagConstraints.NONE
+            fill = GridBagConstraints.HORIZONTAL
             anchor = GridBagConstraints.EAST
         })
         row.add(innerBar, BorderLayout.SOUTH)
