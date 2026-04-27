@@ -14,7 +14,7 @@
 #
 ################################################################################
 
-FROM gcr.io/oss-fuzz-base/base-builder-jvm
+FROM gcr.io/oss-fuzz-base/base-builder-jvm@sha256:cb42140eb0e2cc7a89e9fd290993514637dea7e40fff796647dc68666ea6b337
 
 RUN git clone --depth 1 https://github.com/catatafishen/agentbridge.git /src/agentbridge
 WORKDIR /src/agentbridge

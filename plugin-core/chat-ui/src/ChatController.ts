@@ -1,4 +1,4 @@
-import {decodeBase64, escHtml, hideRedundantTimestamp} from './helpers';
+import {decodeBase64, hideRedundantTimestamp} from './helpers';
 import {renderBatchFragment} from './BatchRenderer';
 import type {TurnContext} from './types';
 
@@ -446,11 +446,21 @@ const ChatController = {
         ctx.meta!.appendChild(chip);
         ctx.meta!.classList.add('show');
         const promptBubble = document.createElement('message-bubble');
-        // Safe: colorIndex is a number from the server (no HTML chars possible).
-        // displayName is HTML-escaped via escHtml(). promptHtml is pre-rendered HTML
-        // produced by MessageFormatter on the Java side and base64-encoded — the Java
-        // layer is responsible for sanitising all user-visible content before encoding. — lgtm[js/html-constructed-from-input]
-        promptBubble.innerHTML = '<span class="subagent-prefix subagent-c' + colorIndex + '">@' + escHtml(displayName) + '</span> ' + (promptHtml ? decodeBase64(promptHtml) : '');
+        // Build the "@displayName " prefix from primitives — no innerHTML touched.
+        const prefix = document.createElement('span');
+        prefix.className = 'subagent-prefix subagent-c' + colorIndex;
+        prefix.textContent = '@' + displayName;
+        promptBubble.appendChild(prefix);
+        promptBubble.appendChild(document.createTextNode(' '));
+        // Append the body. promptHtml is base64-encoded HTML pre-rendered by
+        // MessageFormatter on the Java side; the Java layer is responsible
+        // for sanitising all user-visible content before encoding. We need to
+        // insert it as HTML (not text) to preserve the rendered Markdown
+        // formatting (lists, code blocks, links, etc.).
+        if (promptHtml) {
+            const fragment = document.createRange().createContextualFragment(decodeBase64(promptHtml));
+            promptBubble.appendChild(fragment);
+        }
         ctx.msg!.appendChild(promptBubble);
         const msg = document.createElement('chat-message');
         msg.setAttribute('type', 'agent');
@@ -522,8 +532,12 @@ const ChatController = {
 
     showPlaceholder(text: string): void {
         this.clear();
-        // Safe: text is HTML-escaped via escHtml() before insertion. — lgtm[js/html-constructed-from-input]
-        this._msgs().innerHTML = '<div class="placeholder">' + escHtml(text) + '</div>';
+        const div = document.createElement('div');
+        div.className = 'placeholder';
+        div.textContent = text;
+        const msgs = this._msgs();
+        msgs.innerHTML = '';
+        msgs.appendChild(div);
     },
 
     clear(): void {
@@ -576,21 +590,32 @@ const ChatController = {
 
         // Parse the structured context {question, args} produced by Java.
         // Falls back to generic label if the payload is a plain string (old code paths).
-        // Safe: toolDisplayName and parsed.question are both HTML-escaped via escHtml().
-        // argsJson is only passed to JSON.stringify — it is rendered via textContent, not innerHTML.
-        let questionHtml = `Can I use <strong>${escHtml(toolDisplayName)}</strong>?`;
+        // We track the rendered representation as either:
+        //   - {kind: 'default', toolName} → "Can I use <strong>{toolName}</strong>?"
+        //   - {kind: 'plain', text}       → just the parsed question string
+        // and build the DOM from primitives via createElement / textContent so no
+        // attacker-controlled string ever reaches innerHTML.
+        type Question = { kind: 'default'; toolName: string } | { kind: 'plain'; text: string };
+        let question: Question = {kind: 'default', toolName: toolDisplayName};
         let argsJson = '';
         try {
             const parsed = JSON.parse(contextJson) as { question?: string; args?: Record<string, unknown> };
-            if (parsed.question) questionHtml = escHtml(parsed.question);
+            if (parsed.question) question = {kind: 'plain', text: parsed.question};
             if (parsed.args && Object.keys(parsed.args).length > 0) argsJson = JSON.stringify(parsed.args);
         } catch {
             // contextJson is a plain string from old code paths — use generic label
         }
 
         const bubble = document.createElement('message-bubble');
-        // Safe: questionHtml is constructed exclusively from escHtml() calls — lgtm[js/html-constructed-from-input]
-        bubble.innerHTML = questionHtml;
+        if (question.kind === 'default') {
+            bubble.appendChild(document.createTextNode('Can I use '));
+            const strong = document.createElement('strong');
+            strong.textContent = question.toolName;
+            bubble.appendChild(strong);
+            bubble.appendChild(document.createTextNode('?'));
+        } else {
+            bubble.textContent = question.text;
+        }
         ctx.msg!.appendChild(bubble);
 
         const actions = document.createElement('permission-request');
@@ -608,8 +633,11 @@ const ChatController = {
 
         const bubble = document.createElement('message-bubble');
         bubble.dataset.reqId = reqId;
-        // Safe: question is fully escaped with escHtml() before being set — lgtm[js/html-constructed-from-input]
-        bubble.innerHTML = escHtml(question).replaceAll('\n', '<br/>');
+        const lines = question.split('\n');
+        lines.forEach((line, i) => {
+            if (i > 0) bubble.appendChild(document.createElement('br'));
+            bubble.appendChild(document.createTextNode(line));
+        });
         ctx.msg!.appendChild(bubble);
 
         if (options?.length) {

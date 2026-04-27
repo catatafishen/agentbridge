@@ -62,6 +62,7 @@ jobs:
       - name: Show recent releases for reference
         env:
           GH_TOKEN: ${{ github.token }}
+          SELECTED_TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           echo "### 🏷️ Recent releases" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -72,7 +73,7 @@ jobs:
             --jq '.[] | "| \(.tagName) | \(.publishedAt | split("T")[0]) | \(.name) |"' \
             >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Selected:** \`${{ steps.resolve.outputs.tag }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Selected:** \`$SELECTED_TAG\`" >> "$GITHUB_STEP_SUMMARY"
 
   # ── Step 1: Extract and display the changelog for review ──────────────
   preview:
