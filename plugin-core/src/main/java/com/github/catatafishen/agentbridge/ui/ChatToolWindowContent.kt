@@ -2431,20 +2431,22 @@ class ChatToolWindowContent(
     }
 
     private fun notifyIfUnfocused(toolCallCount: Int) {
-        val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return
-        if (frame.isActive) return
-        val title = "Copilot Response Ready"
-        val content =
-            if (toolCallCount > 0) "Turn completed with $toolCallCount tool call${if (toolCallCount != 1) "s" else ""}"
-            else "Turn completed"
-        com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
-            .notifyByBalloon(
-                "AgentBridge",
-                com.intellij.openapi.ui.MessageType.INFO,
-                "<b>$title</b><br>$content"
-            )
-        com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
-        com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
+        ApplicationManager.getApplication().invokeLater {
+            val frame = com.intellij.openapi.wm.WindowManager.getInstance().getFrame(project) ?: return@invokeLater
+            if (frame.isActive) return@invokeLater
+            val title = "Copilot Response Ready"
+            val content =
+                if (toolCallCount > 0) "Turn completed with $toolCallCount tool call${if (toolCallCount != 1) "s" else ""}"
+                else "Turn completed"
+            com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+                .notifyByBalloon(
+                    "AgentBridge",
+                    com.intellij.openapi.ui.MessageType.INFO,
+                    "<b>$title</b><br>$content"
+                )
+            com.intellij.ui.SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content)
+            com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
+        }
     }
 
     private fun saveTurnStatistics(prompt: String, toolCalls: Int, modelId: String) {
