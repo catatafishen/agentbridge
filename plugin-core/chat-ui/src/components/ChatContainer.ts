@@ -290,7 +290,7 @@ export default class ChatContainer extends HTMLElement {
     set autoScroll(enabled: boolean) {
         this._autoScroll = enabled;
         if (enabled) {
-            this.scrollTop = this.scrollHeight;
+            this._scrollToInstant(this.scrollHeight);
         }
     }
 
@@ -324,6 +324,14 @@ export default class ChatContainer extends HTMLElement {
         if (this._autoScroll && !this._restoring) {
             this._scrollToInstant(this.scrollHeight);
         }
+    }
+
+    scheduleScrollIfNeeded(): void {
+        if (this._scrollRAF) return;
+        this._scrollRAF = requestAnimationFrame(() => {
+            this._scrollRAF = null;
+            this.scrollIfNeeded();
+        });
     }
 
     private _isAtBottom(): boolean {

@@ -120,6 +120,7 @@ const ChatController = {
 
     _container(): HTMLElement & {
         scrollIfNeeded(): void;
+        scheduleScrollIfNeeded(): void;
         forceScroll(): void;
         pauseAutoScrollForRestore(): void;
         stopAutoScrollRestore(): void;
@@ -129,6 +130,7 @@ const ChatController = {
     } | null {
         return document.querySelector<HTMLElement & {
             scrollIfNeeded(): void;
+            scheduleScrollIfNeeded(): void;
             forceScroll(): void;
             pauseAutoScrollForRestore(): void;
             stopAutoScrollRestore(): void;
@@ -316,7 +318,7 @@ const ChatController = {
                 }
             }
             ctx.textBubble = null;
-            this._container()?.scrollIfNeeded();
+            this._container()?.scheduleScrollIfNeeded();
         } catch (e: any) {
             console.error('[finalizeAgentText ERROR]', e.message, e.stack);
         }
@@ -342,7 +344,7 @@ const ChatController = {
             ctx.thinkingChip = chip;
         }
         (ctx.thinkingBlock as any).appendText(text);
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     collapseThinking(turnId: string, agentId: string, encodedHtml?: string): void {
@@ -472,7 +474,7 @@ const ChatController = {
         msg.appendChild(resultBubble);
         this._insertMsg(msg);
         (chip as any).linkSection(msg);
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     updateSubAgent(sectionId: string, status: string, encodedResultHtml?: string): void {
@@ -483,7 +485,7 @@ const ChatController = {
         }
         const chip = document.querySelector('[data-chip-for="sa-' + sectionId + '"]');
         if (chip) chip.setAttribute('status', status === 'failed' ? 'failed' : 'complete');
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     addSubAgentToolCall(subAgentDomId: string, toolDomId: string, title: string, paramsJson?: string, kind?: string, isExternal?: boolean): void {
@@ -506,7 +508,7 @@ const ChatController = {
             meta.appendChild(chip);
             meta.classList.add('show');
         }
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     addSessionSeparator(timestamp: string, agent: string = ''): void {
@@ -560,7 +562,7 @@ const ChatController = {
         document.querySelectorAll('subagent-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
         // Mark any still-running tool chips as complete (not failed)
         document.querySelectorAll('tool-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
         this._trimMessages();
         _showNotification('Agent turn complete', 'The agent has finished responding.');
     },
@@ -594,7 +596,7 @@ const ChatController = {
         if (argsJson) actions.setAttribute('args', argsJson);
         ctx.msg!.appendChild(actions);
 
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     showAskUserRequest(turnId: string, agentId: string, reqId: string, question: string, options: string[]): void {
@@ -615,7 +617,7 @@ const ChatController = {
             ctx.msg!.appendChild(replies);
         }
 
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
         const actions = options?.length
             ? options.slice(0, Notification.maxActions || 2).map(o => ({action: o, title: o}))
             : undefined;
@@ -639,7 +641,7 @@ const ChatController = {
         } else {
             this._insertMsg(el);
         }
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     disableQuickReplies(): void {
@@ -819,7 +821,7 @@ const ChatController = {
             if (this._currentClientType) wi.classList.add('client-' + this._currentClientType);
         }
         wi?.show();
-        container?.scrollIfNeeded();
+        container?.scheduleScrollIfNeeded();
     },
 
     hideWorkingIndicator(): void {
@@ -849,7 +851,7 @@ const ChatController = {
             const bubble = existing.querySelector('message-bubble');
             if (bubble) {
                 bubble.textContent = text;
-                this._container()?.scrollIfNeeded();
+                this._container()?.scheduleScrollIfNeeded();
             }
             return;
         }
@@ -877,7 +879,7 @@ const ChatController = {
         } else {
             this._msgs().appendChild(msg);
         }
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     resolveNudgeBubble(id: string): void {
@@ -913,7 +915,7 @@ const ChatController = {
         cancelBtn.onclick = () => (globalThis as any)._bridge?.cancelQueuedMessage(id, text);
         msg.appendChild(cancelBtn);
         this._msgs().appendChild(msg);
-        this._container()?.scrollIfNeeded();
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     _moveQueuedToBottom(): void {

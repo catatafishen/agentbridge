@@ -1,8 +1,8 @@
 # Screen Tearing Bug — JCEF OSR
 
-**Status**: Fix 5 applied — synchronous `scrollIfNeeded()` removed from `upsertToolChip()`
+**Status**: Fix 6 applied — removed scroll-time CSS virtualization and deferred remaining scroll writes
 **Scope**: JCEF Off-Screen Rendering (OSR) mode in the chat panel  
-**Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`
+**Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`, `chat.css`
 
 ---
 
@@ -36,6 +36,10 @@ JCEF OSR tearing happens when:
 4. **CSS smooth scroll conflicts** — CSS `scroll-behavior: smooth` causes the browser to animate
    scroll position over time, conflicting with rapid programmatic `scrollTop` changes during
    streaming.
+
+5. **Scroll-time CSS virtualization** — `content-visibility: auto` and paint containment delay
+   rendering work until elements enter the viewport. In JCEF OSR, that deferred paint can show as
+   stale rows or tearing while the Swing host composites Chromium's off-screen buffer during scroll.
 
 ---
 
@@ -72,14 +76,18 @@ Kotlin appendText()
 - **One scroll write per rAF** — the `_scrollRAF` gate in `ChatContainer` ensures only one
   `scrollIfNeeded()` runs per animation frame, regardless of how many mutations occurred.
 - **No smooth scroll during streaming** — `setStreaming(true, false)` disables CSS smooth scroll.
-- **Programmatic bottom-lock is always instant** — `scrollIfNeeded()`, `forceScroll()`, and
-  `compensateScroll()` all go through `_scrollToInstant()` even when smooth scrolling is enabled.
+- **Programmatic bottom-lock is always instant** — `scrollIfNeeded()`, `forceScroll()`,
+  `compensateScroll()`, and the `autoScroll` setter all go through `_scrollToInstant()` even when
+  smooth scrolling is enabled.
 - **CEF invalidation removed** — Fix 4 removed both the periodic `repaintTimer` and the
   per-`executeJs` `cef.invalidate()` calls. CEF's native `OnPaint` cycle (capped at the
   windowless frame rate) handles repaints. Do not reintroduce manual invalidation —
   see Fix 4 for the rationale.
 - **No code block decoration during streaming** — `_setupCodeBlocks()` skips `<pre>` elements
   inside `message-bubble[streaming]` to avoid DOM churn.
+- **No CSS scroll virtualization in OSR** — chat rows are painted normally; `content-visibility`,
+  `contain-intrinsic-size`, and paint containment are avoided because they defer viewport paint work
+  into active scroll frames.
 
 ---
 
@@ -144,9 +152,7 @@ scroll is re-enabled after streaming. During streaming this is a noop since beha
    window). The repaintTimer remains as a 200ms safety net; the per-executeJs invalidation catches
    rapid bursts of JS updates.
 
-<<<<<<< HEAD
-
-### Fix 4 — Remove forced OSR invalidation (this commit)
+### Fix 4 — Remove forced OSR invalidation
 
 **Hypothesis revisited.** A new round of bug reports on Windows and Linux confirmed
 tearing/flicker still occurred during streaming despite Fixes 1–3. The user suspected
@@ -174,7 +180,7 @@ load), smooth-scroll suppression during streaming, the `_scrollRAF` debounce gat
 `_setupCodeBlocks()` streaming-bubble skip, and the `_scrollToInstant()` autoscroll
 helper.
 
-### Fix 5 — Remove synchronous `scrollIfNeeded()` from `upsertToolChip()` (this commit)
+### Fix 5 — Remove synchronous `scrollIfNeeded()` from `upsertToolChip()`
 
 **Observation**: Tearing persisted specifically when tool chips were added to the chat panel during
 streaming.
@@ -189,6 +195,28 @@ rAF-debounced `scrollIfNeeded()` for the same mutation, so the synchronous call 
 
 **Fix**: Removed the synchronous `scrollIfNeeded()` call from `upsertToolChip()`. The observers handle
 auto-scroll via rAF after layout is computed, identical to the Fix 3 fix for `appendAgentText()`.
+
+### Fix 6 — Remove scroll-time virtualization and defer remaining scroll writes
+
+**Observation**: Tearing still reproduced on Linux and Windows when the chat pane itself scrolled,
+including outside the narrow tool-chip case handled by Fix 5.
+
+**Root causes**:
+
+1. `chat-message { content-visibility: auto; contain-intrinsic-size: auto 120px; }` virtualized row
+   painting. In a normal browser this can improve long-list performance, but in JCEF OSR it defers
+   paint/layout work into the active scroll frame. The Swing host can then composite an off-screen
+   Chromium buffer where newly visible rows are still stale or only partially painted.
+2. `chat-container { contain: paint; }` added another paint-containment boundary around the scrolling
+   surface, making OSR damage tracking more fragile during scroll.
+3. The earlier fixes removed synchronous scroll writes from agent text and initial tool-chip insertion,
+   but high-frequency paths such as thinking chunks, sub-agent updates, working indicator display,
+   permission prompts, and nudge/queued-message rendering still called `scrollIfNeeded()` directly.
+
+**Fix**: Removed the scroll-time CSS virtualization/paint containment and added
+`ChatContainer.scheduleScrollIfNeeded()`, which reuses the existing `_scrollRAF` gate. ChatController
+now schedules the remaining autoscroll writes instead of forcing `scrollTop` synchronously in the same
+DOM mutation turn.
 
 ---
 
@@ -207,8 +235,11 @@ auto-scroll via rAF after layout is computed, identical to the Fix 3 fix for `ap
 | `ChatContainer.ts`         | `_setupCodeBlocks()`    | Checks `pre.closest('message-bubble[streaming]')`                               |
 | `ChatContainer.ts`         | `setStreaming()`        | Toggles CSS smooth-scroll policy between streaming and idle                     |
 | `ChatContainer.ts`         | `_scrollToInstant()`    | Temporarily forces `scroll-behavior: auto` for scroll                           |
+| `ChatContainer.ts`         | `scheduleScrollIfNeeded()` | rAF-deferred autoscroll entry point for DOM mutation paths                   |
 | `ChatController.ts`        | `appendAgentText()`     | No longer calls synchronous `scrollIfNeeded()` (Fix 3)                          |
+| `ChatController.ts`        | Remaining autoscroll call sites | Use `scheduleScrollIfNeeded()` instead of direct scroll writes (Fix 6) |
 | `ChatController.ts`        | `upsertToolChip()`      | No longer calls synchronous `scrollIfNeeded()` (Fix 5)                          |
+| `chat.css`                 | `chat-container`, `chat-message` | No paint containment or content-visibility virtualization in OSR       |
 | `MessageBubble.ts`         | `appendStreamingText()` | rAF-debounced markdown re-render                                                |
 | `MonitorSwitchRecovery.kt` | `triggerRecovery()`     | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes |
 
@@ -222,8 +253,9 @@ When modifying the streaming pipeline, watch for:
    risks creating a mutation loop. Always check for `message-bubble[streaming]` before adding nodes.
 
 2. **Synchronous `scrollTop` writes** — never write `scrollTop` directly during streaming outside
-   the `_scrollRAF` gate. Use `scrollIfNeeded()` for observer-driven autoscroll, or
-   `_scrollToInstant()`-backed helpers for explicit snap-to-bottom operations.
+   the `_scrollRAF` gate. Use `scheduleScrollIfNeeded()` for DOM-mutation-driven autoscroll,
+   `scrollIfNeeded()` only from inside the rAF gate, or `_scrollToInstant()`-backed helpers for
+   explicit snap-to-bottom operations.
 
 3. **New `executeJs` calls during streaming** — these no longer trigger forced
    invalidation, but excessive calls still add EDT overhead via `pushJsEvent()`.
@@ -243,3 +275,7 @@ When modifying the streaming pipeline, watch for:
 7. **Forced OSR invalidation** — do NOT reintroduce manual `cefBrowser.invalidate()` calls
    keyed off streaming state (per-token, periodic timer, etc.). They paint mid-rAF and
    capture half-rendered DOM. This was the root cause uncovered by Fix 4.
+
+8. **CSS scroll virtualization** — do NOT reintroduce `content-visibility`,
+   `contain-intrinsic-size`, or paint containment on the chat scroll container or rows without
+   testing JCEF OSR on Linux and Windows during active scroll.

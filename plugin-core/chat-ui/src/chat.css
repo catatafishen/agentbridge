@@ -152,7 +152,6 @@ chat-container {
        right edge. The scrollbar still sits inside this narrow lane — this is
        the visual gap that previously made bubbles look offset from the input. */
     padding: var(--sp-4) var(--sp-2) var(--sp-4) var(--sp-4);
-    contain: paint;
 }
 
 ::-webkit-scrollbar {
@@ -227,11 +226,6 @@ chat-container {
 
 
 /* ── Agent response ──────────────────────────────────── */
-
-chat-message {
-    content-visibility: auto;
-    contain-intrinsic-size: auto 120px;
-}
 
 .agent-row {
     display: block;
