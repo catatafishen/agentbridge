@@ -199,9 +199,18 @@ public abstract class Tool implements ToolDefinition {
                 // Evaluate chat-active state here on the EDT, not before invokeLater, to avoid
                 // a stale capture: RunContentExecutor.run() is the actual UI operation,
                 // and the user's focus may have changed between the check and this point.
+                //
+                // RunContentExecutor exposes TWO independent flags, both defaulting to true:
+                //   - withActivateToolWindow → setActivateToolWindowWhenAdded (window activation)
+                //   - withFocusToolWindow    → setAutoFocusContent           (tab content focus)
+                // Even with activateToolWindow=false, setAutoFocusContent(true) still steals
+                // keyboard focus into the new console tab when it is added to an already-visible
+                // Run window. Both must be gated together to keep focus on the chat prompt.
+                boolean chatActive = PsiBridgeService.isChatToolWindowActive(project);
                 new RunContentExecutor(project, processHandler)
                     .withTitle(title)
-                    .withActivateToolWindow(!PsiBridgeService.isChatToolWindowActive(project))
+                    .withActivateToolWindow(!chatActive)
+                    .withFocusToolWindow(!chatActive)
                     .run();
             } catch (Exception e) {
                 // RunContentExecutor.run() may have already called startNotify() before

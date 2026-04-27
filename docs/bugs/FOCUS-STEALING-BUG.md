@@ -1,7 +1,8 @@
 # Focus-Stealing Bug — Issue #275
 
 **Issue**: https://github.com/catatafishen/agentbridge/issues/275  
-**Status**: Under investigation — mitigations in PR #276, PR #280, Attempt 11 (VetoableChangeListener FocusGuard), not confirmed fixed  
+**Status**: Under investigation — mitigations in PR #276, PR #280, Attempt 11 (VetoableChangeListener FocusGuard), not
+confirmed fixed  
 **Scope**: Broader than the title — affects editor focus, terminal tabs, run/search tool windows
 
 ---
@@ -34,13 +35,17 @@ Build tool window, Find tool window, and the chat input focus-restore.
 ```java
 boolean chatWasActive = isChatToolWindowActive(project);
 // ...
-if (req.chatWasActive()) fireFocusRestoreEvent();  // line 450
+if(req.
+
+chatWasActive())
+
+fireFocusRestoreEvent();  // line 450
 ```
 
 Captured at tool call **start**. After the tool finishes, if `chatWasActive=true`, fires a
 focus-restore event that returns focus to the chat input.
 
-**Problem**: Tools can take seconds or minutes. If user switches focus during execution, 
+**Problem**: Tools can take seconds or minutes. If user switches focus during execution,
 `chatWasActive` is stale and still `true`, so focus is wrongly stolen back after completion.
 
 ### 2. `isChatToolWindowActive` check in tools (at time of UI operation)
@@ -49,11 +54,16 @@ Used by: FileTool, GitCommitTool, GitTool, BuildProjectTool, Tool, CreateScratch
 OpenInEditorTool, SearchTextTool, PlatformApiCompat.
 
 Pattern:
+
 ```java
-if (PsiBridgeService.isChatToolWindowActive(project)) {
-    tw.show();    // no focus steal
-} else {
-    tw.activate(null);  // steals focus
+if(PsiBridgeService.isChatToolWindowActive(project)){
+        tw.
+
+show();    // no focus steal
+}else{
+        tw.
+
+activate(null);  // steals focus
 }
 ```
 
@@ -76,7 +86,11 @@ focus is stolen mid-keystroke.
 
 ```java
 boolean focus = !PsiBridgeService.isChatToolWindowActive(project);
-new OpenFileDescriptor(project, vf, midLine - 1, 0).navigate(focus);
+new
+
+OpenFileDescriptor(project, vf, midLine -1, 0).
+
+navigate(focus);
 ```
 
 Note: this check IS inside `invokeLater` (the EDT operation), so the value is fresh. ✓
@@ -85,7 +99,7 @@ When `focus=true` (chat not active), `navigate(true)` opens the file AND steals 
 ### 5. `selectInProjectView` (FileTool.java:283)
 
 ```java
-if (PsiBridgeService.isChatToolWindowActive(project)) return;
+if(PsiBridgeService.isChatToolWindowActive(project))return;
 // ... scroll Project tree (only if already visible)
 ```
 
@@ -116,11 +130,12 @@ The last line of defense during tool execution. Uses Java's `VetoableChangeListe
 `KeyboardFocusManager.focusOwner` to **prevent** programmatic focus changes from happening at all.
 
 **How it works**:
+
 1. Installed on EDT at tool call start (if chat is focused)
 2. When any code tries to move focus to a component **outside** the chat tool window:
-   - If target is in the same Window as chat (editor, tool window) → **vetoed** (focus stays in chat)
-   - If target is in a different Window (dialog, popup, lookup) → **allowed** (legitimate IDE UI)
-   - If triggered by user input (mouse click, keystroke) → **allowed** (user-initiated)
+    - If target is in the same Window as chat (editor, tool window) → **vetoed** (focus stays in chat)
+    - If target is in a different Window (dialog, popup, lookup) → **allowed** (legitimate IDE UI)
+    - If triggered by user input (mouse click, keystroke) → **allowed** (user-initiated)
 3. Uninstalled on EDT after tool completes (synchronous via CountDownLatch)
 
 **Why preventive > reactive**: The previous `PropertyChangeListener` approach reclaimed focus
@@ -137,6 +152,7 @@ no JCEF mis-routing, no one-shot limitation. Every programmatic focus steal is v
 
 **Commit**: `fix: preserve chat prompt focus during agent tool execution`  
 **What**:
+
 - Made `isChatToolWindowActive()` synchronous on EDT (no more stale async cache)
 - Added `tw.show()` vs `tw.activate()` guards to FileTool, BuildProjectTool, GitCommitTool, GitTool
 - `selectInProjectView`: skip when chat is active
@@ -145,14 +161,15 @@ no JCEF mis-routing, no one-shot limitation. Every programmatic focus steal is v
   this commit introduced that is now fixed in RC2)
 
 **Result**: Significantly improved. Tool windows no longer steal focus when chat is in foreground.
-**Still broken**: 
+**Still broken**:
+
 - `activateRunPanel` in Tool.java is stale (RC2 — now fixed in this branch)
 - `chatWasActive` for focus restore is captured at call start, not at completion (RC1)
 - If user switches focus during long-running tool, focus is stolen back on completion (RC1)
 
 ### Attempt 2: Focus restore via message bus + 150ms alarm (commit `92690bc3`)
 
-**What**: After tool call, fire `FOCUS_RESTORE_TOPIC`. `ChatToolWindowContent` uses an alarm 
+**What**: After tool call, fire `FOCUS_RESTORE_TOPIC`. `ChatToolWindowContent` uses an alarm
 with 150ms delay to return focus to the chat input AFTER any secondary window operations.
 
 **Why 150ms**: `navigate()` and `tw.show()` themselves use `invokeLater`, so without the delay,
@@ -174,6 +191,7 @@ user may change focus. The window of stale-check → UI-op is unbounded.
 ### Attempt 4: RC1 + RC2 guards (commit `79029ae4`, PR #276, 2026-04-17)
 
 **What**:
+
 - RC1: gate `fireFocusRestoreEvent()` on `chatWasActive && isChatToolWindowActive(project)` so
   we never steal focus back when the user explicitly switched away during tool execution.
 - RC2: inline `activateRunPanel` capture INSIDE the `invokeLater` lambda in `Tool.java`, so the
@@ -197,6 +215,7 @@ changes (mouse clicks, tab key) are detected via `EventQueue.getCurrentEvent()` 
 `InputEvent` and are allowed through unchanged.
 
 **Why it worked** (in-execution steals):
+
 - Property-change dispatch happens on the EDT synchronously with the focus transfer. If we
   reclaim focus inside the listener, the focus owner is corrected before the EDT yields to
   process queued `KeyEvent`s.
@@ -211,6 +230,7 @@ changes (mouse clicks, tab key) are detected via `EventQueue.getCurrentEvent()` 
 extends `JPanel`) does not necessarily route focus back to `chatFocusOwner` itself — JCEF's
 internal focus delegation may land on a sibling or parent component. That intermediate component
 is:
+
 1. Not `chatFocusOwner` → passes the `newComp == chatFocusOwner` guard
 2. Not inside the chat tool window → passes `isInsideChatToolWindow` guard (OSR components can
    fail the `SwingUtilities.isDescendingFrom` check depending on JCEF's window mode)
@@ -233,6 +253,7 @@ call `if (!hasReclaimed.compareAndSet(false, true)) return;` before `requestFocu
 This ensures the guard fires at most once per tool call lifetime.
 
 **Why this breaks the storm loop**:
+
 - The first focus steal is reclaimed synchronously — preventing any in-flight keystrokes.
 - If the reclaim routes focus to an intermediate component, the second invocation of
   `propertyChange` hits `hasReclaimed=true` and returns immediately.
@@ -289,6 +310,7 @@ tools like `view`, `read`). Previously, `handleFileLink` always called `navigate
 unconditionally stealing focus.
 
 **Root cause**: Two independent file-opening paths exist:
+
 1. **MCP path** (`PsiBridgeService.callTool()` → `FileTool.followFileIfEnabled()`): Protected by
    `FocusGuard` + `isChatToolWindowActive` check. ✓
 2. **ACP path** (`PromptOrchestrator` → `FileNavigator.handleFileLink()`): Runs for ALL tool calls
@@ -312,6 +334,7 @@ the ACP-side path in `PromptOrchestrator` extracted file paths from the ACP even
 ### Attempt 10: PlatformApiCompat race-condition path, ProjectBuildSupport guard, FocusGuard uninstall timing
 
 **New incidents observed**:
+
 - At **19:51**: Focus went to Build tool window, then to Git Log tool window during `git_commit`
 - At **20:48-20:49**: Focus went into editor while user was typing in chat
 
@@ -403,6 +426,7 @@ so there's no reclaim to mis-route, and no `hasReclaimed` flag needed.
    for the entire tool execution duration.
 
 **How `VetoableChangeListener` works in Java's focus system**:
+
 - `KeyboardFocusManager.setGlobalFocusOwner()` fires `fireVetoableChange("focusOwner", ...)`
   *before* changing the property
 - If any listener throws `PropertyVetoException`, the focus change is **cancelled** — the old
@@ -413,6 +437,44 @@ so there's no reclaim to mis-route, and no `hasReclaimed` flag needed.
 
 **Files**: `FocusGuard.java` (rewritten from `PropertyChangeListener` to `VetoableChangeListener`),
 `FocusGuardTest.java` (updated to test veto semantics, added circuit breaker and window-targeting tests).
+
+### Attempt 12: Run panel — gate `setAutoFocusContent` (was always true)
+
+**Problem**: User reported that running `run_command` while typing in the chat prompt still
+stole focus into the new Run console tab — despite `Tool.java` setting
+`withActivateToolWindow(!chatActive)` and being inside `invokeLater`.
+
+**Root cause**: `RunContentExecutor` exposes **two** independent flags, both initialised to
+`true` in the constructor:
+
+| Builder method                 | Field                  | Effect                                                                                                                   |
+|--------------------------------|------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `withActivateToolWindow(bool)` | `myActivateToolWindow` | `descriptor.setActivateToolWindowWhenAdded(...)` — controls whether the Run tool window is brought to front / activated. |
+| `withFocusToolWindow(bool)`    | `myFocusToolWindow`    | `descriptor.setAutoFocusContent(...)` — controls whether the **content tab** auto-grabs keyboard focus when added.       |
+
+Confirmed by decompiling `RunContentExecutor.class` from `idea-2025.3/lib/app.jar`:
+
+```
+49: iconst_1
+50: putfield myActivateToolWindow:Z   // default true
+54: iconst_1
+55: putfield myFocusToolWindow:Z      // default true
+...
+85: getfield myActivateToolWindow → setActivateToolWindowWhenAdded
+94: getfield myFocusToolWindow    → setAutoFocusContent
+```
+
+We only set `withActivateToolWindow(false)`, so `setAutoFocusContent(true)` was still being
+called. Even when the Run tool window itself was not activated, adding the new content
+descriptor with `autoFocusContent=true` made the new tab grab keyboard focus the moment it
+was added to an already-visible Run window — bypassing the chat. FocusGuard could not catch
+this because the content-add path uses internal `IdeFocusManager.requestFocusInProject` which
+in some scenarios does not route through the property-veto chain.
+
+**Fix**: Also set `withFocusToolWindow(!chatActive)` alongside `withActivateToolWindow`. Both
+must be gated together — gating only one is insufficient.
+
+**Files**: `Tool.java` (`executeInRunPanel`).
 
 ---
 
@@ -436,27 +498,28 @@ _All previously documented root causes (RC1–RC4) have been fixed. See Attempts
 
 ## Code Locations (Current State)
 
-| File | Line | Status |
-|------|------|--------|
-| `PsiBridgeService.java` | 321 | ✅ `chatWasActive` captured at start, completion re-checks |
-| `PsiBridgeService.java` | 469 | ✅ Focus restore requires both start+end active |
-| `ChatToolWindowContent.kt` | 165 | ✅ 150ms alarm checks chat-active before firing |
-| `FocusGuard.java` | all | ✅ `VetoableChangeListener` vetoes programmatic focus steals; targeted to same-Window only; circuit breaker at 20 vetoes; synchronous EDT uninstall via latch |
-| `FileTool.java` | 257 | ✅ `navigate(focus)` check is inside `invokeLater` |
-| `FileTool.java` | 286 | ✅ `selectInProjectView` skips if chat active; only scrolls if already open |
-| `GitTool.java` | 400 | ✅ VCS `show()`/`activate()` check is inside `invokeLater` |
-| `BuildProjectTool.java` | 82 | ✅ Build window check is inside `invokeLater` |
-| `Tool.java` | 204 | ✅ Run panel `activateToolWindow` check is inside `invokeLater` |
-| `SearchTextTool.java` | 175 | ✅ Find tool window skipped when chat active |
-| `PlatformApiCompat.java` | ~475 | ✅ VCS log `showRevisionInMainLog` guarded (both listener and race-condition paths) |
-| `FileNavigator.kt` | 30 | ✅ `handleFileLink` passes `focus=!isChatToolWindowActive()` |
-| `ProjectBuildSupport.java` | 92 | ✅ `restoreFocusIfNeeded` skips when chat active |
+| File                       | Line | Status                                                                                                                                                       |
+|----------------------------|------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `PsiBridgeService.java`    | 321  | ✅ `chatWasActive` captured at start, completion re-checks                                                                                                    |
+| `PsiBridgeService.java`    | 469  | ✅ Focus restore requires both start+end active                                                                                                               |
+| `ChatToolWindowContent.kt` | 165  | ✅ 150ms alarm checks chat-active before firing                                                                                                               |
+| `FocusGuard.java`          | all  | ✅ `VetoableChangeListener` vetoes programmatic focus steals; targeted to same-Window only; circuit breaker at 20 vetoes; synchronous EDT uninstall via latch |
+| `FileTool.java`            | 257  | ✅ `navigate(focus)` check is inside `invokeLater`                                                                                                            |
+| `FileTool.java`            | 286  | ✅ `selectInProjectView` skips if chat active; only scrolls if already open                                                                                   |
+| `GitTool.java`             | 400  | ✅ VCS `show()`/`activate()` check is inside `invokeLater`                                                                                                    |
+| `BuildProjectTool.java`    | 82   | ✅ Build window check is inside `invokeLater`                                                                                                                 |
+| `Tool.java`                | 209  | ✅ Run panel `activateToolWindow` AND `focusToolWindow` (Attempt 12) gated by chat-active check inside `invokeLater`                                          |
+| `SearchTextTool.java`      | 175  | ✅ Find tool window skipped when chat active                                                                                                                  |
+| `PlatformApiCompat.java`   | ~475 | ✅ VCS log `showRevisionInMainLog` guarded (both listener and race-condition paths)                                                                           |
+| `FileNavigator.kt`         | 30   | ✅ `handleFileLink` passes `focus=!isChatToolWindowActive()`                                                                                                  |
+| `ProjectBuildSupport.java` | 92   | ✅ `restoreFocusIfNeeded` skips when chat active                                                                                                              |
 
 ---
 
 ## Test Plan
 
 Manual test steps to verify a fix:
+
 1. Start a long-running tool (e.g., run_command with sleep)
 2. While it runs, click into a Terminal tab and start typing
 3. Tool completes — verify your terminal cursor position is preserved

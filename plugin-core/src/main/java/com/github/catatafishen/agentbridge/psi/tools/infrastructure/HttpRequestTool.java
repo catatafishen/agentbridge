@@ -326,6 +326,7 @@ public final class HttpRequestTool extends InfrastructureTool {
                     .withTitle(tabTitle)
                     .withConsole(view)
                     .withActivateToolWindow(false)
+                    .withFocusToolWindow(false)
                     .run();
 
                 view.print(text, com.intellij.execution.ui.ConsoleViewContentType.SYSTEM_OUTPUT);
