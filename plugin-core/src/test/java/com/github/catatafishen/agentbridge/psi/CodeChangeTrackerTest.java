@@ -1,7 +1,12 @@
 package com.github.catatafishen.agentbridge.psi;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.junit.jupiter.api.parallel.ResourceAccessMode;
+import org.junit.jupiter.api.parallel.ResourceLock;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -10,8 +15,26 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Tests for {@link CodeChangeTracker} — counter logic, listener notification, and countLines.
  * Does not test {@code diffLines} as it requires IntelliJ's {@code Diff} class.
+ *
+ * <p><b>Isolation note:</b> {@link CodeChangeTracker} holds JVM-wide static state. Other tests
+ * (e.g. file tool tests) call {@code recordChange} via PSI listeners and can leak counts into
+ * this class when sharing a JVM fork. We mitigate this by:
+ * <ul>
+ *   <li>Resetting all counters in {@code @BeforeEach}.</li>
+ *   <li>Serialising execution against the shared {@code "code-change-tracker"} resource lock
+ *       so no other tests holding the same lock run concurrently.</li>
+ *   <li>Using delta-based assertions for tests that observe absolute counter values.</li>
+ * </ul>
  */
+@Execution(ExecutionMode.SAME_THREAD)
+@ResourceLock(value = "code-change-tracker", mode = ResourceAccessMode.READ_WRITE)
 class CodeChangeTrackerTest {
+
+    @BeforeEach
+    void resetBefore() {
+        CodeChangeTracker.getAndClear();
+        CodeChangeTracker.clearSession();
+    }
 
     @AfterEach
     void resetCounters() {
