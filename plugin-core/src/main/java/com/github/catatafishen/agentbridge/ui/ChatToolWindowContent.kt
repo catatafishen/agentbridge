@@ -14,6 +14,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.actionSystem.*
 import com.intellij.openapi.actionSystem.ex.ComboBoxAction
+import com.intellij.openapi.actionSystem.toolbarLayout.ToolbarLayoutStrategy
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.project.Project
@@ -950,34 +951,20 @@ class ChatToolWindowContent(
 
         row.add(promptTextArea, BorderLayout.CENTER)
 
-        val modelGroup = DefaultActionGroup()
-        modelGroup.add(ModelSelectorAction())
-        val modelToolbar = ActionManager.getInstance().createActionToolbar("AgentModel", modelGroup, true)
-        modelToolbar.isReservePlaceAutoPopupIcon = false
-        modelToolbar.component.isOpaque = false
+        val footerGroup = DefaultActionGroup()
+        footerGroup.add(ShortcutHintsAction())
+        footerGroup.add(ModelSelectorAction())
+        footerGroup.add(SendAction())
 
-        val sendGroup = DefaultActionGroup()
-        sendGroup.add(SendAction())
-        innerInputToolbar = ActionManager.getInstance().createActionToolbar("AgentSend", sendGroup, true)
-        innerInputToolbar.isReservePlaceAutoPopupIcon = false
+        innerInputToolbar = ActionManager.getInstance().createActionToolbar("AgentInputFooter", footerGroup, true)
+        innerInputToolbar.layoutStrategy = ToolbarLayoutStrategy.NOWRAP_STRATEGY
+        innerInputToolbar.isReservePlaceAutoPopupIcon = true
         innerInputToolbar.component.isOpaque = false
-
-        shortcutHintPanel.alignmentY = Component.CENTER_ALIGNMENT
-        modelToolbar.component.alignmentY = Component.CENTER_ALIGNMENT
-        innerInputToolbar.component.alignmentY = Component.CENTER_ALIGNMENT
-
-        val footerContent = JPanel().apply {
-            layout = BoxLayout(this, BoxLayout.X_AXIS)
-            isOpaque = false
-            border = JBUI.Borders.empty(0, 1)
-            add(shortcutHintPanel)
-            add(Box.createHorizontalGlue())
-            add(modelToolbar.component)
-            add(Box.createHorizontalStrut(JBUI.scale(2)))
-            add(innerInputToolbar.component)
+        innerInputToolbar.component.apply {
+            border = JBUI.Borders.empty()
+            alignmentY = Component.RIGHT_ALIGNMENT
         }
-        val innerBar = RightAnchoredFooterScrollPane(footerContent)
-        row.add(innerBar, BorderLayout.SOUTH)
+        row.add(RightAnchoredFooterScrollPane(innerInputToolbar.component), BorderLayout.SOUTH)
 
         refreshShortcutHints()
 
@@ -1154,6 +1141,20 @@ class ChatToolWindowContent(
         }
         shortcutHintPanel.setShortcuts(list)
         shortcutHintPanel.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
+    }
+
+    private inner class ShortcutHintsAction : AnAction(), com.intellij.openapi.actionSystem.ex.CustomComponentAction {
+        override fun getActionUpdateThread() = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            // Custom-component placeholder for the shortcut hint row; it has no direct click action.
+        }
+
+        override fun createCustomComponent(presentation: Presentation, place: String): JComponent = shortcutHintPanel
+
+        override fun updateCustomComponent(component: JComponent, presentation: Presentation) {
+            component.isVisible = ChatInputSettings.getInstance().isShowShortcutHints
+        }
     }
 
     private fun setSendingState(sending: Boolean) {

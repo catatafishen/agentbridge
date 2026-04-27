@@ -5,15 +5,15 @@ import com.intellij.ui.components.JBPanel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.FlowLayout
-import javax.swing.BoxLayout
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
 import javax.swing.JPanel
 import javax.swing.KeyStroke
 
 /** Displays keyboard shortcut hints in a horizontal, non-wrapping row. */
-class PromptShortcutHintPanel : JBPanel<JBPanel<*>>() {
+class PromptShortcutHintPanel : JBPanel<JBPanel<*>>(GridBagLayout()) {
 
     init {
-        layout = BoxLayout(this, BoxLayout.X_AXIS)
         isOpaque = false
         border = JBUI.Borders.empty()
         alignmentY = CENTER_ALIGNMENT
@@ -21,18 +21,25 @@ class PromptShortcutHintPanel : JBPanel<JBPanel<*>>() {
 
     fun setShortcuts(shortcuts: List<Pair<KeyStroke, String>>) {
         removeAll()
-        shortcuts.forEach { (stroke, label) ->
-            add(shortcutCell(stroke, label))
+        shortcuts.forEachIndexed { index, (stroke, label) ->
+            add(shortcutCell(stroke, label), shortcutConstraints(index, index == shortcuts.lastIndex))
         }
         revalidate()
         repaint()
     }
 
+    private fun shortcutConstraints(index: Int, isLast: Boolean): GridBagConstraints =
+        GridBagConstraints().apply {
+            gridx = index
+            gridy = 0
+            anchor = GridBagConstraints.CENTER
+            insets = if (isLast) JBUI.emptyInsets() else JBUI.insetsRight(JBUI.scale(8))
+        }
+
     private fun shortcutCell(stroke: KeyStroke, label: String): JPanel {
         val cell = JPanel(FlowLayout(FlowLayout.CENTER, JBUI.scale(2), 0)).apply {
             isOpaque = false
-            border = JBUI.Borders.emptyRight(JBUI.scale(8))
-            alignmentY = CENTER_ALIGNMENT
+            border = JBUI.Borders.empty()
         }
         KeyBadge.keystrokeTokens(stroke).forEach { cell.add(KeyBadge(it)) }
         cell.add(JBLabel(label).apply {
