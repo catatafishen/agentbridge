@@ -157,7 +157,23 @@ public final class ToolCallStatisticsBackfill {
         String type = getStr(obj, "type");
         if (!"tool".equals(type)) return null;
 
-        String toolName = getStr(obj, "title");
+        // The display "title" is whatever the agent supplied for the chip label
+        // (e.g. "Tail full log", "Run summary"). Each call gets a unique non-deterministic
+        // string, which makes aggregation worthless. Use the canonical MCP tool id from
+        // the "pluginTool" field instead. Skip entries that aren't MCP tool calls.
+        String pluginTool = getStr(obj, "pluginTool");
+        String displayName = getStr(obj, "title");
+        if (pluginTool.isEmpty()) {
+            // Legacy entries with mcpHandled=true but no explicit pluginTool: title was the bare id.
+            boolean mcpHandled = obj.has("mcpHandled") && !obj.get("mcpHandled").isJsonNull()
+                && obj.get("mcpHandled").getAsBoolean();
+            if (mcpHandled && !displayName.isEmpty()) {
+                pluginTool = displayName;
+            } else {
+                return null;
+            }
+        }
+        String toolName = stripMcpPrefix(pluginTool);
         if (toolName.isEmpty()) return null;
 
         String timestampStr = getStr(obj, "timestamp");
@@ -181,10 +197,29 @@ public final class ToolCallStatisticsBackfill {
             errorMessage = result.length() > 500 ? result.substring(0, 500) : result;
         }
 
+        // Preserve the original chip title in display_name for debugging/UI grouping
+        // — but only when it differs from the canonical id (avoids redundant data).
+        String displayForDb = displayName.isEmpty() || displayName.equals(toolName) ? null : displayName;
+
         return new ToolCallRecord(
             toolName, category, inputSize, outputSize,
             0, // durationMs not available in JSONL entries
-            success, errorMessage, clientId, timestamp);
+            success, errorMessage, clientId, timestamp, displayForDb);
+    }
+
+    /**
+     * Strip the {@code agentbridge-} / {@code agentbridge_} / {@code @agentbridge/}
+     * prefix that some agents add to MCP tool ids before invocation. The DB stores
+     * the bare canonical id (e.g. {@code read_file}) to match the live recording path
+     * which receives the bare name from the JSON-RPC {@code tools/call} request.
+     */
+    @NotNull
+    static String stripMcpPrefix(@NotNull String pluginTool) {
+        String s = pluginTool.trim();
+        if (s.startsWith("@agentbridge/")) return s.substring("@agentbridge/".length());
+        if (s.startsWith("agentbridge-")) return s.substring("agentbridge-".length());
+        if (s.startsWith("agentbridge_")) return s.substring("agentbridge_".length());
+        return s;
     }
 
     @NotNull

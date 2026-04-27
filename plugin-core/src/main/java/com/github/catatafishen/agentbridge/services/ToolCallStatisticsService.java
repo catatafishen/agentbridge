@@ -125,6 +125,8 @@ public final class ToolCallStatisticsService implements Disposable {
                 "CREATE INDEX IF NOT EXISTS idx_tool_calls_tool_name ON tool_calls(tool_name)");
             // Migration: add error_message column to existing databases
             migrateAddErrorMessageColumn(stmt);
+            // Migration: add display_name column to preserve agent-supplied chip titles for debugging
+            migrateAddDisplayNameColumn(stmt);
 
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS turn_stats (
@@ -157,6 +159,18 @@ public final class ToolCallStatisticsService implements Disposable {
         } catch (SQLException e) {
             if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
                 LOG.warn("Unexpected error migrating tool_calls schema (error_message column)", e);
+            }
+            // else: duplicate column — expected for databases that have already been migrated
+        }
+    }
+
+    private void migrateAddDisplayNameColumn(java.sql.Statement stmt) {
+        try {
+            stmt.execute("ALTER TABLE tool_calls ADD COLUMN display_name TEXT");
+            LOG.info("Migrated tool_calls table: added display_name column");
+        } catch (SQLException e) {
+            if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
+                LOG.warn("Unexpected error migrating tool_calls schema (display_name column)", e);
             }
             // else: duplicate column — expected for databases that have already been migrated
         }
@@ -208,8 +222,8 @@ public final class ToolCallStatisticsService implements Disposable {
 
     private void insertRecord(@NotNull ToolCallRecord callRecord) throws SQLException {
         String sql = """
-            INSERT INTO tool_calls (tool_name, category, input_size, output_size, duration_ms, success, error_message, client_id, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO tool_calls (tool_name, category, input_size, output_size, duration_ms, success, error_message, client_id, timestamp, display_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setString(1, callRecord.toolName());
@@ -221,6 +235,7 @@ public final class ToolCallStatisticsService implements Disposable {
             stmt.setString(7, callRecord.errorMessage());
             stmt.setString(8, callRecord.clientId());
             stmt.setString(9, callRecord.timestamp().toString());
+            stmt.setString(10, callRecord.displayName());
             stmt.executeUpdate();
         }
     }
@@ -695,6 +710,32 @@ public final class ToolCallStatisticsService implements Disposable {
         }
     }
 
+    private static void runToolNameRepair(@NotNull ToolCallStatisticsService service,
+                                          @NotNull Project project) {
+        try {
+            ToolRegistry registry = ToolRegistry.getInstance(project);
+            ToolCallStatisticsToolNameRepair.RepairResult result =
+                service.runRepairWithRegistry(registry);
+            if (!result.alreadyRun() && (result.repaired() > 0 || result.deleted() > 0)) {
+                LOG.info("Tool name repair: " + result);
+            }
+        } catch (Exception e) {
+            LOG.warn("Tool name repair failed", e);
+        }
+    }
+
+    /**
+     * Run the one-shot tool-name repair against this service's database.
+     * Package-private for the trigger and tests.
+     */
+    synchronized ToolCallStatisticsToolNameRepair.RepairResult runRepairWithRegistry(
+        @NotNull ToolRegistry registry) {
+        if (connection == null) {
+            return new ToolCallStatisticsToolNameRepair.RepairResult(0, 0, 0, 0, false);
+        }
+        return ToolCallStatisticsToolNameRepair.repair(connection, registry);
+    }
+
     private static void runTurnStatsBackfill(@NotNull ToolCallStatisticsService service,
                                              @NotNull String basePath) {
         if (service.getTurnStatsCount() >= BACKFILL_THRESHOLD) return;
@@ -717,6 +758,7 @@ public final class ToolCallStatisticsService implements Disposable {
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             runToolCallBackfill(service, basePath);
             runTurnStatsBackfill(service, basePath);
+            runToolNameRepair(service, project);
         });
     }
 

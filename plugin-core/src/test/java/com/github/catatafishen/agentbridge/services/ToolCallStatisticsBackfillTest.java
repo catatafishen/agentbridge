@@ -244,7 +244,8 @@ class ToolCallStatisticsBackfillTest {
     void kindFieldStoredAsCategory() throws IOException {
         String basePath = tempDir.toString();
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
-        String entryWithKind = "{\"type\":\"tool\",\"title\":\"read_file\","
+        String entryWithKind = "{\"type\":\"tool\",\"pluginTool\":\"read_file\","
+            + "\"title\":\"read_file\","
             + "\"kind\":\"FILE\","
             + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"completed\","
             + "\"arguments\":\"{}\",\"result\":\"file contents\"}";
@@ -255,6 +256,81 @@ class ToolCallStatisticsBackfillTest {
 
         assertEquals(1, result.inserted(), "Entry with kind field should be inserted");
         assertEquals(0, result.errors());
+    }
+
+    @Test
+    @DisplayName("entries without pluginTool are skipped (not MCP tool calls)")
+    void entriesWithoutPluginToolAreSkipped() throws IOException {
+        String basePath = tempDir.toString();
+        createSessionIndex(basePath, "session-1", "GitHub Copilot");
+        // No pluginTool, no mcpHandled — this is a non-MCP tool call (e.g. agent's built-in)
+        String nonMcpEntry = "{\"type\":\"tool\",\"title\":\"Some agent tool\","
+            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"completed\","
+            + "\"arguments\":\"{}\",\"result\":\"ok\"}";
+        createSessionJsonl(basePath, "session-1", nonMcpEntry);
+
+        ToolCallStatisticsBackfill.BackfillResult result =
+            ToolCallStatisticsBackfill.backfill(service, basePath);
+
+        assertEquals(0, result.inserted());
+        assertEquals(0, result.errors());
+        assertEquals(0, service.getRecordCount());
+    }
+
+    @Test
+    @DisplayName("legacy entries with mcpHandled=true and title only are accepted")
+    void legacyMcpHandledFallback() throws IOException {
+        String basePath = tempDir.toString();
+        createSessionIndex(basePath, "session-1", "GitHub Copilot");
+        String legacyEntry = "{\"type\":\"tool\",\"title\":\"read_file\","
+            + "\"mcpHandled\":true,"
+            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"completed\","
+            + "\"arguments\":\"{}\",\"result\":\"ok\"}";
+        createSessionJsonl(basePath, "session-1", legacyEntry);
+
+        ToolCallStatisticsBackfill.BackfillResult result =
+            ToolCallStatisticsBackfill.backfill(service, basePath);
+
+        assertEquals(1, result.inserted());
+    }
+
+    @Test
+    @DisplayName("agentbridge prefix on pluginTool is stripped")
+    void prefixStrippedFromPluginTool() throws IOException {
+        String basePath = tempDir.toString();
+        createSessionIndex(basePath, "session-1", "GitHub Copilot");
+        // Different agents prefix the MCP id differently
+        String copilotEntry = "{\"type\":\"tool\",\"pluginTool\":\"agentbridge-read_file\","
+            + "\"title\":\"Read source\","
+            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"completed\","
+            + "\"arguments\":\"{}\",\"result\":\"ok\"}";
+        String opencodeEntry = "{\"type\":\"tool\",\"pluginTool\":\"agentbridge_search_text\","
+            + "\"title\":\"grep\","
+            + "\"timestamp\":\"2025-01-15T10:01:00Z\",\"status\":\"completed\","
+            + "\"arguments\":\"{}\",\"result\":\"ok\"}";
+        String kiroEntry = "{\"type\":\"tool\",\"pluginTool\":\"@agentbridge/git_status\","
+            + "\"title\":\"git status\","
+            + "\"timestamp\":\"2025-01-15T10:02:00Z\",\"status\":\"completed\","
+            + "\"arguments\":\"{}\",\"result\":\"clean\"}";
+        createSessionJsonl(basePath, "session-1", copilotEntry, opencodeEntry, kiroEntry);
+
+        ToolCallStatisticsBackfill.backfill(service, basePath);
+
+        var stats = service.queryAggregates(null, null);
+        var names = stats.stream().map(ToolCallStatisticsService.ToolAggregate::toolName).toList();
+        assertTrue(names.contains("read_file"), "Stripped 'agentbridge-' prefix → read_file. Got: " + names);
+        assertTrue(names.contains("search_text"), "Stripped 'agentbridge_' prefix → search_text. Got: " + names);
+        assertTrue(names.contains("git_status"), "Stripped '@agentbridge/' prefix → git_status. Got: " + names);
+    }
+
+    @Test
+    @DisplayName("stripMcpPrefix handles all known agent prefix variants")
+    void stripMcpPrefixHandlesAllVariants() {
+        assertEquals("read_file", ToolCallStatisticsBackfill.stripMcpPrefix("agentbridge-read_file"));
+        assertEquals("read_file", ToolCallStatisticsBackfill.stripMcpPrefix("agentbridge_read_file"));
+        assertEquals("read_file", ToolCallStatisticsBackfill.stripMcpPrefix("@agentbridge/read_file"));
+        assertEquals("read_file", ToolCallStatisticsBackfill.stripMcpPrefix("read_file"));
+        assertEquals("read_file", ToolCallStatisticsBackfill.stripMcpPrefix("  agentbridge-read_file  "));
     }
 
     @Test
@@ -288,9 +364,12 @@ class ToolCallStatisticsBackfillTest {
         assertEquals(0, service.getRecordCount());
     }
 
-    private static String toolEntry(String title, String status, String timestamp,
+    private static String toolEntry(String toolName, String status, String timestamp,
                                     String arguments, String result) {
-        return "{\"type\":\"tool\",\"title\":\"" + title
+        // Write both `pluginTool` (canonical id used by the live path) and `title`
+        // (display label) so the test entries match real session JSONL shape.
+        return "{\"type\":\"tool\",\"pluginTool\":\"" + toolName
+            + "\",\"title\":\"" + toolName
             + "\",\"status\":\"" + status
             + "\",\"timestamp\":\"" + timestamp
             + "\",\"arguments\":\"" + arguments.replace("\"", "\\\"")
