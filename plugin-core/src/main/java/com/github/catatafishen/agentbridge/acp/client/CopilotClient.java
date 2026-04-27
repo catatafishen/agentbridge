@@ -557,6 +557,12 @@ public final class CopilotClient extends AcpClient {
         java.util.Set<String> tools = new java.util.LinkedHashSet<>(misusedBuiltInTools);
         misusedBuiltInTools.clear();
 
+        // The same reprimand is also queued in pendingNudge for mid-turn delivery via tool
+        // results. If the previous turn ended without any MCP tool call, that nudge is still
+        // pending — clear it so the agent doesn't see the same notice TWICE in this turn
+        // (once prepended to the prompt, once appended to the next tool result).
+        PsiBridgeService.getInstance(project).setPendingNudge(null);
+
         String reprimand = buildToolReprimand(tools);
         LOG.info(displayName() + ": prepending tool reprimand for: " + tools);
 

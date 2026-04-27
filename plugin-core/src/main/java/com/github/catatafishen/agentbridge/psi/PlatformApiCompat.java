@@ -617,6 +617,41 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Returns absolute root paths of all git repositories detectable in the project,
+     * including <b>unregistered</b> ones in subfolders that IntelliJ has discovered but
+     * the user has not yet added to {@code Settings | Version Control}.
+     *
+     * <p>This is the source of truth for "what git repos exist in this project" — used by
+     * git tool error messages and root resolution. Paths returned here are not guaranteed
+     * to have a backing {@link git4idea.repo.GitRepository} instance, so APIs that require
+     * one (e.g. {@code Git.getInstance().checkout(repo, ...)}) must still go through
+     * {@link #getRepositoryForRoot}; CLI-based git operations work fine with just the path.
+     *
+     * <p>Falls back to {@link #getRepositories} alone when {@code VcsRootDetector} is
+     * unavailable (older IDE, missing VCS plugin).
+     */
+    public static @NotNull java.util.List<String> getDetectedGitRoots(@NotNull Project project) {
+        java.util.LinkedHashSet<String> roots = new java.util.LinkedHashSet<>();
+        for (git4idea.repo.GitRepository r : getRepositories(project)) {
+            roots.add(r.getRoot().getPath());
+        }
+        try {
+            java.util.Collection<com.intellij.openapi.vcs.VcsRoot> detected =
+                com.intellij.openapi.vcs.roots.VcsRootDetector.getInstance(project).getOrDetect();
+            for (com.intellij.openapi.vcs.VcsRoot vr : detected) {
+                com.intellij.openapi.vcs.AbstractVcs vcs = vr.getVcs();
+                com.intellij.openapi.vfs.VirtualFile path = vr.getPath();
+                if (vcs != null && "Git".equals(vcs.getName()) && path != null) {
+                    roots.add(path.getPath());
+                }
+            }
+        } catch (NoClassDefFoundError | Exception e) {
+            // VcsRootDetector unavailable or detection failed — fall through to registered-only.
+        }
+        return new java.util.ArrayList<>(roots);
+    }
+
+    /**
      * Returns the GitRepository whose root is exactly {@code rootPath}, or null if not found.
      */
     public static @Nullable git4idea.repo.GitRepository getRepositoryForRoot(

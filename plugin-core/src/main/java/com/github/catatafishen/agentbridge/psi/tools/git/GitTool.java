@@ -108,55 +108,32 @@ public abstract class GitTool extends Tool {
 
     // ── Multi-repo helpers ───────────────────────────────────
 
-    /**
-     * Returns true when the project contains more than one registered git repository.
-     */
     protected boolean isMultiRepo() {
         try {
-            return PlatformApiCompat.getRepositories(project).size() > 1;
+            return PlatformApiCompat.getDetectedGitRoots(project).size() > 1;
         } catch (NoClassDefFoundError e) {
             return false;
         }
     }
 
-    /**
-     * Returns the relative paths (from the project root) of all registered git repositories.
-     * Returns {@code ["."]} for a project root repo, {@code ["backend", "frontend"]} for
-     * side-by-side repos, etc. Used for error messages and status summaries.
-     */
     protected List<String> listRepoRoots() {
         try {
-            List<git4idea.repo.GitRepository> repos = PlatformApiCompat.getRepositories(project);
             String basePath = project.getBasePath();
-            return repos.stream()
-                .map(r -> toRelativePath(r.getRoot().getPath(), basePath))
+            return PlatformApiCompat.getDetectedGitRoots(project).stream()
+                .map(p -> toRelativePath(p, basePath))
                 .collect(Collectors.toList());
         } catch (NoClassDefFoundError e) {
             return Collections.emptyList();
         }
     }
 
-    /**
-     * Resolves the absolute repository root to use for a git command.
-     *
-     * <ul>
-     *   <li>If {@code repoParam} is non-null: finds the repo matching that relative path and
-     *       returns its absolute root, or an {@code "Error: ..."} string if not found.</li>
-     *   <li>If single repo: returns that repo's root (possibly a subdirectory of basePath).</li>
-     *   <li>If zero repos (git not initialised): returns {@code project.getBasePath()}.</li>
-     *   <li>If multiple repos and no param: returns the primary root (basePath-matching or first)
-     *       — callers that perform writes should call {@link #requireUnambiguousRepo} first.</li>
-     * </ul>
-     *
-     * @return absolute root path, or a string starting with {@code "Error:"} on failure
-     */
     @NotNull
     protected String resolveRepoRootOrError(@Nullable String repoParam) {
-        List<git4idea.repo.GitRepository> repos;
+        List<String> roots;
         try {
-            repos = PlatformApiCompat.getRepositories(project);
+            roots = PlatformApiCompat.getDetectedGitRoots(project);
         } catch (NoClassDefFoundError e) {
-            repos = Collections.emptyList();
+            roots = Collections.emptyList();
         }
 
         if (repoParam != null && !repoParam.isEmpty()) {
@@ -166,34 +143,34 @@ public abstract class GitTool extends Tool {
                 ? new File(basePath, repoParam).getAbsolutePath().replace("\\", "/")
                 : repoParam.replace("\\", "/");
 
-            for (git4idea.repo.GitRepository r : repos) {
-                if (r.getRoot().getPath().equals(absParam)) return r.getRoot().getPath();
+            for (String root : roots) {
+                if (root.equals(absParam)) return root;
             }
-            String available = repos.isEmpty() ? "none"
-                : repos.stream()
-                  .map(r -> "'" + toRelativePath(r.getRoot().getPath(), project.getBasePath()) + "'")
+            String available = roots.isEmpty() ? "none"
+                : roots.stream()
+                  .map(r -> "'" + toRelativePath(r, project.getBasePath()) + "'")
                   .collect(Collectors.joining(", "));
             return "Error: repository '" + repoParam + "' not found. Available: " + available
                 + ". Use git_status to list repositories.";
         }
 
-        if (repos.isEmpty()) {
+        if (roots.isEmpty()) {
             String basePath = project.getBasePath();
             return basePath != null ? basePath : "Error: no project base path";
         }
 
-        if (repos.size() == 1) {
-            return repos.getFirst().getRoot().getPath();
+        if (roots.size() == 1) {
+            return roots.getFirst();
         }
 
         // Multiple repos: prefer the one rooted at basePath, otherwise use first.
         String basePath = project.getBasePath();
         if (basePath != null) {
-            for (git4idea.repo.GitRepository r : repos) {
-                if (r.getRoot().getPath().equals(basePath)) return r.getRoot().getPath();
+            for (String root : roots) {
+                if (root.equals(basePath)) return root;
             }
         }
-        return repos.getFirst().getRoot().getPath();
+        return roots.getFirst();
     }
 
     /**
