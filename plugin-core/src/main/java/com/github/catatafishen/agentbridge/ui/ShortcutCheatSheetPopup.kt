@@ -1,26 +1,17 @@
 package com.github.catatafishen.agentbridge.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBPanel
+import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import com.intellij.vcsUtil.showAbove
-import org.jetbrains.compose.ui.tooling.preview.Preview
-import org.jetbrains.jewel.bridge.JewelComposePanel
-import org.jetbrains.jewel.bridge.retrieveColor
-import org.jetbrains.jewel.foundation.theme.JewelTheme
-import org.jetbrains.jewel.ui.component.Text
+import java.awt.BorderLayout
+import java.awt.Component
+import java.awt.Dimension
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
-import javax.swing.JComponent
-import javax.swing.KeyStroke
+import javax.swing.*
 
 /**
  * Cheat-sheet popup listing all chat prompt keyboard shortcuts.
@@ -29,29 +20,29 @@ import javax.swing.KeyStroke
  */
 object ShortcutCheatSheetPopup {
 
-    private data class ShortcutEntry(
+    private data class ShortcutRow(
         val actionId: String,
         val fallback: KeyStroke,
         val description: String,
     )
 
-    private val ENTRIES = listOf(
-        ShortcutEntry(
+    private val ROWS = listOf(
+        ShortcutRow(
             PromptShortcutAction.SEND_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0),
             "Send prompt (or nudge agent)"
         ),
-        ShortcutEntry(
+        ShortcutRow(
             PromptShortcutAction.NEW_LINE_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK),
             "Insert new line"
         ),
-        ShortcutEntry(
+        ShortcutRow(
             PromptShortcutAction.STOP_AND_SEND_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
             "Stop agent and send"
         ),
-        ShortcutEntry(
+        ShortcutRow(
             PromptShortcutAction.QUEUE_ID,
             KeyStroke.getKeyStroke(
                 KeyEvent.VK_ENTER,
@@ -59,7 +50,7 @@ object ShortcutCheatSheetPopup {
             ),
             "Queue (send after agent finishes)"
         ),
-        ShortcutEntry(
+        ShortcutRow(
             PromptShortcutAction.SHOW_SHORTCUTS_ID,
             KeyStroke.getKeyStroke(KeyEvent.VK_SLASH, InputEvent.CTRL_DOWN_MASK),
             "Show this popup"
@@ -67,71 +58,47 @@ object ShortcutCheatSheetPopup {
     )
 
     fun show(owner: JComponent) {
-        val resolvedEntries = ENTRIES.map { entry ->
-            PromptShortcutAction.resolveKeystroke(entry.actionId, entry.fallback) to entry.description
-        }
-        val panel = JewelComposePanel(focusOnClickInside = false) {
-            ShortcutCheatSheetContent(resolvedEntries)
-        }
+        val panel = buildPanel()
         JBPopupFactory.getInstance()
             .createComponentPopupBuilder(panel, null)
-            .setTitle("Chat Shortcuts")
+            .setTitle("Chat shortcuts")
             .setFocusable(false)
             .setMovable(true)
             .setResizable(false)
             .createPopup()
             .showAbove(owner)
     }
-}
 
-@Composable
-private fun ShortcutCheatSheetContent(entries: List<Pair<KeyStroke, String>>) {
-    val isDark = JewelTheme.isDark
-    val helpForeground = retrieveColor(
-        key = "Label.infoForeground",
-        isDark = isDark,
-        default = Color(0xFF6E6E6E),
-        defaultDark = Color(0xFF8C8C8C),
-    )
-    Column(
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp).padding(bottom = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        entries.forEach { (stroke, description) ->
-            ShortcutCheatRow(stroke = stroke, description = description, helpForeground = helpForeground)
+    private fun buildPanel(): JPanel {
+        val panel = JBPanel<JBPanel<*>>(null)
+        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+        panel.border = JBUI.Borders.empty(4, 8, 8, 16)
+
+        for ((i, row) in ROWS.withIndex()) {
+            panel.add(buildRow(row))
+            if (i < ROWS.size - 1) {
+                panel.add(Box.createVerticalStrut(JBUI.scale(6)))
+            }
         }
+        return panel
     }
-}
 
-@Composable
-private fun ShortcutCheatRow(stroke: KeyStroke, description: String, helpForeground: Color) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            KeyBadge.keystrokeTokens(stroke).forEach { token -> KeyToken(token) }
-        }
-        Text(text = description, color = helpForeground, fontSize = 11.sp)
-    }
-}
+    private fun buildRow(row: ShortcutRow): JPanel {
+        val stroke = PromptShortcutAction.resolveKeystroke(row.actionId, row.fallback)
+        val keyText = KeyBadge.formatKeystroke(stroke)
 
-@Preview
-@Composable
-private fun PreviewShortcutCheatSheet() {
-    ShortcutCheatSheetContent(
-        entries = listOf(
-            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0) to "Send prompt (or nudge agent)",
-            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.SHIFT_DOWN_MASK) to "Insert new line",
-            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK) to "Stop agent and send",
-            KeyStroke.getKeyStroke(
-                KeyEvent.VK_ENTER,
-                InputEvent.CTRL_DOWN_MASK or InputEvent.SHIFT_DOWN_MASK
-            ) to "Queue (send after agent finishes)",
-            KeyStroke.getKeyStroke(KeyEvent.VK_SLASH, InputEvent.CTRL_DOWN_MASK) to "Show this popup",
+        val p = JPanel(BorderLayout(JBUI.scale(12), 0))
+        p.isOpaque = false
+        p.maximumSize = Dimension(Int.MAX_VALUE, p.preferredSize.height)
+        p.alignmentX = Component.LEFT_ALIGNMENT
+        p.add(KeyBadge(keyText), BorderLayout.WEST)
+        p.add(
+            JBLabel(row.description).apply {
+                font = JBUI.Fonts.smallFont()
+                foreground = UIUtil.getLabelForeground()
+            },
+            BorderLayout.CENTER
         )
-    )
+        return p
+    }
 }

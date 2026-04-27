@@ -22,13 +22,8 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.awt.SwingPanel
 import java.awt.*
 import javax.swing.*
-import org.jetbrains.jewel.bridge.JewelComposePanel
 
 /**
  * Main content for the AgentBridge tool window.
@@ -91,7 +86,6 @@ class ChatToolWindowContent(
     @Volatile
     private var modelsStatusText: String? = MSG_LOADING
     private lateinit var controlsToolbar: ActionToolbar
-    private lateinit var modelToolbar: ActionToolbar
     private lateinit var innerInputToolbar: ActionToolbar
     private var restartSessionGroup: RestartSessionGroup? = null
     private lateinit var promptTextArea: EditorTextField
@@ -722,47 +716,54 @@ class ChatToolWindowContent(
         topPanel.add(northStack, BorderLayout.NORTH)
         topPanel.add(responsePanelContainer, BorderLayout.CENTER)
 
-        createInputRow()
+        val inputRow = createInputRow()
 
-        createSideButtonsPanel()
+        val sideButtonsPanel = createSideButtonsPanel()
 
-        // ChatInputPanel (Jewel Compose) owns the chrome: rounded background, border, and divider.
-        // The outer inputSection is a plain Swing container anchoring the resize drag zone
-        // (6px top inset via border) and the resizeHandler mouse listeners.
-        val inputSection = JBPanel<JBPanel<*>>(BorderLayout())
-        inputSection.isOpaque = false
-        // 6px top inset is the resize drag zone — keep it on the Swing container so that
-        // the resize mouse listener fires before the JewelComposePanel consumes events.
-        inputSection.border = JBUI.Borders.empty(6, 0, 1, 2)
-        val inputJewelPanel = JewelComposePanel(focusOnClickInside = false) {
-            ChatInputPanel(
-                modifier = Modifier.fillMaxSize(),
-                sideButtons = {
-                    SwingPanel(factory = { controlsToolbar.component })
-                },
-                editor = {
-                    SwingPanel(modifier = Modifier.fillMaxSize(), factory = { promptTextArea })
-                },
-                shortcuts = {
-                    if (shortcutHintPanel.isHintsVisible) {
-                        ShortcutHintStrip(
-                            shortcuts = shortcutHintPanel.shortcutsState,
-                            modifier = Modifier.weight(1f),
+        // Single rounded white frame that contains BOTH the side-button rail and the editor row —
+        // visually unifies the input area so there is no grey gutter around the side buttons.
+        // A 1px vertical divider is painted between the rail and the editor column.
+        val sideRailWidth = { sideButtonsPanel.preferredSize.width }
+        val inputSection = object : JBPanel<JBPanel<*>>(BorderLayout()) {
+            override fun paintComponent(g: Graphics) {
+                // Non-opaque components must call super so Swing can satisfy dirty-region
+                // obligations (e.g. clearing the back buffer) before we paint on top.
+                super.paintComponent(g)
+                val g2 = g.create() as Graphics2D
+                try {
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    val arc = JBUI.scale(8)
+                    g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
+                    g2.fillRoundRect(0, 0, width, height, arc, arc)
+                    // Subtle vertical divider between the side-button rail and the editor column.
+                    // Uses the tool-window separator color so it reads as a seam, not a hard border.
+                    val insets = insets
+                    val dividerX = insets.left + sideRailWidth()
+                    if (dividerX > insets.left && dividerX < width - insets.right) {
+                        g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
+                        g2.drawLine(
+                            dividerX,
+                            insets.top + JBUI.scale(2),
+                            dividerX,
+                            height - insets.bottom - JBUI.scale(2)
                         )
-                    } else {
-                        Spacer(modifier = Modifier.weight(1f))
                     }
-                },
-                modelSelector = {
-                    SwingPanel(factory = { modelToolbar.component })
-                },
-                sendButton = {
-                    SwingPanel(factory = { innerInputToolbar.component })
-                },
-            )
+                    // Use the component border color (typically ~#ADADAD light / #5A5D63 dark),
+                    // which is more visible than the tool-window separator color.
+                    g2.color = UIManager.getColor("Component.borderColor")
+                        ?: JBUI.CurrentTheme.ToolWindow.borderColor()
+                    g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
+                } finally {
+                    g2.dispose()
+                }
+            }
         }
-        inputJewelPanel.isOpaque = false
-        inputSection.add(inputJewelPanel, BorderLayout.CENTER)
+        inputSection.isOpaque = false
+        // 8px top inset doubles as the resize drag zone (see resizeHandler below).
+        // The surrounding padding is kept tight so the footer reads as one compact unit.
+        inputSection.border = JBUI.Borders.empty(6, 0, 1, 2)
+        inputSection.add(sideButtonsPanel, BorderLayout.WEST)
+        inputSection.add(inputRow, BorderLayout.CENTER)
 
         controlsToolbar.targetComponent = inputSection
         innerInputToolbar.targetComponent = inputSection
@@ -950,7 +951,7 @@ class ChatToolWindowContent(
 
         val modelGroup = DefaultActionGroup()
         modelGroup.add(ModelSelectorAction())
-        modelToolbar = ActionManager.getInstance().createActionToolbar("AgentModel", modelGroup, true)
+        val modelToolbar = ActionManager.getInstance().createActionToolbar("AgentModel", modelGroup, true)
         modelToolbar.isReservePlaceAutoPopupIcon = false
         modelToolbar.component.isOpaque = false
 
