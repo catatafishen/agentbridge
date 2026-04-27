@@ -67,6 +67,13 @@ internal class ProcessingTimerPanel(
     }
 
     fun stop() {
+        // Guard against unmatched stop() calls. The chat input's sending-state listener
+        // fires stop() on every setSending(false), including transitions that never had a
+        // preceding start() (e.g. after restoreSessionStats or after a stop already ran).
+        // Without this guard, startedAt == 0L and we'd add (System.currentTimeMillis() - 0)
+        // ≈ 1.7 trillion ms into sessionTotalTimeMs, producing the "Session time = millions
+        // of minutes" display bug.
+        if (!isRunning) return
         ticker.stop()
         isRunning = false
         lastTurnElapsedSec = (System.currentTimeMillis() - startedAt) / 1000
