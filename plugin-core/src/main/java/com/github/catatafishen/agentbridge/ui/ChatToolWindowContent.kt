@@ -21,7 +21,6 @@ import com.intellij.ui.EditorTextField
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
-import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import java.awt.*
@@ -978,15 +977,7 @@ class ChatToolWindowContent(
             add(Box.createHorizontalStrut(JBUI.scale(2)))
             add(innerInputToolbar.component)
         }
-        val innerBar = JBScrollPane(
-            footerContent,
-            ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER,
-            ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER,
-        ).apply {
-            isOpaque = false
-            border = JBUI.Borders.empty()
-            viewport.isOpaque = false
-        }
+        val innerBar = RightAnchoredFooterScrollPane(footerContent)
         row.add(innerBar, BorderLayout.SOUTH)
 
         refreshShortcutHints()
