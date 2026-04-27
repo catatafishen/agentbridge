@@ -353,6 +353,7 @@ class MyWidget : JPanel(BorderLayout()) {
 ```
 
 Key properties of `JewelComposePanel`:
+
 - `focusOnClickInside = false` — prevents the panel from stealing keyboard focus on click
   (appropriate for toolbar widgets and read-only panels)
 - `mutableStateOf` from `androidx.compose.runtime` wires Swing setters to Compose recomposition
@@ -361,12 +362,12 @@ Key properties of `JewelComposePanel`:
 
 Never hardcode colors — use these helpers so components adapt to light/dark themes:
 
-| Source                  | Code                                                                    |
-|-------------------------|-------------------------------------------------------------------------|
-| JCEF token              | `retrieveColor("Label.infoForeground", isDark = JewelTheme.isDark, default = ..., defaultDark = ...)` |
-| IntelliJ AWT Color      | `myAwtColor.toComposeColor()`                                           |
-| `ToolRenderers` colors  | `ToolRenderers.SUCCESS_COLOR.toComposeColor()`                          |
-| Jewel semantic color    | `JewelTheme.globalColors.text`                                          |
+| Source                 | Code                                                                                                  |
+|------------------------|-------------------------------------------------------------------------------------------------------|
+| JCEF token             | `retrieveColor("Label.infoForeground", isDark = JewelTheme.isDark, default = ..., defaultDark = ...)` |
+| IntelliJ AWT Color     | `myAwtColor.toComposeColor()`                                                                         |
+| `ToolRenderers` colors | `ToolRenderers.SUCCESS_COLOR.toComposeColor()`                                                        |
+| Jewel semantic color   | `JewelTheme.globalColors.text`                                                                        |
 
 Always read `JewelTheme.isDark` **inside** the composable — it's a Compose state that triggers
 recomposition on theme switch.
@@ -392,6 +393,7 @@ private fun PreviewMyComposableRunning() {
 ```
 
 Guidelines:
+
 - **One preview per meaningful state** (idle, running, error, empty, overflow, etc.)
 - **Name by component + state**: `Preview<ComponentName><State>` (e.g. `PreviewTimerStatsRunning`)
 - **Use realistic sample data** — the preview is the component's visual documentation
@@ -402,13 +404,13 @@ Guidelines:
 
 #### What to Migrate (and What Not To)
 
-| Component type                      | Migrate to Jewel? | Reason                                     |
-|-------------------------------------|-------------------|--------------------------------------------|
-| Custom Swing panels with show/hide  | ✅ Yes             | Compose state replaces manual visibility   |
-| `JBLabel`-based display widgets     | ✅ Yes             | `Text` + `mutableStateOf` is cleaner       |
-| IntelliJ `ActionToolbar`            | ❌ No              | Actions must stay as `AnAction` subclasses |
-| `EditorTextField` / `EditorImpl`    | ❌ No              | Deeply platform-integrated Swing component |
-| `InlineBanner` / `EditorNotificationPanel` | ❌ No     | Already a native JB component              |
+| Component type                             | Migrate to Jewel? | Reason                                     |
+|--------------------------------------------|-------------------|--------------------------------------------|
+| Custom Swing panels with show/hide         | ✅ Yes             | Compose state replaces manual visibility   |
+| `JBLabel`-based display widgets            | ✅ Yes             | `Text` + `mutableStateOf` is cleaner       |
+| IntelliJ `ActionToolbar`                   | ❌ No              | Actions must stay as `AnAction` subclasses |
+| `EditorTextField` / `EditorImpl`           | ❌ No              | Deeply platform-integrated Swing component |
+| `InlineBanner` / `EditorNotificationPanel` | ❌ No              | Already a native JB component              |
 
 ## Key Files
 
@@ -484,6 +486,10 @@ all false positives in a single file. Each wrapper method has Javadoc explaining
 | Git4Idea bundled plugin APIs                   | `HashImpl`, `GitRepositoryManager`, `GitLineHandler`         |
 | JPS model types                                | `JavaSourceRootType`, `JavaSourceRootProperties`             |
 | `ThrowableRunnable` functional interface       | `WriteAction.runAndWait()`                                   |
+
+> **Related:** For deprecated / experimental API usages that the Plugin Verifier reports
+> at CI time (and the rationale for keeping each), see
+> [`docs/ACCEPTED-API-WARNINGS.md`](docs/ACCEPTED-API-WARNINGS.md).
 
 ## Dynamic Plugin Loading
 

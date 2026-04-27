@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.editor;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.ide.ui.LafManager;
@@ -30,13 +31,12 @@ public final class ListThemesTool extends EditorTool {
         return "List all available IDE themes with their dark/light type";
     }
 
-
-
     @Override
     public @NotNull Kind kind() {
         return Kind.READ;
     }
-@Override
+
+    @Override
     public boolean isReadOnly() {
         return true;
     }
@@ -52,7 +52,7 @@ public final class ListThemesTool extends EditorTool {
         var current = lafManager.getCurrentUIThemeLookAndFeel();
         String currentName = current != null ? current.getName() : "";
 
-        var themes = kotlin.sequences.SequencesKt.toList(lafManager.getInstalledThemes());
+        var themes = PlatformApiCompat.getInstalledThemes(lafManager);
         var sb = new StringBuilder("Available themes:\n\n");
         for (var theme : themes) {
             boolean active = theme.getName().equals(currentName);

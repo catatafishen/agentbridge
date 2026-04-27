@@ -248,13 +248,13 @@ the build. The reports are saved to `plugin-core/build/reports/pluginVerifier/<I
 
 ### Expected Verification Results
 
-| IDE        | Verdict        | Details                                                     |
-|------------|----------------|-------------------------------------------------------------|
-| **IU-253** | ✅ Compatible   | 2 experimental API usages (`LafManager.getInstalledThemes`) |
-| **IU-261** | ✅ Compatible   | Same 2 experimental API usages                              |
-| **PY-253** | ⚠️ 45 problems | All from `psi.java` package — expected, safe at runtime     |
-| **WS-253** | ⚠️ 45 problems | Same as PY                                                  |
-| **GO-253** | ⚠️ 45 problems | Same as PY                                                  |
+| IDE        | Verdict        | Details                                                                                                           |
+|------------|----------------|-------------------------------------------------------------------------------------------------------------------|
+| **IU-253** | ✅ Compatible   | 1 experimental API usage (`LafManager.getInstalledThemes` via `PlatformApiCompat`)                                |
+| **IU-261** | ✅ Compatible   | Same experimental usage + 12 deprecated API findings (see [`ACCEPTED-API-WARNINGS.md`](ACCEPTED-API-WARNINGS.md)) |
+| **PY-253** | ⚠️ 45 problems | All from `psi.java` package — expected, safe at runtime                                                           |
+| **WS-253** | ⚠️ 45 problems | Same as PY                                                                                                        |
+| **GO-253** | ⚠️ 45 problems | Same as PY                                                                                                        |
 
 ### Known Accepted Problems (PY/WS/GO)
 
