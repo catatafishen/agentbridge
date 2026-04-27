@@ -12,6 +12,20 @@ export interface Bridge {
     openScratch(lang: string, content: string): void;
 
     showToolPopup(id: string): void;
+
+    permissionResponse?(data: string): void;
+
+    cancelNudge?(id: string): void;
+
+    cancelQueuedMessage?(id: string, text: string): void;
+
+    autoScrollDisabled?(): void;
+
+    autoScrollEnabled?(): void;
+
+    scrollStarted?(): void;
+
+    scrollEnded?(): void;
 }
 
 export interface TurnContext {

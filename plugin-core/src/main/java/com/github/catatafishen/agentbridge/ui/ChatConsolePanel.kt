@@ -114,6 +114,8 @@ class ChatConsolePanel(
     private var cancelQueuedMessageBridgeJs = ""
     private var autoScrollDisabledBridgeJs = ""
     private var autoScrollEnabledBridgeJs = ""
+    private var scrollStartedBridgeJs = ""
+    private var scrollEndedBridgeJs = ""
 
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
@@ -124,10 +126,26 @@ class ChatConsolePanel(
     @Volatile
     private var activeAskUserRequestId: String? = null
 
-    // CEF windowless frame rate — high during streaming, moderate when idle.
+    // CEF windowless frame rate — high during streaming and active user scroll, moderate when idle.
     // 10fps was too aggressive — caused stale-frame tearing during manual scroll.
     private fun setFrameRate(fps: Int) {
         browser?.cefBrowser?.setWindowlessFrameRate(fps)
+    }
+
+    private fun beginScrollFrameRateBoost() {
+        if (streaming || scrollFrameRateBoosted) return
+        scrollFrameRateBoosted = true
+        ApplicationManager.getApplication().invokeLater {
+            if (!streaming) setFrameRate(STREAMING_FRAME_RATE)
+        }
+    }
+
+    private fun endScrollFrameRateBoost() {
+        if (!scrollFrameRateBoosted) return
+        scrollFrameRateBoosted = false
+        ApplicationManager.getApplication().invokeLater {
+            if (!streaming) setFrameRate(IDLE_FRAME_RATE)
+        }
     }
 
     // Tracks whether the agent is actively streaming a response. Used by
@@ -135,6 +153,9 @@ class ChatConsolePanel(
     // the replay does not race with in-flight token updates.
     @Volatile
     private var streaming = false
+
+    @Volatile
+    private var scrollFrameRateBoosted = false
 
     // ── Swing fallback ─────────────────────────────────────────────
     private val fallbackArea: JBTextArea?
@@ -248,6 +269,18 @@ class ChatConsolePanel(
             autoScrollEnabledQuery.addHandler { onAutoScrollEnabled?.invoke(); null }
             Disposer.register(this, autoScrollEnabledQuery)
             autoScrollEnabledBridgeJs = autoScrollEnabledQuery.inject("''")
+
+            val scrollStartedQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            scrollStartedQuery.addHandler { beginScrollFrameRateBoost(); null }
+            Disposer.register(this, scrollStartedQuery)
+            scrollStartedBridgeJs = scrollStartedQuery.inject("''")
+
+            val scrollEndedQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            scrollEndedQuery.addHandler { endScrollFrameRateBoost(); null }
+            Disposer.register(this, scrollEndedQuery)
+            scrollEndedBridgeJs = scrollEndedQuery.inject("''")
+
+            setFrameRate(IDLE_FRAME_RATE)
 
             add(browser.component, BorderLayout.CENTER)
 
@@ -743,8 +776,8 @@ class ChatConsolePanel(
     }
 
     override fun finishResponse(toolCallCount: Int, modelId: String, multiplier: String) {
-        setFrameRate(IDLE_FRAME_RATE)
         streaming = false
+        setFrameRate(if (scrollFrameRateBoosted) STREAMING_FRAME_RATE else IDLE_FRAME_RATE)
         val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         toolJustCompleted = false
@@ -815,8 +848,8 @@ class ChatConsolePanel(
     }
 
     override fun cancelAllRunning() {
-        setFrameRate(IDLE_FRAME_RATE)
         streaming = false
+        setFrameRate(if (scrollFrameRateBoosted) STREAMING_FRAME_RATE else IDLE_FRAME_RATE)
         val smooth = McpServerSettings.getInstance(project).isSmoothScrollEnabled
         executeJs("document.querySelector('chat-container')?.setStreaming(false, $smooth)")
         clearPendingAskUserRequest(null)
@@ -1871,7 +1904,9 @@ class ChatConsolePanel(
                 cancelNudge: function(id) { $cancelNudgeBridgeJs },
                 cancelQueuedMessage: function(id, text) { $cancelQueuedMessageBridgeJs },
                 autoScrollDisabled: function() { $autoScrollDisabledBridgeJs },
-                autoScrollEnabled: function() { $autoScrollEnabledBridgeJs }
+                autoScrollEnabled: function() { $autoScrollEnabledBridgeJs },
+                scrollStarted: function() { $scrollStartedBridgeJs },
+                scrollEnded: function() { $scrollEndedBridgeJs }
             };
         """.trimIndent()
         val css = loadResource("/chat/chat.css")

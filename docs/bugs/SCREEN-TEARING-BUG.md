@@ -1,6 +1,6 @@
 # Screen Tearing Bug — JCEF OSR
 
-**Status**: Fix 6 applied — removed scroll-time CSS virtualization and deferred remaining scroll writes
+**Status**: Fix 7 applied — boost JCEF OSR frame rate during manual scroll and remove the agent tooltip overlay
 **Scope**: JCEF Off-Screen Rendering (OSR) mode in the chat panel  
 **Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`, `chat.css`
 
@@ -40,6 +40,15 @@ JCEF OSR tearing happens when:
 5. **Scroll-time CSS virtualization** — `content-visibility: auto` and paint containment delay
    rendering work until elements enter the viewport. In JCEF OSR, that deferred paint can show as
    stale rows or tearing while the Swing host composites Chromium's off-screen buffer during scroll.
+
+6. **Idle OSR frame rate during manual scroll** — JCEF OSR only repaints the off-screen browser buffer
+   at the configured windowless frame rate. Keeping the panel at the idle 30fps cap during a user
+   scroll can make Swing composite stale Chromium frames on 60Hz+ displays.
+
+7. **Hover overlays during scroll** — when the pointer stays over the chat pane while rows scroll
+   underneath it, `:hover` selectors can create and destroy extra painted layers during the active
+   scroll frame. The old `chat-message[data-agent]:hover::before` client-name tooltip was especially
+   expensive because it positioned a transformed overlay above every restored agent row.
 
 ---
 
@@ -88,6 +97,12 @@ Kotlin appendText()
 - **No CSS scroll virtualization in OSR** — chat rows are painted normally; `content-visibility`,
   `contain-intrinsic-size`, and paint containment are avoided because they defer viewport paint work
   into active scroll frames.
+- **Manual scroll gets streaming-rate OSR repaint cadence** — `ChatContainer` notifies Kotlin when
+  scrolling starts/ends so `ChatConsolePanel` temporarily raises `setWindowlessFrameRate()` from the
+  idle 30fps cap to 60fps during active scroll gestures.
+- **No hover-generated overlays while scrolling** — `ChatContainer` applies `is-scrolling` during
+  active scroll gestures so message descendants stop receiving pointer hover/click hit-tests until
+  scrolling is idle again.
 
 ---
 
@@ -218,6 +233,32 @@ including outside the narrow tool-chip case handled by Fix 5.
 now schedules the remaining autoscroll writes instead of forcing `scrollTop` synchronously in the same
 DOM mutation turn.
 
+### Fix 7 — Boost OSR frame rate during active scroll and remove agent tooltip
+
+**Observation**: Tearing still reproduced on Linux and Windows when the chat pane scrolled manually.
+That points at the IDE/JCEF OSR repaint cadence: the browser was allowed to stay at the 30fps idle
+windowless frame rate while Swing composited a moving off-screen buffer. At the same time, hovering chat
+bubbles or tool chips showed the client name. That tooltip was not a native browser title; it was a CSS
+pseudo-element on `chat-message[data-agent]:hover::before`.
+
+**Root causes**:
+
+1. Manual scrolling is an active animation, but the panel stayed at `IDLE_FRAME_RATE` (30fps) unless the
+   agent was streaming. On 60Hz+ displays, that makes stale Chromium OSR frames more visible while the
+   Swing host keeps repainting the tool window.
+2. A stationary mouse pointer over the scrolling chat pane makes different rows enter/leave `:hover`
+   continuously. The client-name pseudo-element was created and destroyed during scroll frames,
+   adding extra paint invalidation during the same gesture.
+3. The scroll handler clicked `load-more` synchronously when the user reached the top. That could
+   insert history and compensate scroll from inside the scroll event itself.
+
+**Fix**: `ChatContainer` now notifies the Kotlin bridge when scrolling starts and when it has been idle
+for 140ms. `ChatConsolePanel` boosts `setWindowlessFrameRate()` to 60fps for that active scroll window
+and returns to 30fps only after scrolling ends (unless streaming is still active). The agent tooltip CSS
+was removed entirely, message descendants stop receiving pointer hover/click hit-tests during active
+scroll, and the load-more trigger is now deferred through `requestAnimationFrame()` instead of mutating
+the DOM from the scroll event callback.
+
 ---
 
 ## Code Locations
@@ -225,12 +266,14 @@ DOM mutation turn.
 | File                       | Component               | Purpose                                                                         |
 |----------------------------|-------------------------|---------------------------------------------------------------------------------|
 | `ChatConsolePanel.kt`      | `startStreaming()`      | Sets 60fps, marks `streaming=true`, disables smooth scroll                      |
-| `ChatConsolePanel.kt`      | `finishResponse()`      | Sets 30fps, marks `streaming=false`, restores smooth scroll                     |
+| `ChatConsolePanel.kt`      | `finishResponse()`      | Sets 30fps unless active scroll still needs 60fps, marks `streaming=false`, restores smooth scroll |
 | `ChatConsolePanel.kt`      | `executeJs()`           | Plain `executeJavaScript` — no manual `invalidate()` (Fix 4)                    |
 | `ChatConsolePanel.kt`      | `setFrameRate()`        | Wraps `setWindowlessFrameRate()`                                                |
+| `ChatConsolePanel.kt`      | Scroll bridge handlers  | Temporarily boosts JCEF OSR to 60fps while the user is actively scrolling       |
 | `ChatContainer.ts`         | `_scrollRAF`            | rAF debounce gate for scroll writes                                             |
 | `ChatContainer.ts`         | `ResizeObserver`        | Debounced via `_scrollRAF` — never writes scrollTop directly                    |
 | `ChatContainer.ts`         | `MutationObserver`      | Auto-scroll trigger — debounced via `_scrollRAF`                                |
+| `ChatContainer.ts`         | Scroll handler          | Adds `is-scrolling` during active scroll and rAF-defers load-more clicks        |
 | `ChatContainer.ts`         | `_copyObs`              | Code block buttons — skips streaming bubbles                                    |
 | `ChatContainer.ts`         | `_setupCodeBlocks()`    | Checks `pre.closest('message-bubble[streaming]')`                               |
 | `ChatContainer.ts`         | `setStreaming()`        | Toggles CSS smooth-scroll policy between streaming and idle                     |
@@ -239,7 +282,7 @@ DOM mutation turn.
 | `ChatController.ts`        | `appendAgentText()`     | No longer calls synchronous `scrollIfNeeded()` (Fix 3)                          |
 | `ChatController.ts`        | Remaining autoscroll call sites | Use `scheduleScrollIfNeeded()` instead of direct scroll writes (Fix 6) |
 | `ChatController.ts`        | `upsertToolChip()`      | No longer calls synchronous `scrollIfNeeded()` (Fix 5)                          |
-| `chat.css`                 | `chat-container`, `chat-message` | No paint containment or content-visibility virtualization in OSR       |
+| `chat.css`                 | `chat-container`, `chat-message` | No paint containment, content-visibility virtualization, or hover tooltip overlays in OSR |
 | `MessageBubble.ts`         | `appendStreamingText()` | rAF-debounced markdown re-render                                                |
 | `MonitorSwitchRecovery.kt` | `triggerRecovery()`     | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes |
 
@@ -269,8 +312,8 @@ When modifying the streaming pipeline, watch for:
    during streaming could still be catastrophic, so keep the fingerprint gate tight and preserve
    the deferred replay behavior.
 
-6. **Frame rate changes** — don't lower `STREAMING_FRAME_RATE` (60) or `IDLE_FRAME_RATE` (30)
-   without testing for tearing.
+6. **Frame rate changes** — don't lower `STREAMING_FRAME_RATE` (60), `IDLE_FRAME_RATE` (30), or remove
+   the manual-scroll 60fps boost without testing for tearing on Linux and Windows.
 
 7. **Forced OSR invalidation** — do NOT reintroduce manual `cefBrowser.invalidate()` calls
    keyed off streaming state (per-token, periodic timer, etc.). They paint mid-rAF and
@@ -279,3 +322,7 @@ When modifying the streaming pipeline, watch for:
 8. **CSS scroll virtualization** — do NOT reintroduce `content-visibility`,
    `contain-intrinsic-size`, or paint containment on the chat scroll container or rows without
    testing JCEF OSR on Linux and Windows during active scroll.
+
+9. **Hover overlays while scrolling** — avoid tooltip-like `:hover::before` / `:hover::after`
+   overlays inside `chat-container`. They repaint repeatedly as rows move under a stationary mouse
+   during scroll and can re-trigger JCEF OSR tearing.

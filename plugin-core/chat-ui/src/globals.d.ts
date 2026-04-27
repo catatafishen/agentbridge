@@ -30,11 +30,18 @@ export interface WebBridge {
     autoScrollDisabled?(): void;
 
     autoScrollEnabled?(): void;
+
+    scrollStarted?(): void;
+
+    scrollEnded?(): void;
 }
 
 declare global {
     // eslint-disable-next-line no-var
     var ChatController: typeof ChatControllerType;
+
+    // eslint-disable-next-line no-var
+    var ICON_SVG: string;
 
     interface Window {
         ICON_SVG: string;

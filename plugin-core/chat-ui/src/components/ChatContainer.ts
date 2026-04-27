@@ -16,6 +16,8 @@ export default class ChatContainer extends HTMLElement {
     private _onTouchEnd: (() => void) | null = null;
     private _touchStartY = 0;
     private _wheelRAF: number | null = null;
+    private _scrollIdleTimer: number | null = null;
+    private _loadMoreRAF: number | null = null;
     private _resizeObs: ResizeObserver | null = null;
     // Per-instance shared ResizeObserver for table overflow detection. Reusing one
     // observer across all tables avoids the per-table overhead and reference retention
@@ -85,15 +87,14 @@ export default class ChatContainer extends HTMLElement {
         };
         this.addEventListener('touchend', this._onTouchEnd, {passive: true});
 
-        // Scroll handler: only used for load-more trigger at the top.
+        // Scroll handler: keep active scroll frames free of hover paints and DOM insertions.
         this._onScroll = () => {
-            if (this.scrollTop < this._prevScrollTop && this.scrollTop <= 30) {
-                const lm = this._messages.querySelector<HTMLElement>('load-more:not([loading])');
-                if (lm) {
-                    lm.click();
-                }
+            this._markScrollActive();
+            const currentScrollTop = this.scrollTop;
+            if (currentScrollTop < this._prevScrollTop && currentScrollTop <= 30) {
+                this._scheduleLoadMoreClick();
             }
-            this._prevScrollTop = this.scrollTop;
+            this._prevScrollTop = currentScrollTop;
         };
         this.addEventListener('scroll', this._onScroll);
 
@@ -275,6 +276,30 @@ export default class ChatContainer extends HTMLElement {
         }, 1500);
     }
 
+    private _markScrollActive(): void {
+        if (!this.classList.contains('is-scrolling')) {
+            this.classList.add('is-scrolling');
+            globalThis._bridge?.scrollStarted?.();
+        }
+        if (this._scrollIdleTimer !== null) {
+            clearTimeout(this._scrollIdleTimer);
+        }
+        this._scrollIdleTimer = globalThis.setTimeout(() => {
+            this._scrollIdleTimer = null;
+            this.classList.remove('is-scrolling');
+            globalThis._bridge?.scrollEnded?.();
+        }, 140);
+    }
+
+    private _scheduleLoadMoreClick(): void {
+        if (this._loadMoreRAF !== null) return;
+        this._loadMoreRAF = requestAnimationFrame(() => {
+            this._loadMoreRAF = null;
+            const lm = this._messages.querySelector<HTMLElement>('load-more:not([loading])');
+            lm?.click();
+        });
+    }
+
     get messages(): HTMLDivElement {
         return this._messages;
     }
@@ -385,6 +410,14 @@ export default class ChatContainer extends HTMLElement {
         if (this._wheelRAF) {
             cancelAnimationFrame(this._wheelRAF);
             this._wheelRAF = null;
+        }
+        if (this._scrollIdleTimer !== null) {
+            clearTimeout(this._scrollIdleTimer);
+            this._scrollIdleTimer = null;
+        }
+        if (this._loadMoreRAF !== null) {
+            cancelAnimationFrame(this._loadMoreRAF);
+            this._loadMoreRAF = null;
         }
         if (this._scrollRAF) {
             cancelAnimationFrame(this._scrollRAF);

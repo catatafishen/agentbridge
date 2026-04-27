@@ -39,6 +39,7 @@ describe('ChatContainer scroll behavior', () => {
     });
 
     afterEach(() => {
+        vi.useRealTimers();
         restoreRAF();
         vi.restoreAllMocks();
     });
@@ -284,6 +285,48 @@ describe('ChatContainer scroll behavior', () => {
             container.stopAutoScrollRestore();
             container.scrollIfNeeded();
             expect(container.scrollTop).toBe(2000);
+        });
+    });
+
+    describe('scroll event handling', () => {
+        it('marks active scrolling and clears the marker after scroll idle', () => {
+            vi.useFakeTimers();
+            const startSpy = vi.spyOn(globalThis._bridge, 'scrollStarted');
+            const endSpy = vi.spyOn(globalThis._bridge, 'scrollEnded');
+
+            container.dispatchEvent(new Event('scroll'));
+
+            expect(container.classList.contains('is-scrolling')).toBe(true);
+            expect(startSpy).toHaveBeenCalledTimes(1);
+
+            vi.advanceTimersByTime(140);
+
+            expect(container.classList.contains('is-scrolling')).toBe(false);
+            expect(endSpy).toHaveBeenCalledTimes(1);
+            vi.useRealTimers();
+        });
+
+        it('defers load-more clicks out of the scroll event', () => {
+            const restoreRAF = globalThis.requestAnimationFrame;
+            let queuedRAF = null;
+            globalThis.requestAnimationFrame = (cb) => {
+                queuedRAF = cb;
+                return 1;
+            };
+            const loadMore = document.createElement('load-more');
+            container.messages.appendChild(loadMore);
+            const clickSpy = vi.spyOn(loadMore, 'click');
+            mockScrollGeometry(container, {scrollHeight: 1000, scrollTop: 10, clientHeight: 500});
+            container._prevScrollTop = 50;
+
+            container.dispatchEvent(new Event('scroll'));
+
+            expect(clickSpy).not.toHaveBeenCalled();
+
+            queuedRAF(performance.now());
+
+            expect(clickSpy).toHaveBeenCalledTimes(1);
+            globalThis.requestAnimationFrame = restoreRAF;
         });
     });
 

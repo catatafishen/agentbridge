@@ -125,6 +125,7 @@ const ChatController = {
         pauseAutoScrollForRestore(): void;
         stopAutoScrollRestore(): void;
         compensateScroll(targetY: number): void;
+        resumeAutoScroll(): void;
         autoScroll: boolean;
         workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void; stop(ms: number): void }
     } | null {
@@ -135,6 +136,7 @@ const ChatController = {
             pauseAutoScrollForRestore(): void;
             stopAutoScrollRestore(): void;
             compensateScroll(targetY: number): void;
+            resumeAutoScroll(): void;
             autoScroll: boolean;
             workingIndicator: HTMLElement & { show(): void; hide(): void; resetTimer(): void; stop(ms: number): void }
         }>('chat-container');
@@ -618,8 +620,9 @@ const ChatController = {
         }
 
         this._container()?.scheduleScrollIfNeeded();
+        const notificationWithActions = Notification as typeof Notification & { readonly maxActions?: number };
         const actions = options?.length
-            ? options.slice(0, Notification.maxActions || 2).map(o => ({action: o, title: o}))
+            ? options.slice(0, notificationWithActions.maxActions ?? 2).map(o => ({action: o, title: o}))
             : undefined;
         _showNotification('Agent is asking you something', question, actions?.length ? actions : undefined);
     },
