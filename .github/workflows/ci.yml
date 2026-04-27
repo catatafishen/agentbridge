@@ -84,6 +84,24 @@ jobs:
         with:
           egress-policy: audit
 
+      # Ubuntu runners ship with ~14 GB free out of 75 GB. The IntelliJ Plugin
+      # Verifier downloads ~6 IDE distributions (recommended() + PyCharm, WebStorm,
+      # GoLand) at ~3-5 GB extracted each, easily blowing the disk budget. This
+      # action removes pre-installed software we don't use and reclaims ~30 GB.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          tool-cache: false        # keep the JDK/Node tool cache populated by setup-java/setup-node
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Show available disk space
+        run: df -h /
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           persist-credentials: false
@@ -171,8 +189,15 @@ jobs:
       - name: Create pluginVerifier cache directory
         run: mkdir -p ~/.pluginVerifier/extracted-plugins
 
+      - name: Show disk space before plugin verification
+        run: df -h /
+
       - name: Verify plugins (marketplace compatibility)
         run: gradle :plugin-core:verifyPlugin --no-daemon --quiet
+
+      - name: Show disk space after plugin verification
+        if: always()
+        run: df -h /
 
       - name: Upload plugin-core artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
