@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.terminal;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.AgentTabTracker;
@@ -110,7 +111,10 @@ public abstract class TerminalTool extends Tool {
         List<String> shellCommand = shell != null ? List.of(shell) : null;
         var createSession = managerClass.getMethod("createNewSession",
             String.class, String.class, List.class, boolean.class, boolean.class);
-        Object widget = createSession.invoke(manager, project.getBasePath(), title, shellCommand, true, true);
+        // 4th param is `requestFocus`; flipping to false when the chat is active prevents
+        // the new terminal tab from yanking the keyboard caret out of the chat prompt.
+        boolean requestFocus = !PsiBridgeService.isChatToolWindowActive(project);
+        Object widget = createSession.invoke(manager, project.getBasePath(), title, shellCommand, requestFocus, true);
         AgentTabTracker.getInstance(project).trackTab(TERMINAL_TOOL_WINDOW_ID, title);
         return new TerminalWidgetResult(widget, title + " (new)");
     }

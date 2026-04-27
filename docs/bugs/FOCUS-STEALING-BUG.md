@@ -478,6 +478,29 @@ must be gated together — gating only one is insufficient.
 
 ---
 
+### Attempt 13: Audit other tools for the same family of focus footguns
+
+After fixing the `RunContentExecutor` two-flag bug, audited all tool-window-opening paths in
+`psi/tools/**` for analogous footguns. Found three more:
+
+| File                                              | Symptom                                                                                                                                | Fix                                                                                                                                                          |
+|---------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `HttpRequestTool.java:329`                        | `RunContentExecutor` builder pinned `withActivateToolWindow(false)` but left `withFocusToolWindow` at default `true` — same as Run.    | Added `.withFocusToolWindow(false)` next to the existing pin.                                                                                                |
+| `TerminalTool.java:113`                           | `TerminalToolWindowManager.createNewSession(basePath, title, shellCommand, true, true)` — 4th param is `requestFocus`, hard-coded `true`. | Switched to `boolean requestFocus = !PsiBridgeService.isChatToolWindowActive(project);`                                                                      |
+| `GitStageTool.java:113`<br>`DatabaseTool.java:72` | Both unconditionally called `tw.activate(null)` on Local Changes / Database tool windows when "Follow Agent Files" was on.             | Wrapped in the same `chatActive ? tw.show() : tw.activate(null)` pattern already used by `GitTool`/`GitCommitTool`/`BuildProjectTool`.                       |
+
+**Pattern to look for going forward**: any IntelliJ API that takes both an *activate / show*
+flag **and** a *request focus / autoFocusContent* flag — they must be gated **together** on
+`PsiBridgeService.isChatToolWindowActive(project)`. Examples already audited:
+
+- `RunContentExecutor`: `withActivateToolWindow` + `withFocusToolWindow`
+- `TerminalToolWindowManager.createNewSession`: `requestFocus` arg
+- `ToolWindow.activate(runnable)` vs `ToolWindow.show()` — `activate` always grabs focus, `show` does not
+
+**Files**: `HttpRequestTool.java`, `TerminalTool.java`, `GitStageTool.java`, `DatabaseTool.java`.
+
+---
+
 ## Remaining Root Causes
 
 _All previously documented root causes (RC1–RC4) have been fixed. See Attempts 1–10 below._

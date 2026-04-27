@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.database;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
@@ -69,7 +70,13 @@ public abstract class DatabaseTool extends Tool {
         }
         EdtUtil.invokeLater(() -> {
             var tw = ToolWindowManager.getInstance(project).getToolWindow(ToolWindowId.DATABASE_VIEW);
-            if (tw != null) tw.activate(null);
+            if (tw == null) return;
+            // Don't steal focus from the chat prompt while the user is typing.
+            if (PsiBridgeService.isChatToolWindowActive(project)) {
+                tw.show();
+            } else {
+                tw.activate(null);
+            }
         });
     }
 

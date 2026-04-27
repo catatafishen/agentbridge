@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.ui.renderers.GitStageRenderer;
 import com.google.gson.JsonObject;
@@ -110,7 +111,13 @@ public final class GitStageTool extends GitTool {
         EdtUtil.invokeLater(() -> {
             String toolWindowName = ChangesViewManager.getLocalChangesToolWindowName(project);
             var tw = ToolWindowManager.getInstance(project).getToolWindow(toolWindowName);
-            if (tw != null) tw.activate(null);
+            if (tw == null) return;
+            // Don't steal focus from the chat prompt while the user is typing.
+            if (PsiBridgeService.isChatToolWindowActive(project)) {
+                tw.show();
+            } else {
+                tw.activate(null);
+            }
         });
     }
 
