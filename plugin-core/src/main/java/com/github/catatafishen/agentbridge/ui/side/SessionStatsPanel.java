@@ -664,27 +664,34 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                         // by the time we repaint — using the *current* snapshot avoids
                         // rendering "Today" totals in the stale mode.
                         SessionStatsSnapshot currentSnap = timerPanel.getSessionSnapshot();
-                        boolean multiplierMode = currentSnap != null
-                            ? currentSnap.getMultiplierMode()
-                            : snap.getMultiplierMode();
-                        applyTodayTotals(totals, multiplierMode);
+                        applyTodayTotals(totals, currentSnap);
                     });
                 } catch (Exception ignored) {
                     // Stats are advisory — never let a query failure crash the UI refresh loop.
                 }
             });
         }
-        applyTodayTotals(todayTotalsRef.get(), snap.getMultiplierMode());
+        applyTodayTotals(todayTotalsRef.get(), snap);
     }
 
-    private void applyTodayTotals(TodayTotals t, boolean multiplierMode) {
-        if (t.turns() <= 0) {
+    private void applyTodayTotals(TodayTotals t, SessionStatsSnapshot snap) {
+        boolean multiplierMode = snap.getMultiplierMode();
+        // Add the active turn's elapsed time on top of the DB-persisted aggregate so the
+        // "Today — Time" counter ticks live during a turn, matching Turn / Session timers.
+        // Persisted rows only land in turn_stats on stop(), so without this addend the row
+        // would freeze for the duration of every turn.
+        long liveDurMs = t.durationMs() + (snap.isRunning() ? snap.getTurnElapsedSec() * 1000L : 0L);
+        // Show the section as soon as a turn is in flight today, even before any turn has
+        // been persisted, so the user gets immediate feedback on first use of the day.
+        boolean hasActivity = t.turns() > 0 || (snap.isRunning() && snap.getTurnElapsedSec() > 0);
+        if (!hasActivity) {
             todaySection.setVisible(false);
             return;
         }
         todaySection.setVisible(true);
-        todayTimeValue.setText(TimerDisplayFormatter.INSTANCE.formatElapsedTime(t.durationMs() / 1000));
-        todayTurnsValue.setText(String.valueOf(t.turns()));
+        todayTimeValue.setText(TimerDisplayFormatter.INSTANCE.formatElapsedTime(liveDurMs / 1000));
+        int liveTurns = t.turns() + (snap.isRunning() ? 1 : 0);
+        todayTurnsValue.setText(String.valueOf(liveTurns));
         todayToolsValue.setText(String.valueOf(t.toolCalls()));
         todayToolsRow.setVisible(t.toolCalls() > 0);
         long lines = t.linesAdded() + t.linesRemoved();
