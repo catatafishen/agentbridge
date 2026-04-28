@@ -15,6 +15,10 @@ jobs:
     permissions:
       security-events: write
       id-token: write
+      # Needed so the default GITHUB_TOKEN can read repo metadata as a fallback
+      # when SCORECARD_READ_TOKEN is not configured.
+      contents: read
+      actions: read
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df  # v2.18.0
@@ -31,6 +35,13 @@ jobs:
           results_file: results.sarif
           results_format: sarif
           publish_results: true
+          # Admin-scoped PAT so the Branch-Protection check can read settings
+          # that GITHUB_TOKEN cannot see (DismissStaleReviews, EnforceAdmins,
+          # RequireLastPushApproval, RequiresStatusChecks, UpToDateBeforeMerge).
+          # Without it, those settings are silently skipped and the score caps
+          # at Tier 1 (3/10) regardless of actual branch protection.
+          # See docs/SCORECARD-SETUP.md for one-time PAT setup.
+          repo_token: ${{ secrets.SCORECARD_READ_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4.35.2
