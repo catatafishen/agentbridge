@@ -46,13 +46,19 @@ public final class ToolCallStatisticsToolNameRepair {
     /**
      * Result of a repair operation.
      *
-     * @param scanned   total rows examined
-     * @param repaired  rows whose {@code tool_name} was successfully recovered to a canonical id
-     * @param deleted   rows whose polluted {@code tool_name} could not be recovered and were removed
-     * @param skipped   rows already matching a canonical id (left untouched)
+     * @param scanned    total rows examined
+     * @param repaired   rows whose {@code tool_name} was successfully recovered to a canonical id
+     * @param deleted    rows whose {@code tool_name} clearly looked like a display title
+     *                   (contained whitespace) and could not be recovered — removed
+     * @param skipped    rows already matching a canonical id (left untouched)
+     * @param kept       rows whose {@code tool_name} looked like a tool id but isn't in the
+     *                   current registry. These are <b>not</b> deleted (they may come from an
+     *                   older plugin version where the tool has since been renamed/removed),
+     *                   and their presence prevents the run-once marker from being written so
+     *                   a future plugin version with the missing registration can repair them.
      * @param alreadyRun true if the repair had already run on this DB and was skipped entirely
      */
-    public record RepairResult(int scanned, int repaired, int deleted, int skipped, boolean alreadyRun) {
+    public record RepairResult(int scanned, int repaired, int deleted, int skipped, int kept, boolean alreadyRun) {
         @NotNull
         @Override
         public String toString() {
@@ -60,7 +66,7 @@ public final class ToolCallStatisticsToolNameRepair {
                 return "RepairResult{alreadyRun=true}";
             }
             return "RepairResult{scanned=" + scanned + ", repaired=" + repaired
-                + ", deleted=" + deleted + ", skipped=" + skipped + "}";
+                + ", deleted=" + deleted + ", skipped=" + skipped + ", kept=" + kept + "}";
         }
     }
 
@@ -88,18 +94,19 @@ public final class ToolCallStatisticsToolNameRepair {
         try {
             ensureMetaTable(connection);
             if (isMarkerSet(connection)) {
-                return new RepairResult(0, 0, 0, 0, true);
+                return new RepairResult(0, 0, 0, 0, 0, true);
             }
 
             if (knownIds.isEmpty()) {
                 LOG.warn("Tool name repair: registry is empty — skipping (will retry on next IDE start)");
-                return new RepairResult(0, 0, 0, 0, false);
+                return new RepairResult(0, 0, 0, 0, 0, false);
             }
 
             List<Row> rows = loadAllRows(connection);
             int repaired = 0;
             int deleted = 0;
             int skipped = 0;
+            int kept = 0;
 
             for (Row row : rows) {
                 if (knownIds.contains(row.toolName)) {
@@ -110,19 +117,32 @@ public final class ToolCallStatisticsToolNameRepair {
                 if (canonical != null) {
                     updateToolName(connection, row.id, canonical, row.toolName);
                     repaired++;
-                } else {
+                } else if (looksLikeDisplayTitle(row.toolName)) {
+                    // Free-form chip title with no canonical match — safe to delete.
                     deleteRow(connection, row.id);
                     deleted++;
+                } else {
+                    // Looks like a tool id but isn't in the current registry. Likely a
+                    // tool that's been renamed/removed in this plugin version. Keep the
+                    // row (preserves historical aggregates) and don't set the marker, so
+                    // a future plugin version with the registration restored can repair it.
+                    kept++;
                 }
             }
 
-            setMarker(connection);
+            // Only mark repair as done when nothing remains unresolved. Re-running on
+            // every IDE start is cheap (one SELECT + N hash lookups) and idempotent for
+            // canonical/display-title rows.
+            if (kept == 0) {
+                setMarker(connection);
+            }
             LOG.info("Tool name repair complete: scanned=" + rows.size()
-                + " repaired=" + repaired + " deleted=" + deleted + " skipped=" + skipped);
-            return new RepairResult(rows.size(), repaired, deleted, skipped, false);
+                + " repaired=" + repaired + " deleted=" + deleted
+                + " skipped=" + skipped + " kept=" + kept);
+            return new RepairResult(rows.size(), repaired, deleted, skipped, kept, false);
         } catch (SQLException e) {
             LOG.warn("Tool name repair failed — leaving data untouched", e);
-            return new RepairResult(0, 0, 0, 0, false);
+            return new RepairResult(0, 0, 0, 0, 0, false);
         }
     }
 
@@ -134,10 +154,32 @@ public final class ToolCallStatisticsToolNameRepair {
         if (!stripped.equals(pollutedName) && knownIds.contains(stripped)) {
             return stripped;
         }
-        // 2. Match against the human-readable display name ("Read File" → "read_file")
-        ToolDefinition def = displayNameLookup.apply(pollutedName);
-        if (def != null) return def.id();
+        // 2. Match against the human-readable display name ("Read File" → "read_file").
+        //    Trim leading/trailing whitespace first — agent display titles occasionally
+        //    have stray spaces that would otherwise prevent the lookup from matching.
+        //    Verify the resolved id is actually in knownIds before accepting it: the
+        //    lookup may return a tool that's been removed from the live registry.
+        String normalized = pollutedName.trim();
+        ToolDefinition def = displayNameLookup.apply(normalized);
+        if (def != null && knownIds.contains(def.id())) {
+            return def.id();
+        }
         return null;
+    }
+
+    /**
+     * Heuristic: does {@code name} look like a free-form display title (vs. a canonical
+     * tool id)? Canonical ids are lowercase tokens with {@code _}, {@code -}, {@code /},
+     * or {@code @} separators (e.g. {@code read_file}, {@code @agentbridge/git_status}).
+     * Anything containing whitespace is unambiguously a display title, never a tool id —
+     * those rows are safe to delete because each one is a unique non-deterministic chip
+     * label with no aggregation value.
+     */
+    static boolean looksLikeDisplayTitle(@NotNull String name) {
+        for (int i = 0; i < name.length(); i++) {
+            if (Character.isWhitespace(name.charAt(i))) return true;
+        }
+        return false;
     }
 
     private static void ensureMetaTable(@NotNull Connection connection) throws SQLException {

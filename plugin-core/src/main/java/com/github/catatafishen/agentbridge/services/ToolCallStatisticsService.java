@@ -731,7 +731,7 @@ public final class ToolCallStatisticsService implements Disposable {
     synchronized ToolCallStatisticsToolNameRepair.RepairResult runRepairWithRegistry(
         @NotNull ToolRegistry registry) {
         if (connection == null) {
-            return new ToolCallStatisticsToolNameRepair.RepairResult(0, 0, 0, 0, false);
+            return new ToolCallStatisticsToolNameRepair.RepairResult(0, 0, 0, 0, 0, false);
         }
         return ToolCallStatisticsToolNameRepair.repair(connection, registry);
     }
@@ -756,9 +756,14 @@ public final class ToolCallStatisticsService implements Disposable {
         if (basePath == null) return;
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
+            // Repair MUST run before backfill: backfill dedup is keyed on
+            // (timestamp, tool_name). If we backfilled first, canonical rows from
+            // JSONL would coexist with legacy polluted rows at the same timestamp,
+            // and the later repair pass would canonicalize the polluted rows —
+            // producing duplicates that double-count aggregates.
+            runToolNameRepair(service, project);
             runToolCallBackfill(service, basePath);
             runTurnStatsBackfill(service, basePath);
-            runToolNameRepair(service, project);
         });
     }
 

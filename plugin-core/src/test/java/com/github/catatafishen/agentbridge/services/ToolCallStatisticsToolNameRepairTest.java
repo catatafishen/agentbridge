@@ -120,7 +120,7 @@ class ToolCallStatisticsToolNameRepairTest {
     }
 
     @Test
-    @DisplayName("unmappable rows (free-form titles) are deleted")
+    @DisplayName("unmappable display-title rows (free-form titles with whitespace) are deleted")
     void unmappableRowsAreDeleted() throws Exception {
         insertRow("Tail full log", null);
         insertRow("Run summary", null);
@@ -129,8 +129,64 @@ class ToolCallStatisticsToolNameRepairTest {
         var result = ToolCallStatisticsToolNameRepair.repair(connection, knownIds, displayNameLookup);
 
         assertEquals(3, result.deleted());
+        assertEquals(0, result.kept());
         assertEquals(0, result.repaired());
         assertEquals(0, countRows());
+    }
+
+    @Test
+    @DisplayName("id-shaped unresolved rows are KEPT (not deleted) and prevent marker from being set")
+    void idShapedUnresolvedRowsAreKept() throws Exception {
+        // These look like canonical ids but aren't in the current registry — likely
+        // tools removed or renamed in this plugin version. Keep the rows so historical
+        // aggregates stay intact, and don't set the marker so a future plugin version
+        // with the registration restored can repair them.
+        insertRow("removed_tool", null);
+        insertRow("@agentbridge/unknown_tool", null);
+
+        var result = ToolCallStatisticsToolNameRepair.repair(connection, knownIds, displayNameLookup);
+
+        assertEquals(2, result.kept());
+        assertEquals(0, result.deleted());
+        assertEquals(0, result.repaired());
+        assertEquals(2, countRows(), "Kept rows must remain in the table");
+
+        // Marker NOT set — a follow-up run still scans (idempotent for these rows)
+        var second = ToolCallStatisticsToolNameRepair.repair(connection, knownIds, displayNameLookup);
+        assertFalse(second.alreadyRun(), "Marker must not be set while rows remain unresolved");
+        assertEquals(2, second.kept());
+    }
+
+    @Test
+    @DisplayName("display-name lookup trims whitespace before matching")
+    void displayNameLookupTrimsWhitespace() throws Exception {
+        // Stray leading/trailing whitespace in stored title — must still resolve
+        insertRow("  Read File  ", null);
+
+        var result = ToolCallStatisticsToolNameRepair.repair(connection, knownIds, displayNameLookup);
+
+        assertEquals(1, result.repaired());
+        assertEquals(0, result.deleted());
+        Map<String, String> rows = loadRows();
+        assertTrue(rows.containsKey("read_file"));
+    }
+
+    @Test
+    @DisplayName("display-name lookup result must be in knownIds — stale registry entries are rejected")
+    void displayNameLookupVerifiedAgainstKnownIds() throws Exception {
+        // Lookup returns a tool whose id is NOT in knownIds (simulates a stale lookup
+        // table). The id-shaped name "stale_tool" has no whitespace → should be kept.
+        java.util.function.Function<String, ToolDefinition> staleLookup =
+            name -> "Stale Tool".equals(name) ? new StubTool("stale_tool", "Stale Tool") : null;
+        insertRow("stale_tool", null);
+
+        var result = ToolCallStatisticsToolNameRepair.repair(connection, knownIds, staleLookup);
+
+        // "stale_tool" is id-shaped but not in knownIds → kept (not deleted, not repaired)
+        assertEquals(0, result.repaired());
+        assertEquals(0, result.deleted());
+        assertEquals(1, result.kept());
+        assertEquals(1, countRows());
     }
 
     @Test
@@ -232,7 +288,9 @@ class ToolCallStatisticsToolNameRepairTest {
         }
     }
 
-    /** Returns a map of tool_name → display_name for every row. */
+    /**
+     * Returns a map of tool_name → display_name for every row.
+     */
     private Map<String, String> loadRows() throws Exception {
         Map<String, String> result = new java.util.HashMap<>();
         try (Statement stmt = connection.createStatement();
@@ -244,12 +302,38 @@ class ToolCallStatisticsToolNameRepairTest {
         return result;
     }
 
-    /** Minimal ToolDefinition stub for registry tests. */
+    /**
+     * Minimal ToolDefinition stub for registry tests.
+     */
     private record StubTool(String id, String displayName) implements ToolDefinition {
-        @Override @NotNull public String id() { return id; }
-        @Override @NotNull public Kind kind() { return Kind.READ; }
-        @Override @NotNull public String displayName() { return displayName; }
-        @Override @NotNull public String description() { return ""; }
-        @Override @NotNull public ToolRegistry.Category category() { return ToolRegistry.Category.OTHER; }
+        @Override
+        @NotNull
+        public String id() {
+            return id;
+        }
+
+        @Override
+        @NotNull
+        public Kind kind() {
+            return Kind.READ;
+        }
+
+        @Override
+        @NotNull
+        public String displayName() {
+            return displayName;
+        }
+
+        @Override
+        @NotNull
+        public String description() {
+            return "";
+        }
+
+        @Override
+        @NotNull
+        public ToolRegistry.Category category() {
+            return ToolRegistry.Category.OTHER;
+        }
     }
 }
