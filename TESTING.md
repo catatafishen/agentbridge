@@ -2,17 +2,19 @@
 
 ## Core Principle
 
-**Every feature must have unit tests.** When implementing new features, add corresponding tests upfront or immediately after. Tests ensure correctness, prevent regressions, and document expected behavior. Never remove tests when refactoring — if tests are removed, their coverage must be restored (see below for an example).
+**Every feature must have unit tests.** When implementing new features, add corresponding tests upfront or immediately
+after. Tests ensure correctness, prevent regressions, and document expected behavior. Never remove tests when
+refactoring — if tests are removed, their coverage must be restored (see below for an example).
 
 ## Quick Reference
 
-| What              | Command                                    | Framework        |
-|-------------------|--------------------------------------------|------------------|
-| All checks        | `./gradlew check`                          | Gradle composite |
-| Java/Kotlin unit  | `./gradlew :plugin-core:test`              | JUnit 5          |
-| JS chat-ui unit   | `./gradlew :plugin-core:jsTest`            | Vitest + happy-dom |
-| JS watch mode     | `cd plugin-core/js-tests && npm run test:watch` | Vitest      |
-| Integration tests | `./gradlew :integration-tests:test`        | JUnit 5          |
+| What              | Command                                         | Framework          |
+|-------------------|-------------------------------------------------|--------------------|
+| All checks        | `./gradlew check`                               | Gradle composite   |
+| Java/Kotlin unit  | `./gradlew :plugin-core:test`                   | JUnit 5            |
+| JS chat-ui unit   | `./gradlew :plugin-core:jsTest`                 | Vitest + happy-dom |
+| JS watch mode     | `cd plugin-core/js-tests && npm run test:watch` | Vitest             |
+| Integration tests | `./gradlew :integration-tests:test`             | JUnit 5            |
 
 ## JavaScript Tests (Chat UI)
 
@@ -41,10 +43,10 @@ npm run test:watch
 
 ### Test files
 
-| File                          | Covers                                          |
-|-------------------------------|--------------------------------------------------|
-| `chat-components.test.js`    | Web components (tool-section, chat-message, etc.) |
-| `chat-controller.test.js`    | ChatController API, streaming, tool calls         |
+| File                      | Covers                                            |
+|---------------------------|---------------------------------------------------|
+| `chat-components.test.js` | Web components (tool-section, chat-message, etc.) |
+| `chat-controller.test.js` | ChatController API, streaming, tool calls         |
 
 ### Setup
 
@@ -82,14 +84,14 @@ via `getInstance(project)` — the service wiring that pure JUnit 5 tests can't 
 
 ### When to Use Platform Tests vs JUnit 5
 
-| Scenario | Use |
-|----------|-----|
-| Testing a pure algorithm, utility, or data structure | JUnit 5 |
-| Testing code with explicit dependency injection | JUnit 5 |
+| Scenario                                                                | Use           |
+|-------------------------------------------------------------------------|---------------|
+| Testing a pure algorithm, utility, or data structure                    | JUnit 5       |
+| Testing code with explicit dependency injection                         | JUnit 5       |
 | Testing project service resolution (`SomeService.getInstance(project)`) | Platform test |
-| Testing `PersistentStateComponent` state management | Platform test |
-| Testing service lifecycle (init, dispose) | Platform test |
-| Testing private methods that wire project services | Platform test |
+| Testing `PersistentStateComponent` state management                     | Platform test |
+| Testing service lifecycle (init, dispose)                               | Platform test |
+| Testing private methods that wire project services                      | Platform test |
 
 ### Writing a Platform Test
 
@@ -124,9 +126,10 @@ import com.intellij.testFramework.ServiceContainerUtil;
 // From Java, cast to ComponentManager for Kotlin interop
 ServiceContainerUtil.replaceService(
     (ComponentManager) getProject(),
-    MyService.class,
-    testInstance,
-    getTestRootDisposable()
+MyService .class,
+testInstance,
+
+getTestRootDisposable()
 );
 ```
 
@@ -154,14 +157,14 @@ Platform tests **must** run via Gradle — the IntelliJ test runner lacks the re
 
 The codebase uses several patterns to make code testable without Mockito:
 
-| Pattern | Description | Example |
-|---------|-------------|---------|
-| **Two-constructor** | Public `(Project)` + package-private no-arg | `TurnMiner`, `BackfillMiner` |
-| **Value constructor** | Public `(Project)` delegates to package-private `(int)` | `QualityFilter` |
-| **Extracted pipeline method** | Package-private method with explicit dependencies | `TurnMiner.executePipeline()` |
-| **Functional interfaces** | Injectable lambdas for I/O boundaries | `Embedder`, `EntryLoader`, `MineFunction` |
-| **Test constructor** | Package-private constructor accepting pre-built components | `MemoryService`, `EmbeddingService` |
-| **`ServiceContainerUtil`** | Replace services in platform tests | `MemoryPlatformTestCase` |
+| Pattern                       | Description                                                | Example                                   |
+|-------------------------------|------------------------------------------------------------|-------------------------------------------|
+| **Two-constructor**           | Public `(Project)` + package-private no-arg                | `TurnMiner`, `BackfillMiner`              |
+| **Value constructor**         | Public `(Project)` delegates to package-private `(int)`    | `QualityFilter`                           |
+| **Extracted pipeline method** | Package-private method with explicit dependencies          | `TurnMiner.executePipeline()`             |
+| **Functional interfaces**     | Injectable lambdas for I/O boundaries                      | `Embedder`, `EntryLoader`, `MineFunction` |
+| **Test constructor**          | Package-private constructor accepting pre-built components | `MemoryService`, `EmbeddingService`       |
+| **`ServiceContainerUtil`**    | Replace services in platform tests                         | `MemoryPlatformTestCase`                  |
 
 ## Integration Tests
 
@@ -185,26 +188,28 @@ For manual smoke-testing of the installed plugin, see [QUICK-START.md](QUICK-STA
 
 ## Example: Restoring Removed Test Coverage
 
-When the agent profile system refactoring removed `CopilotSettings`, the billing persistence tests (`testMonthlyRequests`, `testMonthlyCost`, `testUsageResetMonth`) were accidentally dropped. Even though the `BillingManager` didn't directly use those methods, their coverage was important for ensuring billing data could be persisted per-profile. The tests were restored by:
+When the agent profile system refactoring removed `CopilotSettings`, the billing persistence tests (
+`testMonthlyRequests`, `testMonthlyCost`, `testUsageResetMonth`) were accidentally dropped. Even though the
+`BillingManager` didn't directly use those methods, their coverage was important for ensuring billing data could be
+persisted per-profile. The tests were restored by:
 
 1. Adding the billing methods back to `GenericSettings` (with prefix-based keys for per-profile storage)
 2. Re-adding the 6 test cases to `CopilotSettingsTest`
 
 This ensures the feature continues to work and future changes won't break it silently.
 
-
 ## Fuzz Testing
 
 The repo has Jazzer fuzz targets under `plugin-core/src/test/java/.../fuzz/` and
 `mcp-server/src/test/java/.../mcp/`. They are exercised three ways:
 
-| Where                                  | When                                  | Duration             | Persists corpus |
-|----------------------------------------|---------------------------------------|----------------------|-----------------|
-| `.github/workflows/fuzz.yml`           | Weekly + manual dispatch              | 120 s/target         | No (smoke test) |
-| `.github/workflows/cflite_pr.yml`      | Pull requests touching JVM/build code | 300 s total          | Via storage repo |
-| `.github/workflows/cflite_batch.yml`   | Every 6 h                             | 1800 s total         | Via storage repo |
-| `.github/workflows/cflite_cron.yml`    | Daily                                 | 600 s (corpus prune) | Via storage repo |
-| `.github/workflows/cflite_build.yml`   | Push to `master`                      | Build-only artifact  | n/a              |
+| Where                                | When                                  | Duration             | Persists corpus  |
+|--------------------------------------|---------------------------------------|----------------------|------------------|
+| `.github/workflows/fuzz.yml`         | Weekly + manual dispatch              | 120 s/target         | No (smoke test)  |
+| `.github/workflows/cflite_pr.yml`    | Pull requests touching JVM/build code | 300 s total          | Via storage repo |
+| `.github/workflows/cflite_batch.yml` | Every 6 h                             | 1800 s total         | Via storage repo |
+| `.github/workflows/cflite_cron.yml`  | Daily                                 | 600 s (corpus prune) | Via storage repo |
+| `.github/workflows/cflite_build.yml` | Push to `master`                      | Build-only artifact  | n/a              |
 
 ClusterFuzzLite (`.clusterfuzzlite/`) reuses the OSS-Fuzz build script
 (`oss-fuzz/build.sh`) — both produce the same Jazzer wrapper layout in `$OUT/`.
