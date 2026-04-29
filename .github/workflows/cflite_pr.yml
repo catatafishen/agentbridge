@@ -47,9 +47,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           sanitizer: ${{ matrix.sanitizer }}
           # Enable storage repo for affected-fuzzer detection + corpus reuse:
-          # storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
-          # storage-repo-branch: main
-          # storage-repo-branch-coverage: gh-pages
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages
 
       - name: Run Fuzzers (${{ matrix.sanitizer }})
         id: run
@@ -60,6 +60,6 @@ jobs:
           mode: 'code-change'
           sanitizer: ${{ matrix.sanitizer }}
           output-sarif: true
-          # storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
-          # storage-repo-branch: main
-          # storage-repo-branch-coverage: gh-pages
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
+          storage-repo-branch: main
+          storage-repo-branch-coverage: gh-pages

@@ -31,8 +31,8 @@ jobs:
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1  # v1
         with:
           language: jvm
-          # storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
-          # storage-repo-branch: main
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
+          storage-repo-branch: main
 
       - name: Run Fuzzers (prune)
         id: run
@@ -41,5 +41,5 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           fuzz-seconds: 600
           mode: 'prune'
-          # storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
-          # storage-repo-branch: main
+          storage-repo: https://${{ secrets.PERSONAL_ACCESS_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
+          storage-repo-branch: main
