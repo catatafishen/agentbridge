@@ -218,7 +218,7 @@ corpus between runs. To enable persistence and affected-fuzzer detection on PRs:
 
 1. Create an empty repo `catatafishen/agentbridge-cflite-storage`.
 2. Generate a fine-grained PAT with **Contents: read & write** scoped to that
-   repo only. Add it to `agentbridge` as the `PERSONAL_ACCESS_TOKEN` secret.
+   repo only. Add it to `agentbridge` as the `CFLITE_STORAGE_REPO_TOKEN` secret.
 3. Uncomment the `storage-repo*` lines in all four `cflite_*.yml` workflows.
 
 See <https://google.github.io/clusterfuzzlite/running-clusterfuzzlite/github-actions/#storage-repo>.

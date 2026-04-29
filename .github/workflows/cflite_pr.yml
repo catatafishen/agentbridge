@@ -18,6 +18,8 @@ env:
 jobs:
   PR:
     name: ClusterFuzzLite PR
+    # Skip on fork PRs: secrets are unavailable for forks, so storage-repo would fail.
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     concurrency:
       group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
@@ -28,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sanitizer: [address]
+        sanitizer: [ address ]
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df  # v2.18.0
