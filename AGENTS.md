@@ -75,6 +75,24 @@ Each feature or bug fix must be done in its own branch and a PR created when the
 - Create a PR as soon as the branch is ready for review
 - Do not commit directly to `master`
 
+# Use Git Blame Before Changing Explicit Settings
+
+Before removing or reversing something that was explicitly set — a `.gitignore` rule, a disabled
+flag, a commented-out block, a deleted file — **run `git blame` first** to find the commit that
+introduced it, then read that commit message.
+
+Explicit settings are rarely accidental. Common patterns that look wrong but aren't:
+
+- A file in `.gitignore` → was intentionally untracked (binary blob, machine-specific, secret)
+- A feature flag set to `false` → was disabled for a known reason (instability, incompatibility)
+- A commented-out block → was temporarily disabled with intent to revisit
+- A file deleted from the repo → was intentionally removed (replaced by a better mechanism)
+
+**The rule:** if `git blame` shows the change was made deliberately (descriptive commit message,
+not a typo fix), understand *why* before deciding to undo it. The fix may need to go elsewhere —
+for example, updating a Docker build script rather than re-adding a binary the CI was designed to
+avoid.
+
 # Bug Fixing: Root Cause vs Symptom
 
 When fixing a bug, **always fix the root cause, not just the symptom**.
