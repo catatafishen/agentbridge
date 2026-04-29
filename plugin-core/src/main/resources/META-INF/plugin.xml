@@ -251,6 +251,13 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
       id="com.github.catatafishen.agentbridge.clientAgents.codex"
       displayName="Codex"/>
 
+    <!-- ── Storage (file locations + tool stats opt-out) ── -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.AgentBridgeStorageConfigurable"
+      id="com.github.catatafishen.agentbridge.storage"
+      displayName="Storage"/>
+
     <!-- ── Project Files ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.settings"
