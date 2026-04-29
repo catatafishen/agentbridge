@@ -66,22 +66,19 @@ public final class ToolCallStatisticsService implements Disposable {
         this.project = null;
     }
 
-    /**
-     * Initialize the SQLite database and subscribe to tool call events.
-     * Called lazily on first access via {@code getInstance()}.
-     *
-     * @throws RuntimeException if initialization fails (JDBC driver not found,
-     *                          database cannot be created, or subscription fails).
-     *                          The caller sets {@code initAttempted = true} regardless of
-     *                          success/failure to prevent retry loops — the service stays
-     *                          inert (connection == null) until the IDE is restarted.
-     */
     public void initialize() {
         if (project == null || project.getBasePath() == null) {
             throw new IllegalStateException(
                 "Cannot initialize ToolCallStatisticsService: project has no base path");
         }
         AgentBridgeStorageSettings storageSettings = AgentBridgeStorageSettings.getInstance();
+        // Compute the target path before the enabled check so migration runs unconditionally.
+        // Even when stats collection is disabled, the legacy {project}/.agentbridge/tool-stats.db
+        // must be moved out of the project tree so it no longer pollutes VCS views.
+        Path dbDir = storageSettings.getProjectStorageDir(project);
+        Path dbPath = dbDir.resolve(DB_FILENAME);
+        migrateLegacyDb(project.getBasePath(), dbPath);
+
         if (!storageSettings.isToolStatsEnabled()) {
             LOG.info("ToolCallStatisticsService: tool call statistics collection is disabled in settings — skipping init");
             return;
@@ -92,10 +89,7 @@ public final class ToolCallStatisticsService implements Disposable {
             throw new IllegalStateException("SQLite JDBC driver not found on classpath", e);
         }
         try {
-            Path dbDir = storageSettings.getProjectStorageDir(project);
             Files.createDirectories(dbDir);
-            Path dbPath = dbDir.resolve(DB_FILENAME);
-            migrateLegacyDb(project.getBasePath(), dbPath);
             initializeWithConnection(DriverManager.getConnection("jdbc:sqlite:" + dbPath));
             subscribeToToolCallEvents();
             LOG.info("ToolCallStatisticsService initialized at " + dbPath);
@@ -829,7 +823,9 @@ public final class ToolCallStatisticsService implements Disposable {
                     service.initAttempted = true;
                     try {
                         service.initialize();
-                        triggerBackfillIfNeeded(service, project);
+                        if (service.connection != null) {
+                            triggerBackfillIfNeeded(service, project);
+                        }
                     } catch (RuntimeException e) {
                         LOG.error("ToolCallStatisticsService initialization failed — "
                             + "tool call recording will be disabled until restart", e);

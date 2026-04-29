@@ -1,7 +1,9 @@
 package com.github.catatafishen.agentbridge.settings;
 
+import com.intellij.openapi.fileChooser.FileChooserDescriptor;
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory;
 import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.ui.TextBrowseFolderListener;
 import com.intellij.openapi.ui.TextFieldWithBrowseButton;
 import com.intellij.ui.components.JBCheckBox;
 import com.intellij.ui.components.JBLabel;
@@ -32,17 +34,12 @@ public final class AgentBridgeStorageConfigurable implements Configurable {
         return "Storage";
     }
 
-    @SuppressWarnings("UnstableApiUsage")
     @Override
     public @NotNull JComponent createComponent() {
         settings = AgentBridgeStorageSettings.getInstance();
 
         storageRootField = new TextFieldWithBrowseButton();
-        storageRootField.addBrowseFolderListener(
-            "Select AgentBridge Storage Directory",
-            "All AgentBridge data (per-project tool-stats DB, embedding model cache, future plugin data) will be stored under this directory.",
-            null,
-            FileChooserDescriptorFactory.createSingleFolderDescriptor());
+        configureBrowseButton(storageRootField);
         storageRootField.getTextField().setColumns(40);
 
         JButton resetDefaultBtn = new JButton("Reset to default");
@@ -93,6 +90,13 @@ public final class AgentBridgeStorageConfigurable implements Configurable {
 
         reset();
         return mainPanel;
+    }
+
+    private static void configureBrowseButton(@NotNull TextFieldWithBrowseButton field) {
+        FileChooserDescriptor descriptor = FileChooserDescriptorFactory.createSingleFolderDescriptor();
+        descriptor.setTitle("Select AgentBridge Storage Directory");
+        descriptor.setDescription("AgentBridge per-project data files (tool-call statistics) will be stored under this directory.");
+        field.addBrowseFolderListener(new TextBrowseFolderListener(descriptor));
     }
 
     @Override

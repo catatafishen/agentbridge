@@ -15,8 +15,7 @@ import java.util.Locale;
 
 /**
  * Application-level settings for where the AgentBridge plugin stores its
- * persistent data files (tool-stats DB, embedding model cache, future plugin
- * data).
+ * per-project data files (e.g. the tool-call statistics database).
  *
  * <p>Resolves to {@code ~/.agentbridge/} by default. Users can override the
  * root via the "Storage" settings page. Per-project data lives under
@@ -26,9 +25,9 @@ import java.util.Locale;
  */
 @Service(Service.Level.APP)
 @State(name = "AgentBridgeStorageSettings",
-       storages = @Storage("agentbridgeStorage.xml"))
+    storages = @Storage("agentbridgeStorage.xml"))
 public final class AgentBridgeStorageSettings
-        implements PersistentStateComponent<AgentBridgeStorageSettings.State> {
+    implements PersistentStateComponent<AgentBridgeStorageSettings.State> {
 
     private static final String DEFAULT_DIR_NAME = ".agentbridge";
 
