@@ -39,6 +39,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 ENV JAVA_HOME=/usr/lib/jvm/temurin-21-jdk-amd64
 ENV PATH=$JAVA_HOME/bin:$PATH
+# jazzer_driver loads libjvm.so via LD_LIBRARY_PATH="${JVM_LD_LIBRARY_PATH}:..."
+# at fuzzer runtime. Override the base image's Java-17 path so it picks up
+# our Temurin 21 JVM instead (class file version 65 requires Java 21+).
+ENV JVM_LD_LIBRARY_PATH=/usr/lib/jvm/temurin-21-jdk-amd64/lib/server
 
 # Install Gradle 9.4.1 (matches gradle-wrapper.properties distributionUrl).
 # The wrapper JAR is not committed (intentionally removed in favour of a
