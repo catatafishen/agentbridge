@@ -175,9 +175,17 @@ jobs:
 
       - name: Generate provenance attestation
         if: steps.version.outputs.skip != 'true'
+        id: attest
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
         with:
           subject-path: '${{ steps.artifacts.outputs.dir }}/*.zip'
+
+      - name: Stage provenance bundle for release upload
+        if: steps.version.outputs.skip != 'true'
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+          ARTIFACTS_DIR: ${{ steps.artifacts.outputs.dir }}
+        run: cp "$BUNDLE_PATH" "$ARTIFACTS_DIR/provenance.intoto.jsonl"
 
       - name: Install cosign
         if: steps.version.outputs.skip != 'true'
@@ -214,4 +222,5 @@ jobs:
             --title "Release $TAG" \
             --notes-file build/release-notes.md \
             "$ARTIFACTS_DIR"/*.zip \
-            "$ARTIFACTS_DIR"/*.sigstore.json
+            "$ARTIFACTS_DIR"/*.sigstore.json \
+            "$ARTIFACTS_DIR"/provenance.intoto.jsonl
