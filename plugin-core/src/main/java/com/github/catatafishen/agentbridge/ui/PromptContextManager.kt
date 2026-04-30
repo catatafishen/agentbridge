@@ -269,6 +269,87 @@ class PromptContextManager(
         return references
     }
 
+    /**
+     * Build a typed [PromptAttachment] list from the chip data. Uses each chip's
+     * [ContextItemData.attachmentKind] to decide whether to read text, encode an image
+     * as base64, or just record a binary file reference. Items that fail to load are
+     * skipped with a console warning (same behaviour as [buildContextReferences]).
+     */
+    fun buildPromptAttachments(items: List<ContextItemData>? = null): List<PromptAttachment> {
+        val contextItems = items ?: collectInlineContextItems()
+        val attachments = mutableListOf<PromptAttachment>()
+        for (item in contextItems) {
+            try {
+                val attachment = buildSingleAttachment(item)
+                if (attachment != null) attachments.add(attachment)
+            } catch (_: Exception) {
+                appendResponse("\u26a0 Could not read context: ${item.name}\n")
+            }
+        }
+        return attachments
+    }
+
+    private fun buildSingleAttachment(item: ContextItemData): PromptAttachment? {
+        return when (item.attachmentKind) {
+            AttachmentKind.TEXT -> buildTextAttachment(item)
+            AttachmentKind.IMAGE -> buildImageAttachment(item)
+            AttachmentKind.BINARY -> buildBinaryAttachment(item)
+        }
+    }
+
+    private fun buildTextAttachment(item: ContextItemData): PromptAttachment.TextRef? {
+        val ref = buildSingleReference(item) ?: return null
+        return PromptAttachment.TextRef(
+            uri = ref.uri(),
+            mimeType = ref.mimeType(),
+            displayName = item.name,
+            text = ref.text(),
+        )
+    }
+
+    private fun buildImageAttachment(item: ContextItemData): PromptAttachment.ImageRef? {
+        val file = java.io.File(item.path)
+        if (!file.exists() || !file.isFile) return null
+        val bytes = file.readBytes()
+        val mime = guessImageMime(item.path)
+        val base64 = java.util.Base64.getEncoder().encodeToString(bytes)
+        return PromptAttachment.ImageRef(
+            uri = "file://${item.path.replace("\\", "/")}",
+            mimeType = mime,
+            displayName = item.name,
+            base64Data = base64,
+        )
+    }
+
+    private fun buildBinaryAttachment(item: ContextItemData): PromptAttachment.BinaryRef {
+        return PromptAttachment.BinaryRef(
+            uri = "file://${item.path.replace("\\", "/")}",
+            mimeType = guessBinaryMime(item.path),
+            displayName = item.name,
+        )
+    }
+
+    private fun guessImageMime(path: String): String {
+        val lower = path.lowercase()
+        return when {
+            lower.endsWith(".png") -> "image/png"
+            lower.endsWith(".jpg") || lower.endsWith(".jpeg") -> "image/jpeg"
+            lower.endsWith(".gif") -> "image/gif"
+            lower.endsWith(".webp") -> "image/webp"
+            lower.endsWith(".bmp") -> "image/bmp"
+            lower.endsWith(".tiff") || lower.endsWith(".tif") -> "image/tiff"
+            else -> "image/png"
+        }
+    }
+
+    private fun guessBinaryMime(path: String): String? {
+        return try {
+            java.nio.file.Files.probeContentType(java.nio.file.Paths.get(path))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun buildSingleReference(item: ContextItemData): ResourceReference? {
         val file = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(item.path)
             ?: return null

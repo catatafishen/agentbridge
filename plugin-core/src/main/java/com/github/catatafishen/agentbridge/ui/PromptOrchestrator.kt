@@ -2,7 +2,6 @@ package com.github.catatafishen.agentbridge.ui
 
 import com.github.catatafishen.agentbridge.acp.model.ContentBlock
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest
-import com.github.catatafishen.agentbridge.acp.model.ResourceReference
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
@@ -176,11 +175,11 @@ class PromptOrchestrator(
             wirePermissionListener(client)
 
             val modelId = prepareModelAndTurnState(selectedModelId)
-            val references = contextManager.buildContextReferences(contextItems.ifEmpty { null })
+            val attachments = contextManager.buildPromptAttachments(contextItems.ifEmpty { null })
             val effectivePrompt = buildEffectivePrompt(prompt)
-            addContextEntries(references, contextItems)
+            addContextEntries(attachments, contextItems)
 
-            dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, references)
+            dispatchPromptWithRetry(client, sessionId, effectivePrompt, modelId, attachments)
             // If stop() was called, the remote turn may have ended cleanly (via turn/interrupt
             // response) without throwing. Treat it as a cancellation so handlePromptCompletion
             // is not invoked and the stale thread interrupt doesn't leak into the next turn.
@@ -295,8 +294,8 @@ class PromptOrchestrator(
         return selectedModelId
     }
 
-    private fun addContextEntries(references: List<ResourceReference>, contextItems: List<ContextItemData>) {
-        if (references.isNotEmpty() && contextItems.isNotEmpty()) {
+    private fun addContextEntries(attachments: List<PromptAttachment>, contextItems: List<ContextItemData>) {
+        if (attachments.isNotEmpty() && contextItems.isNotEmpty()) {
             val contextFiles = contextItems.map { Pair(it.name, it.path) }
             consolePanel().addContextFilesEntry(contextFiles)
         }
@@ -324,9 +323,9 @@ class PromptOrchestrator(
         initialSessionId: String,
         effectivePrompt: String,
         modelId: String,
-        references: List<ResourceReference>,
+        attachments: List<PromptAttachment>,
     ) {
-        val promptBlocks = buildPromptBlocks(effectivePrompt, references)
+        val promptBlocks = buildPromptBlocks(effectivePrompt, attachments)
         val onUpdate = java.util.function.Consumer<SessionUpdate> { update ->
             handlePromptStreamingUpdate(update)
         }
@@ -338,35 +337,72 @@ class PromptOrchestrator(
         sendWithSessionRetry(client, initialSessionId, sendCall)
     }
 
-    private fun buildPromptBlocks(prompt: String, references: List<ResourceReference>): List<ContentBlock> {
+    private fun buildPromptBlocks(prompt: String, attachments: List<PromptAttachment>): List<ContentBlock> {
         // Check if the active agent supports resource references
         val profile = agentManager.activeProfile
-        if (!profile.isSendResourceReferences && references.isNotEmpty()) {
-            // Append context content directly to the prompt text for agents that don't support resources
-            val promptWithContext = buildString {
-                append(prompt)
-                append("\n\n")
-                for ((index, ref) in references.withIndex()) {
-                    if (index > 0) append("\n\n")
-                    append("--- Context: ${ref.uri()} ---\n")
-                    append(ref.text())
-                }
-            }
-            return listOf(ContentBlock.Text(promptWithContext))
+        if (!profile.isSendResourceReferences && attachments.isNotEmpty()) {
+            return buildPromptBlocksAsTextFallback(prompt, attachments)
         }
 
-        // Standard path: send resources as separate content blocks
+        // Standard path: send each attachment as the appropriate ACP content block.
         val blocks = mutableListOf<ContentBlock>(ContentBlock.Text(prompt))
-        for (ref in references) {
-            blocks.add(
-                ContentBlock.Resource(
-                    ContentBlock.ResourceLink(
-                        ref.uri(), null, ref.mimeType(), ref.text(), null
+        for (attachment in attachments) {
+            when (attachment) {
+                is PromptAttachment.TextRef -> blocks.add(
+                    ContentBlock.Resource(
+                        ContentBlock.ResourceLink(
+                            attachment.uri, null, attachment.mimeType, attachment.text, null
+                        )
                     )
                 )
-            )
+
+                is PromptAttachment.ImageRef -> blocks.add(
+                    ContentBlock.Image(attachment.base64Data, attachment.mimeType)
+                )
+
+                is PromptAttachment.BinaryRef -> blocks.add(
+                    ContentBlock.Resource(
+                        ContentBlock.ResourceLink(
+                            attachment.uri, attachment.displayName, attachment.mimeType, null, null
+                        )
+                    )
+                )
+            }
         }
         return blocks
+    }
+
+    /**
+     * Fallback for agents that do not accept ACP `Resource` content blocks (see
+     * [com.github.catatafishen.agentbridge.services.AgentProfile.isSendResourceReferences]).
+     * Inlines text attachments into the prompt; drops image/binary attachments with a
+     * console note since base64 image blocks are not supported by these agents either.
+     */
+    private fun buildPromptBlocksAsTextFallback(
+        prompt: String,
+        attachments: List<PromptAttachment>,
+    ): List<ContentBlock> {
+        val textRefs = attachments.filterIsInstance<PromptAttachment.TextRef>()
+        val skipped = attachments.size - textRefs.size
+        if (skipped > 0) {
+            val agentName = agentManager.activeProfile.displayName
+            ApplicationManager.getApplication().invokeLater {
+                consolePanel().addErrorEntry(
+                    "\u26a0 $agentName does not support image or binary attachments — " +
+                        "$skipped attachment(s) were not sent."
+                )
+            }
+        }
+        val promptWithContext = buildString {
+            append(prompt)
+            if (textRefs.isNotEmpty()) append("\n\n")
+            for ((index, ref) in textRefs.withIndex()) {
+                if (index > 0) append("\n\n")
+                append("--- Context: ${ref.uri} ---\n")
+                append(ref.text)
+            }
+        }
+        return listOf(ContentBlock.Text(promptWithContext))
     }
 
     /**

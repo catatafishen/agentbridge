@@ -105,6 +105,7 @@ class ChatToolWindowContent(
     private lateinit var processingTimerPanel: ProcessingTimerPanel
     private lateinit var promptOrchestrator: PromptOrchestrator
     private lateinit var pasteToScratchHandler: PasteToScratchHandler
+    private lateinit var pasteAttachmentHandler: PasteAttachmentHandler
 
     // Plans tree (populated from ACP plan updates)
     private lateinit var planTreeModel: javax.swing.tree.DefaultTreeModel
@@ -872,6 +873,7 @@ class ChatToolWindowContent(
         contextManager = PromptContextManager(project, promptTextArea) { text -> appendResponse(text) }
 
         pasteToScratchHandler = PasteToScratchHandler(project, promptTextArea, contextManager)
+        pasteAttachmentHandler = PasteAttachmentHandler(project, promptTextArea, contextManager)
         promptOrchestrator = PromptOrchestrator(
             project, agentManager, billing, contextManager, authService,
             { consolePanel }, { copilotBanner }, { statusBanner },
@@ -2031,14 +2033,20 @@ class ChatToolWindowContent(
         contentComponent: JComponent,
         pasteStrokes: Set<KeyStroke>
     ): Boolean {
-        val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
-        if (!chatInputSettings.isSmartPasteEnabled) return false
         if (event !is java.awt.event.KeyEvent) return false
         if (editor.isDisposed) return false
         if (event.id != java.awt.event.KeyEvent.KEY_PRESSED) return false
         if (KeyStroke.getKeyStrokeForEvent(event) !in pasteStrokes) return false
         val focused = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
         if (!SwingUtilities.isDescendingFrom(focused, contentComponent)) return false
+
+        // Image and file pastes take precedence over the smart-paste-to-scratch text path.
+        // They are handled regardless of the smart-paste setting because they have no
+        // sensible "insert as plain text" fallback in the prompt editor.
+        if (handleImageOrFilePaste(event)) return true
+
+        val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
+        if (!chatInputSettings.isSmartPasteEnabled) return false
 
         val clipText = contextManager.getClipboardText()
         val minLines = chatInputSettings.smartPasteMinLines
@@ -2056,6 +2064,61 @@ class ChatToolWindowContent(
             }
         }
         return true
+    }
+
+    /**
+     * Detect a non-text clipboard payload (raster image or file list) and route it to
+     * [pasteAttachmentHandler]. Returns true (and consumes [event]) when a payload was
+     * handled — meaning callers must not fall through to text paste handling.
+     *
+     * Images take priority: many apps (e.g. browsers) put both the image bytes AND a
+     * placeholder string on the clipboard; we want the image, not the string.
+     */
+    private fun handleImageOrFilePaste(event: java.awt.event.KeyEvent): Boolean {
+        val clipboard = try {
+            Toolkit.getDefaultToolkit().systemClipboard
+        } catch (_: Exception) {
+            return false
+        }
+        val contents = try {
+            clipboard.getContents(null) ?: return false
+        } catch (_: IllegalStateException) {
+            return false
+        }
+
+        if (contents.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.imageFlavor)) {
+            val image = try {
+                contents.getTransferData(java.awt.datatransfer.DataFlavor.imageFlavor) as? Image
+            } catch (_: Exception) {
+                null
+            }
+            if (image != null) {
+                event.consume()
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    pasteAttachmentHandler.handleImagePaste(image)
+                }
+                return true
+            }
+        }
+
+        if (contents.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
+            @Suppress("UNCHECKED_CAST")
+            val files = try {
+                contents.getTransferData(java.awt.datatransfer.DataFlavor.javaFileListFlavor)
+                    as? List<java.io.File>
+            } catch (_: Exception) {
+                null
+            }
+            if (!files.isNullOrEmpty()) {
+                event.consume()
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    pasteAttachmentHandler.handleFilePaste(files)
+                }
+                return true
+            }
+        }
+
+        return false
     }
 
     private fun registerPasteIntercept(editor: EditorEx, contentComponent: JComponent) {
