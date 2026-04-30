@@ -12,6 +12,7 @@ import com.intellij.util.ui.FormBuilder
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
+import java.awt.Component
 import javax.swing.*
 
 /**
@@ -36,7 +37,7 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
     override fun getId(): String = ID
 
     override fun createComponent(): JComponent {
-        val projectDefault = JRadioButton("Project directory (default)")
+        val projectDefault = JRadioButton("Project directory")
         val userHome = JRadioButton("User home directory")
         val custom = JRadioButton("Custom directory")
         val pathField = createCustomPathField()
@@ -79,15 +80,7 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
             .addSeparator(12)
             .addComponent(
                 contextLabel(
-                    "<b>Note:</b> the project directory option keeps existing Marketplace users on the original " +
-                        "layout. Selecting a shared or custom location moves project-local data there on next use. " +
-                        "Changing the storage location takes effect on the next IDE restart."
-                )
-            )
-            .addSeparator(12)
-            .addComponent(
-                contextLabel(
-                    "Configure individual stores below: <b>Tool Statistics</b>, <b>Memory</b>, and <b>Chat History</b>."
+                    "<b>Note:</b> Changing the storage location takes effect on the next IDE restart."
                 )
             )
             .addComponentFillVertically(JPanel(), 0)
@@ -172,10 +165,17 @@ class AgentBridgeStorageConfigurable @Suppress("unused") constructor(
         JPanel().apply {
             isOpaque = false
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            button.alignmentX = Component.LEFT_ALIGNMENT
             add(button)
-            add(contextLabel("Chosen root stores data under <code>&lt;path&gt;/projects/&lt;project-name&gt;-&lt;hash&gt;</code>.").indented())
+            add(
+                contextLabel("Chosen root stores data under <code>&lt;path&gt;/projects/&lt;project-name&gt;-&lt;hash&gt;</code>.").indented()
+                    .apply {
+                        alignmentX = Component.LEFT_ALIGNMENT
+                    })
             add(Box.createVerticalStrut(4))
-            add(field.indented())
+            add(field.indented().apply {
+                alignmentX = Component.LEFT_ALIGNMENT
+            })
         }
 
     private fun contextLabel(html: String): JBLabel =

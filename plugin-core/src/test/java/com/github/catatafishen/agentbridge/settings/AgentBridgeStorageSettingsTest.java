@@ -126,6 +126,24 @@ class AgentBridgeStorageSettingsTest {
         assertTrue(settings.isToolStatsEnabled());
     }
 
+    @Test
+    void projectStorageDirFallsBackToUserHomeWhenBasePathMissing() {
+        Project project = project("Headless", null);
+
+        AgentBridgeStorageSettings settings = new AgentBridgeStorageSettings();
+
+        Path dir = settings.getProjectStorageDir(project);
+        assertTrue(dir.startsWith(AgentBridgeStorageSettings.getUserHomeStorageRoot().resolve("projects")),
+            "Expected fallback under user-home projects/, got: " + dir);
+    }
+
+    @Test
+    void projectDefaultStorageRootReturnsNullWhenBasePathMissing() {
+        Project project = project("Headless", null);
+        org.junit.jupiter.api.Assertions.assertNull(
+            AgentBridgeStorageSettings.getProjectDefaultStorageRoot(project));
+    }
+
     private static Project project(String name, String basePath) {
         Project project = Mockito.mock(Project.class);
         Mockito.when(project.getName()).thenReturn(name);

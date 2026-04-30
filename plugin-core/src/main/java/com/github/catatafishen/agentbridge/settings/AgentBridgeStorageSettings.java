@@ -82,12 +82,16 @@ public final class AgentBridgeStorageSettings
 
     /**
      * The project-local default storage root: {@code {project}/.agentbridge}.
+     * Returns {@code null} for projects without a base path (e.g. the
+     * IntelliJ {@code DefaultProject} surfaced during dispose or
+     * {@code buildSearchableOptions}); callers should fall back to the
+     * shared user-home location in that case.
      */
-    @NotNull
+    @Nullable
     public static Path getProjectDefaultStorageRoot(@NotNull Project project) {
         String basePath = project.getBasePath();
         if (basePath == null) {
-            throw new IllegalStateException("Cannot resolve AgentBridge project storage: project has no base path");
+            return null;
         }
         return Paths.get(basePath, DEFAULT_DIR_NAME);
     }
@@ -109,7 +113,12 @@ public final class AgentBridgeStorageSettings
     @NotNull
     public Path getProjectStorageDir(@NotNull Project project) {
         return switch (getStorageLocationMode()) {
-            case PROJECT -> getProjectDefaultStorageRoot(project);
+            case PROJECT -> {
+                Path projectRoot = getProjectDefaultStorageRoot(project);
+                yield projectRoot != null
+                    ? projectRoot
+                    : getNamespacedProjectStorageDir(getUserHomeStorageRoot(), project);
+            }
             case USER_HOME -> getNamespacedProjectStorageDir(getUserHomeStorageRoot(), project);
             case CUSTOM -> getNamespacedProjectStorageDir(getRequiredCustomStorageRoot(), project);
         };
