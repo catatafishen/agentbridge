@@ -71,7 +71,7 @@ class ToolsConfigurable(private val project: Project) :
 
         counterLabel = JBLabel().apply {
             alignmentX = Component.LEFT_ALIGNMENT
-            border = JBUI.Borders.empty(0, 0, 4, 0)
+            border = JBUI.Borders.emptyBottom(4)
         }
         toolsPanel.add(counterLabel)
 
@@ -81,7 +81,7 @@ class ToolsConfigurable(private val project: Project) :
         ).apply {
             font = JBUI.Fonts.smallFont()
             foreground = UIUtil.getContextHelpForeground()
-            border = JBUI.Borders.empty(0, 0, 6, 0)
+            border = JBUI.Borders.emptyBottom(6)
             alignmentX = Component.LEFT_ALIGNMENT
             preferredSize = Dimension(1, preferredSize.height)
             maximumSize = Dimension(Int.MAX_VALUE, Int.MAX_VALUE)
@@ -94,7 +94,7 @@ class ToolsConfigurable(private val project: Project) :
                 alignmentX = Component.LEFT_ALIGNMENT
             }
             toolsPanel.add(container)
-            object : SwingWorker<Boolean, Void>() {
+            object : SwingWorker<Boolean, Unit>() {
                 override fun doInBackground(): Boolean = ReSharperMcpClient.isAvailable()
                 override fun done() {
                     var available = false
@@ -127,7 +127,7 @@ class ToolsConfigurable(private val project: Project) :
         }
         val topRow = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
-            border = JBUI.Borders.empty(0, 0, 4, 0)
+            border = JBUI.Borders.emptyBottom(4)
             add(enableAllBtn)
             add(Box.createHorizontalStrut(JBUI.scale(8)))
             add(disableAllBtn)
@@ -156,7 +156,7 @@ class ToolsConfigurable(private val project: Project) :
             }
             toolRow.add(dot)
             val cb = JBCheckBox(tool.displayName(), settings.isToolEnabled(tool.id())).apply {
-                border = JBUI.Borders.empty(1, 0, 0, 0)
+                border = JBUI.Borders.emptyTop(1)
                 addItemListener { updateCounter() }
             }
             toolCheckboxes[tool.id()] = cb
@@ -253,7 +253,7 @@ class ToolsConfigurable(private val project: Project) :
         ).apply {
             font = JBUI.Fonts.smallFont()
             foreground = UIUtil.getContextHelpForeground()
-            border = JBUI.Borders.empty(0, 0, 8, 0)
+            border = JBUI.Borders.emptyBottom(8)
             alignmentX = Component.LEFT_ALIGNMENT
             preferredSize = Dimension(1, preferredSize.height)
             maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
@@ -261,16 +261,16 @@ class ToolsConfigurable(private val project: Project) :
         section.add(hint)
 
         readColorCombo = ThemeColorComboBox().also {
-            it.setSelectedThemeColor(ThemeColor.fromKey(settings.kindReadColorKey))
+            it.selectedThemeColor = ThemeColor.fromKey(settings.kindReadColorKey)
         }
         searchColorCombo = ThemeColorComboBox().also {
-            it.setSelectedThemeColor(ThemeColor.fromKey(settings.kindSearchColorKey))
+            it.selectedThemeColor = ThemeColor.fromKey(settings.kindSearchColorKey)
         }
         editColorCombo = ThemeColorComboBox().also {
-            it.setSelectedThemeColor(ThemeColor.fromKey(settings.kindEditColorKey))
+            it.selectedThemeColor = ThemeColor.fromKey(settings.kindEditColorKey)
         }
         executeColorCombo = ThemeColorComboBox().also {
-            it.setSelectedThemeColor(ThemeColor.fromKey(settings.kindExecuteColorKey))
+            it.selectedThemeColor = ThemeColor.fromKey(settings.kindExecuteColorKey)
         }
         section.add(colorRow("Read & Navigate", readColorCombo!!))
         section.add(colorRow("Search & Query", searchColorCombo!!))
@@ -329,10 +329,10 @@ class ToolsConfigurable(private val project: Project) :
     private fun resetFromSettings() {
         val settings = McpServerSettings.getInstance(project)
         for ((id, cb) in toolCheckboxes) cb.isSelected = settings.isToolEnabled(id)
-        readColorCombo?.setSelectedThemeColor(ThemeColor.fromKey(settings.kindReadColorKey))
-        searchColorCombo?.setSelectedThemeColor(ThemeColor.fromKey(settings.kindSearchColorKey))
-        editColorCombo?.setSelectedThemeColor(ThemeColor.fromKey(settings.kindEditColorKey))
-        executeColorCombo?.setSelectedThemeColor(ThemeColor.fromKey(settings.kindExecuteColorKey))
+        readColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindReadColorKey)
+        searchColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindSearchColorKey)
+        editColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindEditColorKey)
+        executeColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindExecuteColorKey)
         updateCounter()
     }
 

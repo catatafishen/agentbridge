@@ -29,7 +29,6 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
     private val billing = BillingConfigurable()
     private var configPanel: com.intellij.openapi.ui.DialogPanel? = null
 
-    @Suppress("UnstableApiUsage")
     private var liveBinaryFieldText: () -> String = { "" }
 
     override fun getDisplayName(): String = "GitHub Copilot"
@@ -83,6 +82,8 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
                 )
                 .bindItem(
                     { ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)) },
+                    // SonarQube S6619 falsely reports `?.` as useless: bindItem setter receives ThemeColor?
+                    @Suppress("kotlin:S6619")
                     { AcpClient.saveAgentBubbleColorKey(AGENT_ID, it?.name) }
                 )
         }

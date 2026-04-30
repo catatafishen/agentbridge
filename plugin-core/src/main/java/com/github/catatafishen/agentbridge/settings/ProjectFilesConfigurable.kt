@@ -74,7 +74,7 @@ class ProjectFilesConfigurable :
         override fun getColumnCount() = 4
         override fun getColumnName(column: Int) = COLUMNS[column]
         override fun getColumnClass(column: Int): Class<*> =
-            if (column == 2) java.lang.Boolean::class.java else String::class.java
+            if (column == 2) Boolean::class.javaObjectType else String::class.java
         override fun getValueAt(row: Int, column: Int): Any = rows[row][column]
         override fun isCellEditable(row: Int, column: Int) = true
         override fun setValueAt(value: Any, row: Int, column: Int) {
@@ -82,7 +82,7 @@ class ProjectFilesConfigurable :
             fireTableCellUpdated(row, column)
         }
         fun addRow(label: String, path: String, isGlob: Boolean, group: String) {
-            rows += arrayOf<Any>(label, path, isGlob, group)
+            rows += arrayOf(label, path, isGlob, group)
             fireTableRowsInserted(rows.size - 1, rows.size - 1)
         }
         fun removeRow(row: Int) { rows.removeAt(row); fireTableRowsDeleted(row, row) }

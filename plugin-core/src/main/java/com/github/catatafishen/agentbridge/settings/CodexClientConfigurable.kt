@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.settings
 
 import com.github.catatafishen.agentbridge.acp.client.AcpClient
-import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient
 import com.github.catatafishen.agentbridge.services.AgentProfileManager
 import com.github.catatafishen.agentbridge.ui.ThemeColor
 import com.github.catatafishen.agentbridge.ui.runAuthInEmbeddedTerminal
@@ -66,8 +65,11 @@ class CodexClientConfigurable(private val project: Project) :
                 )
         }
         separator()
-        row { button("Sign In (codex login)") { openSignInTerminal(false) } }
-        row { button("Sign In — headless (codex login --device-auth)") { openSignInTerminal(true) } }
+        // Button labels include literal CLI commands ("codex login") which must stay lowercase.
+        @Suppress("DialogTitleCapitalization")
+        row { button("Sign in (codex login)") { openSignInTerminal(false) } }
+        @Suppress("DialogTitleCapitalization")
+        row { button("Sign in — headless (codex login --device-auth)") { openSignInTerminal(true) } }
         row {
             val note = JBLabel(
                 "<html>Use <i>headless</i> sign-in on remote/SSH machines where a browser cannot " +
@@ -143,7 +145,9 @@ class CodexClientConfigurable(private val project: Project) :
 
     companion object {
         const val ID = "com.github.catatafishen.agentbridge.client.codex"
-        private const val CHECKING = "Checking…"
-        private val PROFILE_ID = CodexAppServerClient.PROFILE_ID
     }
 }
+
+private const val CHECKING = "Checking…"
+// Mirrors CodexAppServerClient.PROFILE_ID (kept in sync; cannot reference the Java constant from a const val).
+private const val PROFILE_ID = "codex"

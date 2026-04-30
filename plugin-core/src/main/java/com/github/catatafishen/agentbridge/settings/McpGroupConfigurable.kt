@@ -130,7 +130,7 @@ class McpGroupConfigurable(private val project: Project) :
                     }
                     ApplicationManager.getApplication().invokeLater { resetRestartButton(button) }
                 }, 500, TimeUnit.MILLISECONDS)
-            } catch (ex: ClassNotFoundException) {
+            } catch (_: ClassNotFoundException) {
                 val msg = "MCP HTTP Server plugin is not installed. " +
                     "Install the 'IDE MCP Server' plugin to use the HTTP server."
                 LOG.info(msg); showRestartError(button, msg)

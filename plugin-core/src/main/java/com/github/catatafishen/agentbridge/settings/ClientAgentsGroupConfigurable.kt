@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
+import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.ui.dsl.builder.*
@@ -23,6 +24,7 @@ class ClientAgentsGroupConfigurable(private val project: Project) :
         lineWrap = true
     }
 
+    @Suppress("kotlin:S3776") // Kotlin UI DSL panel{} blocks are inherently nested; refactoring loses closure access.
     override fun createPanel() = panel {
         val manager = ActiveAgentManager.getInstance(project)
         val instr = StartupInstructionsSettings.getInstance()
@@ -71,7 +73,7 @@ class ClientAgentsGroupConfigurable(private val project: Project) :
                 )
         }
         group("Agent Instructions") {
-            lateinit var customCheck: com.intellij.ui.dsl.builder.Cell<com.intellij.ui.components.JBCheckBox>
+            lateinit var customCheck: Cell<JBCheckBox>
             row {
                 customCheck = checkBox("Use custom startup instructions")
                     .bindSelected(
