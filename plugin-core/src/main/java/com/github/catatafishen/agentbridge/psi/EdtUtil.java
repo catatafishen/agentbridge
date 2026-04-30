@@ -171,23 +171,48 @@ public final class EdtUtil {
     }
 
     /**
-     * Build a human-readable description of all visible modal dialogs.
+     * Build a human-readable description of any UI that is currently blocking the EDT
+     * — modal dialogs and active JBPopups (e.g. class-import choosers).
+     * <p>
+     * Popup detection uses the platform {@link com.intellij.openapi.ui.popup.JBPopupFactory}
+     * rather than scanning {@code Window.getWindows()}, so it covers heavyweight and
+     * lightweight popups consistently and avoids false positives from notifications
+     * or transient UI.
      *
-     * @return e.g. {@code " Modal dialog blocking: 'Settings', 'Confirm'"} or empty string if none
+     * @return e.g. {@code " Modal dialog blocking: 'Settings'"} or
+     * {@code " Popup blocking the EDT (e.g. an import-class chooser opened by a quick-fix)."}
+     * or empty string if nothing is blocking
      */
     public static String describeModalBlocker() {
         StringBuilder sb = new StringBuilder();
+        appendVisibleModalDialogs(sb);
+        if (isJbPopupActive()) {
+            sb.append(sb.isEmpty() ? " " : "; ");
+            sb.append("Popup blocking the EDT (e.g. an import-class chooser opened by a quick-fix). ")
+                .append("Such popups cannot be answered non-interactively — apply the change with edit_text instead.");
+        }
+        return sb.toString();
+    }
+
+    private static void appendVisibleModalDialogs(StringBuilder sb) {
         for (Window window : Window.getWindows()) {
             if (window instanceof Dialog dialog && dialog.isModal() && dialog.isVisible()) {
-                if (sb.isEmpty()) {
-                    sb.append(" Modal dialog blocking: ");
-                } else {
-                    sb.append(", ");
-                }
+                sb.append(sb.isEmpty() ? " Modal dialog blocking: " : ", ");
                 String title = dialog.getTitle();
                 sb.append("'").append(title != null && !title.isEmpty() ? title : "(untitled)").append("'");
             }
         }
-        return sb.toString();
+    }
+
+    /**
+     * Returns true if a JBPopup is currently active. Defensive: returns false on any
+     * exception so the modal-poll loop never crashes due to a diagnostic helper.
+     */
+    private static boolean isJbPopupActive() {
+        try {
+            return com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().isPopupActive();
+        } catch (Exception | LinkageError ignored) {
+            return false;
+        }
     }
 }

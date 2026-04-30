@@ -39,6 +39,30 @@ public class RefactoringJavaSupport {
     }
 
     /**
+     * Returns the fully-qualified names of all classes whose short (simple) name matches
+     * {@code simpleName}, searched against the project's resolve scope of {@code psiFile}
+     * (or full project scope if {@code psiFile} is {@code null}).
+     * <p>
+     * Used by {@code ApplyActionTool} to pre-flight ambiguous {@code Import class 'X'}
+     * quick-fixes — when more than one candidate exists, the IDE shows a class-chooser
+     * popup that cannot be answered non-interactively and would block the EDT.
+     * <p>
+     * Must be invoked inside a {@code ReadAction}.
+     */
+    public static java.util.List<String> findClassFqnsByShortName(@NotNull Project project,
+                                                                  @NotNull String simpleName,
+                                                                  @Nullable PsiFile psiFile) {
+        GlobalSearchScope scope = psiFile != null ? psiFile.getResolveScope() : GlobalSearchScope.allScope(project);
+        PsiClass[] classes = PsiShortNamesCache.getInstance(project).getClassesByName(simpleName, scope);
+        java.util.List<String> fqns = new java.util.ArrayList<>(classes.length);
+        for (PsiClass psiClass : classes) {
+            String fqn = psiClass.getQualifiedName();
+            fqns.add(fqn != null ? fqn : psiClass.getName());
+        }
+        return fqns;
+    }
+
+    /**
      * Builds a human-readable type hierarchy string for the given symbol.
      *
      * @param project    current project

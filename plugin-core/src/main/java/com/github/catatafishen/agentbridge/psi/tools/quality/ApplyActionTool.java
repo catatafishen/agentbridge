@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.GitDiffRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.intention.IntentionAction;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.command.undo.UndoManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.editor.Document;
@@ -16,6 +17,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.fileEditor.TextEditor;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDocumentManager;
 import com.intellij.psi.PsiFile;
@@ -24,6 +26,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -38,6 +41,8 @@ public final class ApplyActionTool extends QualityTool {
     private static final String PARAM_DRY_RUN = "dry_run";
     private static final String LINE_LABEL = " line ";
     private static final String ACTION_PREFIX = "Action '";
+    private static final String IMPORT_CLASS_PREFIX = "Import class '";
+    private static final int AMBIGUOUS_IMPORT_FQNS_TO_LIST = 5;
 
     public ApplyActionTool(Project project) {
         super(project);
@@ -154,6 +159,9 @@ public final class ApplyActionTool extends QualityTool {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
 
+        String ambiguousImportError = checkAmbiguousImport(actionName, psiFile);
+        if (ambiguousImportError != null) return ambiguousImportError;
+
         Editor editor = getOrOpenEditor(vf);
         if (editor == null) {
             return "Error: Could not open editor for " + pathStr + ". Ensure the file is open in the IDE.";
@@ -263,6 +271,77 @@ public final class ApplyActionTool extends QualityTool {
         }
         return (applied ? "Applied" : "Applied with option") + " action: " + actionName
             + "\n  File: " + pathStr + LINE_LABEL + line + "\n\n" + diff;
+    }
+
+    /**
+     * Pre-flight check for ambiguous {@code Import class 'X'} quick-fixes.
+     * <p>
+     * When more than one class with the same simple name exists in the resolve scope,
+     * the IDE shows a class-chooser {@link com.intellij.openapi.ui.popup.JBPopup} that
+     * cannot be answered non-interactively. Invoking the action would block the EDT.
+     * <p>
+     * Returns an actionable error string when ambiguity is detected, otherwise {@code null}.
+     * Best-effort: only matches the English action name. Returns {@code null} on any failure
+     * (no Java module, PSI lookup error, etc.) so non-import actions are never blocked.
+     */
+    @Nullable
+    private String checkAmbiguousImport(String actionName, PsiFile psiFile) {
+        String simpleName = parseImportSimpleName(actionName);
+        if (simpleName == null) return null;
+        if (!PlatformApiCompat.isPluginInstalled("com.intellij.modules.java")) return null;
+        try {
+            List<String> candidates = ApplicationManager.getApplication().runReadAction(
+                (Computable<List<String>>) () -> com.github.catatafishen.agentbridge.psi.java.RefactoringJavaSupport
+                    .findClassFqnsByShortName(project, simpleName, psiFile)
+            );
+            if (candidates.size() > 1) {
+                return formatAmbiguousImportError(simpleName, candidates);
+            }
+        } catch (Exception | LinkageError e) {
+            LOG.debug("Ambiguous-import precheck skipped for '" + actionName + "'", e);
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the simple class name from an action name like {@code Import class 'Cell'}.
+     * Returns {@code null} if the action name doesn't match the expected pattern.
+     * <p>
+     * <b>Localization caveat:</b> this only matches the English action name. In a localized
+     * IDE this returns {@code null} and the precheck is a no-op — falling through to the
+     * normal action invocation path. The {@code describeModalBlocker()} popup-detection
+     * still surfaces the issue if the popup actually opens.
+     */
+    @Nullable
+    static String parseImportSimpleName(String actionName) {
+        if (actionName == null || !actionName.startsWith(IMPORT_CLASS_PREFIX)) return null;
+        int end = actionName.indexOf('\'', IMPORT_CLASS_PREFIX.length());
+        if (end <= IMPORT_CLASS_PREFIX.length()) return null;
+        return actionName.substring(IMPORT_CLASS_PREFIX.length(), end);
+    }
+
+    /**
+     * Formats the error message for an ambiguous import. Lists up to
+     * {@value #AMBIGUOUS_IMPORT_FQNS_TO_LIST} candidate FQNs and indicates how many more exist.
+     */
+    static String formatAmbiguousImportError(String simpleName, List<String> candidates) {
+        List<String> sorted = new ArrayList<>(candidates);
+        Collections.sort(sorted);
+        int show = Math.min(sorted.size(), AMBIGUOUS_IMPORT_FQNS_TO_LIST);
+        StringBuilder sb = new StringBuilder();
+        sb.append("Error: Import for '").append(simpleName).append("' is ambiguous (")
+            .append(sorted.size()).append(" candidates: ");
+        for (int i = 0; i < show; i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(sorted.get(i));
+        }
+        if (sorted.size() > show) {
+            sb.append(", … (").append(sorted.size() - show).append(" more)");
+        }
+        sb.append("). Invoking this quick-fix would open a class-chooser popup that cannot be ")
+            .append("answered non-interactively (and would freeze the EDT). ")
+            .append("Add the import line directly with edit_text using the fully-qualified name you want.");
+        return sb.toString();
     }
 
     private void undoLastAction(VirtualFile vf) {
