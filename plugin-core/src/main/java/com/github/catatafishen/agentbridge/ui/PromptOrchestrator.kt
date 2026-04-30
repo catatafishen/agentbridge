@@ -93,6 +93,7 @@ class PromptOrchestrator(
     private var turnCostUsd: Double? = null
     private var turnModelId = ""
     private var turnStartHeadHash: String? = null
+    private var turnStartGitBranch: String? = null
 
     /**
      * Stack of currently active sub-agent call IDs, ordered by start time (oldest first).
@@ -273,6 +274,7 @@ class PromptOrchestrator(
         turnModelId = selectedModelId
         CodeChangeTracker.clear()
         turnStartHeadHash = captureGitHead()
+        turnStartGitBranch = captureGitBranch()
 
         // Register real-time listener so code-change chips update as each tool runs.
         codeChangeListener?.let { CodeChangeTracker.removeListener(it) }
@@ -499,7 +501,8 @@ class PromptOrchestrator(
         recordTurnStatsToSqlite(
             TurnStatsParams(
                 turnDuration, turnInputTokens, turnOutputTokens,
-                turnToolCallCount, codeChanges[0], codeChanges[1], turnMultiplier, commitHashes
+                turnToolCallCount, codeChanges[0], codeChanges[1], turnMultiplier, commitHashes,
+                turnStartGitBranch
             )
         )
 
@@ -861,7 +864,8 @@ class PromptOrchestrator(
     private data class TurnStatsParams(
         val durationMs: Long, val inputTokens: Int, val outputTokens: Int,
         val toolCallCount: Int, val linesAdded: Int, val linesRemoved: Int,
-        val multiplier: String, val commitHashes: List<String>
+        val multiplier: String, val commitHashes: List<String>,
+        val gitBranch: String?
     )
 
     private fun recordTurnStatsToSqlite(params: TurnStatsParams) {
@@ -881,7 +885,7 @@ class PromptOrchestrator(
                         sessionId, agentId, date,
                         params.inputTokens.toLong(), params.outputTokens.toLong(), params.toolCallCount,
                         params.durationMs, params.linesAdded, params.linesRemoved, premiumRequests, timestamp,
-                        commitHashesStr
+                        commitHashesStr, params.gitBranch
                     )
                 )
             } catch (e: Exception) {
@@ -903,6 +907,30 @@ class PromptOrchestrator(
             val output = proc.inputStream.bufferedReader().readText().trim()
             proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
             if (proc.exitValue() == 0 && output.matches(Regex("[0-9a-f]{40}"))) output else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Captures the current git branch checked out at turn start. Returns null when the
+     * working directory is not a git repository, git is unavailable, or HEAD is detached
+     * (e.g. mid-rebase, on a tagged commit). The chart UI treats null as "unattributed"
+     * and excludes those turns from the per-branch comparison view.
+     *
+     * Uses {@code symbolic-ref --short -q HEAD} so detached HEAD exits non-zero rather
+     * than returning the literal string "HEAD" (which {@code rev-parse --abbrev-ref}
+     * would return and which would otherwise need to be filtered out as a magic value).
+     */
+    private fun captureGitBranch(): String? {
+        return try {
+            val pb = ProcessBuilder("git", "symbolic-ref", "--short", "-q", "HEAD")
+                .directory(java.io.File(project.basePath ?: return null))
+            pb.environment()["GIT_TERMINAL_PROMPT"] = "0"
+            val proc = pb.start()
+            val output = proc.inputStream.bufferedReader().readText().trim()
+            proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+            if (proc.exitValue() == 0 && output.isNotEmpty()) output else null
         } catch (_: Exception) {
             null
         }

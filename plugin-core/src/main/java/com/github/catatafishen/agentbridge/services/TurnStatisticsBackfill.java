@@ -216,7 +216,8 @@ public final class TurnStatisticsBackfill {
         return new ToolCallStatisticsService.TurnStatsRecord(
             sessionId, agentId, date,
             inputTokens, outputTokens, toolCalls, durationMs,
-            linesAdded, linesRemoved, premiumRequests, timestamp, commitHashes);
+            linesAdded, linesRemoved, premiumRequests, timestamp, commitHashes,
+            null);
     }
 
     private static double parsePremiumMultiplier(String multiplier) {

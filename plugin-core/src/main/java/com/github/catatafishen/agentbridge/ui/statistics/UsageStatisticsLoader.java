@@ -57,6 +57,50 @@ final class UsageStatisticsLoader {
     }
 
     /**
+     * Loads per-branch totals for the branch-comparison view. Always reads from
+     * SQLite — JSONL has no branch info, so a JSONL fallback would always be
+     * empty and would just confuse the user.
+     *
+     * @return branch snapshot. {@link UsageStatisticsData.BranchSnapshot#branches()}
+     * is empty when no rows in the range have a git branch attached.
+     */
+    static UsageStatisticsData.BranchSnapshot loadBranches(@NotNull Project project,
+                                                           @NotNull UsageStatisticsData.TimeRange range) {
+        LocalDate startDate = range.startDate();
+        LocalDate endDate = LocalDate.now();
+
+        ToolCallStatisticsService service = ToolCallStatisticsService.getInstance(project);
+        String startStr = startDate.toString();
+        String endStr = endDate.toString();
+
+        List<ToolCallStatisticsService.BranchAggregate> aggregates =
+            service.queryBranchTotals(startStr, endStr);
+        int unattributed = service.countUnattributedTurns(startStr, endStr);
+
+        List<UsageStatisticsData.BranchStats> branches = new ArrayList<>();
+        for (ToolCallStatisticsService.BranchAggregate agg : aggregates) {
+            branches.add(new UsageStatisticsData.BranchStats(
+                agg.branch(), agg.turns(), agg.inputTokens(), agg.outputTokens(),
+                agg.toolCalls(), agg.durationMs(),
+                agg.linesAdded(), agg.linesRemoved(), agg.premiumRequests()
+            ));
+        }
+
+        // For "all time", narrow start to earliest data date if available
+        if (range == UsageStatisticsData.TimeRange.ALL) {
+            LocalDate earliest = service.getEarliestTurnDate();
+            if (earliest != null) {
+                startDate = earliest;
+            }
+        }
+
+        LOG.info("Statistics (branches): " + branches.size() + " branches, "
+            + unattributed + " unattributed turns");
+
+        return new UsageStatisticsData.BranchSnapshot(branches, startDate, endDate, unattributed);
+    }
+
+    /**
      * Loads statistics from the SQLite turn_stats table. Returns null if the
      * table is empty (triggers JSONL fallback with backfill).
      */

@@ -195,6 +195,7 @@ public final class ToolCallStatisticsService implements Disposable {
             stmt.execute(
                 "CREATE INDEX IF NOT EXISTS idx_turn_stats_session ON turn_stats(session_id)");
             migrateAddCommitHashesColumn(stmt);
+            migrateAddGitBranchColumn(stmt);
         }
     }
 
@@ -229,6 +230,18 @@ public final class ToolCallStatisticsService implements Disposable {
         } catch (SQLException e) {
             if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
                 LOG.warn("Unexpected error migrating turn_stats schema (commit_hashes column)", e);
+            }
+            // else: duplicate column — expected for databases that have already been migrated
+        }
+    }
+
+    private void migrateAddGitBranchColumn(java.sql.Statement stmt) {
+        try {
+            stmt.execute("ALTER TABLE turn_stats ADD COLUMN git_branch TEXT");
+            LOG.info("Migrated turn_stats table: added git_branch column");
+        } catch (SQLException e) {
+            if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
+                LOG.warn("Unexpected error migrating turn_stats schema (git_branch column)", e);
             }
             // else: duplicate column — expected for databases that have already been migrated
         }
@@ -538,8 +551,8 @@ public final class ToolCallStatisticsService implements Disposable {
         String sql = """
             INSERT INTO turn_stats (session_id, agent_id, date, input_tokens, output_tokens,
                                     tool_calls, duration_ms, lines_added, lines_removed,
-                                    premium_requests, timestamp, commit_hashes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    premium_requests, timestamp, commit_hashes, git_branch)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
             stmt.setString(1, statsRecord.sessionId());
@@ -554,6 +567,7 @@ public final class ToolCallStatisticsService implements Disposable {
             stmt.setDouble(10, statsRecord.premiumRequests());
             stmt.setString(11, statsRecord.timestamp());
             stmt.setString(12, statsRecord.commitHashes());
+            stmt.setString(13, statsRecord.gitBranch());
             stmt.executeUpdate();
         } catch (SQLException e) {
             if (isDbMoved(e) && tryReconnect()) {
@@ -570,6 +584,7 @@ public final class ToolCallStatisticsService implements Disposable {
                     stmt.setDouble(10, statsRecord.premiumRequests());
                     stmt.setString(11, statsRecord.timestamp());
                     stmt.setString(12, statsRecord.commitHashes());
+                    stmt.setString(13, statsRecord.gitBranch());
                     stmt.executeUpdate();
                 } catch (SQLException retryEx) {
                     LOG.warn("Failed to record turn stats after reconnect", retryEx);
@@ -719,6 +734,108 @@ public final class ToolCallStatisticsService implements Disposable {
     }
 
     /**
+     * Aggregated turn statistics for a single git branch over a date range.
+     * Used for the per-branch comparison bar charts in the usage statistics panel.
+     * <p>
+     * Rows with {@code git_branch IS NULL} (pre-feature history or sessions where
+     * git wasn't available) are excluded from the result. Surface that limitation
+     * in the UI rather than dumping unattributed work into a "(no branch)" bucket.
+     */
+    public record BranchAggregate(
+        @NotNull String branch,
+        int turns,
+        long inputTokens,
+        long outputTokens,
+        int toolCalls,
+        long durationMs,
+        int linesAdded,
+        int linesRemoved,
+        double premiumRequests
+    ) {
+    }
+
+    /**
+     * Queries per-branch totals across the date range. One row per distinct
+     * {@code git_branch} value (NULL branches excluded). Sorted by total
+     * premium-request cost descending, so the most expensive branches lead.
+     *
+     * @param startDate inclusive start date (YYYY-MM-DD)
+     * @param endDate   inclusive end date (YYYY-MM-DD)
+     * @return aggregated branch stats; empty list if the table is empty or all
+     * rows in the range have a null branch
+     */
+    public synchronized List<BranchAggregate> queryBranchTotals(
+        @NotNull String startDate, @NotNull String endDate) {
+        if (connection == null) return List.of();
+        String sql = """
+            SELECT git_branch,
+                   COUNT(*)              AS turns,
+                   SUM(input_tokens)     AS input_tokens,
+                   SUM(output_tokens)    AS output_tokens,
+                   SUM(tool_calls)       AS tool_calls,
+                   SUM(duration_ms)      AS duration_ms,
+                   SUM(lines_added)      AS lines_added,
+                   SUM(lines_removed)    AS lines_removed,
+                   SUM(premium_requests) AS premium_requests
+            FROM turn_stats
+            WHERE date BETWEEN ? AND ?
+              AND git_branch IS NOT NULL
+              AND git_branch <> ''
+            GROUP BY git_branch
+            ORDER BY premium_requests DESC, git_branch
+            """;
+        List<BranchAggregate> results = new ArrayList<>();
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, startDate);
+            stmt.setString(2, endDate);
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    results.add(new BranchAggregate(
+                        rs.getString("git_branch"),
+                        rs.getInt("turns"),
+                        rs.getLong("input_tokens"),
+                        rs.getLong("output_tokens"),
+                        rs.getInt("tool_calls"),
+                        rs.getLong("duration_ms"),
+                        rs.getInt("lines_added"),
+                        rs.getInt("lines_removed"),
+                        rs.getDouble("premium_requests")
+                    ));
+                }
+            }
+        } catch (SQLException e) {
+            LOG.warn("Failed to query branch totals", e);
+        }
+        return results;
+    }
+
+    /**
+     * Returns the number of {@code turn_stats} rows in the date range whose
+     * {@code git_branch} is NULL or empty. Used by the UI to surface
+     * "N turns are unattributed (recorded before branch tracking was added)".
+     */
+    public synchronized int countUnattributedTurns(
+        @NotNull String startDate, @NotNull String endDate) {
+        if (connection == null) return 0;
+        String sql = """
+            SELECT COUNT(*) AS unattributed
+            FROM turn_stats
+            WHERE date BETWEEN ? AND ?
+              AND (git_branch IS NULL OR git_branch = '')
+            """;
+        try (PreparedStatement stmt = connection.prepareStatement(sql)) {
+            stmt.setString(1, startDate);
+            stmt.setString(2, endDate);
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next() ? rs.getInt("unattributed") : 0;
+            }
+        } catch (SQLException e) {
+            LOG.warn("Failed to count unattributed turns", e);
+            return 0;
+        }
+    }
+
+    /**
      * A single turn stats record for insertion.
      */
     public record TurnStatsRecord(
@@ -733,7 +850,8 @@ public final class ToolCallStatisticsService implements Disposable {
         int linesRemoved,
         double premiumRequests,
         @NotNull String timestamp,
-        @Nullable String commitHashes
+        @Nullable String commitHashes,
+        @Nullable String gitBranch
     ) {
     }
 

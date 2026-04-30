@@ -370,7 +370,7 @@ class ToolCallStatisticsServiceTest {
         double premiumRequests, String timestamp) {
         return new ToolCallStatisticsService.TurnStatsRecord(
             sessionId, agentId, date, inputTokens, outputTokens, toolCalls,
-            durationMs, linesAdded, linesRemoved, premiumRequests, timestamp, null);
+            durationMs, linesAdded, linesRemoved, premiumRequests, timestamp, null, null);
     }
 
     @Test
@@ -511,5 +511,85 @@ class ToolCallStatisticsServiceTest {
         assertDoesNotThrow(() -> nullService.recordTurnStats(
             turnRecord("s1", "copilot", "2025-01-15",
                 100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z")));
+    }
+
+    // --- Per-branch query tests ---
+
+    private static ToolCallStatisticsService.TurnStatsRecord turnRecordWithBranch(
+        String sessionId, String agentId, String date,
+        long inputTokens, long outputTokens, int toolCalls,
+        long durationMs, int linesAdded, int linesRemoved,
+        double premiumRequests, String timestamp, String branch) {
+        return new ToolCallStatisticsService.TurnStatsRecord(
+            sessionId, agentId, date, inputTokens, outputTokens, toolCalls,
+            durationMs, linesAdded, linesRemoved, premiumRequests, timestamp, null, branch);
+    }
+
+    @Test
+    @DisplayName("queryBranchTotals aggregates per branch and orders by premium DESC")
+    void queryBranchTotalsAggregatesAndSorts() {
+        service.recordTurnStats(turnRecordWithBranch("s1", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 0.5, "2025-01-15T10:00:00Z", "feat/a"));
+        service.recordTurnStats(turnRecordWithBranch("s2", "copilot", "2025-01-16",
+            100, 200, 3, 5000, 10, 2, 0.5, "2025-01-16T10:00:00Z", "feat/a"));
+        service.recordTurnStats(turnRecordWithBranch("s3", "copilot", "2025-01-15",
+            50, 100, 1, 1000, 1, 0, 0.1, "2025-01-15T11:00:00Z", "feat/b"));
+        // Cross-agent — should still be merged by branch (collapses agent dimension)
+        service.recordTurnStats(turnRecordWithBranch("s4", "claude-cli", "2025-01-15",
+            10, 20, 1, 500, 0, 0, 5.0, "2025-01-15T12:00:00Z", "feat/b"));
+
+        var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
+
+        assertEquals(2, results.size());
+        // feat/b has higher premium total (5.1) than feat/a (1.0) → first
+        assertEquals("feat/b", results.get(0).branch());
+        assertEquals(5.1, results.get(0).premiumRequests(), 0.0001);
+        assertEquals(2, results.get(0).turns());
+        assertEquals("feat/a", results.get(1).branch());
+        assertEquals(1.0, results.get(1).premiumRequests(), 0.0001);
+        assertEquals(2, results.get(1).turns());
+    }
+
+    @Test
+    @DisplayName("queryBranchTotals excludes rows with null/empty git_branch")
+    void queryBranchTotalsExcludesUnattributed() {
+        service.recordTurnStats(turnRecordWithBranch("s1", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "feat/a"));
+        service.recordTurnStats(turnRecordWithBranch("s2", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T11:00:00Z", null));
+        service.recordTurnStats(turnRecordWithBranch("s3", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T12:00:00Z", ""));
+
+        var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
+
+        assertEquals(1, results.size());
+        assertEquals("feat/a", results.get(0).branch());
+    }
+
+    @Test
+    @DisplayName("countUnattributedTurns counts only null/empty branches in range")
+    void countUnattributedTurnsCountsCorrectly() {
+        service.recordTurnStats(turnRecordWithBranch("s1", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "feat/a"));
+        service.recordTurnStats(turnRecordWithBranch("s2", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T11:00:00Z", null));
+        service.recordTurnStats(turnRecordWithBranch("s3", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T12:00:00Z", ""));
+        // Outside the date range — should not be counted
+        service.recordTurnStats(turnRecordWithBranch("s4", "copilot", "2024-12-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2024-12-15T10:00:00Z", null));
+
+        assertEquals(2, service.countUnattributedTurns("2025-01-01", "2025-01-31"));
+    }
+
+    @Test
+    @DisplayName("recordTurnStats persists git_branch round-trip")
+    void recordTurnStatsPersistsBranch() {
+        service.recordTurnStats(turnRecordWithBranch("s1", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "feat/round-trip"));
+
+        var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
+        assertEquals(1, results.size());
+        assertEquals("feat/round-trip", results.get(0).branch());
     }
 }
