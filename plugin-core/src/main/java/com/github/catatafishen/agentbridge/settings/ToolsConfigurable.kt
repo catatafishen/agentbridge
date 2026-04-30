@@ -28,6 +28,7 @@ import java.awt.Component
 import java.awt.Dimension
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
+import java.util.*
 import java.util.concurrent.ExecutionException
 import javax.swing.*
 import javax.swing.event.HyperlinkEvent
@@ -132,46 +133,7 @@ class ToolsConfigurable(private val project: Project) :
         }
         toolsPanel.add(topRow)
 
-        val tools = McpToolFilter.getConfigurableTools(project)
-        var currentCategory: ToolRegistry.Category? = null
-        for (tool in tools) {
-            if (tool.category() != currentCategory) {
-                currentCategory = tool.category()
-                toolsPanel.add(buildCategoryHeader(currentCategory))
-            }
-            val kindColor = kindColorFor(tool, settings)
-            val toolRow = JBPanel<JBPanel<*>>().apply {
-                layout = BoxLayout(this, BoxLayout.X_AXIS)
-                alignmentX = Component.LEFT_ALIGNMENT
-                maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
-            }
-            val dot = JBLabel("● ").apply {
-                foreground = kindColor
-                border = JBUI.Borders.empty(1, 16, 0, 0)
-            }
-            toolRow.add(dot)
-            val cb = JBCheckBox(tool.displayName(), settings.isToolEnabled(tool.id())).apply {
-                border = JBUI.Borders.emptyTop(1)
-                addItemListener { updateCounter() }
-            }
-            toolCheckboxes[tool.id()] = cb
-            categoryCheckboxes.getOrPut(tool.category()) { mutableListOf() }.add(cb)
-            toolRow.add(cb)
-            toolRow.add(Box.createHorizontalGlue())
-            toolsPanel.add(toolRow)
-
-            val desc = tool.description()
-            if (desc.isNotBlank()) {
-                val descLabel = JBLabel("<html>$desc</html>").apply {
-                    font = font.deriveFont((JBUI.Fonts.label().size - 1).toFloat())
-                    foreground = UIUtil.getContextHelpForeground()
-                    border = JBUI.Borders.empty(0, 36, 3, 0)
-                    alignmentX = Component.LEFT_ALIGNMENT
-                    isAllowAutoWrapping = true
-                }
-                toolsPanel.add(descLabel)
-            }
-        }
+        addToolRows(toolsPanel, settings)
 
         toolsPanel.add(buildColorPickerSection(settings))
         toolsPanel.add(Box.createVerticalGlue())
@@ -208,6 +170,68 @@ class ToolsConfigurable(private val project: Project) :
         }
         updateCounter()
         return scrollPane
+    }
+
+    private fun addToolRows(toolsPanel: JPanel, settings: McpServerSettings) {
+        var currentCategory: ToolRegistry.Category? = null
+        for (tool in sortedConfigurableTools()) {
+            val category = tool.category()
+            if (category != currentCategory) {
+                currentCategory = category
+                toolsPanel.add(buildCategoryHeader(category))
+            }
+            addToolRow(toolsPanel, tool, category, settings)
+        }
+    }
+
+    private fun sortedConfigurableTools(): List<ToolDefinition> =
+        McpToolFilter.getConfigurableTools(project)
+            .sortedWith(
+                compareBy<ToolDefinition> { it.category().displayName.lowercase(Locale.ROOT) }
+                    .thenBy { it.displayName().lowercase(Locale.ROOT) }
+                    .thenBy { it.id() }
+            )
+
+    private fun addToolRow(
+        toolsPanel: JPanel,
+        tool: ToolDefinition,
+        category: ToolRegistry.Category,
+        settings: McpServerSettings
+    ) {
+        val kindColor = kindColorFor(tool, settings)
+        val toolRow = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            alignmentX = Component.LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+        val dot = JBLabel("● ").apply {
+            foreground = kindColor
+            border = JBUI.Borders.empty(1, 16, 0, 0)
+        }
+        toolRow.add(dot)
+        val cb = JBCheckBox(tool.displayName(), settings.isToolEnabled(tool.id())).apply {
+            border = JBUI.Borders.emptyTop(1)
+            addItemListener { updateCounter() }
+        }
+        toolCheckboxes[tool.id()] = cb
+        categoryCheckboxes.getOrPut(category) { mutableListOf() }.add(cb)
+        toolRow.add(cb)
+        toolRow.add(Box.createHorizontalGlue())
+        toolsPanel.add(toolRow)
+        addToolDescription(toolsPanel, tool)
+    }
+
+    private fun addToolDescription(toolsPanel: JPanel, tool: ToolDefinition) {
+        val desc = tool.description()
+        if (desc.isBlank()) return
+        val descLabel = JBLabel("<html>$desc</html>").apply {
+            font = font.deriveFont((JBUI.Fonts.label().size - 1).toFloat())
+            foreground = UIUtil.getContextHelpForeground()
+            border = JBUI.Borders.empty(0, 36, 3, 0)
+            alignmentX = Component.LEFT_ALIGNMENT
+            isAllowAutoWrapping = true
+        }
+        toolsPanel.add(descLabel)
     }
 
     private fun countEnabled(): Int = toolCheckboxes.values.count { it.isSelected }
@@ -318,6 +342,7 @@ class ToolsConfigurable(private val project: Project) :
             ToolDefinition.Kind.SEARCH -> ToolKindColors.searchColor(settings)
             ToolDefinition.Kind.EDIT, ToolDefinition.Kind.WRITE,
             ToolDefinition.Kind.DELETE, ToolDefinition.Kind.MOVE -> ToolKindColors.editColor(settings)
+
             ToolDefinition.Kind.EXECUTE -> ToolKindColors.executeColor(settings)
             else -> ToolKindColors.readColor(settings)
         }
