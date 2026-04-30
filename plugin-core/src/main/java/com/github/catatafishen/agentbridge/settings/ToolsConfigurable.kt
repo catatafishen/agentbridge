@@ -83,8 +83,7 @@ class ToolsConfigurable(private val project: Project) :
             foreground = UIUtil.getContextHelpForeground()
             border = JBUI.Borders.emptyBottom(6)
             alignmentX = Component.LEFT_ALIGNMENT
-            preferredSize = Dimension(1, preferredSize.height)
-            maximumSize = Dimension(Int.MAX_VALUE, Int.MAX_VALUE)
+            isAllowAutoWrapping = true
         }
         toolsPanel.add(limitHint)
 
@@ -172,8 +171,7 @@ class ToolsConfigurable(private val project: Project) :
                     foreground = UIUtil.getContextHelpForeground()
                     border = JBUI.Borders.empty(0, 36, 3, 0)
                     alignmentX = Component.LEFT_ALIGNMENT
-                    preferredSize = Dimension(1, preferredSize.height)
-                    maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+                    isAllowAutoWrapping = true
                 }
                 toolsPanel.add(descLabel)
             }
@@ -255,8 +253,7 @@ class ToolsConfigurable(private val project: Project) :
             foreground = UIUtil.getContextHelpForeground()
             border = JBUI.Borders.emptyBottom(8)
             alignmentX = Component.LEFT_ALIGNMENT
-            preferredSize = Dimension(1, preferredSize.height)
-            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+            isAllowAutoWrapping = true
         }
         section.add(hint)
 

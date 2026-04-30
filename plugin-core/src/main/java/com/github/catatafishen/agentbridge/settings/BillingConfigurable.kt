@@ -8,6 +8,7 @@ import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -44,22 +45,20 @@ class BillingConfigurable :
                 )
         }
         row {
-            val explanation = JBLabel(
-                "<html><b>Why GitHub CLI is needed:</b><br/>" +
+            text(
+                "<b>Why GitHub CLI is needed:</b><br/>" +
                     "The Copilot ACP (Agent Communication Protocol) mode does not expose billing " +
                     "or usage data. To view Copilot premium request usage, the plugin uses the " +
-                    "GitHub CLI (<code>gh</code>) to query GitHub's internal API endpoint.</html>"
-            )
-            explanation.foreground = UIUtil.getContextHelpForeground()
-            cell(explanation)
+                    "GitHub CLI (<code>gh</code>) to query GitHub's internal API endpoint.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
-            val installNote = JBLabel(
-                "<html>Install from <a href='https://cli.github.com/'>cli.github.com</a>, " +
-                    "then authenticate with <code>gh auth login</code>.</html>"
-            )
-            installNote.foreground = UIUtil.getContextHelpForeground()
-            cell(installNote)
+            text(
+                "Install from <a href='https://cli.github.com/'>cli.github.com</a>, " +
+                    "then authenticate with <code>gh auth login</code>.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             val link = HyperlinkLabel("Install GitHub CLI")

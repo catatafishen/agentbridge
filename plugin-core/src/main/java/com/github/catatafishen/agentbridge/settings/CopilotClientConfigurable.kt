@@ -13,6 +13,7 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
@@ -50,12 +51,11 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
             button("Recheck") { refreshStatusAsync() }
         }
         row {
-            val installNote = JBLabel(
-                "<html>Install with <code>npm install -g @github/copilot-cli</code>. " +
-                    "Ensure it's available on PATH.</html>"
-            )
-            installNote.foreground = UIUtil.getContextHelpForeground()
-            cell(installNote)
+            text(
+                "Install with <code>npm install -g @github/copilot-cli</code>. " +
+                    "Ensure it's available on PATH.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         row {
             val link = HyperlinkLabel("Install from github.com/github/copilot-cli")

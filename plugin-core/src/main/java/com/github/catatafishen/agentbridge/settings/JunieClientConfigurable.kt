@@ -17,6 +17,7 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindIntValue
 import com.intellij.ui.dsl.builder.bindItem
 import com.intellij.ui.dsl.builder.bindText
@@ -67,27 +68,25 @@ class JunieClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
             cell(link)
         }
         row {
-            val authNote = JBLabel(
-                "<html><b>Authentication:</b> You can either:<br>" +
+            text(
+                "<b>Authentication:</b> You can either:<br>" +
                     "1. Enter a token above (recommended for plugin use), OR<br>" +
                     "2. Run <code>junie</code> in a terminal and use <code>/account</code> " +
-                    "to log in with JetBrains Account</html>"
-            )
-            authNote.foreground = UIUtil.getContextHelpForeground()
-            cell(authNote)
+                    "to log in with JetBrains Account",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = UIUtil.getContextHelpForeground() }
         }
         separator()
         row {
-            val warning = JBLabel(
-                "<html><b>⚠ Tool Selection Limitation:</b> Junie ignores " +
+            text(
+                "<b>⚠ Tool Selection Limitation:</b> Junie ignores " +
                     "<code>excludedTools</code> and does not send <code>request_permission</code> " +
                     "for any tools. Built-in tools (Edit, View, Bash) may bypass IntelliJ's editor " +
                     "buffer. The plugin uses prompt engineering to encourage MCP tool usage, but " +
                     "compliance depends on the LLM. See <code>docs/JUNIE-TOOL-WORKAROUND.md</code> " +
-                    "for details.</html>"
-            )
-            warning.foreground = JBColor(0xB8860B, 0xE0A030)
-            cell(warning)
+                    "for details.",
+                MAX_LINE_LENGTH_WORD_WRAP
+            ).applyToComponent { foreground = JBColor(0xB8860B, 0xE0A030) }
         }
         separator()
         row("Junie binary:") {
