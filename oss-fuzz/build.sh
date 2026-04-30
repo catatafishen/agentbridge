@@ -37,7 +37,7 @@ CP_MCP=$(gradle :mcp-server:printFuzzClasspath --no-daemon -q | tail -1)
 # Use jlink to keep the bundle small (~70 MB instead of ~280 MB full JDK).
 "$JAVA_HOME/bin/jlink" \
   --module-path "$JAVA_HOME/jmods" \
-  --add-modules java.base,java.logging,java.xml,java.naming,java.management,java.security.jgss,java.sql,java.desktop,java.instrument,jdk.unsupported,jdk.management,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.zipfs,jdk.localedata \
+  --add-modules java.base,java.logging,java.xml,java.naming,java.management,java.security.jgss,java.sql,java.desktop,java.instrument,jdk.attach,jdk.unsupported,jdk.management,jdk.management.agent,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.zipfs,jdk.localedata \
   --include-locales=en \
   --strip-debug \
   --no-header-files \
