@@ -30,6 +30,21 @@ gradle :plugin-core:testClasses :mcp-server:testClasses --no-daemon --quiet -x b
 CP_CORE=$(gradle :plugin-core:printFuzzClasspath --no-daemon -q -x buildChatUi | tail -1)
 CP_MCP=$(gradle :mcp-server:printFuzzClasspath --no-daemon -q | tail -1)
 
+# Bundle a minimal JRE 21 into $OUT/jvm. The clusterfuzzlite-run-fuzzers
+# and OSS-Fuzz run containers ship Java 17 only (max class file version 61),
+# but our codebase targets Java 21 (version 65). We ship Temurin 21 with the
+# fuzzers so jazzer_driver can load libjvm.so from a Java-21 JRE at runtime.
+# Use jlink to keep the bundle small (~70 MB instead of ~280 MB full JDK).
+"$JAVA_HOME/bin/jlink" \
+  --module-path "$JAVA_HOME/jmods" \
+  --add-modules java.base,java.logging,java.xml,java.naming,java.management,java.security.jgss,java.sql,java.desktop,java.instrument,jdk.unsupported,jdk.management,jdk.crypto.ec,jdk.crypto.cryptoki,jdk.zipfs,jdk.localedata \
+  --include-locales=en \
+  --strip-debug \
+  --no-header-files \
+  --no-man-pages \
+  --compress=zip-6 \
+  --output "$OUT/jvm"
+
 # Copy every JAR from the classpath into $OUT/ and every class directory into
 # $OUT/classes/.  The jazzer_driver wrapper uses "$this_dir/*" (Java wildcard
 # classpath) and "$this_dir/classes" at fuzzing runtime.
@@ -69,7 +84,12 @@ if [[ "\$@" =~ (^| )-runs=[0-9]+(\$| ) ]]; then
 else
   mem_settings='-Xmx2048m:-Xss1024k'
 fi
-LD_LIBRARY_PATH="${JVM_LD_LIBRARY_PATH}:\$this_dir" \\
+# Use the bundled Temurin 21 JRE (project compiles to class file version 65,
+# which the run container's Java 17 cannot load). The bundled jvm/lib/server
+# is prepended to LD_LIBRARY_PATH so jazzer_driver picks up libjvm.so from
+# Java 21 instead of the system Java 17.
+export JAVA_HOME="\$this_dir/jvm"
+LD_LIBRARY_PATH="\$this_dir/jvm/lib/server:\$this_dir/jvm/lib:\$this_dir" \\
 ASAN_OPTIONS=\$ASAN_OPTIONS:symbolize=1:external_symbolizer_path=\$this_dir/llvm-symbolizer:detect_leaks=0 \\
 \$this_dir/jazzer_driver --agent_path=\$this_dir/jazzer_agent_deploy.jar \\
 --cp=\$this_dir/classes:\$this_dir/* \\
