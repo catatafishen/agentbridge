@@ -11,12 +11,7 @@ import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.labels.LinkLabel
-import com.intellij.ui.dsl.builder.Cell
-import com.intellij.ui.dsl.builder.bindIntValue
-import com.intellij.ui.dsl.builder.bindItem
-import com.intellij.ui.dsl.builder.bindSelected
-import com.intellij.ui.dsl.builder.panel
-import com.intellij.ui.dsl.builder.selected
+import com.intellij.ui.dsl.builder.*
 
 class ChatInputConfigurable(private val project: Project) :
     BoundConfigurable("UI/UX"),
@@ -156,12 +151,13 @@ class ChatInputConfigurable(private val project: Project) :
                     "\"Restore into chat input\" prepends the unsent nudge to the input area instead of firing it."
                 )
                 .applyToComponent {
-                    renderer = com.intellij.ui.SimpleListCellRenderer.create<ChatInputSettings.UnhandledNudgeMode>("") { value ->
-                        when (value) {
-                            ChatInputSettings.UnhandledNudgeMode.AUTO_SEND -> "Auto-send as a new prompt"
-                            ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT -> "Restore into chat input"
+                    renderer =
+                        com.intellij.ui.SimpleListCellRenderer.create<ChatInputSettings.UnhandledNudgeMode>("") { value ->
+                            when (value) {
+                                ChatInputSettings.UnhandledNudgeMode.AUTO_SEND -> "Auto-send as a new prompt"
+                                ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT -> "Restore into chat input"
+                            }
                         }
-                    }
                 }
                 .bindItem(
                     { s.unhandledNudgeMode },
