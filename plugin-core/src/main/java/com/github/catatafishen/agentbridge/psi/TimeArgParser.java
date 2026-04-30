@@ -85,9 +85,16 @@ public final class TimeArgParser {
         long amount = Long.parseLong(rel.group(1));
         String unit = rel.group(2).toLowerCase();
         LocalDateTime now = LocalDateTime.now();
-        if (unit.startsWith("h")) return now.minusHours(amount);
-        if (unit.startsWith("m")) return now.minusMinutes(amount);
-        return now.minusSeconds(amount);
+        try {
+            if (unit.startsWith("h")) return now.minusHours(amount);
+            if (unit.startsWith("m")) return now.minusMinutes(amount);
+            return now.minusSeconds(amount);
+        } catch (java.time.DateTimeException | ArithmeticException e) {
+            // Extreme amounts (e.g., 999999999999999h) overflow the LocalDateTime range.
+            // Surface as IllegalArgumentException to match the documented contract.
+            throw new IllegalArgumentException(
+                "Relative time value out of range: \"" + amount + unit + "\"", e);
+        }
     }
 
     @Nullable

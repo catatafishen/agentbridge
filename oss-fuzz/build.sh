@@ -84,15 +84,6 @@ if [[ "\$@" =~ (^| )-runs=[0-9]+(\$| ) ]]; then
 else
   mem_settings='-Xmx2048m:-Xss1024k'
 fi
-# Diagnostics: show what's in the run dir so we can debug missing-jar issues.
-echo "=== Fuzzer wrapper diagnostics for ${short_name} ===" >&2
-echo "this_dir=\$this_dir" >&2
-echo "Files in \$this_dir:" >&2
-ls -la "\$this_dir" 2>&1 | head -100 >&2
-echo "Has gson: \$(ls \$this_dir/gson*.jar 2>/dev/null || echo NO)" >&2
-echo "Has kotlin-stdlib: \$(ls \$this_dir/kotlin-stdlib*.jar 2>/dev/null || echo NO)" >&2
-echo "JRE present: \$(ls -d \$this_dir/jvm 2>/dev/null || echo NO)" >&2
-echo "=== End diagnostics ===" >&2
 # Use the bundled Temurin 21 JRE (project compiles to class file version 65,
 # which the run container's Java 17 cannot load). The bundled jvm/lib/server
 # is prepended to LD_LIBRARY_PATH so jazzer_driver picks up libjvm.so from
@@ -112,10 +103,9 @@ EOF
   chmod +x "$OUT/${short_name}"
 done
 
-# Diagnostics: list final $OUT contents so we can verify all expected JARs were copied.
-echo "=== Final $OUT contents ==="
-ls -la "$OUT" | head -100
+# Build-time sanity check: verify expected JARs were copied to $OUT.
+echo "=== $OUT contents (build-time sanity check) ==="
 echo "JAR count: $(ls "$OUT"/*.jar 2>/dev/null | wc -l)"
-echo "Has gson: $(ls "$OUT"/gson*.jar 2>/dev/null || echo NO)"
-echo "Has kotlin-stdlib: $(ls "$OUT"/kotlin-stdlib*.jar 2>/dev/null || echo NO)"
-echo "=== End $OUT contents ==="
+echo "Has gson: $(ls "$OUT"/gson*.jar 2>/dev/null || echo MISSING)"
+echo "Has kotlin-stdlib: $(ls "$OUT"/kotlin-stdlib*.jar 2>/dev/null || echo MISSING)"
+echo "Bundled JRE: $(ls -d "$OUT"/jvm 2>/dev/null || echo MISSING)"
