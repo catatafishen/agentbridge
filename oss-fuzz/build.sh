@@ -98,10 +98,13 @@ echo "=== End diagnostics ===" >&2
 # is prepended to LD_LIBRARY_PATH so jazzer_driver picks up libjvm.so from
 # Java 21 instead of the system Java 17.
 export JAVA_HOME="\$this_dir/jvm"
+# Build classpath explicitly from JAR files. Java's '*' wildcard classpath has
+# proven unreliable when invoked via jazzer_driver, so enumerate the jars.
+cp_jars=\$(ls "\$this_dir"/*.jar 2>/dev/null | tr '\n' ':')
 LD_LIBRARY_PATH="\$this_dir/jvm/lib/server:\$this_dir/jvm/lib:\$this_dir" \\
 ASAN_OPTIONS=\$ASAN_OPTIONS:symbolize=1:external_symbolizer_path=\$this_dir/llvm-symbolizer:detect_leaks=0 \\
 \$this_dir/jazzer_driver --agent_path=\$this_dir/jazzer_agent_deploy.jar \\
---cp=\$this_dir/classes:\$this_dir/* \\
+--cp=\$this_dir/classes:\${cp_jars%:} \\
 --target_class=${target} \\
 --jvm_args="\$mem_settings" \\
 "\$@"
