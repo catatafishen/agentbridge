@@ -173,8 +173,8 @@ public final class ChatHistoryConfigurable implements Configurable {
 
         JPanel panel = FormBuilder.createFormBuilder()
             .addComponent(new JBLabel(
-                "<html>Conversation files stored in this project's "
-                    + "<code>.agent-work</code> directory.</html>"))
+                "<html><body style='width: 420px'>Conversation files stored in this project's "
+                    + "<code>.agent-work</code> directory.</body></html>"))
             .addComponent(summaryLabel)
             .addComponent(injectHistoryCheckbox)
             .addComponent(limitsPanel)

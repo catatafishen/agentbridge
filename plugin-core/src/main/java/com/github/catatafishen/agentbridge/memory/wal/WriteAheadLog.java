@@ -17,7 +17,8 @@ import java.time.Instant;
  * JSONL write-ahead log for all memory write operations.
  * Each line is a JSON object with operation type, timestamp, and payload.
  *
- * <p>File location: {@code .agent-work/memory/wal/write_log.jsonl}
+ * <p>File location: the project's configured semantic-memory directory, under
+ * {@code wal/write_log.jsonl}
  *
  * <p><b>Attribution:</b> WAL pattern adapted from MemPalace's
  * {@code mcp_server.py _wal_log()} (MIT License).

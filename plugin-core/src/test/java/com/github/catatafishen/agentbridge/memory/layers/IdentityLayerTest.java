@@ -13,7 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for L0 ({@link IdentityLayer}).
- * Uses a {@code @TempDir} to simulate the project base path and identity file.
+ * Uses a {@code @TempDir} to simulate the resolved memory directory and
+ * identity file.
  */
 class IdentityLayerTest {
 
@@ -102,8 +103,7 @@ class IdentityLayerTest {
     }
 
     private void writeIdentityFile(String content) throws IOException {
-        Path identityDir = tempDir.resolve(".agent-work").resolve("memory");
-        Files.createDirectories(identityDir);
-        Files.writeString(identityDir.resolve("identity.txt"), content, StandardCharsets.UTF_8);
+        Files.createDirectories(tempDir);
+        Files.writeString(tempDir.resolve("identity.txt"), content, StandardCharsets.UTF_8);
     }
 }

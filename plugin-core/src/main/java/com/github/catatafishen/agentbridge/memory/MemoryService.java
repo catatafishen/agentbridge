@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.memory.validation.MemoryRefactorListe
 import com.github.catatafishen.agentbridge.memory.validation.MemoryStalenessTrigger;
 import com.github.catatafishen.agentbridge.memory.wal.WriteAheadLog;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -16,6 +17,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 @Service(Service.Level.PROJECT)
@@ -23,7 +25,6 @@ public final class MemoryService implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(MemoryService.class);
 
-    private static final String MEMORY_DIR = "memory";
     private static final String LUCENE_INDEX_DIR = "lucene-index";
     private static final String WAL_DIR = "wal";
     private static final String KG_DB_FILE = "knowledge.sqlite3";
@@ -130,6 +131,7 @@ public final class MemoryService implements Disposable {
             if (initialized) return;
             try {
                 Path memoryDir = getMemoryBasePath();
+                migrateLegacyMemoryDir(project.getBasePath(), memoryDir);
 
                 // Initialize WAL
                 wal = new WriteAheadLog(memoryDir.resolve(WAL_DIR));
@@ -168,12 +170,21 @@ public final class MemoryService implements Disposable {
         }
     }
 
-    private @NotNull Path getMemoryBasePath() {
-        String basePath = project.getBasePath();
-        if (basePath == null) {
-            basePath = System.getProperty("user.home");
+    static void migrateLegacyMemoryDir(@Nullable String projectBasePath, @NotNull Path newMemoryDir) throws IOException {
+        if (projectBasePath == null) {
+            return;
         }
-        return Path.of(basePath, ".agent-work", MEMORY_DIR);
+        Path legacyMemoryDir = Path.of(projectBasePath, ".agent-work", "memory");
+        if (!Files.exists(legacyMemoryDir) || Files.exists(newMemoryDir)) {
+            return;
+        }
+        Files.createDirectories(newMemoryDir.getParent());
+        Files.move(legacyMemoryDir, newMemoryDir);
+        LOG.info("Migrated memory directory from " + legacyMemoryDir + " to " + newMemoryDir);
+    }
+
+    private @NotNull Path getMemoryBasePath() {
+        return AgentBridgeStorageSettings.getInstance().getProjectMemoryDir(project);
     }
 
     @Override

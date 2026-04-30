@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.Service;
@@ -29,8 +30,12 @@ import java.util.Set;
 
 /**
  * Project-level service that records every MCP tool call in a SQLite database
- * ({@code {project}/.agentbridge/tool-stats.db}) and provides query methods for
- * the Tool Statistics UI panel.
+ * and provides query methods for the Tool Statistics UI panel.
+ *
+ * <p>The database location is resolved via {@link AgentBridgeStorageSettings},
+ * which defaults to {@code ~/.agentbridge/projects/<project>-<hash>/tool-stats.db}
+ * but can be overridden by the user. Stats collection can also be disabled
+ * entirely via the same settings page (see issue #351).</p>
  *
  * <p>Subscribes to {@link PsiBridgeService#TOOL_CALL_TOPIC} on the project
  * message bus. Records are appended on the calling thread (MCP handler threads)
@@ -61,36 +66,78 @@ public final class ToolCallStatisticsService implements Disposable {
         this.project = null;
     }
 
-    /**
-     * Initialize the SQLite database and subscribe to tool call events.
-     * Called lazily on first access via {@code getInstance()}.
-     *
-     * @throws RuntimeException if initialization fails (JDBC driver not found,
-     *                          database cannot be created, or subscription fails).
-     *                          The caller sets {@code initAttempted = true} regardless of
-     *                          success/failure to prevent retry loops — the service stays
-     *                          inert (connection == null) until the IDE is restarted.
-     */
     public void initialize() {
+        if (project == null || project.getBasePath() == null) {
+            throw new IllegalStateException(
+                "Cannot initialize ToolCallStatisticsService: project has no base path");
+        }
+        AgentBridgeStorageSettings storageSettings = AgentBridgeStorageSettings.getInstance();
+        // Compute the target path before the enabled check so migration runs unconditionally.
+        // Even when stats collection is disabled, the legacy {project}/.agentbridge/tool-stats.db
+        // must be moved out of the project tree so it no longer pollutes VCS views.
+        Path dbDir = storageSettings.getProjectStorageDir(project);
+        Path dbPath = dbDir.resolve(DB_FILENAME);
+        migrateLegacyDb(project.getBasePath(), dbPath);
+
+        if (!storageSettings.isToolStatsEnabled()) {
+            LOG.info("ToolCallStatisticsService: tool call statistics collection is disabled in settings — skipping init");
+            return;
+        }
         try {
             Class.forName("org.sqlite.JDBC");
         } catch (ClassNotFoundException e) {
             throw new IllegalStateException("SQLite JDBC driver not found on classpath", e);
         }
-        String basePath = project.getBasePath();
-        if (basePath == null) {
-            throw new IllegalStateException(
-                "Cannot initialize ToolCallStatisticsService: project has no base path");
-        }
         try {
-            Path dbDir = Path.of(basePath, ".agentbridge");
             Files.createDirectories(dbDir);
-            Path dbPath = dbDir.resolve(DB_FILENAME);
             initializeWithConnection(DriverManager.getConnection("jdbc:sqlite:" + dbPath));
             subscribeToToolCallEvents();
             LOG.info("ToolCallStatisticsService initialized at " + dbPath);
         } catch (SQLException | IOException e) {
             throw new IllegalStateException("Failed to initialize ToolCallStatisticsService", e);
+        }
+    }
+
+    /**
+     * If a legacy {@code {project}/.agentbridge/tool-stats.db} exists and the
+     * new location does not, move the file to the new location. Best-effort —
+     * failures are logged but never fatal so the service can still proceed
+     * with a fresh database.
+     *
+     * <p>Also attempts to delete the now-empty legacy directory so the project
+     * tree is left clean.</p>
+     */
+    static void migrateLegacyDb(@NotNull String projectBasePath, @NotNull Path newDbPath) {
+        Path legacyDir = Path.of(projectBasePath, ".agentbridge");
+        Path legacyDb = legacyDir.resolve(DB_FILENAME);
+        if (!Files.exists(legacyDb) || Files.exists(newDbPath)) {
+            return;
+        }
+        try {
+            Files.createDirectories(newDbPath.getParent());
+            Files.move(legacyDb, newDbPath);
+            LOG.info("Migrated tool-stats.db from " + legacyDb + " to " + newDbPath);
+            // SQLite may also have left -journal/-wal/-shm sidecar files alongside the DB.
+            for (String suffix : new String[]{"-journal", "-wal", "-shm"}) {
+                Path sidecar = legacyDir.resolve(DB_FILENAME + suffix);
+                if (Files.exists(sidecar)) {
+                    try {
+                        Files.move(sidecar, Path.of(newDbPath + suffix));
+                    } catch (IOException ignored) {
+                        // Sidecar files are recreated by SQLite as needed; safe to leave behind.
+                    }
+                }
+            }
+            try (var entries = Files.list(legacyDir)) {
+                if (entries.findAny().isEmpty()) {
+                    Files.delete(legacyDir);
+                }
+            } catch (IOException ignored) {
+                // Leaving the empty .agentbridge directory behind is harmless.
+            }
+        } catch (IOException e) {
+            LOG.warn("Failed to migrate legacy tool-stats.db from " + legacyDb
+                + " — a fresh database will be created at " + newDbPath, e);
         }
     }
 
@@ -282,9 +329,10 @@ public final class ToolCallStatisticsService implements Disposable {
         if (project == null) return false;
         closeConnectionQuietly();
         try {
-            String basePath = project.getBasePath();
-            if (basePath == null) return false;
-            Path dbPath = Path.of(basePath, ".agentbridge", DB_FILENAME);
+            if (project.getBasePath() == null) return false;
+            Path dbPath = AgentBridgeStorageSettings.getInstance()
+                .getProjectStorageDir(project)
+                .resolve(DB_FILENAME);
             initializeWithConnection(DriverManager.getConnection("jdbc:sqlite:" + dbPath));
             LOG.info("Reconnected to ToolCallStatisticsService database after file move");
             return true;
@@ -775,7 +823,9 @@ public final class ToolCallStatisticsService implements Disposable {
                     service.initAttempted = true;
                     try {
                         service.initialize();
-                        triggerBackfillIfNeeded(service, project);
+                        if (service.connection != null) {
+                            triggerBackfillIfNeeded(service, project);
+                        }
                     } catch (RuntimeException e) {
                         LOG.error("ToolCallStatisticsService initialization failed — "
                             + "tool call recording will be disabled until restart", e);

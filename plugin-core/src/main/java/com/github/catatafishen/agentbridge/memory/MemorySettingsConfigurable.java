@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.memory;
 import com.github.catatafishen.agentbridge.memory.mining.BackfillMiner;
 import com.github.catatafishen.agentbridge.memory.mining.MiningTracker;
 import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
@@ -11,12 +12,16 @@ import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
+import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.util.ui.JBUI;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.nio.file.Path;
 
 public final class MemorySettingsConfigurable implements Configurable {
 
@@ -30,6 +35,7 @@ public final class MemorySettingsConfigurable implements Configurable {
     private JTextField palaceWingField;
     private JButton backfillButton;
     private JLabel backfillStatusLabel;
+    private JLabel storageLocationLabel;
     private volatile boolean miningInProgress;
 
     private JLabel minChunkLabel;
@@ -59,18 +65,25 @@ public final class MemorySettingsConfigurable implements Configurable {
         gbc.gridy = 0;
         gbc.gridwidth = 2;
         JLabel desc = new JLabel(
-            "<html>Semantic memory powered by concepts from " +
+            "<html><body style='width: 420px'>Semantic memory powered by concepts from " +
                 "<a href=\"https://github.com/milla-jovovich/mempalace\">MemPalace</a>. " +
                 "Stores decisions, preferences, and milestones from conversations " +
-                "for cross-session recall.</html>");
+                "for cross-session recall.</body></html>");
         panel.add(desc, gbc);
 
         // ── Enabled ──
         gbc.gridy++;
         gbc.gridwidth = 2;
-        enabledCheckBox = new JCheckBox("Enable semantic memory (stores memories locally in .agent-work/memory/)");
+        enabledCheckBox = new JCheckBox("Enable semantic memory");
         enabledCheckBox.addItemListener(e -> updateSubOptionsEnabled());
         panel.add(enabledCheckBox, gbc);
+
+        gbc.gridy++;
+        storageLocationLabel = new JLabel();
+        storageLocationLabel.setForeground(UIUtil.getContextHelpForeground());
+        storageLocationLabel.setFont(JBUI.Fonts.smallFont());
+        updateStorageLocationLabel();
+        panel.add(storageLocationLabel, gbc);
 
         // ── Auto-mine on turn complete ──
         gbc.gridy++;
@@ -135,8 +148,8 @@ public final class MemorySettingsConfigurable implements Configurable {
 
         gbc.gridx = 1;
         JLabel backfillHint = new JLabel(
-            "<html><i>⚠ Can be slow if you have many sessions. " +
-                "Runs in the background.</i></html>");
+            "<html><body style='width: 280px'><i>⚠ Can be slow if you have many sessions. " +
+                "Runs in the background.</i></body></html>");
         backfillHint.setForeground(UIManager.getColor("Component.warningFocusColor"));
         panel.add(backfillHint, gbc);
 
@@ -167,6 +180,20 @@ public final class MemorySettingsConfigurable implements Configurable {
         backfillStatusLabel.setEnabled(enabled);
     }
 
+    private void updateStorageLocationLabel() {
+        Path memoryDir = AgentBridgeStorageSettings.getInstance().getProjectMemoryDir(project);
+        storageLocationLabel.setText(
+            "<html><body style='width: 420px'>Stored in <code>"
+                + formatPathForHtml(memoryDir)
+                + "</code>.</body></html>");
+    }
+
+    private static @NotNull String formatPathForHtml(@NotNull Path path) {
+        return StringUtil.escapeXmlEntities(path.toString())
+            .replace("/", "/<wbr>")
+            .replace("\\", "\\<wbr>");
+    }
+
     private void updateBackfillStatus() {
         if (miningInProgress) return;
         MemorySettings settings = MemorySettings.getInstance(project);
@@ -177,8 +204,8 @@ public final class MemorySettingsConfigurable implements Configurable {
                 .listSessions(project.getBasePath()).size();
             if (sessionCount > 0) {
                 backfillStatusLabel.setText(
-                    "<html><b>" + sessionCount + " past sessions</b> available to mine. " +
-                        "Click below to populate memory from your conversation history.</html>");
+                    "<html><body style='width: 420px'><b>" + sessionCount + " past sessions</b> available to mine. " +
+                        "Click below to populate memory from your conversation history.</body></html>");
             } else {
                 backfillStatusLabel.setText("No past sessions found.");
             }
@@ -298,6 +325,9 @@ public final class MemorySettingsConfigurable implements Configurable {
         minChunkLengthSpinner.setValue(settings.getMinChunkLength());
         maxDrawersPerTurnSpinner.setValue(settings.getMaxDrawersPerTurn());
         palaceWingField.setText(settings.getPalaceWing());
+        if (storageLocationLabel != null) {
+            updateStorageLocationLabel();
+        }
         if (backfillStatusLabel != null) {
             updateBackfillStatus();
         }

@@ -41,8 +41,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Wraps a Lucene index at {@code .agent-work/memory/lucene-index/} to store
- * and search memory drawers with 384-dimensional vector embeddings.
+ * Wraps a Lucene index in the project's configured semantic-memory directory,
+ * under {@code lucene-index/}, to store and search memory drawers with
+ * 384-dimensional vector embeddings.
  *
  * <p>Provides:
  * <ul>

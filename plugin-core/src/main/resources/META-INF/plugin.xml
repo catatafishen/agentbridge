@@ -176,9 +176,9 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
       id="com.github.catatafishen.agentbridge.chatInput"
       displayName="UI/UX"/>
 
-    <!-- ── Chat History ── -->
+    <!-- ── Chat History (under Storage) ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.settings"
+      parentId="com.github.catatafishen.agentbridge.storage"
       instance="com.github.catatafishen.agentbridge.settings.ChatHistoryConfigurable"
       id="com.github.catatafishen.agentbridge.chatHistory"
       displayName="Chat History"/>
@@ -251,6 +251,19 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
       id="com.github.catatafishen.agentbridge.clientAgents.codex"
       displayName="Codex"/>
 
+    <!-- ── Storage (file locations + child stores: tool stats, memory, chat history) ── -->
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.settings"
+      instance="com.github.catatafishen.agentbridge.settings.AgentBridgeStorageConfigurable"
+      id="com.github.catatafishen.agentbridge.storage"
+      displayName="Storage"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.storage"
+      instance="com.github.catatafishen.agentbridge.settings.ToolStatsConfigurable"
+      id="com.github.catatafishen.agentbridge.storage.toolStats"
+      displayName="Tool Statistics"/>
+
     <!-- ── Project Files ── -->
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.settings"
@@ -265,9 +278,9 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
       id="com.github.catatafishen.agentbridge.scratchTypes"
       displayName="Scratch File Types"/>
 
-    <!-- ── Memory (semantic memory / MemPalace) ── -->
+    <!-- ── Memory (semantic memory / MemPalace, under Storage) ── -->
     <projectConfigurable
-      parentId="com.github.catatafishen.agentbridge.settings"
+      parentId="com.github.catatafishen.agentbridge.storage"
       instance="com.github.catatafishen.agentbridge.memory.MemorySettingsConfigurable"
       id="com.github.catatafishen.agentbridge.memory"
       displayName="Memory"/>

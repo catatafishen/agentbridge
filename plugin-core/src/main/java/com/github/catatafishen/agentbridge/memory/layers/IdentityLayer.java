@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.memory.layers;
 
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -11,8 +12,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * L0 — Identity layer. Reads static identity facts from
- * {@code .agent-work/memory/identity.txt} in the project root.
+ * L0 — Identity layer. Reads static identity facts from {@code identity.txt}
+ * in the project's configured semantic-memory directory.
  *
  * <p>This file is user-managed and contains free-form identity statements
  * such as "This project is an IntelliJ plugin written in Java 21" or
@@ -25,17 +26,18 @@ public final class IdentityLayer implements MemoryStack {
     private static final Logger LOG = Logger.getInstance(IdentityLayer.class);
     private static final String IDENTITY_FILE = "identity.txt";
 
-    private final Path basePath;
+    private final Path memoryDir;
 
     public IdentityLayer(@NotNull Project project) {
-        this(project.getBasePath() != null ? Path.of(project.getBasePath()) : null);
+        this(AgentBridgeStorageSettings.getInstance().getProjectMemoryDir(project));
     }
 
     /**
-     * Package-private constructor for testing — accepts a base path directly.
+     * Package-private constructor for testing — accepts the resolved memory
+     * directory directly.
      */
-    IdentityLayer(@Nullable Path basePath) {
-        this.basePath = basePath;
+    IdentityLayer(@Nullable Path memoryDir) {
+        this.memoryDir = memoryDir;
     }
 
     @Override
@@ -65,7 +67,7 @@ public final class IdentityLayer implements MemoryStack {
     }
 
     private @Nullable Path getIdentityPath() {
-        if (basePath == null) return null;
-        return basePath.resolve(".agent-work").resolve("memory").resolve(IDENTITY_FILE);
+        if (memoryDir == null) return null;
+        return memoryDir.resolve(IDENTITY_FILE);
     }
 }
