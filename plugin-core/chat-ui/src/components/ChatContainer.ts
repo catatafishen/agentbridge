@@ -101,24 +101,17 @@ export default class ChatContainer extends HTMLElement {
         // When the container or its content resizes, re-anchor to bottom if auto-scrolling.
         // Debounced via rAF to avoid synchronous forced-reflow tearing in JCEF OSR.
         this._resizeObs = new ResizeObserver(() => {
-            if (this._autoScroll && !this._restoring && !this._scrollRAF) {
-                this._scrollRAF = requestAnimationFrame(() => {
-                    this._scrollRAF = null;
-                    this.scrollIfNeeded();
-                });
+            if (this._autoScroll && !this._restoring) {
+                this._scheduleDeferredScroll();
             }
         });
         this._resizeObs.observe(this);
         this._resizeObs.observe(this._messages);
 
-        // Auto-scroll when children change (debounced via rAF)
+        // Auto-scroll when children change. Scroll is deferred by an extra rAF after the
+        // mutation paint — see Fix 8 in SCREEN-TEARING-BUG.md for the JBR OSR rationale.
         this._observer = new MutationObserver(() => {
-            if (!this._scrollRAF) {
-                this._scrollRAF = requestAnimationFrame(() => {
-                    this._scrollRAF = null;
-                    this.scrollIfNeeded();
-                });
-            }
+            this._scheduleDeferredScroll();
         });
         this._observer.observe(this._messages, {childList: true, subtree: true, characterData: true});
 
@@ -352,10 +345,38 @@ export default class ChatContainer extends HTMLElement {
     }
 
     scheduleScrollIfNeeded(): void {
+        this._scheduleDeferredScroll();
+    }
+
+    /**
+     * Schedule an autoscroll to bottom that runs one rAF *after* the DOM mutation paint.
+     *
+     * Why two rAFs instead of one (Fix 8 — see SCREEN-TEARING-BUG.md):
+     * The OSR tearing bug is rooted in JBR's `JBCefOsrHandler.drawByteBuffer`, which copies
+     * only Chromium's reported dirty-rect regions into the cached `BufferedImage`. When a DOM
+     * mutation and a `scrollTop` write happen in the same animation frame, Chromium's compositor
+     * batches them and may use tile-translation cache reuse for both the layout-shifted siblings
+     * and the scroll-translated content — collapsing the dirty rect to just (new node bounds) ∪
+     * (scroll-revealed strip). Pixels in the middle of the viewport, where shifted siblings now
+     * sit at new y-positions, fall in neither set and stay stale in `myImage` until the next
+     * full repaint (mouse hover, manual scroll, monitor change).
+     *
+     * Splitting mutation and scroll across two CEF paint frames denies the optimization:
+     *   - Frame N: mutation paints. No scroll → Chromium must repaint shifted siblings →
+     *              dirty rect grows → JBR copies the right region.
+     *   - Frame N+1: scroll happens. Tiny scroll-revealed strip dirty rect, but `myImage` is
+     *                already correct from frame N.
+     *
+     * Cost: ~16ms additional autoscroll latency during streaming. Imperceptible vs. the
+     * stream cadence; users don't notice the bottom-snap arriving one frame later.
+     */
+    private _scheduleDeferredScroll(): void {
         if (this._scrollRAF) return;
         this._scrollRAF = requestAnimationFrame(() => {
-            this._scrollRAF = null;
-            this.scrollIfNeeded();
+            this._scrollRAF = requestAnimationFrame(() => {
+                this._scrollRAF = null;
+                this.scrollIfNeeded();
+            });
         });
     }
 

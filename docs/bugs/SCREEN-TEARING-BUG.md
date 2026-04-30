@@ -1,6 +1,7 @@
 # Screen Tearing Bug — JCEF OSR
 
-**Status**: Fix 7 applied — boost JCEF OSR frame rate during manual scroll and remove the agent tooltip overlay
+**Status**: Fix 8 applied — defer autoscroll by one rAF after DOM mutations to deny Chromium's compositor
+tile-translation cache reuse
 **Scope**: JCEF Off-Screen Rendering (OSR) mode in the chat panel  
 **Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`, `chat.css`
 
@@ -233,6 +234,77 @@ including outside the narrow tool-chip case handled by Fix 5.
 now schedules the remaining autoscroll writes instead of forcing `scrollTop` synchronously in the same
 DOM mutation turn.
 
+### Fix 8 — Defer autoscroll one rAF after DOM mutation (this commit)
+
+**Observation**: After Fixes 1–7, tearing still reproduced on Linux and Windows (confirmed both
+OSes by the user). The pattern: a new chip / message / token paints in the correct location, but
+**old content nearby** (e.g. the chip just above a freshly inserted one, or sibling rows that
+shifted down) **stays visually frozen** until the next "real" paint event — moving the mouse over
+the panel (which changes background colors), scrolling, switching monitors. The Working… counter
+keeps animating throughout the stale period, so frame production is NOT stalled. Only
+`chat-container` is affected; surrounding Swing components paint normally.
+
+**Root cause** — JBR `JBCefOsrHandler.drawByteBuffer` selective copy + Chromium compositor
+tile-translation cache reuse:
+
+1. `JBCefOsrHandler.drawByteBuffer` (in `platform/ui.jcef/jcef/JBCefOsrHandler.java`) copies
+   only the dirty-rect regions reported by CEF into the cached `BufferedImage` (`myImage`).
+   Pixels outside those rects in `myImage` stay frozen from the previous frame. After
+   `drawByteBuffer`, JBR adds the *full* component bounds to Swing's `RepaintManager`, so Swing
+   redraws the whole component — but it draws the (partially stale) `myImage`.
+2. Chromium's compositor caches paint tiles. When a DOM mutation only translates siblings (e.g.
+   a new chip pushes content down) AND a `scrollTop` write happens in the **same animation
+   frame**, the compositor batches both into one paint and may use *tile translation cache reuse*
+   for both:
+    - Layout-shifted siblings → reused tiles, translated to new y-positions
+    - Scroll-translated content → reused scroll-content layer translation
+3. The reported dirty rect collapses to `(new node bounds) ∪ (scroll-revealed strip at bottom)`.
+   Pixels in the middle of the viewport — where shifted siblings now sit at new y-positions —
+   fall in neither set. JBR's selective copy leaves those pixels stale in `myImage`.
+4. `:hover` and manual scroll heal it because they touch styles or off-viewport tiles that force
+   re-rasterization, expanding the dirty rect to cover the previously-stale region.
+
+**Why this is JBR's bug, not Chromium's**: from Chromium's perspective the *full buffer* it hands
+to JBR each frame is correct. The dirty-rect hint is purely an optimization signal. JBR treats
+it as authoritative and skips copying the rest, even though the compositor freely reuses tiles
+across frames in ways that can leave the cached `BufferedImage` desynchronized with the rendered
+viewport. A safe implementation would either copy the full buffer or invalidate the cache when
+the dirty-rect coverage doesn't match the previous frame's reported damage.
+
+**Fix (workaround pending JBR fix)**: defer the autoscroll write by one extra `requestAnimationFrame`
+after every DOM-mutation- or resize-driven scroll trigger. This separates the mutation paint and
+the scroll-translation paint into two distinct CEF paint frames:
+
+- **Frame N**: mutation paints. No scroll happens, so Chromium's compositor can't use scroll-content
+  layer translation. Layout-shifted siblings must be repainted at their new y-positions, expanding
+  the dirty rect to cover them. JBR's selective copy now refreshes the right region.
+- **Frame N+1**: scroll happens. The dirty rect is the small scroll-revealed strip, but `myImage`
+  is already correct from frame N's paint.
+
+Implementation: a single `_scheduleDeferredScroll()` private helper used by the `MutationObserver`,
+`ResizeObserver`, and the public `scheduleScrollIfNeeded()` entrypoint. The existing `_scrollRAF`
+debounce gate is preserved (one scroll write per active gate, regardless of trigger count); the
+gate now holds nested rAF IDs.
+
+**Cost**: ~16ms additional autoscroll latency during streaming. Imperceptible in practice — the
+agent stream is much slower than one frame, and users don't notice the bottom-snap arriving one
+frame later.
+
+**What this fix does NOT address**:
+
+- Tearing on mutations *without* autoscroll active (user has scrolled up; new content arrives
+  off-screen). The bug can still manifest, but is much less noticeable since the user isn't
+  watching the affected region. Fixing this would require a non-deferral approach.
+- The underlying JBR `drawByteBuffer` selective-copy behavior. **TODO**: file a YouTrack issue
+  against JBR linking this fix as the workaround in use.
+
+**Falsifiability**: if Fix 8 does NOT eliminate the tearing, the hypothesis is wrong about
+mutation+scroll batching being the trigger, and we need to look elsewhere — most likely a
+non-scroll source of compositor tile-translation cache reuse, or a JBR issue independent of
+autoscroll. In that case, candidates to investigate next: outline-offset toggle (zero-flicker
+paint nudge), a synthetic 1px-wiggle scroll on idle, or a Kotlin-side `CefRenderHandler`
+wrapper that always treats dirty rects as full-viewport.
+
 ### Fix 7 — Boost OSR frame rate during active scroll and remove agent tooltip
 
 **Observation**: Tearing still reproduced on Linux and Windows when the chat pane scrolled manually.
@@ -259,32 +331,120 @@ was removed entirely, message descendants stop receiving pointer hover/click hit
 scroll, and the load-more trigger is now deferred through `requestAnimationFrame()` instead of mutating
 the DOM from the scroll event callback.
 
+### Fix 8 — Defer autoscroll one rAF after DOM mutation (this commit)
+
+**Observation**: After Fixes 1–7, tearing still reproduced on Linux and Windows (confirmed both
+OSes by the user). The pattern: a new chip / message / token paints in the correct location, but
+**old content nearby** (e.g. the chip just above a freshly inserted one, or sibling rows that
+shifted down) **stays visually frozen** until the next "real" paint event — moving the mouse over
+the panel (which changes background colors), scrolling, switching monitors. The Working… counter
+keeps animating throughout the stale period, so frame production is NOT stalled. Only
+`chat-container` is affected; surrounding Swing components paint normally.
+
+**Root cause** — JBR `JBCefOsrHandler.drawByteBuffer` selective copy + Chromium compositor
+tile-translation cache reuse:
+
+1. `JBCefOsrHandler.drawByteBuffer` (in `platform/ui.jcef/jcef/JBCefOsrHandler.java`) copies
+   only the dirty-rect regions reported by CEF into the cached `BufferedImage` (`myImage`).
+   Pixels outside those rects in `myImage` stay frozen from the previous frame. After
+   `drawByteBuffer`, JBR adds the *full* component bounds to Swing's `RepaintManager`, so Swing
+   redraws the whole component — but it draws the (partially stale) `myImage`.
+2. Chromium's compositor caches paint tiles. When a DOM mutation only translates siblings (e.g.
+   a new chip pushes content down) AND a `scrollTop` write happens in the **same animation
+   frame**, the compositor batches both into one paint and may use *tile translation cache reuse*
+   for both:
+    - Layout-shifted siblings → reused tiles, translated to new y-positions
+    - Scroll-translated content → reused scroll-content layer translation
+3. The reported dirty rect collapses to `(new node bounds) ∪ (scroll-revealed strip at bottom)`.
+   Pixels in the middle of the viewport — where shifted siblings now sit at new y-positions —
+   fall in neither set. JBR's selective copy leaves those pixels stale in `myImage`.
+4. `:hover` and manual scroll heal it because they touch styles or off-viewport tiles that force
+   re-rasterization, expanding the dirty rect to cover the previously-stale region.
+
+**Why this is JBR's bug, not Chromium's**: from Chromium's perspective the *full buffer* it hands
+to JBR each frame is correct. The dirty-rect hint is purely an optimization signal. JBR treats
+it as authoritative and skips copying the rest, even though the compositor freely reuses tiles
+across frames in ways that can leave the cached `BufferedImage` desynchronized with the rendered
+viewport. A safe implementation would either copy the full buffer or invalidate the cache when
+the dirty-rect coverage doesn't match the previous frame's reported damage.
+
+**Fix (workaround pending JBR fix)**: defer the autoscroll write by one extra `requestAnimationFrame`
+after every DOM-mutation- or resize-driven scroll trigger. This separates the mutation paint and
+the scroll-translation paint into two distinct CEF paint frames:
+
+- **Frame N**: mutation paints. No scroll happens, so Chromium's compositor can't use scroll-content
+  layer translation. Layout-shifted siblings must be repainted at their new y-positions, expanding
+  the dirty rect to cover them. JBR's selective copy now refreshes the right region.
+- **Frame N+1**: scroll happens. The dirty rect is the small scroll-revealed strip, but `myImage`
+  is already correct from frame N's paint.
+
+Implementation: a single `_scheduleDeferredScroll()` private helper used by the `MutationObserver`,
+`ResizeObserver`, and the public `scheduleScrollIfNeeded()` entrypoint. The existing `_scrollRAF`
+debounce gate is preserved (one scroll write per active gate, regardless of trigger count); the
+gate now holds nested rAF IDs.
+
+**Cost**: ~16ms additional autoscroll latency during streaming. Imperceptible in practice — the
+agent stream is much slower than one frame, and users don't notice the bottom-snap arriving one
+frame later.
+
+**What this fix does NOT address**:
+
+- Tearing on mutations *without* autoscroll active (user has scrolled up; new content arrives
+  off-screen). The bug can still manifest, but is much less noticeable since the user isn't
+  watching the affected region. Fixing this would require a non-deferral approach.
+- The underlying JBR `drawByteBuffer` selective-copy behavior. **TODO**: file a YouTrack issue
+  against JBR linking this fix as the workaround in use.
+
+**Falsifiability**: if Fix 8 does NOT eliminate the tearing, the hypothesis is wrong about
+mutation+scroll batching being the trigger, and we need to look elsewhere — most likely a
+non-scroll source of compositor tile-translation cache reuse, or a JBR issue independent of
+autoscroll. In that case, candidates to investigate next: outline-offset toggle (zero-flicker
+paint nudge), a synthetic 1px-wiggle scroll on idle, or a Kotlin-side `CefRenderHandler`
+wrapper that always treats dirty rects as full-viewport.
+
+**If Fix 8 confirms the diagnosis, code that can be cleaned up afterward** (do this in a separate
+commit, AFTER user-confirmed verification on Linux + Windows over multiple streaming sessions):
+
+- `ChatConsolePanel.kt` scroll-bridge → 60fps boost during manual scroll (Fix 7) may no longer be
+  needed if dirty-rect coalescence was the underlying cause. Removing the boost would simplify the
+  frame-rate state machine (just streaming-vs-idle).
+- `is-scrolling` class + descendant `pointer-events: none` (Fix 7 hover suppression) was added
+  specifically to avoid `:hover` repaints during scroll. If Fix 8 fully heals scroll-time tearing,
+  this guard becomes redundant and can be removed.
+- `MonitorSwitchRecovery` deferred DOM replay logic exists to recover from the same class of
+  staleness. It's still useful for legitimate monitor switches, but the replay-on-streaming-end
+  guard could be relaxed if tearing during streaming is gone.
+
+Do not remove these speculatively. Each was added because the previous fix wasn't sufficient. Only
+remove after Fix 8 is proven stable.
+
 ---
 
 ## Code Locations
 
-| File                       | Component               | Purpose                                                                         |
-|----------------------------|-------------------------|---------------------------------------------------------------------------------|
-| `ChatConsolePanel.kt`      | `startStreaming()`      | Sets 60fps, marks `streaming=true`, disables smooth scroll                      |
-| `ChatConsolePanel.kt`      | `finishResponse()`      | Sets 30fps unless active scroll still needs 60fps, marks `streaming=false`, restores smooth scroll |
-| `ChatConsolePanel.kt`      | `executeJs()`           | Plain `executeJavaScript` — no manual `invalidate()` (Fix 4)                    |
-| `ChatConsolePanel.kt`      | `setFrameRate()`        | Wraps `setWindowlessFrameRate()`                                                |
-| `ChatConsolePanel.kt`      | Scroll bridge handlers  | Temporarily boosts JCEF OSR to 60fps while the user is actively scrolling       |
-| `ChatContainer.ts`         | `_scrollRAF`            | rAF debounce gate for scroll writes                                             |
-| `ChatContainer.ts`         | `ResizeObserver`        | Debounced via `_scrollRAF` — never writes scrollTop directly                    |
-| `ChatContainer.ts`         | `MutationObserver`      | Auto-scroll trigger — debounced via `_scrollRAF`                                |
-| `ChatContainer.ts`         | Scroll handler          | Adds `is-scrolling` during active scroll and rAF-defers load-more clicks        |
-| `ChatContainer.ts`         | `_copyObs`              | Code block buttons — skips streaming bubbles                                    |
-| `ChatContainer.ts`         | `_setupCodeBlocks()`    | Checks `pre.closest('message-bubble[streaming]')`                               |
-| `ChatContainer.ts`         | `setStreaming()`        | Toggles CSS smooth-scroll policy between streaming and idle                     |
-| `ChatContainer.ts`         | `_scrollToInstant()`    | Temporarily forces `scroll-behavior: auto` for scroll                           |
-| `ChatContainer.ts`         | `scheduleScrollIfNeeded()` | rAF-deferred autoscroll entry point for DOM mutation paths                   |
-| `ChatController.ts`        | `appendAgentText()`     | No longer calls synchronous `scrollIfNeeded()` (Fix 3)                          |
-| `ChatController.ts`        | Remaining autoscroll call sites | Use `scheduleScrollIfNeeded()` instead of direct scroll writes (Fix 6) |
-| `ChatController.ts`        | `upsertToolChip()`      | No longer calls synchronous `scrollIfNeeded()` (Fix 5)                          |
-| `chat.css`                 | `chat-container`, `chat-message` | No paint containment, content-visibility virtualization, or hover tooltip overlays in OSR |
-| `MessageBubble.ts`         | `appendStreamingText()` | rAF-debounced markdown re-render                                                |
-| `MonitorSwitchRecovery.kt` | `triggerRecovery()`     | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes |
+| File                       | Component                        | Purpose                                                                                            |
+|----------------------------|----------------------------------|----------------------------------------------------------------------------------------------------|
+| `ChatConsolePanel.kt`      | `startStreaming()`               | Sets 60fps, marks `streaming=true`, disables smooth scroll                                         |
+| `ChatConsolePanel.kt`      | `finishResponse()`               | Sets 30fps unless active scroll still needs 60fps, marks `streaming=false`, restores smooth scroll |
+| `ChatConsolePanel.kt`      | `executeJs()`                    | Plain `executeJavaScript` — no manual `invalidate()` (Fix 4)                                       |
+| `ChatConsolePanel.kt`      | `setFrameRate()`                 | Wraps `setWindowlessFrameRate()`                                                                   |
+| `ChatConsolePanel.kt`      | Scroll bridge handlers           | Temporarily boosts JCEF OSR to 60fps while the user is actively scrolling                          |
+| `ChatContainer.ts`         | `_scrollRAF`                     | rAF debounce gate for scroll writes (now holds nested 2-rAF chain — Fix 8)                         |
+| `ChatContainer.ts`         | `_scheduleDeferredScroll()`      | Two-rAF deferral helper — separates DOM-mutation paint from scroll paint (Fix 8)                   |
+| `ChatContainer.ts`         | `ResizeObserver`                 | Debounced via `_scheduleDeferredScroll()` — never writes scrollTop directly                        |
+| `ChatContainer.ts`         | `MutationObserver`               | Auto-scroll trigger — debounced via `_scrollRAF`                                                   |
+| `ChatContainer.ts`         | Scroll handler                   | Adds `is-scrolling` during active scroll and rAF-defers load-more clicks                           |
+| `ChatContainer.ts`         | `_copyObs`                       | Code block buttons — skips streaming bubbles                                                       |
+| `ChatContainer.ts`         | `_setupCodeBlocks()`             | Checks `pre.closest('message-bubble[streaming]')`                                                  |
+| `ChatContainer.ts`         | `setStreaming()`                 | Toggles CSS smooth-scroll policy between streaming and idle                                        |
+| `ChatContainer.ts`         | `_scrollToInstant()`             | Temporarily forces `scroll-behavior: auto` for scroll                                              |
+| `ChatContainer.ts`         | `scheduleScrollIfNeeded()`       | rAF-deferred autoscroll entry point for DOM mutation paths                                         |
+| `ChatController.ts`        | `appendAgentText()`              | No longer calls synchronous `scrollIfNeeded()` (Fix 3)                                             |
+| `ChatController.ts`        | Remaining autoscroll call sites  | Use `scheduleScrollIfNeeded()` instead of direct scroll writes (Fix 6)                             |
+| `ChatController.ts`        | `upsertToolChip()`               | No longer calls synchronous `scrollIfNeeded()` (Fix 5)                                             |
+| `chat.css`                 | `chat-container`, `chat-message` | No paint containment, content-visibility virtualization, or hover tooltip overlays in OSR          |
+| `MessageBubble.ts`         | `appendStreamingText()`          | rAF-debounced markdown re-render                                                                   |
+| `MonitorSwitchRecovery.kt` | `triggerRecovery()`              | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes                    |
 
 ---
 
@@ -326,3 +486,17 @@ When modifying the streaming pipeline, watch for:
 9. **Hover overlays while scrolling** — avoid tooltip-like `:hover::before` / `:hover::after`
    overlays inside `chat-container`. They repaint repeatedly as rows move under a stationary mouse
    during scroll and can re-trigger JCEF OSR tearing.
+
+10. **Opacity-toggle "paint nudges"** — do NOT add CSS opacity transitions or programmatic
+    `style.opacity` toggles on `chat-container`, `chat-message`, or any of their descendants as
+    a workaround for OSR tearing. This was attempted in earlier iterations and caused **visible
+    flickering** even with rAF debouncing. The visible side-effect outweighs the dirty-rect benefit.
+    Other zero-flicker alternatives (outline-offset toggle, subpixel scroll wiggle) should be tried
+    first if Fix 8's deferral is insufficient.
+
+11. **Same-frame mutation + scrollTop writes** (Fix 8) — never write `scrollTop` in the same
+    `requestAnimationFrame` callback as a DOM mutation. Always go through
+    `_scheduleDeferredScroll()` (or `scheduleScrollIfNeeded()`) so the scroll lands in the
+    *next* paint frame. Same-frame batching enables Chromium compositor tile-translation cache
+    reuse, which collapses the dirty rect and leaves shifted siblings stale in JBR's
+    `BufferedImage` cache. See Fix 8 for the full mechanism.
