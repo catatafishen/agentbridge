@@ -471,17 +471,13 @@ public final class PlatformApiCompat {
         // and addDataPackChangeListener (e.g., Git4Idea repository update fired immediately
         // after our commit). In that case the listener will never fire for our commit, so we
         // check now. We require BOTH a fresh graph reference (to avoid the storage-only race
-        // documented above) AND that the commit is indexed.
+        // documented above) AND that the commit is indexed in the target root.
         if (getCurrentGraphIdentity(data) != initialGraph
-            && isCommitIndexed(data, hash)
+            && isCommitIndexed(data, hash, repoRootVf)
             && navigated.compareAndSet(false, true)) {
             data.removeDataPackChangeListener(listener);
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                // Skip VCS Log navigation when the user is in the chat prompt to avoid focus
-                // theft. See FOCUS-STEALING-BUG.md.
-                if (PsiBridgeService.isChatToolWindowActive(project)) return;
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, repoRootVf, hash);
-            });
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+                navigateToRevisionInMainLog(project, repoRootVf, hash));
             return;
         }
 
@@ -574,18 +570,13 @@ public final class PlatformApiCompat {
                 // that window selects the previous HEAD and emits a "not found" bubble.
                 Object currentGraph = getPublishedGraphIdentity(data, args);
                 if (currentGraph == initialGraph) return null;
-                if (!isCommitIndexed(data, hash)) return null;
+                if (!isCommitIndexed(data, hash, repoRootVf)) return null;
 
                 if (!navigated.compareAndSet(false, true)) return null;
                 data.removeDataPackChangeListener(
                     (com.intellij.vcs.log.data.DataPackChangeListener) proxy);
-                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                    // Skip when the user is in the chat prompt to avoid focus theft after a
-                    // long-running tool call. See FOCUS-STEALING-BUG.md.
-                    if (PsiBridgeService.isChatToolWindowActive(project)) return;
-                    com.intellij.vcs.log.impl.VcsProjectLog
-                        .showRevisionInMainLog(project, repoRootVf, hash);
-                });
+                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
+                    navigateToRevisionInMainLog(project, repoRootVf, hash));
                 return null;
             });
     }
@@ -634,12 +625,20 @@ public final class PlatformApiCompat {
         return getCurrentGraphIdentity(data);
     }
 
+    private static void navigateToRevisionInMainLog(
+        @NotNull Project project,
+        @NotNull com.intellij.openapi.vfs.VirtualFile repoRoot,
+        @NotNull com.intellij.vcs.log.Hash hash) {
+        // Tool-window show/activate is handled before this point. Do not skip selection
+        // when chat is active: follow-mode must still move the VCS Log selection without focus steal.
+        com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, repoRoot, hash);
+    }
+
     private static boolean isCommitIndexed(
-        com.intellij.vcs.log.data.VcsLogData data,
-        com.intellij.vcs.log.Hash hash) {
-        return data.getLogProviders().keySet().stream()
-            .anyMatch(root -> data.getStorage().containsCommit(
-                new com.intellij.vcs.log.CommitId(hash, root)));
+        @NotNull com.intellij.vcs.log.data.VcsLogData data,
+        @NotNull com.intellij.vcs.log.Hash hash,
+        @NotNull com.intellij.openapi.vfs.VirtualFile repoRoot) {
+        return data.getStorage().containsCommit(new com.intellij.vcs.log.CommitId(hash, repoRoot));
     }
 
     private static void refreshVcsLogForProject(

@@ -1,6 +1,6 @@
 # "Commit not found in VCS Log" Bug — Recurring Regression
 
-**Status**: Fixed (latest fix on branch `fix/git-commit-not-found-in-vcs-log`)
+**Status**: Fixed again (latest fix on branch `fix/vcs-log-follow-navigation`)
 **Related**: [`FOCUS-STEALING-BUG.md`](FOCUS-STEALING-BUG.md)
 
 > ⚠️ **This bug has regressed multiple times.** Read this document end-to-end before
@@ -68,17 +68,17 @@ GitTool.showNewCommitInLog(repoRoot)
         ├─ On every DataPack event, check both:
         │     1. New VcsLogGraphData != initial   (a fresh pack was published)
         │     2. isCommitIndexed(data, hash, root) (storage has the hash)
-        ├─ When BOTH are true (or 10s timeout):
-        │     VcsProjectLog.showRevisionInMainLog(project, root, hash)   ← root-aware overload
-        └─ Always re-check isChatToolWindowActive() inside the EDT lambda before navigating
+        └─ When BOTH are true:
+              VcsProjectLog.showRevisionInMainLog(project, root, hash)   ← root-aware overload
+              (do not skip this when chat is active; the tool-window show/activate guard already handled focus)
 ```
 
 ---
 
 ## Root causes
 
-The bug has had **three** distinct contributing causes. The current fix addresses all
-three. A regression in any one is enough to bring the bubble back.
+The bug has had **four** distinct contributing causes. The current fix addresses all
+four. A regression in any one is enough to bring the bubble back.
 
 ### Cause 1 — Wrong repo root in multi-repo projects
 
@@ -132,6 +132,18 @@ to the 2-arg back-compat shim which uses the project-wide overload. That fallbac
 acceptable because chat-chip clicks operate on abbreviated hashes that were already
 resolved against the project base.
 
+### Cause 4 — Focus guard skipped the actual navigation
+
+The focus-stealing fix correctly changed the tool-window opening path to call
+`tw.show()` instead of `tw.activate(null)` while chat is active. A later implementation
+also returned early before `showRevisionInMainLog` when chat was active. That avoided
+focus steal, but it also meant follow-mode never selected the new commit in the VCS
+Log while the user was using chat — the normal commit path.
+
+**Fix invariant**: use `isChatToolWindowActive(project)` only to choose `tw.show()` vs
+`tw.activate(null)` when opening the VCS tool window. Once a fresh graph contains the
+commit in the target root, always call `showRevisionInMainLog(project, root, hash)`.
+
 ---
 
 ## Past fix attempts
@@ -141,6 +153,7 @@ resolved against the project base.
 | `4a5126e` | First fix — added `showRevisionInLogAfterRefresh` | Originally correct for single-repo; lost root awareness when multi-repo support was bolted on later |
 | `d6816552` | Wait for VCS log indexing via `DataPackChangeListener` | Used `isCommitIndexed` alone (Cause 2 race) — fine when storage and graph happened to publish in lockstep, broke under load |
 | `c92b1231` | Multi-repo `git_*` tool support | Did not update the follow-along path → Cause 1 reintroduced |
+| `fix/vcs-log-follow-navigation` | Keep chat focus guard on tool-window opening only; make indexing root-specific | Previous fix skipped `showRevisionInMainLog` while chat was active, and the index predicate checked any root |
 
 ---
 
@@ -150,8 +163,8 @@ The two bugs pull in **opposite directions**:
 
 - The focus bug requires the follow-along path to *not* steal focus from the chat
   input. The mitigation is the `isChatToolWindowActive(project)` guard *inside* the
-  `invokeLater` lambda — it must run on the EDT *just before* `tw.activate(...)` and
-  again before `showRevisionInMainLog`, because the active tool window can change
+  tool-window `invokeLater` lambda — it must run on the EDT *just before* choosing
+  `tw.show()` vs `tw.activate(...)`, because the active tool window can change
   between scheduling and execution.
 
 - This bug requires the follow-along path to *actually navigate* to the new commit.
@@ -189,14 +202,15 @@ Before merging *any* change to the files listed above, manually verify:
       identity through the compatibility helper — **not** a direct `data.getDataPack()`
       wrapper comparison.
 - [ ] The DataPackChangeListener navigation predicate requires both a changed graph
-      identity AND `isCommitIndexed(data, hash, root)`.
+      identity AND `isCommitIndexed(data, hash, root)` for the *target* root, not any root.
 - [ ] The `refresh(...)` call passes the *commit's repo root* as a `VirtualFile`,
       not the project base.
 - [ ] `VcsProjectLog.showRevisionInMainLog` is called with the 3-arg
       `(project, root, hash)` overload whenever a root is known.
-- [ ] `isChatToolWindowActive(project)` is checked *inside* the `invokeLater` lambda
-      right before any tool-window activation or navigation call. Hoisting it out
-      reintroduces `FOCUS-STEALING-BUG.md`.
+- [ ] `isChatToolWindowActive(project)` is checked *inside* the tool-window
+      `invokeLater` lambda right before choosing `tw.show()` vs `tw.activate(null)`.
+      It must not guard or skip `showRevisionInMainLog`; skipping navigation
+      reintroduces this bug.
 - [ ] The regression test
       `GitCommitFollowAlongRepoRootTest.testShowNewCommitInLogReadsHeadFromSuppliedRoot`
       still passes.
@@ -227,6 +241,6 @@ If the bubble reappears after a future change, in order:
    cleanly when `getLogProviders().get(root) == null` — don't blow up, don't navigate
    to a stale root.
 
-5. **Was the focus guard moved or removed?** Cross-check
-   [`FOCUS-STEALING-BUG.md`](FOCUS-STEALING-BUG.md) — that fix and this fix share
-   wiring through the same `invokeLater` blocks.
+5. **Does the focus guard return before `showRevisionInMainLog`?** That is Cause 4.
+   Cross-check [`FOCUS-STEALING-BUG.md`](FOCUS-STEALING-BUG.md): the guard belongs on
+   VCS tool-window show/activate, not on the log-selection navigation.
