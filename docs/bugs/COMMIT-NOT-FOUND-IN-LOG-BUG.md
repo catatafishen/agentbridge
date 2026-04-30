@@ -108,13 +108,16 @@ bubble + selects the previous HEAD.
 **Fix invariant**: the listener must wait for **both**:
 
 1. `isCommitIndexed(data, hash, root)` — storage knows the hash, *and*
-2. `data.getGraphData() != initialGraphData` — a fresh `VcsLogGraphData` reference has
-   been published (so the visible graph contains the new commit).
+2. the compatibility-layer graph identity has changed — a fresh VCS Log graph/data-pack
+   object has been published (so the visible graph contains the new commit).
 
-> ⚠️ **Do not use `data.getDataPack() != initialPack`** for the freshness check.
-> `getDataPack()` is a deprecated wrapper that returns a *new* DataPack object on
-> every call — reference comparison is meaningless and the listener never sees a
-> change. **Use `data.getGraphData()`** which returns a stable reference.
+> ⚠️ **Do not directly compare `data.getDataPack() != initialPack`** for the freshness check.
+> In newer IDEs, `getDataPack()` is a deprecated wrapper that returns a *new* DataPack
+> object on every call — reference comparison is meaningless and the listener never sees a
+> real change. `PlatformApiCompat` must use its graph-identity helper instead: reflectively
+> call `getGraphData()` when available, fall back to `getDataPack()` only for older SDKs
+> where `getGraphData()` does not exist, and prefer the `DataPackChangeListener` event
+> payload when the listener fires.
 
 ### Cause 3 — Wrong `showRevisionInMainLog` overload
 
@@ -182,11 +185,11 @@ Before merging *any* change to the files listed above, manually verify:
 - [ ] `GitCommitTool.execute()` calls `showNewCommitInLog(root)` **after** the
       `if (result.startsWith("Error")) return result;` check. Calling it before opens
       the log on a failed commit and looks identical to this bug.
-- [ ] `PlatformApiCompat.showRevisionInLogAfterRefresh` snapshot uses
-      `data.getGraphData()` — **not** `data.getDataPack()`.
-- [ ] The DataPackChangeListener navigation predicate requires both
-      `data.getGraphData() != initialGraphData` AND
-      `isCommitIndexed(data, hash, root)`.
+- [ ] `PlatformApiCompat.showRevisionInLogAfterRefresh` snapshots the current graph
+      identity through the compatibility helper — **not** a direct `data.getDataPack()`
+      wrapper comparison.
+- [ ] The DataPackChangeListener navigation predicate requires both a changed graph
+      identity AND `isCommitIndexed(data, hash, root)`.
 - [ ] The `refresh(...)` call passes the *commit's repo root* as a `VirtualFile`,
       not the project base.
 - [ ] `VcsProjectLog.showRevisionInMainLog` is called with the 3-arg
@@ -211,9 +214,9 @@ If the bubble reappears after a future change, in order:
 1. **Did the changed code remove a `repoRoot` parameter or a `runGitIn` call?**
    That's Cause 1 — multi-repo regression. Revert and route the root through.
 
-2. **Is `data.getDataPack()` being compared to a snapshot somewhere?**
-   That's the Cause 2 trap — the comparison always returns "different". Switch to
-   `data.getGraphData()`.
+2. **Is `data.getDataPack()` being compared directly to a snapshot somewhere?**
+   That's the Cause 2 trap on newer SDKs — the comparison always returns "different".
+   Route freshness checks through `PlatformApiCompat`'s graph-identity helper instead.
 
 3. **Is `showRevisionInMainLog(project, hash)` being called with no root?**
    That's Cause 3 — switch to the 3-arg overload (`project, root, hash`).

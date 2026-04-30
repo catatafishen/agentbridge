@@ -451,14 +451,14 @@ public final class PlatformApiCompat {
             return;
         }
 
-        // Capture the current graph data BEFORE registering the listener. We use this as the
-        // freshness baseline: navigation only fires when a NEW VcsLogGraphData has been published
-        // (i.e. the listener observed a refresh, or the immediate race-check sees that the
-        // graph reference has already changed). A pure storage check is insufficient because
+        // Capture the current visible graph identity BEFORE registering the listener. We use this
+        // as the freshness baseline: navigation only fires when a NEW graph/data-pack object has
+        // been published (i.e. the listener observed a refresh, or the immediate race-check sees
+        // that the graph reference has already changed). A pure storage check is insufficient because
         // VcsLogStorage.containsCommit can return true while the new DataPack/PermanentGraph
         // is still being built, in which case showRevisionInMainLog falls back to the previous
         // HEAD selection and emits a "commit not found" bubble. See COMMIT-NOT-FOUND-IN-LOG-BUG.md.
-        com.intellij.vcs.log.data.VcsLogGraphData initialGraph = data.getGraphData();
+        Object initialGraph = getCurrentGraphIdentity(data);
         var navigated = new java.util.concurrent.atomic.AtomicBoolean(false);
 
         com.intellij.vcs.log.data.DataPackChangeListener listener =
@@ -472,7 +472,7 @@ public final class PlatformApiCompat {
         // after our commit). In that case the listener will never fire for our commit, so we
         // check now. We require BOTH a fresh graph reference (to avoid the storage-only race
         // documented above) AND that the commit is indexed.
-        if (data.getGraphData() != initialGraph
+        if (getCurrentGraphIdentity(data) != initialGraph
             && isCommitIndexed(data, hash)
             && navigated.compareAndSet(false, true)) {
             data.removeDataPackChangeListener(listener);
@@ -532,13 +532,18 @@ public final class PlatformApiCompat {
      * <p><b>Why Proxy</b>: {@code DataPackChangeListener} is an internal API whose SAM method
      * signature changed between IDE versions (DataPack → VcsLogGraphData). Using a dynamic
      * {@link java.lang.reflect.Proxy} avoids {@link AbstractMethodError} at runtime.
+     *
+     * <p><b>Why {@code Object initialGraph}</b>: {@code VcsLogData.getGraphData()} and
+     * {@code VcsLogGraphData} are not available in every supported IDE SDK. The identity object
+     * comes from {@link #getCurrentGraphIdentity(com.intellij.vcs.log.data.VcsLogData)} so this
+     * compatibility class can compile against both old and new SDKs.
      */
     private static com.intellij.vcs.log.data.DataPackChangeListener buildDataPackListener(
         @NotNull Project project,
         @NotNull com.intellij.vcs.log.data.VcsLogData data,
         @NotNull com.intellij.vcs.log.Hash hash,
         @NotNull com.intellij.openapi.vfs.VirtualFile repoRootVf,
-        @NotNull com.intellij.vcs.log.data.VcsLogGraphData initialGraph,
+        @NotNull Object initialGraph,
         @NotNull java.util.concurrent.atomic.AtomicBoolean navigated) {
         return (com.intellij.vcs.log.data.DataPackChangeListener) java.lang.reflect.Proxy.newProxyInstance(
             com.intellij.vcs.log.data.DataPackChangeListener.class.getClassLoader(),
@@ -567,7 +572,7 @@ public final class PlatformApiCompat {
                 // indexed. The graph-reference check is critical: VcsLogStorage.containsCommit
                 // can become true before the new PermanentGraph is built, and navigating in
                 // that window selects the previous HEAD and emits a "not found" bubble.
-                com.intellij.vcs.log.data.VcsLogGraphData currentGraph = data.getGraphData();
+                Object currentGraph = getPublishedGraphIdentity(data, args);
                 if (currentGraph == initialGraph) return null;
                 if (!isCommitIndexed(data, hash)) return null;
 
@@ -583,6 +588,50 @@ public final class PlatformApiCompat {
                 });
                 return null;
             });
+    }
+
+    /**
+     * Returns the object whose identity changes when the visible VCS Log graph/data-pack changes.
+     *
+     * <p>Newer IDEs expose {@code VcsLogData.getGraphData()}, which is the correct stable
+     * freshness baseline. Older supported IDEs only expose {@code getDataPack()}, so reflection is
+     * required to keep this compatibility shim compiling against both API shapes.
+     */
+    private static @NotNull Object getCurrentGraphIdentity(
+        @NotNull com.intellij.vcs.log.data.VcsLogData data) {
+        try {
+            return invokeVcsLogDataMethod(data, "getGraphData");
+        } catch (NoSuchMethodException ignored) {
+            try {
+                return invokeVcsLogDataMethod(data, "getDataPack");
+            } catch (NoSuchMethodException e) {
+                throw new IllegalStateException(
+                    "VcsLogData exposes neither getGraphData() nor getDataPack()", e);
+            }
+        }
+    }
+
+    private static @NotNull Object invokeVcsLogDataMethod(
+        @NotNull com.intellij.vcs.log.data.VcsLogData data,
+        @NotNull String methodName) throws NoSuchMethodException {
+        try {
+            return data.getClass().getMethod(methodName).invoke(data);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Unable to access VcsLogData." + methodName + "()", e);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            throw new IllegalStateException("VcsLogData." + methodName + "() failed", e.getCause());
+        }
+    }
+
+    /**
+     * Uses the listener event payload as the freshness identity when available. This avoids
+     * calling version-specific VCS Log APIs from the proxy callback.
+     */
+    private static @NotNull Object getPublishedGraphIdentity(
+        @NotNull com.intellij.vcs.log.data.VcsLogData data,
+        @Nullable Object[] args) {
+        if (args != null && args.length > 0 && args[0] != null) return args[0];
+        return getCurrentGraphIdentity(data);
     }
 
     private static boolean isCommitIndexed(
