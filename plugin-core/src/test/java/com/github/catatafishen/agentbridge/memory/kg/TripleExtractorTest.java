@@ -186,14 +186,16 @@ class TripleExtractorTest {
     }
 
     @Test
-    void inlineCodeIsRemoved() {
-        String text = "We use `HashMap<String, Object>` for caching.";
-        List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, WING, DRAWER_ID);
+    void inlineCodeContentIsPreserved() {
+        // Inline code spans are unwrapped (backticks dropped, contents kept)
+        // because they typically contain class/method/field names that are the
+        // substantive technical content of code-related discussions. Stripping
+        // the contents leaves sentences full of holes and destroys meaning.
+        String result = TripleExtractor.stripMarkdown("We use `HashMap<String, Object>` for caching.");
 
-        for (TripleExtractor.ExtractedTriple triple : triples) {
-            assertFalse(triple.object().contains("HashMap"),
-                "Extracted inline code content: " + triple.object());
-        }
+        assertTrue(result.contains("HashMap"),
+            "Inline code content should be preserved after backticks are unwrapped: " + result);
+        assertFalse(result.contains("`"), "Backticks should be removed: " + result);
     }
 
     @Test
@@ -315,6 +317,20 @@ class TripleExtractorTest {
         assertFalse(TripleExtractor.isQualityObject("cases | Shelve for later]"));
         assertFalse(TripleExtractor.isQualityObject("config [deprecated]"));
         assertFalse(TripleExtractor.isQualityObject("value > threshold"));
+    }
+
+    @Test
+    void rejectsObjectsStartingWithPunctuation() {
+        // Residue from markdown stripping (e.g., a stray close-paren left after
+        // an inline code span was unwrapped) used to sneak through because
+        // isQualityObject only checked the first cleaned word, which became
+        // empty after punctuation was scrubbed and the loop fell through.
+        assertFalse(TripleExtractor.isQualityObject(") the text wraps"),
+            "Object starting with ) should be rejected");
+        assertFalse(TripleExtractor.isQualityObject("} the closing brace"),
+            "Object starting with } should be rejected");
+        assertFalse(TripleExtractor.isQualityObject("- a dashed phrase"),
+            "Object starting with - should be rejected");
     }
 
     @Test

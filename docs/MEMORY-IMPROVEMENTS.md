@@ -282,3 +282,94 @@ Phase 3 and 4 improve recall and context quality. Phase 5 and 6 are refinements.
 
 After each phase, re-mine history and compare drawer/triple quality against a
 baseline sample to validate improvement.
+
+---
+
+## Audit (April 2026)
+
+A follow-up audit of the live memory store revealed that **most of this plan has
+been implemented** across commits `a74f9fc`, `60e808a`, `647bba9`, and
+`d900b44`, but the live database (1 drawer + 1 triple, both garbage) showed two
+specific extraction bugs were still actively producing nonsense output, plus one
+config value was filtering out too many real exchanges.
+
+### Status of original phases
+
+| Phase | Item | Status |
+|-------|------|--------|
+| 1 | Agent narration filter | ✅ `NarrationFilter.java` (11 pattern groups) |
+| 1 | Tool-evidence separation | ✅ `ExchangeChunker.appendToolResultEvidence` only emits `[tool:NAME file:PATH]` markers |
+| 2 | Negation guard on triples | ✅ `TripleExtractor.NEGATION_PATTERN` |
+| 2 | Object trimming + word caps | ✅ `MAX_OBJECT_WORDS=8`, leading/trailing weak-word trim |
+| 2 | Cross-run dedup on KG insert | ✅ `KnowledgeGraph.existsValidTriple` + compound `idx_spo_valid` |
+| 3 | Markdown stripping before embedding | ✅ `TextPreprocessor.forEmbedding` |
+| 3 | Response-first ordering for embedding | ✅ `forEmbedding` emits `response \n\n prompt` |
+| 4 | Wake-up room diversity | ✅ `MemoryStore.getTopDrawersDiverse` round-robins by room |
+| 4 | Smarter snippets (skip echoed prompt) | ⏳ Deferred — content-truncation in `EssentialStoryLayer` still naive |
+| 5 | Confidence threshold + weighted keywords | ✅ `MIN_CONFIDENCE=2`, multi-word patterns score 2 |
+| 6 | Schema rename `source_closet → source_drawer` | ✅ Migration in `KnowledgeGraph.migrateSchema` |
+| 6 | Compound `(s,p,o,valid_until)` index | ✅ `idx_spo_valid` |
+| 6 | Length-aware dedup threshold | ⏳ Deferred — fixed `0.9` similarity used for all lengths |
+
+### Bugs found in the live store and fixed in this audit
+
+**Live evidence (before fixes):**
+- Single drawer, body fragment: `"with reports single-line preferred width before layout..."`  
+  — note the missing subject. The actual sentence was about
+  `JLabel.getPreferredSize()`, but the inline-code spans containing the class and
+  method names were stripped to a single space, deleting all the technical
+  vocabulary.
+- Single triple: `agentbridge → depends-on → ") the text wraps but is clipped"`  
+  — leading `)` is residue from the same code-stripping step; it survived
+  because the object-quality check only inspected the first *cleaned* word, which
+  became empty after punctuation was scrubbed, and the loop fell through and
+  accepted the object anyway.
+
+#### Bug 1 — Inline code spans were nuked, not unwrapped
+
+`TextPreprocessor.stripMarkdown` replaced ``` `inline code` ``` with a single
+space. In developer conversations, inline code spans almost always contain
+class/method/field/file names — the substantive technical vocabulary. Stripping
+the contents leaves sentences full of holes and makes the preprocessed text
+useless both for embedding and for triple extraction.
+
+**Fix:** `result.replaceAll("`([^`\\n]+)`", "$1")` — drop only the backticks,
+keep the contents. Fenced code blocks (``` ``` ```) are still removed entirely
+since their bodies are multi-line code, not prose.
+
+#### Bug 2 — Object-quality check accepted leading punctuation
+
+`TripleExtractor.cleanObject` stripped trailing `[.,:;!?]+` but not leading
+non-word characters, so an object like `") the text wraps"` passed through.
+`isQualityObject` then computed `firstCleaned = words[0].replaceAll("[^a-z]", "")`
+and only rejected if `firstCleaned` was a known weak word — when `firstCleaned`
+was empty (because `words[0]` was pure punctuation) the check fell through and
+the object was accepted as long as at least one later word was substantive.
+
+**Fix (two parts):**
+1. `cleanObject` now strips `^[^\\p{L}\\p{N}]+` before the existing trailing
+   strip.
+2. `isQualityObject` now hard-rejects when `firstCleaned.isEmpty()`. This
+   eliminates objects starting with `)`, `}`, `-`, `>`, etc.
+
+#### Tuning — `QualityFilter.MAX_COMBINED_LENGTH` raised 4000 → 8000
+
+The 4000-char ceiling on combined prompt+response length was too tight for real
+engineering exchanges and was a likely contributor to the "1 drawer per session"
+yield observed in the live store. 8000 still excludes multi-page transcript
+dumps but accommodates detailed technical Q&A.
+
+### Remaining deferred work
+
+- **Smarter wake-up snippets** (Phase 4) — `EssentialStoryLayer` still truncates
+  drawer content from the start, which often shows the user prompt rather than
+  the response. Could detect the prompt prefix and skip past the first
+  `\\n\\n` boundary.
+- **Length-aware dedup similarity threshold** (Phase 6) — a fixed `0.9` is
+  conservative for short drawers and too loose for long ones. Could scale by
+  drawer length.
+- **One-time DB cleanup migration** — invalidate any historical triple whose
+  object starts with non-letter characters. Not strictly required (the live
+  store was wiped manually as part of this audit), but worth adding for users
+  upgrading from a buggy build.
+

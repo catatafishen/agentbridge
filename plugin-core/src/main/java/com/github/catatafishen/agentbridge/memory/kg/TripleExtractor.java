@@ -181,9 +181,13 @@ public final class TripleExtractor {
         String[] words = object.toLowerCase().split("[\\s-]+");
         if (words.length > MAX_OBJECT_WORDS) return false;
 
-        // Reject if the first word is a weak/generic word (article, preposition, pronoun)
+        // Reject if the first word starts with non-letter garbage (markdown
+        // residue, stray punctuation). The empty-firstCleaned case must be a
+        // hard reject — previously the loop fell through and accepted the
+        // object if any later word was non-stopword.
         String firstCleaned = words[0].replaceAll("[^a-z]", "");
-        if (!firstCleaned.isEmpty() && LEADING_WEAK_WORDS.contains(firstCleaned)) return false;
+        if (firstCleaned.isEmpty()) return false;
+        if (LEADING_WEAK_WORDS.contains(firstCleaned)) return false;
 
         // Reject if ALL words are stopwords
         for (String word : words) {
@@ -249,7 +253,13 @@ public final class TripleExtractor {
     }
 
     private static @NotNull String cleanObject(@NotNull String raw) {
-        String cleaned = raw.replaceAll("[.,:;!?]+$", "").strip();
+        // Strip leading punctuation/symbols that are residue from markdown
+        // stripping (e.g., a trailing close-paren left after an inline code span
+        // was unwrapped) — without this, objects like ") the text wraps" pass
+        // through and pollute the KG.
+        String cleaned = raw.replaceAll("^[^\\p{L}\\p{N}]+", "")
+            .replaceAll("[.,:;!?]+$", "")
+            .strip();
         if (cleaned.length() > MAX_OBJECT_LENGTH) {
             int cutoff = cleaned.lastIndexOf(' ', MAX_OBJECT_LENGTH);
             if (cutoff > 30) {

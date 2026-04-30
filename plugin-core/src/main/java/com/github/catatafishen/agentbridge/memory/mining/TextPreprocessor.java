@@ -23,10 +23,13 @@ public final class TextPreprocessor {
      * are removed to prevent false pattern matches.
      */
     public static @NotNull String stripMarkdown(@NotNull String text) {
-        // Remove fenced code blocks entirely (content is code, not prose)
+        // Remove fenced code blocks entirely (content is multi-line code, not prose)
         String result = text.replaceAll("```[\\s\\S]*?```", " ");
-        // Remove inline code spans
-        result = result.replaceAll("`[^`]+`", " ");
+        // Unwrap inline code spans — keep the contents (typically class/method names),
+        // drop only the backticks. Stripping the contents leaves sentences full of
+        // holes ("the JLabel reports single-line ..." → "the reports single-line ...")
+        // which destroys the technical meaning of code-related discussions.
+        result = result.replaceAll("`([^`\\n]+)`", "$1");
         // Remove tool evidence brackets: [tool:...], [...result:...]
         result = result.replaceAll("\\[tool:[^]]*]", " ");
         result = result.replaceAll("\\[[^]]{0,40} result:[^]]*]", " ");

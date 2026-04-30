@@ -38,7 +38,7 @@ public final class QualityFilter {
      * knowledge. The threshold is generous enough to accommodate detailed technical
      * explanations but filters out multi-page transcript dumps.
      */
-    private static final int MAX_COMBINED_LENGTH = 4000;
+    private static final int MAX_COMBINED_LENGTH = 8000;
 
     /**
      * Minimum prompt length (chars) when the response is very long. Short prompts

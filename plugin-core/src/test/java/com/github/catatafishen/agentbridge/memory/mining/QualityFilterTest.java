@@ -125,7 +125,7 @@ class QualityFilterTest {
     @Test
     void exceedsMaxCombinedLength_fails() {
         String longPrompt = "How should we structure the project?";
-        String longResponse = "x".repeat(4000);
+        String longResponse = "x".repeat(8100);
         assertFalse(filter.passes(longPrompt, longResponse));
     }
 
