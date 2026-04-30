@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 @Service(Service.Level.PROJECT)
 public final class MemoryService implements Disposable {
@@ -174,13 +175,25 @@ public final class MemoryService implements Disposable {
         if (projectBasePath == null) {
             return;
         }
-        Path legacyMemoryDir = Path.of(projectBasePath, ".agent-work", "memory");
-        if (!Files.exists(legacyMemoryDir) || Files.exists(newMemoryDir)) {
+        if (Files.exists(newMemoryDir)) {
             return;
         }
-        Files.createDirectories(newMemoryDir.getParent());
-        Files.move(legacyMemoryDir, newMemoryDir);
-        LOG.info("Migrated memory directory from " + legacyMemoryDir + " to " + newMemoryDir);
+        for (Path legacyMemoryDir : legacyMemoryDirs(projectBasePath)) {
+            if (!Files.exists(legacyMemoryDir) || legacyMemoryDir.equals(newMemoryDir)) {
+                continue;
+            }
+            Files.createDirectories(newMemoryDir.getParent());
+            Files.move(legacyMemoryDir, newMemoryDir);
+            LOG.info("Migrated memory directory from " + legacyMemoryDir + " to " + newMemoryDir);
+            return;
+        }
+    }
+
+    private static @NotNull List<Path> legacyMemoryDirs(@NotNull String projectBasePath) {
+        return List.of(
+            Path.of(projectBasePath, ".agentbridge", "memory"),
+            Path.of(projectBasePath, ".agent-work", "memory")
+        );
     }
 
     private @NotNull Path getMemoryBasePath() {

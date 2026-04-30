@@ -18,6 +18,21 @@ class MemoryServiceTest {
     Path tempDir;
 
     @Test
+    void migrateLegacyMemoryDirMovesProjectAgentBridgeMemoryIntoStorageRoot() throws IOException {
+        Path projectBase = tempDir.resolve("project");
+        Path projectMemoryDir = projectBase.resolve(".agentbridge").resolve("memory");
+        Files.createDirectories(projectMemoryDir);
+        Files.writeString(projectMemoryDir.resolve("identity.txt"), "identity", StandardCharsets.UTF_8);
+
+        Path newMemoryDir = tempDir.resolve("storage").resolve("projects").resolve("demo-123").resolve("memory");
+        MemoryService.migrateLegacyMemoryDir(projectBase.toString(), newMemoryDir);
+
+        assertFalse(Files.exists(projectMemoryDir), "Project-local memory directory should be moved");
+        assertEquals("identity",
+            Files.readString(newMemoryDir.resolve("identity.txt"), StandardCharsets.UTF_8));
+    }
+
+    @Test
     void migrateLegacyMemoryDirMovesProjectAgentWorkMemoryIntoStorageRoot() throws IOException {
         Path projectBase = tempDir.resolve("project");
         Path legacyMemoryDir = projectBase.resolve(".agent-work").resolve("memory");

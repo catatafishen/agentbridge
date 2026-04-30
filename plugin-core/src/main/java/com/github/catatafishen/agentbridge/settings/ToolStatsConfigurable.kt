@@ -8,7 +8,7 @@ import com.intellij.ui.dsl.builder.panel
 /**
  * Settings page controlling the tool-call statistics database. Lives under
  * the **Storage** parent page; the underlying file location is governed by
- * the shared storage root configured there.
+ * the storage location configured there.
  *
  * Built with the official IntelliJ Platform Kotlin UI DSL v2.
  */
@@ -33,7 +33,7 @@ class ToolStatsConfigurable :
         separator()
         row {
             comment(
-                "The database file is stored under the storage root configured on the " +
+                "The database file is stored under the storage location configured on the " +
                     "parent <b>Storage</b> page."
             )
         }

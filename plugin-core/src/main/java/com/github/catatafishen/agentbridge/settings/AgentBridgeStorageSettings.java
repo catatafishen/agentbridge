@@ -18,11 +18,10 @@ import java.util.Locale;
  * per-project data files (e.g. the tool-call statistics database and semantic
  * memory files).
  *
- * <p>Resolves to {@code ~/.agentbridge/} by default. Users can override the
- * root via the "Storage" settings page. Per-project data lives under
- * {@code <root>/projects/<project-name>-<hash>/}, keeping stats scoped to
- * individual projects while moving them out of the project tree (see issue
- * #351).</p>
+ * <p>Resolves to {@code {project}/.agentbridge/} by default. Users can choose
+ * the shared {@code ~/.agentbridge/} root or an absolute custom root via the
+ * "Storage" settings page. Shared roots namespace each project under
+ * {@code <root>/projects/<project-name>-<hash>/}.</p>
  */
 @Service(Service.Level.APP)
 @State(name = "AgentBridgeStorageSettings",
@@ -40,59 +39,97 @@ public final class AgentBridgeStorageSettings
         return PlatformApiCompat.getApplicationService(AgentBridgeStorageSettings.class);
     }
 
+    public enum StorageLocationMode {
+        PROJECT,
+        USER_HOME,
+        CUSTOM
+    }
+
     /**
-     * Returns the user-configured custom root, or {@code null} if the default
-     * should be used.
+     * Returns the user-configured custom root, or {@code null} if the custom
+     * root field is empty.
      */
     @Nullable
     public String getCustomStorageRoot() {
-        String s = myState.customStorageRoot;
+        String s = myState.getCustomStorageRoot();
         return (s == null || s.isBlank()) ? null : s.trim();
     }
 
     public void setCustomStorageRoot(@Nullable String path) {
-        myState.customStorageRoot = (path == null || path.isBlank()) ? null : path.trim();
+        myState.setCustomStorageRoot((path == null || path.isBlank()) ? null : path.trim());
+    }
+
+    @NotNull
+    public StorageLocationMode getStorageLocationMode() {
+        StorageLocationMode mode = myState.getStorageLocationMode();
+        if (mode != null) {
+            return mode;
+        }
+        return getCustomStorageRoot() == null ? StorageLocationMode.PROJECT : StorageLocationMode.CUSTOM;
+    }
+
+    public void setStorageLocationMode(@NotNull StorageLocationMode mode) {
+        myState.setStorageLocationMode(mode);
     }
 
     public boolean isToolStatsEnabled() {
-        return myState.toolStatsEnabled;
+        return myState.isToolStatsEnabled();
     }
 
     public void setToolStatsEnabled(boolean enabled) {
-        myState.toolStatsEnabled = enabled;
+        myState.setToolStatsEnabled(enabled);
     }
 
     /**
-     * The default storage root: {@code <user.home>/.agentbridge}. This matches
-     * the location already used by the embedding model cache, so all plugin
-     * data lives in one user-visible directory.
+     * The project-local default storage root: {@code {project}/.agentbridge}.
      */
     @NotNull
-    public static Path getDefaultStorageRoot() {
+    public static Path getProjectDefaultStorageRoot(@NotNull Project project) {
+        String basePath = project.getBasePath();
+        if (basePath == null) {
+            throw new IllegalStateException("Cannot resolve AgentBridge project storage: project has no base path");
+        }
+        return Paths.get(basePath, DEFAULT_DIR_NAME);
+    }
+
+    /**
+     * The shared user-home storage root: {@code <user.home>/.agentbridge}.
+     */
+    @NotNull
+    public static Path getUserHomeStorageRoot() {
         return Paths.get(System.getProperty("user.home"), DEFAULT_DIR_NAME);
     }
 
     /**
-     * Returns the effective storage root — the user override if set, otherwise
-     * the default.
-     */
-    @NotNull
-    public Path getEffectiveStorageRoot() {
-        String custom = getCustomStorageRoot();
-        return custom != null ? Paths.get(custom) : getDefaultStorageRoot();
-    }
-
-    /**
-     * Returns the per-project data directory under the effective storage root.
-     * The directory is namespaced by project name plus a hash of the project
-     * base path so that projects with identical names do not collide.
+     * Returns the per-project data directory for the selected storage mode.
+     * Project-local mode uses {@code {project}/.agentbridge}; shared roots use
+     * {@code <root>/projects/<project-name>-<hash>/} so projects with
+     * identical names do not collide.
      */
     @NotNull
     public Path getProjectStorageDir(@NotNull Project project) {
+        return switch (getStorageLocationMode()) {
+            case PROJECT -> getProjectDefaultStorageRoot(project);
+            case USER_HOME -> getNamespacedProjectStorageDir(getUserHomeStorageRoot(), project);
+            case CUSTOM -> getNamespacedProjectStorageDir(getRequiredCustomStorageRoot(), project);
+        };
+    }
+
+    @NotNull
+    private Path getRequiredCustomStorageRoot() {
+        String custom = getCustomStorageRoot();
+        if (custom == null) {
+            throw new IllegalStateException("Custom AgentBridge storage location is selected but no path is configured");
+        }
+        return Paths.get(custom);
+    }
+
+    @NotNull
+    private static Path getNamespacedProjectStorageDir(@NotNull Path root, @NotNull Project project) {
         String safeName = sanitize(project.getName());
         String hashSource = project.getBasePath() != null ? project.getBasePath() : project.getName();
         String hash = Integer.toHexString(hashSource.hashCode());
-        return getEffectiveStorageRoot().resolve(PROJECTS_DIR_NAME).resolve(safeName + "-" + hash);
+        return root.resolve(PROJECTS_DIR_NAME).resolve(safeName + "-" + hash);
     }
 
     /**
@@ -130,6 +167,7 @@ public final class AgentBridgeStorageSettings
 
     public static class State {
         private String customStorageRoot = null;
+        private StorageLocationMode storageLocationMode = null;
         private boolean toolStatsEnabled = true;
 
         public String getCustomStorageRoot() {
@@ -138,6 +176,14 @@ public final class AgentBridgeStorageSettings
 
         public void setCustomStorageRoot(String customStorageRoot) {
             this.customStorageRoot = customStorageRoot;
+        }
+
+        public StorageLocationMode getStorageLocationMode() {
+            return storageLocationMode;
+        }
+
+        public void setStorageLocationMode(StorageLocationMode storageLocationMode) {
+            this.storageLocationMode = storageLocationMode;
         }
 
         public boolean isToolStatsEnabled() {

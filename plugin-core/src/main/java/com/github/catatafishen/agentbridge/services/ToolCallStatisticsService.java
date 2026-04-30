@@ -33,9 +33,9 @@ import java.util.Set;
  * and provides query methods for the Tool Statistics UI panel.
  *
  * <p>The database location is resolved via {@link AgentBridgeStorageSettings},
- * which defaults to {@code ~/.agentbridge/projects/<project>-<hash>/tool-stats.db}
- * but can be overridden by the user. Stats collection can also be disabled
- * entirely via the same settings page (see issue #351).</p>
+ * which defaults to {@code {project}/.agentbridge/tool-stats.db}. Users can
+ * choose a shared user-home root or a custom root instead. Stats collection can
+ * also be disabled entirely via the same settings page.</p>
  *
  * <p>Subscribes to {@link PsiBridgeService#TOOL_CALL_TOPIC} on the project
  * message bus. Records are appended on the calling thread (MCP handler threads)
@@ -72,9 +72,8 @@ public final class ToolCallStatisticsService implements Disposable {
                 "Cannot initialize ToolCallStatisticsService: project has no base path");
         }
         AgentBridgeStorageSettings storageSettings = AgentBridgeStorageSettings.getInstance();
-        // Compute the target path before the enabled check so migration runs unconditionally.
-        // Even when stats collection is disabled, the legacy {project}/.agentbridge/tool-stats.db
-        // must be moved out of the project tree so it no longer pollutes VCS views.
+        // Compute the target path before the enabled check so an actively selected
+        // external location can move existing project-local data even if recording is off.
         Path dbDir = storageSettings.getProjectStorageDir(project);
         Path dbPath = dbDir.resolve(DB_FILENAME);
         migrateLegacyDb(project.getBasePath(), dbPath);
