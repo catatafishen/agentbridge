@@ -26,14 +26,10 @@ import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
 import java.awt.Dimension
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import java.util.concurrent.ExecutionException
-import javax.swing.Box
-import javax.swing.BoxLayout
-import javax.swing.JButton
-import javax.swing.JComponent
-import javax.swing.JEditorPane
-import javax.swing.ScrollPaneConstants
-import javax.swing.SwingWorker
+import javax.swing.*
 import javax.swing.event.HyperlinkEvent
 
 class ToolsConfigurable(private val project: Project) :
@@ -180,12 +176,35 @@ class ToolsConfigurable(private val project: Project) :
         toolsPanel.add(buildColorPickerSection(settings))
         toolsPanel.add(Box.createVerticalGlue())
 
+        // Revalidate when the panel's width changes. BoxLayout commits to each child's
+        // preferredSize.height before layout assigns them a real width. JBLabel with
+        // isAllowAutoWrapping=true can only recalculate its wrapped height once getWidth()>0,
+        // so we need a second layout pass after the first width arrives.
+        toolsPanel.addComponentListener(object : ComponentAdapter() {
+            private var lastWidth = -1
+            override fun componentResized(e: ComponentEvent) {
+                val w = toolsPanel.width
+                if (w > 0 && w != lastWidth) {
+                    lastWidth = w
+                    SwingUtilities.invokeLater {
+                        toolsPanel.revalidate()
+                        toolsPanel.repaint()
+                    }
+                }
+            }
+        })
+
         val scrollContent = JBPanel<JBPanel<*>>(BorderLayout()).apply {
             add(toolsPanel, BorderLayout.NORTH)
         }
         val scrollPane = JBScrollPane(scrollContent).apply {
             border = JBUI.Borders.empty()
             horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+            // Cap preferred width so the Settings dialog does not grow to fit the
+            // full single-line text width of tool descriptions. AlignX.FILL in
+            // createPanel() will expand the pane to the actual dialog width anyway;
+            // this only controls what the dialog uses when computing its own preferred size.
+            preferredSize = Dimension(JBUI.scale(580), JBUI.scale(480))
         }
         updateCounter()
         return scrollPane
