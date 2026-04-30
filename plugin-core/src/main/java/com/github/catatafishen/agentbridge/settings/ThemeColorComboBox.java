@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.settings;
 
 import com.github.catatafishen.agentbridge.ui.ThemeColor;
+import com.intellij.openapi.ui.ComboBox;
 import com.intellij.ui.JBColor;
 import org.jetbrains.annotations.Nullable;
 
@@ -12,7 +13,7 @@ import java.awt.*;
  * The selected color is theme-aware: when the IDE theme changes, the swatch automatically
  * reflects the new palette because the underlying {@link JBColor} adapts at paint time.
  */
-final class ThemeColorComboBox extends JComboBox<ThemeColor> {
+final class ThemeColorComboBox extends ComboBox<ThemeColor> {
 
     ThemeColorComboBox() {
         super(buildItems());
@@ -20,14 +21,18 @@ final class ThemeColorComboBox extends JComboBox<ThemeColor> {
         setMaximumRowCount(12);
     }
 
-    /** Returns the selected {@link ThemeColor}, or {@code null} if "Default" is selected. */
+    /**
+     * Returns the selected {@link ThemeColor}, or {@code null} if "Default" is selected.
+     */
     @Nullable
     ThemeColor getSelectedThemeColor() {
         Object sel = getSelectedItem();
         return sel instanceof ThemeColor tc ? tc : null;
     }
 
-    /** Selects the given {@link ThemeColor}, or selects "Default" if {@code null}. */
+    /**
+     * Selects the given {@link ThemeColor}, or selects "Default" if {@code null}.
+     */
     void setSelectedThemeColor(@Nullable ThemeColor color) {
         setSelectedItem(color);
     }
@@ -40,12 +45,14 @@ final class ThemeColorComboBox extends JComboBox<ThemeColor> {
         return items;
     }
 
-    /** Renders a colored swatch alongside the color name. */
+    /**
+     * Renders a colored swatch alongside the color name.
+     */
     private static final class ThemeColorRenderer extends DefaultListCellRenderer {
 
         @Override
         public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                       boolean isSelected, boolean cellHasFocus) {
+                                                      boolean isSelected, boolean cellHasFocus) {
             JLabel label = (JLabel) super.getListCellRendererComponent(
                 list, value, index, isSelected, cellHasFocus);
             if (value == null) {
@@ -60,7 +67,9 @@ final class ThemeColorComboBox extends JComboBox<ThemeColor> {
         }
     }
 
-    /** A small rounded-square icon painted in the given theme color. */
+    /**
+     * A small rounded-square icon painted in the given theme color.
+     */
     private static final class SwatchIcon implements Icon {
         private static final int SIZE = 12;
         private final JBColor color;
