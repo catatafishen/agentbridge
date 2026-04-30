@@ -406,24 +406,33 @@ public final class PlatformApiCompat {
             .getCurrentUIThemeLookAndFeel().isDark();
     }
 
-    /**
-     * Opens the Git Log tab and selects the commit with {@code fullHash} once the VCS log has
-     * indexed it. Registers a {@link com.intellij.vcs.log.data.DataPackChangeListener} and waits
-     * for the new commit to appear in the storage before calling
-     * {@code showRevisionInMainLog} — this avoids the "commit could not be found" error bubble
-     * that occurs when the listener fires for an intermediate data-pack update (e.g., branch
-     * pointer refresh) before the new commit is actually indexed.
-     * <p>
-     * <b>Why extracted:</b> {@code DataPackChangeListener} is an internal API whose SAM method
-     * signature changed between IDE versions (DataPack → VcsLogGraphData). Using a dynamic
-     * {@link java.lang.reflect.Proxy} avoids {@link AbstractMethodError} at runtime.
-     * <p>
-     * Must be called on the EDT.
-     *
-     * @param project  the current project
-     * @param fullHash the full 40-character commit SHA
-     */
     public static void showRevisionInLogAfterRefresh(@NotNull Project project, @NotNull String fullHash) {
+        showRevisionInLogAfterRefresh(project, fullHash, null);
+    }
+
+    /**
+     * Repo-aware variant. {@code repoRootPath} is the absolute root of the git repository
+     * the commit was made in — used both to refresh the correct {@link com.intellij.vcs.log.data.VcsLogData}
+     * root in multi-repo projects, and to disambiguate the navigation target via
+     * {@link com.intellij.vcs.log.impl.VcsProjectLog#showRevisionInMainLog(Project, com.intellij.openapi.vfs.VirtualFile, com.intellij.vcs.log.Hash)}.
+     *
+     * <p><b>Why the root matters</b>: in multi-repo projects, refreshing only the project base
+     * root never indexes the new commit in the actual repo's storage. The
+     * {@link com.intellij.vcs.log.data.DataPackChangeListener} then never sees the commit,
+     * the 10-second cleanup fires, and meanwhile any unrelated refresh can race
+     * {@link com.intellij.vcs.log.impl.VcsProjectLog#showRevisionInMainLog(Project, com.intellij.vcs.log.Hash)}
+     * into selecting an older commit and emitting a "commit not found" bubble. See
+     * {@code docs/bugs/COMMIT-NOT-FOUND-IN-LOG-BUG.md}.
+     *
+     * @param project      the current project
+     * @param fullHash     the full 40-character commit SHA
+     * @param repoRootPath absolute root path of the repo the commit was made in;
+     *                     {@code null} means "use the legacy project-base resolution"
+     *                     (only suitable for entry points like chat-chip clicks that
+     *                     have no repo context).
+     */
+    public static void showRevisionInLogAfterRefresh(
+        @NotNull Project project, @NotNull String fullHash, @Nullable String repoRootPath) {
         var hash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
         var vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project);
         var data = vcsLog.getDataManager();
@@ -434,66 +443,44 @@ public final class PlatformApiCompat {
             return;
         }
 
+        com.intellij.openapi.vfs.VirtualFile repoRootVf =
+            resolveLogProviderRoot(data, project, repoRootPath);
+        if (repoRootVf == null) {
+            // Repo isn't a registered VCS-log provider (e.g. detected-but-unregistered subfolder
+            // git repo). The log can't navigate to commits it doesn't index — silently skip.
+            return;
+        }
+
+        // Capture the current graph data BEFORE registering the listener. We use this as the
+        // freshness baseline: navigation only fires when a NEW VcsLogGraphData has been published
+        // (i.e. the listener observed a refresh, or the immediate race-check sees that the
+        // graph reference has already changed). A pure storage check is insufficient because
+        // VcsLogStorage.containsCommit can return true while the new DataPack/PermanentGraph
+        // is still being built, in which case showRevisionInMainLog falls back to the previous
+        // HEAD selection and emits a "commit not found" bubble. See COMMIT-NOT-FOUND-IN-LOG-BUG.md.
+        com.intellij.vcs.log.data.VcsLogGraphData initialGraph = data.getGraphData();
         var navigated = new java.util.concurrent.atomic.AtomicBoolean(false);
 
-        // Use Proxy instead of a lambda to avoid AbstractMethodError when the SAM method
-        // signature changes between IDE versions (DataPack → VcsLogGraphData).
         com.intellij.vcs.log.data.DataPackChangeListener listener =
-            (com.intellij.vcs.log.data.DataPackChangeListener) java.lang.reflect.Proxy.newProxyInstance(
-                com.intellij.vcs.log.data.DataPackChangeListener.class.getClassLoader(),
-                new Class<?>[]{com.intellij.vcs.log.data.DataPackChangeListener.class},
-                (proxy, method, args) -> {
-                    // Handle standard Object methods required by the Proxy contract.
-                    // Returning null for equals/hashCode would cause NullPointerException
-                    // because they unbox to primitives at the call site.
-                    switch (method.getName()) {
-                        case "equals" -> {
-                            return args != null && args.length > 0 && proxy == args[0];
-                        }
-                        case "hashCode" -> {
-                            return System.identityHashCode(proxy);
-                        }
-                        case "toString" -> {
-                            return "DataPackChangeListenerProxy@" + Integer.toHexString(System.identityHashCode(proxy));
-                        }
-                        case "onDataPackChange" -> { /* handled below */ }
-                        default -> {
-                            return null;
-                        }
-                    }
-
-                    // The data pack can change multiple times during a refresh (e.g., once when
-                    // branch pointers update, again when new commits are indexed). Only navigate
-                    // after the new commit is actually present in the VCS log storage — otherwise
-                    // showRevisionInMainLog shows a "commit could not be found" error bubble.
-                    if (!isCommitIndexed(data, hash)) return null;
-
-                    if (!navigated.compareAndSet(false, true)) return null;
-                    data.removeDataPackChangeListener(
-                        (com.intellij.vcs.log.data.DataPackChangeListener) proxy);
-                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                        // This fires asynchronously after VCS refresh — the FocusGuard installed at
-                        // tool-call start is long gone by now. Skip the navigation when the user is
-                        // in the chat prompt so the VCS Log doesn't steal keyboard focus from them.
-                        if (PsiBridgeService.isChatToolWindowActive(project)) return;
-                        com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash);
-                    });
-                    return null;
-                });
+            buildDataPackListener(project, data, hash, repoRootVf, initialGraph, navigated);
 
         data.addDataPackChangeListener(listener);
-        refreshVcsLogForProject(project, data);
+        data.refresh(java.util.List.of(repoRootVf));
 
-        // Race-condition guard: the commit may have already been indexed between getDataManager()
-        // and addDataPackChangeListener (e.g., IntelliJ auto-refreshed from a filesystem event).
-        // In that case the listener would never fire, so check immediately after registering it.
-        if (isCommitIndexed(data, hash) && navigated.compareAndSet(false, true)) {
+        // Race-condition guard: a fresh graph may have been published between getDataManager()
+        // and addDataPackChangeListener (e.g., Git4Idea repository update fired immediately
+        // after our commit). In that case the listener will never fire for our commit, so we
+        // check now. We require BOTH a fresh graph reference (to avoid the storage-only race
+        // documented above) AND that the commit is indexed.
+        if (data.getGraphData() != initialGraph
+            && isCommitIndexed(data, hash)
+            && navigated.compareAndSet(false, true)) {
             data.removeDataPackChangeListener(listener);
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                // Same guard as the DataPackChangeListener path above — skip VCS Log
-                // navigation when the user is in the chat prompt to avoid focus theft.
+                // Skip VCS Log navigation when the user is in the chat prompt to avoid focus
+                // theft. See FOCUS-STEALING-BUG.md.
                 if (PsiBridgeService.isChatToolWindowActive(project)) return;
-                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, hash);
+                com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, repoRootVf, hash);
             });
             return;
         }
@@ -505,6 +492,97 @@ public final class PlatformApiCompat {
                     data.removeDataPackChangeListener(listener);
                 }
             }, 10, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    /**
+     * Resolves the {@link com.intellij.openapi.vfs.VirtualFile} for the repo root that should
+     * be refreshed/navigated. Returns {@code null} if the requested root is not a VCS-log
+     * provider (e.g. unregistered subfolder repo) — callers must skip navigation in that case.
+     *
+     * <p>When {@code repoRootPath} is {@code null} (legacy entry points), falls back to the
+     * project's base path if it is a log provider; otherwise returns the first registered
+     * log provider root.
+     */
+    private static @Nullable com.intellij.openapi.vfs.VirtualFile resolveLogProviderRoot(
+        @NotNull com.intellij.vcs.log.data.VcsLogData data,
+        @NotNull Project project,
+        @Nullable String repoRootPath) {
+        var providers = data.getLogProviders();
+        if (providers.isEmpty()) return null;
+
+        if (repoRootPath != null) {
+            for (var root : providers.keySet()) {
+                if (root.getPath().equals(repoRootPath)) return root;
+            }
+            return null;
+        }
+
+        String basePath = project.getBasePath();
+        if (basePath != null) {
+            for (var root : providers.keySet()) {
+                if (root.getPath().equals(basePath)) return root;
+            }
+        }
+        return providers.keySet().iterator().next();
+    }
+
+    /**
+     * Builds the {@link com.intellij.vcs.log.data.DataPackChangeListener} via dynamic Proxy.
+     *
+     * <p><b>Why Proxy</b>: {@code DataPackChangeListener} is an internal API whose SAM method
+     * signature changed between IDE versions (DataPack → VcsLogGraphData). Using a dynamic
+     * {@link java.lang.reflect.Proxy} avoids {@link AbstractMethodError} at runtime.
+     */
+    private static com.intellij.vcs.log.data.DataPackChangeListener buildDataPackListener(
+        @NotNull Project project,
+        @NotNull com.intellij.vcs.log.data.VcsLogData data,
+        @NotNull com.intellij.vcs.log.Hash hash,
+        @NotNull com.intellij.openapi.vfs.VirtualFile repoRootVf,
+        @NotNull com.intellij.vcs.log.data.VcsLogGraphData initialGraph,
+        @NotNull java.util.concurrent.atomic.AtomicBoolean navigated) {
+        return (com.intellij.vcs.log.data.DataPackChangeListener) java.lang.reflect.Proxy.newProxyInstance(
+            com.intellij.vcs.log.data.DataPackChangeListener.class.getClassLoader(),
+            new Class<?>[]{com.intellij.vcs.log.data.DataPackChangeListener.class},
+            (proxy, method, args) -> {
+                // Handle standard Object methods required by the Proxy contract.
+                // Returning null for equals/hashCode would NPE because they unbox to primitives.
+                switch (method.getName()) {
+                    case "equals" -> {
+                        return args != null && args.length > 0 && proxy == args[0];
+                    }
+                    case "hashCode" -> {
+                        return System.identityHashCode(proxy);
+                    }
+                    case "toString" -> {
+                        return "DataPackChangeListenerProxy@"
+                            + Integer.toHexString(System.identityHashCode(proxy));
+                    }
+                    case "onDataPackChange" -> { /* handled below */ }
+                    default -> {
+                        return null;
+                    }
+                }
+
+                // Only navigate after a NEW graph has been published AND the new commit is
+                // indexed. The graph-reference check is critical: VcsLogStorage.containsCommit
+                // can become true before the new PermanentGraph is built, and navigating in
+                // that window selects the previous HEAD and emits a "not found" bubble.
+                com.intellij.vcs.log.data.VcsLogGraphData currentGraph = data.getGraphData();
+                if (currentGraph == initialGraph) return null;
+                if (!isCommitIndexed(data, hash)) return null;
+
+                if (!navigated.compareAndSet(false, true)) return null;
+                data.removeDataPackChangeListener(
+                    (com.intellij.vcs.log.data.DataPackChangeListener) proxy);
+                com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                    // Skip when the user is in the chat prompt to avoid focus theft after a
+                    // long-running tool call. See FOCUS-STEALING-BUG.md.
+                    if (PsiBridgeService.isChatToolWindowActive(project)) return;
+                    com.intellij.vcs.log.impl.VcsProjectLog
+                        .showRevisionInMainLog(project, repoRootVf, hash);
+                });
+                return null;
+            });
     }
 
     private static boolean isCommitIndexed(

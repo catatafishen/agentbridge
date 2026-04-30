@@ -113,7 +113,7 @@ public final class GitLogTool extends GitTool {
         }
 
         String result = runGitIn(root, cmdArgs.toArray(String[]::new));
-        showFirstCommitInLog(result);
+        showFirstCommitInLog(root, result);
         return result;
     }
 

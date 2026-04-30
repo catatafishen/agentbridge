@@ -584,16 +584,21 @@ public abstract class GitTool extends Tool {
     // ── VCS Log follow-along ─────────────────────────────────
 
     /**
-     * After a successful commit, open the Git Log tab and navigate to HEAD.
-     * Uses {@code tw.show()} instead of {@code tw.activate()} when the chat prompt has focus,
+     * After a successful commit, open the Git Log tab and navigate to HEAD of {@code repoRoot}.
+     * Reads HEAD from the supplied repo root (not the project base) so multi-repo commits
+     * navigate to the correct commit. See {@code docs/bugs/COMMIT-NOT-FOUND-IN-LOG-BUG.md}.
+     *
+     * <p>Uses {@code tw.show()} instead of {@code tw.activate()} when the chat prompt has focus,
      * preventing keystroke leaks to the VCS tool window.
+     *
+     * @param repoRoot absolute path of the repository the commit was made in
      */
-    protected void showNewCommitInLog() {
+    protected void showNewCommitInLog(@NotNull String repoRoot) {
         if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
 
         ApplicationManager.getApplication().executeOnPooledThread(() -> {
             try {
-                String fullHash = runGit("rev-parse", "HEAD").trim();
+                String fullHash = runGitIn(repoRoot, "rev-parse", "HEAD").trim();
                 if (fullHash.length() != 40) return;
 
                 EdtUtil.invokeLater(() -> {
@@ -607,7 +612,7 @@ public abstract class GitTool extends Tool {
                         }
                     }
 
-                    PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash);
+                    PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash, repoRoot);
                 });
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -621,15 +626,18 @@ public abstract class GitTool extends Tool {
      * Extracts the first full commit hash from git output and navigates to it in the VCS Log tab.
      * Uses {@link PlatformApiCompat#showRevisionInLogAfterRefresh} to wait for the VCS log to
      * index the commit before navigating — avoids "commit could not be found" errors.
+     *
+     * @param repoRoot absolute path of the repository the git command was run in;
+     *                 routes the navigation to the correct repo in multi-repo projects
      */
-    protected void showFirstCommitInLog(String gitOutput) {
+    protected void showFirstCommitInLog(@NotNull String repoRoot, String gitOutput) {
         if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
         if (gitOutput == null || gitOutput.isEmpty()) return;
         String hash = extractFirstCommitHash(gitOutput);
         if (hash == null) return;
         EdtUtil.invokeLater(() -> {
             try {
-                PlatformApiCompat.showRevisionInLogAfterRefresh(project, hash);
+                PlatformApiCompat.showRevisionInLogAfterRefresh(project, hash, repoRoot);
             } catch (Exception ignored) {
                 // best-effort UI follow-along
             }

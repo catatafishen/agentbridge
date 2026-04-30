@@ -145,9 +145,13 @@ public final class GitCommitTool extends GitTool {
         cmdArgs.add(args.get(PARAM_MESSAGE).getAsString());
 
         String result = runGitIn(root, cmdArgs.toArray(String[]::new));
-        showNewCommitInLog();
 
         if (result.startsWith("Error")) return result;
+
+        // Navigate the VCS Log to the new commit only after a successful commit. Doing this
+        // before the error check would open/refresh the log to the previous HEAD on failure
+        // and look identical to the "commit not found" bug we are guarding against.
+        showNewCommitInLog(root);
 
         // Prune approved review rows for files that are now part of this commit.
         // Run on EDT-safe pool: AgentEditSession mutations + listeners are EDT-safe.

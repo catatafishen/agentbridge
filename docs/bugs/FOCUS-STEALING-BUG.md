@@ -1,5 +1,12 @@
 # Focus-Stealing Bug — Issue #275
 
+> **See also**: [`COMMIT-NOT-FOUND-IN-LOG-BUG.md`](COMMIT-NOT-FOUND-IN-LOG-BUG.md) — the
+> follow-along VCS Log navigation interacts with the focus guards described here.
+> Any change that tightens or relaxes the `isChatToolWindowActive(project)` guard
+> in the `git_commit` / `git_log` / `git_show` follow-along path can regress one of
+> these two bugs in opposite directions. Read both docs before editing the shared
+> wiring.
+
 **Issue**: https://github.com/catatafishen/agentbridge/issues/275  
 **Status**: Under investigation — mitigations in PR #276, PR #280, Attempt 11 (VetoableChangeListener FocusGuard), not
 confirmed fixed  
