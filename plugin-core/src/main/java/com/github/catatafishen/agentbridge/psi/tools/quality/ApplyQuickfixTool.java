@@ -218,12 +218,21 @@ public final class ApplyQuickfixTool extends QualityTool {
 
         var fix = fixes[Math.min(fixIndex, fixes.length - 1)];
 
-        com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
-            project,
-            () -> fix.applyFix(project, targetProblem),
-            "Apply Quick Fix: " + fix.getName(),
-            null
+        // Wrap in PopupInterceptor so a quick-fix that opens a JBPopup chooser (e.g. a
+        // class-import disambiguation) cannot freeze the EDT — see PopupInterceptor and
+        // .agent-work/freeze-investigation-2026-04-30.md.
+        // No editor available here → null owner falls back to a global frame scan.
+        PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(null,
+            () -> com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                project,
+                () -> fix.applyFix(project, targetProblem),
+                "Apply Quick Fix: " + fix.getName(),
+                null
+            )
         );
+        if (popupResult.popupWasOpened()) {
+            return PopupInterceptor.formatPopupBlockedError("apply_quickfix:" + fix.getName(), popupResult);
+        }
 
         PsiDocumentManager.getInstance(project).commitAllDocuments();
         FileDocumentManager.getInstance().saveAllDocuments();

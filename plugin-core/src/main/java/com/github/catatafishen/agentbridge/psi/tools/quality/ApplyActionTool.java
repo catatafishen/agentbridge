@@ -221,7 +221,13 @@ public final class ApplyActionTool extends QualityTool {
 
     private String applyAsDryRun(String actionName, String pathStr, String before,
                                  ActionContext ctx, VirtualFile vf) {
-        invokeRespectingWriteAction(actionName, ctx);
+        PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(
+            ctx.editor().getComponent(),
+            () -> invokeRespectingWriteAction(actionName, ctx)
+        );
+        if (popupResult.popupWasOpened()) {
+            return PopupInterceptor.formatPopupBlockedError(actionName, popupResult);
+        }
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
         String after = ctx.doc().getText();
         String diff = DiffUtils.unifiedDiff(before, after, pathStr);
@@ -237,10 +243,17 @@ public final class ApplyActionTool extends QualityTool {
                                  String before, ActionContext ctx) {
         VirtualFile vf = FileDocumentManager.getInstance().getFile(ctx.doc());
         FileTool.notifyBeforeEdit(project, vf, ctx.doc());
+        PopupInterceptor.Result popupResult;
         try {
-            invokeRespectingWriteAction(actionName, ctx);
+            popupResult = PopupInterceptor.runDetectingPopups(
+                ctx.editor().getComponent(),
+                () -> invokeRespectingWriteAction(actionName, ctx)
+            );
         } finally {
             FileTool.notifyEditComplete();
+        }
+        if (popupResult.popupWasOpened()) {
+            return PopupInterceptor.formatPopupBlockedError(actionName, popupResult);
         }
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
         FileDocumentManager.getInstance().saveDocument(ctx.doc());

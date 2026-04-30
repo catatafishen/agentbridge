@@ -23,6 +23,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Runs an intention action and intercepts any dialog it opens, returning the dialog options
@@ -145,14 +146,27 @@ public final class GetActionOptionsTool extends QualityTool {
         // Capture document text before running the action
         String before = doc.getText();
 
-        // Run the action and intercept any dialog it opens
-        DialogInterceptor.DialogInfo dialogInfo = DialogInterceptor.runAndCapture(
-            () -> invokeRespectingWriteAction(actionName, action, editor, psiFile)
+        // Run the action and intercept any dialog OR popup it opens.
+        // - DialogInterceptor handles modal Dialogs (radio/checkbox forms with OK button).
+        // - PopupInterceptor handles JBPopup choosers (e.g. "select which Cell to import"),
+        //   which would otherwise pump a nested event loop and freeze the EDT.
+        // See .agent-work/freeze-investigation-2026-04-30.md.
+        AtomicReference<DialogInterceptor.DialogInfo> dialogRef = new AtomicReference<>();
+        PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(
+            editor.getComponent(),
+            () -> dialogRef.set(DialogInterceptor.runAndCapture(
+                () -> invokeRespectingWriteAction(actionName, action, editor, psiFile)
+            ))
         );
 
         PsiDocumentManager.getInstance(project).commitAllDocuments();
         String after = doc.getText();
 
+        if (popupResult.popupWasOpened()) {
+            return PopupInterceptor.formatPopupBlockedError(actionName, popupResult);
+        }
+
+        DialogInterceptor.DialogInfo dialogInfo = dialogRef.get();
         if (dialogInfo != null) {
             // A dialog was intercepted — no changes were committed (dialog was cancelled)
             return formatDialogOptions(actionName, pathStr, targetLine, dialogInfo);
