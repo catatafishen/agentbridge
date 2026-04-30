@@ -26,6 +26,7 @@ jobs:
       contents: write
       id-token: write
       attestations: write
+      packages: write
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40  # v2.19.0
@@ -224,3 +225,17 @@ jobs:
             "$ARTIFACTS_DIR"/*.zip \
             "$ARTIFACTS_DIR"/*.sigstore.json \
             "$ARTIFACTS_DIR"/provenance.intoto.jsonl
+
+      - name: Publish plugin ZIPs to GitHub Packages
+        if: steps.version.outputs.skip != 'true'
+        env:
+          PLUGIN_VERSION: ${{ steps.version.outputs.version }}
+          CHANGELOG_FILE: build/changelog.html
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Publish to GitHub Packages (Maven layout) so users have a real
+          # package-registry distribution channel in addition to the GitHub
+          # release ZIP and the JetBrains Marketplace listing. Also gives
+          # OpenSSF Scorecard's "Packaging" check something to detect.
+          gradle :plugin-core:publish :plugin-experimental:publish --no-daemon --quiet

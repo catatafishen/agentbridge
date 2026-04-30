@@ -5,6 +5,7 @@ plugins {
     id("org.jetbrains.kotlin.jvm") version "2.3.20"
     id("org.jetbrains.intellij.platform") version "2.14.0"
     jacoco
+    `maven-publish`
 }
 
 repositories {
@@ -189,5 +190,42 @@ tasks.named<JacocoReport>("jacocoTestReport") {
     reports {
         xml.required.set(true)
         html.required.set(true)
+    }
+}
+
+// Publish the experimental plugin ZIP to GitHub Packages alongside plugin-core.
+// See plugin-core/build.gradle.kts for the rationale (Scorecard packaging detection,
+// real package-registry distribution channel for users).
+configure<PublishingExtension> {
+    publications {
+        create<MavenPublication>("pluginZip") {
+            groupId = "com.github.catatafishen"
+            artifactId = "ide-agent-for-copilot-experimental"
+            version = project.version.toString()
+            artifact(tasks.named("buildPlugin")) {
+                extension = "zip"
+            }
+            pom {
+                name.set("IDE Agent for Copilot (Experimental)")
+                description.set("Experimental variant of the IntelliJ plugin integrating GitHub Copilot via ACP/MCP.")
+                url.set("https://github.com/catatafishen/agentbridge")
+                licenses {
+                    license {
+                        name.set("MIT")
+                        url.set("https://github.com/catatafishen/agentbridge/blob/master/LICENSE")
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/catatafishen/agentbridge")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: ""
+            }
+        }
     }
 }

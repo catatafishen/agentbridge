@@ -7,6 +7,7 @@ plugins {
     kotlin("jvm") version "2.3.20"
     id("org.jetbrains.intellij.platform") version "2.14.0"
     jacoco
+    `maven-publish`
 }
 
 sourceSets {
@@ -587,5 +588,44 @@ tasks.register("printFuzzClasspath") {
     dependsOn("testClasses")
     doLast {
         println(sourceSets.test.get().runtimeClasspath.asPath)
+    }
+}
+
+// Publish the built plugin ZIP to GitHub Packages so users (and tooling like
+// OpenSSF Scorecard) can discover and consume the plugin via a real package
+// registry, in addition to the GitHub Release and the JetBrains Marketplace.
+// Uses configure<PublishingExtension> because the IntelliJ Platform extension
+// also exposes a `publishing { ... }` DSL that would otherwise be selected.
+configure<PublishingExtension> {
+    publications {
+        create<MavenPublication>("pluginZip") {
+            groupId = "com.github.catatafishen"
+            artifactId = "ide-agent-for-copilot"
+            version = project.version.toString()
+            artifact(tasks.named("buildPlugin")) {
+                extension = "zip"
+            }
+            pom {
+                name.set("IDE Agent for Copilot")
+                description.set("IntelliJ plugin integrating GitHub Copilot via ACP/MCP.")
+                url.set("https://github.com/catatafishen/agentbridge")
+                licenses {
+                    license {
+                        name.set("MIT")
+                        url.set("https://github.com/catatafishen/agentbridge/blob/master/LICENSE")
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/catatafishen/agentbridge")
+            credentials {
+                username = System.getenv("GITHUB_ACTOR") ?: ""
+                password = System.getenv("GITHUB_TOKEN") ?: ""
+            }
+        }
     }
 }
