@@ -1,13 +1,25 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
+import com.intellij.openapi.ui.popup.ListPopupStep;
+import com.intellij.ui.popup.list.ListPopupImpl;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
+import javax.swing.JComponent;
+import javax.swing.JLabel;
+import javax.swing.JRootPane;
+import java.awt.AWTEvent;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.Frame;
+import java.awt.Toolkit;
+import java.awt.Window;
 import java.awt.event.AWTEventListener;
 import java.awt.event.WindowEvent;
 import java.util.ArrayList;
@@ -18,39 +30,47 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Detects and cancels {@link JBPopup quick-fix / chooser popups} that an
- * {@link com.intellij.codeInsight.intention.IntentionAction} opens during {@code invoke()}.
+ * Detects {@link JBPopup} popups opened during an
+ * {@link com.intellij.codeInsight.intention.IntentionAction} invocation and either cancels them
+ * (default), snapshots their structure for later replay, or programmatically selects a captured
+ * value to drive the popup to completion.
  *
  * <p><b>Why this exists — DO NOT REMOVE without reading
- * {@code .agent-work/freeze-investigation-2026-04-30.md}.</b>
+ * {@code .agent-work/freeze-investigation-2026-04-30.md} and
+ * {@code .agent-work/popup-interaction-design-2026-04-30.md}.</b>
  *
- * <p>When an {@code IntentionAction} like {@code "Import class 'Cell'"} cannot decide what to do
+ * <p>When an {@code IntentionAction} like {@code "Import class 'Cell'"} cannot decide
  * non-interactively (e.g. multiple {@code Cell} classes are importable), it opens a heavyweight
- * {@link JBPopup} class chooser and pumps a <em>nested AWT event loop</em> on the EDT until the
- * user picks an option. From outside that nested loop, the EDT looks frozen — every other tool
- * call queued via {@code invokeLater} starves, and the entire IDE becomes unresponsive.
- * {@link com.github.catatafishen.agentbridge.psi.EdtUtil#describeModalBlocker EdtUtil} can
- * <em>diagnose</em> that situation after the fact (after the 1.5 s modal-poll timeout), but the
- * EDT is still stuck inside the popup loop because nothing has cancelled the popup.
+ * {@link JBPopup} chooser and pumps a <em>nested AWT event loop</em> on the EDT until the user
+ * picks. From outside that nested loop, the EDT looks frozen — every other tool call queued via
+ * {@code invokeLater} starves, and the entire IDE becomes unresponsive.
  *
- * <p>This interceptor closes that gap. It installs a global AWT {@code WINDOW_OPENED} listener,
- * runs the action, and — when a new popup window appears <em>inside</em> the nested loop —
- * looks up the corresponding {@link JBPopup} via {@link JBPopupFactory#getChildPopups} and calls
- * {@link JBPopup#cancel()} on the EDT. {@code cancel()} disposes the popup synchronously, which
- * exits the nested event loop, and the original {@code action.invoke()} call returns to the
- * caller. The caller can then report a structured "popup blocked" error to the agent so it can
- * choose a different strategy ({@code edit_text}, ambiguous-import pre-flight, etc.).
+ * <h2>Handler modes</h2>
+ * <ul>
+ *   <li>{@link PopupHandler.Cancel} — the original PR #363 behavior: cancel the popup, return a
+ *       {@code popupWasOpened=true} result. The caller surfaces a structured error to the agent
+ *       and suggests {@code edit_text}.</li>
+ *   <li>{@link PopupHandler.Snapshot} — extract a {@link PopupSnapshot} via
+ *       {@link PopupContentExtractor}, push it through {@link PopupHandler.Snapshot#sink()},
+ *       then cancel. The caller stores the snapshot in {@code PendingPopupService} and tells the
+ *       agent it can call {@code popup_respond}.</li>
+ *   <li>{@link PopupHandler.SelectByValue} — given a {@code valueId} captured by a prior
+ *       Snapshot run, locate the matching value in the popup's {@link ListPopupStep} and invoke
+ *       {@link ListPopupImpl#selectAndExecuteValue(Object)} via
+ *       {@link ApplicationManager#invokeLater(Runnable, ModalityState)} with
+ *       {@link ModalityState#any()} (per the rubber-duck review: dispatching the selection
+ *       inside the {@code WINDOW_OPENED} listener can race popup initialisation).</li>
+ * </ul>
  *
- * <p>The detection is <em>scoped</em> to a chosen owner component (typically the editor's
- * root pane). We snapshot the popups visible under that owner before invoking the action and
- * cancel only popups that were not present in the snapshot. This avoids cancelling unrelated
- * popups that happen to be open in the IDE at the same time (e.g. a tool-window quick search).
+ * <p>The detection is <em>scoped</em> to a chosen owner component (typically the editor's root
+ * pane). We snapshot popups visible under that owner before invoking the action and only act on
+ * popups not present in the baseline. This avoids touching unrelated popups (e.g. tool-window
+ * quick search).
  *
- * <p>This handles the heavyweight-popup freeze case only. Lightweight popups (overlaid on
- * {@link javax.swing.JLayeredPane} without a nested event loop) cannot freeze the EDT and are
- * intentionally out of scope.
+ * <p>Lightweight popups (overlaid on {@link javax.swing.JLayeredPane} without a nested event
+ * loop) cannot freeze the EDT and are intentionally out of scope.
  *
- * <p>All methods must be called from the EDT.
+ * <p>All public methods must be called from the EDT.
  *
  * @see DialogInterceptor for the analogous pattern targeting modal {@link java.awt.Dialog}s.
  */
@@ -60,8 +80,24 @@ final class PopupInterceptor {
 
     /**
      * Snapshot returned to the caller after invocation.
+     *
+     * @param popupWasOpened whether at least one new popup opened during {@code action.run()}.
+     * @param popupTitles    titles of the new popups (best-effort).
+     * @param cancelled      whether <em>all</em> intercepted popups were dismissed (only
+     *                       meaningful in {@link PopupHandler.Cancel} and
+     *                       {@link PopupHandler.Snapshot} modes).
+     * @param snapshot       structural extraction of the first intercepted popup; non-null only
+     *                       when handler is {@link PopupHandler.Snapshot} and extraction
+     *                       succeeded.
+     * @param selectionScheduled true when a {@link PopupHandler.SelectByValue} replay scheduled
+     *                       a selection via {@code invokeLater}; the popup will close
+     *                       asynchronously after this method returns.
      */
-    record Result(boolean popupWasOpened, @NotNull List<String> popupTitles, boolean cancelled) {
+    record Result(boolean popupWasOpened,
+                  @NotNull List<String> popupTitles,
+                  boolean cancelled,
+                  @Nullable PopupSnapshot snapshot,
+                  boolean selectionScheduled) {
 
         @NotNull
         String describe() {
@@ -76,20 +112,34 @@ final class PopupInterceptor {
     }
 
     /**
-     * Runs {@code action}, cancelling any new {@link JBPopup} that opens under {@code owner}'s
-     * window during invocation. Returns a {@link Result} describing what was caught (if anything).
-     *
-     * @param owner  optional component used to scope popup detection. Pass the editor component
-     *               or root pane. {@code null} falls back to a global scan across all frames.
-     * @param action the EDT-bound action whose popup-opening side-effect should be intercepted.
+     * Convenience overload that uses {@link PopupHandler.Cancel}. Maintained for callers that
+     * want PR #363's original behavior.
      */
     @NotNull
     static Result runDetectingPopups(@Nullable Component owner, @NotNull Runnable action) {
-        // Snapshot the popups already open under this owner so we cancel ONLY new ones.
+        return runDetectingPopups(owner, new PopupHandler.Cancel(), action);
+    }
+
+    /**
+     * Runs {@code action} with the given {@link PopupHandler}. See the class Javadoc for the
+     * handler-mode semantics.
+     *
+     * @param owner   optional component used to scope popup detection. Pass the editor component
+     *                or root pane. {@code null} falls back to a global scan across all frames.
+     * @param handler what to do when a popup is detected.
+     * @param action  the EDT-bound action whose popup-opening side-effect should be intercepted.
+     */
+    @NotNull
+    static Result runDetectingPopups(@Nullable Component owner,
+                                     @NotNull PopupHandler handler,
+                                     @NotNull Runnable action) {
         Set<JBPopup> baseline = collectActivePopups(owner);
         AtomicReference<List<JBPopup>> capturedRef = new AtomicReference<>(List.of());
+        AtomicReference<PopupSnapshot> snapshotRef = new AtomicReference<>();
+        AtomicReference<Boolean> selectionScheduledRef = new AtomicReference<>(false);
 
-        AWTEventListener listener = event -> onWindowEvent(event, owner, baseline, capturedRef);
+        AWTEventListener listener = event -> onWindowEvent(
+            event, owner, baseline, capturedRef, handler, snapshotRef, selectionScheduledRef);
 
         Toolkit.getDefaultToolkit().addAWTEventListener(listener, AWTEvent.WINDOW_EVENT_MASK);
         try {
@@ -100,22 +150,52 @@ final class PopupInterceptor {
 
         List<JBPopup> captured = capturedRef.get();
         if (captured.isEmpty()) {
-            return new Result(false, List.of(), false);
+            return new Result(false, List.of(), false, null, false);
         }
 
         List<String> titles = new ArrayList<>(captured.size());
-        boolean allCancelled = cancelAndCollectTitles(captured, titles);
-        return new Result(true, List.copyOf(titles), allCancelled);
+        for (JBPopup popup : captured) {
+            titles.add(extractPopupTitle(popup));
+        }
+
+        boolean isSelect = handler instanceof PopupHandler.SelectByValue;
+        boolean allCancelled = false;
+        if (!isSelect) {
+            // Cancel/Snapshot: ensure popups are gone (defensive — listener may have raced).
+            allCancelled = ensureCancelled(captured);
+        }
+
+        return new Result(
+            true,
+            List.copyOf(titles),
+            allCancelled,
+            snapshotRef.get(),
+            Boolean.TRUE.equals(selectionScheduledRef.get())
+        );
     }
 
-    private static void onWindowEvent(@NotNull AWTEvent event, @Nullable Component owner,
+    private static boolean ensureCancelled(@NotNull List<JBPopup> popups) {
+        boolean allCancelled = true;
+        for (JBPopup popup : popups) {
+            if (!tryCancel(popup) || !popup.isDisposed()) {
+                allCancelled = false;
+            }
+        }
+        return allCancelled;
+    }
+
+    private static void onWindowEvent(@NotNull AWTEvent event,
+                                      @Nullable Component owner,
                                       @NotNull Set<JBPopup> baseline,
-                                      @NotNull AtomicReference<List<JBPopup>> capturedRef) {
+                                      @NotNull AtomicReference<List<JBPopup>> capturedRef,
+                                      @NotNull PopupHandler handler,
+                                      @NotNull AtomicReference<PopupSnapshot> snapshotRef,
+                                      @NotNull AtomicReference<Boolean> selectionScheduledRef) {
         if (!(event instanceof WindowEvent we) || we.getID() != WindowEvent.WINDOW_OPENED) {
             return;
         }
         if (!capturedRef.get().isEmpty()) {
-            return; // already captured one set; ignore further window-opens
+            return;
         }
         try {
             List<JBPopup> newPopups = diffNewPopups(owner, baseline);
@@ -123,31 +203,105 @@ final class PopupInterceptor {
                 return;
             }
             capturedRef.set(newPopups);
-            // cancel() must run on the EDT inside the popup's nested event loop so the loop
-            // exits and action.invoke() returns. The AWT listener fires on the EDT, so we
-            // call cancel() right here — the very same EDT cycle the popup opened in.
-            for (JBPopup popup : newPopups) {
-                tryCancel(popup);
-            }
+            handlePopupCaptured(newPopups, handler, snapshotRef, selectionScheduledRef);
         } catch (Exception | LinkageError t) {
-            // Defensive: never let a diagnostic listener crash the EDT.
             LOG.warn("PopupInterceptor: failed while inspecting opened window", t);
         }
     }
 
-    private static boolean cancelAndCollectTitles(@NotNull List<JBPopup> popups,
-                                                  @NotNull List<String> titlesOut) {
-        boolean allCancelled = true;
-        for (JBPopup popup : popups) {
-            titlesOut.add(extractPopupTitle(popup));
-            // Defensive second cancel pass for the unusual case where the listener saw the
-            // window AFTER action.run() returned (the new window event was queued but not yet
-            // dispatched while the action was still on the stack).
-            if (!tryCancel(popup) || !popup.isDisposed()) {
-                allCancelled = false;
+    private static void handlePopupCaptured(@NotNull List<JBPopup> popups,
+                                            @NotNull PopupHandler handler,
+                                            @NotNull AtomicReference<PopupSnapshot> snapshotRef,
+                                            @NotNull AtomicReference<Boolean> selectionScheduledRef) {
+        JBPopup first = popups.getFirst();
+        switch (handler) {
+            case PopupHandler.Cancel ignored -> {
+                for (JBPopup p : popups) tryCancel(p);
+            }
+            case PopupHandler.Snapshot snap -> {
+                PopupSnapshot ps = PopupContentExtractor.extract(first);
+                snapshotRef.set(ps);
+                try {
+                    snap.sink().accept(ps);
+                } catch (Exception | LinkageError t) {
+                    LOG.warn("PopupInterceptor: snapshot sink threw", t);
+                }
+                for (JBPopup p : popups) tryCancel(p);
+            }
+            case PopupHandler.SelectByValue sel -> {
+                if (first instanceof ListPopupImpl listPopup) {
+                    selectionScheduledRef.set(true);
+                    ApplicationManager.getApplication().invokeLater(
+                        () -> selectInListPopup(listPopup, sel),
+                        ModalityState.any()
+                    );
+                } else {
+                    LOG.warn("PopupInterceptor: SelectByValue requires ListPopupImpl, got "
+                        + first.getClass().getName() + " — cancelling");
+                    for (JBPopup p : popups) tryCancel(p);
+                }
             }
         }
-        return allCancelled;
+    }
+
+    /**
+     * Locates the value matching {@code sel.valueId()} in {@code popup}'s
+     * {@link ListPopupStep} and invokes {@link ListPopupImpl#selectAndExecuteValue(Object)}.
+     * Falls back to {@code sel.fallbackIndex()} only when the captured value can't be found
+     * by id but the index is still valid and selectable. Cancels the popup on failure.
+     */
+    private static void selectInListPopup(@NotNull ListPopupImpl popup,
+                                          @NotNull PopupHandler.SelectByValue sel) {
+        try {
+            if (popup.isDisposed()) {
+                LOG.warn("PopupInterceptor: popup disposed before selection could run");
+                return;
+            }
+            ListPopupStep<Object> step = PlatformApiCompat.getListStep(popup);
+            if (step == null) {
+                LOG.warn("PopupInterceptor: SelectByValue — no ListPopupStep available");
+                tryCancel(popup);
+                return;
+            }
+            List<?> values = step.getValues();
+            Object chosen = findValueByValueId(step, values, sel);
+            if (chosen == null) {
+                LOG.warn("PopupInterceptor: SelectByValue — value '" + sel.valueId()
+                    + "' not found and fallback (index=" + sel.fallbackIndex() + ", text='"
+                    + sel.fallbackText() + "') did not match. Cancelling popup.");
+                tryCancel(popup);
+                return;
+            }
+            popup.selectAndExecuteValue(chosen);
+        } catch (Exception | LinkageError t) {
+            LOG.warn("PopupInterceptor: SelectByValue dispatch failed; cancelling popup", t);
+            tryCancel(popup);
+        }
+    }
+
+    @Nullable
+    private static Object findValueByValueId(@NotNull ListPopupStep<Object> step,
+                                             @NotNull List<?> values,
+                                             @NotNull PopupHandler.SelectByValue sel) {
+        for (int i = 0; i < values.size(); i++) {
+            Object v = values.get(i);
+            String text = step.getTextFor(v);
+            String id = PopupChoice.buildValueId(text == null ? "(unnamed)" : text, i);
+            if (id.equals(sel.valueId()) && step.isSelectable(v)) {
+                return v;
+            }
+        }
+        // Fallback by index+text — protects against minor reordering.
+        int fi = sel.fallbackIndex();
+        if (fi >= 0 && fi < values.size()) {
+            Object v = values.get(fi);
+            String text = step.getTextFor(v);
+            String fbText = sel.fallbackText();
+            if (fbText != null && fbText.equals(text) && step.isSelectable(v)) {
+                return v;
+            }
+        }
+        return null;
     }
 
     private static boolean tryCancel(@NotNull JBPopup popup) {
@@ -164,11 +318,6 @@ final class PopupInterceptor {
 
     // ── Pure helpers (unit-testable) ──────────────────────────
 
-    /**
-     * Returns the popups visible <em>now</em> that were not in {@code baseline}. Pure function
-     * over the live UI state — exposed at package-private level so the listener path and tests
-     * use the same logic.
-     */
     @NotNull
     static List<JBPopup> diffNewPopups(@Nullable Component owner, @NotNull Set<JBPopup> baseline) {
         List<JBPopup> result = new ArrayList<>();
@@ -180,10 +329,6 @@ final class PopupInterceptor {
         return result;
     }
 
-    /**
-     * Collects active {@link JBPopup}s anchored under {@code owner}'s window. When {@code owner}
-     * is {@code null} (no editor available), falls back to scanning every {@link Frame}.
-     */
     @NotNull
     static Set<JBPopup> collectActivePopups(@Nullable Component owner) {
         Set<JBPopup> result = new HashSet<>();
@@ -223,11 +368,6 @@ final class PopupInterceptor {
         return component instanceof JComponent jc ? jc : null;
     }
 
-    /**
-     * Best-effort title for a popup. JBPopup has no public title accessor, so we look for a
-     * window title (heavyweight popups carry the title there) and fall back to the first visible
-     * label inside the popup content. Returns {@code "(untitled popup)"} if nothing is found.
-     */
     @NotNull
     static String extractPopupTitle(@NotNull JBPopup popup) {
         try {
@@ -262,7 +402,8 @@ final class PopupInterceptor {
     }
 
     /**
-     * Formats the agent-facing error returned when a popup was intercepted. Pure function.
+     * Formats the agent-facing error returned when a popup was intercepted in
+     * {@link PopupHandler.Cancel} mode (PR #363 fallback path).
      */
     @NotNull
     static String formatPopupBlockedError(@NotNull String actionName, @NotNull Result result) {

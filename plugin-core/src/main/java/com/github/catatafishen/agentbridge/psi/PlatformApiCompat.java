@@ -1436,4 +1436,22 @@ public final class PlatformApiCompat {
         com.intellij.ui.tabs.JBTabs tabs = com.intellij.ui.tabs.JBTabsFactory.createTabs(project, parentDisposable);
         return new JBTabsPanel(tabs);
     }
+
+    /**
+     * Returns the {@link com.intellij.openapi.ui.popup.ListPopupStep} backing a
+     * {@link com.intellij.ui.popup.list.ListPopupImpl}.
+     *
+     * <p><b>Why extracted:</b> the IDE editor daemon flags
+     * {@code ListPopupImpl.getListStep()} with a spurious "Incompatible types. Found
+     * ListPopupStep&lt;Object&gt;, required ListPopupStep&lt;Object&gt;" error because the
+     * SDK generic signatures differ between the development IDE and the target SDK.
+     * Gradle compiles cleanly. Wrapping the call in a raw-typed bridge keeps the
+     * false-positive confined to this single method.</p>
+     */
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    public static @Nullable com.intellij.openapi.ui.popup.ListPopupStep<Object> getListStep(
+        @NotNull com.intellij.ui.popup.list.ListPopupImpl popup) {
+        com.intellij.openapi.ui.popup.ListPopupStep raw = popup.getListStep();
+        return (com.intellij.openapi.ui.popup.ListPopupStep<Object>) raw;
+    }
 }
