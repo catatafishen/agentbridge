@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.quality;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
+import com.github.catatafishen.agentbridge.services.McpCallContext;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.WriteAction;
@@ -22,11 +23,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Applies an IntelliJ quick-fix at a specific file and line.
  */
-public final class ApplyQuickfixTool extends QualityTool {
+public final class ApplyQuickfixTool extends QualityTool implements Replayable {
 
     private static final Logger LOG = Logger.getInstance(ApplyQuickfixTool.class);
     private static final String PARAM_FIX_INDEX = "fix_index";
@@ -74,6 +76,25 @@ public final class ApplyQuickfixTool extends QualityTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        return executeWithHandler(args, new PopupHandler.Cancel(), false);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Re-runs the same quick-fix pipeline with a {@link PopupHandler.SelectByValue}
+     * handler — see {@link PopupRespondTool} and
+     * {@code .agent-work/popup-interaction-design-2026-04-30.md}.
+     */
+    @Override
+    public @NotNull String replay(@NotNull JsonObject originalArgs,
+                                  @NotNull PopupHandler.SelectByValue handler) throws Exception {
+        return executeWithHandler(originalArgs, handler, true);
+    }
+
+    private @NotNull String executeWithHandler(@NotNull JsonObject args,
+                                               @NotNull PopupHandler handler,
+                                               boolean isReplay) throws Exception {
         if (!args.has("file") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {
             return "Error: 'file', 'line', and '" + PARAM_INSPECTION_ID + "' parameters are required";
         }
@@ -139,11 +160,14 @@ public final class ApplyQuickfixTool extends QualityTool {
                 // invoking the lambda, otherwise the ThreadLocal agent-edit marker leaks across
                 // tool calls. Wrap the whole WriteAction.run() in try/finally (matches the
                 // pattern used in ApplyActionTool / SuppressInspectionTool / WriteFileTool).
+                long beforeModStamp = document.getModificationStamp();
                 FileTool.notifyBeforeEdit(project, vf, document);
                 try {
                     WriteAction.run(() -> {
                         try {
-                            resultFuture.complete(applyAndReportFix(lineProblems, fixIndex, pathStr, targetLine));
+                            resultFuture.complete(applyAndReportFix(lineProblems, fixIndex,
+                                pathStr, targetLine, inspectionId, vf, document, beforeModStamp,
+                                args, handler, isReplay));
                         } catch (Exception e) {
                             LOG.warn("Error applying quickfix", e);
                             resultFuture.complete("Error applying quickfix: " + e.getMessage());
@@ -159,7 +183,7 @@ public final class ApplyQuickfixTool extends QualityTool {
         });
 
         String result = resultFuture.get(30, TimeUnit.SECONDS);
-        if (!result.startsWith("Error") && !result.startsWith("No ")) {
+        if (!result.startsWith("Error") && !result.startsWith("No ") && !result.startsWith("The action ")) {
             FileTool.followFileIfEnabled(project, pathStr, targetLine, targetLine,
                 FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " applied fix");
         }
@@ -206,7 +230,11 @@ public final class ApplyQuickfixTool extends QualityTool {
 
     @SuppressWarnings("unchecked") // QuickFix generic — safe at runtime
     private String applyAndReportFix(List<com.intellij.codeInspection.ProblemDescriptor> lineProblems,
-                                     int fixIndex, String pathStr, int targetLine) {
+                                     int fixIndex, String pathStr, int targetLine,
+                                     String inspectionId, VirtualFile vf, Document document,
+                                     long beforeModStamp,
+                                     @NotNull JsonObject originalArgs,
+                                     @NotNull PopupHandler handler, boolean isReplay) {
         com.intellij.codeInspection.ProblemDescriptor targetProblem =
             lineProblems.get(Math.min(fixIndex, lineProblems.size() - 1));
 
@@ -222,7 +250,9 @@ public final class ApplyQuickfixTool extends QualityTool {
         // class-import disambiguation) cannot freeze the EDT — see PopupInterceptor and
         // .agent-work/freeze-investigation-2026-04-30.md.
         // No editor available here → null owner falls back to a global frame scan.
-        PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(null,
+        AtomicReference<PopupSnapshot> snapRef = new AtomicReference<>();
+        PopupHandler effective = wrapHandlerForCapture(handler, snapRef);
+        PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(null, effective,
             () -> com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
                 project,
                 () -> fix.applyFix(project, targetProblem),
@@ -230,8 +260,23 @@ public final class ApplyQuickfixTool extends QualityTool {
                 null
             )
         );
+
         if (popupResult.popupWasOpened()) {
-            return PopupInterceptor.formatPopupBlockedError("apply_quickfix:" + fix.getName(), popupResult);
+            boolean isSelectMode = handler instanceof PopupHandler.SelectByValue;
+            if (!isReplay && !isSelectMode) {
+                String suspended = trySuspendForPopup(fix.getName(), inspectionId, originalArgs,
+                    document, beforeModStamp, popupResult, snapRef.get(), vf);
+                if (suspended != null) return suspended;
+            } else if (isSelectMode && !popupResult.selectionScheduled()) {
+                return PopupInterceptor.formatPopupBlockedError("apply_quickfix:" + fix.getName(), popupResult);
+            } else if (isReplay) {
+                return "Error: replaying quick-fix '" + fix.getName() + "' opened a chained popup ('"
+                    + popupResult.describe() + "'). Chained popups are not supported by popup_respond"
+                    + " yet — use edit_text to complete the change manually.";
+            }
+            if (!isSelectMode) {
+                return PopupInterceptor.formatPopupBlockedError("apply_quickfix:" + fix.getName(), popupResult);
+            }
         }
 
         PsiDocumentManager.getInstance(project).commitAllDocuments();
@@ -250,6 +295,93 @@ public final class ApplyQuickfixTool extends QualityTool {
                 }
             }
         }
+        return sb.toString();
+    }
+
+    /**
+     * Same wrapping pattern as {@link ApplyActionTool#wrapHandlerForCapture}: upgrade
+     * {@link PopupHandler.Cancel} to {@link PopupHandler.Snapshot} so we can capture choices,
+     * chain {@link PopupHandler.Snapshot} sinks, pass {@link PopupHandler.SelectByValue}
+     * through unchanged.
+     */
+    @NotNull
+    private static PopupHandler wrapHandlerForCapture(@NotNull PopupHandler in,
+                                                      @NotNull AtomicReference<PopupSnapshot> sink) {
+        return switch (in) {
+            case PopupHandler.SelectByValue sv -> sv;
+            case PopupHandler.Snapshot snap -> new PopupHandler.Snapshot(s -> {
+                sink.set(s);
+                snap.sink().accept(s);
+            });
+            case PopupHandler.Cancel ignored -> new PopupHandler.Snapshot(sink::set);
+        };
+    }
+
+    /**
+     * Registers a {@link PendingPopupService.Pending} for the just-intercepted popup so the
+     * agent can drive it via {@code popup_respond}. Returns the suspended-message on success,
+     * or {@code null} to fall through to PR #363's error.
+     */
+    @org.jetbrains.annotations.Nullable
+    private String trySuspendForPopup(@NotNull String fixName, @NotNull String inspectionId,
+                                      @NotNull JsonObject originalArgs,
+                                      @NotNull Document doc, long beforeModStamp,
+                                      @NotNull PopupInterceptor.Result popupResult,
+                                      @org.jetbrains.annotations.Nullable PopupSnapshot snapshot,
+                                      @NotNull VirtualFile vf) {
+        if (snapshot == null || snapshot.isEmpty()) {
+            LOG.info("ApplyQuickfixTool: popup intercepted but snapshot empty — falling back to error");
+            return null;
+        }
+        // Quick-fixes run inside WriteAction with our CommandProcessor group; the IntelliJ
+        // undo manager records the command. We don't attempt rollback here for v1 because
+        // quick-fix popup-then-mutate is rare and cleanly undoing across nested commands is
+        // brittle. If the action mutated the document before the popup, refuse to suspend so
+        // the user is not left with dangling edits.
+        if (doc.getModificationStamp() != beforeModStamp) {
+            LOG.info("ApplyQuickfixTool: quick-fix mutated document before opening popup; refusing to suspend");
+            return null;
+        }
+        ContextFingerprint fp = new ContextFingerprint(
+            project.getName(), vf.getPath(), beforeModStamp, id() + "|" + inspectionId);
+        PendingPopupService.Pending pending = PendingPopupService.getInstance().register(
+            id(), originalArgs, project, fp, snapshot,
+            McpCallContext.currentOrFallback(), null);
+        if (pending == null) return null;
+        return formatPopupSuspendedMessage(fixName, popupResult.describe(), pending);
+    }
+
+    @NotNull
+    private static String formatPopupSuspendedMessage(@NotNull String fixName,
+                                                      @NotNull String popupTitles,
+                                                      @NotNull PendingPopupService.Pending pending) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("The quick-fix '").append(fixName).append("' opened a popup chooser (")
+            .append(popupTitles).append("). The popup is suspended awaiting your selection ")
+            .append("(popup_id=").append(pending.id()).append(").\n\n");
+        sb.append("Choices:\n");
+        var choices = pending.snapshot().choices();
+        for (int i = 0; i < choices.size(); i++) {
+            var c = choices.get(i);
+            sb.append("  ").append(i).append(": ").append(c.text());
+            if (c.secondaryText() != null) sb.append(" — ").append(c.secondaryText());
+            if (!c.selectable()) sb.append("  (not selectable)");
+            if (c.hasSubstep()) sb.append("  (opens submenu — not yet supported in v1)");
+            sb.append('\n');
+        }
+        sb.append("\nTo complete: popup_respond(popup_id=\"").append(pending.id())
+            .append("\", action=\"select\", value_id=\"<one of the value_id strings above>\")\n");
+        sb.append("To cancel:   popup_respond(popup_id=\"").append(pending.id())
+            .append("\", action=\"cancel\")\n\n");
+        sb.append("(value_id strings: ");
+        for (int i = 0; i < choices.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append('"').append(choices.get(i).valueId()).append('"');
+        }
+        sb.append(")\n\n");
+        sb.append("The popup will auto-cancel after ").append(PendingPopupService.MAX_UNRELATED_CALLS)
+            .append(" unrelated tool calls or ").append(PendingPopupService.MAX_AGE.toMinutes())
+            .append(" minutes.");
         return sb.toString();
     }
 }

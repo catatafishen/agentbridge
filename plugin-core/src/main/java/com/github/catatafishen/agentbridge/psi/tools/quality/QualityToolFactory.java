@@ -27,13 +27,21 @@ public final class QualityToolFactory {
         tools.add(new GetHighlightsTool(project));
         tools.add(new GetAvailableActionsTool(project));
         tools.add(new GetActionOptionsTool(project));
-        tools.add(new ApplyQuickfixTool(project));
-        tools.add(new ApplyActionTool(project));
+        ApplyQuickfixTool applyQuickfix = new ApplyQuickfixTool(project);
+        ApplyActionTool applyAction = new ApplyActionTool(project);
+        tools.add(applyQuickfix);
+        tools.add(applyAction);
         tools.add(new SuppressInspectionTool(project));
         tools.add(new OptimizeImportsTool(project));
         tools.add(new FormatCodeTool(project));
         tools.add(new AddToDictionaryTool(project));
         tools.add(new GetCompilationErrorsTool(project));
+        // popup_respond — replays apply_action / apply_quickfix when their popup was suspended.
+        // See .agent-work/popup-interaction-design-2026-04-30.md and PopupRespondTool javadoc.
+        tools.add(new PopupRespondTool(project, java.util.Map.of(
+            applyAction.id(), applyAction,
+            applyQuickfix.id(), applyQuickfix
+        )));
 
         if (PlatformApiCompat.isPluginInstalled("org.jetbrains.qodana")) {
             QodanaAnalyzer qodana = new QodanaAnalyzer(project);

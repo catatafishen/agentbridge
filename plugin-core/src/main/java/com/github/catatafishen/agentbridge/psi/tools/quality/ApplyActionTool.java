@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
+import com.github.catatafishen.agentbridge.services.McpCallContext;
 import com.github.catatafishen.agentbridge.ui.renderers.GitDiffRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.codeInsight.intention.IntentionAction;
@@ -30,8 +31,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
-public final class ApplyActionTool extends QualityTool {
+public final class ApplyActionTool extends QualityTool implements Replayable {
 
     private static final Logger LOG = Logger.getInstance(ApplyActionTool.class);
     private static final String PARAM_COLUMN = "column";
@@ -97,6 +99,32 @@ public final class ApplyActionTool extends QualityTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+        return executeWithHandler(args, new PopupHandler.Cancel(), false);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Re-runs the same action pipeline but with a {@link PopupHandler.SelectByValue}
+     * handler — see {@link PopupRespondTool} and
+     * {@code .agent-work/popup-interaction-design-2026-04-30.md}.
+     */
+    @Override
+    public @NotNull String replay(@NotNull JsonObject originalArgs,
+                                  @NotNull PopupHandler.SelectByValue handler) throws Exception {
+        return executeWithHandler(originalArgs, handler, true);
+    }
+
+    /**
+     * Shared dispatch for both {@link #execute} and {@link #replay}. The {@code handler}
+     * controls what happens when an {@link com.intellij.openapi.ui.popup.JBPopup} opens
+     * during the action invocation. {@code isReplay} marks calls coming from
+     * {@link PopupRespondTool} so the snapshot-and-suspend path is skipped (we want to
+     * complete the action this time, not capture choices again).
+     */
+    private @NotNull String executeWithHandler(@NotNull JsonObject args,
+                                               @NotNull PopupHandler handler,
+                                               boolean isReplay) throws Exception {
         if (!args.has("file") || !args.has("line") || !args.has(PARAM_ACTION_NAME)) {
             return "Error: 'file', 'line', and 'action_name' parameters are required";
         }
@@ -111,7 +139,8 @@ public final class ApplyActionTool extends QualityTool {
         CompletableFuture<String> future = new CompletableFuture<>();
         EdtUtil.invokeLater(() -> {
             try {
-                future.complete(invokeAction(pathStr, targetLine, actionName, symbol, targetCol, option, dryRun));
+                future.complete(invokeAction(pathStr, targetLine, actionName, symbol, targetCol,
+                    option, dryRun, args, handler, isReplay));
             } catch (AssertionError e) {
                 // Some actions (e.g. SafeDeleteFix) trigger interactive dialogs via assertions
                 // that fail headlessly. Catch AssertionError separately for a clear message.
@@ -129,7 +158,8 @@ public final class ApplyActionTool extends QualityTool {
         String result = future.get(30, TimeUnit.SECONDS);
         if (result == null) return "Error: action invocation returned no result";
         if (!dryRun && !result.startsWith("Error") && !result.startsWith("No ")
-            && !result.startsWith(ACTION_PREFIX) && !result.startsWith("Preview")) {
+            && !result.startsWith(ACTION_PREFIX) && !result.startsWith("Preview")
+            && !result.startsWith("The action ")) {
             FileTool.followFileIfEnabled(project, pathStr, targetLine, targetLine,
                 FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " applied action");
         }
@@ -145,7 +175,9 @@ public final class ApplyActionTool extends QualityTool {
 
     private String invokeAction(String pathStr, int targetLine, String actionName,
                                 @Nullable String symbol, @Nullable Integer targetCol,
-                                @Nullable String option, boolean dryRun) {
+                                @Nullable String option, boolean dryRun,
+                                @NotNull JsonObject originalArgs,
+                                @NotNull PopupHandler handler, boolean isReplay) {
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -159,8 +191,12 @@ public final class ApplyActionTool extends QualityTool {
         PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
         if (psiFile == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr;
 
-        String ambiguousImportError = checkAmbiguousImport(actionName, psiFile);
-        if (ambiguousImportError != null) return ambiguousImportError;
+        // Skip ambiguous-import precheck on replay — the agent already saw the choices and
+        // made a selection; refusing here would leave them stuck.
+        if (!isReplay) {
+            String ambiguousImportError = checkAmbiguousImport(actionName, psiFile);
+            if (ambiguousImportError != null) return ambiguousImportError;
+        }
 
         Editor editor = getOrOpenEditor(vf);
         if (editor == null) {
@@ -184,15 +220,17 @@ public final class ApplyActionTool extends QualityTool {
         }
 
         String before = doc.getText();
+        long beforeModStamp = doc.getModificationStamp();
         ActionContext ctx = new ActionContext(action, editor, psiFile, doc);
 
         if (option != null) {
             return applyWithOption(option, actionName, pathStr, targetLine, before, ctx);
         }
         if (dryRun) {
-            return applyAsDryRun(actionName, pathStr, before, ctx, vf);
+            return applyAsDryRun(actionName, pathStr, before, ctx, vf, handler);
         }
-        return applyNormally(actionName, pathStr, targetLine, before, ctx);
+        return applyNormally(actionName, pathStr, targetLine, before, beforeModStamp, ctx,
+            vf, originalArgs, handler, isReplay);
     }
 
     private String applyWithOption(String option, String actionName, String pathStr, int targetLine,
@@ -220,12 +258,17 @@ public final class ApplyActionTool extends QualityTool {
     }
 
     private String applyAsDryRun(String actionName, String pathStr, String before,
-                                 ActionContext ctx, VirtualFile vf) {
+                                 ActionContext ctx, VirtualFile vf, @NotNull PopupHandler handler) {
+        AtomicReference<PopupSnapshot> snapRef = new AtomicReference<>();
+        PopupHandler effective = wrapHandlerForCapture(handler, snapRef);
         PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(
             ctx.editor().getComponent(),
+            effective,
             () -> invokeRespectingWriteAction(actionName, ctx)
         );
-        if (popupResult.popupWasOpened()) {
+        if (popupResult.popupWasOpened() && !popupResult.selectionScheduled()) {
+            // Dry-run cannot meaningfully suspend on a popup — preview semantics require a
+            // single deterministic outcome. Fall back to PR #363 behaviour.
             return PopupInterceptor.formatPopupBlockedError(actionName, popupResult);
         }
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
@@ -240,21 +283,47 @@ public final class ApplyActionTool extends QualityTool {
     }
 
     private String applyNormally(String actionName, String pathStr, int targetLine,
-                                 String before, ActionContext ctx) {
-        VirtualFile vf = FileDocumentManager.getInstance().getFile(ctx.doc());
+                                 String before, long beforeModStamp, ActionContext ctx,
+                                 VirtualFile vf, @NotNull JsonObject originalArgs,
+                                 @NotNull PopupHandler handler, boolean isReplay) {
         FileTool.notifyBeforeEdit(project, vf, ctx.doc());
         PopupInterceptor.Result popupResult;
+        AtomicReference<PopupSnapshot> snapRef = new AtomicReference<>();
+        PopupHandler effective = wrapHandlerForCapture(handler, snapRef);
         try {
             popupResult = PopupInterceptor.runDetectingPopups(
                 ctx.editor().getComponent(),
+                effective,
                 () -> invokeRespectingWriteAction(actionName, ctx)
             );
         } finally {
             FileTool.notifyEditComplete();
         }
-        if (popupResult.popupWasOpened()) {
+
+        boolean popupOpened = popupResult.popupWasOpened();
+        boolean isSelectMode = handler instanceof PopupHandler.SelectByValue;
+        boolean isCancelMode = handler instanceof PopupHandler.Cancel;
+        boolean isSnapshotMode = handler instanceof PopupHandler.Snapshot;
+
+        if (popupOpened && (isSnapshotMode || isCancelMode) && !isReplay) {
+            // Default-mode popup: try to capture a snapshot and suspend the call so the agent
+            // can drive the popup via popup_respond. Falls back to PR #363 error when the
+            // snapshot is unusable or rollback fails.
+            String suspended = trySuspendForPopup(actionName, originalArgs, ctx.doc(),
+                beforeModStamp, popupResult, snapRef.get(), vf);
+            if (suspended != null) return suspended;
             return PopupInterceptor.formatPopupBlockedError(actionName, popupResult);
         }
+        if (popupOpened && isSelectMode && !popupResult.selectionScheduled()) {
+            return PopupInterceptor.formatPopupBlockedError(actionName, popupResult);
+        }
+        if (popupOpened && isReplay && isSnapshotMode) {
+            // Chained popup during replay — out of scope for v1; surface a clear error.
+            return "Error: replaying action '" + actionName + "' opened a chained popup ('"
+                + popupResult.describe() + "'). Chained popups are not supported by popup_respond"
+                + " yet — please use edit_text to complete the change manually.";
+        }
+
         PsiDocumentManager.getInstance(project).commitDocument(ctx.doc());
         FileDocumentManager.getInstance().saveDocument(ctx.doc());
         String after = ctx.doc().getText();
@@ -264,6 +333,100 @@ public final class ApplyActionTool extends QualityTool {
                 + "Try get_action_options to inspect what dialog options it shows.";
         }
         return formatApplyResult(actionName, pathStr, targetLine, diff, true);
+    }
+
+    /**
+     * If the caller passed a {@link PopupHandler.Cancel} we upgrade it to {@link PopupHandler.Snapshot}
+     * so we can still capture choices for {@link PendingPopupService} registration. If the caller
+     * already passed Snapshot we chain its sink. SelectByValue is passed through unchanged.
+     */
+    @NotNull
+    private static PopupHandler wrapHandlerForCapture(@NotNull PopupHandler in,
+                                                      @NotNull AtomicReference<PopupSnapshot> sink) {
+        return switch (in) {
+            case PopupHandler.SelectByValue sv -> sv;
+            case PopupHandler.Snapshot snap -> new PopupHandler.Snapshot(s -> {
+                sink.set(s);
+                snap.sink().accept(s);
+            });
+            case PopupHandler.Cancel ignored -> new PopupHandler.Snapshot(sink::set);
+        };
+    }
+
+    /**
+     * Attempts to register a {@link PendingPopupService.Pending} for the just-intercepted popup,
+     * after rolling back any document changes the action made before opening the popup. Returns
+     * the agent-facing success message when registration succeeds, or {@code null} to fall
+     * through to the PR #363 error path.
+     */
+    @Nullable
+    private String trySuspendForPopup(@NotNull String actionName, @NotNull JsonObject originalArgs,
+                                      @NotNull Document doc, long beforeModStamp,
+                                      @NotNull PopupInterceptor.Result popupResult,
+                                      @Nullable PopupSnapshot snapshot, @NotNull VirtualFile vf) {
+        if (snapshot == null || snapshot.isEmpty()) {
+            LOG.info("ApplyActionTool: popup intercepted but snapshot was empty/null — falling back to error");
+            return null;
+        }
+        long afterModStamp = doc.getModificationStamp();
+        if (afterModStamp != beforeModStamp) {
+            // Action mutated the document before opening the popup. Try to undo so the file
+            // is left clean for the agent to either complete via popup_respond or pick a
+            // different strategy. If we can't restore the original mod stamp, refuse to
+            // suspend (PR #363 fallback).
+            undoLastAction(vf);
+            if (doc.getModificationStamp() != beforeModStamp) {
+                LOG.warn("ApplyActionTool: rollback failed (mod stamp " + beforeModStamp + " → "
+                    + doc.getModificationStamp() + "); cannot safely suspend for popup");
+                return null;
+            }
+        }
+
+        ContextFingerprint fp = new ContextFingerprint(
+            project.getName(), vf.getPath(), beforeModStamp, id() + "|" + actionName);
+        PendingPopupService.Pending pending = PendingPopupService.getInstance().register(
+            id(), originalArgs, project, fp, snapshot,
+            McpCallContext.currentOrFallback(), null);
+        if (pending == null) {
+            // Slot already taken — shouldn't happen because the gate blocks tool calls when
+            // pending != null, but guard anyway.
+            return null;
+        }
+        return formatPopupSuspendedMessage(actionName, popupResult.describe(), pending);
+    }
+
+    @NotNull
+    private static String formatPopupSuspendedMessage(@NotNull String actionName,
+                                                      @NotNull String popupTitles,
+                                                      @NotNull PendingPopupService.Pending pending) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("The action '").append(actionName).append("' opened a popup chooser (")
+            .append(popupTitles).append("). The popup is suspended awaiting your selection ")
+            .append("(popup_id=").append(pending.id()).append(").\n\n");
+        sb.append("Choices:\n");
+        var choices = pending.snapshot().choices();
+        for (int i = 0; i < choices.size(); i++) {
+            var c = choices.get(i);
+            sb.append("  ").append(i).append(": ").append(c.text());
+            if (c.secondaryText() != null) sb.append(" — ").append(c.secondaryText());
+            if (!c.selectable()) sb.append("  (not selectable)");
+            if (c.hasSubstep()) sb.append("  (opens submenu — not yet supported in v1)");
+            sb.append('\n');
+        }
+        sb.append("\nTo complete: popup_respond(popup_id=\"").append(pending.id())
+            .append("\", action=\"select\", value_id=\"<one of the value_id strings above>\")\n");
+        sb.append("To cancel:   popup_respond(popup_id=\"").append(pending.id())
+            .append("\", action=\"cancel\")\n\n");
+        sb.append("(value_id strings: ");
+        for (int i = 0; i < choices.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append('"').append(choices.get(i).valueId()).append('"');
+        }
+        sb.append(")\n\n");
+        sb.append("The popup will auto-cancel after ").append(PendingPopupService.MAX_UNRELATED_CALLS)
+            .append(" unrelated tool calls or ").append(PendingPopupService.MAX_AGE.toMinutes())
+            .append(" minutes.");
+        return sb.toString();
     }
 
     /**

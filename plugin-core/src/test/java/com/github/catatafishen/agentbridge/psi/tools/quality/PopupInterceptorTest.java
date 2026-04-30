@@ -5,8 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import javax.swing.JLabel;
-import javax.swing.JPanel;
+import javax.swing.*;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -39,21 +38,21 @@ class PopupInterceptorTest {
         @Test
         @DisplayName("describe with empty titles → unidentified marker")
         void describeEmpty() {
-            var r = new PopupInterceptor.Result(true, List.of(), true);
+            var r = new PopupInterceptor.Result(true, List.of(), true, null, false);
             assertEquals("(unidentified popup)", r.describe());
         }
 
         @Test
         @DisplayName("describe with one title → quoted title")
         void describeOne() {
-            var r = new PopupInterceptor.Result(true, List.of("Choose Class"), true);
+            var r = new PopupInterceptor.Result(true, List.of("Choose Class"), true, null, false);
             assertEquals("'Choose Class'", r.describe());
         }
 
         @Test
         @DisplayName("describe with multiple titles → comma-joined quoted")
         void describeMany() {
-            var r = new PopupInterceptor.Result(true, List.of("A", "B", "C"), false);
+            var r = new PopupInterceptor.Result(true, List.of("A", "B", "C"), false, null, false);
             assertEquals("'A', 'B', 'C'", r.describe());
         }
 
@@ -61,7 +60,7 @@ class PopupInterceptorTest {
         @DisplayName("popupTitles is exposed as immutable List")
         void titlesAccessor() {
             List<String> titles = List.of("X");
-            var r = new PopupInterceptor.Result(true, titles, true);
+            var r = new PopupInterceptor.Result(true, titles, true, null, false);
             assertEquals(titles, r.popupTitles());
             assertTrue(r.popupWasOpened());
             assertTrue(r.cancelled());
@@ -130,7 +129,7 @@ class PopupInterceptorTest {
         @Test
         @DisplayName("starts with 'Error:' so MCP detects isError=true")
         void startsWithErrorPrefix() {
-            var r = new PopupInterceptor.Result(true, List.of("X"), true);
+            var r = new PopupInterceptor.Result(true, List.of("X"), true, null, false);
             String msg = PopupInterceptor.formatPopupBlockedError("Import class 'Cell'", r);
             assertTrue(msg.startsWith("Error: "), "expected 'Error: ' prefix, got: " + msg);
         }
@@ -138,7 +137,7 @@ class PopupInterceptorTest {
         @Test
         @DisplayName("includes the action name and popup description")
         void includesActionAndDescription() {
-            var r = new PopupInterceptor.Result(true, List.of("Choose Class"), true);
+            var r = new PopupInterceptor.Result(true, List.of("Choose Class"), true, null, false);
             String msg = PopupInterceptor.formatPopupBlockedError("Import class 'Cell'", r);
             assertTrue(msg.contains("Import class 'Cell'"), msg);
             assertTrue(msg.contains("'Choose Class'"), msg);
@@ -147,7 +146,7 @@ class PopupInterceptorTest {
         @Test
         @DisplayName("when cancelled → confirms the popup was cancelled")
         void cancelledMessage() {
-            var r = new PopupInterceptor.Result(true, List.of("X"), true);
+            var r = new PopupInterceptor.Result(true, List.of("X"), true, null, false);
             String msg = PopupInterceptor.formatPopupBlockedError("act", r);
             assertTrue(msg.contains("cancelled"), msg);
             assertFalse(msg.contains("may still be visible"), msg);
@@ -156,7 +155,7 @@ class PopupInterceptorTest {
         @Test
         @DisplayName("when not cancelled → warns that the popup may still be visible")
         void notCancelledMessage() {
-            var r = new PopupInterceptor.Result(true, List.of("X"), false);
+            var r = new PopupInterceptor.Result(true, List.of("X"), false, null, false);
             String msg = PopupInterceptor.formatPopupBlockedError("act", r);
             assertTrue(msg.contains("may still be visible"), msg);
         }
@@ -164,7 +163,7 @@ class PopupInterceptorTest {
         @Test
         @DisplayName("guides the agent to edit_text instead")
         void guidesToEditText() {
-            var r = new PopupInterceptor.Result(true, List.of("X"), true);
+            var r = new PopupInterceptor.Result(true, List.of("X"), true, null, false);
             String msg = PopupInterceptor.formatPopupBlockedError("act", r);
             assertTrue(msg.contains("edit_text"), msg);
         }
@@ -172,7 +171,7 @@ class PopupInterceptorTest {
         @Test
         @DisplayName("clarifies that popup choosers are NOT 'option' parameter selections")
         void clarifiesOptionDistinction() {
-            var r = new PopupInterceptor.Result(true, List.of("X"), true);
+            var r = new PopupInterceptor.Result(true, List.of("X"), true, null, false);
             String msg = PopupInterceptor.formatPopupBlockedError("act", r);
             // We do NOT want the message to (mis)direct the agent to use the 'option' param,
             // since 'option' currently only handles dialog-radio selection, not popup choosers.
@@ -190,7 +189,7 @@ class PopupInterceptorTest {
         @Test
         @DisplayName("no popup → popupWasOpened=false, no titles, not cancelled")
         void noPopup() {
-            var r = new PopupInterceptor.Result(false, List.of(), false);
+            var r = new PopupInterceptor.Result(false, List.of(), false, null, false);
             assertFalse(r.popupWasOpened());
             assertNotNull(r.popupTitles());
             assertTrue(r.popupTitles().isEmpty());

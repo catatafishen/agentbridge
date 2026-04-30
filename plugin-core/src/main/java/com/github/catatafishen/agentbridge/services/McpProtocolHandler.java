@@ -484,16 +484,42 @@ public final class McpProtocolHandler {
             LOG.info("[MCP] tools/call: " + toolName);
         }
 
+        // Popup gate: if a previous apply_action / apply_quickfix call suspended on a
+        // popup chooser, every subsequent tool call must either be popup_respond, the
+        // auto-cancel threshold call, or be blocked. See PopupGateLogic javadoc and
+        // .agent-work/popup-interaction-design-2026-04-30.md for the full design.
+        String sessionKey = project.getLocationHash() + ":" + System.identityHashCode(this);
+        com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService pps =
+            com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService.getInstance();
+        com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.Decision decision =
+            com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.evaluate(
+                pps.peek(), toolName, sessionKey, java.time.Instant.now());
+        String resultPrefix = "";
+        if (decision instanceof com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.Block b) {
+            return buildToolResult(msg, b.message(), true);
+        }
+        if (decision instanceof com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.AllowWithCancelNote a) {
+            pps.cancelAndClear(a.cancelled().id());
+            resultPrefix = a.note() + "\n\n";
+        } else if (!com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.POPUP_RESPOND_TOOL.equals(toolName)
+            && pps.peek() != null) {
+            // Same-session call within budget — count toward auto-cancel.
+            pps.recordUnrelatedCall(sessionKey);
+        }
+
         // Delegate to PsiBridgeService
+        com.github.catatafishen.agentbridge.services.McpCallContext.setCurrent(sessionKey);
         try {
             PsiBridgeService bridge = PsiBridgeService.getInstance(project);
             String resultText = bridge.callTool(toolName, arguments, toolUseId);
             resultText = truncateIfNeeded(resultText);
             boolean isError = resultText != null && resultText.startsWith("Error");
-            return buildToolResult(msg, resultText, isError);
+            return buildToolResult(msg, resultPrefix + resultText, isError);
         } catch (Exception e) {
             LOG.warn("[MCP] tool error: " + toolName, e);
             return buildToolResult(msg, "Error: " + e.getMessage(), true);
+        } finally {
+            com.github.catatafishen.agentbridge.services.McpCallContext.clear();
         }
     }
 
