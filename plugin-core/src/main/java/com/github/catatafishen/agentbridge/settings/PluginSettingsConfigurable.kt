@@ -38,19 +38,22 @@ class PluginSettingsConfigurable @Suppress("unused") constructor(
     }
 
     override fun isModified(): Boolean = false
-    override fun apply() {}
-    override fun reset() {}
 
-    companion object {
-        /**
-         * Opens this settings page programmatically. Defers to the next EDT cycle to avoid a
-         * BufferStrategy NPE when a modal dialog is shown during mouse-event processing.
-         */
-        @JvmStatic
-        fun open(project: Project) {
-            ApplicationManager.getApplication().invokeLater {
-                ShowSettingsUtil.getInstance().showSettingsDialog(project, PluginSettingsConfigurable::class.java)
-            }
-        }
+    // No mutable state on this page; child Configurables own all persisted settings.
+    override fun apply() = Unit
+    override fun reset() = Unit
+}
+
+/**
+ * Opens the AgentBridge root settings page programmatically.
+ *
+ * Defers the dialog to the next EDT cycle to avoid a BufferStrategy NPE that can occur
+ * when a modal dialog is shown synchronously during mouse-event processing
+ * (a JDK Swing repaint race).
+ */
+fun openAgentBridgeSettings(project: Project) {
+    ApplicationManager.getApplication().invokeLater {
+        ShowSettingsUtil.getInstance()
+            .showSettingsDialog(project, PluginSettingsConfigurable::class.java)
     }
 }

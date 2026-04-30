@@ -8,7 +8,6 @@ import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextArea
-import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.AlignY
 import com.intellij.ui.dsl.builder.RowLayout
@@ -46,7 +45,7 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { (this as JBTextField).emptyText.text = "Auto-detect (leave empty)" }
+                .applyToComponent { emptyText.text = "Auto-detect (leave empty)" }
                 .comment("Leave empty to auto-detect on PATH.")
                 .bindText(
                     { profile()?.customBinaryPath.orEmpty() },
@@ -57,7 +56,7 @@ class ClaudeCliClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project
             textField()
                 .align(AlignX.FILL)
                 .resizableColumn()
-                .applyToComponent { (this as JBTextField).emptyText.text = "E.g. CLAUDE.md" }
+                .applyToComponent { emptyText.text = "E.g. CLAUDE.md" }
                 .comment(
                     "Plugin instructions are prepended here on session start (relative to project root)."
                 )

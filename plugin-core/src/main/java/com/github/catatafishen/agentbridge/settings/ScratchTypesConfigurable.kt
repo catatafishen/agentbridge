@@ -61,6 +61,7 @@ class ScratchTypesConfigurable :
                 cell(decorated).align(AlignX.FILL).align(AlignY.FILL).resizableColumn()
             }.resizableRow().layout(RowLayout.PARENT_GRID)
         }
+        @Suppress("DialogTitleCapitalization") // "Code-fence" is a single hyphenated noun.
         group("Code-fence Aliases") {
             row {
                 comment(
@@ -118,7 +119,7 @@ class ScratchTypesConfigurable :
             "Reset to Defaults", "Reset language selection to defaults", AllIcons.Actions.Rollback
         ) {
             override fun actionPerformed(e: AnActionEvent) {
-                val defaults = ScratchTypeSettings.getDefaultEnabledIds()
+                val defaults: Set<String> = ScratchTypeSettings.getDefaultEnabledIds()
                 LanguageUtil.getFileLanguages().forEach {
                     languageList.setItemSelected(it, defaults.contains(it.id))
                 }
@@ -132,7 +133,7 @@ class ScratchTypesConfigurable :
 
     private fun loadLanguageList() {
         languageList.clear()
-        val enabled = ScratchTypeSettings.getInstance().enabledLanguageIds
+        val enabled: Set<String> = ScratchTypeSettings.getInstance().enabledLanguageIds
         LanguageUtil.getFileLanguages().forEach {
             languageList.addItem(it, it.displayName, enabled.contains(it.id))
         }

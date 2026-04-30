@@ -41,7 +41,7 @@ class ChatHistoryConfigurable(private val project: Project) :
 
     override fun getId(): String = ID
 
-    private val summaryLabel = JBLabel().apply { border = JBUI.Borders.empty(0, 0, 4, 0) }
+    private val summaryLabel = JBLabel().apply { border = JBUI.Borders.emptyBottom(4) }
     private val tableModel = ConversationTableModel()
     private val table = JBTable(tableModel).apply {
         setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION)
@@ -124,8 +124,7 @@ class ChatHistoryConfigurable(private val project: Project) :
                 .setRemoveAction { deleteSelectedConversations() }
                 .setRemoveActionUpdater {
                     val rows = table.selectedRows
-                    if (rows.isEmpty()) false
-                    else rows.none { tableModel.getEntryAt(it).isCurrentSession }
+                    rows.isNotEmpty() && rows.none { tableModel.getEntryAt(it).isCurrentSession }
                 }
                 .addExtraAction(createDeleteAllArchivesAction())
                 .addExtraAction(createRefreshAction())

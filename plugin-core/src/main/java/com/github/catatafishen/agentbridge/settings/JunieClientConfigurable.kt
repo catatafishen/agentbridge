@@ -106,6 +106,8 @@ class JunieClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) :
                 .comment("Choose a theme-aware accent color for message bubbles when using Junie.")
                 .bindItem(
                     { ThemeColor.fromKey(AcpClient.loadAgentBubbleColorKey(AGENT_ID)) },
+                    // SonarQube S6619 falsely reports `?.` as useless: bindItem setter receives ThemeColor?
+                    @Suppress("kotlin:S6619")
                     { AcpClient.saveAgentBubbleColorKey(AGENT_ID, it?.name) }
                 )
         }

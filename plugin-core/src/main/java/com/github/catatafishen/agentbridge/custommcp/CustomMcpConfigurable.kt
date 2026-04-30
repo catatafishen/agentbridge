@@ -79,6 +79,7 @@ class CustomMcpConfigurable(private val project: Project) :
                 .createPanel()
             cell(decorator).align(AlignX.FILL).align(AlignY.FILL).resizableColumn()
         }.resizableRow().layout(RowLayout.PARENT_GRID)
+        @Suppress("DialogTitleCapitalization") // Subtitle in parentheses is sentence-case prose.
         group("Usage Instructions (appended to selected server's tool descriptions)") {
             row {
                 cell(JBScrollPane(instructionsArea))
@@ -144,6 +145,7 @@ class CustomMcpConfigurable(private val project: Project) :
             try {
                 CustomMcpClient(server.url).use { client ->
                     client.initialize()
+                    @Suppress("kotlin:S6524") // Java method returns List<>; the Set inferred type is a Sonar false positive.
                     val tools = client.listTools()
                     val toolList = tools.joinToString("\n") { "• ${it.name()}" }
                     ApplicationManager.getApplication().invokeLater {
@@ -189,7 +191,7 @@ class CustomMcpConfigurable(private val project: Project) :
         override fun getColumnCount(): Int = COL_COUNT
         override fun getColumnName(col: Int): String = COLUMNS[col]
         override fun getColumnClass(col: Int): Class<*> =
-            if (col == COL_ENABLED) java.lang.Boolean::class.java else String::class.java
+            if (col == COL_ENABLED) Boolean::class.javaObjectType else String::class.java
         override fun isCellEditable(row: Int, col: Int): Boolean = true
 
         override fun getValueAt(row: Int, col: Int): Any? {

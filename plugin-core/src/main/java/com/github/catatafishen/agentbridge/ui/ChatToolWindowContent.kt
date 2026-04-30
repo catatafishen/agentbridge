@@ -1609,7 +1609,7 @@ class ChatToolWindowContent(
     ) {
         override fun getActionUpdateThread() = ActionUpdateThread.EDT
         override fun actionPerformed(e: AnActionEvent) {
-            com.github.catatafishen.agentbridge.settings.PluginSettingsConfigurable.open(project)
+            com.github.catatafishen.agentbridge.settings.openAgentBridgeSettings(project)
         }
     }
 
