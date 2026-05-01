@@ -36,7 +36,7 @@ class CustomMcpServerConfigTest {
         config.setId("abcd1234-efgh");
         config.setName("");
         assertTrue(config.toolPrefix().startsWith("cmcp_"), "prefix should always start with cmcp_");
-        assertFalse(config.toolPrefix().equals("cmcp_"), "prefix should have non-empty suffix");
+        assertNotEquals("cmcp_", config.toolPrefix(), "prefix should have non-empty suffix");
     }
 
     @Test

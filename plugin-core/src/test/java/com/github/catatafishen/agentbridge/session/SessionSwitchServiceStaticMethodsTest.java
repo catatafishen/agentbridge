@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -656,7 +657,7 @@ class SessionSwitchServiceStaticMethodsTest {
         void differentSessionIds_produceDifferentPaths() {
             Path dir1 = SessionSwitchService.copilotSessionDir("id-1");
             Path dir2 = SessionSwitchService.copilotSessionDir("id-2");
-            assertFalse(dir1.equals(dir2),
+            assertNotEquals(dir2, dir1,
                 "Different session IDs should produce different paths");
             assertEquals(dir1.getParent(), dir2.getParent(),
                 "Parent directories should be the same");

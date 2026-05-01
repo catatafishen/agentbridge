@@ -7,6 +7,8 @@ import com.intellij.openapi.fileEditor.FileEditorManager;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.testFramework.fixtures.BasePlatformTestCase;
 
+import static org.junit.Assert.assertNotEquals;
+
 /**
  * Platform tests for infrastructure tools: {@link ListRunTabsTool},
  * {@link GetNotificationsTool}, {@link ReadBuildOutputTool}, and {@link ReadRunOutputTool}.
@@ -154,7 +156,7 @@ public class InfrastructureToolsExtendedTest extends BasePlatformTestCase {
 
         assertNotNull(result);
         assertFalse("Result must not be a raw Java exception", result.startsWith("java."));
-        assertFalse("Result must not be the 'null' string", "null".equals(result));
+        assertNotEquals("Result must not be the 'null' string", "null", result);
     }
 
     // ── ReadBuildOutputTool ───────────────────────────────────────────────────
@@ -212,7 +214,7 @@ public class InfrastructureToolsExtendedTest extends BasePlatformTestCase {
 
         assertNotNull(result);
         assertFalse("Result must not be a raw Java exception", result.startsWith("java."));
-        assertFalse("Result must not be the 'null' string", "null".equals(result));
+        assertNotEquals("Result must not be the 'null' string", "null", result);
     }
 
     // ── ReadRunOutputTool ─────────────────────────────────────────────────────
@@ -259,7 +261,7 @@ public class InfrastructureToolsExtendedTest extends BasePlatformTestCase {
 
         assertNotNull(result);
         assertFalse("Result must not be blank", result.isBlank());
-        assertFalse("Result must not be the 'null' string", "null".equals(result));
+        assertNotEquals("Result must not be the 'null' string", "null", result);
         assertFalse("Result must not be a raw Java exception", result.startsWith("java."));
     }
 

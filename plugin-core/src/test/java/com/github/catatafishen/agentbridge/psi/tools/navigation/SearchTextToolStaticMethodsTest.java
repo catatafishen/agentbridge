@@ -10,6 +10,7 @@ import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -198,7 +199,7 @@ class SearchTextToolStaticMethodsTest {
         void literalFlagSet() throws ReflectiveOperationException {
             Pattern p = compile("test", false, true);
             assertNotNull(p);
-            assertTrue((p.flags() & Pattern.LITERAL) != 0,
+            assertNotEquals(0, p.flags() & Pattern.LITERAL,
                 "LITERAL flag should be set when isRegex=false");
         }
 
@@ -216,9 +217,9 @@ class SearchTextToolStaticMethodsTest {
         void literalCaseInsensitiveBothFlags() throws ReflectiveOperationException {
             Pattern p = compile("test", false, false);
             assertNotNull(p);
-            assertTrue((p.flags() & Pattern.LITERAL) != 0,
+            assertNotEquals(0, p.flags() & Pattern.LITERAL,
                 "LITERAL flag should be set");
-            assertTrue((p.flags() & Pattern.CASE_INSENSITIVE) != 0,
+            assertNotEquals(0, p.flags() & Pattern.CASE_INSENSITIVE,
                 "CASE_INSENSITIVE flag should be set");
         }
     }
