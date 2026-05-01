@@ -275,26 +275,6 @@ public final class OpenCodeClientExporter {
         return EntryBudgetTrimmer.trimEntriesToBudget(entries, maxTotalChars);
     }
 
-    private static int countEntryChars(@NotNull EntryData e) {
-        return EntryBudgetTrimmer.countEntryChars(e);
-    }
-
-    private static int countTotalChars(@NotNull List<EntryData> entries) {
-        return EntryBudgetTrimmer.countTotalChars(entries);
-    }
-
-    private static int findSecondPromptIndex(@NotNull List<EntryData> entries) {
-        return EntryBudgetTrimmer.findSecondPromptIndex(entries);
-    }
-
-    /**
-     * Drops the oldest non-Prompt entry after the initial Prompt.
-     * Returns the number of characters freed, or -1 if nothing could be dropped.
-     */
-    private static int dropOldestNonPrompt(@NotNull List<EntryData> result) {
-        return EntryBudgetTrimmer.dropOldestNonPrompt(result);
-    }
-
     /**
      * Generates an OpenCode-style prefixed ID (e.g. {@code ses_abc123...}).
      * Uses a UUID as the random component, encoded as base-36 alphanumeric.

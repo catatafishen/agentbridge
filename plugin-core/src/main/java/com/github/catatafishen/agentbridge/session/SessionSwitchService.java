@@ -83,8 +83,6 @@ public final class SessionSwitchService implements Disposable {
     private static final String SESSIONS_DIR = "sessions";
     private static final String CLAUDE_HOME = ".claude";
     private static final String CLAUDE_PROJECTS_DIR = "projects";
-    private static final String KIRO_HOME = ".kiro";
-    private static final String KIRO_SESSIONS_DIR = "sessions";
     private static final String JUNIE_HOME = ".junie";
     private static final String JUNIE_SESSIONS_DIR = "sessions";
     private static final String USER_HOME_PROPERTY = "user.home";
@@ -188,7 +186,7 @@ public final class SessionSwitchService implements Disposable {
         // on every conversation save. No need to re-import from the previous client's
         // native format; that would introduce round-trip conversion bugs.
         List<EntryData> entries = loadCurrentV2Session(basePath);
-        if (entries == null || entries.isEmpty()) {
+        if (entries.isEmpty()) {
             LOG.info("No v2 session found to migrate from " + fromProfileId + " to " + toProfileId);
             return;
         }
@@ -620,7 +618,7 @@ public final class SessionSwitchService implements Disposable {
 
     // ── v2 session reading ────────────────────────────────────────────────────
 
-    @Nullable
+    @NotNull
     private List<EntryData> loadCurrentV2Session(@Nullable String basePath) {
         return SessionStoreV2.getInstance(project).loadRecentEntries(basePath).entries();
     }

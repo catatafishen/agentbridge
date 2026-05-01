@@ -110,7 +110,7 @@ public final class MemoryService implements Disposable {
      */
     public @NotNull String getEffectiveWing() {
         String wing = MemorySettings.getInstance(project).getPalaceWing();
-        if (wing == null || wing.isEmpty()) {
+        if (wing.isEmpty()) {
             wing = project.getName()
                 .toLowerCase()
                 .replaceAll("[^a-z0-9_-]", "-")
