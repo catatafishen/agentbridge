@@ -586,6 +586,9 @@ public final class ChatWebServer implements Disposable {
     private static final String KT_FILE = "-file";
     private static final String KT_NOPROMPT = "-noprompt";
     private static final String KT_IMPORTCERT = "-importcert";
+    private static final long KEYTOOL_TIMEOUT_SECONDS = 120;
+    private static final long PROCESS_TERMINATION_TIMEOUT_SECONDS = 2;
+    private static final int MAX_PROCESS_OUTPUT_CHARS = 4096;
 
     /**
      * Returns the keystore password, generating and persisting a random one if none is stored yet.
@@ -888,18 +891,102 @@ public final class ChatWebServer implements Disposable {
 
     private static void runKeytool(String[] cmd) throws IOException {
         cmd[0] = keytoolPath();
-        Process process = new ProcessBuilder(cmd).start();
-        String error;
+        runProcess("keytool " + cmd[1], cmd, KEYTOOL_TIMEOUT_SECONDS);
+    }
+
+    static void runProcess(String operation, String[] cmd, long timeoutSeconds) throws IOException {
+        Process process = new ProcessBuilder(cmd)
+            .redirectErrorStream(true)
+            .start();
+        ProcessOutput output = new ProcessOutput();
+        Thread outputReader = startOutputCapture(process, output);
+        boolean finished;
         try {
-            if (!process.waitFor(15, TimeUnit.SECONDS) || process.exitValue() != 0) {
-                try (java.io.InputStream is = process.getErrorStream()) {
-                    error = new String(is.readAllBytes(), StandardCharsets.UTF_8);
-                }
-                throw new IOException("keytool " + cmd[1] + " failed: " + error);
+            finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(operation + " interrupted", e);
+        }
+
+        if (!finished) {
+            terminateProcess(process, operation);
+            waitForOutputReader(outputReader, operation);
+            throw new IOException(operation + " timed out after " + timeoutSeconds + " seconds"
+                + formatProcessOutput(output));
+        }
+
+        waitForOutputReader(outputReader, operation);
+        int exitCode = process.exitValue();
+        if (exitCode != 0) {
+            throw new IOException(operation + " failed with exit code " + exitCode + formatProcessOutput(output));
+        }
+    }
+
+    private static Thread startOutputCapture(Process process, ProcessOutput output) {
+        Thread outputReader = new Thread(() -> captureProcessOutput(process, output),
+            "agentbridge-process-output");
+        outputReader.setDaemon(true);
+        outputReader.start();
+        return outputReader;
+    }
+
+    private static void captureProcessOutput(Process process, ProcessOutput output) {
+        try (InputStream input = process.getInputStream()) {
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            while ((bytesRead = input.read(buffer)) != -1) {
+                output.write(buffer, 0, bytesRead);
+            }
+        } catch (IOException e) {
+            LOG.warn("[ChatWebServer] Could not capture process output", e);
+        }
+    }
+
+    private static void terminateProcess(Process process, String operation) throws IOException {
+        process.destroy();
+        try {
+            if (!process.waitFor(PROCESS_TERMINATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("keytool " + cmd[1] + " interrupted", e);
+            process.destroyForcibly();
+            throw new IOException(operation + " interrupted while terminating timed-out process", e);
+        }
+    }
+
+    private static void waitForOutputReader(Thread outputReader, String operation) throws IOException {
+        try {
+            outputReader.join(TimeUnit.SECONDS.toMillis(PROCESS_TERMINATION_TIMEOUT_SECONDS));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException(operation + " interrupted while collecting process output", e);
+        }
+        if (outputReader.isAlive()) {
+            LOG.warn("[ChatWebServer] Timed out while collecting process output for " + operation);
+        }
+    }
+
+    private static String formatProcessOutput(ProcessOutput output) {
+        String trimmed = output.text().trim();
+        if (trimmed.isEmpty()) {
+            return ": no process output";
+        }
+        if (trimmed.length() > MAX_PROCESS_OUTPUT_CHARS) {
+            trimmed = trimmed.substring(0, MAX_PROCESS_OUTPUT_CHARS) + "...";
+        }
+        return ": " + trimmed;
+    }
+
+    private static final class ProcessOutput {
+        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+
+        synchronized void write(byte[] buffer, int offset, int length) {
+            bytes.write(buffer, offset, length);
+        }
+
+        synchronized String text() {
+            return bytes.toString(StandardCharsets.UTF_8);
         }
     }
 

@@ -2,10 +2,16 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.ui.MessageFormatter;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.KeyStore;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -218,6 +224,42 @@ class ChatWebServerTest {
         assertNotNull(invokeJsonString("{\"key\":42}", "key"));
     }
 
+    // ── TLS certificate generation ───────────────────────────────────────────
+
+    @Test
+    void generateCaCertificate_createsLoadableKeystore(@TempDir Path tempDir) throws Exception {
+        String password = "test-password";
+        Path caKeystore = tempDir.resolve("ca.p12");
+
+        invokeGenerateCaCertificate(caKeystore, password);
+
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        try (InputStream input = Files.newInputStream(caKeystore)) {
+            keyStore.load(input, password.toCharArray());
+        }
+        assertTrue(keyStore.containsAlias("ca"));
+        assertNotNull(keyStore.getCertificate("ca"));
+    }
+
+    // ── runProcess ───────────────────────────────────────────────────────────
+
+    @Test
+    void runProcess_reportsTimeoutAndStopsProcess() {
+        IOException error = runFakeProcessExpectingIOException("sleep", 1);
+
+        assertTrue(error.getMessage().contains("fake command timed out after 1 seconds"));
+        assertTrue(error.getMessage().contains("starting sleep"));
+    }
+
+    @Test
+    void runProcess_includesStdoutAndStderrWhenCommandFails() {
+        IOException error = runFakeProcessExpectingIOException("fail", 10);
+
+        assertTrue(error.getMessage().contains("fake command failed with exit code 7"));
+        assertTrue(error.getMessage().contains("stdout marker"));
+        assertTrue(error.getMessage().contains("stderr marker"));
+    }
+
     // ── Reflection helpers ───────────────────────────────────────────────────
 
     private static int invokeParseFromQuery(String query) throws Exception {
@@ -252,5 +294,53 @@ class ChatWebServerTest {
         Method m = ChatWebServer.class.getDeclaredMethod("jsonString", String.class, String.class);
         m.setAccessible(true);
         return (String) m.invoke(null, body, key);
+    }
+
+    private static void invokeGenerateCaCertificate(Path caKeystore, String password) throws Exception {
+        Method m = ChatWebServer.class.getDeclaredMethod("generateCaCertificate", java.io.File.class, String.class);
+        m.setAccessible(true);
+        m.invoke(null, caKeystore.toFile(), password);
+    }
+
+    private static IOException runFakeProcessExpectingIOException(String mode, long timeoutSeconds) {
+        try {
+            ChatWebServer.runProcess("fake command", fakeProcessCommand(mode), timeoutSeconds);
+        } catch (IOException e) {
+            return e;
+        }
+        throw new AssertionError("Expected fake command to fail");
+    }
+
+    private static String[] fakeProcessCommand(String mode) {
+        return new String[]{
+            javaExecutable(),
+            "-cp",
+            System.getProperty("java.class.path"),
+            FakeProcess.class.getName(),
+            mode
+        };
+    }
+
+    private static String javaExecutable() {
+        String executable = System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java";
+        return Path.of(System.getProperty("java.home"), "bin", executable).toString();
+    }
+
+    public static final class FakeProcess {
+        public static void main(String[] args) throws Exception {
+            if ("sleep".equals(args[0])) {
+                System.out.println("starting sleep");
+                System.out.flush();
+                new java.util.concurrent.CountDownLatch(1).await();
+                return;
+            }
+            if ("fail".equals(args[0])) {
+                System.out.println("stdout marker");
+                System.err.println("stderr marker");
+                System.exit(7);
+                return;
+            }
+            throw new IllegalArgumentException("Unknown fake process mode: " + args[0]);
+        }
     }
 }

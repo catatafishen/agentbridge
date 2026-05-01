@@ -12,6 +12,7 @@ import java.awt.event.InputEvent;
 import java.beans.PropertyChangeEvent;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Prevents programmatic focus changes during MCP tool execution from stealing focus
@@ -66,6 +67,7 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
     private final KeyboardFocusManager kfm;
     private final Component chatFocusOwner;
     private final Function<Component, Window> windowResolver;
+    private final Supplier<AWTEvent> ideCurrentEventSupplier;
     /**
      * Package-private so tests can simulate the uninstalled state without requiring the IDE platform.
      */
@@ -88,10 +90,19 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
                KeyboardFocusManager kfm,
                Component chatFocusOwner,
                Function<Component, Window> windowResolver) {
+        this(project, kfm, chatFocusOwner, windowResolver, FocusGuard::getTrueCurrentIdeEvent);
+    }
+
+    FocusGuard(Project project,
+               KeyboardFocusManager kfm,
+               Component chatFocusOwner,
+               Function<Component, Window> windowResolver,
+               Supplier<AWTEvent> ideCurrentEventSupplier) {
         this.project = project;
         this.kfm = kfm;
         this.chatFocusOwner = chatFocusOwner;
         this.windowResolver = windowResolver;
+        this.ideCurrentEventSupplier = ideCurrentEventSupplier;
     }
 
     /**
@@ -143,6 +154,15 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
             }
         }
         return ref.get();
+    }
+
+    private static AWTEvent getTrueCurrentIdeEvent() {
+        try {
+            return com.intellij.ide.IdeEventQueue.getInstance().getTrueCurrentEvent();
+        } catch (Exception e) {
+            // Some unit-test contexts cannot initialize IdeEventQueue; fall back to EventQueue.getCurrentEvent().
+            return null;
+        }
     }
 
     /**
@@ -224,12 +244,8 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
         // Also respect focus changes triggered while a user input event is being
         // processed on the IDE event queue (InputEvent may not be the "current" AWT
         // event if we're in a nested dispatch).
-        try {
-            AWTEvent ideEvent = com.intellij.ide.IdeEventQueue.getInstance().getTrueCurrentEvent();
-            if (ideEvent instanceof InputEvent) return;
-        } catch (Exception ignored) {
-            // IdeEventQueue unavailable in some test contexts — rely on EventQueue check above.
-        }
+        AWTEvent ideEvent = ideCurrentEventSupplier.get();
+        if (ideEvent instanceof InputEvent) return;
 
         // Circuit breaker: stop vetoing after MAX_VETOES to prevent runaway storms.
         // Inline the removal here (we're on EDT in this callback) rather than calling

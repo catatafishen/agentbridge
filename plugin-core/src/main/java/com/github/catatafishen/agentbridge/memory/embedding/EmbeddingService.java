@@ -22,6 +22,7 @@ public final class EmbeddingService implements Disposable, Embedder {
     private volatile InferenceFunction inference;
     private volatile SafetensorsReader safetensorsReader;
     private volatile boolean initialized;
+    private volatile boolean disposed;
     private final Object initLock = new Object();
 
     /**
@@ -90,12 +91,18 @@ public final class EmbeddingService implements Disposable, Embedder {
      * Check whether the model is downloaded and ready (without triggering download).
      */
     public boolean isReady() {
-        return initialized || ModelDownloader.isModelAvailable();
+        return !disposed && (initialized || ModelDownloader.isModelAvailable());
     }
 
     private void ensureInitialized() throws IOException {
+        if (disposed) {
+            throw new IOException("EmbeddingService has been disposed");
+        }
         if (initialized) return;
         synchronized (initLock) {
+            if (disposed) {
+                throw new IOException("EmbeddingService has been disposed");
+            }
             if (initialized) return;
 
             ModelDownloader.ensureModelAvailable(project);
@@ -166,6 +173,7 @@ public final class EmbeddingService implements Disposable, Embedder {
 
     @Override
     public void dispose() {
+        disposed = true;
         if (safetensorsReader != null) {
             try {
                 safetensorsReader.close();
