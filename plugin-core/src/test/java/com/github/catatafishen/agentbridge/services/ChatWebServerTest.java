@@ -241,6 +241,21 @@ class ChatWebServerTest {
         assertNotNull(keyStore.getCertificate("ca"));
     }
 
+    @Test
+    void deleteCertificateStoresForCaRegeneration_removesStaleCaAndServerKeystores(@TempDir Path tempDir)
+        throws Exception {
+
+        Path caKeystore = tempDir.resolve("ca.p12");
+        Path serverKeystore = tempDir.resolve("server.p12");
+        Files.writeString(caKeystore, "stale CA keystore");
+        Files.writeString(serverKeystore, "stale server keystore");
+
+        invokeDeleteCertificateStoresForCaRegeneration(caKeystore, serverKeystore);
+
+        assertFalse(Files.exists(caKeystore));
+        assertFalse(Files.exists(serverKeystore));
+    }
+
     // ── runProcess ───────────────────────────────────────────────────────────
 
     @Test
@@ -300,6 +315,18 @@ class ChatWebServerTest {
         Method m = ChatWebServer.class.getDeclaredMethod("generateCaCertificate", java.io.File.class, String.class);
         m.setAccessible(true);
         m.invoke(null, caKeystore.toFile(), password);
+    }
+
+    private static void invokeDeleteCertificateStoresForCaRegeneration(Path caKeystore, Path serverKeystore)
+        throws Exception {
+
+        Method m = ChatWebServer.class.getDeclaredMethod(
+            "deleteCertificateStoresForCaRegeneration",
+            java.io.File.class,
+            java.io.File.class
+        );
+        m.setAccessible(true);
+        m.invoke(null, caKeystore.toFile(), serverKeystore.toFile());
     }
 
     private static IOException runFakeProcessExpectingIOException(String mode, long timeoutSeconds) {

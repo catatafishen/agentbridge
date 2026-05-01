@@ -661,8 +661,8 @@ public final class ChatWebServer implements Disposable {
 
         if (caNeedsRegen) {
             LOG.info("[ChatWebServer] Generating new CA + server certificates");
-            java.nio.file.Files.deleteIfExists(serverKsFile.toPath());
             java.nio.file.Files.createDirectories(pluginDir);
+            deleteCertificateStoresForCaRegeneration(caKsFile, serverKsFile);
             generateCaPlusServerCerts(pluginDir, caKsFile, serverKsFile, localIps);
         } else if (serverNeedsRegen) {
             // Preserve existing CA so devices that already installed it keep trusting us.
@@ -697,6 +697,14 @@ public final class ChatWebServer implements Disposable {
         SSLContext ctx = SSLContext.getInstance("TLS");
         ctx.init(kmf.getKeyManagers(), null, null);
         return ctx;
+    }
+
+    private static void deleteCertificateStoresForCaRegeneration(
+        java.io.File caKsFile,
+        java.io.File serverKsFile) throws IOException {
+
+        java.nio.file.Files.deleteIfExists(serverKsFile.toPath());
+        java.nio.file.Files.deleteIfExists(caKsFile.toPath());
     }
 
     /**
