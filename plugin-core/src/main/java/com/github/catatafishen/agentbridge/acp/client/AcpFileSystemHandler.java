@@ -79,7 +79,7 @@ final class AcpFileSystemHandler {
         return result;
     }
 
-    JsonObject writeTextFile(@NotNull JsonObject params) {
+    void writeTextFile(@NotNull JsonObject params) {
         String path = getRequiredString(params, "path");
         String content = getRequiredString(params, "content");
 
@@ -93,7 +93,7 @@ final class AcpFileSystemHandler {
         if (isNewFile) {
             // Disk I/O on the current (background) thread
             createNewFile(absolutePath, content);
-            return null;
+            return;
         }
 
         // EdtUtil.invokeAndWait adds a 30-second backstop + modal-dialog detection,
@@ -127,7 +127,6 @@ final class AcpFileSystemHandler {
         });
 
         LOG.info("Wrote " + content.length() + " chars to " + absolutePath);
-        return null;
     }
 
     private void createNewFile(String absolutePath, String content) {

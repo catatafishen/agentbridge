@@ -4,7 +4,8 @@ on:
   push:
     branches: [ master ]
 
-permissions: read-all
+permissions:
+  contents: read
 
 concurrency:
   # Only one release job runs at a time. cancel-in-progress: false means a second

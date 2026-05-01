@@ -1527,7 +1527,10 @@ public abstract class AcpClient extends AbstractAgentClient {
         switch (request.method()) {
             case "session/request_permission" -> handlePermissionRequest(id, request.params());
             case "fs/read_text_file" -> handleFsRequest(id, () -> fsHandler.readTextFile(request.params()));
-            case "fs/write_text_file" -> handleFsRequest(id, () -> fsHandler.writeTextFile(request.params()));
+            case "fs/write_text_file" -> handleFsRequest(id, () -> {
+                fsHandler.writeTextFile(request.params());
+                return null;
+            });
             case "terminal/create" -> handleTerminalRequest(id, () -> terminalHandler.create(request.params()));
             case "terminal/output" -> handleTerminalRequest(id, () -> terminalHandler.output(request.params()));
             case "terminal/wait_for_exit" ->

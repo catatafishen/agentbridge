@@ -134,7 +134,8 @@ class MemoryRefactorListenerTest {
             Project project = mock(Project.class);
             MemoryRefactorListener listener = new MemoryRefactorListener(project);
             // undoRefactoring takes only a String — no RefactoringEventData class loading
-            listener.undoRefactoring("refactoring.rename");
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                listener.undoRefactoring("refactoring.rename"));
         }
 
         @Test
@@ -143,7 +144,7 @@ class MemoryRefactorListenerTest {
             Project project = mock(Project.class);
             MemoryRefactorListener listener = new MemoryRefactorListener(project);
             // dispose() sets pendingOldFqn = null — no side effects
-            listener.dispose();
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(listener::dispose);
         }
     }
 }

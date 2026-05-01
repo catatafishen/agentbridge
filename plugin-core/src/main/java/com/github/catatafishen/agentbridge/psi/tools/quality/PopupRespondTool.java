@@ -140,7 +140,7 @@ public final class PopupRespondTool extends QualityTool {
         if (chosen == null) {
             return "Error: could not resolve a choice from the provided value_id/index. "
                 + "Available value_ids: " + pending.snapshot().choices().stream()
-                    .map(c -> "'" + c.valueId() + "'").toList();
+                .map(c -> "'" + c.valueId() + "'").toList();
         }
         if (!chosen.selectable()) {
             return "Error: choice '" + chosen.text() + "' is marked non-selectable in the popup.";
@@ -250,6 +250,9 @@ public final class PopupRespondTool extends QualityTool {
         EdtUtil.invokeLater(() -> {
             try {
                 f.complete(replayable.replay(args, handler));
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                f.completeExceptionally(ie);
             } catch (Exception e) {
                 f.completeExceptionally(e);
             }

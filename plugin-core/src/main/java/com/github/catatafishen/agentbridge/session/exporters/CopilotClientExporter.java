@@ -233,7 +233,7 @@ public final class CopilotClientExporter {
         data.addProperty(CONTENT_KEY, content);
         data.addProperty(INTERACTION_ID_KEY, interactionId);
         String model = text.getModel();
-        if (model != null && !model.isEmpty()) {
+        if (!model.isEmpty()) {
             data.addProperty("model", model);
         }
         sb.append(chain.emit("assistant.message", data, text.getTimestamp())).append('\n');
@@ -247,7 +247,7 @@ public final class CopilotClientExporter {
 
         String toolCallId = UUID.randomUUID().toString();
         String toolName = toolCall.getTitle();
-        if (toolName == null || toolName.isEmpty()) toolName = "unknown";
+        if (toolName.isEmpty()) toolName = "unknown";
         String argsStr = toolCall.getArguments();
 
         JsonObject toolReq = new JsonObject();
@@ -289,10 +289,8 @@ public final class CopilotClientExporter {
 
         JsonObject startData = new JsonObject();
         startData.addProperty(TOOL_CALL_ID_KEY, toolCallId);
-        String agentType = subAgent.getAgentType();
-        startData.addProperty("agentName", agentType != null ? agentType : "general-purpose");
-        String description = subAgent.getDescription();
-        startData.addProperty("agentDisplayName", description != null ? description : "");
+        startData.addProperty("agentName", subAgent.getAgentType());
+        startData.addProperty("agentDisplayName", subAgent.getDescription());
         sb.append(chain.emit("subagent.started", startData, subAgent.getTimestamp())).append('\n');
 
         if ("done".equals(subAgent.getStatus())) {

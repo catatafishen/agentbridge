@@ -450,7 +450,8 @@ class ClaudeCliClientTest {
             };
 
             // Should not throw — IOException is caught and logged
-            ClaudeCliClient.respondToControlRequest(event, failingStream);
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() ->
+                ClaudeCliClient.respondToControlRequest(event, failingStream));
         }
     }
 

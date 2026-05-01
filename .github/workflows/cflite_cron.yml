@@ -5,7 +5,8 @@ on:
     - cron: '23 3 * * *'  # Daily at 03:23 UTC
   workflow_dispatch:
 
-permissions: read-all
+permissions:
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

@@ -599,8 +599,8 @@ public final class OpenCodeClientExporter {
     private static JsonObject buildToolInvocationPart(@NotNull EntryData.ToolCall toolCall, long timeMs) {
         JsonObject result = new JsonObject();
         result.addProperty("type", "tool");
-        result.addProperty("callID", toolCall.getEntryId() != null ? toolCall.getEntryId() : "");
-        result.addProperty("tool", toolCall.getTitle() != null ? toolCall.getTitle() : "unknown");
+        result.addProperty("callID", toolCall.getEntryId());
+        result.addProperty("tool", toolCall.getTitle());
 
         boolean completed = toolCall.getResult() != null;
 

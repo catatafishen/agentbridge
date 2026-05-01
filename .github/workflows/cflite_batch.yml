@@ -5,7 +5,8 @@ on:
     - cron: '17 */6 * * *'  # Every 6 hours, offset to avoid runner contention
   workflow_dispatch:
 
-permissions: read-all
+permissions:
+  contents: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -20,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sanitizer: [address]
+        sanitizer: [ address ]
     steps:
       - name: Harden Runner
         uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df  # v2.18.0

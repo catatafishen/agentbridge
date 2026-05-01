@@ -135,33 +135,32 @@ class FocusGuardTest {
     class NoVeto {
 
         @Test
-        void whenNewOwnerIsChatComponent() throws java.beans.PropertyVetoException {
+        void whenNewOwnerIsChatComponent() {
             // Focus returns to the guarded component — no steal, no veto.
             PropertyChangeEvent evt = new PropertyChangeEvent(new Object(), "focusOwner", null, chatOwner);
-            guard.vetoableChange(evt);
-            // No exception = pass-through
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> guard.vetoableChange(evt));
         }
 
         @Test
-        void whenNewOwnerIsNull() throws java.beans.PropertyVetoException {
+        void whenNewOwnerIsNull() {
             // Null focus (e.g., window deactivated) — not instanceof Component, ignored.
             PropertyChangeEvent evt = new PropertyChangeEvent(new Object(), "focusOwner", chatOwner, null);
-            guard.vetoableChange(evt);
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> guard.vetoableChange(evt));
         }
 
         @Test
-        void whenGuardIsUninstalled() throws java.beans.PropertyVetoException {
+        void whenGuardIsUninstalled() {
             // After uninstall the guard is logically off — any lingering focus events must be no-ops.
             guard.uninstalled = true;
-            guard.vetoableChange(outsideEvent());
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> guard.vetoableChange(outsideEvent()));
         }
 
         @Test
-        void whenTargetIsInDifferentWindow() throws java.beans.PropertyVetoException {
+        void whenTargetIsInDifferentWindow() {
             // Focus to a component in a different Window (dialog, popup) — allowed through.
             PropertyChangeEvent evt = new PropertyChangeEvent(
                 new Object(), "focusOwner", chatOwner, differentWindowTarget);
-            guard.vetoableChange(evt);
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> guard.vetoableChange(evt));
         }
     }
 }
