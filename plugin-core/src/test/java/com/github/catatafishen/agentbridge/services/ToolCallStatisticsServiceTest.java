@@ -525,6 +525,16 @@ class ToolCallStatisticsServiceTest {
             durationMs, linesAdded, linesRemoved, premiumRequests, timestamp, null, branch);
     }
 
+    private static ToolCallStatisticsService.TurnStatsRecord turnRecordWithBranches(
+        String sessionId, String agentId, String date,
+        long inputTokens, long outputTokens, int toolCalls,
+        long durationMs, int linesAdded, int linesRemoved,
+        double premiumRequests, String timestamp, String startBranch, String endBranch) {
+        return new ToolCallStatisticsService.TurnStatsRecord(
+            sessionId, agentId, date, inputTokens, outputTokens, toolCalls,
+            durationMs, linesAdded, linesRemoved, premiumRequests, timestamp, null, null, startBranch, endBranch);
+    }
+
     @Test
     @DisplayName("queryBranchTotals aggregates per branch and orders by premium DESC")
     void queryBranchTotalsAggregatesAndSorts() {
@@ -591,5 +601,45 @@ class ToolCallStatisticsServiceTest {
         var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
         assertEquals(1, results.size());
         assertEquals("feat/round-trip", results.get(0).branch());
+    }
+
+    @Test
+    @DisplayName("recordTurnStats attributes branch to turn end when end is feature branch")
+    void recordTurnStatsUsesEndBranchForAttribution() {
+        service.recordTurnStats(turnRecordWithBranches("s1", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "master", "feat/end"));
+
+        var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
+        assertEquals(1, results.size());
+        assertEquals("feat/end", results.get(0).branch());
+    }
+
+    @Test
+    @DisplayName("recordTurnStats falls back to start branch when end is master")
+    void recordTurnStatsFallsBackToStartWhenEndIsDefaultBranch() {
+        service.recordTurnStats(turnRecordWithBranches("s1", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "feat/start", "master"));
+
+        var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
+        assertEquals(1, results.size());
+        assertEquals("feat/start", results.get(0).branch());
+    }
+
+    @Test
+    @DisplayName("recordTurnStats falls back to start branch when end branch is missing")
+    void recordTurnStatsFallsBackToStartWhenEndMissing() {
+        service.recordTurnStats(turnRecordWithBranches("s1", "copilot", "2025-01-15",
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "feat/start", null));
+
+        var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
+        assertEquals(1, results.size());
+        assertEquals("feat/start", results.get(0).branch());
+    }
+
+    @Test
+    @DisplayName("branchForAttribution treats main like a default branch")
+    void branchForAttributionFallsBackFromMain() {
+        assertEquals("feat/start",
+            ToolCallStatisticsService.branchForAttribution("feat/start", "main", null));
     }
 }

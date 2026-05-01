@@ -46,6 +46,7 @@ public final class ToolCallStatisticsService implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ToolCallStatisticsService.class);
     private static final String DB_FILENAME = "tool-stats.db";
+    private static final Set<String> DEFAULT_BRANCH_NAMES = Set.of("main", "master");
 
     private final Project project;
     private Connection connection;
@@ -196,6 +197,8 @@ public final class ToolCallStatisticsService implements Disposable {
                 "CREATE INDEX IF NOT EXISTS idx_turn_stats_session ON turn_stats(session_id)");
             migrateAddCommitHashesColumn(stmt);
             migrateAddGitBranchColumn(stmt);
+            migrateAddGitBranchStartColumn(stmt);
+            migrateAddGitBranchEndColumn(stmt);
         }
     }
 
@@ -242,6 +245,30 @@ public final class ToolCallStatisticsService implements Disposable {
         } catch (SQLException e) {
             if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
                 LOG.warn("Unexpected error migrating turn_stats schema (git_branch column)", e);
+            }
+            // else: duplicate column — expected for databases that have already been migrated
+        }
+    }
+
+    private void migrateAddGitBranchStartColumn(java.sql.Statement stmt) {
+        try {
+            stmt.execute("ALTER TABLE turn_stats ADD COLUMN git_branch_start TEXT");
+            LOG.info("Migrated turn_stats table: added git_branch_start column");
+        } catch (SQLException e) {
+            if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
+                LOG.warn("Unexpected error migrating turn_stats schema (git_branch_start column)", e);
+            }
+            // else: duplicate column — expected for databases that have already been migrated
+        }
+    }
+
+    private void migrateAddGitBranchEndColumn(java.sql.Statement stmt) {
+        try {
+            stmt.execute("ALTER TABLE turn_stats ADD COLUMN git_branch_end TEXT");
+            LOG.info("Migrated turn_stats table: added git_branch_end column");
+        } catch (SQLException e) {
+            if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
+                LOG.warn("Unexpected error migrating turn_stats schema (git_branch_end column)", e);
             }
             // else: duplicate column — expected for databases that have already been migrated
         }
@@ -551,40 +578,17 @@ public final class ToolCallStatisticsService implements Disposable {
         String sql = """
             INSERT INTO turn_stats (session_id, agent_id, date, input_tokens, output_tokens,
                                     tool_calls, duration_ms, lines_added, lines_removed,
-                                    premium_requests, timestamp, commit_hashes, git_branch)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    premium_requests, timestamp, commit_hashes, git_branch,
+                                    git_branch_start, git_branch_end)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
         try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-            stmt.setString(1, statsRecord.sessionId());
-            stmt.setString(2, statsRecord.agentId());
-            stmt.setString(3, statsRecord.date());
-            stmt.setLong(4, statsRecord.inputTokens());
-            stmt.setLong(5, statsRecord.outputTokens());
-            stmt.setInt(6, statsRecord.toolCalls());
-            stmt.setLong(7, statsRecord.durationMs());
-            stmt.setInt(8, statsRecord.linesAdded());
-            stmt.setInt(9, statsRecord.linesRemoved());
-            stmt.setDouble(10, statsRecord.premiumRequests());
-            stmt.setString(11, statsRecord.timestamp());
-            stmt.setString(12, statsRecord.commitHashes());
-            stmt.setString(13, statsRecord.gitBranch());
+            bindTurnStatsRecord(stmt, statsRecord);
             stmt.executeUpdate();
         } catch (SQLException e) {
             if (isDbMoved(e) && tryReconnect()) {
                 try (PreparedStatement stmt = connection.prepareStatement(sql)) {
-                    stmt.setString(1, statsRecord.sessionId());
-                    stmt.setString(2, statsRecord.agentId());
-                    stmt.setString(3, statsRecord.date());
-                    stmt.setLong(4, statsRecord.inputTokens());
-                    stmt.setLong(5, statsRecord.outputTokens());
-                    stmt.setInt(6, statsRecord.toolCalls());
-                    stmt.setLong(7, statsRecord.durationMs());
-                    stmt.setInt(8, statsRecord.linesAdded());
-                    stmt.setInt(9, statsRecord.linesRemoved());
-                    stmt.setDouble(10, statsRecord.premiumRequests());
-                    stmt.setString(11, statsRecord.timestamp());
-                    stmt.setString(12, statsRecord.commitHashes());
-                    stmt.setString(13, statsRecord.gitBranch());
+                    bindTurnStatsRecord(stmt, statsRecord);
                     stmt.executeUpdate();
                 } catch (SQLException retryEx) {
                     LOG.warn("Failed to record turn stats after reconnect", retryEx);
@@ -593,6 +597,55 @@ public final class ToolCallStatisticsService implements Disposable {
                 LOG.warn("Failed to record turn stats", e);
             }
         }
+    }
+
+    private static void bindTurnStatsRecord(@NotNull PreparedStatement stmt,
+                                            @NotNull TurnStatsRecord statsRecord) throws SQLException {
+        stmt.setString(1, statsRecord.sessionId());
+        stmt.setString(2, statsRecord.agentId());
+        stmt.setString(3, statsRecord.date());
+        stmt.setLong(4, statsRecord.inputTokens());
+        stmt.setLong(5, statsRecord.outputTokens());
+        stmt.setInt(6, statsRecord.toolCalls());
+        stmt.setLong(7, statsRecord.durationMs());
+        stmt.setInt(8, statsRecord.linesAdded());
+        stmt.setInt(9, statsRecord.linesRemoved());
+        stmt.setDouble(10, statsRecord.premiumRequests());
+        stmt.setString(11, statsRecord.timestamp());
+        stmt.setString(12, statsRecord.commitHashes());
+        stmt.setString(13, branchForAttribution(statsRecord.gitBranchStart(), statsRecord.gitBranchEnd(),
+            statsRecord.gitBranch()));
+        stmt.setString(14, normalizeBranch(statsRecord.gitBranchStart()));
+        stmt.setString(15, normalizeBranch(statsRecord.gitBranchEnd()));
+    }
+
+    @Nullable
+    static String branchForAttribution(@Nullable String startBranch,
+                                       @Nullable String endBranch,
+                                       @Nullable String explicitBranch) {
+        String normalizedExplicit = normalizeBranch(explicitBranch);
+        if (normalizedExplicit != null) return normalizedExplicit;
+
+        String normalizedEnd = normalizeBranch(endBranch);
+        if (normalizedEnd != null && !isDefaultBranch(normalizedEnd)) {
+            return normalizedEnd;
+        }
+
+        String normalizedStart = normalizeBranch(startBranch);
+        if (normalizedStart != null) return normalizedStart;
+
+        return normalizedEnd;
+    }
+
+    @Nullable
+    private static String normalizeBranch(@Nullable String branch) {
+        if (branch == null) return null;
+        String trimmed = branch.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static boolean isDefaultBranch(@NotNull String branch) {
+        return DEFAULT_BRANCH_NAMES.contains(branch);
     }
 
     /**
@@ -851,8 +904,26 @@ public final class ToolCallStatisticsService implements Disposable {
         double premiumRequests,
         @NotNull String timestamp,
         @Nullable String commitHashes,
-        @Nullable String gitBranch
+        @Nullable String gitBranch,
+        @Nullable String gitBranchStart,
+        @Nullable String gitBranchEnd
     ) {
+        public TurnStatsRecord(@NotNull String sessionId,
+                               @NotNull String agentId,
+                               @NotNull String date,
+                               long inputTokens,
+                               long outputTokens,
+                               int toolCalls,
+                               long durationMs,
+                               int linesAdded,
+                               int linesRemoved,
+                               double premiumRequests,
+                               @NotNull String timestamp,
+                               @Nullable String commitHashes,
+                               @Nullable String gitBranch) {
+            this(sessionId, agentId, date, inputTokens, outputTokens, toolCalls, durationMs,
+                linesAdded, linesRemoved, premiumRequests, timestamp, commitHashes, gitBranch, null, null);
+        }
     }
 
     /**

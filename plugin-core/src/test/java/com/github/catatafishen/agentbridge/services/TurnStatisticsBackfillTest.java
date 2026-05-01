@@ -13,7 +13,10 @@ import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link TurnStatisticsBackfill} — verifies that turn stats entries
@@ -189,13 +192,29 @@ class TurnStatisticsBackfillTest {
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
         createSessionJsonl(basePath, "session-1",
             "{\"type\":\"assistant\",\"text\":\"Hello\",\"timestamp\":\"2025-01-15T10:00:00Z\"}",
-            turnStatsEntryNoTimestamp(100, 200, 3, 5000, 10, 2, "1x"));
+            turnStatsEntryNoTimestamp());
 
         TurnStatisticsBackfill.BackfillResult result =
             TurnStatisticsBackfill.backfill(service, basePath);
 
         assertEquals(1, result.inserted());
         assertTrue(service.hasTurnStatsAt("2025-01-15T10:00:00Z"));
+    }
+
+    @Test
+    @DisplayName("backfills git branch start/end and applies attribution rules")
+    void backfillsGitBranchStartEnd() throws IOException {
+        String basePath = tempDir.toString();
+        createSessionIndex(basePath, "session-1", "GitHub Copilot");
+        createSessionJsonl(basePath, "session-1", turnStatsEntryWithBranches());
+
+        TurnStatisticsBackfill.BackfillResult result =
+            TurnStatisticsBackfill.backfill(service, basePath);
+
+        assertEquals(1, result.inserted());
+        var branches = service.queryBranchTotals("2025-01-01", "2025-01-31");
+        assertEquals(1, branches.size());
+        assertEquals("feat/end", branches.getFirst().branch());
     }
 
     @Test
@@ -232,18 +251,30 @@ class TurnStatisticsBackfillTest {
             + "}";
     }
 
-    private static String turnStatsEntryNoTimestamp(long inputTokens, long outputTokens,
-                                                    int toolCalls, long durationMs,
-                                                    int linesAdded, int linesRemoved,
-                                                    String multiplier) {
+    private static String turnStatsEntryWithBranches() {
         return "{\"type\":\"turnStats\""
-            + ",\"inputTokens\":" + inputTokens
-            + ",\"outputTokens\":" + outputTokens
-            + ",\"toolCallCount\":" + toolCalls
-            + ",\"durationMs\":" + durationMs
-            + ",\"linesAdded\":" + linesAdded
-            + ",\"linesRemoved\":" + linesRemoved
-            + ",\"multiplier\":\"" + multiplier + "\""
+            + ",\"timestamp\":\"2025-01-15T10:00:00Z\""
+            + ",\"inputTokens\":100"
+            + ",\"outputTokens\":200"
+            + ",\"toolCallCount\":3"
+            + ",\"durationMs\":5000"
+            + ",\"linesAdded\":10"
+            + ",\"linesRemoved\":2"
+            + ",\"multiplier\":\"1x\""
+            + ",\"gitBranchStart\":\"master\""
+            + ",\"gitBranchEnd\":\"feat/end\""
+            + "}";
+    }
+
+    private static String turnStatsEntryNoTimestamp() {
+        return "{\"type\":\"turnStats\""
+            + ",\"inputTokens\":100"
+            + ",\"outputTokens\":200"
+            + ",\"toolCallCount\":3"
+            + ",\"durationMs\":5000"
+            + ",\"linesAdded\":10"
+            + ",\"linesRemoved\":2"
+            + ",\"multiplier\":\"1x\""
             + "}";
     }
 
