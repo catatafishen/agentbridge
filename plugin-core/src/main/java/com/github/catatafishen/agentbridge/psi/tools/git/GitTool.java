@@ -601,7 +601,12 @@ public abstract class GitTool extends Tool {
                 String fullHash = runGitIn(repoRoot, "rev-parse", "HEAD").trim();
                 if (fullHash.length() != 40) return;
 
-                EdtUtil.invokeLater(() -> {
+                // Build the VCS tool window callback separately so it runs only AFTER the
+                // graph is confirmed fresh. tw.activate(null) on a stale graph triggers
+                // IntelliJ 2025.3's "highlight current revision" which tries to navigate to
+                // the new commit before it is in the visible PermanentGraph, emitting the
+                // "commit not found" bubble. See COMMIT-NOT-FOUND-IN-LOG-BUG.md § Cause 5.
+                Runnable openVcsTw = () -> {
                     var twm = com.intellij.openapi.wm.ToolWindowManager.getInstance(project);
                     var tw = twm.getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
                     if (tw != null) {
@@ -611,9 +616,10 @@ public abstract class GitTool extends Tool {
                             tw.activate(null);
                         }
                     }
+                };
 
-                    PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash, repoRoot);
-                });
+                EdtUtil.invokeLater(() ->
+                    PlatformApiCompat.showRevisionInLogAfterRefresh(project, fullHash, repoRoot, openVcsTw));
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             } catch (Exception ignored) {

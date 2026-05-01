@@ -431,8 +431,27 @@ public final class PlatformApiCompat {
      *                     (only suitable for entry points like chat-chip clicks that
      *                     have no repo context).
      */
+    /**
+     * Overload that accepts a pre-navigation callback invoked on the EDT immediately before
+     * {@code showRevisionInMainLog}. Used to open the VCS tool window only after the graph is
+     * confirmed fresh — avoiding IntelliJ 2025.3's "highlight current revision" auto-navigation
+     * that fires on {@code tw.activate(null)} and emits the "commit not found" bubble when the
+     * graph hasn't been rebuilt yet. See COMMIT-NOT-FOUND-IN-LOG-BUG.md § Cause 5.
+     */
+    public static void showRevisionInLogAfterRefresh(
+        @NotNull Project project, @NotNull String fullHash, @Nullable String repoRootPath,
+        @Nullable Runnable preNavigationCallback) {
+        showRevisionInLogAfterRefreshImpl(project, fullHash, repoRootPath, preNavigationCallback);
+    }
+
     public static void showRevisionInLogAfterRefresh(
         @NotNull Project project, @NotNull String fullHash, @Nullable String repoRootPath) {
+        showRevisionInLogAfterRefreshImpl(project, fullHash, repoRootPath, null);
+    }
+
+    private static void showRevisionInLogAfterRefreshImpl(
+        @NotNull Project project, @NotNull String fullHash, @Nullable String repoRootPath,
+        @Nullable Runnable preNavigationCallback) {
         var hash = com.intellij.vcs.log.impl.HashImpl.build(fullHash);
         var vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project);
         var data = vcsLog.getDataManager();
@@ -462,7 +481,7 @@ public final class PlatformApiCompat {
         var navigated = new java.util.concurrent.atomic.AtomicBoolean(false);
 
         com.intellij.vcs.log.data.DataPackChangeListener listener =
-            buildDataPackListener(project, data, hash, repoRootVf, initialGraph, navigated);
+            buildDataPackListener(project, data, hash, repoRootVf, initialGraph, navigated, preNavigationCallback);
 
         data.addDataPackChangeListener(listener);
         data.refresh(java.util.List.of(repoRootVf));
@@ -477,7 +496,7 @@ public final class PlatformApiCompat {
             && navigated.compareAndSet(false, true)) {
             data.removeDataPackChangeListener(listener);
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-                navigateToRevisionInMainLog(project, repoRootVf, hash));
+                navigateToRevisionInMainLog(project, repoRootVf, hash, preNavigationCallback));
             return;
         }
 
@@ -540,7 +559,8 @@ public final class PlatformApiCompat {
         @NotNull com.intellij.vcs.log.Hash hash,
         @NotNull com.intellij.openapi.vfs.VirtualFile repoRootVf,
         @NotNull Object initialGraph,
-        @NotNull java.util.concurrent.atomic.AtomicBoolean navigated) {
+        @NotNull java.util.concurrent.atomic.AtomicBoolean navigated,
+        @Nullable Runnable preNavigationCallback) {
         return (com.intellij.vcs.log.data.DataPackChangeListener) java.lang.reflect.Proxy.newProxyInstance(
             com.intellij.vcs.log.data.DataPackChangeListener.class.getClassLoader(),
             new Class<?>[]{com.intellij.vcs.log.data.DataPackChangeListener.class},
@@ -576,7 +596,7 @@ public final class PlatformApiCompat {
                 data.removeDataPackChangeListener(
                     (com.intellij.vcs.log.data.DataPackChangeListener) proxy);
                 com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() ->
-                    navigateToRevisionInMainLog(project, repoRootVf, hash));
+                    navigateToRevisionInMainLog(project, repoRootVf, hash, preNavigationCallback));
                 return null;
             });
     }
@@ -628,9 +648,14 @@ public final class PlatformApiCompat {
     private static void navigateToRevisionInMainLog(
         @NotNull Project project,
         @NotNull com.intellij.openapi.vfs.VirtualFile repoRoot,
-        @NotNull com.intellij.vcs.log.Hash hash) {
-        // Tool-window show/activate is handled before this point. Do not skip selection
-        // when chat is active: follow-mode must still move the VCS Log selection without focus steal.
+        @NotNull com.intellij.vcs.log.Hash hash,
+        @Nullable Runnable preNavigationCallback) {
+        // The pre-navigation callback (if any) opens the VCS tool window here — AFTER the graph
+        // is confirmed fresh. This avoids IntelliJ 2025.3's "highlight current revision" behavior
+        // that fires on tw.activate(null) and tries to navigate to HEAD before the graph is ready.
+        if (preNavigationCallback != null) preNavigationCallback.run();
+        // Do not skip selection when chat is active: follow-mode must still move the VCS Log
+        // selection without stealing focus (that is handled inside the callback itself).
         com.intellij.vcs.log.impl.VcsProjectLog.showRevisionInMainLog(project, repoRoot, hash);
     }
 
