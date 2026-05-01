@@ -75,7 +75,37 @@ jobs:
             :plugin-core:test :plugin-core:jacocoTestReport \
             --no-daemon --quiet --build-cache
 
+      - name: Check SonarCloud Automatic Analysis
+        id: sonar-auto-analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          host = os.environ["SONAR_HOST_URL"].rstrip("/")
+          project = os.environ["SONAR_PROJECT_KEY"]
+          url = f"{host}/api/settings/values?component={project}&keys=sonar.autoscan.enabled"
+          request = urllib.request.Request(url)
+          token = os.environ.get("SONAR_TOKEN")
+          if token:
+              auth = base64.b64encode(f"{token}:".encode()).decode()
+              request.add_header("Authorization", f"Basic {auth}")
+          with urllib.request.urlopen(request) as response:
+              settings = json.load(response).get("settings", [])
+          enabled = any(
+              setting.get("key") == "sonar.autoscan.enabled"
+              and setting.get("value", "").lower() == "true"
+              for setting in settings
+          )
+          print(f"enabled={'true' if enabled else 'false'}")
+          PY
+
       - name: Run SonarQube analysis
+        if: steps.sonar-auto-analysis.outputs.enabled != 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
@@ -87,3 +117,9 @@ jobs:
             -Dsonar.javascript.lcov.reportPaths="plugin-core/js-tests/coverage/lcov.info" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
+
+      - name: Explain skipped SonarQube analysis
+        if: steps.sonar-auto-analysis.outputs.enabled == 'true'
+        run: |
+          echo "SonarCloud Automatic Analysis is enabled for $SONAR_PROJECT_KEY."
+          echo "Skipping CI analysis because SonarCloud rejects running both modes for the same project."
