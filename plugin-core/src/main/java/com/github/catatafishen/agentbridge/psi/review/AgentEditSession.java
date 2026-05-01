@@ -965,6 +965,9 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         } catch (java.util.concurrent.ExecutionException e) {
             return "Error: Review wait failed: " + e.getCause();
         } finally {
+            // Sonar S2222 false positive: this is the inverse pattern — we explicitly UNLOCK
+            // at the top (so the agent can wait without holding the write lock) and re-acquire
+            // here in finally on every path. The lock contract is owned by the caller.
             writeSemaphore.acquireUninterruptibly();
             if (syncLock != null) syncLock.lock();
         }

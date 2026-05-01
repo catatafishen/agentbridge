@@ -1252,9 +1252,14 @@ public final class PlatformApiCompat {
     static String resolveShebangInterpreter(@NotNull String text) {
         if (!text.startsWith("#!")) return null;
         String firstLine = text.lines().findFirst().orElse("");
-        String relevant = firstLine.contains("/env ")
-            ? firstLine.substring(firstLine.indexOf("/env ") + 5)
-            : firstLine.substring(firstLine.lastIndexOf('/') + 1);
+        int envIdx = firstLine.indexOf("/env ");
+        String relevant;
+        if (envIdx >= 0) {
+            relevant = firstLine.substring(envIdx + 5);
+        } else {
+            int slashIdx = firstLine.lastIndexOf('/');
+            relevant = slashIdx >= 0 ? firstLine.substring(slashIdx + 1) : firstLine;
+        }
         String[] parts = relevant.trim().split("\\s");
         return parts.length > 0 && !parts[0].isEmpty() ? parts[0] : null;
     }

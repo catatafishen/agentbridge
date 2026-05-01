@@ -56,7 +56,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         add(canvas, BorderLayout.CENTER);
 
         emptyLabel = new JBLabel("No data");
-        emptyLabel.setHorizontalAlignment(JBLabel.CENTER);
+        emptyLabel.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
         emptyLabel.setVisible(false);
     }
 

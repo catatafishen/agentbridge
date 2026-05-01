@@ -118,6 +118,7 @@ public final class ToolCallStatisticsBackfill {
                         case INSERTED -> inserted++;
                         case SKIPPED -> skipped++;
                         case ERROR -> errors++;
+                        case IGNORED -> { /* non-tool / unparseable lines are skipped silently */ }
                     }
                 }
             } catch (IOException e) {
