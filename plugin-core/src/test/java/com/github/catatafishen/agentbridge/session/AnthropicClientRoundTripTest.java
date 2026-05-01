@@ -412,8 +412,8 @@ class AnthropicClientRoundTripTest {
         for (EntryData entry : imported) {
             if (entry instanceof EntryData.ToolCall) {
                 toolCount++;
-                assertTrue(((EntryData.ToolCall) entry).getResult() != null,
-                    "Each tool call should have a result after round-trip");
+                assertNotNull("Each tool call should have a result after round-trip",
+                    ((EntryData.ToolCall) entry).getResult());
             }
         }
         assertEquals(3, toolCount, "All 3 tool results should round-trip");
