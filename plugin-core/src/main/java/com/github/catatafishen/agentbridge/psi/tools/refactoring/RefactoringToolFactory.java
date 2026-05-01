@@ -17,7 +17,7 @@ public final class RefactoringToolFactory {
     private RefactoringToolFactory() {
     }
 
-    public static @NotNull List<Tool> create(@NotNull Project project, boolean hasJava) {
+    public static @NotNull List<Tool> create(@NotNull Project project, boolean hasJava, boolean hasKotlin) {
         var tools = new ArrayList<Tool>();
         tools.add(new RefactorTool(project));
         tools.add(new GoToDeclarationTool(project));
@@ -27,6 +27,9 @@ public final class RefactoringToolFactory {
         tools.add(new GetCallHierarchyTool(project));
         tools.add(new GetDocumentationTool(project));
         tools.add(new GetSymbolInfoTool(project));
+        if (hasKotlin) {
+            tools.add(new ConvertJavaToKotlinTool(project, true));
+        }
         return List.copyOf(tools);
     }
 }

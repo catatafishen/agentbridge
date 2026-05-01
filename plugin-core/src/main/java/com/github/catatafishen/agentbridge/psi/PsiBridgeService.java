@@ -193,12 +193,13 @@ public final class PsiBridgeService implements Disposable {
         // Register OO-style individual tool classes
         boolean hasJava = PlatformApiCompat.isPluginInstalled("com.intellij.modules.java");
         boolean isRider = PlatformApiCompat.isPluginInstalled("com.intellij.modules.rider");
+        boolean hasKotlin = PlatformApiCompat.isPluginInstalled("org.jetbrains.kotlin");
         var allTools = new java.util.ArrayList<com.github.catatafishen.agentbridge.psi.tools.Tool>();
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.git.GitToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.file.FileToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.navigation.NavigationToolFactory.create(project, hasJava));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.quality.QualityToolFactory.create(project, SonarQubeIntegration.isInstalled()));
-        allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.refactoring.RefactoringToolFactory.create(project, hasJava));
+        allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.refactoring.RefactoringToolFactory.create(project, hasJava, hasKotlin));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.editing.EditingToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.testing.TestingToolFactory.create(project));
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.project.ProjectToolFactory.create(project, runConfigService, hasJava));
