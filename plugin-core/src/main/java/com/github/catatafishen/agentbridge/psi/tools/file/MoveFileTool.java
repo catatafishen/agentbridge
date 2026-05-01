@@ -26,11 +26,6 @@ public final class MoveFileTool extends FileTool {
     }
 
     @Override
-    public boolean requiresIndex() {
-        return true;
-    }
-
-    @Override
     public @NotNull String displayName() {
         return "Move File";
     }
@@ -115,7 +110,10 @@ public final class MoveFileTool extends FileTool {
 
     private String performRefactoringMove(PsiMoveTarget target) {
         String oldPath = target.sourceFile().getPath();
-        String newPath = target.destinationDirectory().getPath() + "/" + target.sourceFile().getName();
+        String newPath = com.intellij.openapi.util.io.FileUtil.join(
+            target.destinationDirectory().getPath(),
+            target.sourceFile().getName()
+        );
         var document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(target.sourceFile());
         notifyBeforeEdit(project, target.sourceFile(), document);
         try {
