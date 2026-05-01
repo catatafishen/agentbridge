@@ -570,7 +570,7 @@ public final class ChatWebServer implements Disposable {
     // ── TLS ───────────────────────────────────────────────────────────────────
 
     private static final String KEYSTORE_PASSWORD_SERVICE = "AgentBridge/KeystorePassword";
-    private static final String LEGACY_KEYSTORE_PASSWORD = "agentbridge-ephemeral";
+    private static final String LEGACY_KEYSTORE_UNLOCK_VALUE = "agentbridge-ephemeral";
     private static final String PKCS12_TYPE = "PKCS12";
     private static final String KEYTOOL_CMD = "keytool";
     private static final String KT_GENKEYPAIR = "-genkeypair";
@@ -607,15 +607,6 @@ public final class ChatWebServer implements Disposable {
         String newPwd = UUID.randomUUID().toString();
         PasswordSafe.getInstance().set(attrs, new Credentials("keystore", newPwd));
         return newPwd;
-    }
-
-    /**
-     * Returns {@code true} if the given PKCS12 keystore file can be loaded with the current
-     * stored password. Used to detect keystores created under a different password and force
-     * regeneration.
-     */
-    private static boolean canLoadKeystore(java.io.File ksFile) {
-        return canLoadKeystore(ksFile, getOrCreateKeystorePassword());
     }
 
     private static boolean canLoadKeystore(java.io.File ksFile, String password) {
@@ -715,18 +706,18 @@ public final class ChatWebServer implements Disposable {
         if (!caKsFile.exists() || canLoadKeystore(caKsFile, currentPassword)) {
             return currentPassword;
         }
-        if (!canLoadKeystore(caKsFile, LEGACY_KEYSTORE_PASSWORD)) {
+        if (!canLoadKeystore(caKsFile, LEGACY_KEYSTORE_UNLOCK_VALUE)) {
             return currentPassword;
         }
 
         LOG.info("[ChatWebServer] Migrating legacy TLS keystores to PasswordSafe-backed password");
         java.nio.file.Files.createDirectories(pluginDir);
-        migrateKeystorePassword(caKsFile, LEGACY_KEYSTORE_PASSWORD, currentPassword);
+        migrateKeystorePassword(caKsFile, LEGACY_KEYSTORE_UNLOCK_VALUE, currentPassword);
         if (!serverKsFile.exists()) {
             return currentPassword;
         }
-        if (canLoadKeystore(serverKsFile, LEGACY_KEYSTORE_PASSWORD)) {
-            migrateKeystorePassword(serverKsFile, LEGACY_KEYSTORE_PASSWORD, currentPassword);
+        if (canLoadKeystore(serverKsFile, LEGACY_KEYSTORE_UNLOCK_VALUE)) {
+            migrateKeystorePassword(serverKsFile, LEGACY_KEYSTORE_UNLOCK_VALUE, currentPassword);
         } else if (!canLoadKeystore(serverKsFile, currentPassword)) {
             // The CA is preserved; a stale/unloadable server certificate can be regenerated from it.
             java.nio.file.Files.deleteIfExists(serverKsFile.toPath());

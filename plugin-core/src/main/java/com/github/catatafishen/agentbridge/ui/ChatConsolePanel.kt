@@ -574,7 +574,11 @@ class ChatConsolePanel(
 
             // Create new chip with correct hash-based ID
             val cleanTitle = toolTitleOrDefault(title, name)
-            val resolvedKind = kind ?: entry?.kind ?: "other"
+            val resolvedKind = when {
+                kind != null -> kind
+                entry != null -> entry.kind
+                else -> "other"
+            }
             val label = toolChipTitle(cleanTitle, arguments)
             val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
             val paramsJson = if (!hasCustomRenderer) escJs(arguments) else ""
