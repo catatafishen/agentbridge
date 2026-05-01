@@ -79,6 +79,23 @@ tied to the original goal instead of turning it into a separate clean-up task wi
 For agents, this fail-fast loop is not a luxury. It helps prevent expensive circles: edit, scan, forget, overcorrect,
 rebuild, rediscover the original requirement.
 
+## Strict quality gates fit agentic development
+
+Strict gates such as test coverage requirements, cyclomatic complexity limits, duplication checks, and static-analysis
+rules have always been valuable, but there has traditionally been a real tradeoff. Human teams have to decide how much
+time to spend refactoring working code versus building the next feature.
+
+Agentic development changes that tradeoff. Asking an agent to satisfy a coverage threshold, split a complex method, or
+clean up a warning is much cheaper than asking a human to spend the same focus time on it. That kind of maintenance work
+is almost perfect agent work: deterministic feedback, clear pass/fail criteria, and a strong bias toward code that is
+simpler when the next functional requirement arrives.
+
+This matters because agents still tend to focus on the task directly in front of them. They do not reliably hold the
+full product plan or long-term architecture in mind. A clean, clear, well-tested codebase gives the agent guardrails. As
+the codebase grows, maintainable code is not only nicer for humans; it also makes future agent edits safer and less
+likely to drift away from the larger design. The bigger picture can stay in the human's mind, while the agent can be
+trusted with smaller, well-bounded changes.
+
 ## Deterministic tools should not be reinvented by an LLM
 
 Renaming a function is the simplest example. An LLM can search the codebase, edit every reference it finds, build,
