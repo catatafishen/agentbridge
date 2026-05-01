@@ -508,9 +508,35 @@ flag **and** a *request focus / autoFocusContent* flag — they must be gated **
 
 ---
 
+### Attempt 14: Fix FocusGuard chat-boundary fallback
+
+**Problem**: User reported that `git`, `run_command`, and `run_in_terminal` still stole focus
+while typing in the chat prompt with Follow Agent enabled, even after the per-tool `show()` /
+`activate()` and focus-flag guards above.
+
+**Root cause**: `FocusGuard.isInsideChatToolWindow()` had a fallback for JCEF edge cases that
+treated any component in the same IDE main frame as "inside chat":
+
+```java
+ownerWindow == twWindow && SwingUtilities.isDescendingFrom(twRoot, ownerWindow)
+```
+
+Because the AgentBridge tool window root is itself a descendant of the IDE frame, this condition
+was true for sibling tool-window/editor components too. As a result, the veto path allowed focus
+changes into VCS, Terminal, and Run content as if they were chat-internal focus changes.
+
+**Fix**: Restrict chat-boundary detection to the actual AgentBridge component hierarchy
+(`comp == chatRoot || SwingUtilities.isDescendingFrom(comp, chatRoot)`) and remove the same-frame
+fallback. This restores the guard's intended behavior: programmatic focus moves to sibling tool
+windows in the IDE frame are vetoed, while focus moves within the chat UI are allowed.
+
+**Files**: `FocusGuard.java`, `FocusGuardTest.java`.
+
+---
+
 ## Remaining Root Causes
 
-_All previously documented root causes (RC1–RC4) have been fixed. See Attempts 1–10 below._
+_All previously documented root causes (RC1–RC4) have been fixed. See Attempts 1–14 above._
 
 ---
 
@@ -533,7 +559,7 @@ _All previously documented root causes (RC1–RC4) have been fixed. See Attempts
 | `PsiBridgeService.java`    | 321  | ✅ `chatWasActive` captured at start, completion re-checks                                                                                                    |
 | `PsiBridgeService.java`    | 469  | ✅ Focus restore requires both start+end active                                                                                                               |
 | `ChatToolWindowContent.kt` | 165  | ✅ 150ms alarm checks chat-active before firing                                                                                                               |
-| `FocusGuard.java`          | all  | ✅ `VetoableChangeListener` vetoes programmatic focus steals; targeted to same-Window only; circuit breaker at 20 vetoes; synchronous EDT uninstall via latch |
+| `FocusGuard.java`          | all  | ✅ `VetoableChangeListener` vetoes programmatic focus steals to sibling editor/tool-window components; targeted to same-Window only; circuit breaker at 20 vetoes; synchronous EDT uninstall via latch |
 | `FileTool.java`            | 257  | ✅ `navigate(focus)` check is inside `invokeLater`                                                                                                            |
 | `FileTool.java`            | 286  | ✅ `selectInProjectView` skips if chat active; only scrolls if already open                                                                                   |
 | `GitTool.java`             | 400  | ✅ VCS `show()`/`activate()` check is inside `invokeLater`                                                                                                    |

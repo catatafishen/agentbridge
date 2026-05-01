@@ -11,6 +11,7 @@ import java.beans.PropertyChangeEvent;
 import java.util.HashMap;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -105,6 +106,26 @@ class FocusGuardTest {
         // The 21st should NOT throw — circuit breaker tripped, guard is uninstalled
         guard.vetoableChange(outsideEvent());
         assertTrue(guard.uninstalled, "Guard should be uninstalled after circuit breaker trips");
+    }
+
+    @Test
+    void chatComponentDetectionDoesNotTreatMainWindowSiblingsAsChat() {
+        JPanel ideFrameRoot = new JPanel(new BorderLayout());
+        JPanel chatRoot = new JPanel();
+        JPanel chatChild = new JPanel();
+        JPanel vcsToolWindow = new JPanel();
+        JPanel runToolWindow = new JPanel();
+
+        chatRoot.add(chatChild);
+        ideFrameRoot.add(chatRoot, BorderLayout.CENTER);
+        ideFrameRoot.add(vcsToolWindow, BorderLayout.WEST);
+        ideFrameRoot.add(runToolWindow, BorderLayout.SOUTH);
+
+        assertTrue(FocusGuard.isInsideChatComponent(chatRoot, chatRoot));
+        assertTrue(FocusGuard.isInsideChatComponent(chatChild, chatRoot));
+        assertFalse(FocusGuard.isInsideChatComponent(vcsToolWindow, chatRoot));
+        assertFalse(FocusGuard.isInsideChatComponent(runToolWindow, chatRoot));
+        assertFalse(FocusGuard.isInsideChatComponent(ideFrameRoot, chatRoot));
     }
 
     // ── Pass-through cases (no veto expected) ────────────────────────────────────────────────────

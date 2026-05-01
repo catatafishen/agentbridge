@@ -256,16 +256,13 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
             // tw.getComponent() is @NotNull but we keep the defensive check — runtime ≠ compile-time.
             //noinspection ConstantValue
             if (twRoot == null) return false;
-            if (SwingUtilities.isDescendingFrom(comp, twRoot)) return true;
-
-            // JCEF browser components live in a separate heavyweight window; fall back to
-            // comparing the root window of the focus owner with the tool window's window.
-            Window ownerWindow = SwingUtilities.getWindowAncestor(comp);
-            Window twWindow = SwingUtilities.getWindowAncestor(twRoot);
-            return ownerWindow != null && ownerWindow == twWindow
-                && SwingUtilities.isDescendingFrom(twRoot, ownerWindow);
+            return isInsideChatComponent(comp, twRoot);
         } catch (Exception e) {
             return false;
         }
+    }
+
+    static boolean isInsideChatComponent(Component comp, JComponent chatRoot) {
+        return comp == chatRoot || SwingUtilities.isDescendingFrom(comp, chatRoot);
     }
 }
