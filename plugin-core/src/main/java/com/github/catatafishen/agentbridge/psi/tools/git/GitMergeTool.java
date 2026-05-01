@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.review.AgentEditSession;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -67,59 +68,67 @@ public final class GitMergeTool extends GitTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         boolean hasAbort = args.has(PARAM_ABORT) && args.get(PARAM_ABORT).getAsBoolean();
-        boolean hasBranch = args.has(PARAM_BRANCH) && !args.get(PARAM_BRANCH).getAsString().isEmpty();
-
+        boolean hasBranch = hasBranch(args);
         if (!hasBranch && !hasAbort) {
             return "Error: 'branch' parameter is required (or use 'abort' to abort an in-progress merge)";
         }
 
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
-        String ambiError = requireUnambiguousRepo(repoParam, "git_merge");
-        if (ambiError != null) return ambiError;
-        String root = resolveRepoRootOrError(repoParam);
+        String root = prepareMerge(repoParam);
         if (root.startsWith("Error")) return root;
 
         flushAndSave();
+        if (hasAbort) return runGitIn(root, "merge", "--abort");
+        return mergeBranch(args, root);
+    }
 
-        if (hasAbort) {
-            return runGitIn(root, "merge", "--abort");
-        }
+    private String prepareMerge(@Nullable String repoParam) {
+        String ambiError = requireUnambiguousRepo(repoParam, "git_merge");
+        if (ambiError != null) return ambiError;
+        return resolveRepoRootOrError(repoParam);
+    }
 
+    private String mergeBranch(@NotNull JsonObject args, @NotNull String root) throws Exception {
         String branchArg = args.get(PARAM_BRANCH).getAsString();
-
-        // Auto-fetch when merging a remote branch
         String fetchNote = autoFetchForRemoteRefIn(branchArg, root);
-
         String reviewError = AgentEditSession.getInstance(project)
             .awaitReviewCompletion("git merge '" + branchArg + "'");
         if (reviewError != null) return reviewError;
 
+        String result = runGitIn(root, mergeCommandArgs(args, branchArg));
+        if (result.startsWith("Error")) return fetchNote + result;
+        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git merge");
+        return fetchNote + result + getBranchSummaryIn(root);
+    }
+
+    private static String[] mergeCommandArgs(@NotNull JsonObject args, @NotNull String branchArg) {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("merge");
+        addBooleanFlag(args, PARAM_NO_FF, "--no-ff", cmdArgs);
+        addBooleanFlag(args, PARAM_FF_ONLY, "--ff-only", cmdArgs);
+        addBooleanFlag(args, PARAM_SQUASH, "--squash", cmdArgs);
+        addMessageArg(args, cmdArgs);
+        cmdArgs.add(branchArg);
+        return cmdArgs.toArray(String[]::new);
+    }
 
-        if (args.has(PARAM_NO_FF) && args.get(PARAM_NO_FF).getAsBoolean()) {
-            cmdArgs.add("--no-ff");
-        }
+    private static void addBooleanFlag(
+        @NotNull JsonObject args,
+        @NotNull String parameter,
+        @NotNull String flag,
+        @NotNull List<String> cmdArgs
+    ) {
+        if (args.has(parameter) && args.get(parameter).getAsBoolean()) cmdArgs.add(flag);
+    }
 
-        if (args.has(PARAM_FF_ONLY) && args.get(PARAM_FF_ONLY).getAsBoolean()) {
-            cmdArgs.add("--ff-only");
-        }
-
-        if (args.has(PARAM_SQUASH) && args.get(PARAM_SQUASH).getAsBoolean()) {
-            cmdArgs.add("--squash");
-        }
-
+    private static void addMessageArg(@NotNull JsonObject args, @NotNull List<String> cmdArgs) {
         if (args.has(PARAM_MESSAGE) && !args.get(PARAM_MESSAGE).getAsString().isEmpty()) {
             cmdArgs.add("-m");
             cmdArgs.add(args.get(PARAM_MESSAGE).getAsString());
         }
+    }
 
-        cmdArgs.add(branchArg);
-
-        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
-        if (result.startsWith("Error")) return fetchNote + result;
-
-        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git merge");
-        return fetchNote + result + getBranchSummaryIn(root);
+    private static boolean hasBranch(@NotNull JsonObject args) {
+        return args.has(PARAM_BRANCH) && !args.get(PARAM_BRANCH).getAsString().isEmpty();
     }
 }

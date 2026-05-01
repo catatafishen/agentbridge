@@ -273,14 +273,15 @@ final class ProjectFilesPanel extends JPanel {
             notifyCreateFailure(file, new IOException("parent directory not visible to VFS"));
             return null;
         }
-        return com.intellij.openapi.application.WriteAction.compute(() -> {
+        final VirtualFile[] created = new VirtualFile[1];
+        com.intellij.openapi.application.ApplicationManager.getApplication().runWriteAction(() -> {
             try {
-                return parentVf.createChildData(this, file.getName());
+                created[0] = parentVf.createChildData(this, file.getName());
             } catch (IOException ex) {
                 notifyCreateFailure(file, ex);
-                return null;
             }
         });
+        return created[0];
     }
 
     private void notifyCreateFailure(@NotNull File file, @NotNull Throwable cause) {
@@ -357,13 +358,8 @@ final class ProjectFilesPanel extends JPanel {
                                                       boolean hasFocus) {
             super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
             this.rowSelected = sel;
-            // Selected row gets an opaque label painted with the L&F tree selection color;
-            // every other row is fully transparent so the side-panel background shows through.
             setOpaque(sel);
             if (sel) {
-                // Use the focused/unfocused selection palette based on actual tree focus —
-                // otherwise unfocused selections incorrectly look focused, which breaks the
-                // IDE's standard selection semantics (focused = vivid, unfocused = muted).
                 setBackground(com.intellij.util.ui.UIUtil.getTreeSelectionBackground(hasFocus));
                 setForeground(com.intellij.util.ui.UIUtil.getTreeSelectionForeground(hasFocus));
             } else {

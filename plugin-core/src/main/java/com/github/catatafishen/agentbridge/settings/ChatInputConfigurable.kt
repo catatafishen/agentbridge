@@ -37,7 +37,7 @@ class ChatInputConfigurable(private val project: Project) :
                 .bindSelected({ s.isShowShortcutHints }, { s.isShowShortcutHints = it })
         }
         row {
-            val link = LinkLabel<Void>(
+            val link = LinkLabel<Unit>(
                 "Customize keyboard shortcuts…", null
             ) { _, _ ->
                 ApplicationManager.getApplication().invokeLater {

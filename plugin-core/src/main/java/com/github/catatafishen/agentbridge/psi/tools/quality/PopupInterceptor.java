@@ -11,15 +11,8 @@ import com.intellij.ui.popup.list.ListPopupImpl;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.JComponent;
-import javax.swing.JLabel;
-import javax.swing.JRootPane;
-import java.awt.AWTEvent;
-import java.awt.Component;
-import java.awt.Container;
-import java.awt.Frame;
-import java.awt.Toolkit;
-import java.awt.Window;
+import javax.swing.*;
+import java.awt.*;
 import java.awt.event.AWTEventListener;
 import java.awt.event.WindowEvent;
 import java.util.ArrayList;
@@ -81,17 +74,17 @@ final class PopupInterceptor {
     /**
      * Snapshot returned to the caller after invocation.
      *
-     * @param popupWasOpened whether at least one new popup opened during {@code action.run()}.
-     * @param popupTitles    titles of the new popups (best-effort).
-     * @param cancelled      whether <em>all</em> intercepted popups were dismissed (only
-     *                       meaningful in {@link PopupHandler.Cancel} and
-     *                       {@link PopupHandler.Snapshot} modes).
-     * @param snapshot       structural extraction of the first intercepted popup; non-null only
-     *                       when handler is {@link PopupHandler.Snapshot} and extraction
-     *                       succeeded.
+     * @param popupWasOpened     whether at least one new popup opened during {@code action.run()}.
+     * @param popupTitles        titles of the new popups (best-effort).
+     * @param cancelled          whether <em>all</em> intercepted popups were dismissed (only
+     *                           meaningful in {@link PopupHandler.Cancel} and
+     *                           {@link PopupHandler.Snapshot} modes).
+     * @param snapshot           structural extraction of the first intercepted popup; non-null only
+     *                           when handler is {@link PopupHandler.Snapshot} and extraction
+     *                           succeeded.
      * @param selectionScheduled true when a {@link PopupHandler.SelectByValue} replay scheduled
-     *                       a selection via {@code invokeLater}; the popup will close
-     *                       asynchronously after this method returns.
+     *                           a selection via {@code invokeLater}; the popup will close
+     *                           asynchronously after this method returns.
      */
     record Result(boolean popupWasOpened,
                   @NotNull List<String> popupTitles,
@@ -218,11 +211,11 @@ final class PopupInterceptor {
             case PopupHandler.Cancel ignored -> {
                 for (JBPopup p : popups) tryCancel(p);
             }
-            case PopupHandler.Snapshot snap -> {
+            case PopupHandler.Snapshot(var sink) -> {
                 PopupSnapshot ps = PopupContentExtractor.extract(first);
                 snapshotRef.set(ps);
                 try {
-                    snap.sink().accept(ps);
+                    sink.accept(ps);
                 } catch (Exception | LinkageError t) {
                     LOG.warn("PopupInterceptor: snapshot sink threw", t);
                 }
@@ -286,7 +279,7 @@ final class PopupInterceptor {
         for (int i = 0; i < values.size(); i++) {
             Object v = values.get(i);
             String text = step.getTextFor(v);
-            String id = PopupChoice.buildValueId(text == null ? "(unnamed)" : text, i);
+            String id = PopupChoice.buildValueId(text, i);
             if (id.equals(sel.valueId()) && step.isSelectable(v)) {
                 return v;
             }
@@ -297,7 +290,7 @@ final class PopupInterceptor {
             Object v = values.get(fi);
             String text = step.getTextFor(v);
             String fbText = sel.fallbackText();
-            if (fbText != null && fbText.equals(text) && step.isSelectable(v)) {
+            if (fbText.equals(text) && step.isSelectable(v)) {
                 return v;
             }
         }

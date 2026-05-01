@@ -75,65 +75,74 @@ public final class GitTagTool extends GitTool {
             : "list";
 
         return switch (action) {
-            case "list" -> {
-                List<String> cmdArgs = new ArrayList<>();
-                cmdArgs.add("tag");
-                cmdArgs.add("-l");
-
-                if (args.has(PARAM_PATTERN) && !args.get(PARAM_PATTERN).getAsString().isEmpty()) {
-                    cmdArgs.add(args.get(PARAM_PATTERN).getAsString());
-                }
-
-                if (args.has("sort") && !args.get("sort").getAsString().isEmpty()) {
-                    cmdArgs.add("--sort=" + args.get("sort").getAsString());
-                }
-
-                yield runGitIn(root, cmdArgs.toArray(String[]::new));
-            }
-            case "create" -> {
-                String ambiError = requireUnambiguousRepo(repoParam, "git_tag create");
-                if (ambiError != null) yield ambiError;
-
-                String name = requireName(args);
-                if (name == null) yield "Error: 'name' parameter is required for 'create'";
-
-                boolean annotate = args.has(PARAM_ANNOTATE) && args.get(PARAM_ANNOTATE).getAsBoolean();
-                String message = args.has(PARAM_MESSAGE) ? args.get(PARAM_MESSAGE).getAsString() : "";
-
-                if (annotate && message.isEmpty()) {
-                    yield "Error: 'message' is required for annotated tags (annotated tags without a message open an editor, which is unsupported)";
-                }
-
-                List<String> cmdArgs = new ArrayList<>();
-                cmdArgs.add("tag");
-
-                if (annotate) {
-                    cmdArgs.add("-a");
-                }
-
-                cmdArgs.add(name);
-
-                if (args.has(PARAM_COMMIT) && !args.get(PARAM_COMMIT).getAsString().isEmpty()) {
-                    cmdArgs.add(args.get(PARAM_COMMIT).getAsString());
-                }
-
-                if (!message.isEmpty()) {
-                    cmdArgs.add("-m");
-                    cmdArgs.add(message);
-                }
-
-                yield runGitIn(root, cmdArgs.toArray(String[]::new));
-            }
-            case "delete" -> {
-                String ambiError = requireUnambiguousRepo(repoParam, "git_tag delete");
-                if (ambiError != null) yield ambiError;
-
-                String name = requireName(args);
-                if (name == null) yield "Error: 'name' parameter is required for 'delete'";
-                yield runGitIn(root, "tag", "-d", name);
-            }
+            case "list" -> runGitIn(root, listTagArgs(args));
+            case "create" -> createTag(args, repoParam, root);
+            case "delete" -> deleteTag(args, repoParam, root);
             default -> "Error: unknown action '" + action + "'. Use: list, create, delete";
         };
+    }
+
+    private static String[] listTagArgs(@NotNull JsonObject args) {
+        List<String> cmdArgs = new ArrayList<>();
+        cmdArgs.add("tag");
+        cmdArgs.add("-l");
+        addTextArg(args, PARAM_PATTERN, cmdArgs);
+        addSortArg(args, cmdArgs);
+        return cmdArgs.toArray(String[]::new);
+    }
+
+    private static void addTextArg(@NotNull JsonObject args, @NotNull String parameter, @NotNull List<String> cmdArgs) {
+        if (args.has(parameter) && !args.get(parameter).getAsString().isEmpty()) {
+            cmdArgs.add(args.get(parameter).getAsString());
+        }
+    }
+
+    private static void addSortArg(@NotNull JsonObject args, @NotNull List<String> cmdArgs) {
+        if (args.has("sort") && !args.get("sort").getAsString().isEmpty()) {
+            cmdArgs.add("--sort=" + args.get("sort").getAsString());
+        }
+    }
+
+    private String createTag(@NotNull JsonObject args, @Nullable String repoParam, @NotNull String root) throws Exception {
+        String ambiError = requireUnambiguousRepo(repoParam, "git_tag create");
+        if (ambiError != null) return ambiError;
+
+        String name = requireName(args);
+        if (name == null) return "Error: 'name' parameter is required for 'create'";
+
+        boolean annotate = args.has(PARAM_ANNOTATE) && args.get(PARAM_ANNOTATE).getAsBoolean();
+        String message = args.has(PARAM_MESSAGE) ? args.get(PARAM_MESSAGE).getAsString() : "";
+        if (annotate && message.isEmpty()) {
+            return "Error: 'message' is required for annotated tags (annotated tags without a message open an editor, which is unsupported)";
+        }
+        return runGitIn(root, createTagArgs(args, name, annotate, message));
+    }
+
+    private static String[] createTagArgs(
+        @NotNull JsonObject args,
+        @NotNull String name,
+        boolean annotate,
+        @NotNull String message
+    ) {
+        List<String> cmdArgs = new ArrayList<>();
+        cmdArgs.add("tag");
+        if (annotate) cmdArgs.add("-a");
+        cmdArgs.add(name);
+        addTextArg(args, PARAM_COMMIT, cmdArgs);
+        if (!message.isEmpty()) {
+            cmdArgs.add("-m");
+            cmdArgs.add(message);
+        }
+        return cmdArgs.toArray(String[]::new);
+    }
+
+    private String deleteTag(@NotNull JsonObject args, @Nullable String repoParam, @NotNull String root) throws Exception {
+        String ambiError = requireUnambiguousRepo(repoParam, "git_tag delete");
+        if (ambiError != null) return ambiError;
+
+        String name = requireName(args);
+        if (name == null) return "Error: 'name' parameter is required for 'delete'";
+        return runGitIn(root, "tag", "-d", name);
     }
 
     private static @Nullable String requireName(JsonObject args) {

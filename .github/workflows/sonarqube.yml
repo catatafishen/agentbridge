@@ -3,6 +3,7 @@ name: SonarQube
 on:
   push:
     branches: [ master ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ master ]
     types: [ opened, synchronize, reopened ]
@@ -75,6 +76,22 @@ jobs:
             :plugin-core:test :plugin-core:jacocoTestReport \
             --no-daemon --quiet --build-cache
 
+      - name: Determine Sonar project version
+        id: sonar-version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [[ "${GITHUB_REF_NAME}" == v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            SHORT_SHA="${GITHUB_SHA:0:8}"
+            LATEST_TAG="$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)"
+            if [ -n "$LATEST_TAG" ]; then
+              VERSION="${LATEST_TAG#v}-dev-${SHORT_SHA}"
+            else
+              VERSION="0.0.0-dev-${SHORT_SHA}"
+            fi
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Check SonarCloud Automatic Analysis
         id: sonar-auto-analysis
         env:
@@ -108,18 +125,20 @@ jobs:
         if: steps.sonar-auto-analysis.outputs.enabled != 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_PROJECT_VERSION: ${{ steps.sonar-version.outputs.version }}
         run: |
           gradle sonar --no-daemon --quiet \
             -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
             -Dsonar.organization="$SONAR_ORGANIZATION" \
             -Dsonar.host.url="$SONAR_HOST_URL" \
-            -Dsonar.sources.inclusions="plugin-core/chat-ui/src/**" \
-            -Dsonar.javascript.lcov.reportPaths="plugin-core/js-tests/coverage/lcov.info" \
+            -Dsonar.projectVersion="$SONAR_PROJECT_VERSION" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
 
-      - name: Explain skipped SonarQube analysis
+      - name: Require CI-based SonarQube analysis
         if: steps.sonar-auto-analysis.outputs.enabled == 'true'
         run: |
-          echo "SonarCloud Automatic Analysis is enabled for $SONAR_PROJECT_KEY."
-          echo "Skipping CI analysis because SonarCloud rejects running both modes for the same project."
+          echo "::error::SonarCloud Automatic Analysis is enabled for $SONAR_PROJECT_KEY."
+          echo "::error::Disable it in SonarCloud: Project Settings > Analysis Method > Automatic Analysis."
+          echo "::error::Automatic Analysis does not import coverage and reports projectVersion as 'not provided'."
+          exit 1

@@ -11,6 +11,7 @@ import javax.crypto.KeyAgreement;
 import javax.crypto.Mac;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -22,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.AlgorithmParameters;
+import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -56,6 +58,7 @@ public final class WebPushSender {
     private static final String HMAC_ALG = "HmacSHA256";
     private static final Base64.Encoder B64URL = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder B64URL_DEC = Base64.getUrlDecoder();
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     /**
      * In-memory push subscriptions, keyed by endpoint URL.
@@ -182,7 +185,7 @@ public final class WebPushSender {
             CompletableFuture.runAsync(() -> {
                 try {
                     sendOne(sub, plaintext);
-                } catch (Exception e) {
+                } catch (WebPushException e) {
                     LOG.warn("[WebPush] Failed to send to " + sub.endpoint() + ": " + e.getMessage());
                     if (e.getMessage() != null && e.getMessage().contains("410")) {
                         // Gone — subscription expired
@@ -196,114 +199,127 @@ public final class WebPushSender {
 
     // ── Core send logic ───────────────────────────────────────────────────────
 
-    private void sendOne(@NotNull PushSubscription sub, byte[] plaintext) throws Exception {
-        // Decode browser keys
-        byte[] uaPublicKeyBytes = B64URL_DEC.decode(toBase64Url(sub.p256dh()));
-        byte[] authSecret = B64URL_DEC.decode(toBase64Url(sub.auth()));
+    private void sendOne(@NotNull PushSubscription sub, byte[] plaintext) throws WebPushException {
+        try {
+            // Decode browser keys
+            byte[] uaPublicKeyBytes = B64URL_DEC.decode(toBase64Url(sub.p256dh()));
+            byte[] authSecret = B64URL_DEC.decode(toBase64Url(sub.auth()));
 
-        // Generate ephemeral sender key pair
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
-        kpg.initialize(new ECGenParameterSpec(EC_CURVE), new SecureRandom());
-        KeyPair senderKeys = kpg.generateKeyPair();
-        byte[] senderPublicKeyBytes = encodePublicKeyUncompressed((ECPublicKey) senderKeys.getPublic());
-        ECPublicKey uaPublicKey = decodePublicKey(uaPublicKeyBytes);
+            // Generate ephemeral sender key pair
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
+            kpg.initialize(new ECGenParameterSpec(EC_CURVE), SECURE_RANDOM);
+            KeyPair senderKeys = kpg.generateKeyPair();
+            byte[] senderPublicKeyBytes = encodePublicKeyUncompressed((ECPublicKey) senderKeys.getPublic());
+            ECPublicKey uaPublicKey = decodePublicKey(uaPublicKeyBytes);
 
-        // ECDH shared secret
-        KeyAgreement ka = KeyAgreement.getInstance("ECDH");
-        ka.init(senderKeys.getPrivate());
-        ka.doPhase(uaPublicKey, true);
-        byte[] ecdhSecret = ka.generateSecret();
+            // ECDH shared secret
+            KeyAgreement ka = KeyAgreement.getInstance("ECDH");
+            ka.init(senderKeys.getPrivate());
+            ka.doPhase(uaPublicKey, true);
+            byte[] ecdhSecret = ka.generateSecret();
 
-        // RFC 8291 key derivation: derive PRK_key from auth_secret and ecdh_secret via HMAC-SHA-256,
-        // build key_info from the WebPush info label, uaPublicKey, and senderPublicKey,
-        // then compute IKM via HKDF-Expand using key_info with an appended 0x01 byte.
-        byte[] prkKey = hmacSha256(authSecret, ecdhSecret);
-        byte[] keyInfo = concat(
-            "WebPush: info\0".getBytes(StandardCharsets.US_ASCII),
-            uaPublicKeyBytes,
-            senderPublicKeyBytes
-        );
-        byte[] ikm = hkdfExpand(prkKey, appendByte(keyInfo, (byte) 0x01), 32);
+            // RFC 8291 key derivation: derive PRK_key from auth_secret and ecdh_secret via HMAC-SHA-256,
+            // build key_info from the WebPush info label, uaPublicKey, and senderPublicKey,
+            // then compute IKM via HKDF-Expand using key_info with an appended 0x01 byte.
+            byte[] prkKey = hmacSha256(authSecret, ecdhSecret);
+            byte[] keyInfo = concat(
+                "WebPush: info\0".getBytes(StandardCharsets.US_ASCII),
+                uaPublicKeyBytes,
+                senderPublicKeyBytes
+            );
+            byte[] ikm = hkdfExpand(prkKey, appendByte(keyInfo, (byte) 0x01), 32);
 
-        // Salt + derive CEK and nonce
-        byte[] salt = new byte[16];
-        new SecureRandom().nextBytes(salt);
-        byte[] prk = hmacSha256(salt, ikm);
-        byte[] cek = hkdfExpand(prk, appendByte("Content-Encoding: aes128gcm\0".getBytes(StandardCharsets.US_ASCII), (byte) 0x01), 16);
-        byte[] nonce = hkdfExpand(prk, appendByte("Content-Encoding: nonce\0".getBytes(StandardCharsets.US_ASCII), (byte) 0x01), 12);
+            // Salt + derive CEK and nonce
+            byte[] salt = new byte[16];
+            SECURE_RANDOM.nextBytes(salt);
+            byte[] prk = hmacSha256(salt, ikm);
+            byte[] cek = hkdfExpand(prk, appendByte("Content-Encoding: aes128gcm\0".getBytes(StandardCharsets.US_ASCII), (byte) 0x01), 16);
+            byte[] nonce = hkdfExpand(prk, appendByte("Content-Encoding: nonce\0".getBytes(StandardCharsets.US_ASCII), (byte) 0x01), 12);
 
-        // Encrypt: plaintext + 0x02 (padding delimiter, no padding)
-        byte[] padded = appendByte(plaintext, (byte) 0x02);
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(cek, "AES"), new GCMParameterSpec(128, nonce));
-        byte[] ciphertext = cipher.doFinal(padded);
+            // Encrypt: plaintext + 0x02 (padding delimiter, no padding)
+            byte[] padded = appendByte(plaintext, (byte) 0x02);
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(cek, "AES"), new GCMParameterSpec(128, nonce));
+            byte[] ciphertext = cipher.doFinal(padded);
 
-        // Build aes128gcm content body: 16 bytes salt, 4 bytes record size, 1 byte key-id length, 65 bytes sender public key, then ciphertext
-        ByteBuffer body = ByteBuffer.allocate(16 + 4 + 1 + 65 + ciphertext.length);
-        body.put(salt);
-        body.putInt(RECORD_SIZE);
-        body.put((byte) 65);
-        body.put(senderPublicKeyBytes);
-        body.put(ciphertext);
-        byte[] bodyBytes = body.array();
+            // Build aes128gcm content body: 16 bytes salt, 4 bytes record size, 1 byte key-id length, 65 bytes sender public key, then ciphertext
+            ByteBuffer body = ByteBuffer.allocate(16 + 4 + 1 + 65 + ciphertext.length);
+            body.put(salt);
+            body.putInt(RECORD_SIZE);
+            body.put((byte) 65);
+            body.put(senderPublicKeyBytes);
+            body.put(ciphertext);
+            byte[] bodyBytes = body.array();
 
-        // VAPID JWT
-        String vapidJwt = buildVapidJwt(sub.endpoint());
-        String authHeader = "vapid t=" + vapidJwt + ",k=" + B64URL.encodeToString(vapidPublicKeyBytes);
+            // VAPID JWT
+            String vapidJwt = buildVapidJwt(sub.endpoint());
+            String authHeader = "vapid t=" + vapidJwt + ",k=" + B64URL.encodeToString(vapidPublicKeyBytes);
 
-        // HTTP POST to push endpoint
-        HttpRequest req = HttpRequest.newBuilder()
-            .uri(URI.create(sub.endpoint()))
-            .header("Content-Type", "application/octet-stream")
-            .header("Content-Encoding", "aes128gcm")
-            .header("Authorization", authHeader)
-            .header("TTL", "86400")
-            .POST(HttpRequest.BodyPublishers.ofByteArray(bodyBytes))
-            .timeout(Duration.ofSeconds(15))
-            .build();
-        HttpResponse<String> response = http.send(req, HttpResponse.BodyHandlers.ofString());
-        int status = response.statusCode();
-        if (status >= 200 && status < 300) {
-            LOG.debug("[WebPush] Delivered to " + sub.endpoint() + " (" + status + ")");
-        } else {
-            throw new RuntimeException("Push endpoint returned " + status + ": " + response.body());
+            // HTTP POST to push endpoint
+            HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(sub.endpoint()))
+                .header("Content-Type", "application/octet-stream")
+                .header("Content-Encoding", "aes128gcm")
+                .header("Authorization", authHeader)
+                .header("TTL", "86400")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(bodyBytes))
+                .timeout(Duration.ofSeconds(15))
+                .build();
+            HttpResponse<String> response = http.send(req, HttpResponse.BodyHandlers.ofString());
+            int status = response.statusCode();
+            if (status >= 200 && status < 300) {
+                LOG.debug("[WebPush] Delivered to " + sub.endpoint() + " (" + status + ")");
+            } else {
+                throw new WebPushException("Push endpoint returned " + status + ": " + response.body());
+            }
+        } catch (WebPushException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new WebPushException("Interrupted while sending push message", e);
+        } catch (GeneralSecurityException | IOException | IllegalArgumentException e) {
+            throw new WebPushException("Unable to send push message", e);
         }
     }
 
     // ── VAPID JWT (RFC 8292) ──────────────────────────────────────────────────
 
-    private String buildVapidJwt(@NotNull String endpoint) throws Exception {
-        // audience = origin of the endpoint
-        URI uri = URI.create(endpoint);
-        String audience = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+    private String buildVapidJwt(@NotNull String endpoint) throws WebPushException {
+        try {
+            // audience = origin of the endpoint
+            URI uri = URI.create(endpoint);
+            String audience = uri.getScheme() + "://" + uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
 
-        long exp = Instant.now().getEpochSecond() + 3600;
+            long exp = Instant.now().getEpochSecond() + 3600;
 
-        String header = B64URL.encodeToString("{\"typ\":\"JWT\",\"alg\":\"ES256\"}".getBytes(StandardCharsets.UTF_8));
-        String payload = B64URL.encodeToString(
-            ("{\"aud\":\"" + audience + "\",\"exp\":" + exp + ",\"sub\":\"mailto:agentbridge@localhost\"}").getBytes(StandardCharsets.UTF_8)
-        );
-        String sigInput = header + "." + payload;
+            String header = B64URL.encodeToString("{\"typ\":\"JWT\",\"alg\":\"ES256\"}".getBytes(StandardCharsets.UTF_8));
+            String payload = B64URL.encodeToString(
+                ("{\"aud\":\"" + audience + "\",\"exp\":" + exp + ",\"sub\":\"mailto:agentbridge@localhost\"}").getBytes(StandardCharsets.UTF_8)
+            );
+            String sigInput = header + "." + payload;
 
-        Signature sig = Signature.getInstance("SHA256withECDSA");
-        sig.initSign(vapidKeyPair.getPrivate());
-        sig.update(sigInput.getBytes(StandardCharsets.US_ASCII));
-        byte[] derSig = sig.sign();
+            Signature sig = Signature.getInstance("SHA256withECDSA");
+            sig.initSign(vapidKeyPair.getPrivate());
+            sig.update(sigInput.getBytes(StandardCharsets.US_ASCII));
+            byte[] derSig = sig.sign();
 
-        // Java returns DER-encoded ECDSA signature; JWT requires IEEE P1363 (raw r||s, 32+32 bytes)
-        byte[] rawSig = derToRawEcdsa(derSig, 32);
-        return sigInput + "." + B64URL.encodeToString(rawSig);
+            // Java returns DER-encoded ECDSA signature; JWT requires IEEE P1363 (raw r||s, 32+32 bytes)
+            byte[] rawSig = derToRawEcdsa(derSig, 32);
+            return sigInput + "." + B64URL.encodeToString(rawSig);
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
+            throw new WebPushException("Unable to build VAPID JWT", e);
+        }
     }
 
     // ── Static helpers ────────────────────────────────────────────────────────
 
-    private static byte[] hmacSha256(byte[] key, byte[] data) throws Exception {
+    private static byte[] hmacSha256(byte[] key, byte[] data) throws GeneralSecurityException {
         Mac mac = Mac.getInstance(HMAC_ALG);
         mac.init(new SecretKeySpec(key, HMAC_ALG));
         return mac.doFinal(data);
     }
 
-    private static byte[] hkdfExpand(byte[] prk, byte[] info, int length) throws Exception {
+    private static byte[] hkdfExpand(byte[] prk, byte[] info, int length) throws GeneralSecurityException {
         Mac mac = Mac.getInstance(HMAC_ALG);
         mac.init(new SecretKeySpec(prk, HMAC_ALG));
         mac.update(info);
@@ -352,9 +368,9 @@ public final class WebPushSender {
     /**
      * Generates a new P-256 VAPID key pair.
      */
-    public static KeyPair generateVapidKeyPair() throws Exception {
+    public static KeyPair generateVapidKeyPair() throws GeneralSecurityException {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
-        kpg.initialize(new ECGenParameterSpec(EC_CURVE), new SecureRandom());
+        kpg.initialize(new ECGenParameterSpec(EC_CURVE), SECURE_RANDOM);
         return kpg.generateKeyPair();
     }
 
@@ -393,6 +409,16 @@ public final class WebPushSender {
     }
 
     // ── Subscription record ───────────────────────────────────────────────────
+
+    private static final class WebPushException extends Exception {
+        private WebPushException(String message) {
+            super(message);
+        }
+
+        private WebPushException(String message, Throwable cause) {
+            super(message, cause);
+        }
+    }
 
     public record PushSubscription(String endpoint, String p256dh, String auth) {
     }

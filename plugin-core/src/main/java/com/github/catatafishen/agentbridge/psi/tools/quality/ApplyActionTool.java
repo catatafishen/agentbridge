@@ -30,7 +30,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class ApplyActionTool extends QualityTool implements Replayable {
@@ -98,7 +100,8 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
     }
 
     @Override
-    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args)
+        throws InterruptedException, ExecutionException, TimeoutException {
         return executeWithHandler(args, new PopupHandler.Cancel(), false);
     }
 
@@ -111,7 +114,8 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
      */
     @Override
     public @NotNull String replay(@NotNull JsonObject originalArgs,
-                                  @NotNull PopupHandler.SelectByValue handler) throws Exception {
+                                  @NotNull PopupHandler.SelectByValue handler)
+        throws InterruptedException, ExecutionException, TimeoutException {
         return executeWithHandler(originalArgs, handler, true);
     }
 
@@ -124,43 +128,20 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
      */
     private @NotNull String executeWithHandler(@NotNull JsonObject args,
                                                @NotNull PopupHandler handler,
-                                               boolean isReplay) throws Exception {
+                                               boolean isReplay)
+        throws InterruptedException, ExecutionException, TimeoutException {
         if (!args.has("file") || !args.has("line") || !args.has(PARAM_ACTION_NAME)) {
             return "Error: 'file', 'line', and 'action_name' parameters are required";
         }
-        String pathStr = args.get("file").getAsString();
-        int targetLine = args.get("line").getAsInt();
-        String actionName = args.get(PARAM_ACTION_NAME).getAsString();
-        String symbol = args.has(PARAM_SYMBOL) ? args.get(PARAM_SYMBOL).getAsString() : null;
-        Integer targetCol = args.has(PARAM_COLUMN) ? args.get(PARAM_COLUMN).getAsInt() : null;
-        String option = args.has(PARAM_OPTION) ? args.get(PARAM_OPTION).getAsString() : null;
-        boolean dryRun = args.has(PARAM_DRY_RUN) && args.get(PARAM_DRY_RUN).getAsBoolean();
+        ActionRequest request = ActionRequest.from(args, handler, isReplay);
 
         CompletableFuture<String> future = new CompletableFuture<>();
-        EdtUtil.invokeLater(() -> {
-            try {
-                future.complete(invokeAction(pathStr, targetLine, actionName, symbol, targetCol,
-                    option, dryRun, args, handler, isReplay));
-            } catch (AssertionError e) {
-                // Some actions (e.g. SafeDeleteFix) trigger interactive dialogs via assertions
-                // that fail headlessly. Catch AssertionError separately for a clear message.
-                LOG.warn(ACTION_PREFIX + actionName + "' requires interactive UI at " + pathStr + ":" + targetLine, e);
-                future.complete("Error: " + ACTION_PREFIX + actionName + "' requires an interactive dialog "
-                    + "and cannot be applied non-interactively. "
-                    + "Try get_action_options to see what dialog options it shows, "
-                    + "or perform this action manually in the IDE.");
-            } catch (Exception e) {
-                LOG.warn("Error invoking action '" + actionName + "' at " + pathStr + ":" + targetLine, e);
-                future.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
-            }
-        });
+        EdtUtil.invokeLater(() -> invokeActionSafely(request, future));
 
         String result = future.get(30, TimeUnit.SECONDS);
         if (result == null) return "Error: action invocation returned no result";
-        if (!dryRun && !result.startsWith("Error") && !result.startsWith("No ")
-            && !result.startsWith(ACTION_PREFIX) && !result.startsWith("Preview")
-            && !result.startsWith("The action ")) {
-            FileTool.followFileIfEnabled(project, pathStr, targetLine, targetLine,
+        if (shouldFollowFile(request, result)) {
+            FileTool.followFileIfEnabled(project, request.pathStr(), request.targetLine(), request.targetLine(),
                 FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " applied action");
         }
         return result;
@@ -171,13 +152,70 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
         return GitDiffRenderer.INSTANCE;
     }
 
+    private void invokeActionSafely(@NotNull ActionRequest request, @NotNull CompletableFuture<String> future) {
+        try {
+            future.complete(invokeAction(request));
+        } catch (AssertionError e) {
+            // Some actions (e.g. SafeDeleteFix) trigger interactive dialogs via assertions
+            // that fail headlessly. Catch AssertionError separately for a clear message.
+            LOG.warn(ACTION_PREFIX + request.actionName() + "' requires interactive UI at "
+                + request.pathStr() + ":" + request.targetLine(), e);
+            future.complete("Error: " + ACTION_PREFIX + request.actionName() + "' requires an interactive dialog "
+                + "and cannot be applied non-interactively. "
+                + "Try get_action_options to see what dialog options it shows, "
+                + "or perform this action manually in the IDE.");
+        } catch (Exception e) {
+            LOG.warn("Error invoking action '" + request.actionName() + "' at "
+                + request.pathStr() + ":" + request.targetLine(), e);
+            future.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+        }
+    }
+
+    private static boolean shouldFollowFile(@NotNull ActionRequest request, @NotNull String result) {
+        return !request.dryRun() && !result.startsWith("Error") && !result.startsWith("No ")
+            && !result.startsWith(ACTION_PREFIX) && !result.startsWith("Preview")
+            && !result.startsWith("The action ");
+    }
+
+    private record ActionRequest(String pathStr, int targetLine, String actionName,
+                                 @Nullable String symbol, @Nullable Integer targetCol,
+                                 @Nullable String option, boolean dryRun,
+                                 @NotNull JsonObject originalArgs,
+                                 @NotNull PopupHandler handler, boolean isReplay) {
+        static ActionRequest from(@NotNull JsonObject args, @NotNull PopupHandler handler, boolean isReplay) {
+            return new ActionRequest(
+                args.get("file").getAsString(),
+                args.get("line").getAsInt(),
+                args.get(PARAM_ACTION_NAME).getAsString(),
+                args.has(PARAM_SYMBOL) ? args.get(PARAM_SYMBOL).getAsString() : null,
+                args.has(PARAM_COLUMN) ? args.get(PARAM_COLUMN).getAsInt() : null,
+                args.has(PARAM_OPTION) ? args.get(PARAM_OPTION).getAsString() : null,
+                args.has(PARAM_DRY_RUN) && args.get(PARAM_DRY_RUN).getAsBoolean(),
+                args,
+                handler,
+                isReplay
+            );
+        }
+    }
+
+    private record NormalApplyRequest(String actionName, String pathStr, int targetLine,
+                                      String before, long beforeModStamp, VirtualFile vf,
+                                      @NotNull JsonObject originalArgs,
+                                      @NotNull PopupHandler handler, boolean isReplay) {
+    }
+
     // ── Private helpers ──────────────────────────────────────
 
-    private String invokeAction(String pathStr, int targetLine, String actionName,
-                                @Nullable String symbol, @Nullable Integer targetCol,
-                                @Nullable String option, boolean dryRun,
-                                @NotNull JsonObject originalArgs,
-                                @NotNull PopupHandler handler, boolean isReplay) {
+    private String invokeAction(ActionRequest request) {
+        String pathStr = request.pathStr();
+        int targetLine = request.targetLine();
+        String actionName = request.actionName();
+        String symbol = request.symbol();
+        Integer targetCol = request.targetCol();
+        String option = request.option();
+        boolean dryRun = request.dryRun();
+        PopupHandler handler = request.handler();
+        boolean isReplay = request.isReplay();
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
 
@@ -229,8 +267,9 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
         if (dryRun) {
             return applyAsDryRun(actionName, pathStr, before, ctx, vf, handler);
         }
-        return applyNormally(actionName, pathStr, targetLine, before, beforeModStamp, ctx,
-            vf, originalArgs, handler, isReplay);
+        NormalApplyRequest normalRequest = new NormalApplyRequest(
+            actionName, pathStr, targetLine, before, beforeModStamp, vf, request.originalArgs(), handler, isReplay);
+        return applyNormally(normalRequest, ctx);
     }
 
     private String applyWithOption(String option, String actionName, String pathStr, int targetLine,
@@ -282,10 +321,16 @@ public final class ApplyActionTool extends QualityTool implements Replayable {
         return "Preview (not applied):\n\n" + diff;
     }
 
-    private String applyNormally(String actionName, String pathStr, int targetLine,
-                                 String before, long beforeModStamp, ActionContext ctx,
-                                 VirtualFile vf, @NotNull JsonObject originalArgs,
-                                 @NotNull PopupHandler handler, boolean isReplay) {
+    private String applyNormally(NormalApplyRequest request, ActionContext ctx) {
+        String actionName = request.actionName();
+        String pathStr = request.pathStr();
+        int targetLine = request.targetLine();
+        String before = request.before();
+        long beforeModStamp = request.beforeModStamp();
+        VirtualFile vf = request.vf();
+        JsonObject originalArgs = request.originalArgs();
+        PopupHandler handler = request.handler();
+        boolean isReplay = request.isReplay();
         FileTool.notifyBeforeEdit(project, vf, ctx.doc());
         PopupInterceptor.Result popupResult;
         AtomicReference<PopupSnapshot> snapRef = new AtomicReference<>();

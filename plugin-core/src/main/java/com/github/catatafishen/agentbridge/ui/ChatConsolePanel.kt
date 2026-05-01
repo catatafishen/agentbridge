@@ -573,9 +573,8 @@ class ChatConsolePanel(
             executeJs("ChatController.removeToolChip('$currentDid')")
 
             // Create new chip with correct hash-based ID
-            val cleanTitle = (title ?: name ?: "Tool").trim('\'', '"')
-            val kindFallback = entry?.kind ?: "other"
-            val resolvedKind = kind ?: kindFallback
+            val cleanTitle = toolTitleOrDefault(title, name)
+            val resolvedKind = kind ?: entry?.kind ?: "other"
             val label = toolChipTitle(cleanTitle, arguments)
             val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
             val paramsJson = if (!hasCustomRenderer) escJs(arguments) else ""
@@ -599,6 +598,9 @@ class ChatConsolePanel(
             currentDid
         }
     }
+
+    private fun toolTitleOrDefault(title: String?, name: String?): String =
+        (title?.takeIf { it.isNotBlank() } ?: name?.takeIf { it.isNotBlank() } ?: "Tool").trim('\'', '"')
 
     private data class ToolCallStatusData(
         val chipId: String?, val details: String?, val status: String,
@@ -1764,15 +1766,17 @@ class ChatConsolePanel(
         } else null
         ApplicationManager.getApplication().invokeLater {
             ToolCallPopup.show(
-                project,
-                chipTitle,
-                kind,
-                paramsPanel,
-                resultPanel,
-                mcpDescription,
-                autoDenied,
-                denialReason,
-                failed
+                ToolCallPopup.Request(
+                    project = project,
+                    title = chipTitle,
+                    kind = kind,
+                    paramsPanel = paramsPanel,
+                    resultPanel = resultPanel,
+                    toolDescription = mcpDescription,
+                    autoDenied = autoDenied,
+                    denialReason = denialReason,
+                    failed = failed
+                )
             )
         }
     }

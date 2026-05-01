@@ -77,7 +77,8 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
     }
 
     @Override
-    public @NotNull String execute(@NotNull JsonObject args) throws Exception {
+    public @NotNull String execute(@NotNull JsonObject args)
+        throws InterruptedException, ExecutionException, TimeoutException {
         return executeWithHandler(args, new PopupHandler.Cancel(), false);
     }
 
@@ -90,7 +91,8 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
      */
     @Override
     public @NotNull String replay(@NotNull JsonObject originalArgs,
-                                  @NotNull PopupHandler.SelectByValue handler) throws Exception {
+                                  @NotNull PopupHandler.SelectByValue handler)
+        throws InterruptedException, ExecutionException, TimeoutException {
         return executeWithHandler(originalArgs, handler, true);
     }
 
@@ -100,93 +102,14 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
         if (!args.has("file") || !args.has("line") || !args.has(PARAM_INSPECTION_ID)) {
             return "Error: 'file', 'line', and '" + PARAM_INSPECTION_ID + "' parameters are required";
         }
-        String pathStr = args.get("file").getAsString();
-        int targetLine = args.get("line").getAsInt();
-        String inspectionId = args.get(PARAM_INSPECTION_ID).getAsString();
-        int fixIndex = args.has(PARAM_FIX_INDEX) ? args.get(PARAM_FIX_INDEX).getAsInt() : 0;
-
+        QuickfixRequest request = QuickfixRequest.from(args, handler, isReplay);
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
-        EdtUtil.invokeLater(() -> {
-            try {
-                VirtualFile vf = resolveVirtualFile(pathStr);
-                if (vf == null) {
-                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
-                    return;
-                }
-
-                // Read-only phase: resolve file, document, find problems — no WriteAction needed
-                PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
-                if (psiFile == null) {
-                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + pathStr);
-                    return;
-                }
-
-                Document document = FileDocumentManager.getInstance().getDocument(vf);
-                if (document == null) {
-                    resultFuture.complete("Error: Cannot get document for: " + pathStr);
-                    return;
-                }
-
-                if (targetLine < 1 || targetLine > document.getLineCount()) {
-                    resultFuture.complete("Error: Line " + targetLine + " is out of bounds (file has "
-                        + document.getLineCount() + FORMAT_LINES_SUFFIX);
-                    return;
-                }
-
-                int lineStartOffset = document.getLineStartOffset(targetLine - 1);
-                int lineEndOffset = document.getLineEndOffset(targetLine - 1);
-
-                var profile = com.intellij.profile.codeInspection.InspectionProjectProfileManager
-                    .getInstance(project).getCurrentProfile();
-                var toolWrapper = profile.getInspectionTool(inspectionId, project);
-
-                if (toolWrapper == null) {
-                    resultFuture.complete("Error: Inspection '" + inspectionId + "' not found. "
-                        + "Use the inspection ID from run_inspections output (e.g., 'RedundantCast', 'unused').");
-                    return;
-                }
-
-                List<com.intellij.codeInspection.ProblemDescriptor> lineProblems =
-                    findProblemsOnLine(toolWrapper.getTool(), psiFile, lineStartOffset, lineEndOffset);
-
-                if (lineProblems.isEmpty()) {
-                    resultFuture.complete("No problems found for inspection '" + inspectionId + "' at line " + targetLine
-                        + " in " + pathStr + ". The inspection may have been resolved, or it may be a global inspection "
-                        + "that doesn't support quickfixes. Try using edit_text instead.");
-                    return;
-                }
-
-                // Write phase: only the actual fix application needs WriteAction.
-                // notifyEditComplete() must run even if WriteAction.run itself throws before
-                // invoking the lambda, otherwise the ThreadLocal agent-edit marker leaks across
-                // tool calls. Wrap the whole WriteAction.run() in try/finally (matches the
-                // pattern used in ApplyActionTool / SuppressInspectionTool / WriteFileTool).
-                long beforeModStamp = document.getModificationStamp();
-                FileTool.notifyBeforeEdit(project, vf, document);
-                try {
-                    WriteAction.run(() -> {
-                        try {
-                            resultFuture.complete(applyAndReportFix(lineProblems, fixIndex,
-                                pathStr, targetLine, inspectionId, vf, document, beforeModStamp,
-                                args, handler, isReplay));
-                        } catch (Exception e) {
-                            LOG.warn("Error applying quickfix", e);
-                            resultFuture.complete("Error applying quickfix: " + e.getMessage());
-                        }
-                    });
-                } finally {
-                    FileTool.notifyEditComplete();
-                }
-            } catch (Exception e) {
-                LOG.warn("Error in applyQuickfix", e);
-                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
-            }
-        });
+        EdtUtil.invokeLater(() -> applyQuickfixSafely(request, resultFuture));
 
         String result = resultFuture.get(30, TimeUnit.SECONDS);
-        if (!result.startsWith("Error") && !result.startsWith("No ") && !result.startsWith("The action ")) {
-            FileTool.followFileIfEnabled(project, pathStr, targetLine, targetLine,
+        if (shouldFollowFile(result)) {
+            FileTool.followFileIfEnabled(project, request.pathStr(), request.targetLine(), request.targetLine(),
                 FileTool.HIGHLIGHT_EDIT, FileTool.agentLabel(project) + " applied fix");
         }
         return result;
@@ -195,6 +118,132 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
     @Override
     public @NotNull Object resultRenderer() {
         return SimpleStatusRenderer.INSTANCE;
+    }
+
+    private void applyQuickfixSafely(@NotNull QuickfixRequest request,
+                                     @NotNull CompletableFuture<String> resultFuture) {
+        try {
+            resultFuture.complete(applyQuickfixOnEdt(request));
+        } catch (Exception e) {
+            LOG.warn("Error in applyQuickfix", e);
+            resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+        }
+    }
+
+    private String applyQuickfixOnEdt(@NotNull QuickfixRequest request) {
+        QuickfixTarget target = resolveQuickfixTarget(request);
+        if (target.error() != null) return target.error();
+
+        // Write phase: only the actual fix application needs WriteAction.
+        // notifyEditComplete() must run even if WriteAction.run itself throws before
+        // invoking the lambda, otherwise the ThreadLocal agent-edit marker leaks across
+        // tool calls. Wrap the whole WriteAction.run() in try/finally (matches the
+        // pattern used in ApplyActionTool / SuppressInspectionTool / WriteFileTool).
+        FileTool.notifyBeforeEdit(project, target.vf(), target.document());
+        try {
+            AtomicReference<String> result = new AtomicReference<>();
+            WriteAction.run(() -> result.set(applyAndReportFix(new FixApplication(
+                target.lineProblems(), request.fixIndex(), request.pathStr(), request.targetLine(),
+                request.inspectionId(), target.vf(), target.document(), target.document().getModificationStamp(),
+                request.originalArgs(), request.handler(), request.isReplay()))));
+            return result.get();
+        } catch (Exception e) {
+            LOG.warn("Error applying quickfix", e);
+            return "Error applying quickfix: " + e.getMessage();
+        } finally {
+            FileTool.notifyEditComplete();
+        }
+    }
+
+    private QuickfixTarget resolveQuickfixTarget(@NotNull QuickfixRequest request) {
+        VirtualFile vf = resolveVirtualFile(request.pathStr());
+        if (vf == null) {
+            return QuickfixTarget.error(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + request.pathStr());
+        }
+
+        PsiFile psiFile = PsiManager.getInstance(project).findFile(vf);
+        if (psiFile == null) {
+            return QuickfixTarget.error(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_CANNOT_PARSE + request.pathStr());
+        }
+
+        Document document = FileDocumentManager.getInstance().getDocument(vf);
+        if (document == null) {
+            return QuickfixTarget.error("Error: Cannot get document for: " + request.pathStr());
+        }
+
+        String lineError = validateLine(request, document);
+        if (lineError != null) return QuickfixTarget.error(lineError);
+
+        var profile = com.intellij.profile.codeInspection.InspectionProjectProfileManager
+            .getInstance(project).getCurrentProfile();
+        var toolWrapper = profile.getInspectionTool(request.inspectionId(), project);
+        if (toolWrapper == null) {
+            return QuickfixTarget.error("Error: Inspection '" + request.inspectionId() + "' not found. "
+                + "Use the inspection ID from run_inspections output (e.g., 'RedundantCast', 'unused').");
+        }
+
+        int lineStartOffset = document.getLineStartOffset(request.targetLine() - 1);
+        int lineEndOffset = document.getLineEndOffset(request.targetLine() - 1);
+        List<com.intellij.codeInspection.ProblemDescriptor> lineProblems =
+            findProblemsOnLine(toolWrapper.getTool(), psiFile, lineStartOffset, lineEndOffset);
+        if (lineProblems.isEmpty()) return QuickfixTarget.error(noProblemsMessage(request));
+        return new QuickfixTarget(vf, document, lineProblems, null);
+    }
+
+    @org.jetbrains.annotations.Nullable
+    private static String validateLine(@NotNull QuickfixRequest request, @NotNull Document document) {
+        if (request.targetLine() >= 1 && request.targetLine() <= document.getLineCount()) return null;
+        return "Error: Line " + request.targetLine() + " is out of bounds (file has "
+            + document.getLineCount() + FORMAT_LINES_SUFFIX;
+    }
+
+    private static String noProblemsMessage(@NotNull QuickfixRequest request) {
+        return "No problems found for inspection '" + request.inspectionId() + "' at line " + request.targetLine()
+            + " in " + request.pathStr() + ". The inspection may have been resolved, or it may be a global inspection "
+            + "that doesn't support quickfixes. Try using edit_text instead.";
+    }
+
+    private static boolean shouldFollowFile(@NotNull String result) {
+        return !result.startsWith("Error") && !result.startsWith("No ") && !result.startsWith("The action ");
+    }
+
+    private record QuickfixRequest(String pathStr, int targetLine, String inspectionId, int fixIndex,
+                                   @NotNull JsonObject originalArgs,
+                                   @NotNull PopupHandler handler, boolean isReplay) {
+        static QuickfixRequest from(@NotNull JsonObject args, @NotNull PopupHandler handler, boolean isReplay) {
+            return new QuickfixRequest(
+                args.get("file").getAsString(),
+                args.get("line").getAsInt(),
+                args.get(PARAM_INSPECTION_ID).getAsString(),
+                args.has(PARAM_FIX_INDEX) ? args.get(PARAM_FIX_INDEX).getAsInt() : 0,
+                args,
+                handler,
+                isReplay
+            );
+        }
+    }
+
+    private record QuickfixTarget(VirtualFile vf, Document document,
+                                  List<com.intellij.codeInspection.ProblemDescriptor> lineProblems,
+                                  @org.jetbrains.annotations.Nullable String error) {
+        static QuickfixTarget error(@NotNull String message) {
+            return new QuickfixTarget(null, null, List.of(), message);
+        }
+    }
+
+    private record FixApplication(List<com.intellij.codeInspection.ProblemDescriptor> lineProblems,
+                                  int fixIndex, String pathStr, int targetLine,
+                                  String inspectionId, VirtualFile vf, Document document,
+                                  long beforeModStamp, @NotNull JsonObject originalArgs,
+                                  @NotNull PopupHandler handler, boolean isReplay) {
+    }
+
+    private record PopupSuspensionRequest(String fixName, String inspectionId,
+                                          @NotNull JsonObject originalArgs,
+                                          @NotNull Document doc, long beforeModStamp,
+                                          @NotNull PopupInterceptor.Result popupResult,
+                                          @org.jetbrains.annotations.Nullable PopupSnapshot snapshot,
+                                          @NotNull VirtualFile vf) {
     }
 
     // ── Private helpers ──────────────────────────────────────
@@ -231,14 +280,9 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
     }
 
     @SuppressWarnings("unchecked") // QuickFix generic — safe at runtime
-    private String applyAndReportFix(List<com.intellij.codeInspection.ProblemDescriptor> lineProblems,
-                                     int fixIndex, String pathStr, int targetLine,
-                                     String inspectionId, VirtualFile vf, Document document,
-                                     long beforeModStamp,
-                                     @NotNull JsonObject originalArgs,
-                                     @NotNull PopupHandler handler, boolean isReplay) {
+    private String applyAndReportFix(@NotNull FixApplication request) {
         com.intellij.codeInspection.ProblemDescriptor targetProblem =
-            lineProblems.get(Math.min(fixIndex, lineProblems.size() - 1));
+            request.lineProblems().get(Math.min(request.fixIndex(), request.lineProblems().size() - 1));
 
         var fixes = targetProblem.getFixes();
         if (fixes == null || fixes.length == 0) {
@@ -246,15 +290,24 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
                 targetProblem.getDescriptionTemplate() + ". Use edit_text to fix manually.";
         }
 
-        var fix = fixes[Math.min(fixIndex, fixes.length - 1)];
-
-        // Wrap in PopupInterceptor so a quick-fix that opens a JBPopup chooser (e.g. a
-        // class-import disambiguation) cannot freeze the EDT — see PopupInterceptor and
-        // .agent-work/freeze-investigation-2026-04-30.md.
-        // No editor available here → null owner falls back to a global frame scan.
+        var fix = fixes[Math.min(request.fixIndex(), fixes.length - 1)];
         AtomicReference<PopupSnapshot> snapRef = new AtomicReference<>();
-        PopupHandler effective = wrapHandlerForCapture(handler, snapRef);
-        PopupInterceptor.Result popupResult = PopupInterceptor.runDetectingPopups(null, effective,
+        PopupInterceptor.Result popupResult = runFixWithPopupDetection(request, targetProblem, fix, snapRef);
+        String popupMessage = handlePopupResult(request, fix.getName(), popupResult, snapRef.get());
+        if (popupMessage != null) return popupMessage;
+
+        PsiDocumentManager.getInstance(project).commitAllDocuments();
+        FileDocumentManager.getInstance().saveAllDocuments();
+        return formatAppliedFix(request, fixes, fix.getName());
+    }
+
+    private PopupInterceptor.Result runFixWithPopupDetection(
+        @NotNull FixApplication request,
+        @NotNull com.intellij.codeInspection.ProblemDescriptor targetProblem,
+        @NotNull com.intellij.codeInspection.QuickFix<com.intellij.codeInspection.ProblemDescriptor> fix,
+        @NotNull AtomicReference<PopupSnapshot> snapRef) {
+        PopupHandler effective = wrapHandlerForCapture(request.handler(), snapRef);
+        return PopupInterceptor.runDetectingPopups(null, effective,
             () -> com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
                 project,
                 () -> fix.applyFix(project, targetProblem),
@@ -262,46 +315,57 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
                 null
             )
         );
+    }
 
-        if (popupResult.popupWasOpened()) {
-            boolean isSelectMode = handler instanceof PopupHandler.SelectByValue;
-            if (!isReplay && !isSelectMode) {
-                String suspended = trySuspendForPopup(fix.getName(), inspectionId, originalArgs,
-                    document, beforeModStamp, popupResult, snapRef.get(), vf);
-                if (suspended != null) return suspended;
-            } else if (isSelectMode && !popupResult.selectionScheduled()) {
-                return PopupInterceptor.formatPopupBlockedError("apply_quickfix:" + fix.getName(), popupResult);
-            } else if (isReplay) {
-                return "Error: replaying quick-fix '" + fix.getName() + "' opened a chained popup ('"
-                    + popupResult.describe() + "'). Chained popups are not supported by popup_respond"
-                    + " yet — use edit_text to complete the change manually.";
-            }
-            if (!isSelectMode) {
-                return PopupInterceptor.formatPopupBlockedError("apply_quickfix:" + fix.getName(), popupResult);
-            }
+    @org.jetbrains.annotations.Nullable
+    private String handlePopupResult(@NotNull FixApplication request, @NotNull String fixName,
+                                     @NotNull PopupInterceptor.Result popupResult,
+                                     @org.jetbrains.annotations.Nullable PopupSnapshot snapshot) {
+        if (!popupResult.popupWasOpened()) return null;
+
+        boolean isSelectMode = request.handler() instanceof PopupHandler.SelectByValue;
+        if (!request.isReplay() && !isSelectMode) {
+            String suspended = trySuspendForPopup(new PopupSuspensionRequest(
+                fixName, request.inspectionId(), request.originalArgs(), request.document(),
+                request.beforeModStamp(), popupResult, snapshot, request.vf()));
+            if (suspended != null) return suspended;
         }
+        if (isSelectMode && !popupResult.selectionScheduled()) {
+            return PopupInterceptor.formatPopupBlockedError("apply_quickfix:" + fixName, popupResult);
+        }
+        if (request.isReplay()) {
+            return "Error: replaying quick-fix '" + fixName + "' opened a chained popup ('"
+                + popupResult.describe() + "'). Chained popups are not supported by popup_respond"
+                + " yet — use edit_text to complete the change manually.";
+        }
+        return isSelectMode ? null : PopupInterceptor.formatPopupBlockedError("apply_quickfix:" + fixName, popupResult);
+    }
 
-        PsiDocumentManager.getInstance(project).commitAllDocuments();
-        FileDocumentManager.getInstance().saveAllDocuments();
-
+    private static String formatAppliedFix(@NotNull FixApplication request,
+                                           com.intellij.codeInspection.QuickFix<?>[] fixes,
+                                           @NotNull String fixName) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Applied fix: ").append(fix.getName()).append("\n");
-        sb.append("  File: ").append(pathStr).append(" line ").append(targetLine).append("\n");
-        if (fixes.length > 1) {
-            sb.append("  (").append(fixes.length).append(" fixes were available, applied #")
-                .append(Math.min(fixIndex, fixes.length - 1)).append(")\n");
-            sb.append("  Other available fixes:\n");
-            for (int i = 0; i < fixes.length; i++) {
-                if (i != Math.min(fixIndex, fixes.length - 1)) {
-                    sb.append("    ").append(i).append(": ").append(fixes[i].getName()).append("\n");
-                }
-            }
-        }
+        sb.append("Applied fix: ").append(fixName).append("\n");
+        sb.append("  File: ").append(request.pathStr()).append(" line ").append(request.targetLine()).append("\n");
+        appendOtherFixes(sb, fixes, request.fixIndex());
         return sb.toString();
     }
 
+    private static void appendOtherFixes(StringBuilder sb, com.intellij.codeInspection.QuickFix<?>[] fixes, int fixIndex) {
+        int appliedIndex = Math.min(fixIndex, fixes.length - 1);
+        if (fixes.length <= 1) return;
+        sb.append("  (").append(fixes.length).append(" fixes were available, applied #")
+            .append(appliedIndex).append(")\n");
+        sb.append("  Other available fixes:\n");
+        for (int i = 0; i < fixes.length; i++) {
+            if (i != appliedIndex) {
+                sb.append("    ").append(i).append(": ").append(fixes[i].getName()).append("\n");
+            }
+        }
+    }
+
     /**
-     * Same wrapping pattern as {@link ApplyActionTool#wrapHandlerForCapture}: upgrade
+     * Same wrapping pattern as ApplyActionTool's popup-capture wrapper: upgrade
      * {@link PopupHandler.Cancel} to {@link PopupHandler.Snapshot} so we can capture choices,
      * chain {@link PopupHandler.Snapshot} sinks, pass {@link PopupHandler.SelectByValue}
      * through unchanged.
@@ -325,12 +389,8 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
      * or {@code null} to fall through to PR #363's error.
      */
     @org.jetbrains.annotations.Nullable
-    private String trySuspendForPopup(@NotNull String fixName, @NotNull String inspectionId,
-                                      @NotNull JsonObject originalArgs,
-                                      @NotNull Document doc, long beforeModStamp,
-                                      @NotNull PopupInterceptor.Result popupResult,
-                                      @org.jetbrains.annotations.Nullable PopupSnapshot snapshot,
-                                      @NotNull VirtualFile vf) {
+    private String trySuspendForPopup(@NotNull PopupSuspensionRequest request) {
+        PopupSnapshot snapshot = request.snapshot();
         if (snapshot == null || snapshot.isEmpty()) {
             LOG.info("ApplyQuickfixTool: popup intercepted but snapshot empty — falling back to error");
             return null;
@@ -340,17 +400,17 @@ public final class ApplyQuickfixTool extends QualityTool implements Replayable {
         // quick-fix popup-then-mutate is rare and cleanly undoing across nested commands is
         // brittle. If the action mutated the document before the popup, refuse to suspend so
         // the user is not left with dangling edits.
-        if (doc.getModificationStamp() != beforeModStamp) {
+        if (request.doc().getModificationStamp() != request.beforeModStamp()) {
             LOG.info("ApplyQuickfixTool: quick-fix mutated document before opening popup; refusing to suspend");
             return null;
         }
         ContextFingerprint fp = new ContextFingerprint(
-            project.getName(), vf.getPath(), beforeModStamp, id() + "|" + inspectionId);
+            project.getName(), request.vf().getPath(), request.beforeModStamp(), id() + "|" + request.inspectionId());
         PendingPopupService.Pending pending = PendingPopupService.getInstance().register(
-            id(), originalArgs, project, fp, snapshot,
+            id(), request.originalArgs(), project, fp, snapshot,
             McpCallContext.currentOrFallback(), null);
         if (pending == null) return null;
-        return formatPopupSuspendedMessage(fixName, popupResult.describe(), pending);
+        return formatPopupSuspendedMessage(request.fixName(), request.popupResult().describe(), pending);
     }
 
     @NotNull

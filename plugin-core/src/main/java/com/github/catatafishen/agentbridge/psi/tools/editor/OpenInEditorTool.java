@@ -77,43 +77,61 @@ public final class OpenInEditorTool extends EditorTool {
         if (!args.has("file")) {
             return "Error: 'file' parameter is required";
         }
-        String pathStr = args.get("file").getAsString();
-        int line = args.has("line") ? args.get("line").getAsInt() : -1;
-        boolean requestedFocus = !args.has(PARAM_FOCUS) || args.get(PARAM_FOCUS).getAsBoolean();
-        boolean focus = requestedFocus && ToolLayerSettings.getInstance(project).getFollowAgentFiles();
-
+        OpenRequest request = OpenRequest.from(args,
+            ToolLayerSettings.getInstance(project).getFollowAgentFiles());
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
 
-        EdtUtil.invokeLater(() -> {
-            try {
-                VirtualFile vf = resolveVirtualFile(pathStr);
-                if (vf == null) {
-                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
-                    return;
-                }
-
-                // Don't steal focus when the user is actively typing in the chat prompt.
-                boolean effectiveFocus = focus && !PsiBridgeService.isUserTypingInChat(project);
-
-                if (line > 0) {
-                    new OpenFileDescriptor(project, vf, line - 1, 0).navigate(effectiveFocus);
-                } else {
-                    FileEditorManager.getInstance(project).openFile(vf, effectiveFocus);
-                }
-
-                PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
-                    (Computable<PsiFile>) () -> PsiManager.getInstance(project).findFile(vf));
-                if (psiFile != null) {
-                    DaemonCodeAnalyzer.getInstance(project).restart(psiFile, "File opened in editor");
-                }
-
-                resultFuture.complete("Opened " + pathStr + (line > 0 ? " at line " + line : "") +
-                    " (daemon analysis triggered - use get_highlights after a moment)");
-            } catch (Exception e) {
-                resultFuture.complete("Error opening file: " + e.getMessage());
-            }
-        });
+        EdtUtil.invokeLater(() -> openFileSafely(request, resultFuture));
 
         return resultFuture.get(10, TimeUnit.SECONDS);
+    }
+
+    private void openFileSafely(@NotNull OpenRequest request, @NotNull CompletableFuture<String> resultFuture) {
+        try {
+            resultFuture.complete(openFile(request));
+        } catch (Exception e) {
+            resultFuture.complete("Error opening file: " + e.getMessage());
+        }
+    }
+
+    private String openFile(@NotNull OpenRequest request) {
+        VirtualFile vf = resolveVirtualFile(request.pathStr());
+        if (vf == null) {
+            return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + request.pathStr();
+        }
+
+        // Don't steal focus when the user is actively typing in the chat prompt.
+        boolean effectiveFocus = request.focus() && !PsiBridgeService.isUserTypingInChat(project);
+        navigateToFile(vf, request.line(), effectiveFocus);
+        restartDaemonAnalysis(vf);
+        return "Opened " + request.pathStr() + (request.line() > 0 ? " at line " + request.line() : "") +
+            " (daemon analysis triggered - use get_highlights after a moment)";
+    }
+
+    private void navigateToFile(@NotNull VirtualFile vf, int line, boolean effectiveFocus) {
+        if (line > 0) {
+            new OpenFileDescriptor(project, vf, line - 1, 0).navigate(effectiveFocus);
+        } else {
+            FileEditorManager.getInstance(project).openFile(vf, effectiveFocus);
+        }
+    }
+
+    private void restartDaemonAnalysis(@NotNull VirtualFile vf) {
+        PsiFile psiFile = ApplicationManager.getApplication().runReadAction(
+            (Computable<PsiFile>) () -> PsiManager.getInstance(project).findFile(vf));
+        if (psiFile != null) {
+            DaemonCodeAnalyzer.getInstance(project).restart(psiFile, "File opened in editor");
+        }
+    }
+
+    private record OpenRequest(String pathStr, int line, boolean focus) {
+        static OpenRequest from(@NotNull JsonObject args, boolean followAgentFiles) {
+            boolean requestedFocus = !args.has(PARAM_FOCUS) || args.get(PARAM_FOCUS).getAsBoolean();
+            return new OpenRequest(
+                args.get("file").getAsString(),
+                args.has("line") ? args.get("line").getAsInt() : -1,
+                requestedFocus && followAgentFiles
+            );
+        }
     }
 }

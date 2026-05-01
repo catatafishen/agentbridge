@@ -101,7 +101,7 @@ public final class GitCherryPickTool extends GitTool {
 
         String result = runGitIn(root, cmdArgs.toArray(String[]::new));
         if (!result.startsWith("Error")) {
-            AgentEditSession.getInstance(project).invalidateOnWorktreeChange("cherry-pick");
+            AgentEditSession.getInstance(project).invalidateOnWorktreeChange(CHERRY_PICK);
         }
         return result;
     }

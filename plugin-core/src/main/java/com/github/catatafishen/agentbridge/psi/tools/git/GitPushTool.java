@@ -99,85 +99,91 @@ public final class GitPushTool extends GitTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
-        String ambiError = requireUnambiguousRepo(repoParam, "git_push");
-        if (ambiError != null) return ambiError;
-        String root = resolveRepoRootOrError(repoParam);
+        String root = preparePush(repoParam);
         if (root.startsWith("Error")) return root;
 
         boolean forceFlag = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
-
-        // Auto-fetch to detect remote divergence before pushing
         String fetchNote = autoFetchIfStaleIn(root);
+        String divergenceWarning = divergenceWarning(root, forceFlag);
+        PushTarget target = resolvePushTarget(args, root);
 
-        // Pre-push divergence check (skip for force-push)
-        String divergenceWarning = "";
-        if (!forceFlag) {
-            String behind = runGitInQuiet(root, "rev-list", "--count", "HEAD..@{upstream}");
-            if (behind != null && !"0".equals(behind)) {
-                divergenceWarning = "\n⚠️ Remote is " + behind
-                    + " commit(s) ahead of local. Consider pulling first, or use force: true.";
-            }
-        }
+        String result = runGitIn(root, pushCommandArgs(args, forceFlag, target));
+        if (result.startsWith("Error")) return fetchNote + result + divergenceWarning;
+        return buildPushResponse(result, fetchNote, divergenceWarning, target, root);
+    }
 
-        List<String> cmdArgs = new ArrayList<>();
-        cmdArgs.add("push");
+    private String preparePush(@Nullable String repoParam) {
+        String ambiError = requireUnambiguousRepo(repoParam, "git_push");
+        if (ambiError != null) return ambiError;
+        return resolveRepoRootOrError(repoParam);
+    }
 
-        boolean setUpstream = args.has(PARAM_SET_UPSTREAM) && args.get(PARAM_SET_UPSTREAM).getAsBoolean();
+    private String divergenceWarning(@NotNull String root, boolean forceFlag) {
+        if (forceFlag) return "";
+        String behind = runGitInQuiet(root, "rev-list", "--count", "HEAD..@{upstream}");
+        if (behind == null || "0".equals(behind)) return "";
+        return "\n⚠️ Remote is " + behind
+            + " commit(s) ahead of local. Consider pulling first, or use force: true.";
+    }
 
-        if (forceFlag) {
-            cmdArgs.add("--force");
-        }
-        if (setUpstream) {
-            cmdArgs.add("--set-upstream");
-        }
-
+    private PushTarget resolvePushTarget(@NotNull JsonObject args, @NotNull String root) throws Exception {
         String remote = args.has(PARAM_REMOTE) ? args.get(PARAM_REMOTE).getAsString() : null;
         String branch = args.has(PARAM_BRANCH) ? args.get(PARAM_BRANCH).getAsString() : null;
+        if (!hasFlag(args, PARAM_SET_UPSTREAM)) return new PushTarget(remote, branch);
+        return new PushTarget(
+            remote != null ? remote : DEFAULT_REMOTE,
+            branch != null ? branch : runGitIn(root, GIT_REV_PARSE, ABBREV_REF, "HEAD").trim()
+        );
+    }
 
-        if (setUpstream) {
-            if (remote == null) {
-                remote = DEFAULT_REMOTE;
-            }
-            if (branch == null) {
-                branch = runGitIn(root, GIT_REV_PARSE, ABBREV_REF, "HEAD").trim();
-            }
-        }
+    private static String[] pushCommandArgs(@NotNull JsonObject args, boolean forceFlag, @NotNull PushTarget target) {
+        List<String> cmdArgs = new ArrayList<>();
+        cmdArgs.add("push");
+        if (forceFlag) cmdArgs.add("--force");
+        if (hasFlag(args, PARAM_SET_UPSTREAM)) cmdArgs.add("--set-upstream");
+        if (target.remote() != null) cmdArgs.add(target.remote());
+        if (target.branch() != null) cmdArgs.add(target.branch());
+        if (hasFlag(args, "tags")) cmdArgs.add("--tags");
+        return cmdArgs.toArray(String[]::new);
+    }
 
-        if (remote != null) {
-            cmdArgs.add(remote);
-        }
-        if (branch != null) {
-            cmdArgs.add(branch);
-        }
-        if (args.has("tags") && args.get("tags").getAsBoolean()) {
-            cmdArgs.add("--tags");
-        }
-
-        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
-
-        if (result.startsWith("Error")) return fetchNote + result + divergenceWarning;
-
-        // Append context
+    private String buildPushResponse(
+        @NotNull String result,
+        @NotNull String fetchNote,
+        @NotNull String divergenceWarning,
+        @NotNull PushTarget target,
+        @NotNull String root
+    ) {
         StringBuilder ctx = new StringBuilder(result);
         if (!fetchNote.isEmpty()) ctx.insert(0, fetchNote);
         if (!divergenceWarning.isEmpty()) ctx.append(divergenceWarning);
+        appendPushContext(ctx, target, root);
+        return ctx.toString();
+    }
 
-        ctx.append("\n\n--- Context ---\n");
-        String actualBranch = branch != null ? branch
+    private void appendPushContext(@NotNull StringBuilder ctx, @NotNull PushTarget target, @NotNull String root) {
+        String actualBranch = target.branch() != null ? target.branch()
             : runGitInQuiet(root, GIT_REV_PARSE, ABBREV_REF, "HEAD");
-        String actualRemote = remote != null ? remote : DEFAULT_REMOTE;
+        String actualRemote = target.remote() != null ? target.remote() : DEFAULT_REMOTE;
+        ctx.append("\n\n--- Context ---\n");
         ctx.append("Pushed ").append(actualBranch).append(" → ")
             .append(actualRemote).append('/').append(actualBranch).append('\n');
 
         String remoteUrl = runGitInQuiet(root, PARAM_REMOTE, "get-url", actualRemote);
-        if (remoteUrl != null) {
-            ctx.append("Remote: ").append(remoteUrl).append('\n');
-        }
-
-        if (actualBranch != null && !"main".equals(actualBranch) && !"master".equals(actualBranch)) {
+        if (remoteUrl != null) ctx.append("Remote: ").append(remoteUrl).append('\n');
+        if (isFeatureBranch(actualBranch)) {
             ctx.append("Tip: create a PR with `gh pr create` if ready for review\n");
         }
+    }
 
-        return ctx.toString();
+    private static boolean isFeatureBranch(@Nullable String branch) {
+        return branch != null && !"main".equals(branch) && !"master".equals(branch);
+    }
+
+    private static boolean hasFlag(@NotNull JsonObject args, @NotNull String parameter) {
+        return args.has(parameter) && args.get(parameter).getAsBoolean();
+    }
+
+    private record PushTarget(@Nullable String remote, @Nullable String branch) {
     }
 }

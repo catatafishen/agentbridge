@@ -109,11 +109,9 @@ object MarkdownRenderer {
     }
 
     private fun preprocessXmlTagsOutsideCodeBlocks(text: String): List<String> {
-        val rawLines = text.lines()
         val processed = mutableListOf<String>()
         val segment = mutableListOf<String>()
-        var inFence = false
-        var inImplicit = false
+        val state = XmlPreprocessState()
 
         fun flushSegment() {
             if (segment.isEmpty()) return
@@ -121,38 +119,62 @@ object MarkdownRenderer {
             segment.clear()
         }
 
-        for (line in rawLines) {
-            val trimmed = line.trim()
-            if (trimmed.startsWith("```")) {
-                flushSegment()
-                processed += line
-                inFence = !inFence
-                inImplicit = false
-                continue
-            }
-            if (inFence) {
-                processed += line
-                continue
-            }
-            if (inImplicit) {
-                if (trimmed.isEmpty() || isMajorBlockElement(trimmed)) {
-                    inImplicit = false
-                } else {
+        for (line in text.lines()) {
+            when (classifyXmlPreprocessLine(line, state)) {
+                XmlPreprocessAction.FLUSH_AND_ADD -> {
+                    flushSegment()
                     processed += line
-                    continue
                 }
+
+                XmlPreprocessAction.ADD -> processed += line
+                XmlPreprocessAction.BUFFER -> segment += line
             }
-            if (isCodeLikeLine(trimmed)) {
-                flushSegment()
-                processed += line
-                inImplicit = true
-                continue
-            }
-            segment += line
         }
 
         flushSegment()
         return processed
+    }
+
+    private data class XmlPreprocessState(
+        var inFence: Boolean = false,
+        var inImplicit: Boolean = false
+    )
+
+    private enum class XmlPreprocessAction { FLUSH_AND_ADD, ADD, BUFFER }
+
+    private fun classifyXmlPreprocessLine(
+        line: String,
+        state: XmlPreprocessState
+    ): XmlPreprocessAction {
+        val trimmed = line.trim()
+        return when {
+            isFenceLine(trimmed, state) -> XmlPreprocessAction.FLUSH_AND_ADD
+            state.inFence -> XmlPreprocessAction.ADD
+            shouldContinueImplicitCode(trimmed, state) -> XmlPreprocessAction.ADD
+            isCodeLikeLine(trimmed) -> startImplicitCode(state)
+            else -> XmlPreprocessAction.BUFFER
+        }
+    }
+
+    private fun isFenceLine(trimmed: String, state: XmlPreprocessState): Boolean {
+        if (!trimmed.startsWith("```")) return false
+        state.inFence = !state.inFence
+        state.inImplicit = false
+        return true
+    }
+
+    private fun shouldContinueImplicitCode(trimmed: String, state: XmlPreprocessState): Boolean {
+        if (!state.inImplicit) return false
+        if (trimmed.isEmpty() || isMajorBlockElement(trimmed)) {
+            state.inImplicit = false
+            return false
+        }
+        return true
+    }
+
+    private fun startImplicitCode(state: XmlPreprocessState): XmlPreprocessAction {
+        state.inImplicit = true
+        return XmlPreprocessAction.FLUSH_AND_ADD
     }
 
     private fun buildThinkingBlockHtml(content: String): String {
@@ -345,77 +367,109 @@ object MarkdownRenderer {
     ): String {
         val result = StringBuilder()
         var lastEnd = 0
-        // Split into named parts so S5843 (regex complexity) analysis doesn't flag the combined form.
-        val boldPattern = """\*\*(.+?)\*\*"""
-        val inlineCodePattern = "`([^`]+)`"
-        val mdLinkPattern = """\[([^\]]+)]\(([^)]+)\)"""
-        val urlLinkPattern = """(https?://[^\s<>\[\]()]+)"""
-        val combinedPattern =
-            Regex("$boldPattern|$inlineCodePattern|$mdLinkPattern|$urlLinkPattern")
+        val combinedPattern = inlineFormattingPattern()
         for (match in combinedPattern.findAll(text)) {
             result.append(formatNonCode(text.substring(lastEnd, match.range.first), resolveFilePath, isGitCommit))
-            when {
-                match.groupValues[1].isNotEmpty() -> {
-                    // Bold: **content** — recurse to allow inline code/links inside bold
-                    result.append("<b>")
-                        .append(formatInline(match.groupValues[1], resolveFileReference, resolveFilePath, isGitCommit))
-                        .append("</b>")
-                }
-
-                match.groupValues[2].isNotEmpty() -> {
-                    // Inline code: `content`
-                    val content = match.groupValues[2]
-                    val resolved = resolveFileReference(content)
-                    if (resolved != null) {
-                        val href = resolved.first + if (resolved.second != null) ":${resolved.second}" else ""
-                        result.append("<a href='openfile://$href'><code>${escapeHtml(content)}</code></a>")
-                    } else if (GIT_SHA_REGEX.matches(content) && isGitCommit(content)) {
-                        result.append("<a href='gitshow://$content'><code>${escapeHtml(content)}</code></a>")
-                    } else {
-                        result.append("<code>${escapeHtml(content)}</code>")
-                    }
-                }
-
-                match.groupValues[3].isNotEmpty() -> {
-                    // Markdown link: [text](url)
-                    val linkText = escapeHtml(match.groupValues[3])
-                    val rawTarget = match.groupValues[4].trim()
-                    val resolved = resolveFileReference(rawTarget)
-                        ?: resolveFilePath(rawTarget.removePrefix("file://"))?.let { it to null }
-                    when {
-                        rawTarget.startsWith("openfile://") || rawTarget.startsWith("gitshow://") -> {
-                            result.append("<a href='${escapeHtml(rawTarget)}'>$linkText</a>")
-                        }
-
-                        resolved != null -> {
-                            val href = resolved.first + if (resolved.second != null) ":${resolved.second}" else ""
-                            result.append("<a href='openfile://${escapeHtml(href)}'>$linkText</a>")
-                        }
-
-                        GIT_SHA_REGEX.matches(rawTarget) && isGitCommit(rawTarget) -> {
-                            result.append("<a href='gitshow://${escapeHtml(rawTarget)}'>$linkText</a>")
-                        }
-
-                        rawTarget.startsWith("http://") || rawTarget.startsWith("https://") -> {
-                            result.append("<a href='${escapeHtml(rawTarget)}'>$linkText</a>")
-                        }
-
-                        else -> {
-                            result.append("[").append(linkText).append("](").append(escapeHtml(rawTarget)).append(")")
-                        }
-                    }
-                }
-
-                match.groupValues[5].isNotEmpty() -> {
-                    // Bare URL: https://example.com
-                    val url = escapeHtml(match.groupValues[5])
-                    result.append("<a href='$url'>$url</a>")
-                }
-            }
+            result.append(formatInlineMatch(match, resolveFileReference, resolveFilePath, isGitCommit))
             lastEnd = match.range.last + 1
         }
         result.append(formatNonCode(text.substring(lastEnd), resolveFilePath, isGitCommit))
         return result.toString()
+    }
+
+    private fun inlineFormattingPattern(): Regex {
+        val boldPattern = """\*\*(.+?)\*\*"""
+        val inlineCodePattern = "`([^`]+)`"
+        val mdLinkPattern = """\[([^\]]+)]\(([^)]+)\)"""
+        val urlLinkPattern = """(https?://[^\s<>\[\]()]+)"""
+        return Regex("$boldPattern|$inlineCodePattern|$mdLinkPattern|$urlLinkPattern")
+    }
+
+    private fun formatInlineMatch(
+        match: MatchResult,
+        resolveFileReference: (String) -> Pair<String, Int?>?,
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
+    ): String = when {
+        match.groupValues[1].isNotEmpty() -> formatBold(
+            match.groupValues[1],
+            resolveFileReference,
+            resolveFilePath,
+            isGitCommit
+        )
+
+        match.groupValues[2].isNotEmpty() -> formatInlineCode(match.groupValues[2], resolveFileReference, isGitCommit)
+        match.groupValues[3].isNotEmpty() -> formatMarkdownLink(
+            match,
+            resolveFileReference,
+            resolveFilePath,
+            isGitCommit
+        )
+
+        match.groupValues[5].isNotEmpty() -> formatBareUrl(match.groupValues[5])
+        else -> ""
+    }
+
+    private fun formatBold(
+        content: String,
+        resolveFileReference: (String) -> Pair<String, Int?>?,
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
+    ): String = "<b>${formatInline(content, resolveFileReference, resolveFilePath, isGitCommit)}</b>"
+
+    private fun formatInlineCode(
+        content: String,
+        resolveFileReference: (String) -> Pair<String, Int?>?,
+        isGitCommit: (String) -> Boolean
+    ): String {
+        val resolved = resolveFileReference(content)
+        return when {
+            resolved != null -> "<a href='openfile://${resolvedHref(resolved)}'><code>${escapeHtml(content)}</code></a>"
+            GIT_SHA_REGEX.matches(content) && isGitCommit(content) ->
+                "<a href='gitshow://$content'><code>${escapeHtml(content)}</code></a>"
+
+            else -> "<code>${escapeHtml(content)}</code>"
+        }
+    }
+
+    private fun formatMarkdownLink(
+        match: MatchResult,
+        resolveFileReference: (String) -> Pair<String, Int?>?,
+        resolveFilePath: (String) -> String?,
+        isGitCommit: (String) -> Boolean
+    ): String {
+        val linkText = escapeHtml(match.groupValues[3])
+        val rawTarget = match.groupValues[4].trim()
+        val resolved = resolveFileReference(rawTarget)
+            ?: resolveFilePath(rawTarget.removePrefix("file://"))?.let { it to null }
+        return formatMarkdownLinkTarget(linkText, rawTarget, resolved, isGitCommit)
+    }
+
+    private fun formatMarkdownLinkTarget(
+        linkText: String,
+        rawTarget: String,
+        resolved: Pair<String, Int?>?,
+        isGitCommit: (String) -> Boolean
+    ): String = when {
+        rawTarget.startsWith("openfile://") || rawTarget.startsWith("gitshow://") ->
+            "<a href='${escapeHtml(rawTarget)}'>$linkText</a>"
+
+        resolved != null -> "<a href='openfile://${escapeHtml(resolvedHref(resolved))}'>$linkText</a>"
+        GIT_SHA_REGEX.matches(rawTarget) && isGitCommit(rawTarget) ->
+            "<a href='gitshow://${escapeHtml(rawTarget)}'>$linkText</a>"
+
+        rawTarget.startsWith("http://") || rawTarget.startsWith("https://") ->
+            "<a href='${escapeHtml(rawTarget)}'>$linkText</a>"
+
+        else -> "[${linkText}](${escapeHtml(rawTarget)})"
+    }
+
+    private fun resolvedHref(resolved: Pair<String, Int?>): String =
+        resolved.first + if (resolved.second != null) ":${resolved.second}" else ""
+
+    private fun formatBareUrl(urlText: String): String {
+        val url = escapeHtml(urlText)
+        return "<a href='$url'>$url</a>"
     }
 
     private fun formatNonCode(

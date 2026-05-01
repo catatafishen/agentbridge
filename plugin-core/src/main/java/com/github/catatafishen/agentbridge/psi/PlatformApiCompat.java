@@ -411,6 +411,19 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Overload that accepts a pre-navigation callback invoked on the EDT immediately before
+     * {@code showRevisionInMainLog}. Used to open the VCS tool window only after the graph is
+     * confirmed fresh — avoiding IntelliJ 2025.3's "highlight current revision" auto-navigation
+     * that fires on {@code tw.activate(null)} and emits the "commit not found" bubble when the
+     * graph hasn't been rebuilt yet. See COMMIT-NOT-FOUND-IN-LOG-BUG.md § Cause 5.
+     */
+    public static void showRevisionInLogAfterRefresh(
+        @NotNull Project project, @NotNull String fullHash, @Nullable String repoRootPath,
+        @Nullable Runnable preNavigationCallback) {
+        showRevisionInLogAfterRefreshImpl(project, fullHash, repoRootPath, preNavigationCallback);
+    }
+
+    /**
      * Repo-aware variant. {@code repoRootPath} is the absolute root of the git repository
      * the commit was made in — used both to refresh the correct {@link com.intellij.vcs.log.data.VcsLogData}
      * root in multi-repo projects, and to disambiguate the navigation target via
@@ -431,19 +444,6 @@ public final class PlatformApiCompat {
      *                     (only suitable for entry points like chat-chip clicks that
      *                     have no repo context).
      */
-    /**
-     * Overload that accepts a pre-navigation callback invoked on the EDT immediately before
-     * {@code showRevisionInMainLog}. Used to open the VCS tool window only after the graph is
-     * confirmed fresh — avoiding IntelliJ 2025.3's "highlight current revision" auto-navigation
-     * that fires on {@code tw.activate(null)} and emits the "commit not found" bubble when the
-     * graph hasn't been rebuilt yet. See COMMIT-NOT-FOUND-IN-LOG-BUG.md § Cause 5.
-     */
-    public static void showRevisionInLogAfterRefresh(
-        @NotNull Project project, @NotNull String fullHash, @Nullable String repoRootPath,
-        @Nullable Runnable preNavigationCallback) {
-        showRevisionInLogAfterRefreshImpl(project, fullHash, repoRootPath, preNavigationCallback);
-    }
-
     public static void showRevisionInLogAfterRefresh(
         @NotNull Project project, @NotNull String fullHash, @Nullable String repoRootPath) {
         showRevisionInLogAfterRefreshImpl(project, fullHash, repoRootPath, null);
@@ -780,7 +780,7 @@ public final class PlatformApiCompat {
             for (com.intellij.openapi.vcs.VcsRoot vr : detected) {
                 com.intellij.openapi.vcs.AbstractVcs vcs = vr.getVcs();
                 com.intellij.openapi.vfs.VirtualFile path = vr.getPath();
-                if (vcs != null && "Git".equals(vcs.getName()) && path != null) {
+                if ("Git".equals(vcs.getName())) {
                     roots.add(path.getPath());
                 }
             }
@@ -1587,10 +1587,8 @@ public final class PlatformApiCompat {
      * Gradle compiles cleanly. Wrapping the call in a raw-typed bridge keeps the
      * false-positive confined to this single method.</p>
      */
-    @SuppressWarnings({"rawtypes", "unchecked"})
     public static @Nullable com.intellij.openapi.ui.popup.ListPopupStep<Object> getListStep(
         @NotNull com.intellij.ui.popup.list.ListPopupImpl popup) {
-        com.intellij.openapi.ui.popup.ListPopupStep raw = popup.getListStep();
-        return (com.intellij.openapi.ui.popup.ListPopupStep<Object>) raw;
+        return popup.getListStep();
     }
 }

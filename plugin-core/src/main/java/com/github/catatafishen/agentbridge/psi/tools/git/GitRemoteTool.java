@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 public final class GitRemoteTool extends GitTool {
 
     private static final String PARAM_ACTION = "action";
+    private static final String ACTION_REMOVE = "remove";
     private static final String GIT_REMOTE = "remote";
 
     public GitRemoteTool(Project project) {
@@ -62,7 +63,7 @@ public final class GitRemoteTool extends GitTool {
             : "list";
 
         // Write actions require an unambiguous repo
-        if (action.equals("add") || action.equals("remove") || action.equals("set_url")) {
+        if (action.equals("add") || action.equals(ACTION_REMOVE) || action.equals("set_url")) {
             String ambiError = requireUnambiguousRepo(repoParam, "git_remote " + action);
             if (ambiError != null) return ambiError;
         }
@@ -79,10 +80,10 @@ public final class GitRemoteTool extends GitTool {
                 if (url == null) yield "Error: 'url' parameter is required for 'add'";
                 yield runGitIn(root, GIT_REMOTE, "add", name, url);
             }
-            case "remove" -> {
+            case ACTION_REMOVE -> {
                 String name = requireString(args, "name");
-                if (name == null) yield "Error: 'name' parameter is required for 'remove'";
-                yield runGitIn(root, GIT_REMOTE, "remove", name);
+                if (name == null) yield "Error: 'name' parameter is required for '" + ACTION_REMOVE + "'";
+                yield runGitIn(root, GIT_REMOTE, ACTION_REMOVE, name);
             }
             case "set_url" -> {
                 String name = requireString(args, "name");

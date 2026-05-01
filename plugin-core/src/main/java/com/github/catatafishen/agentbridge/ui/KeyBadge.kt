@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.ui.KeyBadge.Companion.keystrokeTokens
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
@@ -39,45 +40,47 @@ class KeyBadge(text: String) : JBLabel(text) {
         /** Formats a keystroke as a single string; prefer [keystrokeTokens] for badge rendering. */
         fun formatKeystroke(stroke: KeyStroke): String = keystrokeTokens(stroke).joinToString("+")
 
-        /**
-         * Returns one string per individual key token so each can be rendered in its own badge.
-         * On macOS modifiers are returned as Unicode symbols (⌘, ⌃, ⌥, ⇧); on Windows/Linux
-         * Ctrl and Alt are returned as text while Shift uses ⇧.
-         */
         fun keystrokeTokens(stroke: KeyStroke): List<String> {
             val isMac = System.getProperty("os.name", "").lowercase(Locale.ROOT).startsWith("mac")
+            return if (isMac) macKeystrokeTokens(stroke) else defaultKeystrokeTokens(stroke)
+        }
+
+        private fun macKeystrokeTokens(stroke: KeyStroke): List<String> {
             val tokens = mutableListOf<String>()
             val modifiers = stroke.modifiers
-            if (isMac) {
-                if (modifiers and InputEvent.CTRL_DOWN_MASK != 0) tokens.add("⌃")
-                if (modifiers and InputEvent.ALT_DOWN_MASK != 0) tokens.add("⌥")
-                if (modifiers and InputEvent.SHIFT_DOWN_MASK != 0) tokens.add("⇧")
-                if (modifiers and InputEvent.META_DOWN_MASK != 0) tokens.add("⌘")
-                tokens.add(
-                    when (stroke.keyCode) {
-                        KeyEvent.VK_ENTER -> "⏎"
-                        KeyEvent.VK_BACK_SPACE -> "⌫"
-                        KeyEvent.VK_ESCAPE -> "⎋"
-                        KeyEvent.VK_TAB -> "⇥"
-                        else -> KeyEvent.getKeyText(stroke.keyCode)
-                    }
-                )
-            } else {
-                if (modifiers and InputEvent.CTRL_DOWN_MASK != 0) tokens.add("Ctrl")
-                if (modifiers and InputEvent.ALT_DOWN_MASK != 0) tokens.add("Alt")
-                if (modifiers and InputEvent.SHIFT_DOWN_MASK != 0) tokens.add("⇧")
-                tokens.add(
-                    when (stroke.keyCode) {
-                        KeyEvent.VK_ENTER -> "↵"
-                        KeyEvent.VK_BACK_SPACE -> "⌫"
-                        KeyEvent.VK_ESCAPE -> "Esc"
-                        KeyEvent.VK_TAB -> "⇥"
-                        KeyEvent.VK_UP -> "↑"
-                        else -> KeyEvent.getKeyText(stroke.keyCode)
-                    }
-                )
-            }
+            if (modifiers and InputEvent.CTRL_DOWN_MASK != 0) tokens.add("⌃")
+            if (modifiers and InputEvent.ALT_DOWN_MASK != 0) tokens.add("⌥")
+            if (modifiers and InputEvent.SHIFT_DOWN_MASK != 0) tokens.add("⇧")
+            if (modifiers and InputEvent.META_DOWN_MASK != 0) tokens.add("⌘")
+            tokens.add(macKeyText(stroke.keyCode))
             return tokens
+        }
+
+        private fun defaultKeystrokeTokens(stroke: KeyStroke): List<String> {
+            val tokens = mutableListOf<String>()
+            val modifiers = stroke.modifiers
+            if (modifiers and InputEvent.CTRL_DOWN_MASK != 0) tokens.add("Ctrl")
+            if (modifiers and InputEvent.ALT_DOWN_MASK != 0) tokens.add("Alt")
+            if (modifiers and InputEvent.SHIFT_DOWN_MASK != 0) tokens.add("⇧")
+            tokens.add(defaultKeyText(stroke.keyCode))
+            return tokens
+        }
+
+        private fun macKeyText(keyCode: Int): String = when (keyCode) {
+            KeyEvent.VK_ENTER -> "⏎"
+            KeyEvent.VK_BACK_SPACE -> "⌫"
+            KeyEvent.VK_ESCAPE -> "⎋"
+            KeyEvent.VK_TAB -> "⇥"
+            else -> KeyEvent.getKeyText(keyCode)
+        }
+
+        private fun defaultKeyText(keyCode: Int): String = when (keyCode) {
+            KeyEvent.VK_ENTER -> "↵"
+            KeyEvent.VK_BACK_SPACE -> "⌫"
+            KeyEvent.VK_ESCAPE -> "Esc"
+            KeyEvent.VK_TAB -> "⇥"
+            KeyEvent.VK_UP -> "↑"
+            else -> KeyEvent.getKeyText(keyCode)
         }
     }
 }

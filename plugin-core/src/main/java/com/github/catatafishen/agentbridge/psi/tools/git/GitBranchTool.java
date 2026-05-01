@@ -68,58 +68,67 @@ public final class GitBranchTool extends GitTool {
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
 
         return switch (action) {
-            case "list" -> {
-                // List is read-only: no ambiguity guard, no repo required.
-                String root = resolveRepoRootOrError(repoParam);
-                if (root.startsWith(ERR_PREFIX)) yield root;
-                boolean all = args.has(PARAM_ALL) && args.get(PARAM_ALL).getAsBoolean();
-                yield runGitIn(root, CMD_BRANCH, all ? "--all" : "--list", "-v");
-            }
-            case "create" -> {
-                String name = requireName(args);
-                if (name == null) yield "Error: 'name' parameter is required for 'create'";
-                String ambiError = requireUnambiguousRepo(repoParam, "branch create");
-                if (ambiError != null) yield ambiError;
-                String root = resolveRepoRootOrError(repoParam);
-                if (root.startsWith(ERR_PREFIX)) yield root;
-                String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("branch create '" + name + "'");
-                if (reviewError != null) yield reviewError;
-                String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
-                    ? args.get(PARAM_BASE).getAsString()
-                    : null;
-                String result = ideCreate(root, name, base);
-                if (result.startsWith(ERR_PREFIX)) yield result;
-                AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch create");
-                yield "Created and switched to branch '" + name + "'\n" + getBranchContextIn(root);
-            }
-            case "switch", CMD_CHECKOUT -> {
-                String name = requireName(args);
-                if (name == null) yield "Error: 'name' parameter is required for 'switch'";
-                String ambiError = requireUnambiguousRepo(repoParam, "branch switch");
-                if (ambiError != null) yield ambiError;
-                String root = resolveRepoRootOrError(repoParam);
-                if (root.startsWith(ERR_PREFIX)) yield root;
-                String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("branch switch '" + name + "'");
-                if (reviewError != null) yield reviewError;
-                String result = ideSwitch(root, name);
-                if (result.startsWith(ERR_PREFIX)) yield result;
-                AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch switch");
-                yield "Switched to branch '" + name + "'\n" + getBranchContextIn(root);
-            }
-            case "delete" -> {
-                String name = requireName(args);
-                if (name == null) yield "Error: 'name' parameter is required for 'delete'";
-                String ambiError = requireUnambiguousRepo(repoParam, "branch delete");
-                if (ambiError != null) yield ambiError;
-                String root = resolveRepoRootOrError(repoParam);
-                if (root.startsWith(ERR_PREFIX)) yield root;
-                boolean force = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
-                yield ideDelete(root, name, force);
-            }
+            case "list" -> listBranches(args, repoParam);
+            case "create" -> createBranch(args, repoParam);
+            case "switch", CMD_CHECKOUT -> switchBranch(args, repoParam);
+            case "delete" -> deleteBranch(args, repoParam);
             default -> "Error: unknown action '" + action + "'. Use: list, create, switch, delete";
         };
+    }
+
+    private String listBranches(@NotNull JsonObject args, @Nullable String repoParam) throws Exception {
+        String root = resolveRepoRootOrError(repoParam);
+        if (root.startsWith(ERR_PREFIX)) return root;
+        boolean all = args.has(PARAM_ALL) && args.get(PARAM_ALL).getAsBoolean();
+        return runGitIn(root, CMD_BRANCH, all ? "--all" : "--list", "-v");
+    }
+
+    private String createBranch(@NotNull JsonObject args, @Nullable String repoParam) throws Exception {
+        String name = requireName(args);
+        if (name == null) return "Error: 'name' parameter is required for 'create'";
+        String setupError = prepareBranchWrite(repoParam, "branch create");
+        if (setupError.startsWith(ERR_PREFIX)) return setupError;
+        String reviewError = AgentEditSession.getInstance(project)
+            .awaitReviewCompletion("branch create '" + name + "'");
+        if (reviewError != null) return reviewError;
+
+        String base = args.has(PARAM_BASE) && !args.get(PARAM_BASE).getAsString().isEmpty()
+            ? args.get(PARAM_BASE).getAsString()
+            : null;
+        String result = ideCreate(setupError, name, base);
+        if (result.startsWith(ERR_PREFIX)) return result;
+        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch create");
+        return "Created and switched to branch '" + name + "'\n" + getBranchContextIn(setupError);
+    }
+
+    private String switchBranch(@NotNull JsonObject args, @Nullable String repoParam) throws Exception {
+        String name = requireName(args);
+        if (name == null) return "Error: 'name' parameter is required for 'switch'";
+        String setupError = prepareBranchWrite(repoParam, "branch switch");
+        if (setupError.startsWith(ERR_PREFIX)) return setupError;
+        String reviewError = AgentEditSession.getInstance(project)
+            .awaitReviewCompletion("branch switch '" + name + "'");
+        if (reviewError != null) return reviewError;
+
+        String result = ideSwitch(setupError, name);
+        if (result.startsWith(ERR_PREFIX)) return result;
+        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("branch switch");
+        return "Switched to branch '" + name + "'\n" + getBranchContextIn(setupError);
+    }
+
+    private String deleteBranch(@NotNull JsonObject args, @Nullable String repoParam) throws Exception {
+        String name = requireName(args);
+        if (name == null) return "Error: 'name' parameter is required for 'delete'";
+        String setupError = prepareBranchWrite(repoParam, "branch delete");
+        if (setupError.startsWith(ERR_PREFIX)) return setupError;
+        boolean force = args.has(PARAM_FORCE) && args.get(PARAM_FORCE).getAsBoolean();
+        return ideDelete(setupError, name, force);
+    }
+
+    private String prepareBranchWrite(@Nullable String repoParam, @NotNull String action) {
+        String ambiError = requireUnambiguousRepo(repoParam, action);
+        if (ambiError != null) return ambiError;
+        return resolveRepoRootOrError(repoParam);
     }
 
     /**

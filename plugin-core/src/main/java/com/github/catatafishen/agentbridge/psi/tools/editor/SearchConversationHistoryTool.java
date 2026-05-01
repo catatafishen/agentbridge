@@ -258,24 +258,36 @@ public final class SearchConversationHistoryTool extends EditorTool {
             return result;
         }
 
-        // Load current session
+        String currentId = addCurrentSession(store, basePath, result);
+        addIndexedSessions(store, basePath, currentId, result);
+        return result;
+    }
+
+    private static String addCurrentSession(SessionStoreV2 store, String basePath,
+                                            Map<String, List<EntryData>> result) {
         String currentId = store.getCurrentSessionId(basePath);
         List<EntryData> current = store.loadEntries(basePath);
         if (current != null && !current.isEmpty()) {
             result.put(CONVERSATION_CURRENT, current);
         }
+        return currentId;
+    }
 
-        // Load all indexed sessions (skip current to avoid duplication)
-        List<SessionStoreV2.SessionRecord> sessions = store.listSessions(basePath);
-        for (SessionStoreV2.SessionRecord rec : sessions) {
-            if (rec.id().equals(currentId)) continue;
-            List<EntryData> entries = store.loadEntriesBySessionId(basePath, rec.id());
-            if (entries != null && !entries.isEmpty()) {
-                String label = !rec.name().isEmpty() ? rec.name() : rec.id();
-                result.put(label, entries);
-            }
+    private static void addIndexedSessions(SessionStoreV2 store, String basePath, String currentId,
+                                           Map<String, List<EntryData>> result) {
+        for (SessionStoreV2.SessionRecord rec : store.listSessions(basePath)) {
+            addIndexedSession(store, basePath, currentId, result, rec);
         }
-        return result;
+    }
+
+    private static void addIndexedSession(SessionStoreV2 store, String basePath, String currentId,
+                                          Map<String, List<EntryData>> result,
+                                          SessionStoreV2.SessionRecord rec) {
+        if (rec.id().equals(currentId)) return;
+        List<EntryData> entries = store.loadEntriesBySessionId(basePath, rec.id());
+        if (entries == null || entries.isEmpty()) return;
+        String label = !rec.name().isEmpty() ? rec.name() : rec.id();
+        result.put(label, entries);
     }
 
     // ── Entries → text conversion ─────────────────────────────────────────────
@@ -374,31 +386,36 @@ public final class SearchConversationHistoryTool extends EditorTool {
     }
 
     private static String formatConversationEntry(EntryData e) {
-        if (e instanceof EntryData.Prompt p) {
-            String ts = p.getTimestamp().isEmpty() ? "" : " [" + formatTimestamp(p.getTimestamp()) + "]";
-            return ">>> " + p.getText() + ts;
-        }
-        if (e instanceof EntryData.Text t) return t.getRaw().trim();
-        if (e instanceof EntryData.Thinking t) {
-            String raw = t.getRaw().trim();
-            return raw.isEmpty() ? null : "[thinking] " + raw;
-        }
-        if (e instanceof EntryData.ToolCall t) {
-            String toolArgs = t.getArguments() != null ? t.getArguments() : "";
-            return t.getTitle() + (toolArgs.isEmpty() ? "" : " " + toolArgs);
-        }
-        if (e instanceof EntryData.SubAgent s) {
-            return "SubAgent: " + s.getAgentType() + " — " + s.getDescription();
-        }
-        if (e instanceof EntryData.ContextFiles) return "Context files attached";
-        if (e instanceof EntryData.Status s) {
-            return s.getMessage().isEmpty() ? null : "Status: " + s.getMessage();
-        }
-        if (e instanceof EntryData.SessionSeparator s) {
-            return "--- Session " + formatTimestamp(s.getTimestamp()) + " ---";
-        }
-        // skip
-        return null;
+        return switch (e) {
+            case EntryData.Prompt p -> formatPrompt(p);
+            case EntryData.Text t -> t.getRaw().trim();
+            case EntryData.Thinking t -> formatThinking(t);
+            case EntryData.ToolCall t -> formatToolCall(t);
+            case EntryData.SubAgent s -> "SubAgent: " + s.getAgentType() + " — " + s.getDescription();
+            case EntryData.ContextFiles ignored -> "Context files attached";
+            case EntryData.Status s -> formatStatus(s);
+            case EntryData.SessionSeparator s -> "--- Session " + formatTimestamp(s.getTimestamp()) + " ---";
+            default -> null;
+        };
+    }
+
+    private static String formatPrompt(EntryData.Prompt prompt) {
+        String ts = prompt.getTimestamp().isEmpty() ? "" : " [" + formatTimestamp(prompt.getTimestamp()) + "]";
+        return ">>> " + prompt.getText() + ts;
+    }
+
+    private static String formatThinking(EntryData.Thinking thinking) {
+        String raw = thinking.getRaw().trim();
+        return raw.isEmpty() ? null : "[thinking] " + raw;
+    }
+
+    private static String formatToolCall(EntryData.ToolCall toolCall) {
+        String toolArgs = toolCall.getArguments() != null ? toolCall.getArguments() : "";
+        return toolCall.getTitle() + (toolArgs.isEmpty() ? "" : " " + toolArgs);
+    }
+
+    private static String formatStatus(EntryData.Status status) {
+        return status.getMessage().isEmpty() ? null : "Status: " + status.getMessage();
     }
 
     // ── Time helpers ──────────────────────────────────────────────────────────

@@ -55,6 +55,14 @@ class TurnMinerTest {
         if (store != null) store.dispose();
     }
 
+    private TurnMiner.PipelineContext pipelineContext(int maxDrawers) {
+        return pipelineContext(maxDrawers, fakeEmbedder);
+    }
+
+    private TurnMiner.PipelineContext pipelineContext(int maxDrawers, Embedder embedder) {
+        return new TurnMiner.PipelineContext(store, embedder, filter, maxDrawers, WING, null, null);
+    }
+
     // --- MineResult record ---
 
     @Test
@@ -88,7 +96,7 @@ class TurnMinerTest {
     void emptyEntriesReturnsEmpty() {
         TurnMiner miner = new TurnMiner();
         TurnMiner.MineResult result = miner.executePipeline(
-            Collections.emptyList(), SESSION_ID, AGENT, store, fakeEmbedder, filter, 10, WING);
+            Collections.emptyList(), SESSION_ID, AGENT, pipelineContext(10));
         assertEquals(TurnMiner.MineResult.EMPTY, result);
     }
 
@@ -103,7 +111,7 @@ class TurnMinerTest {
 
         TurnMiner miner = new TurnMiner();
         TurnMiner.MineResult result = miner.executePipeline(
-            entries, SESSION_ID, AGENT, store, fakeEmbedder, filter, 10, WING);
+            entries, SESSION_ID, AGENT, pipelineContext(10));
 
         assertEquals(1, result.stored());
         assertEquals(0, result.filtered());
@@ -120,7 +128,7 @@ class TurnMinerTest {
 
         TurnMiner miner = new TurnMiner();
         TurnMiner.MineResult result = miner.executePipeline(
-            entries, SESSION_ID, AGENT, store, fakeEmbedder, filter, 10, WING);
+            entries, SESSION_ID, AGENT, pipelineContext(10));
 
         assertEquals(0, result.stored());
         assertEquals(1, result.filtered());
@@ -143,7 +151,7 @@ class TurnMinerTest {
 
         TurnMiner miner = new TurnMiner();
         TurnMiner.MineResult result = miner.executePipeline(
-            entries, SESSION_ID, AGENT, store, fakeEmbedder, filter, 1, WING);
+            entries, SESSION_ID, AGENT, pipelineContext(1));
 
         assertEquals(1, result.stored());
         assertEquals(3, result.total());
@@ -163,7 +171,7 @@ class TurnMinerTest {
 
         TurnMiner miner = new TurnMiner();
         TurnMiner.MineResult result = miner.executePipeline(
-            entries, SESSION_ID, AGENT, store, fakeEmbedder, filter, 10, WING);
+            entries, SESSION_ID, AGENT, pipelineContext(10));
 
         assertEquals(3, result.total());
         // All should be stored (no duplicates with unique vectors)
@@ -184,7 +192,7 @@ class TurnMinerTest {
 
         TurnMiner miner = new TurnMiner();
         TurnMiner.MineResult result = miner.executePipeline(
-            entries, SESSION_ID, AGENT, store, failingEmbedder, filter, 10, WING);
+            entries, SESSION_ID, AGENT, pipelineContext(10, failingEmbedder));
 
         assertEquals(0, result.stored());
         assertEquals(0, result.filtered());
@@ -205,7 +213,7 @@ class TurnMinerTest {
 
         TurnMiner miner = new TurnMiner();
         TurnMiner.MineResult result = miner.executePipeline(
-            entries, SESSION_ID, AGENT, store, fakeEmbedder, filter, 10, WING);
+            entries, SESSION_ID, AGENT, pipelineContext(10));
 
         assertEquals(1, result.stored());
         assertEquals(1, result.filtered());

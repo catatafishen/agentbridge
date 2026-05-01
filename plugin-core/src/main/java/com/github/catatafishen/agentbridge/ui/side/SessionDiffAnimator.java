@@ -42,7 +42,7 @@ final class SessionDiffAnimator {
         if (!isAnimating(nowMillis)) {
             return new DiffCounts(targetAdded, targetRemoved);
         }
-        double progress = Math.max(0.0d, Math.min(1.0d, (double) (nowMillis - startMillis) / ANIMATION_DURATION_MS));
+        double progress = Math.clamp((double) (nowMillis - startMillis) / ANIMATION_DURATION_MS, 0.0d, 1.0d);
         return new DiffCounts(
             interpolate(startAdded, targetAdded, progress),
             interpolate(startRemoved, targetRemoved, progress)

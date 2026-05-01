@@ -39,6 +39,37 @@ allprojects {
     }
 }
 
+sonar {
+    properties {
+        property(
+            "sonar.projectVersion",
+            providers.environmentVariable("SONAR_PROJECT_VERSION")
+                .orElse(providers.environmentVariable("PLUGIN_VERSION"))
+                .orElse(providers.provider { project.version.toString() })
+                .get()
+        )
+        property(
+            "sonar.coverage.jacoco.xmlReportPaths",
+            listOf(
+                "mcp-server/build/reports/jacoco/test/jacocoTestReport.xml",
+                "plugin-core/build/reports/jacoco/test/jacocoTestReport.xml",
+                "plugin-experimental/build/reports/jacoco/test/jacocoTestReport.xml",
+            ).joinToString(",")
+        )
+        property("sonar.javascript.lcov.reportPaths", "plugin-core/js-tests/coverage/lcov.info")
+    }
+}
+
+project(":plugin-core") {
+    sonar {
+        properties {
+            property("sonar.sources", "src/main/java,chat-ui/src")
+            property("sonar.tests", "src/test/java,js-tests")
+            property("sonar.test.inclusions", "src/test/java/**,js-tests/**/*.test.*")
+        }
+    }
+}
+
 subprojects {
     apply(plugin = "java")
 

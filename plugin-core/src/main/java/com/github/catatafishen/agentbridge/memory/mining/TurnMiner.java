@@ -99,22 +99,15 @@ public final class TurnMiner {
         QualityFilter filter = new QualityFilter(project);
         KnowledgeGraph kg = memoryService.getKnowledgeGraph();
 
-        return executePipeline(entries, sessionId, agentName, store, embedding, filter, maxDrawers, wing, kg, exchangeProgress);
+        PipelineContext context = new PipelineContext(store, embedding, filter, maxDrawers, wing, kg, exchangeProgress);
+        return executePipeline(entries, sessionId, agentName, context);
     }
 
     /**
      * Package-private for testing — runs the full mining pipeline with explicit dependencies.
      */
     MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
-                               MemoryStore store, Embedder embedder, QualityFilter filter,
-                               int maxDrawers, String wing) {
-        return executePipeline(entries, sessionId, agentName, store, embedder, filter, maxDrawers, wing, null, null);
-    }
-
-    MineResult executePipeline(List<EntryData> entries, String sessionId, String agentName,
-                               MemoryStore store, Embedder embedder, QualityFilter filter,
-                               int maxDrawers, String wing, @Nullable KnowledgeGraph kg,
-                               @Nullable ExchangeProgressListener exchangeProgress) {
+                               PipelineContext context) {
         List<ExchangeChunker.Exchange> exchanges = ExchangeChunker.chunk(entries);
         if (exchanges.isEmpty()) {
             return MineResult.EMPTY;
@@ -125,16 +118,15 @@ public final class TurnMiner {
         int duplicates = 0;
 
         for (int i = 0; i < exchanges.size(); i++) {
-            if (stored >= maxDrawers) break;
+            if (stored >= context.maxDrawers()) break;
 
-            if (exchangeProgress != null) {
-                exchangeProgress.onExchange(i + 1, exchanges.size());
+            if (context.exchangeProgress() != null) {
+                context.exchangeProgress().onExchange(i + 1, exchanges.size());
             }
 
             ExchangeChunker.Exchange exchange = exchanges.get(i);
             int turnIndex = i + 1;
-            MineExchangeResult result = mineOneExchange(exchange, wing, sessionId, agentName,
-                filter, store, embedder, kg, turnIndex);
+            MineExchangeResult result = mineOneExchange(exchange, context, sessionId, agentName, turnIndex);
             stored += result.stored;
             filtered += result.filtered;
             duplicates += result.duplicates;
@@ -145,15 +137,18 @@ public final class TurnMiner {
         return new MineResult(stored, filtered, duplicates, exchanges.size());
     }
 
+    record PipelineContext(MemoryStore store, Embedder embedder, QualityFilter filter,
+                           int maxDrawers, String wing, @Nullable KnowledgeGraph kg,
+                           @Nullable ExchangeProgressListener exchangeProgress) {
+    }
+
     private record MineExchangeResult(int stored, int filtered, int duplicates) {
     }
 
     private MineExchangeResult mineOneExchange(ExchangeChunker.Exchange exchange,
-                                               String wing, String sessionId, String agentName,
-                                               QualityFilter filter, MemoryStore store,
-                                               Embedder embedder, @Nullable KnowledgeGraph kg,
-                                               int turnIndex) {
-        if (!filter.passes(exchange.prompt(), exchange.response())) {
+                                               PipelineContext context, String sessionId,
+                                               String agentName, int turnIndex) {
+        if (!context.filter().passes(exchange.prompt(), exchange.response())) {
             return new MineExchangeResult(0, 1, 0);
         }
 
@@ -164,12 +159,12 @@ public final class TurnMiner {
         String commits = String.join(",", exchange.commitHashes());
 
         try {
-            float[] vector = embedder.embed(combinedText);
-            String drawerId = MemoryStore.generateDrawerId(wing, room, combinedText);
+            float[] vector = context.embedder().embed(combinedText);
+            String drawerId = MemoryStore.generateDrawerId(context.wing(), room, combinedText);
             String evidenceJson = EvidenceExtractor.extractAsJson(combinedText);
             DrawerDocument drawer = DrawerDocument.builder()
                 .id(drawerId)
-                .wing(wing)
+                .wing(context.wing())
                 .room(room)
                 .content(combinedText)
                 .memoryType(memoryType)
@@ -182,9 +177,9 @@ public final class TurnMiner {
                 .evidence(evidenceJson)
                 .build();
 
-            String result = store.addDrawer(drawer, vector);
+            String result = context.store().addDrawer(drawer, vector);
             if (result != null) {
-                extractTriples(combinedText, wing, drawerId, kg, evidenceJson);
+                extractTriples(combinedText, context.wing(), drawerId, context.kg());
                 return new MineExchangeResult(1, 0, 0);
             }
             return new MineExchangeResult(0, 0, 1);
@@ -195,7 +190,7 @@ public final class TurnMiner {
     }
 
     private static void extractTriples(String text, String wing, String drawerId,
-                                       @Nullable KnowledgeGraph kg, String evidenceJson) {
+                                       @Nullable KnowledgeGraph kg) {
         if (kg == null) return;
 
         List<TripleExtractor.ExtractedTriple> triples = TripleExtractor.extract(text, wing, drawerId);

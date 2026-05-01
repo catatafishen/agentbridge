@@ -76,119 +76,121 @@ public final class GitCommitTool extends GitTool {
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         flushAndSave();
 
-        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
-        String ambiError = requireUnambiguousRepo(repoParam, "git_commit");
-        if (ambiError != null) return ambiError;
-        String root = resolveRepoRootOrError(repoParam);
+        String root = prepareCommit(args);
         if (root.startsWith("Error")) return root;
-
-        if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) {
-            return "Error: 'message' parameter is required";
-        }
+        String message = requiredMessage(args);
+        if (message == null) return "Error: 'message' parameter is required";
 
         boolean commitAll = resolveCommitAll(args);
         boolean isAmend = resolveAmend(args);
-
-        // Compute which files will be committed, then only gate on those paths.
-        // This prevents unrelated PENDING review items from blocking the commit.
-        // For --amend we don't compute filesToCommit (it's not used for gating) — we
-        // gate unconditionally via awaitReviewCompletion to keep amends safe even when
-        // the staged file set looks empty/irrelevant.
-        AgentEditSession session = AgentEditSession.getInstance(project);
-        String reviewError;
-        if (isAmend) {
-            reviewError = session.awaitReviewCompletion("git commit --amend");
-        } else {
-            Collection<String> filesToCommit = resolveFilesToCommit(commitAll, root);
-            reviewError = session.awaitReviewForPaths("git commit", filesToCommit);
-        }
+        String reviewError = awaitCommitReview(root, commitAll, isAmend);
         if (reviewError != null) return reviewError;
 
-        if (commitAll) {
-            // Stage all changes including new untracked files (equivalent to git add -A)
-            runGitIn(root, "add", "-A");
-        }
+        if (commitAll) runGitIn(root, "add", "-A");
+        if (!isAmend && hasNoStagedChanges(root)) return buildNothingToCommitHint(root);
 
-        // Pre-commit check: verify there are staged changes (skip for amend — message-only amends are valid)
-        if (!isAmend) {
-            String staged = runGitInQuiet(root, "diff", "--cached", NAME_ONLY);
-            if (staged != null && staged.isEmpty()) {
-                return buildNothingToCommitHint(root);
+        showVcsToolWindow();
+        String result = runGitIn(root, commitCommandArgs(args, message, isAmend));
+        if (result.startsWith("Error")) return result;
+
+        showNewCommitInLog(root);
+        pruneApprovedReviewRows(root);
+        return appendCommitDetails(result, root);
+    }
+
+    private String prepareCommit(@NotNull JsonObject args) {
+        String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
+        String ambiError = requireUnambiguousRepo(repoParam, "git_commit");
+        if (ambiError != null) return ambiError;
+        return resolveRepoRootOrError(repoParam);
+    }
+
+    private static @Nullable String requiredMessage(@NotNull JsonObject args) {
+        if (!args.has(PARAM_MESSAGE) || args.get(PARAM_MESSAGE).getAsString().isEmpty()) return null;
+        return args.get(PARAM_MESSAGE).getAsString();
+    }
+
+    private String awaitCommitReview(@NotNull String root, boolean commitAll, boolean isAmend) {
+        AgentEditSession session = AgentEditSession.getInstance(project);
+        if (isAmend) return session.awaitReviewCompletion("git commit --amend");
+        Collection<String> filesToCommit = resolveFilesToCommit(commitAll, root);
+        return session.awaitReviewForPaths("git commit", filesToCommit);
+    }
+
+    private boolean hasNoStagedChanges(@NotNull String root) {
+        String staged = runGitInQuiet(root, "diff", "--cached", NAME_ONLY);
+        return staged != null && staged.isEmpty();
+    }
+
+    private void showVcsToolWindow() {
+        if (!ToolLayerSettings.getInstance(project).getFollowAgentFiles()) return;
+        EdtUtil.invokeLater(() -> {
+            var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+                .getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
+            if (tw == null) return;
+            if (PsiBridgeService.isChatToolWindowActive(project)) {
+                tw.show();
+            } else {
+                tw.activate(null);
             }
-        }
+        });
+    }
 
-        // Show VCS tool window in follow mode without stealing focus from chat prompt
-        if (ToolLayerSettings.getInstance(project).getFollowAgentFiles()) {
-            EdtUtil.invokeLater(() -> {
-                var tw = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
-                    .getToolWindow(com.intellij.openapi.wm.ToolWindowId.VCS);
-                if (tw == null) return;
-                if (PsiBridgeService.isChatToolWindowActive(project)) {
-                    tw.show();
-                } else {
-                    tw.activate(null);
-                }
-            });
-        }
-
+    private static String[] commitCommandArgs(@NotNull JsonObject args, @NotNull String message, boolean isAmend) {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("commit");
-
-        if (isAmend) {
-            cmdArgs.add("--amend");
-        }
-
+        if (isAmend) cmdArgs.add("--amend");
         if (args.has(PARAM_AUTHOR) && !args.get(PARAM_AUTHOR).getAsString().isEmpty()) {
             cmdArgs.add("--author");
             cmdArgs.add(args.get(PARAM_AUTHOR).getAsString());
         }
-
         cmdArgs.add("-m");
-        cmdArgs.add(args.get(PARAM_MESSAGE).getAsString());
+        cmdArgs.add(message);
+        return cmdArgs.toArray(String[]::new);
+    }
 
-        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
-
-        if (result.startsWith("Error")) return result;
-
-        // Navigate the VCS Log to the new commit only after a successful commit. Doing this
-        // before the error check would open/refresh the log to the previous HEAD on failure
-        // and look identical to the "commit not found" bug we are guarding against.
-        showNewCommitInLog(root);
-
-        // Prune approved review rows for files that are now part of this commit.
-        // Run on EDT-safe pool: AgentEditSession mutations + listeners are EDT-safe.
+    private void pruneApprovedReviewRows(@NotNull String root) {
         try {
             String committedNames = runGitInQuiet(root, "show", NAME_ONLY, "--format=", "HEAD");
-            if (committedNames != null && !committedNames.isBlank()) {
-                java.util.List<String> paths = new java.util.ArrayList<>();
-                for (String line : committedNames.split(CRLF_SPLIT)) {
-                    String trimmed = line.trim();
-                    if (!trimmed.isEmpty()) paths.add(trimmed);
-                }
-                if (!paths.isEmpty()) {
-                    var pruneSession = com.github.catatafishen.agentbridge.psi.PlatformApiCompat
-                        .getService(project, com.github.catatafishen.agentbridge.psi.review.AgentEditSession.class);
-                    if (pruneSession != null) pruneSession.removeApprovedForCommit(paths);
-                }
+            List<String> paths = pathLines(committedNames);
+            if (!paths.isEmpty()) {
+                AgentEditSession.getInstance(project).removeApprovedForCommit(paths);
             }
-        } catch (Throwable ignored) {
+        } catch (Exception ignored) {
             // Best-effort: failure to prune the review list must not affect the commit result.
         }
+    }
 
-        // Append committed file list so agent can verify what was included
+    private static List<String> pathLines(@Nullable String rawPaths) {
+        List<String> paths = new ArrayList<>();
+        if (rawPaths == null || rawPaths.isBlank()) return paths;
+        for (String line : rawPaths.split(CRLF_SPLIT)) {
+            String trimmed = line.trim();
+            if (!trimmed.isEmpty()) paths.add(trimmed);
+        }
+        return paths;
+    }
+
+    private String appendCommitDetails(@NotNull String result, @NotNull String root) {
+        StringBuilder details = new StringBuilder(result);
+        appendCommittedFiles(details, root);
+        appendDefaultBranchWarning(details, root);
+        return details + getBranchContextIn(root);
+    }
+
+    private void appendCommittedFiles(@NotNull StringBuilder details, @NotNull String root) {
         String fileStats = runGitInQuiet(root, "show", "--stat", "--format=", "HEAD");
         if (fileStats != null && !fileStats.isBlank()) {
-            result += "\n\nCommitted files:\n" + fileStats.trim();
+            details.append("\n\nCommitted files:\n").append(fileStats.trim());
         }
+    }
 
-        // Warn if committing directly to default branch
+    private void appendDefaultBranchWarning(@NotNull StringBuilder details, @NotNull String root) {
         String branch = runGitInQuiet(root, "rev-parse", "--abbrev-ref", "HEAD");
         if ("main".equals(branch) || "master".equals(branch)) {
-            result += "\n\n⚠️ Warning: you committed directly to " + branch
-                + ". Consider using a feature branch instead.";
+            details.append("\n\n⚠️ Warning: you committed directly to ").append(branch)
+                .append(". Consider using a feature branch instead.");
         }
-
-        return result + getBranchContextIn(root);
     }
 
     /**
@@ -198,39 +200,31 @@ public final class GitCommitTool extends GitTool {
         return args.has(PARAM_AMEND) && args.get(PARAM_AMEND).getAsBoolean();
     }
 
-    /**
-     * Determines which files will be part of the commit, resolved to absolute paths.
-     * For {@code commitAll=true}: all modified, deleted, and untracked files from
-     * {@code git status --porcelain}. For staged-only: files from
-     * {@code git diff --cached --name-only}.
-     */
     private Collection<String> resolveFilesToCommit(boolean commitAll, String root) {
-        String basePath = project.getBasePath();
         Set<String> paths = new java.util.HashSet<>();
-        if (commitAll) {
-            String status = runGitInQuiet(root, "status", "--porcelain");
-            if (status != null) {
-                for (String line : status.split(CRLF_SPLIT)) {
-                    if (line.length() < 4) continue;
-                    // porcelain format: XY <path> or XY <orig> -> <path>
-                    String filePart = line.substring(3);
-                    int arrow = filePart.indexOf(" -> ");
-                    String relPath = arrow >= 0 ? filePart.substring(arrow + 4) : filePart;
-                    paths.add(toAbsolutePath(relPath.trim(), basePath));
-                }
-            }
-        } else {
-            String staged = runGitInQuiet(root, "diff", "--cached", NAME_ONLY);
-            if (staged != null) {
-                for (String line : staged.split(CRLF_SPLIT)) {
-                    String trimmed = line.trim();
-                    if (!trimmed.isEmpty()) {
-                        paths.add(toAbsolutePath(trimmed, basePath));
-                    }
-                }
-            }
+        String basePath = project.getBasePath();
+        String rawPaths = commitAll
+            ? runGitInQuiet(root, "status", "--porcelain")
+            : runGitInQuiet(root, "diff", "--cached", NAME_ONLY);
+        if (rawPaths == null) return paths;
+
+        for (String line : rawPaths.split(CRLF_SPLIT)) {
+            String relPath = commitAll ? porcelainPath(line) : stagedPath(line);
+            if (relPath != null) paths.add(toAbsolutePath(relPath, basePath));
         }
         return paths;
+    }
+
+    private static @Nullable String porcelainPath(@NotNull String line) {
+        if (line.length() < 4) return null;
+        String filePart = line.substring(3).trim();
+        int arrow = filePart.indexOf(" -> ");
+        return arrow >= 0 ? filePart.substring(arrow + 4).trim() : filePart;
+    }
+
+    private static @Nullable String stagedPath(@NotNull String line) {
+        String trimmed = line.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private static @NotNull String toAbsolutePath(@NotNull String path, @Nullable String basePath) {

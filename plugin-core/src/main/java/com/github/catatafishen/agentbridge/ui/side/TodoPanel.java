@@ -53,12 +53,12 @@ final class TodoPanel extends JPanel implements Disposable {
     private final JBLabel headerLabel;
     private final JPanel contentPanel;
     private final transient Timer pollTimer;
-    private @Nullable Runnable onProgressChanged;
+    private transient @Nullable Runnable onProgressChanged;
 
     /**
      * Last observed (path, mtime, done, total) so the poll timer can skip work when nothing changed.
      */
-    private @Nullable Path lastPath;
+    private transient @Nullable Path lastPath;
     private long lastMtime = -1L;
     private int lastDone = -1;
     private int lastTotal = -1;
@@ -275,7 +275,7 @@ final class TodoPanel extends JPanel implements Disposable {
             Path sessionDir = manager.getClient().getSessionDirectory();
             if (sessionDir == null) return null;
             return sessionDir.resolve("plan.md");
-        } catch (Throwable ignored) {
+        } catch (Exception ignored) {
             return null;
         }
     }

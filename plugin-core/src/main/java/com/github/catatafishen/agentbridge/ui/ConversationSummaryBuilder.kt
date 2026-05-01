@@ -1,5 +1,8 @@
 package com.github.catatafishen.agentbridge.ui
 
+import com.github.catatafishen.agentbridge.ui.ConversationSummaryBuilder.formatTurnForSummary
+import com.github.catatafishen.agentbridge.ui.ConversationSummaryBuilder.groupIntoTurns
+
 /**
  * Pure utility for building compressed conversation summaries.
  *
@@ -104,16 +107,15 @@ internal object ConversationSummaryBuilder {
     fun truncateField(text: String, full: Boolean, hint: String): String =
         if (full || text.length <= 500) text else text.take(500) + "…[$hint]"
 
-    /**
-     * Build a count-marker line such as `[5 tool calls, 2 thoughts]`.
-     * Returns `null` when there are no markers to show.
-     */
     fun buildMarkerLine(turn: TurnData): String? {
-        val markers = buildList {
-            if (turn.toolCallCount > 0) add("${turn.toolCallCount} tool call${if (turn.toolCallCount > 1) "s" else ""}")
-            if (turn.thinkingCount > 0) add("${turn.thinkingCount} thinking block${if (turn.thinkingCount > 1) "s" else ""}")
-            if (turn.subAgentCount > 0) add("${turn.subAgentCount} sub-agent${if (turn.subAgentCount > 1) "s" else ""}")
-        }
-        return if (markers.isNotEmpty()) "[${markers.joinToString(", ")}]" else null
+        val markers = listOfNotNull(
+            marker(turn.toolCallCount, "tool call"),
+            marker(turn.thinkingCount, "thinking block"),
+            marker(turn.subAgentCount, "sub-agent")
+        )
+        return markers.takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "[", postfix = "]")
     }
+
+    private fun marker(count: Int, label: String): String? =
+        count.takeIf { it > 0 }?.let { "$it $label${if (it > 1) "s" else ""}" }
 }

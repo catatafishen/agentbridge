@@ -626,51 +626,80 @@ class ChatToolWindowContent(
 
     private fun createPromptTab(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
-
         val responsePanel = createResponsePanel()
-        // Create processing timer and usage graph panels directly so they can be
-        // hosted in the side panel's Stats tab instead of above the input area.
+        val sessionStatsPanel = createSessionStatsPanel()
+        attachSidePanel(sessionStatsPanel)
+
+        responsePanelContainer = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            border = JBUI.Borders.empty()
+            add(responsePanel, BorderLayout.CENTER)
+        }
+
+        val topPanel = createPromptTopPanel()
+        val inputRow = createInputRow()
+        val sideButtonsPanel = createSideButtonsPanel()
+        val inputSection = createInputSection(inputRow, sideButtonsPanel)
+        controlsToolbar.targetComponent = inputSection
+        innerInputToolbar.targetComponent = inputSection
+
+        val bottomSection = createBottomSection(inputSection)
+        val splitPanel = createResizableSplitPanel(topPanel, bottomSection, inputSection)
+        panel.add(splitPanel, BorderLayout.CENTER)
+
+        billing.loadBillingData()
+        return panel
+    }
+
+    private fun createSessionStatsPanel(): com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel {
         processingTimerPanel = ProcessingTimerPanel(
             supportsMultiplier = { agentManager.isClientHealthy && agentManager.client.supportsMultiplier() },
             localPremiumRequests = { billing.localSessionPremiumRequests }
         )
         com.intellij.openapi.util.Disposer.register(project, processingTimerPanel)
 
-        val statsUsageGraphPanel = UsageGraphPanel()
-        statsUsageGraphPanel.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-        statsUsageGraphPanel.addMouseListener(object : java.awt.event.MouseAdapter() {
-            override fun mouseClicked(e: java.awt.event.MouseEvent) {
-                billing.showUsagePopup(statsUsageGraphPanel)
-            }
-        })
+        val statsUsageGraphPanel = UsageGraphPanel().apply {
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent) {
+                    billing.showUsagePopup(this@apply)
+                }
+            })
+        }
         billing.usageGraphPanel = statsUsageGraphPanel
 
-        val sessionStatsPanel = com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel(
-            project, processingTimerPanel, statsUsageGraphPanel, billing
+        return com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel(
+            project,
+            processingTimerPanel,
+            statsUsageGraphPanel,
+            billing
         )
+    }
 
-        // chatConsolePanel is now initialised — build the side panel and attach it to
-        // the root splitter. Registered with the tool window so the embedded subscriptions
-        // (Review panel message-bus, Prompts listener) are disposed when the window is closed.
-        val side = com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel)
-        side.border = JBUI.Borders.compound(
-            JBUI.Borders.empty(4),
-            com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
-        )
+    private fun attachSidePanel(sessionStatsPanel: com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel) {
+        val side = com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel).apply {
+            border = JBUI.Borders.compound(
+                JBUI.Borders.empty(4),
+                com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
+            )
+        }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
         rootSplitter.firstComponent = side
-        // Restore open/closed state from the last session.
+        restoreSidePanelOpenState()
+    }
+
+    private fun restoreSidePanelOpenState() {
         val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
         if (props.getBoolean(PREF_SIDE_PANEL_OPEN, false)) {
             rootSplitter.proportion = defaultReviewProportion
         }
+    }
 
-        responsePanelContainer = JBPanel<JBPanel<*>>(BorderLayout())
-        responsePanelContainer.add(responsePanel, BorderLayout.CENTER)
+    private fun createPromptTopPanel(): JBPanel<JBPanel<*>> {
         val topPanel = JBPanel<JBPanel<*>>(BorderLayout())
-        val northStack = JBPanel<JBPanel<*>>()
-        northStack.layout = BoxLayout(northStack, BoxLayout.Y_AXIS)
+        val northStack = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        }
 
         fun loadModels() {
             loadModelsAsync(onSuccess = { models -> loadedModels = models })
@@ -681,174 +710,176 @@ class ChatToolWindowContent(
             promptOrchestrator.currentSessionId = null
             loadModels()
         }
+        registerAgentSwitchBannerRefresh()
+
+        val status = StatusBanner(project)
+        statusBanner = status
+        northStack.add(copilotBanner!!)
+        northStack.add(createGhSetupBanner { billing.loadBillingData() })
+        northStack.add(GitWarningBanner(project))
+        northStack.add(status)
+
+        consolePanel.onStatusMessage = { type, message -> showConsoleStatus(status, type, message) }
+        topPanel.add(northStack, BorderLayout.NORTH)
+        topPanel.add(responsePanelContainer, BorderLayout.CENTER)
+        return topPanel
+    }
+
+    private fun registerAgentSwitchBannerRefresh() {
         agentManager.addSwitchListener {
-            // Update the session store's agent name when the user switches profiles.
             conversationStore.setCurrentAgent(agentManager.activeProfile.displayName)
-            // Reset session state so ensureSessionCreated() calls createSession() on the
-            // new client. Without this, Claude CLI's cliResumeSessionId property is never
-            // consumed and --resume is never passed, so context is lost on switch-back.
             promptOrchestrator.currentSessionId = null
             promptOrchestrator.conversationSummaryInjected = false
             ApplicationManager.getApplication().invokeLater {
                 copilotBanner?.triggerCheck()
             }
         }
-        val cb = copilotBanner!!
-        northStack.add(cb)
-        val ghBanner = createGhSetupBanner { billing.loadBillingData() }
-        northStack.add(ghBanner)
-        val gitBanner = GitWarningBanner(project)
-        northStack.add(gitBanner)
-        val sb = StatusBanner(project)
-        statusBanner = sb
-        northStack.add(sb)
+    }
 
-        // Edge-to-edge chat panel: no outer margin and no rounded frame so the JCEF
-        // browser fills the entire tool-window width and its scrollbar can sit flush
-        // against the right edge (chat-container's CSS drops right padding to match).
-        // The input frame below provides its own rounded styling for visual grouping.
-        responsePanelContainer.border = JBUI.Borders.empty()
-
-        consolePanel.onStatusMessage = { type, message ->
-            when (type) {
-                "error" -> sb.showError(message)
-                "warning" -> sb.showWarning(message)
-                else -> sb.showInfo(message)
-            }
+    private fun showConsoleStatus(status: StatusBanner, type: String, message: String) {
+        when (type) {
+            "error" -> status.showError(message)
+            "warning" -> status.showWarning(message)
+            else -> status.showInfo(message)
         }
-        topPanel.add(northStack, BorderLayout.NORTH)
-        topPanel.add(responsePanelContainer, BorderLayout.CENTER)
+    }
 
-        val inputRow = createInputRow()
-
-        val sideButtonsPanel = createSideButtonsPanel()
-
-        // Single rounded white frame that contains BOTH the side-button rail and the editor row —
-        // visually unifies the input area so there is no grey gutter around the side buttons.
-        // A 1px vertical divider is painted between the rail and the editor column.
+    private fun createInputSection(
+        inputRow: JComponent,
+        sideButtonsPanel: JComponent
+    ): JBPanel<JBPanel<*>> {
         val sideRailWidth = { sideButtonsPanel.preferredSize.width }
-        val inputSection = object : JBPanel<JBPanel<*>>(BorderLayout()) {
+        return object : JBPanel<JBPanel<*>>(BorderLayout()) {
             override fun paintComponent(g: Graphics) {
-                // Non-opaque components must call super so Swing can satisfy dirty-region
-                // obligations (e.g. clearing the back buffer) before we paint on top.
                 super.paintComponent(g)
                 val g2 = g.create() as Graphics2D
                 try {
-                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                    val arc = JBUI.scale(8)
-                    g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
-                    g2.fillRoundRect(0, 0, width, height, arc, arc)
-                    // Subtle vertical divider between the side-button rail and the editor column.
-                    // Uses the tool-window separator color so it reads as a seam, not a hard border.
-                    val insets = insets
-                    val dividerX = insets.left + sideRailWidth()
-                    if (dividerX > insets.left && dividerX < width - insets.right) {
-                        g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
-                        g2.drawLine(
-                            dividerX,
-                            insets.top + JBUI.scale(2),
-                            dividerX,
-                            height - insets.bottom - JBUI.scale(2)
-                        )
-                    }
-                    // Use the component border color (typically ~#ADADAD light / #5A5D63 dark),
-                    // which is more visible than the tool-window separator color.
-                    g2.color = UIManager.getColor("Component.borderColor")
-                        ?: JBUI.CurrentTheme.ToolWindow.borderColor()
-                    g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
+                    paintInputSectionBackground(g2, sideRailWidth())
                 } finally {
                     g2.dispose()
                 }
             }
+        }.apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(8, 0, 1, 4)
+            add(sideButtonsPanel, BorderLayout.WEST)
+            add(inputRow, BorderLayout.CENTER)
         }
-        inputSection.isOpaque = false
-        // 8px top inset doubles as the resize drag zone (see resizeHandler below).
-        // The surrounding padding is kept tight so the footer reads as one compact unit.
-        inputSection.border = JBUI.Borders.empty(8, 0, 1, 4)
-        inputSection.add(sideButtonsPanel, BorderLayout.WEST)
-        inputSection.add(inputRow, BorderLayout.CENTER)
+    }
 
-        controlsToolbar.targetComponent = inputSection
-        innerInputToolbar.targetComponent = inputSection
+    private fun JComponent.paintInputSectionBackground(g2: Graphics2D, sideRailWidth: Int) {
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        val arc = JBUI.scale(8)
+        g2.color = com.intellij.util.ui.UIUtil.getTextFieldBackground()
+        g2.fillRoundRect(0, 0, width, height, arc, arc)
+        paintInputSectionDivider(g2, sideRailWidth)
+        g2.color = UIManager.getColor("Component.borderColor") ?: JBUI.CurrentTheme.ToolWindow.borderColor()
+        g2.drawRoundRect(1, 1, width - 2, height - 2, arc, arc)
+    }
 
-        val bottomSection = JBPanel<JBPanel<*>>(BorderLayout())
-        bottomSection.isOpaque = false
-        // Keep the footer close to the tool window edges without adding dead space.
-        bottomSection.border = JBUI.Borders.empty(0, 8, 8, 8)
-        bottomSection.add(inputSection, BorderLayout.CENTER)
+    private fun JComponent.paintInputSectionDivider(g2: Graphics2D, sideRailWidth: Int) {
+        val dividerX = insets.left + sideRailWidth
+        if (dividerX <= insets.left || dividerX >= width - insets.right) return
+        g2.color = JBUI.CurrentTheme.ToolWindow.borderColor()
+        g2.drawLine(
+            dividerX,
+            insets.top + JBUI.scale(2),
+            dividerX,
+            height - insets.bottom - JBUI.scale(2)
+        )
+    }
 
-        // Drag-to-resize: the user drags the top border of inputSection to adjust the split.
-        // We replace OnePixelSplitter (which draws a visible 1px divider) with a plain BorderLayout
-        // and wire up a mouse resize handler on inputSection's top inset area.
-        val splitPanel = JBPanel<JBPanel<*>>(BorderLayout())
-        splitPanel.isOpaque = false
+    private fun createBottomSection(inputSection: JComponent): JBPanel<JBPanel<*>> =
+        JBPanel<JBPanel<*>>(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(0, 8, 8, 8)
+            add(inputSection, BorderLayout.CENTER)
+        }
 
-        val savedInputHeight = props.getInt(PREF_INPUT_PANEL_HEIGHT, 0)
+    private fun createResizableSplitPanel(
+        topPanel: JComponent,
+        bottomSection: JBPanel<JBPanel<*>>,
+        inputSection: JComponent
+    ): JBPanel<JBPanel<*>> {
+        val splitPanel = JBPanel<JBPanel<*>>(BorderLayout()).apply { isOpaque = false }
+        val props = com.intellij.ide.util.PropertiesComponent.getInstance(project)
+        installInputResizeHandler(inputSection, bottomSection, splitPanel, props)
+        installSavedInputHeight(splitPanel, bottomSection, props.getInt(PREF_INPUT_PANEL_HEIGHT, 0))
+        splitPanel.add(topPanel, BorderLayout.CENTER)
+        splitPanel.add(bottomSection, BorderLayout.SOUTH)
+        return splitPanel
+    }
 
-        // activeResize: startScreenY to startBottomHeight; null = not currently resizing
-        var activeResize: Pair<Int, Int>? = null
+    private data class ResizeState(var activeResize: Pair<Int, Int>? = null)
+
+    private fun installInputResizeHandler(
+        inputSection: JComponent,
+        bottomSection: JComponent,
+        splitPanel: JComponent,
+        props: com.intellij.ide.util.PropertiesComponent
+    ) {
+        val resizeState = ResizeState()
         val resizeDragZone = JBUI.scale(8)
-
         val resizeHandler = object : java.awt.event.MouseAdapter() {
             override fun mouseMoved(e: java.awt.event.MouseEvent) {
-                inputSection.cursor = if (e.y <= resizeDragZone)
+                inputSection.cursor = if (e.y <= resizeDragZone) {
                     Cursor.getPredefinedCursor(Cursor.N_RESIZE_CURSOR)
-                else
+                } else {
                     Cursor.getDefaultCursor()
-            }
-
-            override fun mousePressed(e: java.awt.event.MouseEvent) {
-                if (e.y <= resizeDragZone) {
-                    activeResize = Pair(e.locationOnScreen.y, bottomSection.height)
                 }
             }
 
+            override fun mousePressed(e: java.awt.event.MouseEvent) {
+                if (e.y <= resizeDragZone) resizeState.activeResize = Pair(e.locationOnScreen.y, bottomSection.height)
+            }
+
             override fun mouseDragged(e: java.awt.event.MouseEvent) {
-                val (startY, startH) = activeResize ?: return
+                val (startY, startH) = resizeState.activeResize ?: return
                 val delta = startY - e.locationOnScreen.y
-                val minH = JBUI.scale(100)
-                val maxH = (splitPanel.height - JBUI.scale(80)).coerceAtLeast(minH)
-                bottomSection.preferredSize = Dimension(bottomSection.width, (startH + delta).coerceIn(minH, maxH))
+                bottomSection.preferredSize = Dimension(
+                    bottomSection.width,
+                    (startH + delta).coerceIn(minInputHeight(), maxInputHeight(splitPanel.height))
+                )
                 splitPanel.revalidate()
             }
 
             override fun mouseReleased(e: java.awt.event.MouseEvent) {
-                if (activeResize != null) {
-                    activeResize = null
-                    props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
-                }
+                if (resizeState.activeResize == null) return
+                resizeState.activeResize = null
+                props.setValue(PREF_INPUT_PANEL_HEIGHT, bottomSection.height, 0)
             }
 
             override fun mouseExited(e: java.awt.event.MouseEvent) {
-                if (activeResize == null) inputSection.cursor = Cursor.getDefaultCursor()
+                if (resizeState.activeResize == null) inputSection.cursor = Cursor.getDefaultCursor()
             }
         }
         inputSection.addMouseMotionListener(resizeHandler)
         inputSection.addMouseListener(resizeHandler)
+    }
 
-        // Apply saved (or default) height on first layout pass, once the panel has a real size.
-        // The listener removes itself so it only fires once.
+    private fun installSavedInputHeight(
+        splitPanel: JComponent,
+        bottomSection: JComponent,
+        savedInputHeight: Int
+    ) {
         splitPanel.addComponentListener(object : java.awt.event.ComponentAdapter() {
             override fun componentResized(e: java.awt.event.ComponentEvent) {
                 if (splitPanel.height <= 0) return
                 splitPanel.removeComponentListener(this)
-                val targetH = if (savedInputHeight > 0) savedInputHeight
-                else (splitPanel.height * 0.22).toInt()
-                val minH = JBUI.scale(100)
-                val maxH = (splitPanel.height - JBUI.scale(80)).coerceAtLeast(minH)
-                bottomSection.preferredSize = Dimension(bottomSection.width, targetH.coerceIn(minH, maxH))
+                val targetHeight = savedInputHeight.takeIf { it > 0 } ?: (splitPanel.height * 0.22).toInt()
+                bottomSection.preferredSize = Dimension(
+                    bottomSection.width,
+                    targetHeight.coerceIn(minInputHeight(), maxInputHeight(splitPanel.height))
+                )
                 splitPanel.revalidate()
             }
         })
-
-        splitPanel.add(topPanel, BorderLayout.CENTER)
-        splitPanel.add(bottomSection, BorderLayout.SOUTH)
-        panel.add(splitPanel, BorderLayout.CENTER)
-
-        billing.loadBillingData()
-
-        return panel
     }
+
+    private fun minInputHeight(): Int = JBUI.scale(100)
+
+    private fun maxInputHeight(splitPanelHeight: Int): Int =
+        (splitPanelHeight - JBUI.scale(80)).coerceAtLeast(minInputHeight())
 
     private fun createInputRow(): JBPanel<JBPanel<*>> {
         val row = JBPanel<JBPanel<*>>(BorderLayout())
@@ -1162,45 +1193,53 @@ class ChatToolWindowContent(
     private fun setSendingState(sending: Boolean) {
         isSending = sending
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
-        if (!sending) {
-            // If nudge was never consumed (no tool calls happened), remove bubble and restore text
-            val nudgeId = pendingNudgeId
-            val nudgeText = pendingNudgeText
-            if (nudgeId != null) {
-                pendingNudgeId = null
-                pendingNudgeText = null
-                val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-                psiBridge.setPendingNudge(null)
-                psiBridge.setOnNudgeConsumed(null)
-                ApplicationManager.getApplication().invokeLater {
-                    consolePanel.removeNudgeBubble(nudgeId)
-                    if (nudgeText != null) {
-                        val mode =
-                            com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().unhandledNudgeMode
-                        if (mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT) {
-                            // Prepend the unhandled nudge to whatever the user is currently typing — do not auto-send.
-                            val current = promptTextArea.text
-                            promptTextArea.text =
-                                if (current.isEmpty()) nudgeText else nudgeText + "\n\n" + current
-                            promptTextArea.requestFocusInWindow()
-                        } else {
-                            // Default: auto-send the nudge as a fresh prompt.
-                            promptTextArea.text = nudgeText
-                            onSendStopClicked()
-                        }
-                    }
-                }
-            }
-        }
+        if (!sending) restoreUnhandledNudgeIfNeeded()
         ApplicationManager.getApplication().invokeLater {
             updatePromptPlaceholder()
             controlsToolbar.updateActionsAsync()
             innerInputToolbar.updateActionsAsync()
             refreshShortcutHints()
-            if (::processingTimerPanel.isInitialized) {
-                if (sending) processingTimerPanel.start() else processingTimerPanel.stop()
-            }
+            updateProcessingTimer(sending)
         }
+    }
+
+    private fun restoreUnhandledNudgeIfNeeded() {
+        val nudgeId = pendingNudgeId ?: return
+        val nudgeText = pendingNudgeText
+        pendingNudgeId = null
+        pendingNudgeText = null
+        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
+        psiBridge.setPendingNudge(null)
+        psiBridge.setOnNudgeConsumed(null)
+        ApplicationManager.getApplication().invokeLater {
+            consolePanel.removeNudgeBubble(nudgeId)
+            nudgeText?.let { restoreUnhandledNudgeText(it) }
+        }
+    }
+
+    private fun restoreUnhandledNudgeText(nudgeText: String) {
+        val mode = ChatInputSettings.getInstance().unhandledNudgeMode
+        if (mode == ChatInputSettings.UnhandledNudgeMode.RESTORE_INTO_INPUT) {
+            prependNudgeToInput(nudgeText)
+        } else {
+            sendUnhandledNudge(nudgeText)
+        }
+    }
+
+    private fun prependNudgeToInput(nudgeText: String) {
+        val current = promptTextArea.text
+        promptTextArea.text = if (current.isEmpty()) nudgeText else "$nudgeText\n\n$current"
+        promptTextArea.requestFocusInWindow()
+    }
+
+    private fun sendUnhandledNudge(nudgeText: String) {
+        promptTextArea.text = nudgeText
+        onSendStopClicked()
+    }
+
+    private fun updateProcessingTimer(sending: Boolean) {
+        if (!::processingTimerPanel.isInitialized) return
+        if (sending) processingTimerPanel.start() else processingTimerPanel.stop()
     }
 
     private fun createSideButtonsPanel(): JComponent {
@@ -1697,14 +1736,20 @@ class ChatToolWindowContent(
         }
 
         override fun update(e: AnActionEvent) {
-            val text = modelsStatusText
-                ?: loadedModels.getOrNull(selectedModelIndex)?.name()
-                ?: MSG_LOADING
-            e.presentation.text = text
+            e.presentation.text = currentModelSelectorText()
             e.presentation.isEnabled = modelsStatusText == null && loadedModels.isNotEmpty()
             // Hide entirely when models loaded successfully but list is empty
             // (agent uses configOptions for model selection instead)
             e.presentation.isVisible = modelsStatusText != null || loadedModels.isNotEmpty()
+        }
+    }
+
+    private fun currentModelSelectorText(): String {
+        modelsStatusText?.let { return it }
+        return if (selectedModelIndex in loadedModels.indices) {
+            loadedModels[selectedModelIndex].name()
+        } else {
+            MSG_LOADING
         }
     }
 
@@ -2303,53 +2348,66 @@ class ChatToolWindowContent(
             val entries = result?.entries() ?: emptyList()
             val hasMoreOnDisk = result?.hasMoreOnDisk() ?: false
             ApplicationManager.getApplication().invokeLater {
-                if (entries.isNotEmpty()) {
-                    val histSettings = ChatHistorySettings.getInstance(project)
-                    chatConsolePanel.setDomMessageLimit(histSettings.domMessageLimit)
-                    conversationReplayer.loadAndSplit(
-                        entries,
-                        histSettings.recentTurnsOnRestore,
-                        hasMoreOnDisk
-                    )
-                    chatConsolePanel.appendEntries(
-                        conversationReplayer.recentEntries(),
-                        conversationReplayer.totalPromptCount()
-                    )
-                    val deferred = conversationReplayer.remainingPromptCount()
-                    if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
-                    val lastStats = entries.filterIsInstance<EntryData.TurnStats>().lastOrNull()
-                    if (lastStats != null && ::processingTimerPanel.isInitialized) {
-                        val turnStatsList = entries.filterIsInstance<EntryData.TurnStats>()
-                        val turnCount = turnStatsList.size
-                        // Sum each turn's premium-request weight so the side panel's "Premium req"
-                        // total reflects the entire restored session — not just turns since IDE start.
-                        // Aligns with the restored "Turns" count above (both span the whole session).
-                        val totalPremium = turnStatsList.sumOf {
-                            BillingCalculator.parseMultiplier(it.multiplier.ifEmpty { "1x" })
-                        }
-                        billing.restoreSessionCounters(turnCount, totalPremium)
-                        processingTimerPanel.restoreSessionStats(
-                            lastStats.totalDurationMs, lastStats.totalInputTokens,
-                            lastStats.totalOutputTokens, lastStats.totalCostUsd,
-                            lastStats.totalToolCalls, lastStats.totalLinesAdded,
-                            lastStats.totalLinesRemoved, turnCount
-                        )
-                        processingTimerPanel.restoreLastTurnStats(
-                            lastStats.durationMs / 1000,
-                            lastStats.inputTokens.toInt(),
-                            lastStats.outputTokens.toInt(),
-                            if (lastStats.costUsd > 0.0) lastStats.costUsd else null,
-                            lastStats.toolCallCount,
-                            lastStats.linesAdded,
-                            lastStats.linesRemoved,
-                            lastStats.multiplier
-                        )
-                    }
-                    persistedEntryCount = conversationReplayer.totalLoadedCount()
-                }
+                restoreEntries(entries, hasMoreOnDisk)
                 onComplete()
             }
         }
+    }
+
+    private fun restoreEntries(entries: List<EntryData>, hasMoreOnDisk: Boolean) {
+        if (entries.isEmpty()) return
+        val histSettings = ChatHistorySettings.getInstance(project)
+        chatConsolePanel.setDomMessageLimit(histSettings.domMessageLimit)
+        conversationReplayer.loadAndSplit(entries, histSettings.recentTurnsOnRestore, hasMoreOnDisk)
+        chatConsolePanel.appendEntries(
+            conversationReplayer.recentEntries(),
+            conversationReplayer.totalPromptCount()
+        )
+        showDeferredRestoreCount()
+        restoreTurnStats(entries.filterIsInstance<EntryData.TurnStats>())
+        persistedEntryCount = conversationReplayer.totalLoadedCount()
+    }
+
+    private fun showDeferredRestoreCount() {
+        val deferred = conversationReplayer.remainingPromptCount()
+        if (deferred > 0) chatConsolePanel.showLoadMore(deferred)
+    }
+
+    private fun restoreTurnStats(turnStatsList: List<EntryData.TurnStats>) {
+        val lastStats = turnStatsList.lastOrNull() ?: return
+        if (!::processingTimerPanel.isInitialized) return
+        restoreBillingCounters(turnStatsList)
+        processingTimerPanel.restoreSessionStats(
+            ProcessingTimerPanel.RestoredSessionStats(
+                totalTimeMs = lastStats.totalDurationMs,
+                totalInputTokens = lastStats.totalInputTokens,
+                totalOutputTokens = lastStats.totalOutputTokens,
+                totalCostUsd = lastStats.totalCostUsd,
+                totalToolCalls = lastStats.totalToolCalls,
+                totalLinesAdded = lastStats.totalLinesAdded,
+                totalLinesRemoved = lastStats.totalLinesRemoved,
+                turnCount = turnStatsList.size
+            )
+        )
+        processingTimerPanel.restoreLastTurnStats(
+            ProcessingTimerPanel.RestoredLastTurnStats(
+                elapsedSec = lastStats.durationMs / 1000,
+                inputTokens = lastStats.inputTokens.toInt(),
+                outputTokens = lastStats.outputTokens.toInt(),
+                costUsd = if (lastStats.costUsd > 0.0) lastStats.costUsd else null,
+                toolCalls = lastStats.toolCallCount,
+                linesAdded = lastStats.linesAdded,
+                linesRemoved = lastStats.linesRemoved,
+                multiplier = lastStats.multiplier
+            )
+        )
+    }
+
+    private fun restoreBillingCounters(turnStatsList: List<EntryData.TurnStats>) {
+        val totalPremium = turnStatsList.sumOf {
+            BillingCalculator.parseMultiplier(it.multiplier.ifEmpty { "1x" })
+        }
+        billing.restoreSessionCounters(turnStatsList.size, totalPremium)
     }
 
     /** Send a quick-reply directly without touching the user's input field. */

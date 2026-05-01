@@ -33,5 +33,6 @@ public interface Replayable {
      */
     @NotNull
     String replay(@NotNull JsonObject originalArgs,
-                  @NotNull PopupHandler.SelectByValue handler) throws Exception;
+                  @NotNull PopupHandler.SelectByValue handler)
+        throws InterruptedException, java.util.concurrent.ExecutionException, java.util.concurrent.TimeoutException;
 }

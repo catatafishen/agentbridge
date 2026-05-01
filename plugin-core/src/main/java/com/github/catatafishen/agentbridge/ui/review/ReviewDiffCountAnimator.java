@@ -16,7 +16,7 @@ final class ReviewDiffCountAnimator {
     private final Map<String, DiffCountState> states = new HashMap<>();
 
     void sync(@NotNull List<ReviewItem> items, long nowMillis) {
-        Set<String> livePaths = new HashSet<>(items.size());
+        Set<String> livePaths = HashSet.newHashSet(items.size());
         for (ReviewItem item : items) {
             livePaths.add(item.path());
             DiffCountState state = states.get(item.path());

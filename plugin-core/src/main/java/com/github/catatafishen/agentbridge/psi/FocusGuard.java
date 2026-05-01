@@ -26,7 +26,7 @@ import java.util.function.Function;
  * the editor instead of the chat prompt.
  *
  * <p><b>The fix.</b> This guard uses a {@link java.beans.VetoableChangeListener} on
- * the {@code focusOwner} property of {@link KeyboardFocusManager}. When a programmatic
+ * the {@value #FOCUS_OWNER_PROPERTY} property of {@link KeyboardFocusManager}. When a programmatic
  * focus change attempts to move focus away from the chat tool window to a component in
  * the <em>same</em> IDE main frame (editors, other tool windows), the guard throws a
  * {@link java.beans.PropertyVetoException} — <b>preventing the focus change entirely</b>.
@@ -60,6 +60,7 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
      * pathological scenarios where a component retries focus acquisition in a loop.
      */
     private static final int MAX_VETOES = 20;
+    private static final String FOCUS_OWNER_PROPERTY = "focusOwner";
 
     private final Project project;
     private final KeyboardFocusManager kfm;
@@ -113,7 +114,7 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
                 if (owner == null) return;
                 if (!isInsideChatToolWindow(project, owner)) return;
                 FocusGuard guard = new FocusGuard(project, kfm, owner);
-                kfm.addVetoableChangeListener("focusOwner", guard);
+                kfm.addVetoableChangeListener(FOCUS_OWNER_PROPERTY, guard);
                 ref.set(guard);
             } catch (Exception e) {
                 LOG.debug("FocusGuard install failed", e);
@@ -133,8 +134,10 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
                 }
             });
             try {
-                //noinspection ResultOfMethodCallIgnored — timeout is best-effort; guard will still install if EDT is slow
-                latch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                boolean installedOnEdt = latch.await(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (!installedOnEdt) {
+                    LOG.debug("FocusGuard EDT install timed out; will finish when EDT catches up");
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -159,7 +162,7 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
             if (uninstalled) return;
             uninstalled = true;
             try {
-                kfm.removeVetoableChangeListener("focusOwner", this);
+                kfm.removeVetoableChangeListener(FOCUS_OWNER_PROPERTY, this);
             } catch (Exception e) {
                 LOG.debug("FocusGuard uninstall failed", e);
             }
@@ -224,7 +227,7 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
         try {
             AWTEvent ideEvent = com.intellij.ide.IdeEventQueue.getInstance().getTrueCurrentEvent();
             if (ideEvent instanceof InputEvent) return;
-        } catch (Throwable ignored) {
+        } catch (Exception ignored) {
             // IdeEventQueue unavailable in some test contexts — rely on EventQueue check above.
         }
 
@@ -235,7 +238,7 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
             LOG.warn("FocusGuard circuit breaker: exceeded " + MAX_VETOES + " vetoes, disabling guard");
             uninstalled = true;
             try {
-                kfm.removeVetoableChangeListener("focusOwner", this);
+                kfm.removeVetoableChangeListener(FOCUS_OWNER_PROPERTY, this);
             } catch (Exception e) {
                 LOG.debug("FocusGuard circuit breaker removal failed", e);
             }
@@ -253,9 +256,6 @@ final class FocusGuard implements java.beans.VetoableChangeListener {
             var tw = twm.getToolWindow("AgentBridge");
             if (tw == null) return false;
             JComponent twRoot = tw.getComponent();
-            // tw.getComponent() is @NotNull but we keep the defensive check — runtime ≠ compile-time.
-            //noinspection ConstantValue
-            if (twRoot == null) return false;
             return isInsideChatComponent(comp, twRoot);
         } catch (Exception e) {
             return false;

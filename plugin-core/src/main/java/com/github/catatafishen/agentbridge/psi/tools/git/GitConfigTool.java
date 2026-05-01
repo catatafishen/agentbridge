@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.git;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -64,51 +65,65 @@ public final class GitConfigTool extends GitTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
-
-        List<String> cmdArgs = new ArrayList<>();
-        cmdArgs.add("config");
-
-        boolean isGlobal = args.has(PARAM_GLOBAL) && args.get(PARAM_GLOBAL).getAsBoolean();
-        if (isGlobal) {
-            cmdArgs.add("--global");
+        if (isList(args)) {
+            return runConfigCommand(repoParam, baseConfigArgs(args, "--list"));
         }
-
-        if (args.has(PARAM_LIST) && args.get(PARAM_LIST).getAsBoolean()) {
-            cmdArgs.add("--list");
-            String root = resolveRepoRootOrError(repoParam);
-            if (root.startsWith("Error")) return root;
-            return runGitIn(root, cmdArgs.toArray(new String[0]));
-        }
-
         if (!args.has(PARAM_KEY)) {
             return "Error: 'key' is required for get/set/unset operations";
         }
 
         String key = args.get(PARAM_KEY).getAsString();
-        boolean isUnset = args.has(PARAM_UNSET) && args.get(PARAM_UNSET).getAsBoolean();
-        boolean isSet = args.has(PARAM_VALUE);
-        boolean isWrite = isUnset || isSet;
+        String ambiError = validateRepoScopedWrite(args, repoParam);
+        if (ambiError != null) return ambiError;
+        return runConfigCommand(repoParam, configCommandArgs(args, key));
+    }
 
-        // Repo-scoped writes require an unambiguous repo target
-        if (!isGlobal && isWrite) {
-            String ambiError = requireUnambiguousRepo(repoParam, "git_config");
-            if (ambiError != null) return ambiError;
-        }
-
+    private String runConfigCommand(@Nullable String repoParam, @NotNull List<String> cmdArgs) throws Exception {
         String root = resolveRepoRootOrError(repoParam);
         if (root.startsWith("Error")) return root;
+        return runGitIn(root, cmdArgs.toArray(new String[0]));
+    }
 
-        if (isUnset) {
+    private @Nullable String validateRepoScopedWrite(@NotNull JsonObject args, @Nullable String repoParam) {
+        if (isGlobal(args) || !isWrite(args)) return null;
+        return requireUnambiguousRepo(repoParam, "git_config");
+    }
+
+    private static List<String> configCommandArgs(@NotNull JsonObject args, @NotNull String key) {
+        List<String> cmdArgs = baseConfigArgs(args);
+        if (isUnset(args)) {
             cmdArgs.add("--unset");
             cmdArgs.add(key);
-        } else if (isSet) {
+        } else if (args.has(PARAM_VALUE)) {
             cmdArgs.add(key);
             cmdArgs.add(args.get(PARAM_VALUE).getAsString());
         } else {
-            // Get operation
             cmdArgs.add(key);
         }
+        return cmdArgs;
+    }
 
-        return runGitIn(root, cmdArgs.toArray(new String[0]));
+    private static List<String> baseConfigArgs(@NotNull JsonObject args, String... extraArgs) {
+        List<String> cmdArgs = new ArrayList<>();
+        cmdArgs.add("config");
+        if (isGlobal(args)) cmdArgs.add("--global");
+        cmdArgs.addAll(List.of(extraArgs));
+        return cmdArgs;
+    }
+
+    private static boolean isList(@NotNull JsonObject args) {
+        return args.has(PARAM_LIST) && args.get(PARAM_LIST).getAsBoolean();
+    }
+
+    private static boolean isGlobal(@NotNull JsonObject args) {
+        return args.has(PARAM_GLOBAL) && args.get(PARAM_GLOBAL).getAsBoolean();
+    }
+
+    private static boolean isUnset(@NotNull JsonObject args) {
+        return args.has(PARAM_UNSET) && args.get(PARAM_UNSET).getAsBoolean();
+    }
+
+    private static boolean isWrite(@NotNull JsonObject args) {
+        return isUnset(args) || args.has(PARAM_VALUE);
     }
 }

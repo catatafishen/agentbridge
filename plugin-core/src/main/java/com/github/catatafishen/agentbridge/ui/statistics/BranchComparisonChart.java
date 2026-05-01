@@ -8,6 +8,7 @@ import com.intellij.util.ui.JBUI;
 
 import javax.swing.BorderFactory;
 import javax.swing.JPanel;
+import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -59,7 +60,7 @@ final class BranchComparisonChart extends JBPanel<BranchComparisonChart> {
         add(canvas, BorderLayout.CENTER);
 
         emptyLabel = new JBLabel("No branch data");
-        emptyLabel.setHorizontalAlignment(JBLabel.CENTER);
+        emptyLabel.setHorizontalAlignment(SwingConstants.CENTER);
         emptyLabel.setVisible(false);
     }
 
@@ -90,18 +91,10 @@ final class BranchComparisonChart extends JBPanel<BranchComparisonChart> {
         return switch (metric) {
             case PREMIUM_REQUESTS -> branch.premiumRequests();
             case TURNS -> branch.turns();
-            case TOKENS -> (double) (branch.inputTokens() + branch.outputTokens());
+            case TOKENS -> branch.inputTokens() + branch.outputTokens();
             case TOOL_CALLS -> branch.toolCalls();
-            case CODE_CHANGES -> (double) (branch.linesAdded() + branch.linesRemoved());
+            case CODE_CHANGES -> branch.linesAdded() + branch.linesRemoved();
             case AGENT_TIME -> branch.durationMs();
-        };
-    }
-
-    private String formatValue(double value) {
-        return switch (metric) {
-            case AGENT_TIME -> formatDuration((long) value);
-            case TOKENS, TOOL_CALLS, CODE_CHANGES, TURNS -> formatLargeNumber((long) value);
-            case PREMIUM_REQUESTS -> formatPremium(value);
         };
     }
 
@@ -127,7 +120,7 @@ final class BranchComparisonChart extends JBPanel<BranchComparisonChart> {
     }
 
     private final class BarCanvas extends JPanel {
-        private List<UsageStatisticsData.BranchStats> branches = List.of();
+        private transient List<UsageStatisticsData.BranchStats> branches = List.of();
 
         BarCanvas() {
             setOpaque(false);
@@ -140,6 +133,14 @@ final class BranchComparisonChart extends JBPanel<BranchComparisonChart> {
             int rowsHeight = branches.size() * (ROW_HEIGHT + ROW_GAP);
             setPreferredSize(new Dimension(getWidth(), rowsHeight + 2 * CANVAS_PADDING));
             revalidate();
+        }
+
+        private String formatValue(double value) {
+            return switch (metric) {
+                case AGENT_TIME -> formatDuration((long) value);
+                case TOKENS, TOOL_CALLS, CODE_CHANGES, TURNS -> formatLargeNumber((long) value);
+                case PREMIUM_REQUESTS -> formatPremium(value);
+            };
         }
 
         @Override

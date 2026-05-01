@@ -48,42 +48,10 @@ final class AcpTerminalHandler {
      */
     JsonObject create(@NotNull JsonObject params) throws IOException {
         String command = getRequiredString(params, "command");
-        String[] args = getStringArray(params, "args");
-        String cwd = params.has("cwd") && params.get("cwd").isJsonPrimitive()
-            ? params.get("cwd").getAsString() : project.getBasePath();
-        int outputByteLimit = params.has(OUTPUT_BYTE_LIMIT_KEY) && params.get(OUTPUT_BYTE_LIMIT_KEY).isJsonPrimitive()
-            ? params.get(OUTPUT_BYTE_LIMIT_KEY).getAsInt() : DEFAULT_OUTPUT_BYTE_LIMIT;
+        String[] cmdArray = buildCommandArray(command, getStringArray(params, "args"));
+        int outputByteLimit = getOutputByteLimit(params);
 
-        // Build command line: [command, ...args]
-        String[] cmdArray = new String[1 + args.length];
-        cmdArray[0] = command;
-        System.arraycopy(args, 0, cmdArray, 1, args.length);
-
-        ProcessBuilder pb = new ProcessBuilder(cmdArray);
-        pb.redirectErrorStream(true);
-        if (cwd != null) {
-            pb.directory(new File(cwd));
-        }
-
-        // Apply environment variables from params
-        if (params.has("env") && params.get("env").isJsonArray()) {
-            Map<String, String> env = pb.environment();
-            for (JsonElement el : params.getAsJsonArray("env")) {
-                if (el.isJsonObject()) {
-                    JsonObject envVar = el.getAsJsonObject();
-                    String name = getStringOrNull(envVar, "name");
-                    String value = getStringOrNull(envVar, "value");
-                    if (name != null && value != null) {
-                        env.put(name, value);
-                    }
-                }
-            }
-        }
-
-        // Merge shell environment for PATH resolution
-        pb.environment().putAll(
-            ShellEnvironment.getEnvironment());
-
+        ProcessBuilder pb = createProcessBuilder(params, cmdArray);
         String terminalId = "term_" + UUID.randomUUID().toString().substring(0, 12);
         Process process = pb.start();
 
@@ -96,6 +64,56 @@ final class AcpTerminalHandler {
         JsonObject result = new JsonObject();
         result.addProperty(TERMINAL_ID_KEY, terminalId);
         return result;
+    }
+
+    private ProcessBuilder createProcessBuilder(@NotNull JsonObject params, String[] cmdArray) {
+        ProcessBuilder pb = new ProcessBuilder(cmdArray);
+        pb.redirectErrorStream(true);
+        String cwd = getWorkingDirectory(params);
+        if (cwd != null) {
+            pb.directory(new File(cwd));
+        }
+        applyEnvironmentParams(params, pb.environment());
+        pb.environment().putAll(ShellEnvironment.getEnvironment());
+        return pb;
+    }
+
+    private String getWorkingDirectory(@NotNull JsonObject params) {
+        return params.has("cwd") && params.get("cwd").isJsonPrimitive()
+            ? params.get("cwd").getAsString() : project.getBasePath();
+    }
+
+    private static int getOutputByteLimit(@NotNull JsonObject params) {
+        return params.has(OUTPUT_BYTE_LIMIT_KEY) && params.get(OUTPUT_BYTE_LIMIT_KEY).isJsonPrimitive()
+            ? params.get(OUTPUT_BYTE_LIMIT_KEY).getAsInt() : DEFAULT_OUTPUT_BYTE_LIMIT;
+    }
+
+    private static String[] buildCommandArray(@NotNull String command, String[] args) {
+        String[] cmdArray = new String[1 + args.length];
+        cmdArray[0] = command;
+        System.arraycopy(args, 0, cmdArray, 1, args.length);
+        return cmdArray;
+    }
+
+    private static void applyEnvironmentParams(@NotNull JsonObject params, Map<String, String> env) {
+        if (!params.has("env") || !params.get("env").isJsonArray()) {
+            return;
+        }
+        for (JsonElement el : params.getAsJsonArray("env")) {
+            addEnvironmentVariable(el, env);
+        }
+    }
+
+    private static void addEnvironmentVariable(@NotNull JsonElement el, Map<String, String> env) {
+        if (!el.isJsonObject()) {
+            return;
+        }
+        JsonObject envVar = el.getAsJsonObject();
+        String name = getStringOrNull(envVar, "name");
+        String value = getStringOrNull(envVar, "value");
+        if (name != null && value != null) {
+            env.put(name, value);
+        }
     }
 
     /**
@@ -255,7 +273,7 @@ final class AcpTerminalHandler {
         }
 
         void startOutputCapture() {
-            captureThread = Thread.ofVirtual().name("acp-terminal-" + id).start(() -> {
+            captureThread = Thread.ofPlatform().name("acp-terminal-" + id).start(() -> {
                 try (InputStream is = process.getInputStream()) {
                     byte[] buf = new byte[4096];
                     int n;

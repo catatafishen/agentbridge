@@ -73,64 +73,69 @@ public final class GitStashTool extends GitTool {
 
         return switch (action) {
             case "list" -> runGitIn(root, CMD_STASH, "list");
-            case "push", "save" -> {
-                String ambiError = requireUnambiguousRepo(repoParam, "git_stash push");
-                if (ambiError != null) yield ambiError;
-
-                List<String> cmdArgs = new ArrayList<>();
-                cmdArgs.add(CMD_STASH);
-                cmdArgs.add("push");
-
-                if (args.has(PARAM_MESSAGE) && !args.get(PARAM_MESSAGE).getAsString().isEmpty()) {
-                    cmdArgs.add("-m");
-                    cmdArgs.add(args.get(PARAM_MESSAGE).getAsString());
-                }
-
-                if (args.has(PARAM_INCLUDE_UNTRACKED) && args.get(PARAM_INCLUDE_UNTRACKED).getAsBoolean()) {
-                    cmdArgs.add("--include-untracked");
-                }
-
-                yield runGitIn(root, cmdArgs.toArray(String[]::new));
-            }
-            case "pop" -> {
-                String ambiError = requireUnambiguousRepo(repoParam, "git_stash pop");
-                if (ambiError != null) yield ambiError;
-
-                String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("stash pop");
-                if (reviewError != null) yield reviewError;
-                String index = stashRef(args);
-                String result = index != null
-                    ? runGitIn(root, CMD_STASH, "pop", index)
-                    : runGitIn(root, CMD_STASH, "pop");
-                AgentEditSession.getInstance(project).invalidateOnWorktreeChange("stash pop");
-                yield result;
-            }
-            case ACTION_APPLY -> {
-                String ambiError = requireUnambiguousRepo(repoParam, "git_stash apply");
-                if (ambiError != null) yield ambiError;
-
-                String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("stash apply");
-                if (reviewError != null) yield reviewError;
-                String index = stashRef(args);
-                String result = index != null
-                    ? runGitIn(root, CMD_STASH, ACTION_APPLY, index)
-                    : runGitIn(root, CMD_STASH, ACTION_APPLY);
-                AgentEditSession.getInstance(project).invalidateOnWorktreeChange("stash apply");
-                yield result;
-            }
-            case "drop" -> {
-                String ambiError = requireUnambiguousRepo(repoParam, "git_stash drop");
-                if (ambiError != null) yield ambiError;
-
-                String index = stashRef(args);
-                yield index != null
-                    ? runGitIn(root, CMD_STASH, "drop", index)
-                    : runGitIn(root, CMD_STASH, "drop");
-            }
+            case "push", "save" -> pushStash(args, repoParam, root);
+            case "pop" -> applyOrPopStash(args, repoParam, root, "pop");
+            case ACTION_APPLY -> applyOrPopStash(args, repoParam, root, ACTION_APPLY);
+            case "drop" -> dropStash(args, repoParam, root);
             default -> "Error: unknown action '" + action + "'. Use: list, push, pop, apply, drop";
         };
+    }
+
+    private String pushStash(@NotNull JsonObject args, @Nullable String repoParam, @NotNull String root) throws Exception {
+        String ambiError = requireUnambiguousRepo(repoParam, "git_stash push");
+        if (ambiError != null) return ambiError;
+        return runGitIn(root, pushCommandArgs(args));
+    }
+
+    private static String[] pushCommandArgs(@NotNull JsonObject args) {
+        List<String> cmdArgs = new ArrayList<>();
+        cmdArgs.add(CMD_STASH);
+        cmdArgs.add("push");
+        addMessage(args, cmdArgs);
+        if (args.has(PARAM_INCLUDE_UNTRACKED) && args.get(PARAM_INCLUDE_UNTRACKED).getAsBoolean()) {
+            cmdArgs.add("--include-untracked");
+        }
+        return cmdArgs.toArray(String[]::new);
+    }
+
+    private static void addMessage(@NotNull JsonObject args, @NotNull List<String> cmdArgs) {
+        if (args.has(PARAM_MESSAGE) && !args.get(PARAM_MESSAGE).getAsString().isEmpty()) {
+            cmdArgs.add("-m");
+            cmdArgs.add(args.get(PARAM_MESSAGE).getAsString());
+        }
+    }
+
+    private String applyOrPopStash(
+        @NotNull JsonObject args,
+        @Nullable String repoParam,
+        @NotNull String root,
+        @NotNull String action
+    ) throws Exception {
+        String ambiError = requireUnambiguousRepo(repoParam, "git_stash " + action);
+        if (ambiError != null) return ambiError;
+        String reviewError = AgentEditSession.getInstance(project).awaitReviewCompletion("stash " + action);
+        if (reviewError != null) return reviewError;
+
+        String result = runStashWithOptionalRef(args, root, action);
+        AgentEditSession.getInstance(project).invalidateOnWorktreeChange("stash " + action);
+        return result;
+    }
+
+    private String dropStash(@NotNull JsonObject args, @Nullable String repoParam, @NotNull String root) throws Exception {
+        String ambiError = requireUnambiguousRepo(repoParam, "git_stash drop");
+        if (ambiError != null) return ambiError;
+        return runStashWithOptionalRef(args, root, "drop");
+    }
+
+    private String runStashWithOptionalRef(
+        @NotNull JsonObject args,
+        @NotNull String root,
+        @NotNull String action
+    ) throws Exception {
+        String index = stashRef(args);
+        return index != null
+            ? runGitIn(root, CMD_STASH, action, index)
+            : runGitIn(root, CMD_STASH, action);
     }
 
     private static @Nullable String stashRef(JsonObject args) {

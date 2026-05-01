@@ -130,7 +130,7 @@ public abstract class GitTool extends Tool {
             String basePath = project.getBasePath();
             return PlatformApiCompat.getDetectedGitRoots(project).stream()
                 .map(p -> toRelativePath(p, basePath))
-                .collect(Collectors.toList());
+                .toList();
         } catch (NoClassDefFoundError e) {
             return Collections.emptyList();
         }
@@ -138,41 +138,60 @@ public abstract class GitTool extends Tool {
 
     @NotNull
     protected String resolveRepoRootOrError(@Nullable String repoParam) {
-        List<String> roots;
+        List<String> roots = detectedGitRoots();
+        if (hasText(repoParam)) {
+            return resolveRequestedRepoRoot(repoParam, roots);
+        }
+        return defaultRepoRoot(roots);
+    }
+
+    protected static boolean hasText(@Nullable String value) {
+        return value != null && !value.isEmpty();
+    }
+
+    private List<String> detectedGitRoots() {
         try {
-            roots = PlatformApiCompat.getDetectedGitRoots(project);
+            return PlatformApiCompat.getDetectedGitRoots(project);
         } catch (NoClassDefFoundError e) {
-            roots = Collections.emptyList();
+            return Collections.emptyList();
         }
+    }
 
-        if (repoParam != null && !repoParam.isEmpty()) {
-            String basePath = project.getBasePath();
-            // Accept both relative (e.g. "backend") and absolute paths
-            String absParam = (basePath != null && !new File(repoParam).isAbsolute())
-                ? new File(basePath, repoParam).getAbsolutePath().replace("\\", "/")
-                : repoParam.replace("\\", "/");
-
-            for (String root : roots) {
-                if (root.equals(absParam)) return root;
-            }
-            String available = roots.isEmpty() ? "none"
-                : roots.stream()
-                  .map(r -> "'" + toRelativePath(r, project.getBasePath()) + "'")
-                  .collect(Collectors.joining(", "));
-            return "Error: repository '" + repoParam + "' not found. Available: " + available
-                + ". Use git_status to list repositories.";
+    private String resolveRequestedRepoRoot(@NotNull String repoParam, @NotNull List<String> roots) {
+        String absParam = normalizeRepoParam(repoParam);
+        for (String root : roots) {
+            if (root.equals(absParam)) return root;
         }
+        return "Error: repository '" + repoParam + "' not found. Available: "
+            + availableRepoRoots(roots) + ". Use git_status to list repositories.";
+    }
 
+    private String normalizeRepoParam(@NotNull String repoParam) {
+        String basePath = project.getBasePath();
+        File repoFile = new File(repoParam);
+        String path = basePath != null && !repoFile.isAbsolute()
+            ? new File(basePath, repoParam).getAbsolutePath()
+            : repoParam;
+        return path.replace("\\", "/");
+    }
+
+    private String availableRepoRoots(@NotNull List<String> roots) {
+        if (roots.isEmpty()) return "none";
+        return roots.stream()
+            .map(r -> "'" + toRelativePath(r, project.getBasePath()) + "'")
+            .collect(Collectors.joining(", "));
+    }
+
+    private String defaultRepoRoot(@NotNull List<String> roots) {
         if (roots.isEmpty()) {
             String basePath = project.getBasePath();
             return basePath != null ? basePath : ERR_NO_BASE_PATH;
         }
+        if (roots.size() == 1) return roots.getFirst();
+        return rootAtProjectBase(roots);
+    }
 
-        if (roots.size() == 1) {
-            return roots.getFirst();
-        }
-
-        // Multiple repos: prefer the one rooted at basePath, otherwise use first.
+    private String rootAtProjectBase(@NotNull List<String> roots) {
         String basePath = project.getBasePath();
         if (basePath != null) {
             for (String root : roots) {
@@ -215,59 +234,60 @@ public abstract class GitTool extends Tool {
         return getBranchContextIn(resolveRepoRootOrError(null));
     }
 
-    /**
-     * Root-aware variant of {@link #getBranchContext()}.
-     * Use when the repo root has already been resolved for the current tool call.
-     */
     protected String getBranchContextIn(@NotNull String rootDir) {
         if (rootDir.startsWith(ERR_PREFIX)) return "";
-        StringBuilder ctx = new StringBuilder();
-
         String branch = runGitInQuiet(rootDir, REV_PARSE, ABBREV_REF, "HEAD");
         if (branch == null) return "";
 
+        StringBuilder ctx = new StringBuilder();
         ctx.append("\n\n--- Context ---\n");
         ctx.append("On branch: ").append(branch).append('\n');
-
-        String tracking = runGitInQuiet(rootDir, REV_PARSE, ABBREV_REF, "@{upstream}");
-        if (tracking != null) {
-            ctx.append("Tracking: ").append(tracking);
-            appendAheadBehindIn(ctx, rootDir, tracking);
-            ctx.append('\n');
-        } else {
-            ctx.append("Tracking: none (no upstream set — use git_push with set_upstream: true)\n");
-        }
-
-        // Divergence from default branch
-        String defaultBranch = detectDefaultBranchIn(rootDir);
-        if (defaultBranch != null && !defaultBranch.equals(branch)) {
-            String count = runGitInQuiet(rootDir, REV_LIST, COUNT_FLAG, defaultBranch + "..HEAD");
-            if (count != null && !"0".equals(count)) {
-                ctx.append("Branch has ").append(count)
-                    .append(" commit(s) since ").append(defaultBranch).append('\n');
-            }
-        }
-
-        // Working tree status
-        String porcelain = runGitInQuiet(rootDir, "status", "--porcelain");
-        if (porcelain != null) {
-            if (porcelain.isEmpty()) {
-                ctx.append("Working tree: clean\n");
-            } else {
-                ctx.append("Working tree: ").append(formatPorcelainStatus(porcelain)).append('\n');
-            }
-        }
-
-        // Stash count
-        String stashList = runGitInQuiet(rootDir, "stash", "list");
-        if (stashList != null && !stashList.isEmpty()) {
-            long count = countStashEntries(stashList);
-            if (count > 0) {
-                ctx.append("Stash: ").append(count).append(" entr").append(count == 1 ? "y" : "ies").append('\n');
-            }
-        }
-
+        appendTrackingContext(ctx, rootDir);
+        appendDefaultBranchContext(ctx, rootDir, branch);
+        appendWorkingTreeContext(ctx, rootDir);
+        appendStashContext(ctx, rootDir);
         return ctx.toString();
+    }
+
+    private void appendTrackingContext(@NotNull StringBuilder ctx, @NotNull String rootDir) {
+        String tracking = runGitInQuiet(rootDir, REV_PARSE, ABBREV_REF, "@{upstream}");
+        if (tracking == null) {
+            ctx.append("Tracking: none (no upstream set — use git_push with set_upstream: true)\n");
+            return;
+        }
+        ctx.append("Tracking: ").append(tracking);
+        appendAheadBehindIn(ctx, rootDir, tracking);
+        ctx.append('\n');
+    }
+
+    private void appendDefaultBranchContext(@NotNull StringBuilder ctx, @NotNull String rootDir, @NotNull String branch) {
+        String defaultBranch = detectDefaultBranchIn(rootDir);
+        if (defaultBranch == null || defaultBranch.equals(branch)) return;
+        String count = runGitInQuiet(rootDir, REV_LIST, COUNT_FLAG, defaultBranch + "..HEAD");
+        if (count != null && !"0".equals(count)) {
+            ctx.append("Branch has ").append(count)
+                .append(" commit(s) since ").append(defaultBranch).append('\n');
+        }
+    }
+
+    private void appendWorkingTreeContext(@NotNull StringBuilder ctx, @NotNull String rootDir) {
+        String porcelain = runGitInQuiet(rootDir, "status", "--porcelain");
+        if (porcelain == null) return;
+        if (porcelain.isEmpty()) {
+            ctx.append("Working tree: clean\n");
+            return;
+        }
+        ctx.append("Working tree: ").append(formatPorcelainStatus(porcelain)).append('\n');
+    }
+
+    private void appendStashContext(@NotNull StringBuilder ctx, @NotNull String rootDir) {
+        String stashList = runGitInQuiet(rootDir, "stash", "list");
+        if (stashList == null || stashList.isEmpty()) return;
+        long count = countStashEntries(stashList);
+        if (count > 0) {
+            ctx.append("Stash: ").append(count).append(" entr")
+                .append(count == 1 ? "y" : "ies").append('\n');
+        }
     }
 
     /**
@@ -303,26 +323,25 @@ public abstract class GitTool extends Tool {
         }
     }
 
-    /**
-     * Parses git {@code status --porcelain} output into a human-readable summary.
-     * Pure function — no IDE dependency.
-     */
     static String formatPorcelainStatus(String porcelain) {
-        int staged = 0;
-        int modified = 0;
-        int untracked = 0;
+        int[] counts = new int[3];
         for (String line : porcelain.split("\n")) {
-            if (line.length() < 2) continue;
-            char index = line.charAt(0);
-            char worktree = line.charAt(1);
-            if (line.startsWith("??")) {
-                untracked++;
-            } else {
-                if (index != ' ' && index != '?') staged++;
-                if (worktree != ' ' && worktree != '?') modified++;
-            }
+            countPorcelainLine(line, counts);
         }
+        return formatStatusCounts(counts[0], counts[1], counts[2]);
+    }
 
+    private static void countPorcelainLine(@NotNull String line, int[] counts) {
+        if (line.length() < 2) return;
+        if (line.startsWith("??")) {
+            counts[2]++;
+            return;
+        }
+        if (line.charAt(0) != ' ' && line.charAt(0) != '?') counts[0]++;
+        if (line.charAt(1) != ' ' && line.charAt(1) != '?') counts[1]++;
+    }
+
+    private static String formatStatusCounts(int staged, int modified, int untracked) {
         List<String> parts = new ArrayList<>();
         if (staged > 0) parts.add(staged + " staged");
         if (modified > 0) parts.add(modified + " modified");

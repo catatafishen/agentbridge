@@ -15,6 +15,28 @@ internal class ProcessingTimerPanel(
     private val localPremiumRequests: () -> Double,
 ) : Disposable {
 
+    data class RestoredSessionStats(
+        val totalTimeMs: Long,
+        val totalInputTokens: Long,
+        val totalOutputTokens: Long,
+        val totalCostUsd: Double,
+        val totalToolCalls: Int,
+        val totalLinesAdded: Int,
+        val totalLinesRemoved: Int,
+        val turnCount: Int
+    )
+
+    data class RestoredLastTurnStats(
+        val elapsedSec: Long,
+        val inputTokens: Int,
+        val outputTokens: Int,
+        val costUsd: Double?,
+        val toolCalls: Int,
+        val linesAdded: Int,
+        val linesRemoved: Int,
+        val multiplier: String = ""
+    )
+
     /** Callback fired on every stats change (including timer ticks). */
     var onStatsChanged: Runnable? = null
 
@@ -116,39 +138,27 @@ internal class ProcessingTimerPanel(
         onStatsChanged?.run()
     }
 
-    fun restoreSessionStats(
-        totalTimeMs: Long, totalInputTokens: Long, totalOutputTokens: Long,
-        totalCostUsd: Double, totalToolCalls: Int,
-        totalLinesAdded: Int, totalLinesRemoved: Int, turnCount: Int
-    ) {
-        sessionTotalTimeMs = totalTimeMs
-        sessionTotalInputTokens = totalInputTokens
-        sessionTotalOutputTokens = totalOutputTokens
-        sessionTotalCostUsd = totalCostUsd
-        sessionTotalToolCalls = totalToolCalls
-        sessionTotalAddedLines = totalLinesAdded
-        sessionTotalRemovedLines = totalLinesRemoved
-        sessionTurnCount = turnCount
+    fun restoreSessionStats(stats: RestoredSessionStats) {
+        sessionTotalTimeMs = stats.totalTimeMs
+        sessionTotalInputTokens = stats.totalInputTokens
+        sessionTotalOutputTokens = stats.totalOutputTokens
+        sessionTotalCostUsd = stats.totalCostUsd
+        sessionTotalToolCalls = stats.totalToolCalls
+        sessionTotalAddedLines = stats.totalLinesAdded
+        sessionTotalRemovedLines = stats.totalLinesRemoved
+        sessionTurnCount = stats.turnCount
         onStatsChanged?.run()
     }
 
-    /**
-     * Restores the most-recent-turn snapshot after a session reload, so the Session tab's
-     * "Last turn" section shows the user's last prompt cost/usage without waiting for the
-     * next turn. Distinct from [restoreSessionStats] which restores cumulative totals.
-     */
-    fun restoreLastTurnStats(
-        elapsedSec: Long, inputTokens: Int, outputTokens: Int, costUsd: Double?,
-        toolCalls: Int, linesAdded: Int, linesRemoved: Int, multiplier: String = ""
-    ) {
-        lastTurnElapsedSec = elapsedSec
-        turnInputTokens = inputTokens
-        turnOutputTokens = outputTokens
-        turnCostUsd = costUsd
-        toolCallCount = toolCalls
-        addedLineCount = linesAdded
-        removedLineCount = linesRemoved
-        lastTurnPremium = BillingCalculator.parseMultiplier(multiplier.ifEmpty { "1x" })
+    fun restoreLastTurnStats(stats: RestoredLastTurnStats) {
+        lastTurnElapsedSec = stats.elapsedSec
+        turnInputTokens = stats.inputTokens
+        turnOutputTokens = stats.outputTokens
+        turnCostUsd = stats.costUsd
+        toolCallCount = stats.toolCalls
+        addedLineCount = stats.linesAdded
+        removedLineCount = stats.linesRemoved
+        lastTurnPremium = BillingCalculator.parseMultiplier(stats.multiplier.ifEmpty { "1x" })
         onStatsChanged?.run()
     }
 

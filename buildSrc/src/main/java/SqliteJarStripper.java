@@ -1,3 +1,6 @@
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -18,6 +21,8 @@ import java.util.zip.ZipOutputStream;
  * All other native libraries are removed, typically saving ~10 MB.
  */
 public class SqliteJarStripper {
+
+    private static final Logger LOGGER = Logging.getLogger(SqliteJarStripper.class);
 
     public void strip(File inputJar, File outputJar) throws IOException {
         File parentDir = outputJar.getParentFile();
@@ -70,6 +75,6 @@ public class SqliteJarStripper {
         long originalMB = originalSize / (1024 * 1024);
         long strippedMB = strippedSize / (1024 * 1024);
 
-        System.out.printf("SQLite JAR stripped: %dMB → %dMB (−%dMB)%n", originalMB, strippedMB, savedMB);
+        LOGGER.lifecycle("SQLite JAR stripped: {}MB → {}MB (−{}MB)", originalMB, strippedMB, savedMB);
     }
 }

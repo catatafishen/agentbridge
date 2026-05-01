@@ -38,17 +38,23 @@ final class CodexMessageParser {
     static String extractReasoningText(@Nullable JsonElement el) {
         if (el == null || el.isJsonNull()) return "";
         if (el.isJsonPrimitive()) return el.getAsString();
-        if (el.isJsonArray()) {
-            StringBuilder sb = new StringBuilder();
-            for (JsonElement child : el.getAsJsonArray()) {
-                String childText = extractReasoningText(child);
-                if (!childText.isEmpty()) sb.append(childText);
-            }
-            return sb.toString();
-        }
-        if (!el.isJsonObject()) return "";
+        if (el.isJsonArray()) return extractReasoningArray(el);
+        if (el.isJsonObject()) return extractReasoningObject(el.getAsJsonObject());
+        return "";
+    }
 
-        JsonObject obj = el.getAsJsonObject();
+    @NotNull
+    private static String extractReasoningArray(@NotNull JsonElement el) {
+        StringBuilder sb = new StringBuilder();
+        for (JsonElement child : el.getAsJsonArray()) {
+            String childText = extractReasoningText(child);
+            if (!childText.isEmpty()) sb.append(childText);
+        }
+        return sb.toString();
+    }
+
+    @NotNull
+    private static String extractReasoningObject(@NotNull JsonObject obj) {
         if (obj.has(F_TEXT) && obj.get(F_TEXT).isJsonPrimitive()) return obj.get(F_TEXT).getAsString();
         if (obj.has(F_THINKING) && obj.get(F_THINKING).isJsonPrimitive()) return obj.get(F_THINKING).getAsString();
         if (obj.has("summary")) return extractReasoningText(obj.get("summary"));

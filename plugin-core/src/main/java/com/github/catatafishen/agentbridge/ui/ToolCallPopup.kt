@@ -27,45 +27,36 @@ internal object ToolCallPopup {
         "other" to JBColor(Color(0x78, 0x7C, 0x80), Color(160, 165, 170)),
     )
 
+    data class Request(
+        val project: Project,
+        val title: String,
+        val kind: String,
+        val paramsPanel: JComponent?,
+        val resultPanel: JComponent,
+        val toolDescription: String? = null,
+        val autoDenied: Boolean = false,
+        val denialReason: String? = null,
+        val failed: Boolean = false
+    )
+
     private fun popupWidth() = JBUI.scale(650)
     private fun popupHeight() = JBUI.scale(420)
 
-    /**
-     * Shows a popup with tool result and optional parameters.
-     *
-     * @param kind            tool kind ("read", "edit", "execute", etc.) — drives the background tint
-     * @param paramsPanel     Swing component for the parameters section, or null to omit
-     * @param resultPanel     Swing component for the result section
-     * @param toolDescription optional one-liner description for MCP tools, shown at the top of the popup
-     * @param autoDenied      true if the tool was automatically denied by the plugin (security/policy)
-     * @param denialReason    human-readable reason for the auto-denial, or null
-     * @param failed          true if the tool call failed — changes the "Result" section label to "Error"
-     */
-    fun show(
-        project: Project,
-        title: String,
-        kind: String,
-        paramsPanel: JComponent?,
-        resultPanel: JComponent,
-        toolDescription: String? = null,
-        autoDenied: Boolean = false,
-        denialReason: String? = null,
-        failed: Boolean = false
-    ) {
+    fun show(request: Request) {
         currentPopup?.cancel()
 
-        val kindColor = KIND_COLORS[kind] ?: KIND_COLORS["other"]!!
+        val kindColor = KIND_COLORS[request.kind] ?: KIND_COLORS["other"]!!
         val panelBg = UIUtil.getPanelBackground()
         val tintedBg = ToolRenderers.blendColor(kindColor, panelBg, 0.07)
 
         val contentPanel = buildContentPanel(
             tintedBg,
-            resultPanel,
-            paramsPanel,
-            toolDescription,
-            autoDenied,
-            denialReason,
-            failed
+            request.resultPanel,
+            request.paramsPanel,
+            request.toolDescription,
+            request.autoDenied,
+            request.denialReason,
+            request.failed
         )
 
         val width = popupWidth()
@@ -82,7 +73,7 @@ internal object ToolCallPopup {
 
         val popup = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(scrollPane, scrollPane)
-            .setTitle(title)
+            .setTitle(request.title)
             .setMovable(true)
             .setResizable(true)
             .setRequestFocus(true)
@@ -93,7 +84,7 @@ internal object ToolCallPopup {
             .createPopup()
         currentPopup = popup
 
-        val frame = WindowManager.getInstance().getFrame(project)
+        val frame = WindowManager.getInstance().getFrame(request.project)
         if (frame != null) {
             val rootPane = frame.rootPane
             val relPoint = com.intellij.ui.awt.RelativePoint(

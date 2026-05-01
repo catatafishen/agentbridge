@@ -15,6 +15,8 @@ import java.util.List;
 public final class GitResetTool extends GitTool {
 
     private static final String PARAM_COMMIT = "commit";
+    private static final String PARAM_MODE = "mode";
+    private static final String MODE_MIXED = "mixed";
 
     public GitResetTool(Project project) {
         super(project);
@@ -56,7 +58,7 @@ public final class GitResetTool extends GitTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional(PARAM_COMMIT, TYPE_STRING, "Target commit (default: HEAD)"),
-            Param.optional("mode", TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"),
+            Param.optional(PARAM_MODE, TYPE_STRING, "Reset mode: 'soft' (keep staged), 'mixed' (default, unstage), 'hard' (discard all changes)"),
             Param.optional("path", TYPE_STRING, "Reset a specific file path (unstages it)"),
             Param.optional(PARAM_REPO, TYPE_STRING, REPO_PARAM_DESCRIPTION)
         );
@@ -67,35 +69,58 @@ public final class GitResetTool extends GitTool {
         flushAndSave();
 
         String repoParam = args.has(PARAM_REPO) ? args.get(PARAM_REPO).getAsString() : null;
-        String ambiError = requireUnambiguousRepo(repoParam, "git_reset");
-        if (ambiError != null) return ambiError;
-        String root = resolveRepoRootOrError(repoParam);
+        String root = validateAndResolveRoot(repoParam);
         if (root.startsWith("Error")) return root;
 
+        boolean hardReset = isHardModeReset(args);
+        String reviewError = awaitHardResetReviewIfNeeded(hardReset);
+        if (reviewError != null) return reviewError;
+
+        List<String> cmdArgs = buildResetArgs(args);
+        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
+        if (!result.isBlank() && result.startsWith("Error")) return result;
+        invalidateAfterHardReset(hardReset);
+        return result.isBlank() ? "Reset completed successfully." : result;
+    }
+
+    private String validateAndResolveRoot(String repoParam) {
+        String ambiError = requireUnambiguousRepo(repoParam, "git_reset");
+        if (ambiError != null) return ambiError;
+        return resolveRepoRootOrError(repoParam);
+    }
+
+    private List<String> buildResetArgs(JsonObject args) {
         List<String> cmdArgs = new ArrayList<>();
         cmdArgs.add("reset");
-
-        if (args.has("path") && !args.get("path").getAsString().isEmpty()) {
+        if (hasPath(args)) {
             addFilePathResetArgs(cmdArgs, args);
         } else {
             addModeResetArgs(cmdArgs, args);
-            // Only gate worktree-changing resets (--hard). Soft/mixed only move HEAD/index.
-            String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";
-            if ("hard".equals(mode)) {
-                String reviewError = AgentEditSession.getInstance(project)
-                    .awaitReviewCompletion("git reset --hard");
-                if (reviewError != null) return reviewError;
-            }
         }
+        return cmdArgs;
+    }
 
-        String result = runGitIn(root, cmdArgs.toArray(String[]::new));
-        if (!result.isBlank() && result.startsWith("Error")) return result;
-        // Invalidate after hard reset (worktree changed)
-        String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";
-        if ("hard".equals(mode)) {
+    private boolean hasPath(JsonObject args) {
+        return args.has("path") && !args.get("path").getAsString().isEmpty();
+    }
+
+    private boolean isHardModeReset(JsonObject args) {
+        return !hasPath(args) && "hard".equals(getMode(args));
+    }
+
+    private String getMode(JsonObject args) {
+        return args.has(PARAM_MODE) ? args.get(PARAM_MODE).getAsString() : MODE_MIXED;
+    }
+
+    private String awaitHardResetReviewIfNeeded(boolean hardReset) {
+        if (!hardReset) return null;
+        return AgentEditSession.getInstance(project).awaitReviewCompletion("git reset --hard");
+    }
+
+    private void invalidateAfterHardReset(boolean hardReset) {
+        if (hardReset) {
             AgentEditSession.getInstance(project).invalidateOnWorktreeChange("git reset --hard");
         }
-        return result.isBlank() ? "Reset completed successfully." : result;
     }
 
     private void addFilePathResetArgs(List<String> cmdArgs, JsonObject args) {
@@ -108,11 +133,11 @@ public final class GitResetTool extends GitTool {
     }
 
     private void addModeResetArgs(List<String> cmdArgs, JsonObject args) {
-        String mode = args.has("mode") ? args.get("mode").getAsString() : "mixed";
+        String mode = args.has(PARAM_MODE) ? args.get(PARAM_MODE).getAsString() : MODE_MIXED;
         switch (mode) {
             case "soft" -> cmdArgs.add("--soft");
             case "hard" -> cmdArgs.add("--hard");
-            default -> cmdArgs.add("--mixed");
+            default -> cmdArgs.add("--" + MODE_MIXED);
         }
         if (args.has(PARAM_COMMIT) && !args.get(PARAM_COMMIT).getAsString().isEmpty()) {
             cmdArgs.add(args.get(PARAM_COMMIT).getAsString());
