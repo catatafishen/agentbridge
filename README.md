@@ -23,6 +23,32 @@ or generating diffs in isolation.
 - **PWA web access** — use the chat from any device on your local network via HTTPS.
 - **Human in the loop** — every action is visible in the IDE. Undo, review, or redirect at any point.
 
+## Why this approach?
+
+AgentBridge is built around a simple idea: if a full JetBrains IDE helps humans work in a
+fail-fast way, agents should be able to use that same IDE feedback loop too. Instead of asking
+an LLM to approximate refactorings, code intelligence, inspections, Git state, and project
+context from text alone, AgentBridge lets the agent call the deterministic IDE tools directly.
+
+See [Why AgentBridge?](docs/WHY-AGENTBRIDGE.md) for the longer reasoning behind this IDE-native
+approach and why I think it is worth exploring alongside lighter agent wrappers and harnesses.
+
+## Project status, collaborators, and reviews
+
+AgentBridge is starting to feel feature-ready. Most current work is tuning behavior, polishing
+workflows, and following what agent CLIs expose through ACP so new capabilities can be integrated
+when they become available.
+
+I would be happy to have collaborators, especially for code review. A healthy practice for
+agent-authored changes is at least two pairs of human eyes; right now I mostly review changes
+alone after prompting Copilot to make them.
+
+If you use the plugin and find it useful, an honest rating or review on the
+[JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30415-agentbridge) would help other
+users decide whether to try it. The plugin is approaching 2,000 downloads, and Marketplace update
+stats suggest hundreds of active installs, but I understand why someone might hesitate to install
+a plugin with no reviews.
+
 ## Supported Agents
 
 | Agent                          | Protocol                   | Authentication                |
