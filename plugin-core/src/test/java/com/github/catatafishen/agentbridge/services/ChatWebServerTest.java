@@ -12,6 +12,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyStore;
+import java.security.cert.Certificate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -256,6 +257,21 @@ class ChatWebServerTest {
         assertFalse(Files.exists(serverKeystore));
     }
 
+    @Test
+    void migrateKeystorePassword_preservesCertificateWithNewPassword(@TempDir Path tempDir) throws Exception {
+        String legacyPassword = "agentbridge-ephemeral";
+        String newPassword = "new-random-password";
+        Path caKeystore = tempDir.resolve("ca.p12");
+        invokeGenerateCaCertificate(caKeystore, legacyPassword);
+        Certificate certificateBeforeMigration = loadCertificate(caKeystore, legacyPassword, "ca");
+
+        invokeMigrateKeystorePassword(caKeystore, legacyPassword, newPassword);
+
+        assertFalse(invokeCanLoadKeystore(caKeystore, legacyPassword));
+        assertTrue(invokeCanLoadKeystore(caKeystore, newPassword));
+        assertEquals(certificateBeforeMigration, loadCertificate(caKeystore, newPassword, "ca"));
+    }
+
     // ── runProcess ───────────────────────────────────────────────────────────
 
     @Test
@@ -327,6 +343,33 @@ class ChatWebServerTest {
         );
         m.setAccessible(true);
         m.invoke(null, caKeystore.toFile(), serverKeystore.toFile());
+    }
+
+    private static void invokeMigrateKeystorePassword(Path keystore, String oldPassword, String newPassword)
+        throws Exception {
+
+        Method m = ChatWebServer.class.getDeclaredMethod(
+            "migrateKeystorePassword",
+            java.io.File.class,
+            String.class,
+            String.class
+        );
+        m.setAccessible(true);
+        m.invoke(null, keystore.toFile(), oldPassword, newPassword);
+    }
+
+    private static boolean invokeCanLoadKeystore(Path keystore, String password) throws Exception {
+        Method m = ChatWebServer.class.getDeclaredMethod("canLoadKeystore", java.io.File.class, String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, keystore.toFile(), password);
+    }
+
+    private static Certificate loadCertificate(Path keystore, String password, String alias) throws Exception {
+        KeyStore keyStore = KeyStore.getInstance("PKCS12");
+        try (InputStream input = Files.newInputStream(keystore)) {
+            keyStore.load(input, password.toCharArray());
+        }
+        return keyStore.getCertificate(alias);
     }
 
     private static IOException runFakeProcessExpectingIOException(String mode, long timeoutSeconds) {

@@ -34,6 +34,7 @@ import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.Key;
 import java.security.KeyStore;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -569,6 +570,7 @@ public final class ChatWebServer implements Disposable {
     // ── TLS ───────────────────────────────────────────────────────────────────
 
     private static final String KEYSTORE_PASSWORD_SERVICE = "AgentBridge/KeystorePassword";
+    private static final String LEGACY_KEYSTORE_PASSWORD = "agentbridge-ephemeral";
     private static final String PKCS12_TYPE = "PKCS12";
     private static final String KEYTOOL_CMD = "keytool";
     private static final String KT_GENKEYPAIR = "-genkeypair";
@@ -613,10 +615,14 @@ public final class ChatWebServer implements Disposable {
      * regeneration.
      */
     private static boolean canLoadKeystore(java.io.File ksFile) {
+        return canLoadKeystore(ksFile, getOrCreateKeystorePassword());
+    }
+
+    private static boolean canLoadKeystore(java.io.File ksFile, String password) {
         try {
             KeyStore ks = KeyStore.getInstance(PKCS12_TYPE);
             try (java.io.FileInputStream fis = new java.io.FileInputStream(ksFile)) {
-                ks.load(fis, getOrCreateKeystorePassword().toCharArray());
+                ks.load(fis, password.toCharArray());
             }
             return true;
         } catch (Exception e) {
@@ -653,11 +659,13 @@ public final class ChatWebServer implements Disposable {
 
         List<String> localIps = collectLocalIpv4Addresses();
 
-        boolean caNeedsRegen = !caKsFile.exists() || !canLoadKeystore(caKsFile);
+        String ksPassword = prepareKeystorePassword(pluginDir, caKsFile, serverKsFile);
+        boolean caNeedsRegen = !caKsFile.exists() || !canLoadKeystore(caKsFile, ksPassword);
         boolean serverNeedsRegen = caNeedsRegen
             || !serverKsFile.exists()
-            || !serverCertCoversAllIps(serverKsFile, localIps)
-            || !serverCertHasExpectedSubject(serverKsFile);
+            || !canLoadKeystore(serverKsFile, ksPassword)
+            || !serverCertCoversAllIps(serverKsFile, localIps, ksPassword)
+            || !serverCertHasExpectedSubject(serverKsFile, ksPassword);
 
         if (caNeedsRegen) {
             LOG.info("[ChatWebServer] Generating new CA + server certificates");
@@ -673,7 +681,6 @@ public final class ChatWebServer implements Disposable {
         }
 
         // Load CA cert for device installation at /cert.crt
-        String ksPassword = getOrCreateKeystorePassword();
         KeyStore caKs = KeyStore.getInstance(PKCS12_TYPE);
         try (java.io.FileInputStream fis = new java.io.FileInputStream(caKsFile)) {
             caKs.load(fis, ksPassword.toCharArray());
@@ -697,6 +704,85 @@ public final class ChatWebServer implements Disposable {
         SSLContext ctx = SSLContext.getInstance("TLS");
         ctx.init(kmf.getKeyManagers(), null, null);
         return ctx;
+    }
+
+    private static String prepareKeystorePassword(
+        java.nio.file.Path pluginDir,
+        java.io.File caKsFile,
+        java.io.File serverKsFile) throws IOException {
+
+        String currentPassword = getOrCreateKeystorePassword();
+        if (!caKsFile.exists() || canLoadKeystore(caKsFile, currentPassword)) {
+            return currentPassword;
+        }
+        if (!canLoadKeystore(caKsFile, LEGACY_KEYSTORE_PASSWORD)) {
+            return currentPassword;
+        }
+
+        LOG.info("[ChatWebServer] Migrating legacy TLS keystores to PasswordSafe-backed password");
+        java.nio.file.Files.createDirectories(pluginDir);
+        migrateKeystorePassword(caKsFile, LEGACY_KEYSTORE_PASSWORD, currentPassword);
+        if (!serverKsFile.exists()) {
+            return currentPassword;
+        }
+        if (canLoadKeystore(serverKsFile, LEGACY_KEYSTORE_PASSWORD)) {
+            migrateKeystorePassword(serverKsFile, LEGACY_KEYSTORE_PASSWORD, currentPassword);
+        } else if (!canLoadKeystore(serverKsFile, currentPassword)) {
+            // The CA is preserved; a stale/unloadable server certificate can be regenerated from it.
+            java.nio.file.Files.deleteIfExists(serverKsFile.toPath());
+        }
+        return currentPassword;
+    }
+
+    private static void migrateKeystorePassword(java.io.File keystoreFile, String oldPassword, String newPassword)
+        throws IOException {
+
+        try {
+            KeyStore source = KeyStore.getInstance(PKCS12_TYPE);
+            char[] oldPasswordChars = oldPassword.toCharArray();
+            char[] newPasswordChars = newPassword.toCharArray();
+            try (java.io.FileInputStream input = new java.io.FileInputStream(keystoreFile)) {
+                source.load(input, oldPasswordChars);
+            }
+
+            KeyStore migrated = KeyStore.getInstance(PKCS12_TYPE);
+            migrated.load(null, newPasswordChars);
+            Enumeration<String> aliases = source.aliases();
+            while (aliases.hasMoreElements()) {
+                String alias = aliases.nextElement();
+                if (source.isKeyEntry(alias)) {
+                    Key key = source.getKey(alias, oldPasswordChars);
+                    java.security.cert.Certificate[] chain = source.getCertificateChain(alias);
+                    migrated.setKeyEntry(alias, key, newPasswordChars, chain);
+                } else if (source.isCertificateEntry(alias)) {
+                    migrated.setCertificateEntry(alias, source.getCertificate(alias));
+                }
+            }
+            replaceKeystoreAtomically(keystoreFile.toPath(), migrated, newPasswordChars);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Failed to migrate TLS keystore password for " + keystoreFile.getName(), e);
+        }
+    }
+
+    private static void replaceKeystoreAtomically(java.nio.file.Path keystorePath, KeyStore migrated, char[] password)
+        throws IOException, GeneralSecurityException {
+
+        java.nio.file.Path parent = keystorePath.getParent();
+        java.nio.file.Path tempFile = java.nio.file.Files.createTempFile(parent, keystorePath.getFileName().toString(), ".tmp");
+        try {
+            try (java.io.OutputStream output = java.nio.file.Files.newOutputStream(tempFile)) {
+                migrated.store(output, password);
+            }
+            try {
+                java.nio.file.Files.move(tempFile, keystorePath,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                java.nio.file.Files.move(tempFile, keystorePath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally {
+            java.nio.file.Files.deleteIfExists(tempFile);
+        }
     }
 
     private static void deleteCertificateStoresForCaRegeneration(
@@ -1017,12 +1103,12 @@ public final class ChatWebServer implements Disposable {
         return ips;
     }
 
-    private static boolean serverCertCoversAllIps(java.io.File serverKsFile, List<String> requiredIps) {
+    private static boolean serverCertCoversAllIps(java.io.File serverKsFile, List<String> requiredIps, String ksPassword) {
         if (requiredIps.isEmpty()) return true;
         try {
             KeyStore ks = KeyStore.getInstance(PKCS12_TYPE);
             try (java.io.FileInputStream fis = new java.io.FileInputStream(serverKsFile)) {
-                ks.load(fis, getOrCreateKeystorePassword().toCharArray());
+                ks.load(fis, ksPassword.toCharArray());
             }
             java.security.cert.Certificate cert = ks.getCertificate(KT_ALIAS_SERVER);
             if (!(cert instanceof X509Certificate x509)) return false;
@@ -1045,11 +1131,11 @@ public final class ChatWebServer implements Disposable {
      * Returns {@code true} if the server keystore contains a cert with the expected subject and
      * {@code agentbridge.local} DNS SAN. Detects keystores from older single-cert format.
      */
-    private static boolean serverCertHasExpectedSubject(java.io.File serverKsFile) {
+    private static boolean serverCertHasExpectedSubject(java.io.File serverKsFile, String ksPassword) {
         try {
             KeyStore ks = KeyStore.getInstance(PKCS12_TYPE);
             try (java.io.FileInputStream fis = new java.io.FileInputStream(serverKsFile)) {
-                ks.load(fis, getOrCreateKeystorePassword().toCharArray());
+                ks.load(fis, ksPassword.toCharArray());
             }
             java.security.cert.Certificate cert = ks.getCertificate(KT_ALIAS_SERVER);
             if (!(cert instanceof X509Certificate x509)) return false;
