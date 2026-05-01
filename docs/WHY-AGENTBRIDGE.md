@@ -22,6 +22,46 @@ fraction of what an IDE like IntelliJ enables.
 The important difference is not only that the agent can ask the IDE a question. It is whether the agent is working
 through the IDE in the same feedback loop a human would.
 
+## Related work and external references
+
+AgentBridge is not the only attempt to improve the interface between agents and development tools. The broader ecosystem
+is clearly moving from "prompt plus shell" toward richer, more structured interfaces.
+
+[MCP](https://modelcontextprotocol.io/introduction) is probably the most visible example. The project describes MCP as
+"an open-source standard for connecting AI applications to external systems" and compares it to "a USB-C port for AI
+applications". That is exactly the direction AgentBridge depends on: agents should not need to rediscover everything
+from raw text if a better tool interface exists. AgentBridge's narrower bet is that a JetBrains IDE is one of the most
+valuable external systems to connect.
+
+The [Language Server Protocol](https://microsoft.github.io/language-server-protocol/) is another important precedent.
+It standardized how editors get language features such as autocomplete, go to definition, and hover documentation from a
+language server. LSP made language intelligence more portable across tools, and many agent integrations now expose
+LSP-like symbol search or diagnostics. I think that is useful, but still smaller than the full IDE surface. JetBrains'
+[Program Structure Interface](https://plugins.jetbrains.com/docs/intellij/psi.html) is described as the layer that
+creates the "syntactic and semantic code model" powering platform features. AgentBridge tries to expose more of that
+platform, not only the few features that fit neatly into an LSP-shaped box.
+
+The SWE-agent paper and project also make a useful point in the title alone:
+["Agent-Computer Interfaces Enable Automated Software Engineering"](https://arxiv.org/abs/2405.15793). Their
+open-source project focuses on agents autonomously using tools to fix real GitHub issues. That framing matters: the
+interface you give the agent changes what the agent can do. AgentBridge agrees with that thesis, but explores a
+different interface: not primarily a terminal-centric computer interface, but an IDE-native one.
+
+Hooks are another path the ecosystem is exploring. Claude Code documents hooks as
+["user-defined shell commands, HTTP endpoints, or LLM prompts"](https://code.claude.com/docs/en/hooks) that run at
+specific lifecycle points, including before and after tool use. I think hooks are valuable, especially when they call
+deterministic tools. My concern is mostly timing and synchronization: if a hook fixes or reformats something after the
+agent's edit, the agent may already be reasoning from stale context. AgentBridge tries to make that feedback part of the
+same IDE-aware tool response when possible.
+
+The JetBrains documentation also backs the core IDE-native argument. IntelliJ inspections
+["detect and correct abnormal code ... before you compile it"](https://www.jetbrains.com/help/idea/code-inspection.html)
+and can find probable bugs, dead code, spelling problems, and structural issues. [Intention actions](https://www.jetbrains.com/help/idea/intention-actions.html)
+are described as the IDE analyzing code as you work and searching for ways to optimize it.
+[Refactoring support](https://www.jetbrains.com/help/idea/refactoring-source-code.html) is documented as a first-class
+IDE workflow with previews, conflict handling, and popular automated refactorings. These are exactly the kinds of
+deterministic, context-rich capabilities I want agents to use directly instead of approximating with text edits.
+
 ## Fail fast matters even more for agents
 
 When a human edits code in IntelliJ, feedback appears immediately. Imports are suggested. Errors and warnings are
