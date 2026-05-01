@@ -57,6 +57,16 @@ sonar {
             ).joinToString(",")
         )
         property("sonar.javascript.lcov.reportPaths", "plugin-core/js-tests/coverage/lcov.info")
+        // MCP tool implementations are intentionally formulaic: each Tool subclass declares
+        // id(), displayName(), description(), kind(), category(), and isReadOnly() in nearly
+        // identical shapes. CPD treats this required boilerplate as duplication, producing
+        // false positives that drown out real findings. The structural similarity is enforced
+        // by the ToolDefinition contract — refactoring it away would mean reflection or
+        // generated code, both worse than the current explicit form.
+        property(
+            "sonar.cpd.exclusions",
+            "plugin-core/src/main/java/com/github/catatafishen/agentbridge/psi/tools/**/*.java"
+        )
     }
 }
 
