@@ -60,13 +60,13 @@ public final class DebugSessionListTool extends DebugTool {
         return sb.toString().strip();
     }
 
+    @SuppressWarnings({"javabugs:S2259"}) // platform contract: XSourcePosition.getFile() is non-null
     private String sessionStatus(@NotNull XDebugSession s, @Nullable String basePath) {
         if (s.isStopped()) return "STOPPED";
         if (s.getSuspendContext() == null) return "RUNNING";
         XSourcePosition pos = s.getCurrentPosition();
         if (pos == null) return "PAUSED";
         VirtualFile file = pos.getFile();
-        if (file == null) return "PAUSED";
         String relPath = relativize(basePath, file.getPath());
         String location = relPath != null ? relPath : file.getName();
         return "PAUSED at " + location + ':' + (pos.getLine() + 1);
