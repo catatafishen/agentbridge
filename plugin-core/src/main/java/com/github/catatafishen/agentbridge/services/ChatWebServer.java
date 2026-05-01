@@ -712,82 +712,10 @@ public final class ChatWebServer implements Disposable {
 
         String ksPassword = getOrCreateKeystorePassword();
         try {
-            StringBuilder san = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1,ip:127.0.1.1");
-            for (String ip : localIps) san.append(",ip:").append(ip);
-
-            // 1. Generate CA key pair + long-lived self-signed CA cert
-            runKeytool(new String[]{
-                KEYTOOL_CMD, KT_GENKEYPAIR,
-                KT_ALIAS, "ca",
-                KT_KEYALG, "RSA", KT_KEYSIZE, "4096", KT_VALIDITY, "3650",
-                KT_KEYSTORE, caKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword, KT_KEYPASS, ksPassword,
-                KT_DNAME, "CN=AgentBridge CA, O=AgentBridge, C=FI",
-                KT_EXT, "BC:critical=ca:true",
-                KT_EXT, "KU:critical=keyCertSign,cRLSign"
-            });
-
-            // 2. Generate server key pair (initially self-signed; will be replaced below)
-            runKeytool(new String[]{
-                KEYTOOL_CMD, KT_GENKEYPAIR,
-                KT_ALIAS, KT_ALIAS_SERVER,
-                KT_KEYALG, "RSA", KT_KEYSIZE, "2048", KT_VALIDITY, "397",
-                KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword, KT_KEYPASS, ksPassword,
-                KT_DNAME, "CN=AgentBridge Server, O=AgentBridge, C=FI"
-            });
-
-            // 3. Generate CSR from server key
-            runKeytool(new String[]{
-                KEYTOOL_CMD, "-certreq",
-                KT_ALIAS, KT_ALIAS_SERVER,
-                KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                KT_FILE, serverCsrFile.getAbsolutePath()
-            });
-
-            // 4. Sign server CSR with CA key → short-lived server cert with SANs and serverAuth EKU
-            runKeytool(new String[]{
-                KEYTOOL_CMD, "-gencert",
-                KT_ALIAS, "ca",
-                KT_KEYSTORE, caKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                "-infile", serverCsrFile.getAbsolutePath(),
-                "-outfile", serverCerFile.getAbsolutePath(),
-                KT_VALIDITY, "397",
-                KT_EXT, "SAN=" + san,
-                KT_EXT, "EKU=serverAuth",
-                KT_EXT, "BC:critical=ca:false"
-            });
-
-            // 5. Export CA cert as DER so it can be imported as a trusted entry into the server keystore
-            runKeytool(new String[]{
-                KEYTOOL_CMD, "-exportcert",
-                KT_ALIAS, "ca",
-                KT_KEYSTORE, caKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                KT_FILE, caExportFile.getAbsolutePath()
-            });
-
-            // 6. Import CA cert as trusted into server keystore — keytool needs this to build the chain
-            runKeytool(new String[]{
-                KEYTOOL_CMD, KT_IMPORTCERT,
-                KT_ALIAS, "ca",
-                KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                KT_FILE, caExportFile.getAbsolutePath(),
-                KT_NOPROMPT, "-trustcacerts"
-            });
-
-            // 7. Import signed server cert — replaces the temp self-signed cert; chain: server → CA
-            runKeytool(new String[]{
-                KEYTOOL_CMD, KT_IMPORTCERT,
-                KT_ALIAS, KT_ALIAS_SERVER,
-                KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                KT_FILE, serverCerFile.getAbsolutePath(),
-                KT_NOPROMPT
-            });
+            generateCaCertificate(caKsFile, ksPassword);
+            generateServerKeyPair(serverKsFile, ksPassword);
+            generateServerCertificateChain(caKsFile, serverKsFile, caExportFile, serverCsrFile, serverCerFile,
+                buildSubjectAlternativeNames(localIps), ksPassword);
         } finally {
             java.nio.file.Files.deleteIfExists(caExportFile.toPath());
             java.nio.file.Files.deleteIfExists(serverCsrFile.toPath());
@@ -813,75 +741,137 @@ public final class ChatWebServer implements Disposable {
 
         String ksPassword = getOrCreateKeystorePassword();
         try {
-            StringBuilder san = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1,ip:127.0.1.1");
-            for (String ip : localIps) san.append(",ip:").append(ip);
-
-            // 1. Generate server key pair (initially self-signed; replaced below)
-            runKeytool(new String[]{
-                KEYTOOL_CMD, KT_GENKEYPAIR,
-                KT_ALIAS, KT_ALIAS_SERVER,
-                KT_KEYALG, "RSA", KT_KEYSIZE, "2048", KT_VALIDITY, "397",
-                KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword, KT_KEYPASS, ksPassword,
-                KT_DNAME, "CN=AgentBridge Server, O=AgentBridge, C=FI"
-            });
-
-            // 2. Generate CSR from server key
-            runKeytool(new String[]{
-                KEYTOOL_CMD, "-certreq",
-                KT_ALIAS, KT_ALIAS_SERVER,
-                KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                KT_FILE, serverCsrFile.getAbsolutePath()
-            });
-
-            // 3. Sign server CSR with existing CA
-            runKeytool(new String[]{
-                KEYTOOL_CMD, "-gencert",
-                KT_ALIAS, "ca",
-                KT_KEYSTORE, caKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                "-infile", serverCsrFile.getAbsolutePath(),
-                "-outfile", serverCerFile.getAbsolutePath(),
-                KT_VALIDITY, "397",
-                KT_EXT, "SAN=" + san,
-                KT_EXT, "EKU=serverAuth",
-                KT_EXT, "BC:critical=ca:false"
-            });
-
-            // 4. Export CA cert as DER so it can be imported as a trusted entry into the server keystore
-            runKeytool(new String[]{
-                KEYTOOL_CMD, "-exportcert",
-                KT_ALIAS, "ca",
-                KT_KEYSTORE, caKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                KT_FILE, caExportFile.getAbsolutePath()
-            });
-
-            // 5. Import CA cert as trusted into server keystore — keytool needs this to build the chain
-            runKeytool(new String[]{
-                KEYTOOL_CMD, KT_IMPORTCERT,
-                KT_ALIAS, "ca",
-                KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                KT_FILE, caExportFile.getAbsolutePath(),
-                KT_NOPROMPT, "-trustcacerts"
-            });
-
-            // 6. Import signed server cert — replaces the temp self-signed cert; chain: server → CA
-            runKeytool(new String[]{
-                KEYTOOL_CMD, KT_IMPORTCERT,
-                KT_ALIAS, KT_ALIAS_SERVER,
-                KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
-                KT_STOREPASS, ksPassword,
-                KT_FILE, serverCerFile.getAbsolutePath(),
-                KT_NOPROMPT
-            });
+            generateServerKeyPair(serverKsFile, ksPassword);
+            generateServerCertificateChain(caKsFile, serverKsFile, caExportFile, serverCsrFile, serverCerFile,
+                buildSubjectAlternativeNames(localIps), ksPassword);
         } finally {
             java.nio.file.Files.deleteIfExists(caExportFile.toPath());
             java.nio.file.Files.deleteIfExists(serverCsrFile.toPath());
             java.nio.file.Files.deleteIfExists(serverCerFile.toPath());
         }
+    }
+
+    private static String buildSubjectAlternativeNames(List<String> localIps) {
+        StringBuilder san = new StringBuilder("dns:localhost,dns:agentbridge.local,ip:127.0.0.1,ip:127.0.1.1");
+        for (String ip : localIps) {
+            san.append(",ip:").append(ip);
+        }
+        return san.toString();
+    }
+
+    private static void generateCaCertificate(java.io.File caKsFile, String ksPassword) throws IOException {
+        runKeytool(new String[]{
+            KEYTOOL_CMD, KT_GENKEYPAIR,
+            KT_ALIAS, "ca",
+            KT_KEYALG, "RSA", KT_KEYSIZE, "4096", KT_VALIDITY, "3650",
+            KT_KEYSTORE, caKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
+            KT_STOREPASS, ksPassword, KT_KEYPASS, ksPassword,
+            KT_DNAME, "CN=AgentBridge CA, O=AgentBridge, C=FI",
+            KT_EXT, "BC:critical=ca:true",
+            KT_EXT, "KU:critical=keyCertSign,cRLSign"
+        });
+    }
+
+    private static void generateServerKeyPair(java.io.File serverKsFile, String ksPassword) throws IOException {
+        runKeytool(new String[]{
+            KEYTOOL_CMD, KT_GENKEYPAIR,
+            KT_ALIAS, KT_ALIAS_SERVER,
+            KT_KEYALG, "RSA", KT_KEYSIZE, "2048", KT_VALIDITY, "397",
+            KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
+            KT_STOREPASS, ksPassword, KT_KEYPASS, ksPassword,
+            KT_DNAME, "CN=AgentBridge Server, O=AgentBridge, C=FI"
+        });
+    }
+
+    private static void generateServerCertificateChain(
+        java.io.File caKsFile,
+        java.io.File serverKsFile,
+        java.io.File caExportFile,
+        java.io.File serverCsrFile,
+        java.io.File serverCerFile,
+        String subjectAlternativeNames,
+        String ksPassword) throws IOException {
+
+        generateServerCertificateRequest(serverKsFile, serverCsrFile, ksPassword);
+        signServerCertificate(caKsFile, serverCsrFile, serverCerFile, subjectAlternativeNames, ksPassword);
+        exportCaCertificate(caKsFile, caExportFile, ksPassword);
+        importCaCertificate(serverKsFile, caExportFile, ksPassword);
+        importSignedServerCertificate(serverKsFile, serverCerFile, ksPassword);
+    }
+
+    private static void generateServerCertificateRequest(
+        java.io.File serverKsFile,
+        java.io.File serverCsrFile,
+        String ksPassword) throws IOException {
+
+        runKeytool(new String[]{
+            KEYTOOL_CMD, "-certreq",
+            KT_ALIAS, KT_ALIAS_SERVER,
+            KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
+            KT_STOREPASS, ksPassword,
+            KT_FILE, serverCsrFile.getAbsolutePath()
+        });
+    }
+
+    private static void signServerCertificate(
+        java.io.File caKsFile,
+        java.io.File serverCsrFile,
+        java.io.File serverCerFile,
+        String subjectAlternativeNames,
+        String ksPassword) throws IOException {
+
+        runKeytool(new String[]{
+            KEYTOOL_CMD, "-gencert",
+            KT_ALIAS, "ca",
+            KT_KEYSTORE, caKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
+            KT_STOREPASS, ksPassword,
+            "-infile", serverCsrFile.getAbsolutePath(),
+            "-outfile", serverCerFile.getAbsolutePath(),
+            KT_VALIDITY, "397",
+            KT_EXT, "SAN=" + subjectAlternativeNames,
+            KT_EXT, "EKU=serverAuth",
+            KT_EXT, "BC:critical=ca:false"
+        });
+    }
+
+    private static void exportCaCertificate(java.io.File caKsFile, java.io.File caExportFile, String ksPassword)
+        throws IOException {
+
+        runKeytool(new String[]{
+            KEYTOOL_CMD, "-exportcert",
+            KT_ALIAS, "ca",
+            KT_KEYSTORE, caKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
+            KT_STOREPASS, ksPassword,
+            KT_FILE, caExportFile.getAbsolutePath()
+        });
+    }
+
+    private static void importCaCertificate(java.io.File serverKsFile, java.io.File caExportFile, String ksPassword)
+        throws IOException {
+
+        runKeytool(new String[]{
+            KEYTOOL_CMD, KT_IMPORTCERT,
+            KT_ALIAS, "ca",
+            KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
+            KT_STOREPASS, ksPassword,
+            KT_FILE, caExportFile.getAbsolutePath(),
+            KT_NOPROMPT, "-trustcacerts"
+        });
+    }
+
+    private static void importSignedServerCertificate(
+        java.io.File serverKsFile,
+        java.io.File serverCerFile,
+        String ksPassword) throws IOException {
+
+        runKeytool(new String[]{
+            KEYTOOL_CMD, KT_IMPORTCERT,
+            KT_ALIAS, KT_ALIAS_SERVER,
+            KT_KEYSTORE, serverKsFile.getAbsolutePath(), KT_STORETYPE, PKCS12_TYPE,
+            KT_STOREPASS, ksPassword,
+            KT_FILE, serverCerFile.getAbsolutePath(),
+            KT_NOPROMPT
+        });
     }
 
     /**
@@ -1068,63 +1058,14 @@ public final class ChatWebServer implements Disposable {
     private static byte[] generateBadgePng(int size) {
         java.awt.image.BufferedImage img =
             new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-        java.awt.Graphics2D g = img.createGraphics();
-        g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setRenderingHint(java.awt.RenderingHints.KEY_STROKE_CONTROL, java.awt.RenderingHints.VALUE_STROKE_PURE);
-
-        // White silhouette on transparent background — Android masks to monochrome
-        double pad = size * 0.10;
-        double scale = (size - 2 * pad) / 13.0;
-        g.translate(pad, pad);
-        g.scale(scale, scale);
-
-        g.setColor(java.awt.Color.WHITE);
-
-        // Lightning bolt (filled)
-        java.awt.geom.Path2D.Double bolt = new java.awt.geom.Path2D.Double();
-        bolt.moveTo(7.925, 0);
-        bolt.lineTo(3.907, 6.5);
-        bolt.lineTo(6.98, 6.5);
-        bolt.lineTo(3.907, 13);
-        bolt.lineTo(9.58, 5.318);
-        bolt.lineTo(6.389, 5.318);
-        bolt.closePath();
-        g.fill(bolt);
-
-        // Corner circles (stroked)
-        float sw = 0.709f;
-        g.setStroke(new java.awt.BasicStroke(sw, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
-        double r = 1.182;
-        double[][] corners = {{1.536, 1.536}, {11.464, 1.536}, {1.536, 11.464}, {11.464, 11.464}};
-        for (double[] c : corners) {
-            g.draw(new java.awt.geom.Ellipse2D.Double(c[0] - r, c[1] - r, r * 2, r * 2));
-        }
-
-        // Arms connecting corners to center
-        java.awt.geom.Path2D.Double arms = new java.awt.geom.Path2D.Double();
-        arms.moveTo(1.536, 2.718);
-        arms.lineTo(1.536, 5.082);
-        arms.lineTo(2.955, 6.5);
-        arms.moveTo(11.464, 2.718);
-        arms.lineTo(11.464, 5.082);
-        arms.lineTo(10.045, 6.5);
-        arms.moveTo(1.536, 10.282);
-        arms.lineTo(1.536, 7.918);
-        arms.lineTo(2.955, 6.5);
-        arms.moveTo(11.464, 10.282);
-        arms.lineTo(11.464, 7.918);
-        arms.lineTo(10.045, 6.5);
-        g.draw(arms);
-
-        g.dispose();
-
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        java.awt.Graphics2D g = createScaledIconGraphics(img, size);
         try {
-            javax.imageio.ImageIO.write(img, "PNG", baos);
-        } catch (IOException ignored) {
-            // ImageIO.write to a ByteArrayOutputStream never throws IOException
+            g.setColor(java.awt.Color.WHITE);
+            drawAgentBridgeMark(g);
+        } finally {
+            g.dispose();
         }
-        return baos.toByteArray();
+        return writePng(img);
     }
 
     private void handleBadgePng(HttpExchange exchange) throws IOException {
@@ -1170,23 +1111,37 @@ public final class ChatWebServer implements Disposable {
         java.awt.image.BufferedImage img =
             new java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB);
         java.awt.Graphics2D g = img.createGraphics();
+        try {
+            g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            g.setRenderingHint(java.awt.RenderingHints.KEY_STROKE_CONTROL, java.awt.RenderingHints.VALUE_STROKE_PURE);
+            int arc = size / 5;
+            g.setColor(new java.awt.Color(0x1E1F22));
+            g.fillRoundRect(0, 0, size, size, arc, arc);
+            scaleIconGraphics(g, size);
+            g.setColor(new java.awt.Color(0xECEEF2));
+            drawAgentBridgeMark(g);
+        } finally {
+            g.dispose();
+        }
+        return writePng(img);
+    }
+
+    private static java.awt.Graphics2D createScaledIconGraphics(java.awt.image.BufferedImage img, int size) {
+        java.awt.Graphics2D g = img.createGraphics();
         g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(java.awt.RenderingHints.KEY_STROKE_CONTROL, java.awt.RenderingHints.VALUE_STROKE_PURE);
+        scaleIconGraphics(g, size);
+        return g;
+    }
 
-        // Dark rounded-square background
-        int arc = size / 5;
-        g.setColor(new java.awt.Color(0x1E1F22));
-        g.fillRoundRect(0, 0, size, size, arc, arc);
-
-        // Transform into SVG coordinate space (viewBox 0 0 13 13) with padding
+    private static void scaleIconGraphics(java.awt.Graphics2D g, int size) {
         double pad = size * 0.10;
         double scale = (size - 2 * pad) / 13.0;
         g.translate(pad, pad);
         g.scale(scale, scale);
+    }
 
-        g.setColor(new java.awt.Color(0xECEEF2));
-
-        // Lightning bolt (filled)
+    private static void drawAgentBridgeMark(java.awt.Graphics2D g) {
         java.awt.geom.Path2D.Double bolt = new java.awt.geom.Path2D.Double();
         bolt.moveTo(7.925, 0);
         bolt.lineTo(3.907, 6.5);
@@ -1197,7 +1152,6 @@ public final class ChatWebServer implements Disposable {
         bolt.closePath();
         g.fill(bolt);
 
-        // Corner decorations (circles + arms, stroked)
         float sw = 0.709f;
         g.setStroke(new java.awt.BasicStroke(sw, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
         double r = 1.182;
@@ -1205,6 +1159,7 @@ public final class ChatWebServer implements Disposable {
         for (double[] c : corners) {
             g.draw(new java.awt.geom.Ellipse2D.Double(c[0] - r, c[1] - r, r * 2, r * 2));
         }
+
         java.awt.geom.Path2D.Double arms = new java.awt.geom.Path2D.Double();
         arms.moveTo(1.536, 2.718);
         arms.lineTo(1.536, 5.082);
@@ -1219,9 +1174,9 @@ public final class ChatWebServer implements Disposable {
         arms.lineTo(11.464, 7.918);
         arms.lineTo(10.045, 6.5);
         g.draw(arms);
+    }
 
-        g.dispose();
-
+    private static byte[] writePng(java.awt.image.BufferedImage img) {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try {
             javax.imageio.ImageIO.write(img, "PNG", baos);
