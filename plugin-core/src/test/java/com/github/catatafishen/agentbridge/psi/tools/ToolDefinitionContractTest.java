@@ -71,6 +71,7 @@ import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadBuildOut
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadIdeLogTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.ReadRunOutputTool;
 import com.github.catatafishen.agentbridge.psi.tools.infrastructure.RunCommandTool;
+import com.github.catatafishen.agentbridge.psi.tools.navigation.FindFileTool;
 import com.github.catatafishen.agentbridge.psi.tools.navigation.FindReferencesTool;
 import com.github.catatafishen.agentbridge.psi.tools.navigation.GetClassOutlineTool;
 import com.github.catatafishen.agentbridge.psi.tools.navigation.GetFileOutlineTool;
@@ -248,6 +249,7 @@ class ToolDefinitionContractTest {
     static Stream<Tool> navigationTools() {
         return Stream.of(
             new ListProjectFilesTool(null),
+            new FindFileTool(null),
             new GetFileOutlineTool(null),
             new SearchSymbolsTool(null),
             new FindReferencesTool(null),

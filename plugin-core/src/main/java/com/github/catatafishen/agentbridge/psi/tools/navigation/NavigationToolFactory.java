@@ -18,6 +18,7 @@ public final class NavigationToolFactory {
     public static @NotNull List<Tool> create(@NotNull Project project, boolean hasJava) {
         List<Tool> tools = new ArrayList<>();
         tools.add(new ListProjectFilesTool(project));
+        tools.add(new FindFileTool(project));
         tools.add(new GetFileOutlineTool(project));
         tools.add(new SearchSymbolsTool(project));
         tools.add(new FindReferencesTool(project));
