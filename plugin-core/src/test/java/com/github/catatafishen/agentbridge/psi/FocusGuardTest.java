@@ -61,7 +61,8 @@ class FocusGuardTest {
             project,
             KeyboardFocusManager.getCurrentKeyboardFocusManager(),
             chatOwner,
-            windows::get
+            windows::get,
+            () -> null
         );
     }
 

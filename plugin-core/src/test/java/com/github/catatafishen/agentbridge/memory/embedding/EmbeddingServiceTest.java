@@ -256,6 +256,7 @@ class EmbeddingServiceTest {
         service.dispose();
 
         assertFalse(service.isReady(), "isReady must be false after dispose");
+        assertThrows(IOException.class, () -> service.embed("after dispose"));
     }
 
     // --- ModelDownloader path methods ---
