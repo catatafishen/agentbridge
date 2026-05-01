@@ -66,6 +66,7 @@ public final class DebugSessionListTool extends DebugTool {
         XSourcePosition pos = s.getCurrentPosition();
         if (pos == null) return "PAUSED";
         VirtualFile file = pos.getFile();
+        if (file == null) return "PAUSED";
         String relPath = relativize(basePath, file.getPath());
         String location = relPath != null ? relPath : file.getName();
         return "PAUSED at " + location + ':' + (pos.getLine() + 1);
