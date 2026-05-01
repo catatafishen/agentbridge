@@ -138,9 +138,13 @@ public class ReadFileTool extends FileTool {
 
     @SuppressWarnings({"javabugs:S6416"}) // Math.min guarantees end <= lines.length, no IAE possible
     static String applyReadHintAndTruncate(String content, String hint) {
-        StringBuilder sb = new StringBuilder();
         String[] lines = content.split("\n", -1);
         int totalLines = lines.length;
+        StringBuilder sb = new StringBuilder();
+
+        if (totalLines > 0) {
+            sb.append("[").append(totalLines).append(" lines total]\n");
+        }
 
         if (hint != null && !hint.isEmpty()) {
             sb.append(hint).append("\n");
@@ -152,10 +156,10 @@ public class ReadFileTool extends FileTool {
             sb.append("[Showing first ").append(MAX_READ_LINES)
                 .append(" lines. Use start_line/end_line to read specific sections.]\n");
             sb.append(truncated);
-            return sb.toString();
+        } else {
+            sb.append(content);
         }
 
-        sb.append(content);
         return sb.toString();
     }
 
