@@ -8,9 +8,16 @@ import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.psi.PsiClass;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiField;
 import com.intellij.psi.PsiFile;
+import com.intellij.psi.PsiMethod;
+import com.intellij.psi.PsiModifier;
+import com.intellij.psi.PsiModifierList;
+import com.intellij.psi.PsiModifierListOwner;
 import com.intellij.psi.PsiNamedElement;
+import com.intellij.psi.PsiParameter;
 import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
@@ -158,7 +165,9 @@ public abstract class NavigationTool extends Tool {
                         String type = ToolUtils.classifyElement(element);
                         if (type != null) {
                             int line = document.getLineNumber(element.getTextOffset()) + 1;
-                            outline.add(String.format("  %d: %s %s", line, type, name));
+                            int depth = structuralAncestorDepth(element);
+                            outline.add(String.format("  %s%d: %s %s",
+                                "  ".repeat(depth), line, type, outlineLabel(named)));
                         }
                     }
                 }
@@ -166,6 +175,67 @@ public abstract class NavigationTool extends Tool {
             }
         });
         return outline;
+    }
+
+    private int structuralAncestorDepth(PsiElement element) {
+        int depth = 0;
+        PsiElement parent = element.getParent();
+        while (parent != null) {
+            if (parent instanceof PsiNamedElement && ToolUtils.classifyElement(parent) != null) {
+                depth++;
+            }
+            parent = parent.getParent();
+        }
+        return depth;
+    }
+
+    private String outlineLabel(PsiNamedElement element) {
+        String name = element.getName();
+        StringBuilder label = new StringBuilder(name == null ? "<anonymous>" : name);
+        if (element instanceof PsiMethod method) {
+            appendMethodSignature(label, method);
+        } else if (element instanceof PsiField field) {
+            label.append(": ").append(field.getType().getPresentableText());
+        } else if (element instanceof PsiClass psiClass) {
+            String qualifiedName = psiClass.getQualifiedName();
+            if (qualifiedName != null && !qualifiedName.equals(name)) {
+                label.append(" [").append(qualifiedName).append(']');
+            }
+        }
+        return prefixModifiers(element, label.toString());
+    }
+
+    private static void appendMethodSignature(StringBuilder label, PsiMethod method) {
+        label.append('(');
+        java.util.List<String> parameters = new java.util.ArrayList<>();
+        for (PsiParameter parameter : method.getParameterList().getParameters()) {
+            parameters.add(parameter.getType().getPresentableText());
+        }
+        label.append(String.join(", ", parameters)).append(')');
+        if (!method.isConstructor() && method.getReturnType() != null) {
+            label.append(": ").append(method.getReturnType().getPresentableText());
+        }
+    }
+
+    private static String prefixModifiers(PsiNamedElement element, String label) {
+        if (!(element instanceof PsiModifierListOwner owner)) return label;
+        PsiModifierList modifierList = owner.getModifierList();
+        if (modifierList == null) return label;
+        java.util.List<String> modifiers = new java.util.ArrayList<>();
+        addModifier(modifierList, modifiers, PsiModifier.PUBLIC, "public");
+        addModifier(modifierList, modifiers, PsiModifier.PROTECTED, "protected");
+        addModifier(modifierList, modifiers, PsiModifier.PRIVATE, "private");
+        addModifier(modifierList, modifiers, PsiModifier.STATIC, "static");
+        addModifier(modifierList, modifiers, PsiModifier.ABSTRACT, "abstract");
+        addModifier(modifierList, modifiers, PsiModifier.FINAL, "final");
+        return modifiers.isEmpty() ? label : String.join(" ", modifiers) + " " + label;
+    }
+
+    private static void addModifier(PsiModifierList modifierList, java.util.List<String> modifiers,
+                                    String modifier, String label) {
+        if (modifierList.hasModifierProperty(modifier)) {
+            modifiers.add(label);
+        }
     }
 
     protected void collectSymbolsFromFile(PsiFile psiFile, Document doc, com.intellij.openapi.vfs.VirtualFile vf,
