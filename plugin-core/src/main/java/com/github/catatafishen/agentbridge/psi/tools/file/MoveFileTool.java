@@ -11,13 +11,10 @@ import org.jetbrains.annotations.NotNull;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Moves a file to a different directory.
- */
-@SuppressWarnings("java:S112")
 public final class MoveFileTool extends FileTool {
 
     private static final String PARAM_DESTINATION = "destination";
+    private static final int MOVE_TIMEOUT_SECONDS = 30;
 
     public MoveFileTool(Project project) {
         super(project);
@@ -29,14 +26,20 @@ public final class MoveFileTool extends FileTool {
     }
 
     @Override
+    public boolean requiresIndex() {
+        return true;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Move File";
     }
 
     @Override
     public @NotNull String description() {
-        return "Move a file to a different directory. Does NOT update import statements or references — " +
-            "use refactor(operation='rename') for reference-aware moves.";
+        return "Move a file to a different directory using IntelliJ's refactoring engine when PSI is available. " +
+            "Language-aware IDE move handlers update imports, package declarations, and references where supported. " +
+            "Falls back to a plain VFS move only for files/directories the IDE cannot represent as PSI.";
     }
 
     @Override
@@ -46,7 +49,7 @@ public final class MoveFileTool extends FileTool {
 
     @Override
     public @NotNull String permissionTemplate() {
-        return "Move {path} → {destination}";
+        return "Move {path} -> {destination}";
     }
 
     @Override
@@ -77,32 +80,94 @@ public final class MoveFileTool extends FileTool {
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         performMoveOnEdt(vf, destDir, resultFuture);
-        return resultFuture.get(10, TimeUnit.SECONDS);
+        return resultFuture.get(MOVE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     private void performMoveOnEdt(VirtualFile vf, VirtualFile destDir, CompletableFuture<String> resultFuture) {
+        EdtUtil.invokeLater(() -> {
+            try {
+                PsiMoveTarget target = resolvePsiMoveTarget(vf, destDir);
+                String result;
+                if (target.canUseRefactoring()) {
+                    result = performRefactoringMove(target);
+                } else {
+                    result = performPlainVfsMove(vf, destDir);
+                }
+                resultFuture.complete(result);
+            } catch (Exception e) {
+                resultFuture.complete("Error moving file: " + e.getMessage());
+            }
+        });
+    }
+
+    private PsiMoveTarget resolvePsiMoveTarget(VirtualFile vf, VirtualFile destDir) {
+        return ApplicationManager.getApplication().runReadAction(
+            (com.intellij.openapi.util.Computable<PsiMoveTarget>) () -> {
+                var psiManager = com.intellij.psi.PsiManager.getInstance(project);
+                return new PsiMoveTarget(
+                    vf,
+                    destDir,
+                    psiManager.findFile(vf),
+                    psiManager.findDirectory(destDir)
+                );
+            });
+    }
+
+    private String performRefactoringMove(PsiMoveTarget target) {
+        String oldPath = target.sourceFile().getPath();
+        String newPath = target.destinationDirectory().getPath() + "/" + target.sourceFile().getName();
+        var document = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getDocument(target.sourceFile());
+        notifyBeforeEdit(project, target.sourceFile(), document);
+        try {
+            var processor = new com.intellij.refactoring.move.moveFilesOrDirectories.MoveFilesOrDirectoriesProcessor(
+                project,
+                new com.intellij.psi.PsiElement[]{target.psiFile()},
+                target.psiDirectory(),
+                true,
+                true,
+                true,
+                null,
+                null
+            );
+            processor.setPreviewUsages(false);
+            processor.run();
+            com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments();
+            com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().saveAllDocuments();
+            return "Moved " + oldPath + " to " + newPath + " using IntelliJ refactoring engine";
+        } finally {
+            notifyEditComplete();
+        }
+    }
+
+    private String performPlainVfsMove(VirtualFile vf, VirtualFile destDir) {
         String oldPath = vf.getPath();
         MoveFileTool requestor = this;
-        EdtUtil.invokeLater(() ->
-            ApplicationManager.getApplication().runWriteAction(() -> {
-                try {
-                    com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
-                        project,
-                        () -> {
-                            try {
-                                vf.move(requestor, destDir);
-                            } catch (java.io.IOException e) {
-                                throw new RuntimeException(e);
-                            }
-                        },
-                        "Move File: " + vf.getName(),
-                        null
-                    );
-                    resultFuture.complete("Moved " + oldPath + " to " + destDir.getPath() + "/" + vf.getName());
-                } catch (Exception e) {
-                    resultFuture.complete("Error moving file: " + e.getMessage());
-                }
-            })
+        ApplicationManager.getApplication().runWriteAction(() ->
+            com.intellij.openapi.command.CommandProcessor.getInstance().executeCommand(
+                project,
+                () -> {
+                    try {
+                        vf.move(requestor, destDir);
+                    } catch (java.io.IOException e) {
+                        throw new IllegalStateException("VFS move failed", e);
+                    }
+                },
+                "Move File: " + vf.getName(),
+                null
+            )
         );
+        return "Moved " + oldPath + " to " + destDir.getPath() + "/" + vf.getName() +
+            " using plain VFS move (no PSI refactoring available)";
+    }
+
+    private record PsiMoveTarget(
+        VirtualFile sourceFile,
+        VirtualFile destinationDirectory,
+        com.intellij.psi.PsiFile psiFile,
+        com.intellij.psi.PsiDirectory psiDirectory) {
+
+        private boolean canUseRefactoring() {
+            return psiFile != null && psiDirectory != null && psiFile.isPhysical() && psiDirectory.isPhysical();
+        }
     }
 }

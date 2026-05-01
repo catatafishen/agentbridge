@@ -30,9 +30,9 @@ import java.util.stream.Stream;
  * can locate both the source file and the destination directory.
  *
  * <p><b>Async execution note:</b> {@code MoveFileTool} uses {@code EdtUtil.invokeLater} to
- * perform the actual {@code VirtualFile#move} inside a write action on the EDT, then blocks on
- * a {@code CompletableFuture}. The {@code executeSync} helper runs {@code execute()} on a pooled
- * thread and pumps the EDT queue until the future resolves.
+ * perform the actual move on the EDT, then blocks on a {@code CompletableFuture}. The
+ * {@code executeSync} helper runs {@code execute()} on a pooled thread and pumps the EDT queue
+ * until the future resolves.
  */
 public class MoveFileToolTest extends BasePlatformTestCase {
 
