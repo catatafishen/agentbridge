@@ -49,8 +49,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     private static final String LABEL_TOOL_CALLS = "Tool calls";
     private static final String LABEL_LINES_CHANGED = "Lines changed";
 
-    private final ProcessingTimerPanel timerPanel;
-    private final BillingManager billing;
+    private final transient ProcessingTimerPanel timerPanel;
+    private final transient BillingManager billing;
     private final transient ActiveAgentManager agentManager;
     private final Font smallFont;
     private final Color dimColor;
@@ -109,7 +109,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
     // "Today" section — aggregates persisted turn_stats rows for the current local date,
     // across all agents. Independent of the in-memory Session totals (which only track
     // the current chat session).
-    private final Project project;
+    private final transient Project project;
     private final JLabel todayTimeValue = new JLabel();
     private final JLabel todayTurnsValue = new JLabel();
     private final JLabel todayToolsValue = new JLabel();

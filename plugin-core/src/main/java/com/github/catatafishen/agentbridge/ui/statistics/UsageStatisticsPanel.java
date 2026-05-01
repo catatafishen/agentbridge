@@ -39,7 +39,7 @@ class UsageStatisticsPanel extends JBPanel<UsageStatisticsPanel> {
     private static final String CARD_AGENT = "agent";
     private static final String CARD_BRANCH = "branch";
 
-    private final Project project;
+    private final transient Project project;
     private final ComboBox<UsageStatisticsData.TimeRange> rangeCombo;
     private final ComboBox<UsageStatisticsData.GroupBy> groupByCombo;
 

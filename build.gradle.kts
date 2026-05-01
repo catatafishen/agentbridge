@@ -68,13 +68,18 @@ sonar {
             "plugin-core/src/main/java/com/github/catatafishen/agentbridge/psi/tools/**/*.java"
         )
 
-        // S3776 (cognitive complexity, default threshold 15) on protocol/codec methods.
-        // The files listed below are linearly branchy by nature: ACP/MCP JSON
+        // S3776 (cognitive complexity, default threshold 15) on protocol/codec methods,
+        // typescript:S3776 on chat-ui renderers, and typescript:S2004 on the DOM-update
+        // pipeline. The files listed below are linearly branchy by nature: ACP/MCP JSON
         // deserializers, IDE-client config exporters, the embedded HTTP server's request
-        // dispatcher, and shell-startup parsers. Splitting them into helpers fragments a
-        // single readable state-machine without reducing real complexity. Each is reviewed
-        // and accepted at the file level; new files still get scanned.
-        val s3776IgnoredFiles = listOf(
+        // dispatcher, shell-startup parsers, and performance-critical rendering loops
+        // whose nesting/branchiness reflects the underlying state machine, not accidental
+        // complexity. Each is reviewed and accepted at the file level; new files still
+        // get scanned.
+        data class IgnoredIssue(val key: String, val ruleKey: String, val resourceKey: String)
+
+        val ignoredIssues = listOf(
+            // java:S3776 — protocol/codec methods
             "**/agent/claude/ClaudeCliClient.java",
             "**/acp/client/AcpClient.java",
             "**/acp/client/AcpFileSystemHandler.java",
@@ -96,12 +101,16 @@ sonar {
             "**/psi/ToolUtils.java",
             "**/psi/review/ChangeNavigator.java",
             "**/services/ToolCallStatisticsBackfill.java"
+        ).mapIndexed { i, path -> IgnoredIssue("s3776_$i", "java:S3776", path) } + listOf(
+            IgnoredIssue("ts_s3776_render", "typescript:S3776", "**/chat-ui/src/renderMarkdown.ts"),
+            IgnoredIssue("ts_s3776_batch", "typescript:S3776", "**/chat-ui/src/BatchRenderer.ts"),
+            IgnoredIssue("ts_s2004_app", "typescript:S2004", "**/chat-ui/src/web-app.ts")
         )
-        val s3776Keys = s3776IgnoredFiles.indices.map { "s3776_$it" }
-        property("sonar.issue.ignore.multicriteria", s3776Keys.joinToString(","))
-        s3776IgnoredFiles.forEachIndexed { i, path ->
-            property("sonar.issue.ignore.multicriteria.s3776_$i.ruleKey", "java:S3776")
-            property("sonar.issue.ignore.multicriteria.s3776_$i.resourceKey", path)
+
+        property("sonar.issue.ignore.multicriteria", ignoredIssues.joinToString(",") { it.key })
+        ignoredIssues.forEach {
+            property("sonar.issue.ignore.multicriteria.${it.key}.ruleKey", it.ruleKey)
+            property("sonar.issue.ignore.multicriteria.${it.key}.resourceKey", it.resourceKey)
         }
     }
 }

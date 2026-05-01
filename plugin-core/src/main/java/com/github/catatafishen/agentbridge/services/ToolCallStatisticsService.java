@@ -46,6 +46,7 @@ public final class ToolCallStatisticsService implements Disposable {
 
     private static final Logger LOG = Logger.getInstance(ToolCallStatisticsService.class);
     private static final String DUPLICATE_COLUMN = "duplicate column";
+    private static final String COL_DURATION_MS = "duration_ms";
     private static final String DB_FILENAME = "tool-stats.db";
     private static final Set<String> DEFAULT_BRANCH_NAMES = Set.of("main", "master");
 
@@ -253,7 +254,7 @@ public final class ToolCallStatisticsService implements Disposable {
             stmt.execute("ALTER TABLE turn_stats ADD COLUMN git_branch TEXT");
             LOG.info("Migrated turn_stats table: added git_branch column");
         } catch (SQLException e) {
-            if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
+            if (e.getMessage() == null || !e.getMessage().contains(DUPLICATE_COLUMN)) {
                 LOG.warn("Unexpected error migrating turn_stats schema (git_branch column)", e);
             }
             // else: duplicate column — expected for databases that have already been migrated
@@ -265,7 +266,7 @@ public final class ToolCallStatisticsService implements Disposable {
             stmt.execute("ALTER TABLE turn_stats ADD COLUMN git_branch_start TEXT");
             LOG.info("Migrated turn_stats table: added git_branch_start column");
         } catch (SQLException e) {
-            if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
+            if (e.getMessage() == null || !e.getMessage().contains(DUPLICATE_COLUMN)) {
                 LOG.warn("Unexpected error migrating turn_stats schema (git_branch_start column)", e);
             }
             // else: duplicate column — expected for databases that have already been migrated
@@ -277,7 +278,7 @@ public final class ToolCallStatisticsService implements Disposable {
             stmt.execute("ALTER TABLE turn_stats ADD COLUMN git_branch_end TEXT");
             LOG.info("Migrated turn_stats table: added git_branch_end column");
         } catch (SQLException e) {
-            if (e.getMessage() == null || !e.getMessage().contains("duplicate column")) {
+            if (e.getMessage() == null || !e.getMessage().contains(DUPLICATE_COLUMN)) {
                 LOG.warn("Unexpected error migrating turn_stats schema (git_branch_end column)", e);
             }
             // else: duplicate column — expected for databases that have already been migrated
@@ -566,7 +567,7 @@ public final class ToolCallStatisticsService implements Disposable {
                         rs.getString("tool_name"),
                         rs.getString("category"),
                         rs.getString("client_id"),
-                        rs.getLong("duration_ms"),
+                        rs.getLong(COL_DURATION_MS),
                         rs.getString("error_message"),
                         rs.getString("timestamp")
                     ));
@@ -730,7 +731,7 @@ public final class ToolCallStatisticsService implements Disposable {
                         rs.getLong("input_tokens"),
                         rs.getLong("output_tokens"),
                         rs.getInt("tool_calls"),
-                        rs.getLong("duration_ms"),
+                        rs.getLong(COL_DURATION_MS),
                         rs.getInt("lines_added"),
                         rs.getInt("lines_removed"),
                         rs.getDouble("premium_requests")
@@ -859,7 +860,7 @@ public final class ToolCallStatisticsService implements Disposable {
                         rs.getLong("input_tokens"),
                         rs.getLong("output_tokens"),
                         rs.getInt("tool_calls"),
-                        rs.getLong("duration_ms"),
+                        rs.getLong(COL_DURATION_MS),
                         rs.getInt("lines_added"),
                         rs.getInt("lines_removed"),
                         rs.getDouble("premium_requests")
