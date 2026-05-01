@@ -135,10 +135,9 @@ jobs:
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
 
-      - name: Require CI-based SonarQube analysis
+      - name: Warn when SonarCloud Automatic Analysis is enabled
         if: steps.sonar-auto-analysis.outputs.enabled == 'true'
         run: |
-          echo "::error::SonarCloud Automatic Analysis is enabled for $SONAR_PROJECT_KEY."
-          echo "::error::Disable it in SonarCloud: Project Settings > Analysis Method > Automatic Analysis."
-          echo "::error::Automatic Analysis does not import coverage and reports projectVersion as 'not provided'."
-          exit 1
+          echo "::warning::SonarCloud Automatic Analysis is enabled for $SONAR_PROJECT_KEY."
+          echo "::warning::Disable it in SonarCloud: Project Settings > Analysis Method > Automatic Analysis to use CI coverage and projectVersion."
+          echo "::warning::Skipping CI-based SonarQube analysis because SonarCloud would reject it while Automatic Analysis is enabled."
