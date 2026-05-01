@@ -105,6 +105,7 @@ import com.github.catatafishen.agentbridge.psi.tools.quality.OptimizeImportsTool
 import com.github.catatafishen.agentbridge.psi.tools.quality.RunSonarQubeAnalysisTool;
 import com.github.catatafishen.agentbridge.psi.tools.quality.SuppressInspectionTool;
 import com.github.catatafishen.agentbridge.psi.tools.refactoring.FindImplementationsTool;
+import com.github.catatafishen.agentbridge.psi.tools.refactoring.FindSuperMethodsTool;
 import com.github.catatafishen.agentbridge.psi.tools.refactoring.GetCallHierarchyTool;
 import com.github.catatafishen.agentbridge.psi.tools.refactoring.GetDocumentationTool;
 import com.github.catatafishen.agentbridge.psi.tools.refactoring.GetSymbolInfoTool;
@@ -304,6 +305,7 @@ class ToolDefinitionContractTest {
             new GoToDeclarationTool(null),
             new GetTypeHierarchyTool(null, true),
             new FindImplementationsTool(null, true),
+            new FindSuperMethodsTool(null, true),
             new GetCallHierarchyTool(null),
             new GetDocumentationTool(null),
             new GetSymbolInfoTool(null)

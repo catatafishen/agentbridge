@@ -23,6 +23,7 @@ public final class RefactoringToolFactory {
         tools.add(new GoToDeclarationTool(project));
         tools.add(new GetTypeHierarchyTool(project, hasJava));
         tools.add(new FindImplementationsTool(project, hasJava));
+        tools.add(new FindSuperMethodsTool(project, hasJava));
         tools.add(new GetCallHierarchyTool(project));
         tools.add(new GetDocumentationTool(project));
         tools.add(new GetSymbolInfoTool(project));
