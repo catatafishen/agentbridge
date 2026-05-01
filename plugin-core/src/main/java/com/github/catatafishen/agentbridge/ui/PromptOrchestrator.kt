@@ -490,6 +490,7 @@ class PromptOrchestrator(
         val turnDuration = System.currentTimeMillis() - turnStartedAt
         val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
         val commitHashes = collectTurnCommits()
+        val turnEndGitBranch = captureGitBranch()
         consolePanel().emitTurnStats(
             TurnStatsData(
                 turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
@@ -502,7 +503,7 @@ class PromptOrchestrator(
             TurnStatsParams(
                 turnDuration, turnInputTokens, turnOutputTokens,
                 turnToolCallCount, codeChanges[0], codeChanges[1], turnMultiplier, commitHashes,
-                turnStartGitBranch
+                turnStartGitBranch, turnEndGitBranch
             )
         )
 
@@ -865,7 +866,7 @@ class PromptOrchestrator(
         val durationMs: Long, val inputTokens: Int, val outputTokens: Int,
         val toolCallCount: Int, val linesAdded: Int, val linesRemoved: Int,
         val multiplier: String, val commitHashes: List<String>,
-        val gitBranch: String?
+        val gitBranchStart: String?, val gitBranchEnd: String?
     )
 
     private fun recordTurnStatsToSqlite(params: TurnStatsParams) {
@@ -885,7 +886,7 @@ class PromptOrchestrator(
                         sessionId, agentId, date,
                         params.inputTokens.toLong(), params.outputTokens.toLong(), params.toolCallCount,
                         params.durationMs, params.linesAdded, params.linesRemoved, premiumRequests, timestamp,
-                        commitHashesStr, params.gitBranch
+                        commitHashesStr, null, params.gitBranchStart, params.gitBranchEnd
                     )
                 )
             } catch (e: Exception) {
@@ -913,7 +914,7 @@ class PromptOrchestrator(
     }
 
     /**
-     * Captures the current git branch checked out at turn start. Returns null when the
+     * Captures the current git branch. Returns null when the
      * working directory is not a git repository, git is unavailable, or HEAD is detached
      * (e.g. mid-rebase, on a tagged commit). The chart UI treats null as "unattributed"
      * and excludes those turns from the per-branch comparison view.

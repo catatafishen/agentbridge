@@ -38,6 +38,8 @@ public final class TurnStatisticsBackfill {
     private static final Logger LOG = Logger.getInstance(TurnStatisticsBackfill.class);
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final String KEY_COMMIT_HASHES = "commitHashes";
+    private static final String KEY_GIT_BRANCH_START = "gitBranchStart";
+    private static final String KEY_GIT_BRANCH_END = "gitBranchEnd";
 
     private TurnStatisticsBackfill() {
         throw new IllegalStateException("Utility class");
@@ -213,11 +215,14 @@ public final class TurnStatisticsBackfill {
             }
         }
 
+        String gitBranchStart = nullableStr(obj, KEY_GIT_BRANCH_START);
+        String gitBranchEnd = nullableStr(obj, KEY_GIT_BRANCH_END);
+
         return new ToolCallStatisticsService.TurnStatsRecord(
             sessionId, agentId, date,
             inputTokens, outputTokens, toolCalls, durationMs,
             linesAdded, linesRemoved, premiumRequests, timestamp, commitHashes,
-            null);
+            null, gitBranchStart, gitBranchEnd);
     }
 
     private static double parsePremiumMultiplier(String multiplier) {
@@ -252,5 +257,11 @@ public final class TurnStatisticsBackfill {
             return obj.get(key).getAsInt();
         }
         return 0;
+    }
+
+    @Nullable
+    private static String nullableStr(@NotNull JsonObject obj, @NotNull String key) {
+        String value = getStr(obj, key);
+        return value.isEmpty() ? null : value;
     }
 }
