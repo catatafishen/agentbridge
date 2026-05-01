@@ -225,7 +225,8 @@ public final class ToolUtils {
         return LocalFileSystem.getInstance().refreshAndFindFileByPath(normalized);
     }
 
-    public static String relativize(String basePath, String filePath) {
+    public static String relativize(@Nullable String basePath, @NotNull String filePath) {
+        if (basePath == null) return filePath;
         String base = basePath.replace('\\', '/');
         String file = filePath.replace('\\', '/');
         return file.startsWith(base + "/") ? file.substring(base.length() + 1) : file;
