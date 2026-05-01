@@ -83,13 +83,6 @@ jobs:
             -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
             -Dsonar.organization="$SONAR_ORGANIZATION" \
             -Dsonar.host.url="$SONAR_HOST_URL" \
-            -Dsonar.projectName="AgentBridge" \
-            -Dsonar.sourceEncoding="UTF-8" \
-            -Dsonar.qualitygate.wait=true \
-            -Dsonar.qualitygate.timeout=300 \
-            -Dsonar.sources="plugin-core/src/main/java,plugin-core/chat-ui/src,mcp-server/src/main/java,plugin-experimental/src/main/java" \
-            -Dsonar.tests="plugin-core/src/test/java,plugin-core/js-tests,mcp-server/src/test/java,plugin-experimental/src/test/java" \
-            -Dsonar.java.binaries="plugin-core/build/classes/java/main,plugin-core/build/classes/kotlin/main,mcp-server/build/classes/java/main,plugin-experimental/build/classes/java/main,plugin-experimental/build/classes/kotlin/main" \
-            -Dsonar.coverage.jacoco.xmlReportPaths="plugin-core/build/reports/jacoco/test/jacocoTestReport.xml,mcp-server/build/reports/jacoco/test/jacocoTestReport.xml,plugin-experimental/build/reports/jacoco/test/jacocoTestReport.xml" \
             -Dsonar.javascript.lcov.reportPaths="plugin-core/js-tests/coverage/lcov.info" \
-            -Dsonar.exclusions="**/build/**,**/out/**,.agent-work/**,plugin-core/chat-ui/dist/**,plugin-core/chat-ui/node_modules/**,plugin-core/js-tests/node_modules/**"
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300
