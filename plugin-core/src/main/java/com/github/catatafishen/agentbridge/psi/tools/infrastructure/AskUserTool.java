@@ -2,13 +2,13 @@ package com.github.catatafishen.agentbridge.psi.tools.infrastructure;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
+import com.intellij.notification.Notification;
+import com.intellij.notification.NotificationType;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.MessageType;
 import com.intellij.openapi.ui.Messages;
-import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.ui.AppIcon;
 import com.intellij.ui.SystemNotifications;
@@ -30,6 +30,7 @@ public final class AskUserTool extends InfrastructureTool {
     private static final String PARAM_QUESTION = "question";
     private static final String PARAM_OPTIONS = "options";
     private static final long RESPONSE_TIMEOUT_MS = 120_000L;
+    private static final String NOTIFICATION_GROUP_ID = "AgentBridge Notifications";
 
     public AskUserTool(Project project) {
         super(project);
@@ -96,31 +97,7 @@ public final class AskUserTool extends InfrastructureTool {
         final long[] deadlineMs = {System.currentTimeMillis() + RESPONSE_TIMEOUT_MS};
         String reqId = UUID.randomUUID().toString();
 
-        EdtUtil.invokeLater(() ->
-            panel.showAskUserRequest(
-                reqId,
-                question,
-                options,
-                deadlineMs[0],
-                response -> {
-                    responseFuture.complete(response);
-                    return kotlin.Unit.INSTANCE;
-                },
-                () -> {
-                    // Backend always controls the extension amount — never trust the client.
-                    long newDeadline = System.currentTimeMillis() + RESPONSE_TIMEOUT_MS;
-                    deadlineMs[0] = newDeadline;
-                    return newDeadline;
-                },
-                () -> {
-                    // Superseded (a newer ask_user replaced this one) or panel cleared.
-                    if (!responseFuture.isDone()) {
-                        responseFuture.complete("__cancelled__");
-                    }
-                    return kotlin.Unit.INSTANCE;
-                }
-            )
-        );
+        EdtUtil.invokeLater(() -> showAskUserRequestCompat(panel, reqId, question, options, deadlineMs, responseFuture));
 
         try {
             return awaitWithExtensibleDeadline(responseFuture, deadlineMs);
@@ -131,6 +108,71 @@ public final class AskUserTool extends InfrastructureTool {
             return "Error: failed to read user response";
         } finally {
             EdtUtil.invokeLater(() -> panel.clearPendingAskUserRequest(reqId));
+        }
+    }
+
+    /**
+     * Calls the ask-user panel API through reflection so Java compilation does not depend on
+     * javac understanding the Kotlin function-type signature. This has been observed to drift
+     * between the source model and the Java compiler stub view during incremental builds.
+     *
+     * <p>We prefer the new 7-argument API (deadline + extend + supersede callbacks). If the
+     * runtime class only exposes the older 4-argument ABI, we still show the prompt and keep
+     * the backend waiter functional, but deadline extension/supersede notifications are not
+     * available from that older contract.
+     */
+    private static void showAskUserRequestCompat(
+        @NotNull ChatConsolePanel panel,
+        @NotNull String reqId,
+        @NotNull String question,
+        @NotNull List<String> options,
+        long @NotNull [] deadlineMs,
+        @NotNull CompletableFuture<String> responseFuture
+    ) {
+        kotlin.jvm.functions.Function1<String, kotlin.Unit> onRespond = response -> {
+            responseFuture.complete(response);
+            return kotlin.Unit.INSTANCE;
+        };
+        kotlin.jvm.functions.Function0<Long> onExtend = () -> {
+            long newDeadline = System.currentTimeMillis() + RESPONSE_TIMEOUT_MS;
+            deadlineMs[0] = newDeadline;
+            return newDeadline;
+        };
+        kotlin.jvm.functions.Function0<kotlin.Unit> onSuperseded = () -> {
+            if (!responseFuture.isDone()) {
+                responseFuture.complete("__cancelled__");
+            }
+            return kotlin.Unit.INSTANCE;
+        };
+
+        try {
+            panel.getClass().getMethod(
+                "showAskUserRequest",
+                String.class,
+                String.class,
+                List.class,
+                long.class,
+                kotlin.jvm.functions.Function1.class,
+                kotlin.jvm.functions.Function0.class,
+                kotlin.jvm.functions.Function0.class
+            ).invoke(panel, reqId, question, options, deadlineMs[0], onRespond, onExtend, onSuperseded);
+            return;
+        } catch (NoSuchMethodException ignored) {
+            // Fall through to the older ABI below.
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to invoke ask-user panel API", e);
+        }
+
+        try {
+            panel.getClass().getMethod(
+                "showAskUserRequest",
+                String.class,
+                String.class,
+                List.class,
+                kotlin.jvm.functions.Function1.class
+            ).invoke(panel, reqId, question, options, onRespond);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Failed to invoke legacy ask-user panel API", e);
         }
     }
 
@@ -182,9 +224,9 @@ public final class AskUserTool extends InfrastructureTool {
         if (frame == null || frame.isActive()) return;
         String title = "Agent Needs Your Input";
         String content = question.length() > 80 ? question.substring(0, 80) + "…" : question;
-        ToolWindowManager.getInstance(project)
-            .notifyByBalloon("AgentBridge", MessageType.INFO, "<b>" + title + "</b><br>" + content);
-        SystemNotifications.getInstance().notify("AgentBridge Notifications", title, content);
+        new Notification(NOTIFICATION_GROUP_ID, title, content, NotificationType.INFORMATION)
+            .notify(project);
+        SystemNotifications.getInstance().notify(NOTIFICATION_GROUP_ID, title, content);
         AppIcon.getInstance().requestAttention(project, false);
     }
 
