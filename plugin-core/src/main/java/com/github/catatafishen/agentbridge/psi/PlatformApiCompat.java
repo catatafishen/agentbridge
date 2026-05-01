@@ -666,18 +666,6 @@ public final class PlatformApiCompat {
         return data.getStorage().containsCommit(new com.intellij.vcs.log.CommitId(hash, repoRoot));
     }
 
-    private static void refreshVcsLogForProject(
-        @NotNull Project project,
-        @NotNull com.intellij.vcs.log.data.VcsLogData data) {
-        // Trigger VCS log refresh to pick up the new commit
-        String basePath = project.getBasePath();
-        if (basePath == null) return;
-        var root = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(basePath);
-        if (root != null) {
-            data.refresh(java.util.List.of(root));
-        }
-    }
-
     /**
      * Runs a git command through IntelliJ's Git4Idea infrastructure (GitLineHandler).
      * Returns command output, or null to signal that the caller should fall back to ProcessBuilder.

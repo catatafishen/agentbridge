@@ -4,6 +4,7 @@ import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
+import java.util.Arrays;
 
 /**
  * Typed container for all weight matrices from the
@@ -111,6 +112,48 @@ public final class BertWeights {
                 + intermediateWeight.length + intermediateBias.length
                 + outputWeight.length + outputBias.length
                 + outputLayerNormWeight.length + outputLayerNormBias.length;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof LayerWeights other)) {
+                return false;
+            }
+            return Arrays.deepEquals(arrayComponents(), other.arrayComponents());
+        }
+
+        @Override
+        public int hashCode() {
+            return Arrays.deepHashCode(arrayComponents());
+        }
+
+        @Override
+        public String toString() {
+            return "LayerWeights" + Arrays.deepToString(arrayComponents());
+        }
+
+        private Object[] arrayComponents() {
+            return new Object[]{
+                queryWeight,
+                queryBias,
+                keyWeight,
+                keyBias,
+                valueWeight,
+                valueBias,
+                attentionOutputWeight,
+                attentionOutputBias,
+                attentionLayerNormWeight,
+                attentionLayerNormBias,
+                intermediateWeight,
+                intermediateBias,
+                outputWeight,
+                outputBias,
+                outputLayerNormWeight,
+                outputLayerNormBias
+            };
         }
     }
 

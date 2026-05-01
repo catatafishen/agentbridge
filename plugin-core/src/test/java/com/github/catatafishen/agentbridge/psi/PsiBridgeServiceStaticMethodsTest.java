@@ -636,8 +636,11 @@ class PsiBridgeServiceStaticMethodsTest {
         void nonEmptyModalDetailAppendsDetailAndHint() {
             String result = PsiBridgeService.buildErrorWithModalDetail(
                 "Error: blocked", "Dialog: Save changes?");
-            assertEquals("Error: blocked\nDialog: Save changes?"
-                + "\nUse the interact_with_modal tool to respond to the dialog.", result);
+            assertEquals("""
+                Error: blocked
+                Dialog: Save changes?
+                Use the interact_with_modal tool to respond to the dialog.\
+                """, result);
         }
 
         @Test

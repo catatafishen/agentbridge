@@ -439,12 +439,7 @@ public final class RunTestsTool extends TestingTool {
 
             Module fallbackModule = resolveModuleFallback();
             if (fallbackModule != null) {
-                try {
-                    var setModule = config.getClass().getMethod("setModule", Module.class);
-                    setModule.invoke(config, fallbackModule);
-                } catch (NoSuchMethodException ignored) {
-                    // Method not available in this version
-                }
+                setModuleIfSupported(config, fallbackModule);
             }
 
             String configError = checkRunConfiguration(config);
@@ -467,6 +462,16 @@ public final class RunTestsTool extends TestingTool {
         } catch (Exception e) {
             LOG.warn("Failed to run JUnit pattern config", e);
             launchFuture.complete(LAUNCH_FAILED);
+        }
+    }
+
+    private static void setModuleIfSupported(RunConfiguration config, Module module)
+        throws ReflectiveOperationException {
+        try {
+            var setModule = config.getClass().getMethod("setModule", Module.class);
+            setModule.invoke(config, module);
+        } catch (NoSuchMethodException ignored) {
+            // Method not available in this version
         }
     }
 

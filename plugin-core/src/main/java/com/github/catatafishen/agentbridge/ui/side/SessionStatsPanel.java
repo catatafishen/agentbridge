@@ -51,13 +51,13 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
 
     private final ProcessingTimerPanel timerPanel;
     private final BillingManager billing;
-    private final ActiveAgentManager agentManager;
+    private final transient ActiveAgentManager agentManager;
     private final Font smallFont;
     private final Color dimColor;
-    private final Runnable switchListener;
+    private final transient Runnable switchListener;
 
-    private final SessionDiffAnimator sessionDiffAnimator = new SessionDiffAnimator();
-    private final SessionDiffAnimator turnDiffAnimator = new SessionDiffAnimator();
+    private final transient SessionDiffAnimator sessionDiffAnimator = new SessionDiffAnimator();
+    private final transient SessionDiffAnimator turnDiffAnimator = new SessionDiffAnimator();
     private final Timer animationTimer;
 
     // Selected client section

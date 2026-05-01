@@ -60,8 +60,10 @@ class SessionStoreV2Test {
 
     @Test
     void parseJsonlAutoDetect_newFormatEntries() {
-        String jsonl = "{\"type\":\"prompt\",\"text\":\"Hello world\",\"timestamp\":\"2024-01-01T00:00:00Z\",\"entryId\":\"e1\"}\n"
-            + "{\"type\":\"text\",\"raw\":\"Hi there\",\"timestamp\":\"2024-01-01T00:00:01Z\",\"agent\":\"copilot\",\"model\":\"gpt-4\",\"entryId\":\"e2\"}\n";
+        String jsonl = """
+            {"type":"prompt","text":"Hello world","timestamp":"2024-01-01T00:00:00Z","entryId":"e1"}
+            {"type":"text","raw":"Hi there","timestamp":"2024-01-01T00:00:01Z","agent":"copilot","model":"gpt-4","entryId":"e2"}
+            """;
 
         List<EntryData> entries = SessionStoreV2.parseJsonlAutoDetect(jsonl);
 
@@ -86,8 +88,10 @@ class SessionStoreV2Test {
     void parseJsonlAutoDetect_legacyFormatEntries() {
         // Legacy separator lines do NOT contain "type:" at the top level
         // so isEntryFormat returns false → classified as legacy → convertLegacyMessages
-        String jsonl = "{\"role\":\"separator\",\"createdAt\":1704067200000}\n"
-            + "{\"role\":\"separator\",\"createdAt\":1704153600000,\"agent\":\"copilot\"}\n";
+        String jsonl = """
+            {"role":"separator","createdAt":1704067200000}
+            {"role":"separator","createdAt":1704153600000,"agent":"copilot"}
+            """;
 
         List<EntryData> entries = SessionStoreV2.parseJsonlAutoDetect(jsonl);
 
@@ -101,8 +105,10 @@ class SessionStoreV2Test {
     @Test
     void parseJsonlAutoDetect_mixedContent_newFormatWins() {
         // When both new-format and legacy lines are present, new format wins
-        String jsonl = "{\"type\":\"prompt\",\"text\":\"New format\",\"entryId\":\"e1\"}\n"
-            + "{\"role\":\"separator\",\"createdAt\":1704067200000}\n";
+        String jsonl = """
+            {"type":"prompt","text":"New format","entryId":"e1"}
+            {"role":"separator","createdAt":1704067200000}
+            """;
 
         List<EntryData> entries = SessionStoreV2.parseJsonlAutoDetect(jsonl);
 
@@ -120,9 +126,11 @@ class SessionStoreV2Test {
 
     @Test
     void parseJsonlAutoDetect_malformedLines_skipped() {
-        String jsonl = "not json at all\n"
-            + "{\"type\":\"prompt\",\"text\":\"Valid\",\"entryId\":\"e1\"}\n"
-            + "{broken json\n";
+        String jsonl = """
+            not json at all
+            {"type":"prompt","text":"Valid","entryId":"e1"}
+            {broken json
+            """;
 
         List<EntryData> entries = SessionStoreV2.parseJsonlAutoDetect(jsonl);
 
@@ -141,8 +149,10 @@ class SessionStoreV2Test {
     @Test
     void parseJsonlAutoDetect_unknownNewFormatType_skipped() {
         // A line with "type" but an unknown value is silently skipped
-        String jsonl = "{\"type\":\"future_unknown_entry\",\"data\":\"something\"}\n"
-            + "{\"type\":\"prompt\",\"text\":\"Hello\",\"entryId\":\"e1\"}\n";
+        String jsonl = """
+            {"type":"future_unknown_entry","data":"something"}
+            {"type":"prompt","text":"Hello","entryId":"e1"}
+            """;
 
         List<EntryData> entries = SessionStoreV2.parseJsonlAutoDetect(jsonl);
 
@@ -154,15 +164,17 @@ class SessionStoreV2Test {
     @Test
     void parseJsonlAutoDetect_allNewFormatTypes() {
         // Build one of each new-format type and verify all parse
-        String jsonl = "{\"type\":\"prompt\",\"text\":\"Q\",\"entryId\":\"p1\"}\n"
-            + "{\"type\":\"text\",\"raw\":\"A\",\"entryId\":\"t1\"}\n"
-            + "{\"type\":\"thinking\",\"raw\":\"T\",\"entryId\":\"th1\"}\n"
-            + "{\"type\":\"tool\",\"title\":\"read\",\"entryId\":\"tc1\"}\n"
-            + "{\"type\":\"subagent\",\"agentType\":\"explore\",\"description\":\"D\",\"entryId\":\"sa1\"}\n"
-            + "{\"type\":\"context\",\"files\":[{\"name\":\"A\",\"path\":\"/a\"}],\"entryId\":\"cf1\"}\n"
-            + "{\"type\":\"status\",\"icon\":\"i\",\"message\":\"m\",\"entryId\":\"st1\"}\n"
-            + "{\"type\":\"separator\",\"timestamp\":\"ts\",\"entryId\":\"sep1\"}\n"
-            + "{\"type\":\"turnStats\",\"turnId\":\"turn1\",\"entryId\":\"ts1\"}\n";
+        String jsonl = """
+            {"type":"prompt","text":"Q","entryId":"p1"}
+            {"type":"text","raw":"A","entryId":"t1"}
+            {"type":"thinking","raw":"T","entryId":"th1"}
+            {"type":"tool","title":"read","entryId":"tc1"}
+            {"type":"subagent","agentType":"explore","description":"D","entryId":"sa1"}
+            {"type":"context","files":[{"name":"A","path":"/a"}],"entryId":"cf1"}
+            {"type":"status","icon":"i","message":"m","entryId":"st1"}
+            {"type":"separator","timestamp":"ts","entryId":"sep1"}
+            {"type":"turnStats","turnId":"turn1","entryId":"ts1"}
+            """;
 
         List<EntryData> entries = SessionStoreV2.parseJsonlAutoDetect(jsonl);
 
@@ -1021,8 +1033,13 @@ class SessionStoreV2Test {
 
     @Test
     void roundTrip_textWithSpecialCharacters() {
-        String specialContent = "Line 1\nLine 2\tTabbed\nUnicode: 日本語 émojis 🎉\n"
-            + "JSON: {\"key\": \"value\"}\nBackslash: C:\\path\\to\\file";
+        String specialContent = """
+            Line 1
+            Line 2	Tabbed
+            Unicode: 日本語 émojis 🎉
+            JSON: {"key": "value"}
+            Backslash: C:\\path\\to\\file\
+            """;
         EntryData.Text original = new EntryData.Text(
             specialContent,
             "2024-01-01T00:00:00Z", "copilot", "gpt-4", "special-1");

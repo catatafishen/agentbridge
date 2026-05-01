@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -72,17 +73,18 @@ public final class WordPieceTokenizer {
         String cleaned = cleanText(text);
         String[] words = cleaned.split("\\s+");
         for (String word : words) {
-            if (word.isEmpty()) continue;
-            List<Integer> wordTokens = tokenizeWord(word);
-            // Stop early if we'd exceed the length (need room for [SEP])
-            if (tokens.size() + wordTokens.size() >= maxSeqLength - 1) {
-                int remaining = maxSeqLength - 1 - tokens.size();
-                for (int i = 0; i < remaining && i < wordTokens.size(); i++) {
-                    tokens.add(wordTokens.get(i));
+            if (!word.isEmpty()) {
+                List<Integer> wordTokens = tokenizeWord(word);
+                // Stop early if we'd exceed the length (need room for [SEP])
+                if (tokens.size() + wordTokens.size() >= maxSeqLength - 1) {
+                    int remaining = maxSeqLength - 1 - tokens.size();
+                    for (int i = 0; i < remaining && i < wordTokens.size(); i++) {
+                        tokens.add(wordTokens.get(i));
+                    }
+                    break;
                 }
-                break;
+                tokens.addAll(wordTokens);
             }
-            tokens.addAll(wordTokens);
         }
 
         tokens.add(sepId);
@@ -184,6 +186,36 @@ public final class WordPieceTokenizer {
     public record TokenizedInput(long[] inputIds, long[] attentionMask, long[] tokenTypeIds) {
         public int sequenceLength() {
             return inputIds.length;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof TokenizedInput other)) {
+                return false;
+            }
+            return Arrays.equals(inputIds, other.inputIds)
+                && Arrays.equals(attentionMask, other.attentionMask)
+                && Arrays.equals(tokenTypeIds, other.tokenTypeIds);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Arrays.hashCode(inputIds);
+            result = 31 * result + Arrays.hashCode(attentionMask);
+            result = 31 * result + Arrays.hashCode(tokenTypeIds);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "TokenizedInput["
+                + "inputIds=" + Arrays.toString(inputIds)
+                + ", attentionMask=" + Arrays.toString(attentionMask)
+                + ", tokenTypeIds=" + Arrays.toString(tokenTypeIds)
+                + ']';
         }
     }
 }

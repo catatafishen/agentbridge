@@ -88,18 +88,13 @@ public final class NarrationFilter {
                     result.append('\n');
                     prevBlank = true;
                 }
-                continue;
+            } else if (!isNarration(trimmed)) {
+                if (!result.isEmpty() && !prevBlank) {
+                    result.append('\n');
+                }
+                result.append(line);
+                prevBlank = false;
             }
-
-            if (isNarration(trimmed)) {
-                continue;
-            }
-
-            if (!result.isEmpty() && !prevBlank) {
-                result.append('\n');
-            }
-            result.append(line);
-            prevBlank = false;
         }
 
         return result.toString().strip();

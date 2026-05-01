@@ -25,6 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -826,8 +827,7 @@ class JsonRpcTransportTest {
             stderrFeed.write("some stderr output\n".getBytes(StandardCharsets.UTF_8));
             stderrFeed.flush();
 
-            // Give the stderr thread time to process — no assertion needed, just no exception
-            Thread.sleep(200);
+            assertTrue(transport.isAlive(), "Transport should remain alive after stderr without handler");
         }
     }
 
@@ -958,6 +958,12 @@ class JsonRpcTransportTest {
         @Test
         @DisplayName("process exit with stderr includes stderr context in error")
         void processExitIncludesStderr() throws Exception {
+            CountDownLatch stderrRead = new CountDownLatch(1);
+            transport.onStderr(line -> {
+                if (line.contains("FATAL: out of memory")) {
+                    stderrRead.countDown();
+                }
+            });
             transport.start(mockProcess);
 
             CompletableFuture<JsonElement> future = transport.sendRequest("test/method", null);
@@ -966,8 +972,7 @@ class JsonRpcTransportTest {
             // Feed stderr before closing stdout
             stderrFeed.write("FATAL: out of memory\n".getBytes(StandardCharsets.UTF_8));
             stderrFeed.flush();
-            // Give stderr thread time to buffer the line
-            Thread.sleep(300);
+            assertTrue(stderrRead.await(5, TimeUnit.SECONDS));
 
             feedToTransport.close();
 
@@ -989,17 +994,7 @@ class JsonRpcTransportTest {
             feedToTransport.close();
 
             // Wait for the reader thread to detect the closed stream
-            CompletableFuture<Void> aliveCheck = CompletableFuture.runAsync(() -> {
-                while (transport.isAlive()) {
-                    try {
-                        Thread.sleep(50);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            });
-            aliveCheck.get(5, TimeUnit.SECONDS);
+            waitUntil(() -> !transport.isAlive(), 5_000);
             assertFalse(transport.isAlive());
         }
     }
@@ -1007,6 +1002,13 @@ class JsonRpcTransportTest {
     // ═══════════════════════════════════════════════
     // Round-trip Integration
     // ═══════════════════════════════════════════════
+
+    private static void waitUntil(BooleanSupplier condition, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (!condition.getAsBoolean() && System.currentTimeMillis() < deadline) {
+            new CountDownLatch(1).await(25, TimeUnit.MILLISECONDS);
+        }
+    }
 
     @Nested
     @DisplayName("round-trip integration")

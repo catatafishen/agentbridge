@@ -162,12 +162,15 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
      * replaced by the Auto-Approve toggle ({@link #isAutoApproveAgentEdits()}). This
      * accessor is kept only to read legacy persisted state during migration.
      */
-    @Deprecated(forRemoval = true)
+    @Deprecated(since = "0.7", forRemoval = true)
     public boolean isReviewAgentEdits() {
         return myState.reviewAgentEdits;
     }
 
-    @Deprecated(forRemoval = true)
+    /**
+     * @deprecated The Diff Review session is now always-on. Kept only for legacy state migration.
+     */
+    @Deprecated(since = "0.7", forRemoval = true)
     public void setReviewAgentEdits(boolean enabled) {
         myState.reviewAgentEdits = enabled;
     }

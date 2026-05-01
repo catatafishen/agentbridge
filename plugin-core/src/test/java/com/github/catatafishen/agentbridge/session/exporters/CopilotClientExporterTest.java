@@ -14,9 +14,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
-import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for {@link CopilotClientExporter}.
@@ -73,11 +76,11 @@ class CopilotClientExporterTest {
     void everyEventHasTypeDataIdTimestampAndParentId() throws IOException {
         List<JsonObject> events = exportAndParse(List.of(prompt("Hi"), text("Ho")));
         for (JsonObject event : events) {
-            assertTrue(event.has("type"),       "event must have 'type': "      + event);
-            assertTrue(event.has("data"),       "event must have 'data': "      + event);
-            assertTrue(event.has("id"),         "event must have 'id': "        + event);
+            assertTrue(event.has("type"), "event must have 'type': " + event);
+            assertTrue(event.has("data"), "event must have 'data': " + event);
+            assertTrue(event.has("id"), "event must have 'id': " + event);
             assertTrue(event.has("timestamp"), "event must have 'timestamp': " + event);
-            assertTrue(event.has("parentId"),   "event must have 'parentId': "  + event);
+            assertTrue(event.has("parentId"), "event must have 'parentId': " + event);
         }
     }
 
@@ -92,11 +95,11 @@ class CopilotClientExporterTest {
     void sessionStartDataHasRequiredFields() throws IOException {
         List<JsonObject> events = exportAndParse(List.of(prompt("Hello")));
         JsonObject data = events.get(0).getAsJsonObject("data");
-        assertTrue(data.has("sessionId"),   "session.start data must have sessionId");
-        assertTrue(data.has("version"),     "session.start data must have version");
-        assertTrue(data.has("producer"),    "session.start data must have producer");
-        assertTrue(data.has("startTime"),   "session.start data must have startTime");
-        assertTrue(data.has("context"),     "session.start data must have context");
+        assertTrue(data.has("sessionId"), "session.start data must have sessionId");
+        assertTrue(data.has("version"), "session.start data must have version");
+        assertTrue(data.has("producer"), "session.start data must have producer");
+        assertTrue(data.has("startTime"), "session.start data must have startTime");
+        assertTrue(data.has("context"), "session.start data must have context");
         assertTrue(data.has("alreadyInUse"), "session.start data must have alreadyInUse");
         assertEquals("copilot-agent", data.get("producer").getAsString());
         assertFalse(data.get("alreadyInUse").getAsBoolean());
@@ -228,7 +231,7 @@ class CopilotClientExporterTest {
 
         List<String> types = events.stream()
             .map(CopilotClientExporterTest::safeType)
-            .collect(Collectors.toList());
+            .toList();
 
         int turnEndIdx = types.lastIndexOf("assistant.turn_end");
         int userMsg2Idx = -1;
@@ -237,7 +240,10 @@ class CopilotClientExporterTest {
         for (int i = 0; i < types.size(); i++) {
             if ("user.message".equals(types.get(i))) {
                 count++;
-                if (count == 2) { userMsg2Idx = i; break; }
+                if (count == 2) {
+                    userMsg2Idx = i;
+                    break;
+                }
             }
         }
 
@@ -380,7 +386,7 @@ class CopilotClientExporterTest {
 
         List<String> ids = events.stream()
             .map(e -> e.get("id").getAsString())
-            .collect(Collectors.toList());
+            .toList();
         long distinctCount = ids.stream().distinct().count();
         assertEquals(ids.size(), distinctCount,
             "All event ids must be unique; found duplicates among: " + ids);
@@ -398,7 +404,7 @@ class CopilotClientExporterTest {
         return Files.readAllLines(file, StandardCharsets.UTF_8).stream()
             .filter(l -> !l.isBlank())
             .map(l -> GSON.fromJson(l, JsonObject.class))
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static String safeType(JsonObject obj) {

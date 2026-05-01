@@ -18,18 +18,18 @@ public final class CleanupSettings implements PersistentStateComponent<CleanupSe
         /**
          * Hours to retain agent-created scratch files. 0 = keep forever.
          */
-        public int scratchRetentionHours = 24;
+        public int scratchRetentionHours = 24; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
 
         /**
          * If true, close agent-created tool window tabs when a new turn starts.
          */
-        public boolean autoCloseAgentTabs = true;
+        public boolean autoCloseAgentTabs = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
 
         /**
          * If true, also close terminal tabs that may still be running.
          * Only applies when {@link #autoCloseAgentTabs} is true.
          */
-        public boolean autoCloseRunningTerminals = false;
+        public boolean autoCloseRunningTerminals = false; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
     private State state = new State();

@@ -191,8 +191,11 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
     private static final class ChartCanvas extends JPanel {
 
         private final UsageStatisticsData.Metric metric;
-        private List<DataSeries> seriesList = List.of();
-        private long xMin, xMax, yMin, yMax;
+        private transient List<DataSeries> seriesList = List.of();
+        private long xMin;
+        private long xMax;
+        private long yMin;
+        private long yMax;
 
         ChartCanvas(UsageStatisticsData.Metric metric) {
             this.metric = metric;
@@ -368,13 +371,16 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
                 .map(DataPoint::date)
                 .distinct()
                 .sorted()
-                .collect(Collectors.toList());
+                .toList();
         }
     }
 
     static Bounds computeMinMax(List<DataSeries> allSeries) {
         boolean first = true;
-        long xLo = 0, xHi = 0, yLo = 0, yHi = 0;
+        long xLo = 0;
+        long xHi = 0;
+        long yLo = 0;
+        long yHi = 0;
         for (DataSeries series : allSeries) {
             for (DataPoint pt : series.points) {
                 if (first) {

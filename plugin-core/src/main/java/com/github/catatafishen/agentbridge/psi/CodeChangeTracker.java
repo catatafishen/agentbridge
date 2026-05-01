@@ -87,7 +87,8 @@ public final class CodeChangeTracker {
         if (before.equals(after)) return new int[]{0, 0};
         String[] beforeLines = Diff.splitLines(before);
         String[] afterLines = Diff.splitLines(after);
-        int added = 0, removed = 0;
+        int added = 0;
+        int removed = 0;
         try {
             Diff.Change change = Diff.buildChanges(beforeLines, afterLines);
             for (Diff.Change c = change; c != null; c = c.link) {

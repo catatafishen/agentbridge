@@ -72,7 +72,7 @@ class AcpTerminalHandlerTest {
     @Test
     void outputReturnsRequiredFields() throws Exception {
         String id = createTerminal("echo", "hello");
-        Thread.sleep(500);
+        handler.waitForExit(terminalParams(id));
 
         JsonObject result = handler.output(terminalParams(id));
 
@@ -84,7 +84,7 @@ class AcpTerminalHandlerTest {
     @Test
     void outputIncludesExitStatusOnlyWhenFinished() throws Exception {
         String id = createTerminal("echo", "done");
-        Thread.sleep(1000);
+        handler.waitForExit(terminalParams(id));
 
         JsonObject result = handler.output(terminalParams(id));
 
@@ -109,7 +109,7 @@ class AcpTerminalHandlerTest {
         params.addProperty("outputByteLimit", 50);
 
         String id = handler.create(params).get("terminalId").getAsString();
-        Thread.sleep(1500);
+        handler.waitForExit(terminalParams(id));
 
         JsonObject result = handler.output(terminalParams(id));
 

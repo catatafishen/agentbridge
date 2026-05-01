@@ -463,13 +463,15 @@ class SessionSwitchServiceStaticMethodsTest {
             String yaml = SessionSwitchService.buildWorkspaceYamlContent(
                 "my-session", "/my/path", "develop", "2025-06-01T00:00:00Z");
 
-            String expected = "id: my-session\n"
-                + "cwd: /my/path\n"
-                + "git_root: /my/path\n"
-                + "branch: develop\n"
-                + "summary_count: 0\n"
-                + "created_at: 2025-06-01T00:00:00Z\n"
-                + "updated_at: 2025-06-01T00:00:00Z\n";
+            String expected = """
+                id: my-session
+                cwd: /my/path
+                git_root: /my/path
+                branch: develop
+                summary_count: 0
+                created_at: 2025-06-01T00:00:00Z
+                updated_at: 2025-06-01T00:00:00Z
+                """;
 
             assertEquals(expected, yaml);
         }

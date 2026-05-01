@@ -82,11 +82,11 @@ public final class ChatWebServerSettings implements PersistentStateComponent<Cha
         /**
          * VAPID private key — base64url-encoded raw 32-byte P-256 scalar.
          */
-        public String vapidPrivateKey = "";
+        public String vapidPrivateKey = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         /**
          * VAPID public key — base64url-encoded uncompressed 65-byte P-256 point.
          */
-        public String vapidPublicKey = "";
+        public String vapidPublicKey = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
 
         public int getPort() {
             return port;

@@ -120,25 +120,34 @@ public final class ToolCallStatisticsService implements Disposable {
             LOG.info("Migrated tool-stats.db from " + legacyDb + " to " + newDbPath);
             // SQLite may also have left -journal/-wal/-shm sidecar files alongside the DB.
             for (String suffix : new String[]{"-journal", "-wal", "-shm"}) {
-                Path sidecar = legacyDir.resolve(DB_FILENAME + suffix);
-                if (Files.exists(sidecar)) {
-                    try {
-                        Files.move(sidecar, Path.of(newDbPath + suffix));
-                    } catch (IOException ignored) {
-                        // Sidecar files are recreated by SQLite as needed; safe to leave behind.
-                    }
-                }
+                moveLegacySidecarIfPresent(legacyDir, newDbPath, suffix);
             }
-            try (var entries = Files.list(legacyDir)) {
-                if (entries.findAny().isEmpty()) {
-                    Files.delete(legacyDir);
-                }
-            } catch (IOException ignored) {
-                // Leaving the empty .agentbridge directory behind is harmless.
-            }
+            deleteDirectoryIfEmpty(legacyDir);
         } catch (IOException e) {
             LOG.warn("Failed to migrate legacy tool-stats.db from " + legacyDb
                 + " — a fresh database will be created at " + newDbPath, e);
+        }
+    }
+
+    private static void moveLegacySidecarIfPresent(@NotNull Path legacyDir, @NotNull Path newDbPath, @NotNull String suffix) {
+        Path sidecar = legacyDir.resolve(DB_FILENAME + suffix);
+        if (!Files.exists(sidecar)) {
+            return;
+        }
+        try {
+            Files.move(sidecar, Path.of(newDbPath + suffix));
+        } catch (IOException ignored) {
+            // Sidecar files are recreated by SQLite as needed; safe to leave behind.
+        }
+    }
+
+    private static void deleteDirectoryIfEmpty(@NotNull Path directory) {
+        try (var entries = Files.list(directory)) {
+            if (entries.findAny().isEmpty()) {
+                Files.delete(directory);
+            }
+        } catch (IOException ignored) {
+            // Leaving the empty .agentbridge directory behind is harmless.
         }
     }
 

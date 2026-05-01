@@ -36,7 +36,7 @@ public final class AgentScratchTracker implements PersistentStateComponent<Agent
         /**
          * Map of scratch file path → creation epoch millis.
          */
-        public Map<String, Long> trackedFiles = new LinkedHashMap<>();
+        public Map<String, Long> trackedFiles = new LinkedHashMap<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
     private final Project project;

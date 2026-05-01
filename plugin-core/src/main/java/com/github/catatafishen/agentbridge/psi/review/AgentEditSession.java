@@ -1481,12 +1481,12 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
      * {@code XmlSerializer} can round-trip them without custom converters.
      */
     public static final class PersistedState {
-        public Map<String, String> snapshots = new HashMap<>();
-        public Map<String, String> deletedFiles = new HashMap<>();
-        public List<String> newFiles = new ArrayList<>();
-        public Map<String, String> approvals = new HashMap<>();
-        public Map<String, String> lastEditedAt = new HashMap<>();
-        public Map<String, String> linesAdded = new HashMap<>();
-        public Map<String, String> linesRemoved = new HashMap<>();
+        public Map<String, String> snapshots = new HashMap<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public Map<String, String> deletedFiles = new HashMap<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public List<String> newFiles = new ArrayList<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public Map<String, String> approvals = new HashMap<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public Map<String, String> lastEditedAt = new HashMap<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public Map<String, String> linesAdded = new HashMap<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public Map<String, String> linesRemoved = new HashMap<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 }

@@ -36,5 +36,6 @@ public record InitializeResponse(
     }
 
     public record SessionCapabilities() {
+        public static final boolean PRESENT = true;
     }
 }

@@ -7,8 +7,8 @@ import com.github.catatafishen.agentbridge.services.AgentProfile;
 import com.github.catatafishen.agentbridge.services.GenericSettings;
 import com.github.catatafishen.agentbridge.services.McpInjectionMethod;
 import com.github.catatafishen.agentbridge.services.PermissionInjectionMethod;
-import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
+import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ProfileBinaryDetector;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
@@ -23,7 +23,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -407,14 +406,12 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         if (resolved == null) return;
 
         try {
-            File configFile = File.createTempFile("acp-mcp-", ".json");
-            configFile.deleteOnExit();
-            try (FileWriter fw = new FileWriter(configFile)) {
-                fw.write(resolved);
-            }
+            Path configFile = createPrivateMcpConfigFile("acp-mcp-", ".json");
+            Files.writeString(configFile, resolved);
+            configFile.toFile().deleteOnExit();
             cmd.add("--additional-mcp-config");
-            cmd.add("@" + configFile.getAbsolutePath());
-            LOG.info("MCP config written to " + configFile.getAbsolutePath());
+            cmd.add("@" + configFile.toAbsolutePath());
+            LOG.info("MCP config written to " + configFile.toAbsolutePath());
         } catch (IOException e) {
             LOG.warn("Failed to write MCP config file", e);
         }
@@ -440,7 +437,7 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         if (resolved == null) return;
 
         try {
-            Path tempDir = Files.createTempDirectory("acp-mcp-loc-");
+            Path tempDir = createPrivateMcpConfigDirectory("acp-mcp-loc-");
             Path configFile = tempDir.resolve("mcp.json");
             Files.writeString(configFile, resolved);
             // Register for deletion on JVM exit
@@ -452,6 +449,28 @@ public class ProfileBasedAgentConfig implements AgentConfig {
         } catch (IOException e) {
             LOG.warn("Failed to write MCP location config file", e);
         }
+    }
+
+    private Path createPrivateMcpConfigFile(@NotNull String prefix, @NotNull String suffix) throws IOException {
+        Path configDir = resolvePrivateMcpConfigDir();
+        Files.createDirectories(configDir);
+        return Files.createTempFile(configDir, prefix, suffix);
+    }
+
+    private Path createPrivateMcpConfigDirectory(@NotNull String prefix) throws IOException {
+        Path configDir = resolvePrivateMcpConfigDir();
+        Files.createDirectories(configDir);
+        return Files.createTempDirectory(configDir, prefix);
+    }
+
+    private Path resolvePrivateMcpConfigDir() {
+        if (project != null) {
+            String basePath = project.getBasePath();
+            if (basePath != null && !basePath.isBlank()) {
+                return Path.of(basePath, ".agent-work", "mcp-configs");
+            }
+        }
+        return Path.of(System.getProperty("user.home"), ".agentbridge", "mcp-configs");
     }
 
     @Nullable

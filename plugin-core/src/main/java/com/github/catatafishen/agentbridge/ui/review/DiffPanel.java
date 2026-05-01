@@ -80,7 +80,7 @@ public final class DiffPanel extends JPanel implements Disposable {
     private final JPanel cardPanel;
     private final JBLabel emptyLabel;
     private final JBLabel diffTotalsLabel;
-    private final ReviewDiffCountAnimator diffCountAnimator;
+    private final transient ReviewDiffCountAnimator diffCountAnimator;
     private final Timer diffAnimationTimer;
 
     public DiffPanel(@NotNull Project project) {

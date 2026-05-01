@@ -200,31 +200,43 @@ public abstract class AcpClient extends AbstractAgentClient {
             LOG.info(displayName() + " transport started, registering handlers");
             registerHandlers();
             LOG.info(displayName() + " handlers registered, initializing");
-            try {
-                capabilities = initialize();
-            } catch (Exception e) {
-                LOG.warn(displayName() + " initialization failed: " + e.getMessage(), e);
-                throw e;
-            }
+            initializeWithLogging();
             LOG.info(displayName() + " initialized, authenticating");
-            try {
-                authenticate();
-            } catch (Exception e) {
-                LOG.warn(displayName() + " authentication failed: " + e.getMessage(), e);
-                throw e;
-            }
+            authenticateWithLogging();
             LOG.info(displayName() + " authenticated, fetching models");
-            try {
-                eagerFetchModels();
-            } catch (Exception e) {
-                LOG.warn(displayName() + " model fetching failed: " + e.getMessage(), e);
-                throw e;
-            }
+            eagerFetchModelsWithLogging();
             LOG.info(displayName() + " agent started successfully");
         } catch (Exception e) {
             LOG.warn(displayName() + " startup failed at: " + getStartupStepFromException(e), e);
             stop();
             throw new AgentStartException("Failed to start " + displayName(), e);
+        }
+    }
+
+    private void initializeWithLogging() throws InterruptedException, ExecutionException, TimeoutException {
+        try {
+            capabilities = initialize();
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            LOG.warn(displayName() + " initialization failed: " + e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    private void authenticateWithLogging() throws InterruptedException, ExecutionException, TimeoutException {
+        try {
+            authenticate();
+        } catch (InterruptedException | ExecutionException | TimeoutException e) {
+            LOG.warn(displayName() + " authentication failed: " + e.getMessage(), e);
+            throw e;
+        }
+    }
+
+    private void eagerFetchModelsWithLogging() {
+        try {
+            eagerFetchModels();
+        } catch (RuntimeException e) {
+            LOG.warn(displayName() + " model fetching failed: " + e.getMessage(), e);
+            throw e;
         }
     }
 
@@ -335,37 +347,9 @@ public abstract class AcpClient extends AbstractAgentClient {
             beforeCreateSession(cwd);
             requestedResumeId = loadResumeSessionId();
 
-            // Per ACP spec, session/load resumes an existing session.
-            // Subclasses may override loadSession() for agent-specific behavior
-            // (e.g. CopilotClient throws because Copilot doesn't support it).
-            if (requestedResumeId != null) {
-                try {
-                    String loaded = loadSession(cwd, requestedResumeId);
-                    if (loadedSessionHistory != null) {
-                        // Agent replayed history — it has conversation context.
-                        // Disable injection in case it was left enabled from a prior failed load.
-                        ActiveAgentManager.setInjectConversationHistory(project, false);
-                    } else {
-                        // Agent loaded the session but didn't replay any history.
-                        // It may not have conversation context — inject as a safety net.
-                        LOG.info(displayName() + ": session loaded but no history replayed — enabling injection fallback");
-                        enableInjectionFallback(requestedResumeId, supportsSessionResumption());
-                    }
-                    return loaded;
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    LOG.warn(displayName() + ": session/load interrupted for " + requestedResumeId
-                        + ", falling back to session/new");
-                    persistResumeSessionId(null);
-                    enableInjectionFallback(requestedResumeId, supportsSessionResumption());
-                } catch (Exception e) {
-                    LOG.warn(displayName() + ": session/load failed for " + requestedResumeId
-                        + ", falling back to session/new: " + e.getMessage());
-                    // Clear the stale ID so the next start doesn't retry the same dead session.
-                    // If session/new below succeeds, persistResumeSessionId() replaces this with the new ID.
-                    persistResumeSessionId(null);
-                    enableInjectionFallback(requestedResumeId, supportsSessionResumption());
-                }
+            String resumedSessionId = tryResumeRequestedSession(cwd);
+            if (resumedSessionId != null) {
+                return resumedSessionId;
             }
 
             // Standard session/new path — creates a fresh session.
@@ -391,6 +375,47 @@ public abstract class AcpClient extends AbstractAgentClient {
         } catch (Exception e) {
             throw new AgentSessionException("Failed to create session for " + displayName(), e);
         }
+    }
+
+    @Nullable
+    private String tryResumeRequestedSession(String cwd) {
+        // Per ACP spec, session/load resumes an existing session.
+        // Subclasses may override loadSession() for agent-specific behavior
+        // (e.g. CopilotClient throws because Copilot doesn't support it).
+        if (requestedResumeId == null) {
+            return null;
+        }
+        try {
+            String loaded = loadSession(cwd, requestedResumeId);
+            if (loadedSessionHistory != null) {
+                // Agent replayed history — it has conversation context.
+                // Disable injection in case it was left enabled from a prior failed load.
+                ActiveAgentManager.setInjectConversationHistory(project, false);
+            } else {
+                // Agent loaded the session but didn't replay any history.
+                // It may not have conversation context — inject as a safety net.
+                LOG.info(displayName() + ": session loaded but no history replayed — enabling injection fallback");
+                enableInjectionFallback(requestedResumeId, supportsSessionResumption());
+            }
+            return loaded;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.warn(displayName() + ": session/load interrupted for " + requestedResumeId
+                + ", falling back to session/new");
+            clearResumeAndEnableInjectionFallback();
+        } catch (Exception e) {
+            LOG.warn(displayName() + ": session/load failed for " + requestedResumeId
+                + ", falling back to session/new: " + e.getMessage());
+            clearResumeAndEnableInjectionFallback();
+        }
+        return null;
+    }
+
+    private void clearResumeAndEnableInjectionFallback() {
+        // Clear the stale ID so the next start doesn't retry the same dead session.
+        // If session/new below succeeds, persistResumeSessionId() replaces this with the new ID.
+        persistResumeSessionId(null);
+        enableInjectionFallback(requestedResumeId, supportsSessionResumption());
     }
 
     private JsonObject buildNewSessionParams(String cwd) {
@@ -822,14 +847,18 @@ public abstract class AcpClient extends AbstractAgentClient {
     void tryBranchSessionAtStartup(String cwd) {
         try {
             if (ActiveAgentManager.getInstance(project).isBranchSessionAtStartup()) {
-                try {
-                    SessionStoreV2.getInstance(project).branchCurrentSession(cwd);
-                } catch (Exception e) {
-                    LOG.warn("Failed to branch session at startup — continuing without snapshot", e);
-                }
+                branchCurrentSession(cwd);
             }
         } catch (Exception e) {
             LOG.warn("Branch-at-startup check failed — continuing without snapshot", e);
+        }
+    }
+
+    private void branchCurrentSession(String cwd) {
+        try {
+            SessionStoreV2.getInstance(project).branchCurrentSession(cwd);
+        } catch (Exception e) {
+            LOG.warn("Failed to branch session at startup — continuing without snapshot", e);
         }
     }
 

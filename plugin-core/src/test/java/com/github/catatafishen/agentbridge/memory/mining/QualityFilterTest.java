@@ -60,12 +60,14 @@ class QualityFilterTest {
     @Test
     void toolOutputHeavy_fails() {
         // 6 structural lines → 100% > 80% threshold, and >= 5 lines
-        String response = "│ src/main/java/Auth.java\n" +
-            "│ src/main/java/User.java\n" +
-            "│ src/main/java/Config.java\n" +
-            "│ src/main/java/Service.java\n" +
-            "│ src/main/java/Controller.java\n" +
-            "│ src/main/java/Repository.java";
+        String response = """
+            │ src/main/java/Auth.java
+            │ src/main/java/User.java
+            │ src/main/java/Config.java
+            │ src/main/java/Service.java
+            │ src/main/java/Controller.java
+            │ src/main/java/Repository.java\
+            """;
         assertFalse(filter.passes("Show me the project file listing please", response));
     }
 
@@ -90,16 +92,18 @@ class QualityFilterTest {
     @Test
     void mixedContent_belowThreshold_passes() {
         // 10 lines total: 6 normal text + 4 structural → 40% tool lines, below 80%
-        String response = "Here is the analysis of the codebase:\n" +
-            "The service layer handles business logic.\n" +
-            "│ src/Service.java\n" +
-            "│ src/Repository.java\n" +
-            "The controller maps HTTP endpoints.\n" +
-            "The repository abstracts database access.\n" +
-            "│ src/Controller.java\n" +
-            "│ src/Database.java\n" +
-            "Overall the architecture is well structured.\n" +
-            "I recommend adding more integration tests.";
+        String response = """
+            Here is the analysis of the codebase:
+            The service layer handles business logic.
+            │ src/Service.java
+            │ src/Repository.java
+            The controller maps HTTP endpoints.
+            The repository abstracts database access.
+            │ src/Controller.java
+            │ src/Database.java
+            Overall the architecture is well structured.
+            I recommend adding more integration tests.\
+            """;
         assertTrue(filter.passes("Analyze the project architecture", response));
     }
 

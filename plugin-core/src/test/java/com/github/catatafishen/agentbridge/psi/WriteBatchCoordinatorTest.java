@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -197,7 +198,7 @@ class WriteBatchCoordinatorTest {
                     semaphore.acquire();
                     // Simulate write execution
                     writeOrder.add("write-" + threadId);
-                    Thread.sleep(50); // brief work
+                    pauseBriefly();
                     coord.unregisterWrite();
 
                     if (coord.hasPendingWrites()) {
@@ -283,8 +284,8 @@ class WriteBatchCoordinatorTest {
         }, "pending-writer");
         other.start();
 
-        // Give the thread time to block on the semaphore
-        Thread.sleep(100);
+        // Wait for the thread to block on the semaphore
+        waitUntil(semaphore::hasQueuedThreads, 1_000);
         assertFalse(semaphoreAcquiredByOther.get(), "Should be blocked on semaphore");
 
         // Drain releases the semaphore, allowing the other thread to proceed
@@ -323,7 +324,8 @@ class WriteBatchCoordinatorTest {
         drainer.start();
 
         drainStarted.await();
-        Thread.sleep(100);
+        waitUntil(() -> drainer.getState() == Thread.State.WAITING
+            || drainer.getState() == Thread.State.TIMED_WAITING, 1_000);
         drainer.interrupt();
         drainer.join(3000);
 
@@ -331,6 +333,17 @@ class WriteBatchCoordinatorTest {
 
         // Clean up
         coord.unregisterWrite();
+    }
+
+    private static void pauseBriefly() throws InterruptedException {
+        new CountDownLatch(1).await(50, TimeUnit.MILLISECONDS);
+    }
+
+    private static void waitUntil(BooleanSupplier condition, long timeoutMillis) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMillis;
+        while (!condition.getAsBoolean() && System.currentTimeMillis() < deadline) {
+            new CountDownLatch(1).await(25, TimeUnit.MILLISECONDS);
+        }
     }
 
     // ──────────────────────────────────────────────────────────────────────────

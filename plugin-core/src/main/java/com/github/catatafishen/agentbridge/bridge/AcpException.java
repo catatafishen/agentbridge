@@ -5,7 +5,7 @@ import com.github.catatafishen.agentbridge.agent.AgentException;
 /**
  * @deprecated Use {@link AgentException}
  */
-@Deprecated
+@Deprecated(since = "0.7", forRemoval = true)
 public class AcpException extends AgentException {
     public AcpException(String message) {
         super(message, null, true, 0, null);

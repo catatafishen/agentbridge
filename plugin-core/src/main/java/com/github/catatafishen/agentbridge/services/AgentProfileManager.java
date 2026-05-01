@@ -59,17 +59,17 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
      * that plugin updates can modify them freely.</p>
      */
     public static class ProfileOverride {
-        public String profileId = "";
-        public String customBinaryPath = "";
-        public String prependInstructionsTo = "";
-        public List<String> customCliModels = new ArrayList<>();
+        public String profileId = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public String customBinaryPath = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public String prependInstructionsTo = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public List<String> customCliModels = new ArrayList<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
     /**
      * Root state object serialised to {@code ideAgentProfiles.xml}.
      */
     public static class PersistedState {
-        public List<ProfileOverride> overrides = new ArrayList<>();
+        public List<ProfileOverride> overrides = new ArrayList<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
     @Override

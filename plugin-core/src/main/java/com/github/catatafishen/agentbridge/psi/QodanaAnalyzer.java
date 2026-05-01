@@ -270,7 +270,6 @@ public final class QodanaAnalyzer {
     private String tryCommonSarifLocations(String basePath, int limit) {
         Path[] candidates = {
             basePath != null ? Path.of(basePath, ".qodana", "results", "qodana.sarif.json") : null,
-            Path.of("/tmp/qodana_output/qodana.sarif.json"),
             Path.of(System.getProperty("java.io.tmpdir"), "qodana_output", "qodana.sarif.json"),
         };
         for (var candidate : candidates) {

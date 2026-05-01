@@ -17,8 +17,8 @@ import java.awt.*;
  * Hosts four tabs:
  * <ol>
  *   <li><b>Diff</b> — the existing {@link DiffPanel} with pending agent edits.</li>
- *   <li><b>Todo</b> — rendered view of the active agent session's {@code plan.md},
- *       with a {@code (done/total)} badge in the tab title when checkbox-style todos exist.</li>
+ *   <li><b>Tasks</b> — rendered view of the active agent session's {@code plan.md},
+ *       with a {@code (done/total)} badge in the tab title when checkbox-style task items exist.</li>
  *   <li><b>Search</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
  *   <li><b>Session</b> — session statistics, billing info, and a project-files tree.</li>
  * </ol>
@@ -31,12 +31,9 @@ public final class SidePanel extends JPanel implements Disposable {
     private static final int TAB_SESSION = 3;
 
     private final transient PlatformApiCompat.JBTabsPanel tabsPanel;
-    private final SessionStatsPanel sessionStatsPanel;
-
     public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
                      @NotNull SessionStatsPanel sessionStatsPanel) {
         super(new BorderLayout());
-        this.sessionStatsPanel = sessionStatsPanel;
         DiffPanel reviewPanel = new DiffPanel(project);
         Disposer.register(this, reviewPanel);
         Disposer.register(this, sessionStatsPanel);

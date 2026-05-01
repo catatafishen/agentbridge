@@ -37,7 +37,7 @@ public interface AgentSettings {
     /**
      * @deprecated Use {@link #getTurnTimeout()}.
      */
-    @Deprecated
+    @Deprecated(since = "0.7", forRemoval = true)
     default int getPromptTimeout() {
         return getTurnTimeout();
     }

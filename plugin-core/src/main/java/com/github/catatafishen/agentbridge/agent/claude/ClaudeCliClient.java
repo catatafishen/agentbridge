@@ -899,12 +899,28 @@ public final class ClaudeCliClient extends AbstractClaudeAgentClient {
             String json = "{\"mcpServers\":{\"agentbridge\":{"
                 + "\"type\":\"http\","
                 + "\"url\":\"http://localhost:" + mcpPort + "/mcp\"}}}";
-            Path tmp = Files.createTempFile("agentbridge-mcp-", ".json");
+            Path tmp = createPrivateMcpConfigFile();
             Files.writeString(tmp, json, StandardCharsets.UTF_8);
             return tmp;
         } catch (IOException e) {
             throw new AgentException("Could not write MCP config: " + e.getMessage(), e, true);
         }
+    }
+
+    private Path createPrivateMcpConfigFile() throws IOException {
+        Path configDir = resolvePrivateMcpConfigDir();
+        Files.createDirectories(configDir);
+        return Files.createTempFile(configDir, "agentbridge-mcp-", ".json");
+    }
+
+    private Path resolvePrivateMcpConfigDir() {
+        if (project != null) {
+            String basePath = project.getBasePath();
+            if (basePath != null && !basePath.isBlank()) {
+                return Path.of(basePath, ".agent-work", "mcp-configs");
+            }
+        }
+        return Path.of(System.getProperty("user.home"), ".agentbridge", "mcp-configs");
     }
 
     // ── Prompt building ──────────────────────────────────────────────────────

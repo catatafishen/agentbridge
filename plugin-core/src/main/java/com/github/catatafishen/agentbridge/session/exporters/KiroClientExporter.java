@@ -380,21 +380,6 @@ public final class KiroClientExporter {
         }
     }
 
-    /**
-     * Drops the oldest complete conversation blocks from {@code messages} until the total
-     * serialized character count is within {@code maxTotalChars}.
-     *
-     * <p>If {@code maxTotalChars} is 0 or negative, the method returns immediately (unlimited).</p>
-     *
-     * <p><b>Multi-turn sessions (multiple Prompts):</b> drops the oldest user-turn block
-     * (everything from one {@code Prompt} up to the next). This is the common case.</p>
-     *
-     * <p><b>Single-turn sessions (one Prompt):</b> drops the oldest {@code AssistantMessage}
-     * and its immediately following {@code ToolResults} (if any), keeping the initial Prompt
-     * and at least one {@code AssistantMessage}. This handles long single-turn sessions where
-     * the assistant makes many tool-call rounds — without this fallback the history would
-     * exceed the Anthropic API context limit and produce "invalid conversation history".</p>
-     */
     private static void trimToSizeBudget(@NotNull List<JsonObject> messages, int maxTotalChars) {
         if (maxTotalChars <= 0) return;
         int totalChars = 0;
@@ -404,78 +389,84 @@ public final class KiroClientExporter {
         if (totalChars <= maxTotalChars) return;
 
         while (totalChars > maxTotalChars) {
-            // Find the index of the second Prompt so we can drop everything before it.
-            int secondPromptIdx = -1;
-            int promptsSeen = 0;
-            for (int i = 0; i < messages.size(); i++) {
-                if (KIND_PROMPT.equals(messages.get(i).get("kind").getAsString())) {
-                    promptsSeen++;
-                    if (promptsSeen == 2) {
-                        secondPromptIdx = i;
-                        break;
-                    }
-                }
-            }
-
-            if (secondPromptIdx != -1) {
-                // Multi-turn: drop everything before the second Prompt.
-                int charsDropped = 0;
-                for (int i = 0; i < secondPromptIdx; i++) {
-                    charsDropped += GSON.toJson(messages.get(i)).length();
-                }
-                LOG.warn("Kiro export: trimming " + secondPromptIdx
-                    + " oldest messages (" + charsDropped + " chars) — history was "
-                    + totalChars + " chars, budget is " + maxTotalChars);
-                messages.subList(0, secondPromptIdx).clear();
-                totalChars -= charsDropped;
-                continue;
-            }
-
-            // Single-turn fallback: only one Prompt remains, but still over budget.
-            // Drop the oldest AssistantMessage (plus the following ToolResults if any)
-            // while keeping the Prompt and at least one AssistantMessage.
-            // The Prompt is always at index 0 here; the oldest AssistantMessage is at index 1.
-            int firstAssistantIdx = -1;
-            for (int i = 1; i < messages.size(); i++) {
-                if (KIND_ASSISTANT_MESSAGE.equals(messages.get(i).get("kind").getAsString())) {
-                    firstAssistantIdx = i;
-                    break;
-                }
-            }
-            if (firstAssistantIdx == -1) {
-                LOG.warn("Kiro export: history exceeds budget (" + totalChars
-                    + " chars) but no AssistantMessage found to drop — cannot trim further");
+            int charsDropped = dropOldestBudgetedBlock(messages, totalChars, maxTotalChars);
+            if (charsDropped <= 0) {
                 break;
             }
-
-            // Count how many AssistantMessages remain (excluding the one we're about to drop).
-            long remainingAssistants = messages.stream()
-                .filter(m -> KIND_ASSISTANT_MESSAGE.equals(m.get("kind").getAsString()))
-                .count() - 1;
-            if (remainingAssistants < 1) {
-                LOG.warn("Kiro export: history exceeds budget (" + totalChars
-                    + " chars) but only one AssistantMessage remains — cannot trim further");
-                break;
-            }
-
-            // Drop: AssistantMessage at firstAssistantIdx, plus the immediately following
-            // ToolResults (if any), so tool-call pairs are always removed together.
-            int dropEnd = firstAssistantIdx + 1;
-            if (dropEnd < messages.size()
-                && KIND_TOOL_RESULTS.equals(messages.get(dropEnd).get("kind").getAsString())) {
-                dropEnd++;
-            }
-
-            int charsDropped = 0;
-            for (int i = firstAssistantIdx; i < dropEnd; i++) {
-                charsDropped += GSON.toJson(messages.get(i)).length();
-            }
-            LOG.warn("Kiro export: single-turn trim: dropping " + (dropEnd - firstAssistantIdx)
-                + " oldest tool-call round(s) (" + charsDropped + " chars) — history was "
-                + totalChars + " chars, budget is " + maxTotalChars);
-            messages.subList(firstAssistantIdx, dropEnd).clear();
             totalChars -= charsDropped;
         }
+    }
+
+    private static int dropOldestBudgetedBlock(@NotNull List<JsonObject> messages, int totalChars, int maxTotalChars) {
+        int secondPromptIdx = findSecondPromptIndex(messages);
+        if (secondPromptIdx != -1) {
+            int charsDropped = countSerializedChars(messages, 0, secondPromptIdx);
+            LOG.warn("Kiro export: trimming " + secondPromptIdx
+                + " oldest messages (" + charsDropped + " chars) — history was "
+                + totalChars + " chars, budget is " + maxTotalChars);
+            messages.subList(0, secondPromptIdx).clear();
+            return charsDropped;
+        }
+
+        int firstAssistantIdx = findFirstAssistantIndex(messages);
+        if (firstAssistantIdx == -1) {
+            LOG.warn("Kiro export: history exceeds budget (" + totalChars
+                + " chars) but no AssistantMessage found to drop — cannot trim further");
+            return 0;
+        }
+
+        long remainingAssistants = messages.stream()
+            .filter(m -> KIND_ASSISTANT_MESSAGE.equals(m.get("kind").getAsString()))
+            .count() - 1;
+        if (remainingAssistants < 1) {
+            LOG.warn("Kiro export: history exceeds budget (" + totalChars
+                + " chars) but only one AssistantMessage remains — cannot trim further");
+            return 0;
+        }
+
+        int dropEnd = firstAssistantIdx + 1;
+        if (dropEnd < messages.size()
+            && KIND_TOOL_RESULTS.equals(messages.get(dropEnd).get("kind").getAsString())) {
+            dropEnd++;
+        }
+
+        int charsDropped = countSerializedChars(messages, firstAssistantIdx, dropEnd);
+        LOG.warn("Kiro export: single-turn trim: dropping " + (dropEnd - firstAssistantIdx)
+            + " oldest tool-call round(s) (" + charsDropped + " chars) — history was "
+            + totalChars + " chars, budget is " + maxTotalChars);
+        messages.subList(firstAssistantIdx, dropEnd).clear();
+        return charsDropped;
+    }
+
+    private static int findSecondPromptIndex(@NotNull List<JsonObject> messages) {
+        int promptsSeen = 0;
+        for (int i = 0; i < messages.size(); i++) {
+            if (KIND_PROMPT.equals(messages.get(i).get("kind").getAsString())) {
+                promptsSeen++;
+                if (promptsSeen == 2) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int findFirstAssistantIndex(@NotNull List<JsonObject> messages) {
+        int index = -1;
+        for (int i = 1; i < messages.size() && index == -1; i++) {
+            if (KIND_ASSISTANT_MESSAGE.equals(messages.get(i).get("kind").getAsString())) {
+                index = i;
+            }
+        }
+        return index;
+    }
+
+    private static int countSerializedChars(@NotNull List<JsonObject> messages, int fromIndex, int toIndex) {
+        int chars = 0;
+        for (int i = fromIndex; i < toIndex; i++) {
+            chars += GSON.toJson(messages.get(i)).length();
+        }
+        return chars;
     }
 
     private static void emitAssistantTurn(

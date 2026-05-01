@@ -432,14 +432,16 @@ public final class MemoryStore implements Disposable {
     private static float @Nullable [] readVectorFromIndex(@NotNull DirectoryReader reader, int docId) throws IOException {
         for (var leafCtx : reader.leaves()) {
             int localDocId = docId - leafCtx.docBase;
-            if (localDocId < 0 || localDocId >= leafCtx.reader().maxDoc()) continue;
-            var vectorValues = leafCtx.reader().getFloatVectorValues(FLD_EMBEDDING);
-            if (vectorValues == null) continue;
-            try {
-                float[] vec = vectorValues.vectorValue(localDocId);
-                return vec.clone();
-            } catch (Exception e) {
-                // Document may not have a vector — return null
+            if (localDocId >= 0 && localDocId < leafCtx.reader().maxDoc()) {
+                var vectorValues = leafCtx.reader().getFloatVectorValues(FLD_EMBEDDING);
+                if (vectorValues != null) {
+                    try {
+                        float[] vec = vectorValues.vectorValue(localDocId);
+                        return vec.clone();
+                    } catch (Exception e) {
+                        // Document may not have a vector — return null
+                    }
+                }
             }
         }
         return null;

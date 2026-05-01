@@ -9,7 +9,6 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.awt.*;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * Renderer for http_request output.
@@ -98,7 +97,7 @@ public final class HttpRequestRenderer implements ToolResultRenderer {
         return output.substring(headersStart + HEADERS_MARKER.length(), end)
             .trim().lines()
             .filter(line -> !line.isBlank())
-            .collect(Collectors.toList());
+            .toList();
     }
 
     static @NotNull String parseBody(@NotNull String output, int bodyStart) {
@@ -126,14 +125,14 @@ public final class HttpRequestRenderer implements ToolResultRenderer {
     private static @NotNull JComponent renderBodySection(@NotNull String body) {
         JPanel section = ToolRenderers.INSTANCE.listPanel();
         section.setBorder(JBUI.Borders.emptyTop(6));
-        section.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        section.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         JBLabel bodyLabel = new JBLabel("Body");
         bodyLabel.setFont(UIUtil.getLabelFont().deriveFont(Font.BOLD));
-        bodyLabel.setAlignmentX(JComponent.LEFT_ALIGNMENT);
+        bodyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         section.add(bodyLabel);
 
-        List<String> bodyLines = body.lines().collect(Collectors.toList());
+        List<String> bodyLines = body.lines().toList();
         String truncatedBody = bodyLines.size() > MAX_BODY_LINES
             ? String.join("\n", bodyLines.subList(0, MAX_BODY_LINES))
             : body;

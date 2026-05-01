@@ -5,6 +5,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -37,15 +40,18 @@ class AcpProcessCleanupTest {
     private static List<ProcessHandle> awaitDescendants(Process process, long timeoutMs) throws InterruptedException {
         ProcessHandle handle = process.toHandle();
         long deadline = System.currentTimeMillis() + timeoutMs;
+        waitUntil(() -> !handle.descendants().toList().isEmpty() || !process.isAlive(), deadline);
         List<ProcessHandle> descendants = handle.descendants().toList();
-        while (descendants.isEmpty() && System.currentTimeMillis() < deadline && process.isAlive()) {
-            Thread.sleep(100);
-            descendants = handle.descendants().toList();
-        }
         if (descendants.isEmpty()) {
             fail("Process did not spawn descendants before timeout");
         }
         return descendants;
+    }
+
+    private static void waitUntil(BooleanSupplier condition, long deadline) throws InterruptedException {
+        while (!condition.getAsBoolean() && System.currentTimeMillis() < deadline) {
+            new CountDownLatch(1).await(100, TimeUnit.MILLISECONDS);
+        }
     }
 
     private static void awaitAllTerminated(List<ProcessHandle> handles, long timeoutMs) {

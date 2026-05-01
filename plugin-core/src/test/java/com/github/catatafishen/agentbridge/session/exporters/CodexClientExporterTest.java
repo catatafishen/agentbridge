@@ -13,9 +13,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for {@link CodexClientExporter} — specifically the package-private
@@ -345,7 +348,7 @@ class CodexClientExporterTest {
                 }
                 return obj;
             })
-            .collect(Collectors.toList());
+            .toList();
     }
 
     private static EntryData.Prompt prompt(String text) {

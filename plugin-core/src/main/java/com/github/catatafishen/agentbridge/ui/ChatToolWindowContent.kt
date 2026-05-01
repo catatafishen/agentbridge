@@ -208,12 +208,12 @@ class ChatToolWindowContent(
      */
     private fun wireUpWebServerCallbacks() {
         ChatWebServer.getInstance(project)?.also { ws ->
-            ws.onConnect = java.util.function.Consumer { profileId ->
+            ws.setOnConnect(java.util.function.Consumer { profileId ->
                 ApplicationManager.getApplication().invokeLater { connectToAgent(profileId, null) }
-            }
-            ws.onDisconnect = Runnable {
+            })
+            ws.setOnDisconnect(Runnable {
                 ApplicationManager.getApplication().invokeLater { disconnectFromAgent() }
-            }
+            })
             ws.setProfilesJson(buildProfilesJson())
         }
     }
@@ -1812,20 +1812,20 @@ class ChatToolWindowContent(
     }
 
     private fun setupWebServerCallbacks(ws: ChatWebServer) {
-        ws.onSendPrompt = { prompt ->
+        ws.setOnSendPrompt { prompt ->
             ApplicationManager.getApplication().invokeLater { sendPromptDirectly(prompt) }
         }
-        ws.onQuickReply = { text ->
+        ws.setOnQuickReply { text ->
             ApplicationManager.getApplication().invokeLater {
                 if (!consolePanel.consumePendingAskUserResponse(text)) sendQuickReply(text)
             }
         }
-        ws.onNudge = { text ->
+        ws.setOnNudge { text ->
             ApplicationManager.getApplication().invokeLater {
                 if (isSending) submitNudge(text)
             }
         }
-        ws.onStop = {
+        ws.setOnStop {
             ApplicationManager.getApplication().invokeLater {
                 if (isSending) {
                     promptOrchestrator.stop()
@@ -1833,22 +1833,22 @@ class ChatToolWindowContent(
                 }
             }
         }
-        ws.onCancelNudge = { id ->
+        ws.setOnCancelNudge { id ->
             ApplicationManager.getApplication().invokeLater {
                 chatConsolePanel.onCancelNudge?.invoke(id)
             }
         }
-        ws.onPermissionResponse = java.util.function.Consumer { data ->
+        ws.setOnPermissionResponse(java.util.function.Consumer { data ->
             ApplicationManager.getApplication().invokeLater {
                 chatConsolePanel.handleWebPermissionResponse(data)
             }
-        }
-        ws.onSelectModel = java.util.function.Consumer { modelId ->
+        })
+        ws.setOnSelectModel(java.util.function.Consumer { modelId ->
             ApplicationManager.getApplication().invokeLater { selectModelById(modelId) }
-        }
-        ws.onLoadMore = Runnable {
+        })
+        ws.setOnLoadMore(Runnable {
             ApplicationManager.getApplication().invokeLater { onLoadMoreHistory() }
-        }
+        })
     }
 
     private fun appendResponse(text: String) {

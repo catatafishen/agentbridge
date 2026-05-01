@@ -120,11 +120,11 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
     }
 
     public static final class State {
-        public boolean showShortcutHints = true;
-        public boolean smartPasteEnabled = true;
-        public boolean softWrapsEnabled = true;
-        public int smartPasteMinLines = DEFAULT_SMART_PASTE_MIN_LINES;
-        public int smartPasteMinChars = DEFAULT_SMART_PASTE_MIN_CHARS;
+        public boolean showShortcutHints = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean smartPasteEnabled = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean softWrapsEnabled = true; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public int smartPasteMinLines = DEFAULT_SMART_PASTE_MIN_LINES; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public int smartPasteMinChars = DEFAULT_SMART_PASTE_MIN_CHARS; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         @NotNull
         public String fileSearchTrigger = "#";
         @NotNull

@@ -161,21 +161,21 @@ public final class BackfillMiner {
 
             try {
                 List<EntryData> entries = entryLoader.load(session.id());
-                if (entries == null || entries.isEmpty()) continue;
-
-                final int currentSession = processedSessions;
-                TurnMiner.MineResult result = miner.mine(entries, session.id(), session.agent(),
-                    (exchangeNum, exchangeTotal) -> {
-                        double sessionFraction = (double) exchangeNum / exchangeTotal;
-                        double overallFraction = (currentSession - 1.0 + sessionFraction) / totalSessions;
-                        fractionCallback.accept(overallFraction);
-                        textCallback.accept("Mining session " + currentSession + " of " + totalSessions
-                            + ": " + sessionLabel + " (exchange " + exchangeNum + " of " + exchangeTotal + ")");
-                    });
-                totalStored += result.stored();
-                totalFiltered += result.filtered();
-                totalDuplicates += result.duplicates();
-                totalExchanges += result.total();
+                if (entries != null && !entries.isEmpty()) {
+                    final int currentSession = processedSessions;
+                    TurnMiner.MineResult result = miner.mine(entries, session.id(), session.agent(),
+                        (exchangeNum, exchangeTotal) -> {
+                            double sessionFraction = (double) exchangeNum / exchangeTotal;
+                            double overallFraction = (currentSession - 1.0 + sessionFraction) / totalSessions;
+                            fractionCallback.accept(overallFraction);
+                            textCallback.accept("Mining session " + currentSession + " of " + totalSessions
+                                + ": " + sessionLabel + " (exchange " + exchangeNum + " of " + exchangeTotal + ")");
+                        });
+                    totalStored += result.stored();
+                    totalFiltered += result.filtered();
+                    totalDuplicates += result.duplicates();
+                    totalExchanges += result.total();
+                }
             } catch (Exception e) {
                 LOG.warn("Failed to mine session " + session.id(), e);
             }

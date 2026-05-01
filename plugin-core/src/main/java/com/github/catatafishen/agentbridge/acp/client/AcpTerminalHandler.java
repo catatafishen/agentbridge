@@ -141,6 +141,8 @@ final class AcpTerminalHandler {
                 + WAIT_FOR_EXIT_TIMEOUT_SECONDS + " seconds and was killed (terminal " + terminalId + ")");
         }
 
+        terminal.awaitOutputCapture();
+
         JsonObject result = new JsonObject();
         result.addProperty("exitCode", terminal.process.exitValue());
         result.add("signal", null);
@@ -274,6 +276,13 @@ final class AcpTerminalHandler {
             if (t != null) {
                 t.interrupt();
                 captureThread = null;
+            }
+        }
+
+        void awaitOutputCapture() throws InterruptedException {
+            Thread t = captureThread;
+            if (t != null) {
+                t.join();
             }
         }
 

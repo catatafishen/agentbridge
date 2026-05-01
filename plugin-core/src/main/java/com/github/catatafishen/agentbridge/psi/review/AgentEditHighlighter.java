@@ -93,7 +93,7 @@ public final class AgentEditHighlighter implements Disposable {
         List<ChangeRange> ranges = session.computeRanges(vf);
         ApplicationManager.getApplication().invokeLater(
             () -> applyOnEdt(vf, ranges),
-            __ -> project.isDisposed());
+            ignored -> project.isDisposed());
     }
 
     private void applyOnEdt(@NotNull VirtualFile vf, @NotNull List<ChangeRange> ranges) {
@@ -200,7 +200,7 @@ public final class AgentEditHighlighter implements Disposable {
                     }
                 }
             }
-        }, __ -> project.isDisposed());
+        }, ignored -> project.isDisposed());
     }
 
     /**
@@ -221,7 +221,7 @@ public final class AgentEditHighlighter implements Disposable {
                 }
             }
             active.clear();
-        }, __ -> project.isDisposed());
+        }, ignored -> project.isDisposed());
     }
 
     @Override

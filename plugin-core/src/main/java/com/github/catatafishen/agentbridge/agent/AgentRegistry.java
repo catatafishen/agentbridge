@@ -34,7 +34,7 @@ public final class AgentRegistry {
         register("junie", "Junie", JunieClient::new);
         register("kiro", "Kiro", KiroClient::new);
         register("opencode", "OpenCode", OpenCodeClient::new);
-        // TODO: register Claude clients when they support single-arg Project constructor
+        // Claude clients are registered once they support a single-arg Project constructor.
     }
 
     private AgentRegistry() {}

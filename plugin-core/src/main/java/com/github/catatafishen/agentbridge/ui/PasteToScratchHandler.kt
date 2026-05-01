@@ -16,7 +16,7 @@ import javax.swing.KeyStroke
  * Handles paste-to-scratch and new-scratch-file features in the chat prompt toolbar.
  * Owns the language popup, keyboard intercept, and scratch file creation logic.
  */
-internal class PasteToScratchHandler(
+class PasteToScratchHandler(
     private val project: Project,
     private val promptTextArea: EditorTextField,
     private val contextManager: PromptContextManager,

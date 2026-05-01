@@ -69,18 +69,7 @@ public final class CodexClientExporter {
             Path rolloutFile = sessionDir.resolve("rollout.jsonl");
             writeRolloutFile(entries, rolloutFile, threadId, cwd);
 
-            long createdAt = System.currentTimeMillis() / 1000;
-            for (EntryData entry : entries) {
-                String ts = entry.getTimestamp();
-                if (!ts.isEmpty()) {
-                    try {
-                        createdAt = Instant.parse(ts).toEpochMilli() / 1000;
-                    } catch (Exception e) {
-                        LOG.debug("Could not parse timestamp for Codex export: " + ts, e);
-                    }
-                    break;
-                }
-            }
+            long createdAt = findCreatedAt(entries);
 
             if (Files.exists(dbPath)) {
                 insertThread(dbPath, threadId, rolloutFile.toString(), createdAt);
@@ -91,6 +80,26 @@ public final class CodexClientExporter {
         } catch (IOException e) {
             LOG.warn("Failed to export v2 session to Codex", e);
             return null;
+        }
+    }
+
+    private static long findCreatedAt(@NotNull List<EntryData> entries) {
+        long createdAt = System.currentTimeMillis() / 1000;
+        for (EntryData entry : entries) {
+            String ts = entry.getTimestamp();
+            if (!ts.isEmpty()) {
+                return parseCreatedAt(ts, createdAt);
+            }
+        }
+        return createdAt;
+    }
+
+    private static long parseCreatedAt(@NotNull String timestamp, long fallback) {
+        try {
+            return Instant.parse(timestamp).toEpochMilli() / 1000;
+        } catch (Exception e) {
+            LOG.debug("Could not parse timestamp for Codex export: " + timestamp, e);
+            return fallback;
         }
     }
 

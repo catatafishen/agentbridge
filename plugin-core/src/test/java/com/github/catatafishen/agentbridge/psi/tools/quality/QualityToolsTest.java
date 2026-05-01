@@ -318,13 +318,14 @@ public class QualityToolsTest extends BasePlatformTestCase {
      * directly from the EDT would deadlock.
      */
     public void testOptimizeImportsWithValidFile() throws Exception {
-        VirtualFile vf = createTestFile("OptimizeMe.java",
-            "package com.example;\n"
-                + "import java.util.ArrayList;\n"
-                + "import java.util.List;\n"
-                + "public class OptimizeMe {\n"
-                + "    private List<String> items = new ArrayList<>();\n"
-                + "}\n");
+        VirtualFile vf = createTestFile("OptimizeMe.java", """
+            package com.example;
+            import java.util.ArrayList;
+            import java.util.List;
+            public class OptimizeMe {
+                private List<String> items = new ArrayList<>();
+            }
+            """);
 
         String result = executeSync(() -> optimizeImportsTool.execute(args("path", vf.getPath())));
         assertNotNull("execute() must not return null", result);

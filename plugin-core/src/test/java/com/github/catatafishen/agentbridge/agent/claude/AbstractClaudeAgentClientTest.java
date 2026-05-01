@@ -46,12 +46,12 @@ class AbstractClaudeAgentClientTest {
 
         @Override
         public void start() throws Exception {
-
+            // No-op test stub.
         }
 
         @Override
         public void stop() {
-
+            // No-op test stub.
         }
 
         @Override
@@ -66,7 +66,7 @@ class AbstractClaudeAgentClientTest {
 
         @Override
         public void cancelSession(String sessionId) {
-
+            // No-op test stub.
         }
 
         @Override

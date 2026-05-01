@@ -30,11 +30,11 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Side-panel tab that renders the active agent session's plan/todo file.
+ * Side-panel tab that renders the active agent session's plan file.
  * <p>
  * Different agents store their task-list in different places and formats, but the plugin
  * treats {@code plan.md} inside the active agent's session directory as the canonical
- * todo file (see {@code SessionSwitchService#PLAN_FILE_NAME}). This panel shows that
+ * task file (see {@code SessionSwitchService#PLAN_FILE_NAME}). This panel shows that
  * file as rendered Markdown and exposes a {@code (done/total)} progress summary that
  * the parent tab container uses to badge the tab title.
  * <p>
@@ -98,7 +98,7 @@ final class TodoPanel extends JPanel implements Disposable {
     }
 
     /**
-     * Registers a callback fired whenever the todo count changes. Called on the EDT.
+     * Registers a callback fired whenever the task count changes. Called on the EDT.
      * The consumer receives {@code (done, total)} — both zero when no checkbox-style
      * items exist (in which case the parent should drop the badge).
      */

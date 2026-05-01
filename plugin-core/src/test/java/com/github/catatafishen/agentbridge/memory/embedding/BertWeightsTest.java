@@ -136,7 +136,7 @@ class BertWeightsTest {
      * matching the HuggingFace safetensors export format.
      */
     private static Path buildMinimalModelFileNoPrefix(Path dir) throws IOException {
-        List<String> names = buildTensorNamesNoPrefix();
+        List<String> names = buildTensorNames();
 
         StringBuilder json = new StringBuilder("{");
         int dataOffset = 0;
@@ -165,32 +165,4 @@ class BertWeightsTest {
         return file;
     }
 
-    private static List<String> buildTensorNamesNoPrefix() {
-        List<String> names = new ArrayList<>(101);
-        names.add("embeddings.word_embeddings.weight");
-        names.add("embeddings.position_embeddings.weight");
-        names.add("embeddings.token_type_embeddings.weight");
-        names.add("embeddings.LayerNorm.weight");
-        names.add("embeddings.LayerNorm.bias");
-        for (int i = 0; i < 6; i++) {
-            String p = "encoder.layer." + i + ".";
-            names.add(p + "attention.self.query.weight");
-            names.add(p + "attention.self.query.bias");
-            names.add(p + "attention.self.key.weight");
-            names.add(p + "attention.self.key.bias");
-            names.add(p + "attention.self.value.weight");
-            names.add(p + "attention.self.value.bias");
-            names.add(p + "attention.output.dense.weight");
-            names.add(p + "attention.output.dense.bias");
-            names.add(p + "attention.output.LayerNorm.weight");
-            names.add(p + "attention.output.LayerNorm.bias");
-            names.add(p + "intermediate.dense.weight");
-            names.add(p + "intermediate.dense.bias");
-            names.add(p + "output.dense.weight");
-            names.add(p + "output.dense.bias");
-            names.add(p + "output.LayerNorm.weight");
-            names.add(p + "output.LayerNorm.bias");
-        }
-        return names;
-    }
 }

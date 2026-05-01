@@ -38,8 +38,7 @@ class CodeChangeTrackerTest {
 
     @AfterEach
     void resetCounters() {
-        CodeChangeTracker.getAndClear();
-        CodeChangeTracker.clearSession();
+        resetBefore();
     }
 
     // ── countLines ──────────────────────────────────────────

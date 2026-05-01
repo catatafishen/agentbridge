@@ -12,7 +12,10 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AbstractAgentClientTest {
 
@@ -31,22 +34,75 @@ class AbstractAgentClientTest {
         private String currentModeSlug = null;
         private String currentAgentSlug = null;
 
-        @Override public String agentId() { return "test"; }
-        @Override public String displayName() { return "Test Agent"; }
-        @Override public void start() { connected = true; }
-        @Override public void stop() { connected = false; }
-        @Override public boolean isConnected() { return connected; }
-        @Override public String createSession(String cwd) { return "test-session-1"; }
-        @Override public void cancelSession(String sessionId) {}
-        @Override public PromptResponse sendPrompt(PromptRequest request, Consumer<SessionUpdate> onUpdate) { return null; }
-        @Override public List<Model> getAvailableModels() { return models; }
-        @Override public void setModel(String sessionId, String modelId) {}
+        @Override
+        public String agentId() {
+            return "test";
+        }
 
-        void setModels(List<Model> m) { models = m; }
-        @Override public String getCurrentModeSlug() { return currentModeSlug; }
-        @Override public void setCurrentModeSlug(String slug) { currentModeSlug = slug; }
-        @Override public String getCurrentAgentSlug() { return currentAgentSlug; }
-        @Override public void setCurrentAgentSlug(String slug) { currentAgentSlug = slug; }
+        @Override
+        public String displayName() {
+            return "Test Agent";
+        }
+
+        @Override
+        public void start() {
+            connected = true;
+        }
+
+        @Override
+        public void stop() {
+            connected = false;
+        }
+
+        @Override
+        public boolean isConnected() {
+            return connected;
+        }
+
+        @Override
+        public String createSession(String cwd) {
+            return "test-session-1";
+        }
+
+        @Override
+        public void cancelSession(String sessionId) { /* No-op test stub. */ }
+
+        @Override
+        public PromptResponse sendPrompt(PromptRequest request, Consumer<SessionUpdate> onUpdate) {
+            return null;
+        }
+
+        @Override
+        public List<Model> getAvailableModels() {
+            return models;
+        }
+
+        @Override
+        public void setModel(String sessionId, String modelId) { /* No-op test stub. */ }
+
+        void setModels(List<Model> m) {
+            models = m;
+        }
+
+        @Override
+        public String getCurrentModeSlug() {
+            return currentModeSlug;
+        }
+
+        @Override
+        public void setCurrentModeSlug(String slug) {
+            currentModeSlug = slug;
+        }
+
+        @Override
+        public String getCurrentAgentSlug() {
+            return currentAgentSlug;
+        }
+
+        @Override
+        public void setCurrentAgentSlug(String slug) {
+            currentAgentSlug = slug;
+        }
     }
 
     private static class MultiplierAgentClient extends TestAgentClient {
@@ -261,8 +317,8 @@ class AbstractAgentClientTest {
             var value1 = new AbstractAgentClient.AgentConfigOptionValue("low", "Low");
             var value2 = new AbstractAgentClient.AgentConfigOptionValue("high", "High");
             var option = new AbstractAgentClient.AgentConfigOption(
-                    "effort", "Effort Level", "Controls thinking effort",
-                    List.of(value1, value2), "low"
+                "effort", "Effort Level", "Controls thinking effort",
+                List.of(value1, value2), "low"
             );
             assertEquals("effort", option.id());
             assertEquals("Effort Level", option.label());

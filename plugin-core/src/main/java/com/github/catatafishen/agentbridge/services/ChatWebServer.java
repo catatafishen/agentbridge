@@ -117,19 +117,19 @@ public final class ChatWebServer implements Disposable {
     private volatile String profilesJson = "[]";
 
     // ── Action callbacks (wired by ChatToolWindowContent) ─────────────────────
-    public volatile Consumer<String> onSendPrompt;
-    public volatile Consumer<String> onQuickReply;
-    public volatile Consumer<String> onNudge;
-    public volatile Runnable onStop;
-    public volatile Consumer<String> onCancelNudge;
+    private volatile Consumer<String> onSendPrompt;
+    private volatile Consumer<String> onQuickReply;
+    private volatile Consumer<String> onNudge;
+    private volatile Runnable onStop;
+    private volatile Consumer<String> onCancelNudge;
     /**
      * Permission response: "reqId:deny" / "reqId:once" / "reqId:session"
      */
-    public volatile Consumer<String> onPermissionResponse;
-    public volatile Runnable onDisconnect;
-    public volatile Consumer<String> onConnect;
-    public volatile Consumer<String> onSelectModel;
-    public volatile Runnable onLoadMore;
+    private volatile Consumer<String> onPermissionResponse;
+    private volatile Runnable onDisconnect;
+    private volatile Consumer<String> onConnect;
+    private volatile Consumer<String> onSelectModel;
+    private volatile Runnable onLoadMore;
 
     public ChatWebServer(@NotNull Project project) {
         this.project = project;
@@ -138,6 +138,48 @@ public final class ChatWebServer implements Disposable {
 
     public static ChatWebServer getInstance(@NotNull Project project) {
         return PlatformApiCompat.getService(project, ChatWebServer.class);
+    }
+
+    // ── Action callbacks (called by ChatToolWindowContent) ─────────────────────
+
+    public void setOnSendPrompt(Consumer<String> onSendPrompt) {
+        this.onSendPrompt = onSendPrompt;
+    }
+
+    public void setOnQuickReply(Consumer<String> onQuickReply) {
+        this.onQuickReply = onQuickReply;
+    }
+
+    public void setOnNudge(Consumer<String> onNudge) {
+        this.onNudge = onNudge;
+    }
+
+    public void setOnStop(Runnable onStop) {
+        this.onStop = onStop;
+    }
+
+    public void setOnCancelNudge(Consumer<String> onCancelNudge) {
+        this.onCancelNudge = onCancelNudge;
+    }
+
+    public void setOnPermissionResponse(Consumer<String> onPermissionResponse) {
+        this.onPermissionResponse = onPermissionResponse;
+    }
+
+    public void setOnDisconnect(Runnable onDisconnect) {
+        this.onDisconnect = onDisconnect;
+    }
+
+    public void setOnConnect(Consumer<String> onConnect) {
+        this.onConnect = onConnect;
+    }
+
+    public void setOnSelectModel(Consumer<String> onSelectModel) {
+        this.onSelectModel = onSelectModel;
+    }
+
+    public void setOnLoadMore(Runnable onLoadMore) {
+        this.onLoadMore = onLoadMore;
     }
 
     // ── State setters (called by ChatToolWindowContent) ───────────────────────

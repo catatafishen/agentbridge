@@ -478,7 +478,7 @@ public final class AgentProfile {
     /**
      * @deprecated Use {@link #getBundledAgentFiles()} instead.
      */
-    @Deprecated
+    @Deprecated(since = "0.7", forRemoval = true)
     public void setEnsureCopilotAgents(boolean ensureCopilotAgents) {
         // no-op: replaced by bundledAgentFiles
     }

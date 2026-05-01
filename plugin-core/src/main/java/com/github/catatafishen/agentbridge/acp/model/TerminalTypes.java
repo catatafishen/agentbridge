@@ -37,5 +37,7 @@ public final class TerminalTypes {
             String input
     ) {}
 
-    public record TerminalWriteResponse() {}
+    public record TerminalWriteResponse() {
+        public static final boolean SUCCESS = true;
+    }
 }

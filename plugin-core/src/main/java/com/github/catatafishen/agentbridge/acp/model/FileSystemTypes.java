@@ -1,7 +1,5 @@
 package com.github.catatafishen.agentbridge.acp.model;
 
-import org.jetbrains.annotations.Nullable;
-
 /**
  * File-system related requests from agent to client.
  *
@@ -17,5 +15,7 @@ public final class FileSystemTypes {
 
     public record WriteTextFileRequest(String path, String text) {}
 
-    public record WriteTextFileResponse() {}
+    public record WriteTextFileResponse() {
+        public static final boolean SUCCESS = true;
+    }
 }

@@ -327,10 +327,6 @@ public final class WebPushSender {
         return WebPushCryptoUtils.derToRawEcdsa(der, componentLen);
     }
 
-    private static void copyUnsignedBig(byte[] src, byte[] dst, int dstOffset, int len) {
-        WebPushCryptoUtils.copyUnsignedBig(src, dst, dstOffset, len);
-    }
-
     private static byte[] concat(byte[]... arrays) {
         return WebPushCryptoUtils.concat(arrays);
     }

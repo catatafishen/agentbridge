@@ -82,32 +82,10 @@ public final class V1ToV2Migrator {
 
             long now = System.currentTimeMillis();
             for (List<EntryData> session : sessions) {
-                if (session.isEmpty()) continue;
-
-                String sessionId = UUID.randomUUID().toString();
-                // Write JSONL
-                File jsonlFile = new File(sessionsDir, sessionId + ".jsonl");
-                StringBuilder sb = new StringBuilder();
-                for (EntryData entry : session) {
-                    sb.append(GSON.toJson(EntryDataJsonAdapter.serialize(entry))).append('\n');
+                JsonObject rec = migrateSession(session, sessionsDir, directory, now);
+                if (rec != null) {
+                    indexRecords.add(rec);
                 }
-                try {
-                    Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
-                        StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-                } catch (IOException e) {
-                    LOG.warn("Migration: failed to write JSONL for session " + sessionId, e);
-                    continue;
-                }
-
-                // Build index record
-                JsonObject rec = new JsonObject();
-                rec.addProperty("id", sessionId);
-                rec.addProperty("agent", "GitHub Copilot");
-                rec.addProperty("directory", directory);
-                rec.addProperty("createdAt", now);
-                rec.addProperty("updatedAt", now);
-                rec.addProperty("jsonlPath", sessionId + ".jsonl");
-                indexRecords.add(rec);
             }
 
             // Write index
@@ -130,6 +108,36 @@ public final class V1ToV2Migrator {
         } catch (Exception e) {
             LOG.warn("V1→V2 migration failed", e);
         }
+    }
+
+    @Nullable
+    private static JsonObject migrateSession(List<EntryData> session, File sessionsDir, String directory, long now) {
+        if (session.isEmpty()) {
+            return null;
+        }
+
+        String sessionId = UUID.randomUUID().toString();
+        File jsonlFile = new File(sessionsDir, sessionId + ".jsonl");
+        StringBuilder sb = new StringBuilder();
+        for (EntryData entry : session) {
+            sb.append(GSON.toJson(EntryDataJsonAdapter.serialize(entry))).append('\n');
+        }
+        try {
+            Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        } catch (IOException e) {
+            LOG.warn("Migration: failed to write JSONL for session " + sessionId, e);
+            return null;
+        }
+
+        JsonObject rec = new JsonObject();
+        rec.addProperty("id", sessionId);
+        rec.addProperty("agent", "GitHub Copilot");
+        rec.addProperty("directory", directory);
+        rec.addProperty("createdAt", now);
+        rec.addProperty("updatedAt", now);
+        rec.addProperty("jsonlPath", sessionId + ".jsonl");
+        return rec;
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
