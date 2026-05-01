@@ -23,7 +23,7 @@ public class ToolStatisticsPanel extends JPanel {
 
     private static final String ALL_CLIENTS = "All clients";
 
-    private final Project project;
+    private final transient Project project;
     private final ToolStatisticsTableModel tableModel = new ToolStatisticsTableModel();
     private final JComboBox<String> rangeCombo = new JComboBox<>(new String[]{
         "Last hour", "Last 24 hours", "Last 7 days", "All time"
