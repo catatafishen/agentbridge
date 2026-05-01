@@ -10,7 +10,6 @@ import com.intellij.psi.codeStyle.MinusculeMatcher;
 import com.intellij.psi.codeStyle.NameUtil;
 import com.intellij.psi.search.FilenameIndex;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.util.text.matching.MatchingMode;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -163,7 +162,7 @@ public final class FindFileTool extends NavigationTool {
             return new MatchPredicate(
                 query,
                 query.toLowerCase(Locale.ROOT),
-                NameUtil.buildMatcher("*" + query).withMatchingMode(MatchingMode.IGNORE_CASE).build(),
+                NameUtil.buildMatcher("*" + query, NameUtil.MatchingCaseSensitivity.NONE),
                 glob,
                 query.indexOf('/') >= 0 || query.indexOf('\\') >= 0
             );
