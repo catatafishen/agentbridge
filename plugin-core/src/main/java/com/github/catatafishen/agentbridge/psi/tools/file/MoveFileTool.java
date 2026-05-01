@@ -26,6 +26,11 @@ public final class MoveFileTool extends FileTool {
     }
 
     @Override
+    public @NotNull Kind kind() {
+        return Kind.MOVE;
+    }
+
+    @Override
     public @NotNull String displayName() {
         return "Move File";
     }
@@ -35,11 +40,6 @@ public final class MoveFileTool extends FileTool {
         return "Move a file to a different directory using IntelliJ's refactoring engine when PSI is available. " +
             "Language-aware IDE move handlers update imports, package declarations, and references where supported. " +
             "Falls back to a plain VFS move only for files/directories the IDE cannot represent as PSI.";
-    }
-
-    @Override
-    public @NotNull Kind kind() {
-        return Kind.MOVE;
     }
 
     @Override
