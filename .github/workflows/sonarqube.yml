@@ -83,6 +83,7 @@ jobs:
             -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
             -Dsonar.organization="$SONAR_ORGANIZATION" \
             -Dsonar.host.url="$SONAR_HOST_URL" \
+            -Dsonar.sources.inclusions="plugin-core/chat-ui/src/**" \
             -Dsonar.javascript.lcov.reportPaths="plugin-core/js-tests/coverage/lcov.info" \
             -Dsonar.qualitygate.wait=true \
             -Dsonar.qualitygate.timeout=300
