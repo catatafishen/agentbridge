@@ -66,10 +66,7 @@ public final class DebugSessionListTool extends DebugTool {
         XSourcePosition pos = s.getCurrentPosition();
         if (pos == null) return "PAUSED";
         VirtualFile file = pos.getFile();
-        // NOSONAR java:S2583/javabugs:S2259 — Sonar's two engines disagree on whether
-        // XSourcePosition.getFile() can be null. Defensive guard kept for safety since the
-        // platform contract isn't annotated with @NotNull.
-        if (file == null) return "PAUSED"; // NOSONAR
+        if (file == null) return "PAUSED";
         String relPath = relativize(basePath, file.getPath());
         String location = relPath != null ? relPath : file.getName();
         return "PAUSED at " + location + ':' + (pos.getLine() + 1);

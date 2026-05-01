@@ -151,11 +151,8 @@ public class ReadFileTool extends FileTool {
         }
 
         if (totalLines > MAX_READ_LINES) {
-            int end = MAX_READ_LINES;
-            if (end > lines.length) end = lines.length;
-            // NOSONAR javabugs:S6416 — symbolic execution can't prove end <= lines.length
-            // despite the explicit clamp above. Bounds are provably safe.
-            String truncated = String.join("\n", Arrays.copyOfRange(lines, 0, end)); // NOSONAR
+            int end = Math.min(MAX_READ_LINES, lines.length);
+            String truncated = String.join("\n", Arrays.copyOf(lines, end));
             sb.append("[Showing first ").append(MAX_READ_LINES)
                 .append(" lines. Use start_line/end_line to read specific sections.]\n");
             sb.append(truncated);
