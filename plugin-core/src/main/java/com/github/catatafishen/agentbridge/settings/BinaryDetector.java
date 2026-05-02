@@ -19,6 +19,8 @@ import java.util.concurrent.TimeUnit;
 public class BinaryDetector {
     private static final Logger LOG = Logger.getInstance(BinaryDetector.class);
 
+    private static final String VERSION_FLAG = " --version";
+
     private static final String DEFAULT_PATHEXT =
         ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC";
 
@@ -49,8 +51,8 @@ public class BinaryDetector {
     private static String tryDetectBinary(@NotNull String binaryName) {
         String os = System.getProperty("os.name", "").toLowerCase();
         List<String> cmd = os.contains("win")
-            ? List.of("cmd.exe", "/c", binaryName + " --version")
-            : List.of("sh", "-c", "command -v " + binaryName + " >/dev/null && " + binaryName + " --version");
+            ? List.of("cmd.exe", "/c", binaryName + VERSION_FLAG)
+            : List.of("sh", "-c", "command -v " + binaryName + " >/dev/null && " + binaryName + VERSION_FLAG);
 
         String output = runCommand(cmd, 5);
         if (output == null) return null;
@@ -139,8 +141,8 @@ public class BinaryDetector {
     @Nullable
     public static String getVersionForPath(@NotNull String binaryPath) {
         List<String> cmd = isWindows()
-            ? List.of("cmd.exe", "/c", binaryPath + " --version")
-            : List.of("sh", "-c", binaryPath + " --version");
+            ? List.of("cmd.exe", "/c", binaryPath + VERSION_FLAG)
+            : List.of("sh", "-c", binaryPath + VERSION_FLAG);
 
         String output = runCommand(cmd, 5);
         if (output == null) return null;
@@ -170,7 +172,7 @@ public class BinaryDetector {
         if (version == null || version.isBlank()) return new int[0];
 
         // Strip leading non-digits (e.g. "v", "Copilot v")
-        String cleaned = version.replaceAll("^[^0-9]*", "");
+        String cleaned = version.replaceAll("^\\D*", "");
         // Strip trailing non-numeric suffixes (e.g. "-1", "-beta")
         cleaned = cleaned.replaceAll("[^0-9.].*$", "");
         if (cleaned.isEmpty()) return new int[0];
