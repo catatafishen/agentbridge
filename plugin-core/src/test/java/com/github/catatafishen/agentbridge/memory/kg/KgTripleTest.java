@@ -128,8 +128,8 @@ class KgTripleTest {
 
     @Test
     void builder_throwsOnEmptySubject() {
-        assertThrows(IllegalArgumentException.class,
-            () -> KgTriple.builder().subject("   "));
+        KgTriple.Builder builder = KgTriple.builder();
+        assertThrows(IllegalArgumentException.class, () -> builder.subject("   "));
     }
 
     @Test

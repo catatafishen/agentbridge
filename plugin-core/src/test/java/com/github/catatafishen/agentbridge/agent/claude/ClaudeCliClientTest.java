@@ -163,8 +163,8 @@ class ClaudeCliClientTest {
 
         @Test
         void listIsUnmodifiable() {
-            assertThrows(UnsupportedOperationException.class,
-                () -> models.add(new Model("test", "test", null, null)));
+            Model extra = new Model("test", "test", null, null);
+            assertThrows(UnsupportedOperationException.class, () -> models.add(extra));
         }
     }
 
