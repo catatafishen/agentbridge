@@ -153,7 +153,7 @@ class EssentialStoryLayerTest {
     @Test
     void customMaxDrawersLimitIsPassedToStore() throws IOException {
         int customLimit = 5;
-        when(store.getTopDrawersDiverse(eq(WING), eq(customLimit))).thenReturn(Collections.emptyList());
+        when(store.getTopDrawersDiverse(WING, customLimit)).thenReturn(Collections.emptyList());
 
         EssentialStoryLayer layer = new EssentialStoryLayer(store, customLimit);
         layer.render(WING, null);

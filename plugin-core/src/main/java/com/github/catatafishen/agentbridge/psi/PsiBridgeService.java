@@ -465,7 +465,10 @@ public final class PsiBridgeService implements Disposable {
             ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), result);
             return result;
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
-            if (e instanceof com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException) {
+            // The instanceof + early-return pattern is intentional: splitting into a separate
+            // catch for CannotRunReadActionException would trigger IntelliJ's "PCE inheritor
+            // must be rethrown" inspection (CannotRunReadActionException extends PCE).
+            if (e instanceof com.intellij.openapi.application.ex.ApplicationUtil.CannotRunReadActionException) { // NOSONAR java:S1193
                 // IDE was temporarily busy — not a shutdown signal; return a retryable error.
                 success = false;
                 errorMessage = "Error: IDE is busy, please retry. " + e.getMessage();
