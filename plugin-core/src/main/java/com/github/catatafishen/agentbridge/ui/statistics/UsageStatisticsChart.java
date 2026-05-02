@@ -439,7 +439,10 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         return minutes + "m";
     }
 
-    private static String formatYLabel(long value, UsageStatisticsData.Metric metric) {
+    // S3398: Sonar wants this moved into ChartCanvas (only caller), but these formatting utilities are
+    // tested via reflection from UsageStatisticsChartTest at the outer-class level. Moving them would
+    // break existing tests without meaningful improvement — they're chart-level formatting logic.
+    private static String formatYLabel(long value, UsageStatisticsData.Metric metric) { // NOSONAR java:S3398
         if (metric == UsageStatisticsData.Metric.AGENT_TIME) {
             return formatDuration(value);
         }

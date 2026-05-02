@@ -19,7 +19,8 @@ import java.util.List;
  * </ul>
  * Headers section only appears when {@code show_headers: true}.
  */
-public final class HttpRequestRenderer implements ToolResultRenderer {
+// S6548: Stateless renderer implementing ToolResultRenderer interface — singleton is safe and idiomatic.
+public final class HttpRequestRenderer implements ToolResultRenderer { // NOSONAR java:S6548
 
     public static final HttpRequestRenderer INSTANCE = new HttpRequestRenderer();
 

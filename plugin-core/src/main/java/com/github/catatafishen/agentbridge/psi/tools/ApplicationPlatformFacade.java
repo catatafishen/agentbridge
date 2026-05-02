@@ -14,7 +14,9 @@ import java.util.function.Supplier;
  *
  * @see PlatformFacade
  */
-public final class ApplicationPlatformFacade implements PlatformFacade {
+// S6548: Intentional stateless singleton — testability seam for PlatformFacade interface.
+// Only one IntelliJ Application per process; one facade for it is semantically correct.
+public final class ApplicationPlatformFacade implements PlatformFacade { // NOSONAR java:S6548
 
     static final ApplicationPlatformFacade INSTANCE = new ApplicationPlatformFacade();
 

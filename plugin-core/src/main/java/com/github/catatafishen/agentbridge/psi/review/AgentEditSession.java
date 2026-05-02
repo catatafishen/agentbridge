@@ -804,7 +804,9 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(path);
         if (vf == null) return null;
         String text = readDocumentText(vf);
-        if (text != null) return text;
+        // S2589: false positive — readDocumentText() is @Nullable (returns null when no live document
+        // exists), but Sonar can't see through ReadAction.compute() lambda and assumes non-null.
+        if (text != null) return text; // NOSONAR java:S2589
         try {
             return new String(vf.contentsToByteArray(), StandardCharsets.UTF_8);
         } catch (Exception e) {
