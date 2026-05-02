@@ -456,17 +456,16 @@ public final class PlatformApiCompat {
         var vcsLog = com.intellij.vcs.log.impl.VcsProjectLog.getInstance(project);
         var data = vcsLog.getDataManager();
         if (data == null) {
-            // VCS log not yet initialized — skip navigation to avoid a "commit not found" error
-            // bubble. The log hasn't indexed the commit yet, and there's no UI panel to navigate
-            // to anyway. Best-effort follow-mode only runs when the log is already open.
+            LOG.info("VCS log follow-along skipped for " + fullHash.substring(0, 8)
+                + ": VcsLogData not yet initialized (log tab not opened?)");
             return;
         }
 
         com.intellij.openapi.vfs.VirtualFile repoRootVf =
             resolveLogProviderRoot(data, project, repoRootPath);
         if (repoRootVf == null) {
-            // Repo isn't a registered VCS-log provider (e.g. detected-but-unregistered subfolder
-            // git repo). The log can't navigate to commits it doesn't index — silently skip.
+            LOG.info("VCS log follow-along skipped for " + fullHash.substring(0, 8)
+                + ": repo root '" + repoRootPath + "' not found in VCS log providers");
             return;
         }
 
@@ -505,6 +504,8 @@ public final class PlatformApiCompat {
             .schedule(() -> {
                 if (navigated.compareAndSet(false, true)) {
                     data.removeDataPackChangeListener(listener);
+                    LOG.info("VCS log follow-along timed out after 10s for " + fullHash.substring(0, 8)
+                        + " in " + repoRootPath);
                 }
             }, 10, java.util.concurrent.TimeUnit.SECONDS);
     }
@@ -780,7 +781,7 @@ public final class PlatformApiCompat {
             for (com.intellij.openapi.vcs.VcsRoot vr : detected) {
                 com.intellij.openapi.vcs.AbstractVcs vcs = vr.getVcs();
                 com.intellij.openapi.vfs.VirtualFile path = vr.getPath();
-                if ("Git".equals(vcs.getName())) {
+                if (vcs != null && path != null && "Git".equals(vcs.getName())) {
                     roots.add(path.getPath());
                 }
             }
