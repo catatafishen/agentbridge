@@ -22,6 +22,7 @@ import javax.swing.event.HyperlinkEvent;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -38,6 +39,10 @@ import java.util.regex.Pattern;
  * file as rendered Markdown and exposes a {@code (done/total)} progress summary that
  * the parent tab container uses to badge the tab title.
  * <p>
+ * When a SQLite {@code session.db} exists in the same session directory (created by
+ * Copilot CLI's SQL tool), a split pane shows the structured task database below
+ * the markdown plan.
+ * <p>
  * The panel polls the file's modification time every {@link #POLL_INTERVAL_MS} ms while
  * showing, so edits made by the agent (or the user) appear without requiring a manual
  * refresh. Polling stops when the panel is removed from the component hierarchy.
@@ -46,14 +51,17 @@ final class TodoPanel extends JPanel implements Disposable {
 
     private static final Pattern CHECKBOX_LINE = Pattern.compile("^\\s*+[-*]\\s+\\[([ xX])]\\s+.+$");
     private static final int POLL_INTERVAL_MS = 1500;
+    private static final String SESSION_DB_NAME = "session.db";
 
     private final transient Project project;
     private final JEditorPane markdownPane;
     private final JBLabel emptyLabel;
     private final JBLabel headerLabel;
-    private final JPanel contentPanel;
+    private final JPanel markdownContentPanel;
+    private final TodoDatabasePanel databasePanel;
     private final transient Timer pollTimer;
     private transient @Nullable Runnable onProgressChanged;
+    private boolean splitVisible;
 
     /**
      * Last observed (path, mtime, done, total) so the poll timer can skip work when nothing changed.
@@ -85,12 +93,14 @@ final class TodoPanel extends JPanel implements Disposable {
         emptyLabel.setHorizontalAlignment(SwingConstants.CENTER);
         emptyLabel.setBorder(EmptyStateStyles.PLACEHOLDER_PADDING);
 
-        contentPanel = new JPanel(new BorderLayout());
-        contentPanel.add(emptyLabel, BorderLayout.CENTER);
+        markdownContentPanel = new JPanel(new BorderLayout());
+        markdownContentPanel.add(emptyLabel, BorderLayout.CENTER);
+
+        databasePanel = new TodoDatabasePanel();
 
         JPanel body = new JPanel(new BorderLayout());
         body.add(headerLabel, BorderLayout.NORTH);
-        body.add(contentPanel, BorderLayout.CENTER);
+        body.add(markdownContentPanel, BorderLayout.CENTER);
         add(body, BorderLayout.CENTER);
 
         pollTimer = new Timer(POLL_INTERVAL_MS, e -> pollIfVisible());
@@ -106,16 +116,10 @@ final class TodoPanel extends JPanel implements Disposable {
         this.onProgressChanged = callback;
     }
 
-    /**
-     * Zero when no checkbox-style todos were found.
-     */
     int getTotal() {
         return Math.max(0, lastTotal);
     }
 
-    /**
-     * Zero when no checkbox-style todos were found.
-     */
     int getDone() {
         return Math.max(0, lastDone);
     }
@@ -157,6 +161,7 @@ final class TodoPanel extends JPanel implements Disposable {
     @Override
     public void dispose() {
         pollTimer.stop();
+        databasePanel.dispose();
     }
 
     private void pollIfVisible() {
@@ -167,7 +172,10 @@ final class TodoPanel extends JPanel implements Disposable {
      * Re-reads the plan file and repaints if anything changed. Safe to call from the EDT.
      */
     void refresh() {
-        Path path = resolvePlanPath();
+        Path sessionDir = resolveSessionDir();
+        updateDatabasePanel(sessionDir);
+
+        Path path = sessionDir != null ? sessionDir.resolve("plan.md") : null;
         if (path == null || !Files.isRegularFile(path)) {
             renderEmpty();
             return;
@@ -189,6 +197,68 @@ final class TodoPanel extends JPanel implements Disposable {
         renderMarkdown(content);
     }
 
+    private void updateDatabasePanel(@Nullable Path sessionDir) {
+        File dbFile = sessionDir != null ? sessionDir.resolve(SESSION_DB_NAME).toFile() : null;
+        boolean hasDb = dbFile != null && dbFile.exists();
+
+        if (hasDb && !splitVisible) {
+            showSplit(dbFile);
+        } else if (!hasDb && splitVisible) {
+            hideSplit();
+        } else if (hasDb) {
+            databasePanel.setDatabaseFile(dbFile);
+        }
+    }
+
+    private void showSplit(@NotNull File dbFile) {
+        splitVisible = true;
+        databasePanel.setDatabaseFile(dbFile);
+
+        Component mainBody = getMainBody();
+        if (mainBody == null) return;
+
+        Container parent = mainBody.getParent();
+        parent.remove(mainBody);
+
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mainBody, databasePanel);
+        split.setResizeWeight(0.6);
+        split.setBorder(JBUI.Borders.empty());
+        split.setDividerSize(4);
+
+        parent.add(split, BorderLayout.CENTER);
+        parent.revalidate();
+        parent.repaint();
+    }
+
+    private void hideSplit() {
+        splitVisible = false;
+        databasePanel.setDatabaseFile(null);
+
+        Component mainBody = getMainBody();
+        if (mainBody == null) return;
+
+        Container splitParent = mainBody.getParent();
+        if (splitParent instanceof JSplitPane split) {
+            Container grandParent = split.getParent();
+            grandParent.remove(split);
+            grandParent.add(mainBody, BorderLayout.CENTER);
+            grandParent.revalidate();
+            grandParent.repaint();
+        }
+    }
+
+    /**
+     * Returns the JPanel containing headerLabel + markdownContentPanel.
+     */
+    private @Nullable Component getMainBody() {
+        if (getComponentCount() == 0) return null;
+        Component c = getComponent(0);
+        if (c instanceof JSplitPane split) {
+            return split.getTopComponent();
+        }
+        return c;
+    }
+
     private void renderEmpty() {
         boolean changed = lastTotal != 0 || lastDone != 0 || lastPath != null;
         lastPath = null;
@@ -197,10 +267,10 @@ final class TodoPanel extends JPanel implements Disposable {
         lastTotal = 0;
 
         headerLabel.setVisible(false);
-        contentPanel.removeAll();
-        contentPanel.add(emptyLabel, BorderLayout.CENTER);
-        contentPanel.revalidate();
-        contentPanel.repaint();
+        markdownContentPanel.removeAll();
+        markdownContentPanel.add(emptyLabel, BorderLayout.CENTER);
+        markdownContentPanel.revalidate();
+        markdownContentPanel.repaint();
         if (changed && onProgressChanged != null) onProgressChanged.run();
     }
 
@@ -228,13 +298,13 @@ final class TodoPanel extends JPanel implements Disposable {
         markdownPane.setText(html);
         markdownPane.setCaretPosition(0);
 
-        contentPanel.removeAll();
+        markdownContentPanel.removeAll();
         JBScrollPane scroll = new JBScrollPane(markdownPane);
         scroll.setBorder(JBUI.Borders.empty());
         scroll.getVerticalScrollBar().setUnitIncrement(16);
-        contentPanel.add(scroll, BorderLayout.CENTER);
-        contentPanel.revalidate();
-        contentPanel.repaint();
+        markdownContentPanel.add(scroll, BorderLayout.CENTER);
+        markdownContentPanel.revalidate();
+        markdownContentPanel.repaint();
 
         if (progressChanged && onProgressChanged != null) onProgressChanged.run();
     }
@@ -266,23 +336,23 @@ final class TodoPanel extends JPanel implements Disposable {
     }
 
     /**
-     * Resolves the plan file for the currently-active agent session.
+     * Resolves the session directory for the currently-active agent session.
      * Returns {@code null} if no agent is running or the session dir is unknown.
      */
-    private @Nullable Path resolvePlanPath() {
+    private @Nullable Path resolveSessionDir() {
         try {
             ActiveAgentManager manager = ActiveAgentManager.getInstance(project);
-            Path sessionDir = manager.getClient().getSessionDirectory();
-            if (sessionDir == null) return null;
-            return sessionDir.resolve("plan.md");
+            return manager.getClient().getSessionDirectory();
         } catch (Exception ignored) {
             return null;
         }
     }
 
     private void openPlanInEditor() {
-        Path path = resolvePlanPath();
-        if (path == null || !Files.isRegularFile(path)) return;
+        Path sessionDir = resolveSessionDir();
+        if (sessionDir == null) return;
+        Path path = sessionDir.resolve("plan.md");
+        if (!Files.isRegularFile(path)) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path);
             if (vf != null) {
