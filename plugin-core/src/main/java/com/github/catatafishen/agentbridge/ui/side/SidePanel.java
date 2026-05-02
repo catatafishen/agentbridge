@@ -14,11 +14,12 @@ import java.awt.*;
 /**
  * Tabbed container for the left-hand tool-window pane.
  * Uses {@link PlatformApiCompat#createJBTabsPanel} for native IntelliJ flat tab styling.
- * Hosts four tabs:
+ * Hosts five tabs:
  * <ol>
  *   <li><b>Diff</b> — the existing {@link DiffPanel} with pending agent edits.</li>
- *   <li><b>Tasks</b> — rendered view of the active agent session's {@code plan.md},
+ *   <li><b>Todo</b> — rendered view of the active agent session's {@code plan.md},
  *       with a {@code (done/total)} badge in the tab title when checkbox-style task items exist.</li>
+ *   <li><b>Tools</b> — live list of MCP tool calls with timestamps, categories, and expandable I/O.</li>
  *   <li><b>Search</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
  *   <li><b>Session</b> — session statistics, billing info, and a project-files tree.</li>
  * </ol>
@@ -28,9 +29,10 @@ public final class SidePanel extends JPanel implements Disposable {
 
     private static final int TAB_REVIEW = 0;
     private static final int TAB_TODOS = 1;
-    private static final int TAB_SESSION = 3;
+    private static final int TAB_SESSION = 4;
 
     private final transient PlatformApiCompat.JBTabsPanel tabsPanel;
+
     public SidePanel(@NotNull Project project, @NotNull ChatConsolePanel chatConsole,
                      @NotNull SessionStatsPanel sessionStatsPanel) {
         super(new BorderLayout());
@@ -43,9 +45,13 @@ public final class SidePanel extends JPanel implements Disposable {
         PromptsPanel promptsPanel = new PromptsPanel(project, chatConsole);
         Disposer.register(this, promptsPanel);
 
+        ToolCallListPanel toolCallPanel = new ToolCallListPanel(project);
+        Disposer.register(this, toolCallPanel);
+
         tabsPanel = PlatformApiCompat.createJBTabsPanel(project, this);
         tabsPanel.addTab(reviewPanel, "Diff");
         tabsPanel.addTab(todoPanel, "Todo");
+        tabsPanel.addTab(toolCallPanel, "Tools");
         tabsPanel.addTab(promptsPanel, "Search");
         tabsPanel.addTab(sessionStatsPanel, "Session");
 
