@@ -75,6 +75,7 @@ class ChatToolWindowContent(
     private val agentManager = ActiveAgentManager.getInstance(project)
     private lateinit var connectPanel: AcpConnectPanel
     private var chatPanel: JComponent? = null
+    private var chatSessionInitialized = false
 
     // Shared model list (populated from ACP)
     @Volatile
@@ -155,6 +156,7 @@ class ChatToolWindowContent(
      */
     private fun registerReviewPanelHandlers() {
         val expand = Runnable {
+            ensureSidePanelAvailable()
             sidePanel?.selectReviewTab()
             if (rootSplitter.proportion < 0.01f) {
                 rootSplitter.proportion = defaultReviewProportion
@@ -269,10 +271,8 @@ class ChatToolWindowContent(
             consolePanel.addSessionSeparator(ts, agentManager.activeProfile.displayName)
             appendNewEntries()
         }
-        if (chatPanel == null) {
-            val panel = createPromptTab()
-            chatPanel = panel
-            mainPanel.add(panel, CARD_CHAT)
+        ensureSidePanelAvailable()
+        if (!chatSessionInitialized) {
             archiveConversation()
             // Set agent color immediately so it is queued in pendingJs before the browser loads.
             // Without this there is a race: the browser becomes ready (pendingJs flushed empty) before
@@ -282,6 +282,7 @@ class ChatToolWindowContent(
                 agentManager.activeProfile.id,
                 agentManager.activeProfile.clientCssClass
             )
+            chatSessionInitialized = true
             restoreConversation(onComplete = addSeparatorNow)
         } else {
             addSeparatorNow()
@@ -624,6 +625,13 @@ class ChatToolWindowContent(
         return banner
     }
 
+    private fun ensureSidePanelAvailable() {
+        if (sidePanel != null) return
+        val panel = createPromptTab()
+        chatPanel = panel
+        mainPanel.add(panel, CARD_CHAT)
+    }
+
     private fun createPromptTab(): JComponent {
         val panel = JBPanel<JBPanel<*>>(BorderLayout())
         val responsePanel = createResponsePanel()
@@ -676,12 +684,13 @@ class ChatToolWindowContent(
     }
 
     private fun attachSidePanel(sessionStatsPanel: com.github.catatafishen.agentbridge.ui.side.SessionStatsPanel) {
-        val side = com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel).apply {
-            border = JBUI.Borders.compound(
-                JBUI.Borders.empty(4),
-                com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
-            )
-        }
+        val side =
+            com.github.catatafishen.agentbridge.ui.side.SidePanel(project, chatConsolePanel, sessionStatsPanel).apply {
+                border = JBUI.Borders.compound(
+                    JBUI.Borders.empty(4),
+                    com.intellij.ui.RoundedLineBorder(JBUI.CurrentTheme.ToolWindow.borderColor(), JBUI.scale(8), 1)
+                )
+            }
         com.intellij.openapi.util.Disposer.register(toolWindow.disposable, side)
         sidePanel = side
         rootSplitter.firstComponent = side
@@ -1685,6 +1694,7 @@ class ChatToolWindowContent(
 
         override fun setSelected(e: AnActionEvent, state: Boolean) {
             if (state) {
+                ensureSidePanelAvailable()
                 // When showing: record the current tool window width (= chat width when side is hidden),
                 // then expand the tool window by the side panel width so the chat area stays the same size.
                 val chatWidth = rootSplitter.width

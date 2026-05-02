@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.psi.review.ReviewItem;
 import com.github.catatafishen.agentbridge.psi.review.ReviewSessionTopic;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.ui.util.EmptyStateStyles;
+import com.github.catatafishen.agentbridge.ui.util.SidePanelFooter;
 import com.github.catatafishen.agentbridge.ui.util.TimestampDisplayFormatter;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
@@ -22,7 +23,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
-import com.intellij.ui.SideBorder;
 import com.intellij.ui.SimpleColoredComponent;
 import com.intellij.ui.SimpleTextAttributes;
 import com.intellij.ui.components.JBLabel;
@@ -131,21 +131,10 @@ public final class DiffPanel extends JPanel implements Disposable {
 
         ActionToolbar toolbar = createToolbar();
         toolbar.setTargetComponent(this);
-        toolbar.getComponent().setBorder(JBUI.Borders.empty());
-
-        JPanel toolbarFooter = new JPanel(new BorderLayout());
-        toolbarFooter.setBorder(JBUI.Borders.compound(
-            new SideBorder(JBColor.border(), SideBorder.TOP),
-            JBUI.Borders.empty(2, 0)));
-        JComponent toolbarComponent = toolbar.getComponent();
-        int footerHeight = JBUI.scale(32);
-        toolbarComponent.setPreferredSize(new Dimension(0, footerHeight));
-        toolbarComponent.setMinimumSize(new Dimension(0, footerHeight));
 
         diffTotalsLabel = new JBLabel();
         diffTotalsLabel.setBorder(JBUI.Borders.emptyRight(8));
-        toolbarFooter.add(diffTotalsLabel, BorderLayout.EAST);
-        toolbarFooter.add(toolbarComponent, BorderLayout.CENTER);
+        JPanel toolbarFooter = SidePanelFooter.createToolbarFooter(toolbar, diffTotalsLabel);
 
         add(cardPanel, BorderLayout.CENTER);
         add(toolbarFooter, BorderLayout.SOUTH);

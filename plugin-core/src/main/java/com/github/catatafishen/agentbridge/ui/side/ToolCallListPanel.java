@@ -2,11 +2,18 @@ package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry;
 import com.github.catatafishen.agentbridge.services.LiveToolCallService;
+import com.github.catatafishen.agentbridge.ui.util.SidePanelFooter;
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.actionSystem.ActionManager;
+import com.intellij.openapi.actionSystem.ActionToolbar;
+import com.intellij.openapi.actionSystem.ActionUpdateThread;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DefaultActionGroup;
 import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.project.DumbAwareAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.JBColor;
-import com.intellij.ui.SideBorder;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
@@ -85,21 +92,9 @@ final class ToolCallListPanel extends JPanel implements Disposable {
 
         add(scrollPane, BorderLayout.CENTER);
 
-        // Footer with clear button (matching DiffPanel pattern)
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setBorder(JBUI.Borders.compound(
-            new SideBorder(JBColor.border(), SideBorder.TOP),
-            JBUI.Borders.empty(2, 4)));
-        JButton clearBtn = new JButton("Clear");
-        clearBtn.setFont(clearBtn.getFont().deriveFont(11f));
-        clearBtn.putClientProperty("JButton.buttonType", "borderless");
-        clearBtn.addActionListener(e -> {
-            LiveToolCallService.getInstance(project).clear();
-            expandedIndex = -1;
-            rebuild();
-        });
-        footer.add(clearBtn, BorderLayout.WEST);
-        add(footer, BorderLayout.SOUTH);
+        ActionToolbar toolbar = createToolbar();
+        toolbar.setTargetComponent(this);
+        add(SidePanelFooter.createToolbarFooter(toolbar), BorderLayout.SOUTH);
 
         // Subscribe to service updates
         serviceListener = e -> ApplicationManager.getApplication().invokeLater(this::onServiceChanged);
@@ -164,6 +159,29 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         listPanel.repaint();
         SwingUtilities.invokeLater(() ->
             scrollPane.getVerticalScrollBar().setValue(0));
+    }
+
+    private @NotNull ActionToolbar createToolbar() {
+        DefaultActionGroup group = new DefaultActionGroup();
+        group.add(new DumbAwareAction("Clear", "Clear tool call history", AllIcons.Actions.GC) {
+            @Override
+            public @NotNull ActionUpdateThread getActionUpdateThread() {
+                return ActionUpdateThread.BGT;
+            }
+
+            @Override
+            public void actionPerformed(@NotNull AnActionEvent e) {
+                LiveToolCallService.getInstance(project).clear();
+                expandedIndex = -1;
+                rebuild();
+            }
+
+            @Override
+            public void update(@NotNull AnActionEvent e) {
+                e.getPresentation().setEnabled(!LiveToolCallService.getInstance(project).getEntries().isEmpty());
+            }
+        });
+        return ActionManager.getInstance().createActionToolbar("ToolCallsToolbar", group, true);
     }
 
     private JPanel createRow(LiveToolCallEntry entry, int index) {
