@@ -294,7 +294,9 @@ public final class PsiBridgeService implements Disposable {
         if (nudgesHeld) return null;
         String nudge = pendingNudge.getAndSet(null);
         if (nudge != null) {
-            Runnable cb = onNudgeConsumed.get();
+            // Clear the callback atomically to prevent stale callbacks from firing
+            // on future nudge sources (e.g., tool reprimands, revert nudges)
+            Runnable cb = onNudgeConsumed.getAndSet(null);
             if (cb != null) cb.run();
         }
         return nudge;

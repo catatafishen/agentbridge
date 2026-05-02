@@ -1082,9 +1082,12 @@ class ChatToolWindowContent(
             consolePanel.showNudgeBubble(id, text)
         }
         val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setPendingNudge(text)
+        // Register callback BEFORE arming the nudge to avoid race condition where
+        // a tool call consumes the nudge between setPendingNudge and setOnNudgeConsumed
         val resolveId = pendingNudgeId!!
-        psiBridge.setOnNudgeConsumed {
+        // Chain with (not replace) any existing callback — e.g., tool reprimand cleanup
+        // from CopilotClient.onBuiltInToolApproved() may already be registered
+        psiBridge.addOnNudgeConsumed {
             val capturedText = pendingNudgeText
             pendingNudgeId = null
             pendingNudgeText = null
@@ -1097,6 +1100,7 @@ class ChatToolWindowContent(
                 refreshShortcutHints()
             }
         }
+        psiBridge.setPendingNudge(text)
         refreshShortcutHints()
     }
 
