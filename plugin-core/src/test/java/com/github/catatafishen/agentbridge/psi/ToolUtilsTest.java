@@ -49,6 +49,21 @@ class ToolUtilsTest {
             assertEquals("/project-extra/file.txt",
                 ToolUtils.relativize("/project", "/project-extra/file.txt"));
         }
+
+        @Test
+        void producesJarUrlForJarInternalPaths() {
+            assertEquals("jar:///home/user/.gradle/caches/guava.jar!/com/google/common/collect/ImmutableList.java",
+                ToolUtils.relativize("/home/user/project",
+                    "/home/user/.gradle/caches/guava.jar!/com/google/common/collect/ImmutableList.java"));
+        }
+
+        @Test
+        void jarPathInsideProjectStillGetsJarUrl() {
+            // Even if the jar is under the project, the .jar!/ path should get a jar:// URL
+            assertEquals("jar:///home/user/project/lib/my.jar!/com/example/MyClass.java",
+                ToolUtils.relativize("/home/user/project",
+                    "/home/user/project/lib/my.jar!/com/example/MyClass.java"));
+        }
     }
 
     @Nested

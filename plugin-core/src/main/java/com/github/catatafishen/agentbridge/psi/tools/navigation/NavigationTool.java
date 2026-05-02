@@ -151,22 +151,22 @@ public abstract class NavigationTool extends Tool {
     }
 
     /**
-     * Returns a safe, non-sensitive relative path for display:
+     * Relativizes a path for agent-facing output.
      * <ul>
+     *   <li>JAR-internal paths ({@code .jar!/}) → {@code jar://} URL so agents can pass it back to file tools</li>
      *   <li>Files inside the project → project-relative path (normal behaviour)</li>
-     *   <li>JAR-internal paths ({@code .jar!/}) → the in-JAR portion only (e.g. {@code com/example/SomeClass.java})</li>
      *   <li>Other external paths → just the filename, to avoid leaking user-specific home-directory paths</li>
      * </ul>
      */
     protected static String safeRelativize(String basePath, String absolutePath) {
         String p = absolutePath.replace('\\', '/');
+        // JAR-internal source: produce a jar:// URL that can be passed back to file tools.
+        // Must check before the base-path prefix strip to avoid producing broken relative JAR paths.
+        if (p.contains(ToolUtils.JAR_SEPARATOR)) return ToolUtils.JAR_URL_PREFIX + p;
         if (basePath != null) {
             String base = basePath.replace('\\', '/');
             if (p.startsWith(base + "/")) return p.substring(base.length() + 1);
         }
-        // JAR-internal source: strip the on-disk path, keep the in-JAR relative path
-        int jarSep = p.lastIndexOf(".jar!/");
-        if (jarSep >= 0) return p.substring(jarSep + ".jar!/".length());
         // Unknown external path: emit only the filename to avoid leaking home-dir paths
         int lastSlash = p.lastIndexOf('/');
         return lastSlash >= 0 ? p.substring(lastSlash + 1) : p;

@@ -23,6 +23,8 @@ public final class ToolUtils {
         "'path' parameter is required");
     public static final String JAVA_EXTENSION = ".java";
     public static final String BUILD_DIR = "build";
+    public static final String JAR_URL_PREFIX = "jar://";
+    public static final String JAR_SEPARATOR = ".jar!/";
 
     // Element type constants
     public static final String ELEMENT_TYPE_CLASS = "class";
@@ -199,8 +201,27 @@ public final class ToolUtils {
         return null;
     }
 
+    /**
+     * Resolves a JAR path (with or without {@code jar://} prefix) to a VirtualFile.
+     * Returns {@code null} if the path is not a JAR path.
+     */
+    private static @Nullable VirtualFile resolveJarPath(String normalized) {
+        if (normalized.startsWith(JAR_URL_PREFIX)) {
+            String jarPath = normalized.substring(JAR_URL_PREFIX.length());
+            return com.intellij.openapi.vfs.JarFileSystem.getInstance().findFileByPath(jarPath);
+        }
+        if (normalized.contains(JAR_SEPARATOR)) {
+            return com.intellij.openapi.vfs.JarFileSystem.getInstance().findFileByPath(normalized);
+        }
+        return null;
+    }
+
     public static VirtualFile resolveVirtualFile(Project project, String path) {
         String normalized = path.replace('\\', '/');
+
+        VirtualFile jarFile = resolveJarPath(normalized);
+        if (jarFile != null) return jarFile;
+
         VirtualFile vf = LocalFileSystem.getInstance().findFileByPath(normalized);
         if (vf != null) return vf;
 
@@ -219,6 +240,10 @@ public final class ToolUtils {
      */
     public static VirtualFile refreshAndFindVirtualFile(Project project, String path) {
         String normalized = path.replace('\\', '/');
+
+        VirtualFile jarFile = resolveJarPath(normalized);
+        if (jarFile != null) return jarFile;
+
         String basePath = project.getBasePath();
         if (basePath != null) {
             VirtualFile vf = LocalFileSystem.getInstance().refreshAndFindFileByPath(basePath + "/" + normalized);
@@ -228,15 +253,20 @@ public final class ToolUtils {
     }
 
     public static String relativize(@Nullable String basePath, @NotNull String filePath) {
+        String file = filePath.replace('\\', '/');
+        // JAR-internal paths: produce a jar:// URL so agents can pass it back to file tools.
+        // Must check before the base-path prefix strip to avoid producing broken relative JAR paths.
+        if (file.contains(JAR_SEPARATOR)) return JAR_URL_PREFIX + file;
         if (basePath == null) return filePath;
         String base = basePath.replace('\\', '/');
-        String file = filePath.replace('\\', '/');
-        return file.startsWith(base + "/") ? file.substring(base.length() + 1) : file;
+        if (file.startsWith(base + "/")) return file.substring(base.length() + 1);
+        return file;
     }
 
     /**
      * Appends {@code " (relative/path/to/file:lineNumber)"} to {@code sb} for the given PSI element.
-     * Skips JAR-internal paths (no location to navigate to) and null paths.
+     * For JAR-internal paths, produces a {@code jar://} URL so agents can pass it back to file tools.
+     * Skips elements with null containing files or base paths.
      *
      * @param sb       string being built
      * @param element  PSI element whose source location to append
@@ -247,7 +277,6 @@ public final class ToolUtils {
         com.intellij.psi.PsiFile file = element.getContainingFile();
         if (file == null || file.getVirtualFile() == null || basePath == null) return;
         String path = file.getVirtualFile().getPath();
-        if (path.contains(".jar!")) return;
         sb.append(" (").append(relativize(basePath, path));
         Document doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
             .getDocument(file.getVirtualFile());
