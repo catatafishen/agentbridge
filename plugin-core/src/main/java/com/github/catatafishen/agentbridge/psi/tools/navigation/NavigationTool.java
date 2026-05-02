@@ -40,14 +40,14 @@ public abstract class NavigationTool extends Tool {
     protected static final String PARAM_QUERY = "query";
     protected static final String PARAM_SCOPE = "scope";
     protected static final String SCOPE_PROJECT = "project";
-    protected static final String SCOPE_PRODUCTION = "project_production_files";
-    protected static final String SCOPE_TEST = "project_test_files";
+    protected static final String SCOPE_PRODUCTION = "production";
+    protected static final String SCOPE_TEST = "test";
     protected static final String SCOPE_LIBRARIES = "libraries";
     protected static final String SCOPE_ALL = "all";
     protected static final String SCOPE_DESCRIPTION =
         "Search scope: 'project' (default — only project sources, fastest), "
-            + "'project_production_files' (production sources only, excludes tests), "
-            + "'project_test_files' (test sources only), "
+            + "'production' (production sources only — Sources + Resources, excludes test roots), "
+            + "'test' (test sources only — Test Sources + Test Resources), "
             + "'libraries' (only library/JDK sources — "
             + "use after download_sources to look up symbols in dependencies), or 'all' (project + libraries). "
             + "Default 'project' keeps result counts small; switch when you need symbols declared in dependency JARs.";

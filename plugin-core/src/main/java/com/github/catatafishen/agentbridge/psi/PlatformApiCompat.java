@@ -1004,6 +1004,36 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Classifies a file's source root type into the canonical vocabulary used by
+     * {@code mark_directory}: "sources", "test_sources", "resources", "test_resources",
+     * "generated_sources", or empty string if the file is not in a source root.
+     *
+     * <p><b>Why extracted:</b> {@code ProjectFileIndex.getContainingSourceRootType()} returns
+     * a {@code JpsModuleSourceRootType} whose concrete subtypes ({@code JavaSourceRootType},
+     * {@code JavaResourceRootType}) are bundled in a JPS JAR that differs between dev IDE
+     * and target SDK. This method centralises the type check.</p>
+     */
+    public static @NotNull String classifyFileSourceRoot(
+        @NotNull com.intellij.openapi.roots.ProjectFileIndex fileIndex,
+        @NotNull com.intellij.openapi.vfs.VirtualFile vf) {
+        boolean isGenerated = fileIndex.isInGeneratedSources(vf);
+        var rootType = fileIndex.getContainingSourceRootType(vf);
+        if (rootType == null) return "";
+
+        boolean isTest = rootType instanceof org.jetbrains.jps.model.java.JavaSourceRootType
+            && rootType == org.jetbrains.jps.model.java.JavaSourceRootType.TEST_SOURCE;
+        boolean isTestResource = rootType instanceof org.jetbrains.jps.model.java.JavaResourceRootType
+            && rootType == org.jetbrains.jps.model.java.JavaResourceRootType.TEST_RESOURCE;
+        boolean isResource = rootType instanceof org.jetbrains.jps.model.java.JavaResourceRootType;
+
+        if (isGenerated) return isTest || isTestResource ? "generated_test_sources" : "generated_sources";
+        if (isTestResource) return "test_resources";
+        if (isTest) return "test_sources";
+        if (isResource) return "resources";
+        return "sources";
+    }
+
+    /**
      * Lists available SDK types with their suggested entries.
      *
      * <p><b>Why extracted:</b> {@code SdkType.EP_NAME.getExtensionList()} cannot be resolved

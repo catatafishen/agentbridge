@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.navigation;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.ListProjectFilesRenderer;
 import com.google.gson.JsonObject;
@@ -152,11 +153,7 @@ public final class ListProjectFilesTool extends NavigationTool {
     }
 
     private static String resolveTag(ProjectFileIndex fileIndex, VirtualFile vf) {
-        if (fileIndex.isInGeneratedSources(vf)) {
-            return fileIndex.isInTestSourceContent(vf) ? "generated-test " : "generated ";
-        }
-        if (fileIndex.isInTestSourceContent(vf)) return "test ";
-        if (fileIndex.isInSourceContent(vf)) return "source ";
-        return "";
+        String rootKind = PlatformApiCompat.classifyFileSourceRoot(fileIndex, vf);
+        return rootKind.isEmpty() ? "" : rootKind + " ";
     }
 }
