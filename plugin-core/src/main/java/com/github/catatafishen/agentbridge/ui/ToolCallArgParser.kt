@@ -50,8 +50,8 @@ object ToolCallArgParser {
             if (!json.isJsonObject) return null
             val obj = json.asJsonObject
             for (key in listOf("path", "file", "filename", "filepath")) {
-                if (obj.has(key) && obj.get(key).isJsonPrimitive) {
-                    return obj.get(key).asString
+                if (obj.has(key) && obj[key].isJsonPrimitive) {
+                    return obj[key].asString
                 }
             }
         } catch (_: Exception) {
@@ -70,8 +70,8 @@ object ToolCallArgParser {
             val json = JsonParser.parseString(arguments)
             if (json.isJsonObject) {
                 val obj = json.asJsonObject
-                if (obj.has("summary") && obj.get("summary").isJsonPrimitive) {
-                    return obj.get("summary").asString
+                if (obj.has("summary") && obj["summary"].isJsonPrimitive) {
+                    return obj["summary"].asString
                 }
             }
         } catch (_: Exception) {

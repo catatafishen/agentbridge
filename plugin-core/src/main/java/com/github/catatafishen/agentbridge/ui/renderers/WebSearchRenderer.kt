@@ -123,7 +123,7 @@ object WebSearchRenderer : ToolResultRenderer {
 
     private fun firstString(obj: JsonObject, vararg keys: String): String? {
         for (key in keys) {
-            val element = obj.get(key) ?: continue
+            val element = obj[key] ?: continue
             val value = elementToText(element)
             if (!value.isNullOrBlank()) return value
         }

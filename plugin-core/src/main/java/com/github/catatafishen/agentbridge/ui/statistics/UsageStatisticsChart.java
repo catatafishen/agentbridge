@@ -247,7 +247,7 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         }
 
         private void paintGrid(Graphics2D g2, int plotLeft, int plotTop, int plotW, int plotH) {
-            g2.setFont(g2.getFont().deriveFont(Font.PLAIN, (float) JBUI.scale(10)));
+            g2.setFont(g2.getFont().deriveFont(Font.PLAIN, JBUI.scale(10)));
             FontMetrics fm = g2.getFontMetrics();
             int plotBottom = plotTop + plotH;
             int plotRight = plotLeft + plotW;
