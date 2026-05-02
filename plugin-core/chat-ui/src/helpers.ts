@@ -35,7 +35,7 @@ export function escHtml(s: string | null | undefined): string {
  */
 export function hideRedundantTimestamp(msg: Element): void {
     const tsEl = msg.querySelector('.ts');
-    if (!tsEl || !tsEl.textContent) return;
+    if (!tsEl?.textContent) return;
     const current = tsEl.textContent.trim();
     if (!current) return;
     let prev = msg.previousElementSibling;

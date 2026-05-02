@@ -448,7 +448,8 @@ public final class OpenCodeClientExporter {
         long timeCreated,
         @NotNull String projectDir,
         @Nullable String parentMessageId
-    ) {}
+    ) {
+    }
 
     /**
      * Inserts a message and its pre-built parts into the database.

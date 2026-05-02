@@ -90,7 +90,7 @@ document.addEventListener('mouseover', (e: MouseEvent) => {
 });
 
 // Request notification permission (for PWA turn-end alerts)
-if ('Notification' in window && Notification.permission === 'default') {
+if ('Notification' in globalThis && Notification.permission === 'default') {
     Notification.requestPermission();
 }
 

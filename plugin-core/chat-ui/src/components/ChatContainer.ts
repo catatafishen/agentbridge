@@ -23,7 +23,7 @@ export default class ChatContainer extends HTMLElement {
     // observer across all tables avoids the per-table overhead and reference retention
     // that would accumulate in long chats.
     private _tableResizeObs: ResizeObserver | null = null;
-    private _tableOverflowCallbacks: WeakMap<Element, () => void> = new WeakMap();
+    private readonly _tableOverflowCallbacks: WeakMap<Element, () => void> = new WeakMap();
 
     connectedCallback(): void {
         if (this._init) return;
@@ -220,14 +220,12 @@ export default class ChatContainer extends HTMLElement {
             // and dispatch resize events to the per-table callback via a WeakMap. Avoids
             // creating a fresh observer per table (which would also retain references to
             // tables removed from the DOM until GC).
-            if (!this._tableResizeObs) {
-                this._tableResizeObs = new ResizeObserver((entries) => {
-                    for (const entry of entries) {
-                        const cb = this._tableOverflowCallbacks.get(entry.target);
-                        if (cb) cb();
-                    }
-                });
-            }
+            this._tableResizeObs ??= new ResizeObserver((entries) => {
+                for (const entry of entries) {
+                    const cb = this._tableOverflowCallbacks.get(entry.target);
+                    if (cb) cb();
+                }
+            });
             this._tableOverflowCallbacks.set(table, updateOverflow);
             this._tableResizeObs.observe(table);
         });
