@@ -6,6 +6,7 @@ import com.google.gson.JsonPrimitive;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.Method;
 
@@ -266,17 +267,11 @@ class JunieClientTest {
         assertEquals("hello", result.get("query").getAsString());
     }
 
-    @Test
-    void tryParseArgs_nonJsonText() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"not json at all", "[1, 2, 3]", "   "})
+    void tryParseArgs_invalidTextReturnsNull(String text) throws Exception {
         JsonObject block = new JsonObject();
-        block.addProperty("text", "not json at all");
-        assertNull(invokeTryParseArgs(block));
-    }
-
-    @Test
-    void tryParseArgs_textNotStartingWithBrace() throws Exception {
-        JsonObject block = new JsonObject();
-        block.addProperty("text", "[1, 2, 3]");
+        block.addProperty("text", text);
         assertNull(invokeTryParseArgs(block));
     }
 
@@ -289,13 +284,6 @@ class JunieClientTest {
     void tryParseArgs_noTextKey() throws Exception {
         JsonObject block = new JsonObject();
         block.addProperty("type", "image");
-        assertNull(invokeTryParseArgs(block));
-    }
-
-    @Test
-    void tryParseArgs_emptyText() throws Exception {
-        JsonObject block = new JsonObject();
-        block.addProperty("text", "   ");
         assertNull(invokeTryParseArgs(block));
     }
 

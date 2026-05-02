@@ -9,6 +9,8 @@ import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -345,20 +347,13 @@ class AcpClientTest {
     @Nested
     class FindDenyOption {
 
-        @Test
-        void findsDenyOnce() throws Exception {
-            JsonObject params = buildOptionsParams("allow", "deny_once");
+        @ParameterizedTest
+        @CsvSource({"deny_once", "reject_once"})
+        void findsDenyOrRejectOnce(String denyKind) throws Exception {
+            JsonObject params = buildOptionsParams("allow", denyKind);
             JsonObject result = invokeFindDenyOption(params);
             assertNotNull(result);
-            assertEquals("deny_once", result.get("kind").getAsString());
-        }
-
-        @Test
-        void findsRejectOnce() throws Exception {
-            JsonObject params = buildOptionsParams("allow", "reject_once");
-            JsonObject result = invokeFindDenyOption(params);
-            assertNotNull(result);
-            assertEquals("reject_once", result.get("kind").getAsString());
+            assertEquals(denyKind, result.get("kind").getAsString());
         }
 
         @Test
@@ -598,55 +593,31 @@ class AcpClientTest {
 
         private final AcpClient client = new TestableAcpClient();
 
-        @Test
-        void agentTypeInParams() {
+        @ParameterizedTest
+        @CsvSource({
+            "agentType, copilot",
+            "agent_type, claude",
+            "subagent_type, gemini",
+        })
+        void agentTypeKeyInParams(String key, String value) {
             JsonObject params = new JsonObject();
-            params.addProperty("agentType", "copilot");
+            params.addProperty(key, value);
 
-            assertEquals("copilot", client.extractSubAgentType(params, "title", null));
+            assertEquals(value, client.extractSubAgentType(params, "title", null));
         }
 
-        @Test
-        void agentUnderscoreTypeInParams() {
-            JsonObject params = new JsonObject();
-            params.addProperty("agent_type", "claude");
-
-            assertEquals("claude", client.extractSubAgentType(params, "title", null));
-        }
-
-        @Test
-        void subagentTypeInParams() {
-            JsonObject params = new JsonObject();
-            params.addProperty("subagent_type", "gemini");
-
-            assertEquals("gemini", client.extractSubAgentType(params, "title", null));
-        }
-
-        @Test
-        void agentTypeInArgumentsObj() {
+        @ParameterizedTest
+        @CsvSource({
+            "agentType, copilot",
+            "agent_type, claude",
+            "subagent_type, gemini",
+        })
+        void agentTypeKeyInArgumentsObj(String key, String value) {
             JsonObject params = new JsonObject();
             JsonObject argsObj = new JsonObject();
-            argsObj.addProperty("agentType", "copilot");
+            argsObj.addProperty(key, value);
 
-            assertEquals("copilot", client.extractSubAgentType(params, "title", argsObj));
-        }
-
-        @Test
-        void agentUnderscoreTypeInArgumentsObj() {
-            JsonObject params = new JsonObject();
-            JsonObject argsObj = new JsonObject();
-            argsObj.addProperty("agent_type", "claude");
-
-            assertEquals("claude", client.extractSubAgentType(params, "title", argsObj));
-        }
-
-        @Test
-        void subagentTypeInArgumentsObj() {
-            JsonObject params = new JsonObject();
-            JsonObject argsObj = new JsonObject();
-            argsObj.addProperty("subagent_type", "gemini");
-
-            assertEquals("gemini", client.extractSubAgentType(params, "title", argsObj));
+            assertEquals(value, client.extractSubAgentType(params, "title", argsObj));
         }
 
         @Test

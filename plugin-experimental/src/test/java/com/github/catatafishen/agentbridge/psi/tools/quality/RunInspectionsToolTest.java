@@ -2,6 +2,8 @@ package com.github.catatafishen.agentbridge.psi.tools.quality;
 
 import org.jdom.Element;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -27,7 +29,7 @@ class RunInspectionsToolTest {
     @Test
     void formatInspectionPage_emptyProblems() {
         String result = RunInspectionsTool.formatInspectionPage(
-                List.of(), 0, "Default", 0, 100);
+            List.of(), 0, "Default", 0, 100);
         assertEquals("No inspection problems found (cached result).", result);
     }
 
@@ -35,7 +37,7 @@ class RunInspectionsToolTest {
     void formatInspectionPage_singlePage() {
         List<String> problems = List.of("problem1", "problem2", "problem3");
         String result = RunInspectionsTool.formatInspectionPage(
-                problems, 2, "MyProfile", 0, 10);
+            problems, 2, "MyProfile", 0, 10);
 
         assertTrue(result.contains("Found 3 total problems across 2 files (profile: MyProfile)."));
         assertTrue(result.contains("Showing 1-3 of 3."));
@@ -49,7 +51,7 @@ class RunInspectionsToolTest {
     void formatInspectionPage_paginatedFirstPage() {
         List<String> problems = List.of("p1", "p2", "p3", "p4", "p5");
         String result = RunInspectionsTool.formatInspectionPage(
-                problems, 3, "Default", 0, 2);
+            problems, 3, "Default", 0, 2);
 
         assertTrue(result.contains("Showing 1-2 of 5."));
         assertTrue(result.contains("WARNING: 3 more problems not shown!"));
@@ -63,7 +65,7 @@ class RunInspectionsToolTest {
     void formatInspectionPage_paginatedSecondPage() {
         List<String> problems = List.of("p1", "p2", "p3", "p4", "p5");
         String result = RunInspectionsTool.formatInspectionPage(
-                problems, 3, "Default", 2, 2);
+            problems, 3, "Default", 2, 2);
 
         assertTrue(result.contains("Showing 3-4 of 5."));
         assertTrue(result.contains("WARNING: 1 more problems not shown!"));
@@ -79,7 +81,7 @@ class RunInspectionsToolTest {
     void formatInspectionPage_offsetBeyondTotal() {
         List<String> problems = List.of("p1", "p2");
         String result = RunInspectionsTool.formatInspectionPage(
-                problems, 1, "Default", 10, 5);
+            problems, 1, "Default", 10, 5);
 
         // effectiveOffset = min(10, 2) = 2, end = min(2+5,2) = 2 → empty page
         assertTrue(result.contains("Showing 3-2 of 2."));
@@ -91,7 +93,7 @@ class RunInspectionsToolTest {
     void formatInspectionPage_offsetEqualTotal() {
         List<String> problems = List.of("p1", "p2", "p3");
         String result = RunInspectionsTool.formatInspectionPage(
-                problems, 1, "Default", 3, 5);
+            problems, 1, "Default", 3, 5);
 
         // effectiveOffset = min(3, 3) = 3, end = min(3+5,3) = 3 → empty page
         assertTrue(result.contains("Showing 4-3 of 3."));
@@ -106,7 +108,7 @@ class RunInspectionsToolTest {
         root.addContent(new Element("file").setText("file:///some/path.java"));
 
         String result = RunInspectionsTool.formatExportedElement(
-                root, "MyInspection", "/base", new HashSet<>());
+            root, "MyInspection", "/base", new HashSet<>());
         assertNull(result);
     }
 
@@ -117,7 +119,7 @@ class RunInspectionsToolTest {
         root.addContent(new Element("file").setText("file:///some/path.java"));
 
         String result = RunInspectionsTool.formatExportedElement(
-                root, "MyInspection", "/base", new HashSet<>());
+            root, "MyInspection", "/base", new HashSet<>());
         assertNull(result);
     }
 
@@ -127,7 +129,7 @@ class RunInspectionsToolTest {
         root.addContent(new Element("description").setText("Some issue"));
 
         String result = RunInspectionsTool.formatExportedElement(
-                root, "MyInspection", "/base", new HashSet<>());
+            root, "MyInspection", "/base", new HashSet<>());
         assertEquals("", result);
     }
 
@@ -141,7 +143,7 @@ class RunInspectionsToolTest {
 
         Set<String> filesSet = new HashSet<>();
         String result = RunInspectionsTool.formatExportedElement(
-                root, "UnusedVar", "/project", filesSet);
+            root, "UnusedVar", "/project", filesSet);
 
         assertEquals("src/Main.java:10 [WARNING/UnusedVar] Unused variable", result);
         assertTrue(filesSet.contains("src/Main.java"));
@@ -157,7 +159,7 @@ class RunInspectionsToolTest {
 
         Set<String> filesSet = new HashSet<>();
         String result = RunInspectionsTool.formatExportedElement(
-                root, "SomeCheck", "/project", filesSet);
+            root, "SomeCheck", "/project", filesSet);
 
         // file:// stripped → /project/src/Foo.java, relativized with basePath /project → src/Foo.java
         assertEquals("src/Foo.java:5 [ERROR/SomeCheck] Issue here", result);
@@ -174,7 +176,7 @@ class RunInspectionsToolTest {
 
         Set<String> filesSet = new HashSet<>();
         String result = RunInspectionsTool.formatExportedElement(
-                root, "Check", null, filesSet);
+            root, "Check", null, filesSet);
 
         // No basePath → no relativization, just strip file://
         assertEquals("/absolute/path/File.java:1 [WARNING/Check] Issue", result);
@@ -190,7 +192,7 @@ class RunInspectionsToolTest {
         addProblemClass(root, "ERROR");
 
         String result = RunInspectionsTool.formatExportedElement(
-                root, "BugCheck", "/p", new HashSet<>());
+            root, "BugCheck", "/p", new HashSet<>());
         assertTrue(result.contains("A.java:42 "));
     }
 
@@ -203,7 +205,7 @@ class RunInspectionsToolTest {
         addProblemClass(root, "ERROR");
 
         String result = RunInspectionsTool.formatExportedElement(
-                root, "BugCheck", "/p", new HashSet<>());
+            root, "BugCheck", "/p", new HashSet<>());
         assertTrue(result.contains("A.java:0 "));
     }
 
@@ -215,7 +217,7 @@ class RunInspectionsToolTest {
         addProblemClass(root, "ERROR");
 
         String result = RunInspectionsTool.formatExportedElement(
-                root, "BugCheck", "/p", new HashSet<>());
+            root, "BugCheck", "/p", new HashSet<>());
         assertTrue(result.contains("A.java:0 "));
     }
 
@@ -223,13 +225,13 @@ class RunInspectionsToolTest {
     void formatExportedElement_htmlStripping() {
         Element root = new Element("problem");
         root.addContent(new Element("description")
-                .setText("Use &lt;String&gt; instead of <code>Object</code> &amp; fix"));
+            .setText("Use &lt;String&gt; instead of <code>Object</code> &amp; fix"));
         root.addContent(new Element("file").setText("file://$PROJECT_DIR$/X.java"));
         root.addContent(new Element("line").setText("1"));
         addProblemClass(root, "WARNING");
 
         String result = RunInspectionsTool.formatExportedElement(
-                root, "T", "/p", new HashSet<>());
+            root, "T", "/p", new HashSet<>());
         // HTML tags stripped, entities decoded
         assertTrue(result.contains("Use <String> instead of Object & fix"));
     }
@@ -257,7 +259,7 @@ class RunInspectionsToolTest {
         addProblemClass(root, "WEAK_WARNING");
 
         String result = RunInspectionsTool.formatExportedElement(
-                root, "Chk", "/p", new HashSet<>());
+            root, "Chk", "/p", new HashSet<>());
         assertTrue(result.contains("[WEAK_WARNING/Chk]"));
     }
 
@@ -288,53 +290,20 @@ class RunInspectionsToolTest {
 
     // ── shouldFilterBySeverity ──────────────────────────────────────────────
 
-    @Test
-    void shouldFilterBySeverity_requiredRankZero() {
+    @ParameterizedTest(name = "severity={0} requiredRank={1} → filtered={2}")
+    @CsvSource({
+        "INFORMATION, 0, false",
+        "ERROR, 3, false",
+        "INFORMATION, 3, true",
+        "WARNING, 3, false",
+        "CUSTOM_UNKNOWN, 1, true",
+    })
+    void shouldFilterBySeverity(String severity, int requiredRank, boolean expectedFiltered) {
         Element root = new Element("problem");
-        addProblemClass(root, "INFORMATION");
+        addProblemClass(root, severity);
 
-        RunInspectionsTool.InspectionContext ctx = makeContext(0);
-        assertFalse(RunInspectionsTool.shouldFilterBySeverity(root, ctx));
-    }
-
-    @Test
-    void shouldFilterBySeverity_severityAboveThreshold() {
-        Element root = new Element("problem");
-        addProblemClass(root, "ERROR");
-
-        // ERROR rank = 4, requiredRank = 3 → not filtered
-        RunInspectionsTool.InspectionContext ctx = makeContext(3);
-        assertFalse(RunInspectionsTool.shouldFilterBySeverity(root, ctx));
-    }
-
-    @Test
-    void shouldFilterBySeverity_severityBelowThreshold() {
-        Element root = new Element("problem");
-        addProblemClass(root, "INFORMATION");
-
-        // INFORMATION rank = 1, requiredRank = 3 → filtered
-        RunInspectionsTool.InspectionContext ctx = makeContext(3);
-        assertTrue(RunInspectionsTool.shouldFilterBySeverity(root, ctx));
-    }
-
-    @Test
-    void shouldFilterBySeverity_severityAtThreshold() {
-        Element root = new Element("problem");
-        addProblemClass(root, "WARNING");
-
-        // WARNING rank = 3, requiredRank = 3 → not filtered (equal is kept)
-        RunInspectionsTool.InspectionContext ctx = makeContext(3);
-        assertFalse(RunInspectionsTool.shouldFilterBySeverity(root, ctx));
-    }
-
-    @Test
-    void shouldFilterBySeverity_unknownSeverity() {
-        Element root = new Element("problem");
-        addProblemClass(root, "CUSTOM_UNKNOWN");
-
-        // Unknown severity defaults to rank 0, requiredRank = 1 → filtered
-        RunInspectionsTool.InspectionContext ctx = makeContext(1);
-        assertTrue(RunInspectionsTool.shouldFilterBySeverity(root, ctx));
+        RunInspectionsTool.InspectionContext ctx = makeContext(requiredRank);
+        assertEquals(expectedFiltered, RunInspectionsTool.shouldFilterBySeverity(root, ctx));
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────
@@ -356,6 +325,6 @@ class RunInspectionsToolTest {
         severityRank.put("TEXT_ATTRIBUTES", 0);
         severityRank.put("GENERIC_SERVER_ERROR_OR_WARNING", 3);
         return new RunInspectionsTool.InspectionContext(
-                "/project", new HashSet<>(), severityRank, requiredRank);
+            "/project", new HashSet<>(), severityRank, requiredRank);
     }
 }
