@@ -95,9 +95,8 @@ class EntryDataJsonAdapterTest {
 
     // ── 4. ToolCall round-trip ────────────────────────────────────────────────
 
-    @Test
-    void toolCallRoundTrip() {
-        var original = new EntryData.ToolCall(
+    private static EntryData.ToolCall newToolCallSample() {
+        return new EntryData.ToolCall(
             "read_file",        // title
             "{\"path\":\"/src\"}", // arguments
             "read",             // kind
@@ -113,8 +112,12 @@ class EntryDataJsonAdapterTest {
             "claude-sonnet-4-6",    // model
             "eid-4"             // entryId
         );
+    }
 
-        JsonObject json = EntryDataJsonAdapter.serialize(original);
+    @Test
+    void toolCallSerializesAllFields() {
+        JsonObject json = EntryDataJsonAdapter.serialize(newToolCallSample());
+
         assertEquals("tool", json.get("type").getAsString());
         assertEquals("read_file", json.get("title").getAsString());
         assertEquals("{\"path\":\"/src\"}", json.get("arguments").getAsString());
@@ -130,6 +133,11 @@ class EntryDataJsonAdapterTest {
         assertEquals("copilot", json.get("agent").getAsString());
         assertEquals("claude-sonnet-4-6", json.get("model").getAsString());
         assertEquals("eid-4", json.get("entryId").getAsString());
+    }
+
+    @Test
+    void toolCallDeserializesAllFields() {
+        JsonObject json = EntryDataJsonAdapter.serialize(newToolCallSample());
 
         EntryData deserialized = EntryDataJsonAdapter.deserialize(json);
         assertInstanceOf(EntryData.ToolCall.class, deserialized);
@@ -152,9 +160,8 @@ class EntryDataJsonAdapterTest {
 
     // ── 5. SubAgent round-trip ────────────────────────────────────────────────
 
-    @Test
-    void subAgentRoundTrip() {
-        var original = new EntryData.SubAgent(
+    private static EntryData.SubAgent newSubAgentSample() {
+        return new EntryData.SubAgent(
             "explore",          // agentType
             "Find code",        // description
             "search for X",     // prompt
@@ -169,8 +176,12 @@ class EntryDataJsonAdapterTest {
             "gpt-4o",           // model
             "eid-5"             // entryId
         );
+    }
 
-        JsonObject json = EntryDataJsonAdapter.serialize(original);
+    @Test
+    void subAgentSerializesAllFields() {
+        JsonObject json = EntryDataJsonAdapter.serialize(newSubAgentSample());
+
         assertEquals("subagent", json.get("type").getAsString());
         assertEquals("explore", json.get("agentType").getAsString());
         assertEquals("Find code", json.get("description").getAsString());
@@ -184,6 +195,11 @@ class EntryDataJsonAdapterTest {
         assertEquals("copilot", json.get("agent").getAsString());
         assertEquals("gpt-4o", json.get("model").getAsString());
         assertEquals("eid-5", json.get("entryId").getAsString());
+    }
+
+    @Test
+    void subAgentDeserializesAllFields() {
+        JsonObject json = EntryDataJsonAdapter.serialize(newSubAgentSample());
 
         EntryData deserialized = EntryDataJsonAdapter.deserialize(json);
         assertInstanceOf(EntryData.SubAgent.class, deserialized);
@@ -390,16 +406,19 @@ class EntryDataJsonAdapterTest {
 
     // ── 16. TurnStats round-trip ──────────────────────────────────────────────
 
-    @Test
-    void turnStatsRoundTrip() {
-        EntryData.TurnStats stats = new EntryData.TurnStats(
+    private static EntryData.TurnStats newTurnStatsSample() {
+        return new EntryData.TurnStats(
             "t3", 45230, 1200, 3500, 0.015, 8, 42, 7,
             "claude-opus-4.6", "5x",
             120000, 5000, 15000, 0.065, 25, 150, 30,
             "2026-04-10T09:00:00Z",
             "eid-stats-1"
         );
-        JsonObject json = EntryDataJsonAdapter.serialize(stats);
+    }
+
+    @Test
+    void turnStatsSerializesAllFields() {
+        JsonObject json = EntryDataJsonAdapter.serialize(newTurnStatsSample());
         assertEquals("turnStats", json.get("type").getAsString());
         assertEquals("t3", json.get("turnId").getAsString());
         assertEquals(45230, json.get("durationMs").getAsLong());
@@ -420,29 +439,18 @@ class EntryDataJsonAdapterTest {
         assertEquals(30, json.get("totalLinesRemoved").getAsInt());
         assertEquals("2026-04-10T09:00:00Z", json.get("timestamp").getAsString());
         assertEquals("eid-stats-1", json.get("entryId").getAsString());
+    }
+
+    @Test
+    void turnStatsDeserializesAllFields() {
+        EntryData.TurnStats stats = newTurnStatsSample();
+        JsonObject json = EntryDataJsonAdapter.serialize(stats);
 
         EntryData deserialized = EntryDataJsonAdapter.deserialize(json);
         assertInstanceOf(EntryData.TurnStats.class, deserialized);
-        EntryData.TurnStats rt = (EntryData.TurnStats) deserialized;
-        assertEquals("t3", rt.getTurnId());
-        assertEquals(45230, rt.getDurationMs());
-        assertEquals(1200, rt.getInputTokens());
-        assertEquals(3500, rt.getOutputTokens());
-        assertEquals(0.015, rt.getCostUsd(), 0.0001);
-        assertEquals(8, rt.getToolCallCount());
-        assertEquals(42, rt.getLinesAdded());
-        assertEquals(7, rt.getLinesRemoved());
-        assertEquals("claude-opus-4.6", rt.getModel());
-        assertEquals("5x", rt.getMultiplier());
-        assertEquals(120000, rt.getTotalDurationMs());
-        assertEquals(5000, rt.getTotalInputTokens());
-        assertEquals(15000, rt.getTotalOutputTokens());
-        assertEquals(0.065, rt.getTotalCostUsd(), 0.0001);
-        assertEquals(25, rt.getTotalToolCalls());
-        assertEquals(150, rt.getTotalLinesAdded());
-        assertEquals(30, rt.getTotalLinesRemoved());
-        assertEquals("2026-04-10T09:00:00Z", rt.getTimestamp());
-        assertEquals("eid-stats-1", rt.getEntryId());
+        // TurnStats is a Kotlin data class — equals covers all fields including
+        // commitHashes (defaulted to empty list on both sides).
+        assertEquals(stats, deserialized);
     }
 
     // ── 17. TurnStats defaults omitted (compaction) ──────────────────────────
