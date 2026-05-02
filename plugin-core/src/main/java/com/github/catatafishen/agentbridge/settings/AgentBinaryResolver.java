@@ -1,7 +1,10 @@
 package com.github.catatafishen.agentbridge.settings;
 
+import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
+import java.util.List;
 
 /**
  * Strategy for locating an agent's binary.
@@ -19,11 +22,17 @@ import org.jetbrains.annotations.Nullable;
  */
 public abstract class AgentBinaryResolver {
 
-    /** Returns the user-configured binary path override, or {@code null} if not set. */
+    private static final Logger LOG = Logger.getInstance(AgentBinaryResolver.class);
+
+    /**
+     * Returns the user-configured binary path override, or {@code null} if not set.
+     */
     @Nullable
     protected abstract String customBinaryPath();
 
-    /** The primary binary name used for auto-detection (e.g. {@code "copilot"}, {@code "claude"}). */
+    /**
+     * The primary binary name used for auto-detection (e.g. {@code "copilot"}, {@code "claude"}).
+     */
     @NotNull
     protected abstract String primaryBinaryName();
 
@@ -38,7 +47,10 @@ public abstract class AgentBinaryResolver {
 
     /**
      * Resolves the binary to an absolute path.
-     * Returns the custom override if set, otherwise searches the login-shell {@code PATH}.
+     * Returns the custom override if set. Otherwise, finds all matching binaries
+     * in PATH (for the primary name and alternates) and picks the one with the
+     * highest version. Falls back to the first-found path if version detection
+     * fails for all candidates.
      *
      * @return absolute path, or {@code null} if not found anywhere
      */
@@ -47,14 +59,47 @@ public abstract class AgentBinaryResolver {
         String custom = customBinaryPath();
         if (custom != null && !custom.isEmpty()) return custom;
 
-        String found = BinaryDetector.findBinaryPath(primaryBinaryName());
-        if (found != null) return found;
+        return findBestBinaryAcrossNames();
+    }
 
+    /**
+     * Finds all matching binaries for primary and alternate names, then picks
+     * the one with the highest version. If version detection fails for all
+     * candidates, returns the first-found path.
+     */
+    @Nullable
+    private String findBestBinaryAcrossNames() {
+        List<String> allCandidates = new java.util.ArrayList<>(
+            BinaryDetector.findAllBinaryPaths(primaryBinaryName()));
         for (String alt : alternateNames()) {
-            found = BinaryDetector.findBinaryPath(alt);
-            if (found != null) return found;
+            allCandidates.addAll(BinaryDetector.findAllBinaryPaths(alt));
         }
-        return null;
+
+        if (allCandidates.isEmpty()) return null;
+        if (allCandidates.size() == 1) return allCandidates.getFirst();
+
+        // Multiple candidates — pick the highest version
+        String bestPath = null;
+        String bestVersion = null;
+
+        for (String path : allCandidates) {
+            String version = BinaryDetector.getVersionForPath(path);
+            if (version == null) continue;
+
+            if (bestVersion == null || BinaryDetector.compareVersions(version, bestVersion) > 0) {
+                bestVersion = version;
+                bestPath = path;
+            }
+        }
+
+        if (bestPath != null) {
+            LOG.info("Selected " + bestPath + " (version: " + bestVersion
+                + ") from " + allCandidates.size() + " candidates");
+            return bestPath;
+        }
+
+        // Version detection failed for all — fall back to first-found
+        return allCandidates.getFirst();
     }
 
     /**
@@ -80,11 +125,20 @@ public abstract class AgentBinaryResolver {
         AgentBinaryResolver parent = this;
         return new AgentBinaryResolver() {
             @Override
-            protected String customBinaryPath() { return fixedPath; }
+            @NotNull
+            protected String customBinaryPath() {
+                return fixedPath;
+            }
+
             @Override
-            protected @NotNull String primaryBinaryName() { return parent.primaryBinaryName(); }
+            protected @NotNull String primaryBinaryName() {
+                return parent.primaryBinaryName();
+            }
+
             @Override
-            protected @NotNull String[] alternateNames() { return parent.alternateNames(); }
+            protected @NotNull String[] alternateNames() {
+                return parent.alternateNames();
+            }
         };
     }
 }

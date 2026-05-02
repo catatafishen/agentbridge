@@ -89,6 +89,124 @@ public class BinaryDetector {
     }
 
     /**
+     * Find ALL absolute paths to a binary across the user's PATH.
+     * On Unix, scans PATH directories directly (equivalent to {@code which -a}).
+     * On Windows, scans all PATH directories with PATHEXT extensions.
+     *
+     * @param binaryName Name of the binary to find
+     * @return list of absolute paths (may be empty, never null)
+     */
+    @NotNull
+    public static List<String> findAllBinaryPaths(@NotNull String binaryName) {
+        Map<String, String> env = ShellEnvironment.getEnvironment();
+        String pathVar;
+        if (isWindows()) {
+            pathVar = env.getOrDefault("PATH", env.getOrDefault("Path", ""));
+        } else {
+            pathVar = env.getOrDefault("PATH", "");
+        }
+
+        String separator = isWindows() ? ";" : ":";
+        String[] dirs = pathVar.split(separator);
+        List<String> results = new java.util.ArrayList<>();
+
+        if (isWindows()) {
+            String pathext = env.getOrDefault("PATHEXT", DEFAULT_PATHEXT);
+            String[] extensions = pathext.split(";");
+
+            if (hasExtension(binaryName, extensions)) {
+                collectFromDirs(dirs, binaryName, results);
+            }
+            for (String ext : extensions) {
+                collectFromDirs(dirs, binaryName + ext, results);
+            }
+        } else {
+            collectFromDirs(dirs, binaryName, results);
+        }
+
+        if (results.size() > 1) {
+            LOG.info("Found " + results.size() + " binaries for '" + binaryName + "': " + results);
+        }
+        return results;
+    }
+
+    /**
+     * Gets the version string for a binary at the given absolute path.
+     *
+     * @param binaryPath absolute path to the binary
+     * @return version string (e.g. "v1.0.40"), or null if version detection fails
+     */
+    @Nullable
+    public static String getVersionForPath(@NotNull String binaryPath) {
+        List<String> cmd = isWindows()
+            ? List.of("cmd.exe", "/c", binaryPath + " --version")
+            : List.of("sh", "-c", binaryPath + " --version");
+
+        String output = runCommand(cmd, 5);
+        if (output == null) return null;
+        return parseVersion(output);
+    }
+
+    /**
+     * Compares two version strings and returns the higher one. Handles common version
+     * formats: {@code "v1.0.40"}, {@code "1.0.40"}, {@code "v1.0.40-1"}.
+     *
+     * @return positive if v1 > v2, negative if v1 < v2, zero if equal
+     */
+    public static int compareVersions(@Nullable String v1, @Nullable String v2) {
+        int[] parts1 = parseVersionParts(v1);
+        int[] parts2 = parseVersionParts(v2);
+
+        int len = Math.max(parts1.length, parts2.length);
+        for (int i = 0; i < len; i++) {
+            int p1 = i < parts1.length ? parts1[i] : 0;
+            int p2 = i < parts2.length ? parts2[i] : 0;
+            if (p1 != p2) return Integer.compare(p1, p2);
+        }
+        return 0;
+    }
+
+    private static int[] parseVersionParts(@Nullable String version) {
+        if (version == null || version.isBlank()) return new int[0];
+
+        // Strip leading non-digits (e.g. "v", "Copilot v")
+        String cleaned = version.replaceAll("^[^0-9]*", "");
+        // Strip trailing non-numeric suffixes (e.g. "-1", "-beta")
+        cleaned = cleaned.replaceAll("[^0-9.].*$", "");
+        if (cleaned.isEmpty()) return new int[0];
+
+        String[] segments = cleaned.split("\\.");
+        int[] parts = new int[segments.length];
+        for (int i = 0; i < segments.length; i++) {
+            try {
+                parts[i] = Integer.parseInt(segments[i]);
+            } catch (NumberFormatException e) {
+                parts[i] = 0;
+            }
+        }
+        return parts;
+    }
+
+    /**
+     * Collects all matching files from directories into the results list.
+     * Skips duplicates (same canonical path).
+     */
+    private static void collectFromDirs(@NotNull String[] dirs, @NotNull String fileName,
+                                        @NotNull List<String> results) {
+        for (String dir : dirs) {
+            String trimmed = dir.trim();
+            if (trimmed.isEmpty()) continue;
+            File f = new File(trimmed, fileName);
+            if (f.isFile()) {
+                String absPath = f.getAbsolutePath();
+                if (!results.contains(absPath)) {
+                    results.add(absPath);
+                }
+            }
+        }
+    }
+
+    /**
      * Scans the Windows {@code PATH} directories for a binary, respecting {@code PATHEXT}.
      * Uses Java's {@link File} API directly — no subprocess, no encoding issues.
      */

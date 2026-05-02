@@ -23,8 +23,8 @@ public class AcpClientBinaryResolver extends AgentBinaryResolver {
      * @param alternates additional names to try when the primary is not found
      */
     public AcpClientBinaryResolver(@NotNull String agentId,
-                                    @NotNull String binaryName,
-                                    @NotNull String... alternates) {
+                                   @NotNull String binaryName,
+                                   @NotNull String... alternates) {
         this.agentId = agentId;
         this.binaryName = binaryName;
         this.alternates = alternates;
