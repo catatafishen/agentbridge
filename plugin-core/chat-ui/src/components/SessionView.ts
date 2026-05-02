@@ -5,12 +5,24 @@ export class SessionView extends HTMLElement {
     connectedCallback(): void {
         this.innerHTML = `<div class="sv-container"><div class="sv-content"></div></div>`;
         this._content = this.querySelector('.sv-content')!;
-        this.refresh();
-        this._pollTimer = window.setInterval(() => this.refresh(), 2000);
     }
 
     disconnectedCallback(): void {
-        if (this._pollTimer) clearInterval(this._pollTimer);
+        this.deactivate();
+    }
+
+    activate(): void {
+        void this.refresh();
+        if (this._pollTimer == null) {
+            this._pollTimer = globalThis.setInterval(() => void this.refresh(), 2000);
+        }
+    }
+
+    deactivate(): void {
+        if (this._pollTimer != null) {
+            clearInterval(this._pollTimer);
+            this._pollTimer = null;
+        }
     }
 
     async refresh(): Promise<void> {

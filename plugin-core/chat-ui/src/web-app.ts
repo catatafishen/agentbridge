@@ -167,21 +167,6 @@ requestAnimationFrame(() => {
         }
     }
 
-    // Listen for pane changes to re-focus appropriately
-    swiper.addEventListener('pane-changed', (e) => {
-        const index = (e as CustomEvent).detail?.index;
-        footerEl.style.display = index === 1 ? '' : 'none';
-        if (index === 1) {
-            inputEl.focus();
-        }
-        // Refresh the view when switching to it
-        if (index === 2) reviewView.refresh();
-        else if (index === 3) todoView.refresh();
-        else if (index === 4) toolCallsView.refresh();
-        else if (index === 5) searchView.refresh();
-        else if (index === 6) sessionView.refresh();
-    });
-
     // Add side panel panes mirroring the IDE side panel tabs.
     const reviewPane = swiper.addPane('Diff');
     const reviewView = document.createElement('review-view') as ReviewView;
@@ -202,6 +187,31 @@ requestAnimationFrame(() => {
     const sessionPane = swiper.addPane('Session');
     const sessionView = document.createElement('session-view') as SessionView;
     sessionPane.appendChild(sessionView);
+
+    const sideViews = new Map<number, { activate(): void; deactivate(): void }>([
+        [2, reviewView],
+        [3, todoView],
+        [4, toolCallsView],
+        [5, searchView],
+        [6, sessionView],
+    ]);
+    let activeSideView: { activate(): void; deactivate(): void } | null = null;
+
+    // Listen for pane changes to re-focus appropriately.
+    swiper.addEventListener('pane-changed', (e) => {
+        const index = (e as CustomEvent).detail?.index;
+        footerEl.style.display = index === 1 ? '' : 'none';
+        if (index === 1) {
+            inputEl.focus();
+        }
+
+        const nextSideView = sideViews.get(index) ?? null;
+        if (nextSideView !== activeSideView) {
+            activeSideView?.deactivate();
+            activeSideView = nextSideView;
+            activeSideView?.activate();
+        }
+    });
 });
 
 // ── Auto-scroll: track whether user is near the bottom ──────────────────────

@@ -90,6 +90,7 @@ public final class ChatWebServer implements Disposable {
     private static final String CACHE_NO_CACHE = "no-cache";
     private static final String CACHE_PUBLIC = "public, max-age=86400";
     private static final String BIND_ALL_INTERFACES = "0.0.0.0";
+    private static final long MAX_PWA_FILE_BYTES = 1_048_576;
 
     private final Project project;
     private HttpsServer httpsServer;
@@ -1548,56 +1549,42 @@ public final class ChatWebServer implements Disposable {
             return;
         }
 
-        String query = exchange.getRequestURI().getQuery();
-        String path = null;
-        if (query != null) {
-            for (String param : query.split("&")) {
-                if (param.startsWith("path=")) {
-                    path = java.net.URLDecoder.decode(param.substring(5), StandardCharsets.UTF_8);
-                }
-            }
-        }
+        String path = pathQueryParameter(exchange.getRequestURI().getQuery());
         if (path == null || path.isEmpty()) {
-            String error = "{\"error\":\"Missing 'path' query parameter\"}";
-            sendJson(exchange, error);
+            sendErrorJson(exchange, 400, "Missing 'path' query parameter");
             return;
         }
 
-        String basePath = project.getBasePath();
-        if (basePath == null) {
-            sendJson(exchange, "{\"error\":\"Project base path not available\"}");
+        java.nio.file.Path projectRoot = projectRootPath();
+        if (projectRoot == null) {
+            sendErrorJson(exchange, 503, "Project base path not available");
             return;
         }
 
-        java.nio.file.Path projectRoot = java.nio.file.Path.of(basePath);
-        java.nio.file.Path resolved = projectRoot.resolve(path).normalize();
-
-        // Security: prevent path traversal outside project root
-        if (!resolved.startsWith(projectRoot)) {
-            exchange.sendResponseHeaders(403, -1);
-            exchange.close();
+        java.nio.file.Path resolved;
+        try {
+            resolved = resolveProjectPath(projectRoot, path);
+        } catch (java.nio.file.NoSuchFileException e) {
+            sendErrorJson(exchange, 404, "File not found: " + path);
+            return;
+        } catch (SecurityException e) {
+            sendErrorJson(exchange, 403, "Path is outside the project root");
             return;
         }
 
         if (!java.nio.file.Files.isRegularFile(resolved)) {
-            String error = "{\"error\":\"File not found: " + path.replace("\"", "\\\"") + "\"}";
-            byte[] bytes = error.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set(HDR_CONTENT_TYPE, JSON_CONTENT_TYPE);
-            exchange.sendResponseHeaders(404, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.close();
+            sendErrorJson(exchange, 404, "File not found: " + path);
             return;
         }
 
-        // Limit file size to 1 MB to avoid memory issues
         long size = java.nio.file.Files.size(resolved);
-        if (size > 1_048_576) {
-            sendJson(exchange, "{\"error\":\"File too large (max 1 MB)\"}");
+        if (size > MAX_PWA_FILE_BYTES) {
+            sendErrorJson(exchange, 413, "File too large (max 1 MB)");
             return;
         }
 
         String content = java.nio.file.Files.readString(resolved, StandardCharsets.UTF_8);
-        String relativePath = projectRoot.relativize(resolved).toString().replace('\\', '/');
+        String relativePath = projectRoot.toRealPath().relativize(resolved).toString().replace('\\', '/');
 
         com.google.gson.JsonObject json = new com.google.gson.JsonObject();
         json.addProperty("path", relativePath);
@@ -1614,34 +1601,32 @@ public final class ChatWebServer implements Disposable {
             return;
         }
 
-        String query = exchange.getRequestURI().getQuery();
-        String path = "";
-        if (query != null) {
-            for (String param : query.split("&")) {
-                if (param.startsWith("path=")) {
-                    path = java.net.URLDecoder.decode(param.substring(5), StandardCharsets.UTF_8);
-                }
-            }
+        String path = pathQueryParameter(exchange.getRequestURI().getQuery());
+        if (path == null) {
+            path = "";
         }
 
-        String basePath = project.getBasePath();
-        if (basePath == null) {
-            sendJson(exchange, "{\"error\":\"Project base path not available\"}");
+        java.nio.file.Path projectRoot = projectRootPath();
+        if (projectRoot == null) {
+            sendErrorJson(exchange, 503, "Project base path not available");
             return;
         }
 
-        java.nio.file.Path projectRoot = java.nio.file.Path.of(basePath);
-        java.nio.file.Path dir = path.isEmpty() ? projectRoot : projectRoot.resolve(path).normalize();
-
-        // Security: prevent path traversal outside project root
-        if (!dir.startsWith(projectRoot)) {
-            exchange.sendResponseHeaders(403, -1);
-            exchange.close();
+        java.nio.file.Path realRoot;
+        java.nio.file.Path dir;
+        try {
+            realRoot = projectRoot.toRealPath();
+            dir = path.isEmpty() ? realRoot : resolveProjectPath(projectRoot, path);
+        } catch (java.nio.file.NoSuchFileException e) {
+            sendErrorJson(exchange, 404, "Directory not found");
+            return;
+        } catch (SecurityException e) {
+            sendErrorJson(exchange, 403, "Path is outside the project root");
             return;
         }
 
         if (!java.nio.file.Files.isDirectory(dir)) {
-            sendJson(exchange, "{\"error\":\"Not a directory\"}");
+            sendErrorJson(exchange, 400, "Not a directory");
             return;
         }
 
@@ -1659,7 +1644,7 @@ public final class ChatWebServer implements Disposable {
                 .forEach(p -> {
                     com.google.gson.JsonObject entry = new com.google.gson.JsonObject();
                     String name = p.getFileName().toString();
-                    String relPath = projectRoot.relativize(p).toString().replace('\\', '/');
+                    String relPath = realRoot.relativize(p).toString().replace('\\', '/');
                     entry.addProperty("name", name);
                     entry.addProperty("path", relPath);
                     entry.addProperty("isDirectory", java.nio.file.Files.isDirectory(p));
@@ -1667,7 +1652,7 @@ public final class ChatWebServer implements Disposable {
                         try {
                             entry.addProperty("size", java.nio.file.Files.size(p));
                         } catch (IOException ignored) {
-                            // Size unavailable — omit
+                            // Size unavailable - omit
                         }
                     }
                     entries.add(entry);
@@ -1678,6 +1663,43 @@ public final class ChatWebServer implements Disposable {
         result.addProperty("path", path.isEmpty() ? "." : path);
         result.add("entries", entries);
         sendJson(exchange, GSON.toJson(result));
+    }
+
+    private @Nullable java.nio.file.Path projectRootPath() {
+        String basePath = project.getBasePath();
+        return basePath == null ? null : java.nio.file.Path.of(basePath);
+    }
+
+    static @NotNull java.nio.file.Path resolveProjectPath(@NotNull java.nio.file.Path projectRoot,
+                                                          @NotNull String rawPath) throws IOException {
+        java.nio.file.Path realRoot = projectRoot.toRealPath();
+        java.nio.file.Path realPath = realRoot.resolve(rawPath).normalize().toRealPath();
+        if (!realPath.startsWith(realRoot)) {
+            throw new SecurityException("Path is outside the project root: " + rawPath);
+        }
+        return realPath;
+    }
+
+    static @Nullable String pathQueryParameter(@Nullable String query) {
+        if (query == null) return null;
+        String prefix = "path=";
+        for (String param : query.split("&")) {
+            if (param.startsWith(prefix)) {
+                return java.net.URLDecoder.decode(param.substring(prefix.length()), StandardCharsets.UTF_8);
+            }
+        }
+        return null;
+    }
+
+    private void sendErrorJson(HttpExchange exchange, int status, String message) throws IOException {
+        com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+        json.addProperty("error", message);
+        byte[] bytes = GSON.toJson(json).getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set(HDR_CONTENT_TYPE, JSON_CONTENT_TYPE);
+        exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
+        exchange.sendResponseHeaders(status, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
     }
 
     private static boolean isExcludedDir(java.nio.file.Path p) {

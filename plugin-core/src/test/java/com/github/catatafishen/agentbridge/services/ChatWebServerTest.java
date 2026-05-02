@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -204,22 +205,53 @@ class ChatWebServerTest {
 
     @Test
     void jsonString_extractsStringValue() throws Exception {
-        assertEquals("hello", invokeJsonString("{\"key\":\"hello\"}", "key"));
+        assertEquals("hello", invokeJsonString("{\"key\":\"hello\"}"));
     }
 
     @Test
     void jsonString_returnsNullForMissingKey() throws Exception {
-        assertNull(invokeJsonString("{\"other\":\"value\"}", "key"));
+        assertNull(invokeJsonString("{\"other\":\"value\"}"));
     }
 
     @Test
     void jsonString_returnsNullForInvalidJson() throws Exception {
-        assertNull(invokeJsonString("not json", "key"));
+        assertNull(invokeJsonString("not json"));
     }
 
     @Test
     void jsonString_convertsNumberToString() throws Exception {
-        assertNotNull(invokeJsonString("{\"key\":42}", "key"));
+        assertNotNull(invokeJsonString("{\"key\":42}"));
+    }
+
+    // ── PWA file access helpers ─────────────────────────────────────────────
+
+    @Test
+    void pathQueryParameter_decodesPathParameter() {
+        assertEquals("src/main file.txt", ChatWebServer.pathQueryParameter("path=src%2Fmain+file.txt&other=x"));
+    }
+
+    @Test
+    void pathQueryParameter_returnsNullWhenMissing() {
+        assertNull(ChatWebServer.pathQueryParameter("other=value"));
+    }
+
+    @Test
+    void resolveProjectPath_allowsFilesInsideProject(@TempDir Path tempDir) throws Exception {
+        Path root = tempDir.resolve("project");
+        Path nested = root.resolve("src/readme.txt");
+        Files.createDirectories(nested.getParent());
+        Files.writeString(nested, "content");
+
+        assertEquals(nested.toRealPath(), ChatWebServer.resolveProjectPath(root, "src/readme.txt"));
+    }
+
+    @Test
+    void resolveProjectPath_rejectsTraversalOutsideProject(@TempDir Path tempDir) throws Exception {
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+        Files.writeString(tempDir.resolve("outside.txt"), "secret");
+
+        assertThrows(SecurityException.class, () -> ChatWebServer.resolveProjectPath(root, "../outside.txt"));
     }
 
     // ── TLS certificate generation ───────────────────────────────────────────
@@ -260,13 +292,13 @@ class ChatWebServerTest {
         String newPassword = "new-random-password";
         Path caKeystore = tempDir.resolve("ca.p12");
         invokeGenerateCaCertificate(caKeystore, legacyPassword);
-        Certificate certificateBeforeMigration = loadCertificate(caKeystore, legacyPassword, "ca");
+        Certificate certificateBeforeMigration = loadCertificate(caKeystore, legacyPassword);
 
         invokeMigrateKeystorePassword(caKeystore, legacyPassword, newPassword);
 
         assertFalse(invokeCanLoadKeystore(caKeystore, legacyPassword));
         assertTrue(invokeCanLoadKeystore(caKeystore, newPassword));
-        assertEquals(certificateBeforeMigration, loadCertificate(caKeystore, newPassword, "ca"));
+        assertEquals(certificateBeforeMigration, loadCertificate(caKeystore, newPassword));
     }
 
     // ── runProcess ───────────────────────────────────────────────────────────
@@ -318,10 +350,10 @@ class ChatWebServerTest {
         return (String) m.invoke(null, s);
     }
 
-    private static String invokeJsonString(String body, String key) throws Exception {
+    private static String invokeJsonString(String body) throws Exception {
         Method m = ChatWebServer.class.getDeclaredMethod("jsonString", String.class, String.class);
         m.setAccessible(true);
-        return (String) m.invoke(null, body, key);
+        return (String) m.invoke(null, body, "key");
     }
 
     private static void invokeGenerateCaCertificate(Path caKeystore, String password) throws Exception {
@@ -361,12 +393,12 @@ class ChatWebServerTest {
         return (boolean) m.invoke(null, keystore.toFile(), password);
     }
 
-    private static Certificate loadCertificate(Path keystore, String password, String alias) throws Exception {
+    private static Certificate loadCertificate(Path keystore, String password) throws Exception {
         KeyStore keyStore = KeyStore.getInstance("PKCS12");
         try (InputStream input = Files.newInputStream(keystore)) {
             keyStore.load(input, password.toCharArray());
         }
-        return keyStore.getCertificate(alias);
+        return keyStore.getCertificate("ca");
     }
 
     private static IOException runFakeProcessExpectingIOException(String mode, long timeoutSeconds) {
