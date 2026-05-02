@@ -4,6 +4,8 @@ import kotlin.Pair;
 import kotlin.jvm.functions.Function1;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -414,27 +416,10 @@ class MarkdownRendererTest {
 
     @Nested
     class HorizontalRules {
-        @Test
-        void threeDashesCreateHr() {
-            String html = render("---");
-            assertTrue(html.contains("<hr>"), html);
-        }
-
-        @Test
-        void manyDashesCreateHr() {
-            String html = render("----------");
-            assertTrue(html.contains("<hr>"), html);
-        }
-
-        @Test
-        void threeAsterisksCreateHr() {
-            String html = render("***");
-            assertTrue(html.contains("<hr>"), html);
-        }
-
-        @Test
-        void threeUnderscoresCreateHr() {
-            String html = render("___");
+        @ParameterizedTest(name = "{0} creates HR")
+        @ValueSource(strings = {"---", "----------", "***", "___"})
+        void markersCreateHr(String marker) {
+            String html = render(marker);
             assertTrue(html.contains("<hr>"), html);
         }
 
