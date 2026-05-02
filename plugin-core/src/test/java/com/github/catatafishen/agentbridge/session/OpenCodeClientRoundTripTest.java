@@ -332,7 +332,7 @@ class OpenCodeClientRoundTripTest {
                 while (rs.next()) {
                     JsonObject partData = GSON.fromJson(rs.getString("data"), JsonObject.class);
                     String type = partData.get("type").getAsString();
-                    assertNotEquals("subagent type must not be written to DB", "subagent", type);
+                    assertNotEquals("subagent", type, "subagent type must not be written to DB");
                     if ("text".equals(type)) {
                         String text = partData.get("text").getAsString();
                         if (text.contains("Exploring codebase")) {

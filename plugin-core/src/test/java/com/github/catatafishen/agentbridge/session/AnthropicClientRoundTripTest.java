@@ -19,6 +19,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -412,8 +413,8 @@ class AnthropicClientRoundTripTest {
         for (EntryData entry : imported) {
             if (entry instanceof EntryData.ToolCall) {
                 toolCount++;
-                assertNotNull("Each tool call should have a result after round-trip",
-                    ((EntryData.ToolCall) entry).getResult());
+                assertNotNull(((EntryData.ToolCall) entry).getResult(),
+                    "Each tool call should have a result after round-trip");
             }
         }
         assertEquals(3, toolCount, "All 3 tool results should round-trip");
