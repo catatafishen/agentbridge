@@ -13,9 +13,11 @@ import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
 import com.intellij.psi.search.searches.ReferencesSearch;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Finds all usages of a symbol throughout the project.
@@ -87,7 +89,7 @@ public final class FindReferencesTool extends NavigationTool {
         int offset = pagination[1];
 
         showSearchFeedback("🔍 Finding references: " + symbol);
-        String result = ApplicationManager.getApplication().<String>runReadAction(() -> {
+        String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
             List<String> results = new ArrayList<>();
             String basePath = project.getBasePath();
             GlobalSearchScope scope = resolveScope(scopeName);
@@ -131,10 +133,9 @@ public final class FindReferencesTool extends NavigationTool {
         PsiSearchHelper.getInstance(project).processElementsWithWord(
             (element, offsetInElement) -> {
                 String entry = buildWordEntry(element, filePattern, compiledGlob, basePath);
-                if (entry != null && !results.contains(entry)) {
-                    if (seen[0]++ >= offset) {
-                        results.add(entry);
-                    }
+                if (entry == null || results.contains(entry)) return results.size() < maxResults;
+                if (seen[0]++ >= offset) {
+                    results.add(entry);
                 }
                 return results.size() < maxResults;
             },
