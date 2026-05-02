@@ -172,9 +172,9 @@ public final class OpenCodeClientExporter {
                     // Flush any pending assistant message before a new user message
                     if (pendingParts != null && !pendingParts.isEmpty()) {
                         prevTime++;
-                        flushMessage(conn, sessionId, "assistant",
-                            pendingAgent, pendingModel, pendingParts, prevTime,
-                            projectDir, lastUserMessageId);
+                        flushMessage(conn, sessionId,
+                            new MessageInsert("assistant", pendingAgent, pendingModel,
+                                pendingParts, prevTime, projectDir, lastUserMessageId));
                         pendingParts = null;
                         pendingAgent = null;
                         pendingModel = null;
@@ -187,8 +187,9 @@ public final class OpenCodeClientExporter {
                     userPart.addProperty("type", "text");
                     userPart.addProperty("text", prompt.getText());
 
-                    lastUserMessageId = flushMessage(conn, sessionId, "user",
-                        "", "", List.of(userPart), prevTime, projectDir, null);
+                    lastUserMessageId = flushMessage(conn, sessionId,
+                        new MessageInsert("user", "", "", List.of(userPart),
+                            prevTime, projectDir, null));
                     messageCount++;
                 }
                 case EntryData.Text text -> {
@@ -244,9 +245,9 @@ public final class OpenCodeClientExporter {
         // Flush trailing assistant message
         if (pendingParts != null && !pendingParts.isEmpty()) {
             prevTime++;
-            flushMessage(conn, sessionId, "assistant",
-                pendingAgent, pendingModel, pendingParts, prevTime,
-                projectDir, lastUserMessageId);
+            flushMessage(conn, sessionId,
+                new MessageInsert("assistant", pendingAgent, pendingModel,
+                    pendingParts, prevTime, projectDir, lastUserMessageId));
             messageCount++;
         }
 
@@ -435,6 +436,20 @@ public final class OpenCodeClientExporter {
     // ── Message insertion ─────────────────────────────────────────────────────
 
     /**
+     * Parameters for a single {@link #flushMessage} insertion. Bundled into a
+     * record to keep the method signature within the 7-parameter limit (Sonar S107).
+     */
+    private record MessageInsert(
+        @NotNull String role,
+        @Nullable String agent,
+        @Nullable String model,
+        @NotNull List<JsonObject> parts,
+        long timeCreated,
+        @NotNull String projectDir,
+        @Nullable String parentMessageId
+    ) {}
+
+    /**
      * Inserts a message and its pre-built parts into the database.
      *
      * @return the generated message ID (for parentID linking)
@@ -443,31 +458,26 @@ public final class OpenCodeClientExporter {
     private static String flushMessage(
         @NotNull Connection conn,
         @NotNull String sessionId,
-        @NotNull String role,
-        @Nullable String agent,
-        @Nullable String model,
-        @NotNull List<JsonObject> parts,
-        long timeCreated,
-        @NotNull String projectDir,
-        @Nullable String parentMessageId) throws SQLException {
+        @NotNull MessageInsert msg) throws SQLException {
 
         String messageId = generateId("msg");
 
-        JsonObject msgData = buildMessageData(role, agent, model, timeCreated, projectDir, parentMessageId);
+        JsonObject msgData = buildMessageData(msg.role(), msg.agent(), msg.model(),
+            msg.timeCreated(), msg.projectDir(), msg.parentMessageId());
 
         try (PreparedStatement ps = conn.prepareStatement(
             "INSERT INTO message (id, session_id, time_created, time_updated, data) "
                 + "VALUES (?, ?, ?, ?, ?)")) {
             ps.setString(1, messageId);
             ps.setString(2, sessionId);
-            ps.setLong(3, timeCreated);
-            ps.setLong(4, timeCreated);
+            ps.setLong(3, msg.timeCreated());
+            ps.setLong(4, msg.timeCreated());
             ps.setString(5, GSON.toJson(msgData));
             ps.executeUpdate();
         }
 
-        for (JsonObject part : parts) {
-            insertPart(conn, messageId, sessionId, part, timeCreated);
+        for (JsonObject part : msg.parts()) {
+            insertPart(conn, messageId, sessionId, part, msg.timeCreated());
         }
 
         return messageId;

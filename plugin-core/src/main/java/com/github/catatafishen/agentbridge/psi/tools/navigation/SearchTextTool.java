@@ -229,33 +229,29 @@ public final class SearchTextTool extends NavigationTool {
         // does not need to call PsiManager on the EDT.
         com.intellij.psi.PsiFile psiFile = p.positions() != null
             ? PsiManager.getInstance(project).findFile(vf) : null;
-        searchFileForPattern(vf, psiFile, p.pattern(), relPath, p.results(), p.positions(), p.maxResults(), p.contextLines(), p.totalOutputBytes());
+        searchFileForPattern(vf, psiFile, relPath, p);
         return p.results().size() < p.maxResults() && p.totalOutputBytes().get() < MAX_OUTPUT_BYTES;
     }
 
     private static void searchFileForPattern(VirtualFile vf, @Nullable com.intellij.psi.PsiFile psiFile,
-                                             Pattern pattern,
-                                             String relPath, List<String> results,
-                                             @Nullable List<MatchPosition> positions,
-                                             int maxResults, int contextLines,
-                                             AtomicInteger totalOutputBytes) {
+                                             String relPath, SearchParams p) {
         Document doc = FileDocumentManager.getInstance().getDocument(vf);
         if (doc == null) return;
         String text = doc.getText();
-        Matcher matcher = pattern.matcher(text);
-        while (matcher.find() && results.size() < maxResults && totalOutputBytes.get() < MAX_OUTPUT_BYTES) {
+        Matcher matcher = p.pattern().matcher(text);
+        while (matcher.find() && p.results().size() < p.maxResults() && p.totalOutputBytes().get() < MAX_OUTPUT_BYTES) {
             int matchLine = doc.getLineNumber(matcher.start()) + 1;
             String lineText = ToolUtils.getLineText(doc, matchLine - 1);
             String entry;
-            if (contextLines <= 0) {
+            if (p.contextLines() <= 0) {
                 entry = String.format(FORMAT_LINE_REF, relPath, matchLine, lineText);
             } else {
-                entry = buildMatchWithContext(doc, relPath, matchLine, lineText, contextLines);
+                entry = buildMatchWithContext(doc, relPath, matchLine, lineText, p.contextLines());
             }
-            results.add(entry);
-            totalOutputBytes.addAndGet(entry.length());
-            if (positions != null) {
-                positions.add(new MatchPosition(vf, psiFile, matcher.start(), matcher.end()));
+            p.results().add(entry);
+            p.totalOutputBytes().addAndGet(entry.length());
+            if (p.positions() != null) {
+                p.positions().add(new MatchPosition(vf, psiFile, matcher.start(), matcher.end()));
             }
         }
     }

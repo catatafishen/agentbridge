@@ -403,22 +403,27 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             snapshots,
             newFiles,
             deletedFiles,
-            approvals,
-            lastEditedAt,
-            linesAdded,
-            linesRemoved,
+            new EditMetrics(approvals, lastEditedAt, linesAdded, linesRemoved),
             project.getBasePath()
         );
     }
+
+    /**
+     * Per-path edit metrics passed together to keep review-building method
+     * signatures within the 7-parameter limit (Sonar S107).
+     */
+    record EditMetrics(
+        @NotNull Map<String, ApprovalState> approvals,
+        @NotNull Map<String, Long> lastEditedAt,
+        @NotNull Map<String, Integer> linesAdded,
+        @NotNull Map<String, Integer> linesRemoved
+    ) {}
 
     static @NotNull List<ReviewItem> buildReviewItems(
         @NotNull Map<String, String> snapshots,
         @NotNull Set<String> newFiles,
         @NotNull Map<String, String> deletedFiles,
-        @NotNull Map<String, ApprovalState> approvals,
-        @NotNull Map<String, Long> lastEditedAt,
-        @NotNull Map<String, Integer> linesAdded,
-        @NotNull Map<String, Integer> linesRemoved,
+        @NotNull EditMetrics metrics,
         @Nullable String basePath
     ) {
         List<ReviewItem> items = new ArrayList<>();
@@ -426,20 +431,17 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         for (Map.Entry<String, String> entry : snapshots.entrySet()) {
             String path = entry.getKey();
             if (newFiles.contains(path) || deletedFiles.containsKey(path)) continue;
-            items.add(buildItem(path, basePath, ReviewItem.Status.MODIFIED, entry.getValue(),
-                approvals, lastEditedAt, linesAdded, linesRemoved));
+            items.add(buildItem(path, basePath, ReviewItem.Status.MODIFIED, entry.getValue(), metrics));
         }
         for (String path : newFiles) {
             if (deletedFiles.containsKey(path)) continue;
-            items.add(buildItem(path, basePath, ReviewItem.Status.ADDED, null,
-                approvals, lastEditedAt, linesAdded, linesRemoved));
+            items.add(buildItem(path, basePath, ReviewItem.Status.ADDED, null, metrics));
         }
         for (Map.Entry<String, String> entry : deletedFiles.entrySet()) {
             String path = entry.getKey();
             if (newFiles.contains(path)) continue;
             String beforeContent = snapshots.getOrDefault(path, entry.getValue());
-            items.add(buildItem(path, basePath, ReviewItem.Status.DELETED, beforeContent,
-                approvals, lastEditedAt, linesAdded, linesRemoved));
+            items.add(buildItem(path, basePath, ReviewItem.Status.DELETED, beforeContent, metrics));
         }
 
         items.sort((a, b) -> a.relativePath().compareToIgnoreCase(b.relativePath()));
@@ -449,14 +451,11 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     private static @NotNull ReviewItem buildItem(@NotNull String path, @Nullable String basePath,
                                                  @NotNull ReviewItem.Status status,
                                                  @Nullable String beforeContent,
-                                                 @NotNull Map<String, ApprovalState> approvals,
-                                                 @NotNull Map<String, Long> lastEditedAt,
-                                                 @NotNull Map<String, Integer> linesAdded,
-                                                 @NotNull Map<String, Integer> linesRemoved) {
-        ApprovalState state = approvals.getOrDefault(path, ApprovalState.PENDING);
-        long ts = lastEditedAt.getOrDefault(path, 0L);
-        int added = linesAdded.getOrDefault(path, 0);
-        int removed = linesRemoved.getOrDefault(path, 0);
+                                                 @NotNull EditMetrics metrics) {
+        ApprovalState state = metrics.approvals().getOrDefault(path, ApprovalState.PENDING);
+        long ts = metrics.lastEditedAt().getOrDefault(path, 0L);
+        int added = metrics.linesAdded().getOrDefault(path, 0);
+        int removed = metrics.linesRemoved().getOrDefault(path, 0);
         return new ReviewItem(path, relativize(path, basePath), status, beforeContent,
             state, ts, added, removed);
     }

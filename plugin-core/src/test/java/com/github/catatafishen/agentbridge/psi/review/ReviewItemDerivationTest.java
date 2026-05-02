@@ -44,10 +44,12 @@ class ReviewItemDerivationTest {
             snapshots,
             newFiles,
             deletedFiles,
-            new HashMap<>(),
-            new HashMap<>(),
-            new HashMap<>(linesAdded),
-            new HashMap<>(linesRemoved),
+            new AgentEditSession.EditMetrics(
+                new HashMap<>(),
+                new HashMap<>(),
+                new HashMap<>(linesAdded),
+                new HashMap<>(linesRemoved)
+            ),
             BASE
         );
     }
