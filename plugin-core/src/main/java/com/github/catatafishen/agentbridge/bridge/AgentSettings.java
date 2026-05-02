@@ -35,14 +35,6 @@ public interface AgentSettings {
     int getInactivityTimeout();
 
     /**
-     * @deprecated Use {@link #getTurnTimeout()}.
-     */
-    @Deprecated(since = "0.7", forRemoval = true)
-    default int getPromptTimeout() {
-        return getTurnTimeout();
-    }
-
-    /**
      * Maximum tool calls allowed per prompt turn (0 = unlimited).
      */
     int getMaxToolCallsPerTurn();

@@ -12,8 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Tests for the {@link AgentException} hierarchy — constructors, field accessors,
- * and the deprecated {@link com.github.catatafishen.agentbridge.bridge.AcpException} subclass.
+ * Tests for the {@link AgentException} hierarchy — constructors and field accessors.
  */
 @DisplayName("AgentException")
 class AgentExceptionTest {
@@ -180,51 +179,8 @@ class AgentExceptionTest {
         }
     }
 
-    // ── AcpException (deprecated subclass) ───────────────────────────────
-
-    @Nested
-    @DisplayName("AcpException (deprecated)")
-    @SuppressWarnings("deprecation")
-    class AcpExceptionTests {
-
-        @Test
-        @DisplayName("single-arg constructor defaults to recoverable")
-        void singleArgRecoverable() {
-            var ex = new com.github.catatafishen.agentbridge.bridge.AcpException("msg");
-            assertEquals("msg", ex.getMessage());
-            assertTrue(ex.isRecoverable());
-            assertEquals(0, ex.getErrorCode());
-        }
-
-        @Test
-        @DisplayName("two-arg constructor passes cause")
-        void twoArgWithCause() {
-            var cause = new RuntimeException("root");
-            var ex = new com.github.catatafishen.agentbridge.bridge.AcpException("msg", cause);
-            assertSame(cause, ex.getCause());
-        }
-
-        @Test
-        @DisplayName("three-arg constructor honours recoverable flag")
-        void threeArgRecoverable() {
-            var ex = new com.github.catatafishen.agentbridge.bridge.AcpException("msg", null, false);
-            assertFalse(ex.isRecoverable());
-        }
-
-        @Test
-        @DisplayName("full constructor stores errorCode and errorData")
-        void fullConstructor() {
-            var ex = new com.github.catatafishen.agentbridge.bridge.AcpException(
-                "msg", null, false, -32601, "data");
-            assertEquals(-32601, ex.getErrorCode());
-            assertEquals("data", ex.getErrorData());
-        }
-
-        @Test
-        @DisplayName("is an AgentException")
-        void isAgentException() {
-            var ex = new com.github.catatafishen.agentbridge.bridge.AcpException("x");
-            assertInstanceOf(AgentException.class, ex);
-        }
-    }
+    // ── AcpException (removed in 0.8) ────────────────────────────────────
+    // The deprecated AcpException subclass was removed; AgentException is the
+    // canonical type. No replacement test needed — AgentException is covered
+    // by the tests above.
 }
