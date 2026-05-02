@@ -33,7 +33,6 @@ public final class SearchTextTool extends NavigationTool {
 
     private static final String PARAM_REGEX = "regex";
     private static final String PARAM_CASE_SENSITIVE = "case_sensitive";
-    private static final String PARAM_MAX_RESULTS = "max_results";
     private static final String PARAM_CONTEXT_LINES = "context_lines";
 
     /**
@@ -53,7 +52,8 @@ public final class SearchTextTool extends NavigationTool {
     private record SearchParams(Pattern pattern, String basePath, String filePattern,
                                 Pattern compiledFileGlob,
                                 List<String> results, @Nullable List<MatchPosition> positions,
-                                AtomicInteger skippedLarge, int maxResults, int contextLines,
+                                AtomicInteger skippedLarge, int maxResults, int offset,
+                                AtomicInteger totalSeen, int contextLines,
                                 AtomicInteger totalOutputBytes) {
     }
 
@@ -96,6 +96,7 @@ public final class SearchTextTool extends NavigationTool {
             Param.optional(PARAM_REGEX, TYPE_BOOLEAN, "If true, treat query as regex. Default: false (literal match)"),
             Param.optional(PARAM_CASE_SENSITIVE, TYPE_BOOLEAN, "Case-sensitive search. Default: true"),
             Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of results to skip for pagination (default: 0)"),
             Param.optional(PARAM_CONTEXT_LINES, TYPE_INTEGER, "Lines of context before and after each match (default: 0). Reduces need for follow-up read_file calls.")
         );
     }
@@ -114,6 +115,7 @@ public final class SearchTextTool extends NavigationTool {
         boolean isRegex = args.has(PARAM_REGEX) && args.get(PARAM_REGEX).getAsBoolean();
         boolean caseSensitive = !args.has(PARAM_CASE_SENSITIVE) || args.get(PARAM_CASE_SENSITIVE).getAsBoolean();
         int maxResults = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : 100;
+        int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int contextLines = args.has(PARAM_CONTEXT_LINES) ? args.get(PARAM_CONTEXT_LINES).getAsInt() : 0;
         boolean followAgent = ActiveAgentManager.getFollowAgentFiles(project);
 
@@ -124,15 +126,15 @@ public final class SearchTextTool extends NavigationTool {
         // executeSynchronously() yields to write actions when they need to run, then restarts the
         // search (performSearch creates fresh collections, so restart is safe).
         String result = ReadAction.nonBlocking(
-            () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults, contextLines, followAgent)
+            () -> performSearch(query, filePattern, isRegex, caseSensitive, maxResults, offset, contextLines, followAgent)
         ).executeSynchronously();
         showSearchFeedback("Text search complete: " + query);
         return result;
     }
 
     private String performSearch(String query, String filePattern, boolean isRegex,
-                                 boolean caseSensitive, int maxResults, int contextLines,
-                                 boolean followAgent) {
+                                 boolean caseSensitive, int maxResults, int offset,
+                                 int contextLines, boolean followAgent) {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -144,7 +146,7 @@ public final class SearchTextTool extends NavigationTool {
         AtomicInteger skippedLarge = new AtomicInteger(0);
         AtomicInteger totalOutputBytes = new AtomicInteger(0);
         var compiledFileGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
-        var params = new SearchParams(pattern, basePath, filePattern, compiledFileGlob, results, positions, skippedLarge, maxResults, contextLines, totalOutputBytes);
+        var params = new SearchParams(pattern, basePath, filePattern, compiledFileGlob, results, positions, skippedLarge, maxResults, offset, new AtomicInteger(0), contextLines, totalOutputBytes);
         ProjectFileIndex.getInstance(project).iterateContent(vf -> processFile(vf, params));
 
         if (positions != null && !positions.isEmpty()) {
@@ -164,6 +166,10 @@ public final class SearchTextTool extends NavigationTool {
         }
         if (totalOutputBytes.get() >= MAX_OUTPUT_BYTES) {
             sb.append("\n(output truncated at 256 KB — use a more specific query or file_pattern to narrow results)");
+        }
+        if (results.size() >= maxResults) {
+            sb.append("\n\n(Showing ").append(maxResults).append(" results starting at offset ").append(offset)
+                .append(". Use offset=").append(offset + maxResults).append(" to see more)");
         }
         return sb.toString();
     }
@@ -248,8 +254,9 @@ public final class SearchTextTool extends NavigationTool {
             } else {
                 entry = buildMatchWithContext(doc, relPath, matchLine, lineText, p.contextLines());
             }
-            p.results().add(entry);
             p.totalOutputBytes().addAndGet(entry.length());
+            if (p.totalSeen().getAndIncrement() < p.offset()) continue;
+            p.results().add(entry);
             if (p.positions() != null) {
                 p.positions().add(new MatchPosition(vf, psiFile, matcher.start(), matcher.end()));
             }

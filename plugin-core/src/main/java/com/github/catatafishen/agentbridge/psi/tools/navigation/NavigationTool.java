@@ -46,6 +46,10 @@ public abstract class NavigationTool extends Tool {
             + "use after download_sources to look up symbols in dependencies), or 'all' (project + libraries). "
             + "Default 'project' keeps result counts small; switch when you need symbols declared in dependency JARs.";
 
+    protected static final String PARAM_MAX_RESULTS = "max_results";
+    protected static final String PARAM_OFFSET = "offset";
+    protected static final int DEFAULT_MAX_RESULTS = 100;
+
     protected NavigationTool(Project project) {
         super(project);
     }
@@ -67,6 +71,27 @@ public abstract class NavigationTool extends Tool {
         return args.has(PARAM_SCOPE) && !args.get(PARAM_SCOPE).isJsonNull()
             ? args.get(PARAM_SCOPE).getAsString()
             : SCOPE_PROJECT;
+    }
+
+    /**
+     * Reads pagination params (max_results, offset) from tool arguments.
+     * Returns an int array: [maxResults, offset].
+     */
+    protected int[] readPaginationParams(com.google.gson.JsonObject args, int defaultMax) {
+        int maxResults = args.has(PARAM_MAX_RESULTS) ? args.get(PARAM_MAX_RESULTS).getAsInt() : defaultMax;
+        int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
+        return new int[]{maxResults, offset};
+    }
+
+    /**
+     * Builds a pagination footer when results were limited.
+     * Returns empty string if all results fit, otherwise returns hint with next offset.
+     */
+    protected static String paginationFooter(int totalFound, int offset, int maxResults) {
+        int nextOffset = offset + maxResults;
+        if (totalFound <= offset + maxResults) return "";
+        return "\n\n(Showing " + maxResults + " of " + totalFound + " results. "
+            + "Use offset=" + nextOffset + " to see more)";
     }
 
     @Override

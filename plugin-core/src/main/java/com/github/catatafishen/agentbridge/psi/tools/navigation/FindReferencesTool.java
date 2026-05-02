@@ -64,7 +64,9 @@ public final class FindReferencesTool extends NavigationTool {
         return schema(
             Param.required("symbol", TYPE_STRING, "The exact symbol name to search for"),
             Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.java')", ""),
-            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT)
+            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
+            Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of results to skip for pagination (default: 0)")
         );
     }
 
@@ -80,6 +82,9 @@ public final class FindReferencesTool extends NavigationTool {
         String symbol = args.get(PARAM_SYMBOL).getAsString();
         String filePattern = args.has(PARAM_FILE_PATTERN) ? args.get(PARAM_FILE_PATTERN).getAsString() : "";
         String scopeName = readScopeParam(args);
+        int[] pagination = readPaginationParams(args, DEFAULT_MAX_RESULTS);
+        int maxResults = pagination[0];
+        int offset = pagination[1];
 
         showSearchFeedback("🔍 Finding references: " + symbol);
         String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
@@ -89,31 +94,41 @@ public final class FindReferencesTool extends NavigationTool {
 
             PsiElement definition = findDefinition(symbol, scope);
             if (definition != null) {
-                collectDefinitionReferences(definition, scope, filePattern, basePath, results);
+                collectDefinitionReferences(definition, scope, filePattern, basePath, results, maxResults, offset);
             }
             if (results.isEmpty()) {
-                collectWordReferences(symbol, scope, filePattern, basePath, results);
+                collectWordReferences(symbol, scope, filePattern, basePath, results, maxResults, offset);
             }
             if (results.isEmpty()) return "No references found for '" + symbol + "'";
-            return results.size() + " references found:\n" + String.join("\n", results);
+            String footer = results.size() >= maxResults
+                ? "\n\n(Showing " + maxResults + " results starting at offset " + offset + ". Use offset=" + (offset + maxResults) + " to see more)"
+                : "";
+            return results.size() + " references found:\n" + String.join("\n", results) + footer;
         });
         showSearchFeedback("✓ Reference search complete: " + symbol);
         return result;
     }
 
     private void collectDefinitionReferences(PsiElement definition, GlobalSearchScope scope,
-                                             String filePattern, String basePath, List<String> results) {
+                                             String filePattern, String basePath, List<String> results,
+                                             int maxResults, int offset) {
         var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
+        int seen = 0;
         for (PsiReference ref : ReferencesSearch.search(definition, scope).findAll()) {
-            if (results.size() >= 100) break;
+            if (results.size() >= maxResults) break;
             String entry = buildReferenceEntry(ref, filePattern, compiledGlob, basePath);
-            if (entry != null) results.add(entry);
+            if (entry != null) {
+                if (seen++ < offset) continue;
+                results.add(entry);
+            }
         }
     }
 
     private void collectWordReferences(String symbol, GlobalSearchScope scope,
-                                       String filePattern, String basePath, List<String> results) {
+                                       String filePattern, String basePath, List<String> results,
+                                       int maxResults, int offset) {
         var compiledGlob = filePattern.isEmpty() ? null : ToolUtils.compileGlob(filePattern);
+        int[] seen = {0};
         PsiSearchHelper.getInstance(project).processElementsWithWord(
             (element, offsetInElement) -> {
                 com.intellij.psi.PsiFile file = element.getContainingFile();
@@ -128,9 +143,12 @@ public final class FindReferencesTool extends NavigationTool {
                     int line = doc.getLineNumber(element.getTextOffset()) + 1;
                     String lineText = ToolUtils.getLineText(doc, line - 1);
                     String entry = String.format(FORMAT_LINE_REF, relPath, line, lineText);
-                    if (!results.contains(entry)) results.add(entry);
+                    if (!results.contains(entry)) {
+                        if (seen[0]++ < offset) return true;
+                        results.add(entry);
+                    }
                 }
-                return results.size() < 100;
+                return results.size() < maxResults;
             },
             scope, symbol, UsageSearchContext.IN_CODE, true
         );

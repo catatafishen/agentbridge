@@ -72,7 +72,9 @@ public final class SearchSymbolsTool extends NavigationTool {
         return schema(
             Param.required("query", TYPE_STRING, "Symbol name to search for, or '*' to list all symbols in the project"),
             Param.optional("type", TYPE_STRING, "Optional: filter by type (class, method, field, property). Default: all types", ""),
-            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT)
+            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
+            Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 50 for exact, 200 for wildcard)"),
+            Param.optional(PARAM_OFFSET, TYPE_INTEGER, "Number of results to skip for pagination (default: 0)")
         );
     }
 
@@ -86,6 +88,9 @@ public final class SearchSymbolsTool extends NavigationTool {
         String query = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : "";
         String typeFilter = args.has("type") ? args.get("type").getAsString() : "";
         String scopeName = readScopeParam(args);
+        int[] pagination = readPaginationParams(args, -1); // -1 means "use per-mode default"
+        int maxResults = pagination[0];
+        int offset = pagination[1];
 
         showSearchFeedback("🔍 Searching symbols: " + query);
         String result = ApplicationManager.getApplication().runReadAction((Computable<String>) () -> {
@@ -94,15 +99,15 @@ public final class SearchSymbolsTool extends NavigationTool {
                     return "Error: Wildcard symbol listing is only supported with scope='project'. "
                         + "Use an exact query name when searching scope='libraries' or scope='all'.";
                 }
-                return searchWildcard(typeFilter);
+                return searchWildcard(typeFilter, maxResults > 0 ? maxResults : 200, offset);
             }
-            return searchExact(query, typeFilter, resolveScope(scopeName));
+            return searchExact(query, typeFilter, resolveScope(scopeName), maxResults > 0 ? maxResults : 50, offset);
         });
         showSearchFeedback("✓ Symbol search complete: " + query);
         return result;
     }
 
-    private String searchWildcard(String typeFilter) {
+    private String searchWildcard(String typeFilter, int maxResults, int offset) {
         if (typeFilter.isEmpty())
             return "Provide a 'type' filter (class, interface, method, field) when using wildcard query";
 
@@ -122,16 +127,24 @@ public final class SearchSymbolsTool extends NavigationTool {
             if (doc == null) return true;
 
             collectSymbolsFromFile(psiFile, doc, vf, typeFilter, basePath, seen, results);
-            return results.size() < 200;
+            return results.size() < offset + maxResults;
         });
 
         if (results.isEmpty())
             return "No " + typeFilter + " symbols found (scanned " + fileCount[0]
                 + " source files using AST analysis). This is a definitive result — no grep needed.";
-        return results.size() + " " + typeFilter + " symbols:\n" + String.join("\n", results);
+
+        // Apply offset
+        List<String> page = offset >= results.size() ? List.of() : results.subList(offset, Math.min(results.size(), offset + maxResults));
+        if (page.isEmpty()) return "No more results at offset " + offset;
+
+        String footer = page.size() >= maxResults
+            ? "\n\n(Showing " + maxResults + " results starting at offset " + offset + ". Use offset=" + (offset + maxResults) + " to see more)"
+            : "";
+        return page.size() + " " + typeFilter + " symbols:\n" + String.join("\n", page) + footer;
     }
 
-    private String searchExact(String query, String typeFilter, GlobalSearchScope scope) {
+    private String searchExact(String query, String typeFilter, GlobalSearchScope scope, int maxResults, int offset) {
         List<String> results = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String basePath = project.getBasePath();
@@ -145,12 +158,17 @@ public final class SearchSymbolsTool extends NavigationTool {
                         addSymbolResult(parent, basePath, seen, results);
                     }
                 }
-                return results.size() < 50;
+                return results.size() < offset + maxResults;
             },
             scope, query, UsageSearchContext.IN_CODE, true
         );
 
-        if (results.isEmpty()) return "No symbols found matching '" + query + "'";
-        return String.join("\n", results);
+        // Apply offset
+        List<String> page = offset >= results.size() ? List.of() : results.subList(offset, Math.min(results.size(), offset + maxResults));
+        if (page.isEmpty()) return "No symbols found matching '" + query + "'";
+        String footer = page.size() >= maxResults
+            ? "\n\n(Showing " + maxResults + " results starting at offset " + offset + ". Use offset=" + (offset + maxResults) + " to see more)"
+            : "";
+        return String.join("\n", page) + footer;
     }
 }
