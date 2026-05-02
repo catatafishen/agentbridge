@@ -119,7 +119,13 @@ sonar {
             "**/services/ActiveAgentManager.java",
             "**/session/SessionSwitchService.java",
             "**/settings/ShellEnvironment.java"
-        ).mapIndexed { i, path -> IgnoredIssue("s3077_$i", "java:S3077", path) }
+        ).mapIndexed { i, path -> IgnoredIssue("s3077_$i", "java:S3077", path) } + listOf(
+            // java:S125 — both occurrences are descriptive comment blocks (close-signal
+            // best-effort note, EDT-freeze rationale) that Sonar's heuristics misclassify
+            // as commented-out code. They are not dead code.
+            IgnoredIssue("s125_chatwebserver", "java:S125", "**/services/ChatWebServer.java"),
+            IgnoredIssue("s125_runinspections", "java:S125", "**/psi/tools/quality/RunInspectionsTool.java")
+        )
 
         property("sonar.issue.ignore.multicriteria", ignoredIssues.joinToString(",") { it.key })
         ignoredIssues.forEach {

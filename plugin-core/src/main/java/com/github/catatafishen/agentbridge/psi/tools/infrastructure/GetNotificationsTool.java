@@ -4,7 +4,6 @@ import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import com.github.catatafishen.agentbridge.ui.renderers.IdeInfoRenderer;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * Gets recent IntelliJ balloon notifications.
@@ -30,7 +29,7 @@ public final class GetNotificationsTool extends InfrastructureTool {
         return "Get recent IntelliJ balloon notifications";
     }
 
-    
+
 
     @Override
     public @NotNull Kind kind() {

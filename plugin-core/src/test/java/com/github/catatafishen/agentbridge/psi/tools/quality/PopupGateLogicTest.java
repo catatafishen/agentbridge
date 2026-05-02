@@ -116,7 +116,7 @@ class PopupGateLogicTest {
             PopupGateLogic.evaluate(p, "search_text", OWNING, later);
         // age should mention seconds count
         long expected = PendingPopupService.MAX_AGE.toSeconds() + 42;
-        assertTrue(awcn.note().contains(expected + "s"), () -> awcn.note());
+        assertTrue(awcn.note().contains(expected + "s"), awcn::note);
     }
 
     @Test

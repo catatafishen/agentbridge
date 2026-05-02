@@ -243,7 +243,7 @@ class MarkdownRendererTest {
 
         @Test
         void inlineCodeWithGitShaResolvesToGitShowLink() {
-            String html = renderWithGit("`abc1234`", sha -> "abc1234".equals(sha));
+            String html = renderWithGit("`abc1234`", "abc1234"::equals);
             assertTrue(html.contains("<a href='gitshow://abc1234'>"), html);
             assertTrue(html.contains("<code>abc1234</code>"), html);
         }
@@ -722,7 +722,7 @@ class MarkdownRendererTest {
 
         @Test
         void markdownLinkResolvedAsGitCommit() {
-            String html = renderWithGit("[fix](abcdef1234)", sha -> "abcdef1234".equals(sha));
+            String html = renderWithGit("[fix](abcdef1234)", "abcdef1234"::equals);
             assertTrue(html.contains("gitshow://abcdef1234"), html);
         }
 
@@ -804,7 +804,7 @@ class MarkdownRendererTest {
     class GitShaDetection {
         @Test
         void bareGitShaInTextResolvesToLink() {
-            String html = renderWithGit("Fixed in abc1234 commit", sha -> "abc1234".equals(sha));
+            String html = renderWithGit("Fixed in abc1234 commit", "abc1234"::equals);
             assertTrue(html.contains("<a href='gitshow://abc1234'"), html);
             assertTrue(html.contains("class='git-commit-link'"), html);
         }
@@ -820,7 +820,7 @@ class MarkdownRendererTest {
         void gitShaMaxLength() {
             // 12 chars is within BARE_GIT_SHA_REGEX range
             String sha = "abcdef123456";
-            String html = renderWithGit("Commit " + sha, s -> sha.equals(s));
+            String html = renderWithGit("Commit " + sha, sha::equals);
             assertTrue(html.contains("gitshow://" + sha), html);
         }
 
@@ -1175,7 +1175,7 @@ class MarkdownRendererTest {
             String html = renderFull("[fix](" + sha + ")",
                 ref -> null,
                 ref -> null,
-                s -> sha.equals(s));
+                sha::equals);
             assertTrue(html.contains("gitshow://" + sha), html);
         }
     }

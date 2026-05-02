@@ -11,7 +11,6 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -43,7 +42,7 @@ public final class ListScratchFilesTool extends EditorTool {
         return "List existing scratch files in the IDE scratch directory";
     }
 
-    
+
 
     @Override
     public @NotNull Kind kind() {

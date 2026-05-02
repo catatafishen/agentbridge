@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.ui.renderers;
 
-import kotlin.text.Regex;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

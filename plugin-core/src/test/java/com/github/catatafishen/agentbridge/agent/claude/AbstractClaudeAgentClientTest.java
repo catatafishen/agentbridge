@@ -203,14 +203,14 @@ class AbstractClaudeAgentClientTest {
         @Test
         void throwsWhenNotStarted() {
             client.setStarted(false);
-            AgentException ex = assertThrows(AgentException.class, () -> client.testEnsureStarted());
+            AgentException ex = assertThrows(AgentException.class, client::testEnsureStarted);
             assertTrue(ex.getMessage().contains("not started"));
         }
 
         @Test
         void doesNotThrowWhenStarted() {
             client.setStarted(true);
-            assertDoesNotThrow(() -> client.testEnsureStarted());
+            assertDoesNotThrow(client::testEnsureStarted);
         }
     }
 

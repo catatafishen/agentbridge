@@ -49,7 +49,7 @@ class CustomMcpClientSessionTest {
     @Test
     void initialize_capturesSessionIdFromResponseHeader() throws IOException {
         String sessionId = "test-session-abc123";
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             exchange.getResponseHeaders().add(CustomMcpClient.SESSION_HEADER, sessionId);
             respondJson(exchange, initializeResult());
@@ -64,7 +64,7 @@ class CustomMcpClientSessionTest {
 
     @Test
     void initialize_noSessionHeader_sessionIdRemainsNull() throws IOException {
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             respondJson(exchange, initializeResult());
         });
@@ -81,7 +81,7 @@ class CustomMcpClientSessionTest {
         String sessionId = "session-for-list";
         AtomicInteger callCount = new AtomicInteger();
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             RecordedRequest req = recordRequest(exchange);
             requests.add(req);
             int call = callCount.incrementAndGet();
@@ -110,7 +110,7 @@ class CustomMcpClientSessionTest {
         String sessionId = "session-for-call";
         AtomicInteger callCount = new AtomicInteger();
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             RecordedRequest req = recordRequest(exchange);
             requests.add(req);
             int call = callCount.incrementAndGet();
@@ -142,7 +142,7 @@ class CustomMcpClientSessionTest {
     void statelessServer_noSessionHeaderSentOnSubsequentRequests() throws IOException {
         AtomicInteger callCount = new AtomicInteger();
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             int call = callCount.incrementAndGet();
 
@@ -172,7 +172,7 @@ class CustomMcpClientSessionTest {
         String secondSession = "session-new";
         AtomicInteger callCount = new AtomicInteger();
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             RecordedRequest req = recordRequest(exchange);
             requests.add(req);
             int call = callCount.incrementAndGet();
@@ -209,7 +209,7 @@ class CustomMcpClientSessionTest {
         String session = "session-doomed";
         AtomicInteger callCount = new AtomicInteger();
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             int call = callCount.incrementAndGet();
 
@@ -244,7 +244,7 @@ class CustomMcpClientSessionTest {
         String secondSession = "sess-2";
         AtomicInteger callCount = new AtomicInteger();
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             int call = callCount.incrementAndGet();
 
@@ -280,7 +280,7 @@ class CustomMcpClientSessionTest {
         AtomicReference<String> deleteMethod = new AtomicReference<>();
         AtomicReference<String> deleteSessionHeader = new AtomicReference<>();
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             if ("DELETE".equals(exchange.getRequestMethod())) {
                 deleteMethod.set(exchange.getRequestMethod());
@@ -307,7 +307,7 @@ class CustomMcpClientSessionTest {
 
     @Test
     void close_noopWhenNoSession() throws IOException {
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             respondJson(exchange, initializeResult());
         });
@@ -328,7 +328,7 @@ class CustomMcpClientSessionTest {
     void close_swallows405FromServer() throws IOException {
         String sessionId = "session-405";
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             if ("DELETE".equals(exchange.getRequestMethod())) {
                 exchange.sendResponseHeaders(405, -1);
@@ -351,7 +351,7 @@ class CustomMcpClientSessionTest {
         String sessionId = "session-idempotent";
         AtomicInteger deleteCount = new AtomicInteger();
 
-        setupHandler((exchange) -> {
+        setupHandler(exchange -> {
             requests.add(recordRequest(exchange));
             if ("DELETE".equals(exchange.getRequestMethod())) {
                 deleteCount.incrementAndGet();

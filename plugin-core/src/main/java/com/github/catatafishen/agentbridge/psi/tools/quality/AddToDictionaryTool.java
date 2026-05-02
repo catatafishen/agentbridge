@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.psi.tools.quality;
 
-import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
