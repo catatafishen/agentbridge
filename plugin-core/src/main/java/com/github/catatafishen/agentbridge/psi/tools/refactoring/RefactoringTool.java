@@ -33,34 +33,6 @@ public abstract class RefactoringTool extends Tool {
     // ── Shared helpers ──────────────────────────────────────
 
     /**
-     * Splits a fully-qualified symbol into class name and optional member name.
-     * Tries to resolve as a full class first; falls back to splitting at the last dot.
-     */
-    protected String[] splitSymbolParts(String symbol) {
-        try {
-            Class<?> javaPsiFacadeClass = Class.forName("com.intellij.psi.JavaPsiFacade");
-            Object facade = javaPsiFacadeClass.getMethod("getInstance", Project.class).invoke(null, project);
-            var scope = com.intellij.psi.search.GlobalSearchScope.allScope(project);
-
-            PsiElement resolvedClass = (PsiElement) javaPsiFacadeClass
-                .getMethod("findClass", String.class, com.intellij.psi.search.GlobalSearchScope.class)
-                .invoke(facade, symbol, scope);
-
-            if (resolvedClass != null) {
-                return new String[]{symbol, null};
-            }
-        } catch (Exception ignored) {
-            // Reflection errors handled by caller
-        }
-
-        int lastDot = symbol.lastIndexOf('.');
-        if (lastDot > 0) {
-            return new String[]{symbol.substring(0, lastDot), symbol.substring(lastDot + 1)};
-        }
-        return new String[]{symbol, null};
-    }
-
-    /**
      * Finds a {@link PsiNamedElement} by name in the given file, optionally constrained to a line.
      */
     protected PsiNamedElement findNamedElement(PsiFile psiFile, Document document, String name, int targetLine) {
