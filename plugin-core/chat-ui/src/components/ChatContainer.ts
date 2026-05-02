@@ -412,7 +412,8 @@ export default class ChatContainer extends HTMLElement {
      * via _scrollToInstant() regardless of this CSS property.
      */
     setStreaming(active: boolean, smoothScrollEnabled: boolean): void {
-        this.style.scrollBehavior = active ? 'auto' : (smoothScrollEnabled ? 'smooth' : 'auto');
+        const restored = smoothScrollEnabled ? 'smooth' : 'auto';
+        this.style.scrollBehavior = active ? 'auto' : restored;
     }
 
     disconnectedCallback(): void {

@@ -417,7 +417,8 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
         @NotNull Map<String, Long> lastEditedAt,
         @NotNull Map<String, Integer> linesAdded,
         @NotNull Map<String, Integer> linesRemoved
-    ) {}
+    ) {
+    }
 
     static @NotNull List<ReviewItem> buildReviewItems(
         @NotNull Map<String, String> snapshots,

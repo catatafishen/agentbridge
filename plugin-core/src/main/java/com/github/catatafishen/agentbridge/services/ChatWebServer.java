@@ -1600,29 +1600,15 @@ public final class ChatWebServer implements Disposable {
         if (profileId == null) {
             name = "agentbridge";
         } else {
-            switch (profileId) {
-                case "anthropic", "claude-cli":
-                    name = "claude";
-                    break;
-                case "copilot":
-                    name = "copilot";
-                    break;
-                case "opencode":
-                    name = "opencode";
-                    break;
-                case "junie":
-                    name = "junie";
-                    break;
-                case "kiro":
-                    name = "kiro";
-                    break;
-                case "codex":
-                    name = "codex";
-                    break;
-                default:
-                    name = "agentbridge";
-                    break;
-            }
+            name = switch (profileId) {
+                case "anthropic", "claude-cli" -> "claude";
+                case "copilot" -> "copilot";
+                case "opencode" -> "opencode";
+                case "junie" -> "junie";
+                case "kiro" -> "kiro";
+                case "codex" -> "codex";
+                default -> "agentbridge";
+            };
         }
         String suffix = isDark ? "_dark" : "";
         String path = "/icons/expui/" + name + suffix + ".svg";

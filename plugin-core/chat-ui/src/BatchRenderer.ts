@@ -304,8 +304,11 @@ function _buildStatBar(stats: StatsTurn): HTMLElement {
             dur = s > 0 ? m + 'm ' + s + 's' : m + 'm';
         }
     }
-    const fmt = (n: number): string =>
-        n < 1000 ? String(n) : n < 10000 ? (n / 1000).toFixed(1) + 'k' : Math.round(n / 1000) + 'k';
+    const fmt = (n: number): string => {
+        if (n < 1000) return String(n);
+        if (n < 10000) return (n / 1000).toFixed(1) + 'k';
+        return Math.round(n / 1000) + 'k';
+    };
 
     const parts: Array<string | HTMLElement> = [];
 
