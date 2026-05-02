@@ -41,6 +41,8 @@ class ToolsConfigurable(private val project: Project) :
 
     private val toolCheckboxes = LinkedHashMap<String, JBCheckBox>()
     private val categoryCheckboxes = LinkedHashMap<ToolRegistry.Category, MutableList<JBCheckBox>>()
+    private val toolTemplates = LinkedHashMap<String, String>()
+    private val templateIndicators = LinkedHashMap<String, JBLabel>()
 
     private var counterLabel: JBLabel? = null
     private var readColorCombo: ThemeColorComboBox? = null
@@ -198,6 +200,7 @@ class ToolsConfigurable(private val project: Project) :
         category: ToolRegistry.Category,
         settings: McpServerSettings
     ) {
+        val toolId = tool.id()
         val kindColor = kindColorFor(tool, settings)
         val toolRow = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
@@ -209,13 +212,38 @@ class ToolsConfigurable(private val project: Project) :
             border = JBUI.Borders.empty(1, 16, 0, 0)
         }
         toolRow.add(dot)
-        val cb = JBCheckBox(tool.displayName(), settings.isToolEnabled(tool.id())).apply {
+        val cb = JBCheckBox(tool.displayName(), settings.isToolEnabled(toolId)).apply {
             border = JBUI.Borders.emptyTop(1)
             addItemListener { updateCounter() }
         }
-        toolCheckboxes[tool.id()] = cb
+        toolCheckboxes[toolId] = cb
         categoryCheckboxes.getOrPut(category) { mutableListOf() }.add(cb)
         toolRow.add(cb)
+
+        // Template indicator — shows when an output template is configured
+        val currentTemplate = settings.getToolOutputTemplate(toolId)
+        toolTemplates[toolId] = currentTemplate
+        val indicator = JBLabel().apply {
+            border = JBUI.Borders.empty(1, 4, 0, 0)
+            updateTemplateIndicator(this, currentTemplate)
+        }
+        templateIndicators[toolId] = indicator
+        toolRow.add(indicator)
+
+        // Gear button to edit the output template
+        val configBtn = JBLabel("⚙").apply {
+            cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+            toolTipText = "Edit output template"
+            border = JBUI.Borders.empty(1, 4, 0, 0)
+            foreground = UIUtil.getContextHelpForeground()
+            addMouseListener(object : java.awt.event.MouseAdapter() {
+                override fun mouseClicked(e: java.awt.event.MouseEvent?) {
+                    showOutputTemplateDialog(toolId, tool.displayName())
+                }
+            })
+        }
+        toolRow.add(configBtn)
+
         toolRow.add(Box.createHorizontalGlue())
         toolsPanel.add(toolRow)
         addToolDescription(toolsPanel, tool)
@@ -352,6 +380,9 @@ class ToolsConfigurable(private val project: Project) :
         for ((id, cb) in toolCheckboxes) {
             if (cb.isSelected != settings.isToolEnabled(id)) return true
         }
+        for ((id, template) in toolTemplates) {
+            if (template != settings.getToolOutputTemplate(id)) return true
+        }
         if (readColorCombo != null && keyOf(readColorCombo!!) != settings.kindReadColorKey) return true
         if (searchColorCombo != null && keyOf(searchColorCombo!!) != settings.kindSearchColorKey) return true
         if (editColorCombo != null && keyOf(editColorCombo!!) != settings.kindEditColorKey) return true
@@ -361,6 +392,7 @@ class ToolsConfigurable(private val project: Project) :
     private fun applySettings() {
         val settings = McpServerSettings.getInstance(project)
         for ((id, cb) in toolCheckboxes) settings.setToolEnabled(id, cb.isSelected)
+        for ((id, template) in toolTemplates) settings.setToolOutputTemplate(id, template)
         readColorCombo?.let { settings.kindReadColorKey = keyOf(it) }
         searchColorCombo?.let { settings.kindSearchColorKey = keyOf(it) }
         editColorCombo?.let { settings.kindEditColorKey = keyOf(it) }
@@ -370,6 +402,11 @@ class ToolsConfigurable(private val project: Project) :
     private fun resetFromSettings() {
         val settings = McpServerSettings.getInstance(project)
         for ((id, cb) in toolCheckboxes) cb.isSelected = settings.isToolEnabled(id)
+        for (id in toolTemplates.keys) {
+            val template = settings.getToolOutputTemplate(id)
+            toolTemplates[id] = template
+            templateIndicators[id]?.let { updateTemplateIndicator(it, template) }
+        }
         readColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindReadColorKey)
         searchColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindSearchColorKey)
         editColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindEditColorKey)
@@ -386,9 +423,61 @@ class ToolsConfigurable(private val project: Project) :
         executeColorCombo = null
         toolCheckboxes.clear()
         categoryCheckboxes.clear()
+        toolTemplates.clear()
+        templateIndicators.clear()
     }
 
     private fun keyOf(combo: ThemeColorComboBox): String? = combo.selectedThemeColor?.name
+
+    private fun updateTemplateIndicator(label: JBLabel, template: String) {
+        if (template.isNotEmpty()) {
+            label.text = "📝"
+            label.toolTipText = "Output template: " + template.take(80) +
+                if (template.length > 80) "…" else ""
+        } else {
+            label.text = ""
+            label.toolTipText = null
+        }
+    }
+
+    private fun showOutputTemplateDialog(toolId: String, displayName: String) {
+        val currentText = toolTemplates[toolId] ?: ""
+        val textArea = javax.swing.JTextArea(currentText, 5, 50).apply {
+            lineWrap = true
+            wrapStyleWord = true
+            font = JBUI.Fonts.label()
+        }
+        val scrollPane = JBScrollPane(textArea).apply {
+            preferredSize = Dimension(JBUI.scale(450), JBUI.scale(120))
+        }
+
+        val hintLabel = JBLabel(
+            "<html>Text appended to every successful response from <b>$displayName</b>. " +
+                "Use to inject reminders, conventions, or instructions into tool output.</html>"
+        ).apply {
+            font = JBUI.Fonts.smallFont()
+            foreground = UIUtil.getContextHelpForeground()
+            border = JBUI.Borders.emptyBottom(8)
+            isAllowAutoWrapping = true
+        }
+
+        val dialogPanel = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            add(hintLabel)
+            add(scrollPane)
+        }
+
+        val result = javax.swing.JOptionPane.showConfirmDialog(
+            null, dialogPanel, "Output Template — $displayName",
+            javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.PLAIN_MESSAGE
+        )
+
+        if (result == javax.swing.JOptionPane.OK_OPTION) {
+            val newTemplate = textArea.text.trim()
+            toolTemplates[toolId] = newTemplate
+            templateIndicators[toolId]?.let { updateTemplateIndicator(it, newTemplate) }
+        }
+    }
 
     private fun buildRiderInfoPanel(): JComponent {
         val disabledList = PsiBridgeService.getRiderDisabledToolIds().joinToString(", ")

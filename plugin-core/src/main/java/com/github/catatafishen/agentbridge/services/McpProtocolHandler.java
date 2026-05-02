@@ -6,9 +6,11 @@ import com.github.catatafishen.agentbridge.memory.MemorySettings;
 import com.github.catatafishen.agentbridge.memory.layers.EssentialStoryLayer;
 import com.github.catatafishen.agentbridge.memory.layers.IdentityLayer;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
+import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.ToolError;
-import com.github.catatafishen.agentbridge.psi.McpErrorCode;
+import com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService;
+import com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -462,7 +464,6 @@ public final class McpProtocolHandler {
             return respondError(msg, -32602, "Missing tool name");
         }
 
-        // Check if tool is enabled
         McpServerSettings settings = McpServerSettings.getInstance(project);
         if (!settings.isToolEnabled(toolName) || McpToolFilter.isAlwaysHidden(toolName)) {
             return respondError(msg, -32602, "Tool is disabled: " + toolName);
@@ -471,64 +472,73 @@ public final class McpProtocolHandler {
         JsonObject arguments = params.has("arguments")
             ? params.getAsJsonObject("arguments") : new JsonObject();
 
-        // Extract correlation fields from _meta.
-        // claudecode/toolUseId matches the ACP tool_use.id exactly — used for direct chip correlation.
-        // progressToken is a sequence number, kept for debug logging only.
         ToolCallMeta meta = extractMeta(params);
-        String progressToken = meta.progressToken();
-        String toolUseId = meta.toolUseId();
+        logToolCall(toolName, meta.progressToken(), settings);
 
-        // Always log with [MCP] prefix for easy filtering alongside [ACP] logs.
-        // Include progressToken when debug logging is on — this is the key for ACP↔MCP correlation.
-        String tokenSuffix = progressToken != null ? " [progressToken=" + progressToken + "]" : " [no progressToken]";
-        if (settings.isDebugLoggingEnabled()) {
-            LOG.info("[MCP] >>> tools/call: " + toolName + tokenSuffix);
-        } else {
-            LOG.info("[MCP] tools/call: " + toolName);
-        }
-
-        // Popup gate: if a previous apply_action / apply_quickfix call suspended on a
-        // popup chooser, every subsequent tool call must either be popup_respond, the
-        // auto-cancel threshold call, or be blocked. See PopupGateLogic javadoc and
-        // .agent-work/popup-interaction-design-2026-04-30.md for the full design.
         String sessionKey = project.getLocationHash() + ":" + System.identityHashCode(this);
-        com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService pps =
-            com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService.getInstance();
-        com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.Decision decision =
-            com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.evaluate(
-                pps.peek(), toolName, sessionKey, java.time.Instant.now());
-        String resultPrefix = "";
-        if (decision instanceof com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.Block(
-            var message
-        )) {
-            return buildToolResult(msg, message, true);
-        }
-        if (decision instanceof com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.AllowWithCancelNote(
-            var cancelled, var note
-        )) {
-            pps.cancelAndClear(cancelled.id());
-            resultPrefix = note + "\n\n";
-        } else if (!com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic.POPUP_RESPOND_TOOL.equals(toolName)
-            && pps.peek() != null) {
-            // Same-session call within budget — count toward auto-cancel.
-            pps.recordUnrelatedCall(sessionKey);
-        }
+        PopupGateResult gateResult = evaluatePopupGate(toolName, sessionKey, msg);
+        if (gateResult.blocked != null) return gateResult.blocked;
 
-        // Delegate to PsiBridgeService
-        com.github.catatafishen.agentbridge.services.McpCallContext.setCurrent(sessionKey);
+        McpCallContext.setCurrent(sessionKey);
         try {
-            PsiBridgeService bridge = PsiBridgeService.getInstance(project);
-            String resultText = bridge.callTool(toolName, arguments, toolUseId);
+            String resultText = PsiBridgeService.getInstance(project)
+                .callTool(toolName, arguments, meta.toolUseId());
             resultText = truncateIfNeeded(resultText);
             boolean isError = ToolError.isError(resultText);
-            return buildToolResult(msg, resultPrefix + resultText, isError);
+
+            if (!isError) {
+                resultText = appendOutputTemplate(resultText, toolName, settings);
+            }
+            return buildToolResult(msg, gateResult.prefix + resultText, isError);
         } catch (Exception e) {
             LOG.warn("[MCP] tool error: " + toolName, e);
             return buildToolResult(msg,
                 ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage()), true);
         } finally {
-            com.github.catatafishen.agentbridge.services.McpCallContext.clear();
+            McpCallContext.clear();
         }
+    }
+
+    private static void logToolCall(String toolName, @Nullable String progressToken,
+                                    McpServerSettings settings) {
+        if (settings.isDebugLoggingEnabled()) {
+            String tokenSuffix = progressToken != null
+                ? " [progressToken=" + progressToken + "]" : " [no progressToken]";
+            LOG.info("[MCP] >>> tools/call: " + toolName + tokenSuffix);
+        } else {
+            LOG.info("[MCP] tools/call: " + toolName);
+        }
+    }
+
+    private record PopupGateResult(String prefix, @Nullable JsonObject blocked) {
+    }
+
+    private PopupGateResult evaluatePopupGate(String toolName, String sessionKey,
+                                              JsonObject msg) {
+        PendingPopupService pps = PendingPopupService.getInstance();
+        PopupGateLogic.Decision decision = PopupGateLogic.evaluate(
+            pps.peek(), toolName, sessionKey, java.time.Instant.now());
+
+        if (decision instanceof PopupGateLogic.Block(var message)) {
+            return new PopupGateResult("", buildToolResult(msg, message, true));
+        }
+        if (decision instanceof PopupGateLogic.AllowWithCancelNote(var cancelled, var note)) {
+            pps.cancelAndClear(cancelled.id());
+            return new PopupGateResult(note + "\n\n", null);
+        }
+        if (!PopupGateLogic.POPUP_RESPOND_TOOL.equals(toolName) && pps.peek() != null) {
+            pps.recordUnrelatedCall(sessionKey);
+        }
+        return new PopupGateResult("", null);
+    }
+
+    private static String appendOutputTemplate(String resultText, String toolName,
+                                               McpServerSettings settings) {
+        String template = settings.getToolOutputTemplate(toolName);
+        if (!template.isEmpty()) {
+            return resultText + "\n\n" + template;
+        }
+        return resultText;
     }
 
     private static String truncateIfNeeded(String text) {

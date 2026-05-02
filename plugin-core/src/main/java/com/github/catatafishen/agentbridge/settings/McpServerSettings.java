@@ -8,7 +8,9 @@ import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -171,6 +173,42 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
+     * Returns the output template for a tool, or empty string if none is configured.
+     * The template is appended to every successful (non-error) tool response.
+     */
+    public @NotNull String getToolOutputTemplate(@NotNull String toolId) {
+        ToolOptions options = myState.toolOptions.get(toolId);
+        if (options == null) return "";
+        String template = options.getOutputTemplate();
+        return template != null ? template : "";
+    }
+
+    /**
+     * Sets the output template for a tool. Pass empty/null to clear.
+     * Empty entries are pruned from the map to keep the XML clean.
+     */
+    public void setToolOutputTemplate(@NotNull String toolId, @org.jetbrains.annotations.Nullable String template) {
+        if (template == null || template.isEmpty()) {
+            ToolOptions existing = myState.toolOptions.get(toolId);
+            if (existing != null) {
+                existing.setOutputTemplate("");
+                if (existing.isEmpty()) {
+                    myState.toolOptions.remove(toolId);
+                }
+            }
+        } else {
+            myState.toolOptions.computeIfAbsent(toolId, k -> new ToolOptions()).setOutputTemplate(template);
+        }
+    }
+
+    /**
+     * Returns all configured tool options. Keys are tool IDs.
+     */
+    public @NotNull Map<String, ToolOptions> getAllToolOptions() {
+        return myState.toolOptions;
+    }
+
+    /**
      * Applies {@link McpToolFilter#DEFAULT_DISABLED} on first run, and applies
      * incremental defaults when new default-disabled tools are added in later
      * versions. Existing user enable/disable choices are preserved — only tools
@@ -241,6 +279,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private String kindEditColorKey = null;
         private String kindExecuteColorKey = null;
         private String kindSearchColorKey = null;
+        private Map<String, ToolOptions> toolOptions = new LinkedHashMap<>();
 
         public int getPort() {
             return port;
@@ -376,6 +415,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setKindSearchColorKey(@org.jetbrains.annotations.Nullable String kindSearchColorKey) {
             this.kindSearchColorKey = kindSearchColorKey;
+        }
+
+        public Map<String, ToolOptions> getToolOptions() {
+            return toolOptions;
+        }
+
+        public void setToolOptions(Map<String, ToolOptions> toolOptions) {
+            this.toolOptions = toolOptions != null ? toolOptions : new LinkedHashMap<>();
         }
     }
 }

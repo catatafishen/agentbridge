@@ -265,4 +265,63 @@ class McpServerSettingsStateTest {
         settings.setKindSearchColorKey(null);
         assertNull(settings.getKindSearchColorKey());
     }
+
+    // ── Output template API ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("getToolOutputTemplate returns empty string by default")
+    void defaultOutputTemplate() {
+        assertEquals("", settings.getToolOutputTemplate("git_commit"));
+    }
+
+    @Test
+    @DisplayName("setToolOutputTemplate round-trips correctly")
+    void outputTemplateRoundTrip() {
+        settings.setToolOutputTemplate("git_commit", "Always use conventional commits");
+        assertEquals("Always use conventional commits", settings.getToolOutputTemplate("git_commit"));
+    }
+
+    @Test
+    @DisplayName("setting template to null clears it")
+    void clearTemplateWithNull() {
+        settings.setToolOutputTemplate("git_commit", "something");
+        settings.setToolOutputTemplate("git_commit", null);
+        assertEquals("", settings.getToolOutputTemplate("git_commit"));
+    }
+
+    @Test
+    @DisplayName("setting template to empty clears it")
+    void clearTemplateWithEmpty() {
+        settings.setToolOutputTemplate("git_commit", "something");
+        settings.setToolOutputTemplate("git_commit", "");
+        assertEquals("", settings.getToolOutputTemplate("git_commit"));
+    }
+
+    @Test
+    @DisplayName("clearing template removes the entry from the map")
+    void clearingTemplatePrunesMap() {
+        settings.setToolOutputTemplate("git_commit", "test");
+        settings.setToolOutputTemplate("git_commit", "");
+        assertTrue(settings.getAllToolOptions().isEmpty(),
+            "Empty ToolOptions entries should be pruned from the map");
+    }
+
+    @Test
+    @DisplayName("templates for different tools are independent")
+    void templatesAreIndependent() {
+        settings.setToolOutputTemplate("git_commit", "template A");
+        settings.setToolOutputTemplate("edit_text", "template B");
+        assertEquals("template A", settings.getToolOutputTemplate("git_commit"));
+        assertEquals("template B", settings.getToolOutputTemplate("edit_text"));
+    }
+
+    @Test
+    @DisplayName("template survives loadState round-trip")
+    void templateSurvivesLoadState() {
+        settings.setToolOutputTemplate("run_tests", "Check CI dashboard");
+        McpServerSettings.State state = settings.getState();
+        McpServerSettings restored = new McpServerSettings();
+        restored.loadState(state);
+        assertEquals("Check CI dashboard", restored.getToolOutputTemplate("run_tests"));
+    }
 }
