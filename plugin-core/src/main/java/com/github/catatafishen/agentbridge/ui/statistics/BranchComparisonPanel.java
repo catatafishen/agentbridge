@@ -34,7 +34,7 @@ class BranchComparisonPanel extends JBPanel<BranchComparisonPanel> {
     private final Map<UsageStatisticsData.Metric, BranchComparisonChart> charts =
         new EnumMap<>(UsageStatisticsData.Metric.class);
     private final JBLabel hintLabel;
-    private UsageStatisticsData.BranchSnapshot currentSnapshot;
+    private transient UsageStatisticsData.BranchSnapshot currentSnapshot;
 
     BranchComparisonPanel(Project project) {
         super(new BorderLayout());
