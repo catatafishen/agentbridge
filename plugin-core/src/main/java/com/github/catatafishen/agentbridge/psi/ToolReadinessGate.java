@@ -28,22 +28,29 @@ public final class ToolReadinessGate {
 
     private static final Logger LOG = Logger.getInstance(ToolReadinessGate.class);
 
-    /** How long we opportunistically wait for indexing to finish. */
+    /**
+     * How long we opportunistically wait for indexing to finish.
+     */
     static final long INDEX_WAIT_MS = 30_000L;
 
-    /** How long we opportunistically wait for project initialisation. */
+    /**
+     * How long we opportunistically wait for project initialisation.
+     */
     static final long PROJECT_INIT_WAIT_MS = 2_000L;
 
-    /** Polling interval while waiting for project initialisation. */
+    /**
+     * Polling interval while waiting for project initialisation.
+     */
     private static final long PROJECT_INIT_POLL_MS = 50L;
 
-    private ToolReadinessGate() { }
+    private ToolReadinessGate() {
+    }
 
     /**
      * Checks every applicable readiness gate for the given tool and project.
      *
      * @return null when all gates pass; otherwise an error string suitable to
-     *         return directly to the MCP client (already prefixed with {@code "Error: "}).
+     * return directly to the MCP client (already prefixed with {@code "Error: "}).
      */
     @Nullable
     public static String checkReady(@NotNull Project project, @NotNull ToolDefinition def) {
@@ -68,28 +75,33 @@ public final class ToolReadinessGate {
 
     @NotNull
     public static String projectInitErrorMessage(@NotNull String toolName) {
-        return "Error: Project is still initialising. Tool '" + toolName
-            + "' depends on the project being fully opened. Retry shortly.";
+        return ToolError.of(McpErrorCode.PROJECT_NOT_READY,
+            "Project is still initialising. Tool '" + toolName
+                + "' depends on the project being fully opened.",
+            "Retry shortly.");
     }
 
     @NotNull
     public static String indexingErrorMessage(@NotNull String toolName) {
-        return "Error: IDE is still indexing after waiting 30s. Tool '" + toolName
-            + "' depends on the symbol index, which is not yet ready. "
-            + "Call get_indexing_status with wait=true to wait longer, then retry.";
+        return ToolError.of(McpErrorCode.INDEX_NOT_READY,
+            "IDE is still indexing after waiting 30s. Tool '" + toolName
+                + "' depends on the symbol index, which is not yet ready.",
+            "Call get_indexing_status with wait=true to wait longer, then retry.");
     }
 
     @NotNull
     public static String modalErrorMessage(@NotNull String toolName, @NotNull String detail) {
-        return "Error: A modal dialog is open and blocks tool '" + toolName + "'."
-            + detail
-            + " Use the interact_with_modal tool to inspect or dismiss the dialog, then retry.";
+        return ToolError.of(McpErrorCode.MODAL_BLOCKING,
+            "A modal dialog is open and blocks tool '" + toolName + "'." + detail,
+            "Use the interact_with_modal tool to inspect or dismiss the dialog, then retry.");
     }
 
     @NotNull
     public static String buildInProgressErrorMessage(@NotNull String toolName) {
-        return "Error: A project build is already in progress. Tool '" + toolName
-            + "' cannot run concurrently. Wait for the current build to finish and retry.";
+        return ToolError.of(McpErrorCode.BUILD_IN_PROGRESS,
+            "A project build is already in progress. Tool '" + toolName
+                + "' cannot run concurrently.",
+            "Wait for the current build to finish and retry.");
     }
 
     /**
@@ -103,12 +115,14 @@ public final class ToolReadinessGate {
     @Nullable
     static String awaitProjectInitialised(@NotNull Project project, @NotNull String toolName, long timeoutMs) {
         if (project.isDisposed()) {
-            return "Error: Project is disposed. Tool '" + toolName + "' cannot run.";
+            return ToolError.of(McpErrorCode.PROJECT_DISPOSED,
+                "Project is disposed. Tool '" + toolName + "' cannot run.");
         }
         long deadline = System.currentTimeMillis() + timeoutMs;
         while (!project.isInitialized()) {
             if (project.isDisposed()) {
-                return "Error: Project is disposed. Tool '" + toolName + "' cannot run.";
+                return ToolError.of(McpErrorCode.PROJECT_DISPOSED,
+                    "Project is disposed. Tool '" + toolName + "' cannot run.");
             }
             if (System.currentTimeMillis() >= deadline) {
                 return projectInitErrorMessage(toolName);
@@ -117,7 +131,8 @@ public final class ToolReadinessGate {
                 Thread.sleep(PROJECT_INIT_POLL_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                return "Error: Interrupted while waiting for project initialisation.";
+                return ToolError.of(McpErrorCode.INTERNAL_ERROR,
+                    "Interrupted while waiting for project initialisation.");
             }
         }
         return null;
@@ -144,7 +159,8 @@ public final class ToolReadinessGate {
             return indexingErrorMessage(toolName);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "Error: Interrupted while waiting for indexing to finish.";
+            return ToolError.of(McpErrorCode.INTERNAL_ERROR,
+                "Interrupted while waiting for indexing to finish.");
         } catch (Exception e) {
             LOG.debug("Smart-mode wait failed", e);
             return null; // be permissive on unexpected failure

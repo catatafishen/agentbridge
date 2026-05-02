@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.McpErrorCode;
+import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.SimpleStatusRenderer;
 import com.google.gson.JsonObject;
@@ -78,17 +80,19 @@ public final class DeleteFileTool extends FileTool {
             try {
                 VirtualFile vf = resolveVirtualFile(pathStr);
                 if (vf == null) {
-                    resultFuture.complete(ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr);
+                    resultFuture.complete(ToolError.of(McpErrorCode.FILE_NOT_FOUND, pathStr,
+                        "Check the path and try again. Use find_file to search by name."));
                     return null;
                 }
                 if (vf.isDirectory()) {
-                    resultFuture.complete("Error: Cannot delete directories. Path is a directory: " + pathStr);
+                    resultFuture.complete(ToolError.of(McpErrorCode.INVALID_PARAM,
+                        "Cannot delete directories. Path is a directory: " + pathStr));
                     return null;
                 }
                 scheduleFileDeletion(vf, pathStr, resultFuture);
                 return null;
             } catch (Exception e) {
-                resultFuture.complete(ToolUtils.ERROR_PREFIX + e.getMessage());
+                resultFuture.complete(ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage()));
                 return null;
             }
         }).inSmartMode(project).submit(AppExecutorUtil.getAppExecutorService());

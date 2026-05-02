@@ -1,7 +1,8 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
-import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.McpErrorCode;
+import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
@@ -58,7 +59,8 @@ public final class MoveFileTool extends FileTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || !args.has(PARAM_DESTINATION))
-            return ToolUtils.ERROR_PREFIX + "'path' and 'destination' parameters are required";
+            return ToolError.of(McpErrorCode.MISSING_PARAM,
+                "'path' and 'destination' parameters are required");
         String pathStr = args.get("path").getAsString();
         String destStr = args.get(PARAM_DESTINATION).getAsString();
 
@@ -66,12 +68,14 @@ public final class MoveFileTool extends FileTool {
         // when the VFS cache is stale (same fix as RenameFileTool).
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) vf = refreshAndFindVirtualFile(pathStr);
-        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+        if (vf == null) return ToolError.of(McpErrorCode.FILE_NOT_FOUND, pathStr,
+            "Check the path and try again. Use find_file to search by name.");
 
         VirtualFile destDir = resolveVirtualFile(destStr);
         if (destDir == null) destDir = refreshAndFindVirtualFile(destStr);
         if (destDir == null || !destDir.isDirectory())
-            return ToolUtils.ERROR_PREFIX + "Destination directory not found: " + destStr;
+            return ToolError.of(McpErrorCode.FILE_NOT_FOUND,
+                "Destination directory not found: " + destStr);
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         performMoveOnEdt(vf, destDir, resultFuture);

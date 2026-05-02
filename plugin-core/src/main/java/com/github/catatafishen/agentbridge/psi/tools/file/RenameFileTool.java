@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.McpErrorCode;
+import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
@@ -60,7 +62,8 @@ public final class RenameFileTool extends FileTool {
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
         if (!args.has("path") || !args.has(PARAM_NEW_NAME))
-            return ToolUtils.ERROR_PREFIX + "'path' and 'new_name' parameters are required";
+            return ToolError.of(McpErrorCode.MISSING_PARAM,
+                "'path' and 'new_name' parameters are required");
         String pathStr = args.get("path").getAsString();
         String newName = args.get(PARAM_NEW_NAME).getAsString();
 
@@ -70,7 +73,8 @@ public final class RenameFileTool extends FileTool {
         // refreshAndFindFileByPath forces a synchronous VFS refresh for that specific path.
         VirtualFile vf = resolveVirtualFile(pathStr);
         if (vf == null) vf = refreshAndFindVirtualFile(pathStr);
-        if (vf == null) return ToolUtils.ERROR_PREFIX + ToolUtils.ERROR_FILE_NOT_FOUND + pathStr;
+        if (vf == null) return ToolError.of(McpErrorCode.FILE_NOT_FOUND, pathStr,
+            "Check the path and try again. Use find_file to search by name.");
 
         CompletableFuture<String> resultFuture = new CompletableFuture<>();
         performRenameOnEdt(vf, newName, resultFuture);

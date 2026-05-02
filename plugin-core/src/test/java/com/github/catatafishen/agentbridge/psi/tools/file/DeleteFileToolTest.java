@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
+import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
@@ -157,10 +158,10 @@ public class DeleteFileToolTest extends BasePlatformTestCase {
 
         String result = executeSync(args("path", nonExistentPath));
 
-        assertTrue("Expected error prefix, got: " + result,
-            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertTrue("Expected error, got: " + result,
+            ToolError.isError(result));
         assertTrue("Expected 'File not found' in error, got: " + result,
-            result.contains(ToolUtils.ERROR_FILE_NOT_FOUND));
+            result.contains("FILE_NOT_FOUND") || result.contains(ToolUtils.ERROR_FILE_NOT_FOUND));
     }
 
     /**

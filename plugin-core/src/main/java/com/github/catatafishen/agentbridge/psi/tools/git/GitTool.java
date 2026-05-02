@@ -1,8 +1,10 @@
 package com.github.catatafishen.agentbridge.psi.tools.git;
 
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
+import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
+import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.tools.Tool;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
@@ -57,7 +59,8 @@ public abstract class GitTool extends Tool {
         Pattern.compile("^commit ([0-9a-f]{40})$", Pattern.MULTILINE);
 
     private static final String REV_PARSE = "rev-parse";
-    private static final String ERR_NO_BASE_PATH = "Error: no project base path";
+    private static final String ERR_NO_BASE_PATH = ToolError.of(McpErrorCode.PROJECT_NOT_READY,
+        "No project base path available");
     private static final String ERR_PREFIX = "Error";
     private static final String ABBREV_REF = "--abbrev-ref";
     private static final String REV_LIST = "rev-list";
@@ -162,8 +165,10 @@ public abstract class GitTool extends Tool {
         for (String root : roots) {
             if (root.equals(absParam)) return root;
         }
-        return "Error: repository '" + repoParam + "' not found. Available: "
-            + availableRepoRoots(roots) + ". Use git_status to list repositories.";
+        return ToolError.of(McpErrorCode.INVALID_PARAM,
+            "Repository '" + repoParam + "' not found. Available: "
+                + availableRepoRoots(roots) + ".",
+            "Use git_status to list repositories.");
     }
 
     private String normalizeRepoParam(@NotNull String repoParam) {
@@ -216,9 +221,10 @@ public abstract class GitTool extends Tool {
         String repoList = listRepoRoots().stream()
             .map(r -> "'" + r + "'")
             .collect(Collectors.joining(", "));
-        return "Error: project has multiple git repositories (" + repoList + "). "
-            + "Specify which repository to use with the 'repo' parameter for '"
-            + action + "'. Use git_status to see all repositories.";
+        return ToolError.of(McpErrorCode.AMBIGUOUS_MATCH,
+            "Project has multiple git repositories (" + repoList + ").",
+            "Specify which repository to use with the 'repo' parameter for '"
+                + action + "'. Use git_status to see all repositories.");
     }
 
     // ── Branch context enrichment ────────────────────────────

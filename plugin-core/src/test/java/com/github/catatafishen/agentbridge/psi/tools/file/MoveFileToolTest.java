@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.file;
 
+import com.github.catatafishen.agentbridge.psi.ToolError;
 import com.github.catatafishen.agentbridge.psi.ToolLayerSettings;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.google.gson.JsonObject;
@@ -189,8 +190,8 @@ public class MoveFileToolTest extends BasePlatformTestCase {
 
         String result = tool.execute(args("path", srcVf.getPath(), "destination", missingDestination));
 
-        assertTrue("Expected error prefix, got: " + result,
-            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertTrue("Expected error, got: " + result,
+            ToolError.isError(result));
         assertTrue("Expected destination error, got: " + result,
             result.contains("Destination directory not found"));
     }
@@ -203,8 +204,8 @@ public class MoveFileToolTest extends BasePlatformTestCase {
         // Missing path — returns before resolveVirtualFile / invokeLater.
         String result = tool.execute(new JsonObject());
 
-        assertTrue("Expected error prefix, got: " + result,
-            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertTrue("Expected error, got: " + result,
+            ToolError.isError(result));
         assertTrue("Expected missing-params message, got: " + result,
             result.contains("'path' and 'destination' parameters are required"));
     }
@@ -218,8 +219,8 @@ public class MoveFileToolTest extends BasePlatformTestCase {
         // Missing destination — returns before resolveVirtualFile / invokeLater.
         String result = tool.execute(args("path", tempDir.resolve("dummy.txt").toString()));
 
-        assertTrue("Expected error prefix, got: " + result,
-            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertTrue("Expected error, got: " + result,
+            ToolError.isError(result));
         assertTrue("Expected missing-params message, got: " + result,
             result.contains("'path' and 'destination' parameters are required"));
     }
@@ -257,9 +258,9 @@ public class MoveFileToolTest extends BasePlatformTestCase {
         String result = tool.execute(
             args("path", nonExistentPath, "destination", tempDir.toString()));
 
-        assertTrue("Expected error prefix, got: " + result,
-            result.startsWith(ToolUtils.ERROR_PREFIX));
+        assertTrue("Expected error, got: " + result,
+            ToolError.isError(result));
         assertTrue("Expected 'File not found' in error, got: " + result,
-            result.contains(ToolUtils.ERROR_FILE_NOT_FOUND));
+            result.contains("FILE_NOT_FOUND") || result.contains(ToolUtils.ERROR_FILE_NOT_FOUND));
     }
 }

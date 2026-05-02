@@ -7,6 +7,8 @@ import com.github.catatafishen.agentbridge.memory.layers.EssentialStoryLayer;
 import com.github.catatafishen.agentbridge.memory.layers.IdentityLayer;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
+import com.github.catatafishen.agentbridge.psi.ToolError;
+import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -517,11 +519,12 @@ public final class McpProtocolHandler {
             PsiBridgeService bridge = PsiBridgeService.getInstance(project);
             String resultText = bridge.callTool(toolName, arguments, toolUseId);
             resultText = truncateIfNeeded(resultText);
-            boolean isError = resultText != null && resultText.startsWith("Error");
+            boolean isError = ToolError.isError(resultText);
             return buildToolResult(msg, resultPrefix + resultText, isError);
         } catch (Exception e) {
             LOG.warn("[MCP] tool error: " + toolName, e);
-            return buildToolResult(msg, "Error: " + e.getMessage(), true);
+            return buildToolResult(msg,
+                ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage()), true);
         } finally {
             com.github.catatafishen.agentbridge.services.McpCallContext.clear();
         }

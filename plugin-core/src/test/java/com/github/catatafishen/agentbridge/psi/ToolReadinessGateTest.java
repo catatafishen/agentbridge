@@ -31,7 +31,9 @@ class ToolReadinessGateTest {
     @Test
     void indexingErrorMessage_pointsToGetIndexingStatus() {
         String msg = ToolReadinessGate.indexingErrorMessage("foo");
-        assertTrue(msg.startsWith("Error: "), "must use Error: prefix so MCP marks isError");
+        assertTrue(ToolError.isError(msg), "must be detected as error by ToolError.isError()");
+        assertEquals(McpErrorCode.INDEX_NOT_READY, ToolError.extractCode(msg),
+            "must use INDEX_NOT_READY error code");
         assertTrue(msg.contains("'foo'"), "message must reference the calling tool");
         assertTrue(msg.contains("get_indexing_status"), "must nudge agent to the readiness tool");
         assertTrue(msg.contains("wait=true"), "must tell agent how to await completion");
@@ -40,7 +42,8 @@ class ToolReadinessGateTest {
     @Test
     void modalErrorMessage_includesInteractWithModalNudge() {
         String msg = ToolReadinessGate.modalErrorMessage("foo", " Modal: 'Settings'.");
-        assertTrue(msg.startsWith("Error: "));
+        assertTrue(ToolError.isError(msg));
+        assertEquals(McpErrorCode.MODAL_BLOCKING, ToolError.extractCode(msg));
         assertTrue(msg.contains("'foo'"));
         assertTrue(msg.contains("Modal: 'Settings'."), "detail string must be embedded verbatim");
         assertTrue(msg.contains("interact_with_modal"));
@@ -49,7 +52,8 @@ class ToolReadinessGateTest {
     @Test
     void projectInitErrorMessage_isActionable() {
         String msg = ToolReadinessGate.projectInitErrorMessage("foo");
-        assertTrue(msg.startsWith("Error: "));
+        assertTrue(ToolError.isError(msg));
+        assertEquals(McpErrorCode.PROJECT_NOT_READY, ToolError.extractCode(msg));
         assertTrue(msg.contains("'foo'"));
         assertTrue(msg.contains("Retry"), "must tell agent the failure is transient");
     }
@@ -57,7 +61,8 @@ class ToolReadinessGateTest {
     @Test
     void buildInProgressErrorMessage_isActionable() {
         String msg = ToolReadinessGate.buildInProgressErrorMessage("build_project");
-        assertTrue(msg.startsWith("Error: "));
+        assertTrue(ToolError.isError(msg));
+        assertEquals(McpErrorCode.BUILD_IN_PROGRESS, ToolError.extractCode(msg));
         assertTrue(msg.contains("'build_project'"));
         assertTrue(msg.contains("build to finish"), "must tell agent why and what to do");
     }
@@ -65,12 +70,35 @@ class ToolReadinessGateTest {
     @Test
     void definitionDefaults_areAllFalse() {
         ToolDefinition empty = new ToolDefinition() {
-            @Override public @NotNull String id() { return "x"; }
-            @Override public @NotNull Kind kind() { return Kind.READ; }
-            @Override public @NotNull String displayName() { return "X"; }
-            @Override public @NotNull String description() { return "x"; }
-            @Override public @NotNull ToolRegistry.Category category() { return ToolRegistry.Category.OTHER; }
-            @Override public @Nullable String execute(@NotNull JsonObject args) { return null; }
+            @Override
+            public @NotNull String id() {
+                return "x";
+            }
+
+            @Override
+            public @NotNull Kind kind() {
+                return Kind.READ;
+            }
+
+            @Override
+            public @NotNull String displayName() {
+                return "X";
+            }
+
+            @Override
+            public @NotNull String description() {
+                return "x";
+            }
+
+            @Override
+            public @NotNull ToolRegistry.Category category() {
+                return ToolRegistry.Category.OTHER;
+            }
+
+            @Override
+            public @Nullable String execute(@NotNull JsonObject args) {
+                return null;
+            }
         };
         assertNotNull(empty);
         // All three readiness flags default to false to preserve backwards compat.
