@@ -197,8 +197,8 @@ final class BranchComparisonChart extends JBPanel<BranchComparisonChart> {
 
         private int labelWidth(int canvasWidth) {
             int availableBeforeValue = Math.max(0, canvasWidth - VALUE_WIDTH - (2 * CANVAS_PADDING));
-            int widthForWideLayouts = Math.min(PREFERRED_LABEL_WIDTH, Math.max(MIN_LABEL_WIDTH, canvasWidth / 3));
-            return Math.min(widthForWideLayouts, Math.max(0, availableBeforeValue - MIN_BAR_AREA_WIDTH));
+            int widthForWideLayouts = Math.clamp(canvasWidth / 3, MIN_LABEL_WIDTH, PREFERRED_LABEL_WIDTH);
+            return Math.clamp(availableBeforeValue - MIN_BAR_AREA_WIDTH, 0, widthForWideLayouts);
         }
 
         private int rowAt(int y) {
