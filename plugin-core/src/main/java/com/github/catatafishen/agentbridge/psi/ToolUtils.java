@@ -581,20 +581,12 @@ public final class ToolUtils {
         String cmd = command.toLowerCase().trim();
 
         // Block git — causes IntelliJ editor buffer desync
-        // Also catches env-prefixed (VAR=val git ...), sudo/env/command wrappers
-        if (cmd.startsWith("git ") || cmd.equals("git") ||
-            cmd.contains("&& git ") || cmd.contains("; git ") || cmd.contains("| git ") ||
-            cmd.matches("(\\w+=\\S*+\\s++)++git(\\s.*|$)") ||
-            cmd.matches("(sudo|env|command|nohup)\\s+git(\\s.*|$)") ||
-            cmd.matches("(\\w+=\\S*+\\s++)++(?:sudo|env|command)\\s+git(\\s.*|$)") ||
-            // env with VAR=val arguments before git (e.g. env GIT_DIR=/tmp git status)
-            cmd.matches("env\\s+(\\S+=\\S*+\\s++)*+git(\\s.*|$)")) {
+        if (isGitCommand(cmd)) {
             return "git";
         }
 
         // Block cat/head/tail/less/more — should use intellij_read_file for live buffer access
-        if (cmd.matches("(cat|head|tail|less|more) .*") ||
-            cmd.contains("| cat ") || cmd.contains("&& cat ") || cmd.contains("; cat ")) {
+        if (isFileViewerCommand(cmd)) {
             return "cat";
         }
 
@@ -774,11 +766,10 @@ public final class ToolUtils {
             isPythonPytestCommand(cmd) ||
             cmd.contains("cargo test") ||
             cmd.contains("dotnet test") ||
-            cmd.matches("pytest\\s+.*") ||
+            cmd.startsWith("pytest ") ||
             NPX_RUNNER_PATTERN.matcher(cmd).find() ||
             NPM_RUN_TEST_PATTERN.matcher(cmd).find() ||
-            // Bare test runner invocations (jest, vitest, mocha, etc.)
-            cmd.matches("(jest|vitest|mocha|ava|tap|jasmine)(\\s.*|$)");
+            isBareTestRunner(cmd);
     }
 
     private static boolean isBuildCommand(String cmd) {
@@ -818,6 +809,44 @@ public final class ToolUtils {
     }
 
     /**
+     * Detects git commands including prefixed variants (env/sudo wrappers, VAR=val prefixes,
+     * piped/chained commands). Uses indexOf instead of regex for Sonar S5852 compliance.
+     */
+    private static boolean isGitCommand(String cmd) {
+        if (cmd.startsWith("git ") || cmd.equals("git")) return true;
+        if (cmd.contains("&& git ") || cmd.contains("; git ") || cmd.contains("| git ")) return true;
+        // sudo/env/command/nohup prefix: e.g. "sudo git status"
+        if (cmd.startsWith("sudo git") || cmd.startsWith("env git") ||
+            cmd.startsWith("command git") || cmd.startsWith("nohup git")) return true;
+        // env with VAR=val: e.g. "env GIT_DIR=/tmp git status" or "GIT_DIR=/tmp git ..."
+        // Check if "git" appears as a word (preceded by space)
+        int gitIdx = cmd.indexOf(" git");
+        return gitIdx > 0 && (gitIdx + 4 >= cmd.length() || cmd.charAt(gitIdx + 4) == ' ');
+    }
+
+    /**
+     * Detects cat/head/tail/less/more commands (including piped variants).
+     * Uses startsWith/contains instead of regex for Sonar S5852 compliance.
+     */
+    private static boolean isFileViewerCommand(String cmd) {
+        return cmd.startsWith("cat ") || cmd.startsWith("head ") || cmd.startsWith("tail ") ||
+            cmd.startsWith("less ") || cmd.startsWith("more ") ||
+            cmd.contains("| cat ") || cmd.contains("&& cat ") || cmd.contains("; cat ");
+    }
+
+    /**
+     * Checks if a command starts with a bare test runner name (jest, vitest, mocha, etc.).
+     * Uses startsWith instead of regex for Sonar S5852 compliance.
+     */
+    private static boolean isBareTestRunner(String cmd) {
+        String[] runners = {"jest", "vitest", "mocha", "ava", "tap", "jasmine"};
+        for (String runner : runners) {
+            if (cmd.equals(runner) || cmd.startsWith(runner + " ")) return true;
+        }
+        return false;
+    }
+
+    /**
      * Detects hard-block abuse patterns for {@code run_in_terminal}.
      * Only blocks commands that cause IDE state desync (git, sed).
      * For commands with better MCP alternatives (grep, cat, find), use
@@ -849,7 +878,7 @@ public final class ToolUtils {
         }
 
         // cat/head/tail/less/more — prefer read_file
-        if (cmd.matches("(cat|head|tail|less|more) .*")) {
+        if (isFileViewerCommand(cmd)) {
             return "⚠️ Prefer read_file over shell cat/head/tail — "
                 + "it reads live editor buffers, not stale disk content.";
         }
