@@ -44,7 +44,7 @@ import java.util.regex.Pattern;
  */
 final class TodoPanel extends JPanel implements Disposable {
 
-    private static final Pattern CHECKBOX_LINE = Pattern.compile("^\\s*[-*]\\s+\\[([ xX])]\\s+.+$");
+    private static final Pattern CHECKBOX_LINE = Pattern.compile("^\\s*+[-*]\\s+\\[([ xX])]\\s+.+$");
     private static final int POLL_INTERVAL_MS = 1500;
 
     private final transient Project project;

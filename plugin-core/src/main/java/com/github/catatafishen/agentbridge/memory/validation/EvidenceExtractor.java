@@ -124,13 +124,35 @@ public final class EvidenceExtractor {
     private static boolean isLikelyFqn(@NotNull String candidate) {
         if (candidate.contains("://")) return false;
         if (candidate.startsWith("www.")) return false;
-        if (candidate.matches(".*\\d+\\.\\d+\\.\\d+.*")) return false;
+        if (looksLikeVersionNumber(candidate)) return false;
 
         int dotCount = 0;
         for (int i = 0; i < candidate.length(); i++) {
             if (candidate.charAt(i) == '.') dotCount++;
         }
         return dotCount >= 2;
+    }
+
+    /**
+     * Detects version-number-like strings (e.g. "1.0.3", "v2.5.1-beta") without regex,
+     * avoiding ReDoS risk from patterns like {@code .*\d+\.\d+\.\d+.*}.
+     */
+    private static boolean looksLikeVersionNumber(@NotNull String s) {
+        int dotDigitRuns = 0;
+        boolean prevWasDot = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '.') {
+                prevWasDot = true;
+            } else if (Character.isDigit(c) && prevWasDot) {
+                dotDigitRuns++;
+                if (dotDigitRuns >= 2) return true;
+                prevWasDot = false;
+            } else {
+                prevWasDot = false;
+            }
+        }
+        return false;
     }
 
     private static boolean hasCodeExtension(@NotNull String ref) {

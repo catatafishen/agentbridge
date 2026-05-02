@@ -46,6 +46,33 @@ public final class ToolUtils {
     private static final java.util.concurrent.ConcurrentHashMap<Class<?>, java.util.Optional<java.lang.reflect.Method>> IS_ENUM_CACHE =
         new java.util.concurrent.ConcurrentHashMap<>();
 
+    // Precompiled patterns for abuse detection — using find() avoids leading/trailing .*
+    // which Sonar flags for ReDoS (S5852). All patterns are anchored or use word boundaries.
+    private static final java.util.regex.Pattern FIND_NAME_PATTERN =
+        java.util.regex.Pattern.compile("^find \\S+.*-name");
+    private static final java.util.regex.Pattern FIND_TYPE_PATTERN =
+        java.util.regex.Pattern.compile("^find \\S+.*-type");
+    private static final java.util.regex.Pattern GRADLE_WORD_PATTERN =
+        java.util.regex.Pattern.compile("\\bgradle\\s");
+    private static final java.util.regex.Pattern COMPILE_TASK_PATTERN =
+        java.util.regex.Pattern.compile("compile(test)?(kotlin|java)", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern TEST_RUNNER_PATTERN =
+        java.util.regex.Pattern.compile("(gradlew|gradle|mvn|npm|yarn|pnpm|pytest|jest|mocha|go) test");
+    private static final java.util.regex.Pattern GRADLEW_TEST_PATTERN =
+        java.util.regex.Pattern.compile("\\./gradlew.*test");
+    private static final java.util.regex.Pattern PYTHON_PYTEST_PATTERN =
+        java.util.regex.Pattern.compile("python.*-m.*pytest");
+    private static final java.util.regex.Pattern NPX_RUNNER_PATTERN =
+        java.util.regex.Pattern.compile("(npx|bunx|pnpx)\\s+(jest|vitest|mocha|ava|tap|jasmine)");
+    private static final java.util.regex.Pattern NPM_RUN_TEST_PATTERN =
+        java.util.regex.Pattern.compile("(npm|yarn|pnpm)\\s+run\\s+test");
+    private static final java.util.regex.Pattern GRADLE_BUILD_PATTERN =
+        java.util.regex.Pattern.compile("(gradlew|gradle)\\s+(build|check)(\\s|$)");
+    private static final java.util.regex.Pattern GRADLEW_BUILD_PATTERN =
+        java.util.regex.Pattern.compile("\\./gradlew\\s+(build|check)(\\s|$)");
+    private static final java.util.regex.Pattern MVN_LIFECYCLE_PATTERN =
+        java.util.regex.Pattern.compile("mvn\\s+(verify|package|install|deploy)(\\s|$)");
+
     private ToolUtils() {
     }
 
@@ -591,7 +618,7 @@ public final class ToolUtils {
         }
 
         // Block find — should use list_project_files
-        if (cmd.matches("find \\S+.*-name.*") || cmd.matches("find \\S+.*-type.*") ||
+        if (FIND_NAME_PATTERN.matcher(cmd).find() || FIND_TYPE_PATTERN.matcher(cmd).find() ||
             cmd.startsWith("find .") || cmd.startsWith("find /")) {
             return "find";
         }
@@ -742,28 +769,28 @@ public final class ToolUtils {
     }
 
     private static boolean isGradleCompileCommand(String cmd) {
-        boolean isGradleCmd = cmd.contains("gradlew") || cmd.matches(".*\\bgradle\\s.*");
-        boolean hasCompileTask = cmd.matches(".*compile(test)?(kotlin|java).*");
+        boolean isGradleCmd = cmd.contains("gradlew") || GRADLE_WORD_PATTERN.matcher(cmd).find();
+        boolean hasCompileTask = COMPILE_TASK_PATTERN.matcher(cmd).find();
         return isGradleCmd && hasCompileTask;
     }
 
     private static boolean isTestCommand(String cmd) {
-        return cmd.matches(".*(gradlew|gradle|mvn|npm|yarn|pnpm|pytest|jest|mocha|go) test.*") ||
-            cmd.matches(".*\\./gradlew.*test.*") ||
-            cmd.matches(".*python.*-m.*pytest.*") ||
-            cmd.matches(".*cargo test.*") ||
-            cmd.matches(".*dotnet test.*") ||
+        return TEST_RUNNER_PATTERN.matcher(cmd).find() ||
+            GRADLEW_TEST_PATTERN.matcher(cmd).find() ||
+            PYTHON_PYTEST_PATTERN.matcher(cmd).find() ||
+            cmd.contains("cargo test") ||
+            cmd.contains("dotnet test") ||
             cmd.matches("pytest\\s+.*") ||
-            cmd.matches(".*(npx|bunx|pnpx)\\s+(jest|vitest|mocha|ava|tap|jasmine).*") ||
-            cmd.matches(".*(npm|yarn|pnpm)\\s+run\\s+test.*") ||
+            NPX_RUNNER_PATTERN.matcher(cmd).find() ||
+            NPM_RUN_TEST_PATTERN.matcher(cmd).find() ||
             // Bare test runner invocations (jest, vitest, mocha, etc.)
             cmd.matches("(jest|vitest|mocha|ava|tap|jasmine)(\\s.*|$)");
     }
 
     private static boolean isBuildCommand(String cmd) {
-        return cmd.matches(".*(gradlew|gradle)\\s+(build|check)(\\s.*|$)") ||
-            cmd.matches(".*\\./gradlew\\s+(build|check)(\\s.*|$)") ||
-            cmd.matches(".*mvn\\s+(verify|package|install|deploy)(\\s.*|$)");
+        return GRADLE_BUILD_PATTERN.matcher(cmd).find() ||
+            GRADLEW_BUILD_PATTERN.matcher(cmd).find() ||
+            MVN_LIFECYCLE_PATTERN.matcher(cmd).find();
     }
 
     /**
@@ -804,7 +831,7 @@ public final class ToolUtils {
         }
 
         // find — prefer list_project_files / list_directory_tree
-        if (cmd.matches("find \\S+.*-name.*") || cmd.matches("find \\S+.*-type.*") ||
+        if (FIND_NAME_PATTERN.matcher(cmd).find() || FIND_TYPE_PATTERN.matcher(cmd).find() ||
             cmd.startsWith("find .") || cmd.startsWith("find /")) {
             return "⚠️ Prefer list_project_files or list_directory_tree over shell find — "
                 + "they respect project structure and exclusions.";

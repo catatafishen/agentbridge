@@ -13,11 +13,11 @@ public final class QualityFilter {
      * Patterns matching content that is purely status/nudge with no semantic value.
      */
     private static final List<Pattern> STATUS_PATTERNS = List.of(
-        Pattern.compile("^\\s*(continue|go ahead|proceed|yes|no|ok|okay|sure|thanks|thank you|done|next)\\s*[.!?]*\\s*$",
+        Pattern.compile("^\\s*+(continue|go ahead|proceed|yes|no|ok|okay|sure|thanks|thank you|done|next)\\s*+[.!?]*+\\s*+$",
             Pattern.CASE_INSENSITIVE),
-        Pattern.compile("^\\s*keep going\\s*[.!?]*\\s*$", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("^\\s*looks? good\\s*[.!?]*\\s*$", Pattern.CASE_INSENSITIVE),
-        Pattern.compile("^\\s*\\S{1,3}\\s*$")
+        Pattern.compile("^\\s*+keep going\\s*+[.!?]*+\\s*+$", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("^\\s*+looks? good\\s*+[.!?]*+\\s*+$", Pattern.CASE_INSENSITIVE),
+        Pattern.compile("^\\s*+\\S{1,3}\\s*+$")
     );
 
     /**

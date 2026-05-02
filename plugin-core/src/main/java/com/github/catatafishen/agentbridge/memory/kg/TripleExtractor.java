@@ -257,8 +257,8 @@ public final class TripleExtractor {
         // stripping (e.g., a trailing close-paren left after an inline code span
         // was unwrapped) — without this, objects like ") the text wraps" pass
         // through and pollute the KG.
-        String cleaned = raw.replaceAll("^[^\\p{L}\\p{N}]+", "")
-            .replaceAll("[.,:;!?]+$", "")
+        String cleaned = raw.replaceAll("^[^\\p{L}\\p{N}]++", "")
+            .replaceAll("[.,:;!?]++$", "")
             .strip();
         if (cleaned.length() > MAX_OBJECT_LENGTH) {
             int cutoff = cleaned.lastIndexOf(' ', MAX_OBJECT_LENGTH);

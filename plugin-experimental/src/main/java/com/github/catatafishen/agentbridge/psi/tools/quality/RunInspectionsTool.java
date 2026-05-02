@@ -479,7 +479,10 @@ public final class RunInspectionsTool extends QualityTool {
 
         String filePath = fileUrl;
         if (filePath.contains("$PROJECT_DIR$")) {
-            filePath = filePath.replaceAll(".*\\$PROJECT_DIR\\$/", "");
+            int idx = filePath.indexOf("$PROJECT_DIR$/");
+            if (idx >= 0) {
+                filePath = filePath.substring(idx + "$PROJECT_DIR$/".length());
+            }
         } else if (filePath.startsWith("file://")) {
             filePath = filePath.substring(7);
             if (basePath != null) {

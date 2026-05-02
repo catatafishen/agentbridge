@@ -45,7 +45,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
 
     // Matches: 2026-03-22 16:58:04,345 [  49065]   INFO - #com.example.Foo - message
     private static final Pattern LOG_LINE_PATTERN = Pattern.compile(
-        "^(\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2}:\\d{2}),(\\d{3}) \\[[^]]+]\\s+(\\w+)\\s+- #?([^\\s-][^-]*)\\s*-\\s*(.*)$"
+        "^(\\d{4}-\\d{2}-\\d{2}) (\\d{2}:\\d{2}:\\d{2}),(\\d{3}) \\[[^]]++]\\s++(\\w+)\\s++- #?([^\\s-][^-]*+)\\s*+-\\s*+(.*)$"
     );
 
     private static final DateTimeFormatter DATETIME_FMT =

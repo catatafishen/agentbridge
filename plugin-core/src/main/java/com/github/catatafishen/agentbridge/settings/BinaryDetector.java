@@ -322,10 +322,26 @@ public class BinaryDetector {
 
             String lower = trimmed.toLowerCase();
             boolean isNoise = lower.contains("welcome") || lower.contains("loading") || lower.contains("initializing");
-            if (!isNoise && trimmed.matches(".*\\d+\\.\\d+.*")) {
+            if (!isNoise && containsVersionPattern(trimmed)) {
                 return trimmed;
             }
         }
         return null;
+    }
+
+    /**
+     * Checks if a string contains a version-like pattern (digits.digits) without using regex,
+     * avoiding ReDoS risk from patterns like {@code .*\d+\.\d+.*}.
+     */
+    private static boolean containsVersionPattern(@NotNull String s) {
+        boolean prevWasDigit = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '.' && prevWasDigit && i + 1 < s.length() && Character.isDigit(s.charAt(i + 1))) {
+                return true;
+            }
+            prevWasDigit = Character.isDigit(c);
+        }
+        return false;
     }
 }
