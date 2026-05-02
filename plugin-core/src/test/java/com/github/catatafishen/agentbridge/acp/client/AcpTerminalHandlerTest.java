@@ -63,7 +63,8 @@ class AcpTerminalHandlerTest {
 
     @Test
     void createRequiresCommand() {
-        assertThrows(IllegalArgumentException.class, () -> handler.create(new JsonObject()),
+        JsonObject empty = new JsonObject();
+        assertThrows(IllegalArgumentException.class, () -> handler.create(empty),
             "Must reject missing 'command' parameter");
     }
 
@@ -121,8 +122,8 @@ class AcpTerminalHandlerTest {
 
     @Test
     void outputRejectsUnknownTerminalId() {
-        assertThrows(IllegalArgumentException.class,
-            () -> handler.output(terminalParams("nonexistent")));
+        JsonObject params = terminalParams("nonexistent");
+        assertThrows(IllegalArgumentException.class, () -> handler.output(params));
     }
 
     // ── terminal/wait_for_exit — per spec: blocks, returns {exitCode, signal} ─
@@ -190,8 +191,10 @@ class AcpTerminalHandlerTest {
         handler.release(terminalParams(id));
 
         // Per spec: "terminal ID becomes invalid for all other terminal/* methods"
-        assertThrows(IllegalArgumentException.class, () -> handler.output(terminalParams(id)));
-        assertThrows(IllegalArgumentException.class, () -> handler.kill(terminalParams(id)));
+        JsonObject outParams = terminalParams(id);
+        JsonObject killParams = terminalParams(id);
+        assertThrows(IllegalArgumentException.class, () -> handler.output(outParams));
+        assertThrows(IllegalArgumentException.class, () -> handler.kill(killParams));
     }
 
     @Test
@@ -201,8 +204,10 @@ class AcpTerminalHandlerTest {
 
         handler.releaseAll();
 
-        assertThrows(IllegalArgumentException.class, () -> handler.output(terminalParams(id1)));
-        assertThrows(IllegalArgumentException.class, () -> handler.output(terminalParams(id2)));
+        JsonObject params1 = terminalParams(id1);
+        JsonObject params2 = terminalParams(id2);
+        assertThrows(IllegalArgumentException.class, () -> handler.output(params1));
+        assertThrows(IllegalArgumentException.class, () -> handler.output(params2));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

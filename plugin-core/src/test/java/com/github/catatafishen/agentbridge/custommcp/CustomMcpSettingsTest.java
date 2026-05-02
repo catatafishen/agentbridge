@@ -27,8 +27,9 @@ class CustomMcpSettingsTest {
         settings.setServers(List.of(config));
 
         List<CustomMcpServerConfig> returned = settings.getServers();
-        assertThrows(UnsupportedOperationException.class, () -> returned.add(
-                new CustomMcpServerConfig("id-2", "Server B", "http://localhost:4000/mcp", "", true)));
+        CustomMcpServerConfig extra = new CustomMcpServerConfig(
+                "id-2", "Server B", "http://localhost:4000/mcp", "", true);
+        assertThrows(UnsupportedOperationException.class, () -> returned.add(extra));
 
         // Original settings unchanged
         assertEquals(1, settings.getServers().size());
