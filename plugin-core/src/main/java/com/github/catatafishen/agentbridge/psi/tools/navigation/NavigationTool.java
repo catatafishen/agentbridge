@@ -19,6 +19,7 @@ import com.intellij.psi.PsiModifierListOwner;
 import com.intellij.psi.PsiNamedElement;
 import com.intellij.psi.PsiParameter;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.search.GlobalSearchScopes;
 import com.intellij.psi.search.PsiSearchHelper;
 import com.intellij.psi.search.UsageSearchContext;
 import org.jetbrains.annotations.NotNull;
@@ -39,10 +40,15 @@ public abstract class NavigationTool extends Tool {
     protected static final String PARAM_QUERY = "query";
     protected static final String PARAM_SCOPE = "scope";
     protected static final String SCOPE_PROJECT = "project";
+    protected static final String SCOPE_PRODUCTION = "project_production_files";
+    protected static final String SCOPE_TEST = "project_test_files";
     protected static final String SCOPE_LIBRARIES = "libraries";
     protected static final String SCOPE_ALL = "all";
     protected static final String SCOPE_DESCRIPTION =
-        "Search scope: 'project' (default — only project sources, fastest), 'libraries' (only library/JDK sources — "
+        "Search scope: 'project' (default — only project sources, fastest), "
+            + "'project_production_files' (production sources only, excludes tests), "
+            + "'project_test_files' (test sources only), "
+            + "'libraries' (only library/JDK sources — "
             + "use after download_sources to look up symbols in dependencies), or 'all' (project + libraries). "
             + "Default 'project' keeps result counts small; switch when you need symbols declared in dependency JARs.";
 
@@ -61,6 +67,8 @@ public abstract class NavigationTool extends Tool {
     protected GlobalSearchScope resolveScope(String scopeName) {
         if (scopeName == null) return GlobalSearchScope.projectScope(project);
         return switch (scopeName.toLowerCase(java.util.Locale.ROOT)) {
+            case SCOPE_PRODUCTION -> GlobalSearchScopes.projectProductionScope(project);
+            case SCOPE_TEST -> GlobalSearchScopes.projectTestScope(project);
             case SCOPE_LIBRARIES -> com.intellij.psi.search.ProjectScope.getLibrariesScope(project);
             case SCOPE_ALL -> GlobalSearchScope.allScope(project);
             default -> GlobalSearchScope.projectScope(project);

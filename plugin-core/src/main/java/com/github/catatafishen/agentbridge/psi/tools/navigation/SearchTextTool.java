@@ -24,7 +24,9 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
@@ -62,7 +64,8 @@ public final class SearchTextTool extends NavigationTool {
                                 List<String> results, @Nullable List<MatchPosition> positions,
                                 AtomicInteger skippedLarge, int maxResults, int offset,
                                 AtomicInteger totalSeen, int contextLines,
-                                AtomicInteger totalOutputBytes) {
+                                AtomicInteger totalOutputBytes,
+                                @Nullable Predicate<VirtualFile> scopeFilter) {
     }
 
     public SearchTextTool(Project project) {
@@ -101,6 +104,7 @@ public final class SearchTextTool extends NavigationTool {
         return schema(
             Param.required("query", TYPE_STRING, "Text or regex pattern to search for"),
             Param.optional("file_pattern", TYPE_STRING, "Optional glob pattern to filter files (e.g., '*.kt', '*.java')", ""),
+            Param.optional(PARAM_SCOPE, TYPE_STRING, SCOPE_DESCRIPTION, SCOPE_PROJECT),
             Param.optional(PARAM_REGEX, TYPE_BOOLEAN, "If true, treat query as regex. Default: false (literal match)"),
             Param.optional(PARAM_CASE_SENSITIVE, TYPE_BOOLEAN, "Case-sensitive search. Default: true"),
             Param.optional(PARAM_MAX_RESULTS, TYPE_INTEGER, "Maximum results to return (default: 100)"),
@@ -126,6 +130,8 @@ public final class SearchTextTool extends NavigationTool {
         int offset = args.has(PARAM_OFFSET) ? args.get(PARAM_OFFSET).getAsInt() : 0;
         int contextLines = args.has(PARAM_CONTEXT_LINES) ? args.get(PARAM_CONTEXT_LINES).getAsInt() : 0;
         boolean followAgent = ActiveAgentManager.getFollowAgentFiles(project);
+        String scopeName = readScopeParam(args);
+        Predicate<VirtualFile> scopeFilter = buildScopeFilter(scopeName);
 
         var cfg = new SearchConfig(query, filePattern, isRegex, caseSensitive, maxResults, offset, contextLines, followAgent);
 
@@ -136,13 +142,27 @@ public final class SearchTextTool extends NavigationTool {
         // executeSynchronously() yields to write actions when they need to run, then restarts the
         // search (performSearch creates fresh collections, so restart is safe).
         String result = ReadAction.nonBlocking(
-            () -> performSearch(cfg)
+            () -> performSearch(cfg, scopeFilter)
         ).executeSynchronously();
         showSearchFeedback("Text search complete: " + query);
         return result;
     }
 
-    private String performSearch(SearchConfig cfg) {
+    /**
+     * Builds a file filter predicate for production/test scope filtering.
+     * Returns {@code null} for project/libraries/all scopes (no filtering needed).
+     */
+    private @Nullable Predicate<VirtualFile> buildScopeFilter(String scopeName) {
+        if (scopeName == null) return null;
+        ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
+        return switch (scopeName.toLowerCase(Locale.ROOT)) {
+            case SCOPE_PRODUCTION -> vf -> !fileIndex.isInTestSourceContent(vf);
+            case SCOPE_TEST -> fileIndex::isInTestSourceContent;
+            default -> null;
+        };
+    }
+
+    private String performSearch(SearchConfig cfg, @Nullable Predicate<VirtualFile> scopeFilter) {
         String basePath = project.getBasePath();
         if (basePath == null) return ERROR_NO_PROJECT_PATH;
 
@@ -155,7 +175,7 @@ public final class SearchTextTool extends NavigationTool {
         AtomicInteger totalOutputBytes = new AtomicInteger(0);
         var compiledFileGlob = cfg.filePattern().isEmpty() ? null : ToolUtils.compileGlob(cfg.filePattern());
         var params = new SearchParams(pattern, basePath, cfg.filePattern(), compiledFileGlob, results, positions,
-            skippedLarge, cfg.maxResults(), cfg.offset(), new AtomicInteger(0), cfg.contextLines(), totalOutputBytes);
+            skippedLarge, cfg.maxResults(), cfg.offset(), new AtomicInteger(0), cfg.contextLines(), totalOutputBytes, scopeFilter);
         ProjectFileIndex.getInstance(project).iterateContent(vf -> processFile(vf, params));
 
         if (positions != null && !positions.isEmpty()) {
@@ -232,6 +252,7 @@ public final class SearchTextTool extends NavigationTool {
 
     private boolean processFile(VirtualFile vf, SearchParams p) {
         if (vf.isDirectory()) return true;
+        if (p.scopeFilter() != null && !p.scopeFilter().test(vf)) return true;
         String relPath = relativize(p.basePath(), vf.getPath());
         if (relPath == null) return true;
         if (!p.filePattern().isEmpty() && ToolUtils.doesNotMatchGlob(relPath, p.filePattern(), p.compiledFileGlob()))
