@@ -11,6 +11,7 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -391,7 +392,7 @@ public final class HttpRequestTool extends InfrastructureTool {
     }
 
     private @NotNull String handleSaveTo(@NotNull String saveTo, byte[] responseBytes,
-                                         int statusCode, long elapsedMs) throws Exception {
+                                         int statusCode, long elapsedMs) throws IOException {
         String basePath = project.getBasePath();
         if (basePath == null) return "Error: No project base path";
 

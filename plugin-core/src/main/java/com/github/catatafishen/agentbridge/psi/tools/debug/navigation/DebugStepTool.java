@@ -80,7 +80,7 @@ public final class DebugStepTool extends DebugTool {
             case "into" -> session.stepInto();
             case "out" -> session.stepOut();
             case "continue" -> session.resume();
-            default -> throw new Exception("Unknown action '" + action + "'. Use: over, into, out, continue");
+            default -> throw new IllegalArgumentException("Unknown action '" + action + "'. Use: over, into, out, continue");
         }
 
         boolean completed = latch.await(30, TimeUnit.SECONDS);

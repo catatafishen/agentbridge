@@ -11,6 +11,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,7 +54,7 @@ final class AcpFileSystemHandler {
                 try {
                     holder[0] = new String(vf.contentsToByteArray(), StandardCharsets.UTF_8);
                 } catch (IOException e) {
-                    throw new RuntimeException("Failed to read file: " + absolutePath, e);
+                    throw new UncheckedIOException("Failed to read file: " + absolutePath, e);
                 }
             }
         });
@@ -120,7 +121,7 @@ final class AcpFileSystemHandler {
                     try {
                         vf.setBinaryContent(content.getBytes(StandardCharsets.UTF_8));
                     } catch (IOException e) {
-                        throw new RuntimeException("Failed to write file: " + absolutePath, e);
+                        throw new UncheckedIOException("Failed to write file: " + absolutePath, e);
                     }
                 });
             }
@@ -138,7 +139,7 @@ final class AcpFileSystemHandler {
             LocalFileSystem.getInstance().refreshAndFindFileByPath(absolutePath);
             LOG.info("Created new file: " + absolutePath);
         } catch (IOException e) {
-            throw new RuntimeException("Failed to create file: " + absolutePath, e);
+            throw new UncheckedIOException("Failed to create file: " + absolutePath, e);
         }
     }
 
