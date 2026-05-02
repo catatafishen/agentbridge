@@ -480,8 +480,10 @@ public final class McpProtocolHandler {
         if (gateResult.blocked != null) return gateResult.blocked;
 
         LiveToolCallService liveService = LiveToolCallService.getInstance(project);
+        ToolDefinition definition = ToolRegistry.getInstance(project).findById(toolName);
+        String kind = definition != null ? definition.kind().value() : null;
         String inputJson = arguments.toString();
-        int liveIdx = liveService.recordStart(toolName, inputJson, null);
+        int liveIdx = liveService.recordStart(toolName, inputJson, kind);
         long callStartMs = System.currentTimeMillis();
 
         McpCallContext.setCurrent(sessionKey);

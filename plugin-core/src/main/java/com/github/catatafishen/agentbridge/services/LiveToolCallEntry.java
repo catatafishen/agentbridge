@@ -16,7 +16,7 @@ import java.time.Instant;
  * @param timestamp  when the call started
  * @param durationMs wall-clock execution time; -1 while still running
  * @param success    true if completed without error; null while running
- * @param category   tool category from ToolDefinition (e.g. "FILE", "GIT")
+ * @param category   legacy field carrying the tool kind wire value (e.g. "read", "edit")
  */
 public record LiveToolCallEntry(
     @NotNull String toolName,
@@ -27,7 +27,9 @@ public record LiveToolCallEntry(
     @Nullable Boolean success,
     @Nullable String category
 ) {
-    /** Max characters stored per input/output field to bound memory. */
+    /**
+     * Max characters stored per input/output field to bound memory.
+     */
     static final int MAX_IO_CHARS = 8_000;
 
     /**
@@ -47,7 +49,9 @@ public record LiveToolCallEntry(
             toolName, input, truncate(output), timestamp, durationMs, success, category);
     }
 
-    /** Whether this entry is still in-flight. */
+    /**
+     * Whether this entry is still in-flight.
+     */
     public boolean isRunning() {
         return success == null;
     }

@@ -38,8 +38,8 @@ public final class LiveToolCallService {
      * Records a tool call starting. Returns the index for later completion via {@link #complete}.
      */
     public synchronized int recordStart(@NotNull String toolName, @NotNull String inputJson,
-                                        @org.jetbrains.annotations.Nullable String category) {
-        LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, inputJson, category);
+                                        @org.jetbrains.annotations.Nullable String kind) {
+        LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, inputJson, kind);
         entries.add(entry);
         evictIfNeeded();
         int idx = entries.size() - 1;
