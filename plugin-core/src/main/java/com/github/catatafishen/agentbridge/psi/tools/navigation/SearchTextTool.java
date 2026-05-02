@@ -157,7 +157,7 @@ public final class SearchTextTool extends NavigationTool {
         ProjectFileIndex fileIndex = ProjectFileIndex.getInstance(project);
         return switch (scopeName.toLowerCase(Locale.ROOT)) {
             case SCOPE_PRODUCTION -> vf -> !fileIndex.isInTestSourceContent(vf);
-            case SCOPE_TEST -> fileIndex::isInTestSourceContent;
+            case SCOPE_TESTS -> fileIndex::isInTestSourceContent;
             default -> null;
         };
     }

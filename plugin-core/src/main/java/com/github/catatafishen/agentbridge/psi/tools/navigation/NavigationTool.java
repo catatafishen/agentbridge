@@ -41,13 +41,13 @@ public abstract class NavigationTool extends Tool {
     protected static final String PARAM_SCOPE = "scope";
     protected static final String SCOPE_PROJECT = "project";
     protected static final String SCOPE_PRODUCTION = "production";
-    protected static final String SCOPE_TEST = "test";
+    protected static final String SCOPE_TESTS = "tests";
     protected static final String SCOPE_LIBRARIES = "libraries";
     protected static final String SCOPE_ALL = "all";
     protected static final String SCOPE_DESCRIPTION =
-        "Search scope: 'project' (default — only project sources, fastest), "
-            + "'production' (production sources only — Sources + Resources, excludes test roots), "
-            + "'test' (test sources only — Test Sources + Test Resources), "
+        "Search scope: 'project' (default — all project sources), "
+            + "'production' (non-test code only — files in sources, resources, generated_sources roots), "
+            + "'tests' (test code only — files in test_sources, test_resources roots), "
             + "'libraries' (only library/JDK sources — "
             + "use after download_sources to look up symbols in dependencies), or 'all' (project + libraries). "
             + "Default 'project' keeps result counts small; switch when you need symbols declared in dependency JARs.";
@@ -68,7 +68,7 @@ public abstract class NavigationTool extends Tool {
         if (scopeName == null) return GlobalSearchScope.projectScope(project);
         return switch (scopeName.toLowerCase(java.util.Locale.ROOT)) {
             case SCOPE_PRODUCTION -> GlobalSearchScopes.projectProductionScope(project);
-            case SCOPE_TEST -> GlobalSearchScopes.projectTestScope(project);
+            case SCOPE_TESTS -> GlobalSearchScopes.projectTestScope(project);
             case SCOPE_LIBRARIES -> com.intellij.psi.search.ProjectScope.getLibrariesScope(project);
             case SCOPE_ALL -> GlobalSearchScope.allScope(project);
             default -> GlobalSearchScope.projectScope(project);
