@@ -158,15 +158,46 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
-     * Applies {@link McpToolFilter#DEFAULT_DISABLED} on first run (before any
-     * persisted state exists). Once applied, the flag is persisted so subsequent
-     * loads skip this step.
+     * Applies {@link McpToolFilter#DEFAULT_DISABLED} on first run, and applies
+     * incremental defaults when new default-disabled tools are added in later
+     * versions. Existing user enable/disable choices are preserved — only tools
+     * from NEW versions are added to the disabled set.
+     *
+     * <p>Migration path:
+     * <ul>
+     *   <li>Fresh install ({@code defaultsVersion == 0, !defaultsApplied}):
+     *       all DEFAULT_DISABLED applied, version set to CURRENT</li>
+     *   <li>Pre-versioned install ({@code defaultsApplied, defaultsVersion == 0}):
+     *       treated as version 1, only version 2+ defaults applied</li>
+     *   <li>Current version: no-op</li>
+     * </ul>
      */
     public void ensureDefaultsApplied() {
-        if (!myState.defaultsApplied) {
+        int currentVersion = myState.defaultsVersion;
+
+        if (!myState.defaultsApplied && currentVersion == 0) {
+            // Fresh install — apply all defaults
             myState.disabledToolIds.addAll(McpToolFilter.DEFAULT_DISABLED);
             myState.defaultsApplied = true;
+            myState.defaultsVersion = McpToolFilter.CURRENT_DEFAULTS_VERSION;
+            return;
         }
+
+        // Migrate from boolean-only era: defaultsApplied=true but no version
+        if (myState.defaultsApplied && currentVersion == 0) {
+            currentVersion = 1;
+        }
+
+        // Apply incremental defaults for each version above currentVersion
+        for (int v = currentVersion + 1; v <= McpToolFilter.CURRENT_DEFAULTS_VERSION; v++) {
+            var newDefaults = McpToolFilter.DEFAULTS_BY_VERSION.get(v);
+            if (newDefaults != null) {
+                myState.disabledToolIds.addAll(newDefaults);
+            }
+        }
+
+        myState.defaultsApplied = true;
+        myState.defaultsVersion = McpToolFilter.CURRENT_DEFAULTS_VERSION;
     }
 
     @Override
@@ -186,6 +217,7 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
         private TransportMode transportMode = TransportMode.STREAMABLE_HTTP;
         private Set<String> disabledToolIds = new LinkedHashSet<>();
         private boolean defaultsApplied = false;
+        private int defaultsVersion = 0;
         private boolean smoothScrollEnabled = false;
         private boolean showTurnStats = true;
         private boolean reviewAgentEdits = false;
@@ -242,6 +274,14 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
 
         public void setDefaultsApplied(boolean defaultsApplied) {
             this.defaultsApplied = defaultsApplied;
+        }
+
+        public int getDefaultsVersion() {
+            return defaultsVersion;
+        }
+
+        public void setDefaultsVersion(int defaultsVersion) {
+            this.defaultsVersion = defaultsVersion;
         }
 
         public boolean isSmoothScrollEnabled() {

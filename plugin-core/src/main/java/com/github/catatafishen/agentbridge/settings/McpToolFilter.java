@@ -30,12 +30,36 @@ public final class McpToolFilter {
     );
 
     /**
-     * Tools that are shown but disabled by default — cosmetic or rarely useful.
+     * Tools that are shown but disabled by default — cosmetic, rarely useful, or expensive.
+     * This is the full set for fresh installations. For incremental migrations, see
+     * {@link #DEFAULTS_BY_VERSION}.
      */
     public static final Set<String> DEFAULT_DISABLED = Set.of(
         "get_notifications",
         "set_theme",
-        "list_themes"
+        "list_themes",
+        "run_sonarqube_analysis",
+        "get_sonar_rule_description"
+    );
+
+    /**
+     * Current defaults version. Increment when adding new default-disabled tools.
+     * Existing installations with an older version get only the NEW entries applied,
+     * preserving any user-made enable/disable choices for previously-known tools.
+     */
+    public static final int CURRENT_DEFAULTS_VERSION = 2;
+
+    /**
+     * Incremental defaults per version. Each entry maps a version number to the
+     * tool IDs that were added as default-disabled in that version.
+     * <ul>
+     *   <li>Version 1: cosmetic/niche tools (original defaults)</li>
+     *   <li>Version 2: SonarQube tools (expensive, opt-in)</li>
+     * </ul>
+     */
+    static final java.util.Map<Integer, Set<String>> DEFAULTS_BY_VERSION = java.util.Map.of(
+        1, Set.of("get_notifications", "set_theme", "list_themes"),
+        2, Set.of("run_sonarqube_analysis", "get_sonar_rule_description")
     );
 
     private McpToolFilter() {

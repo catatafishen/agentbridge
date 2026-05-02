@@ -53,6 +53,18 @@ class McpToolFilterTest {
     }
 
     @Test
+    @DisplayName("run_sonarqube_analysis is default-disabled")
+    void sonarQubeAnalysisDefaultDisabled() {
+        assertTrue(McpToolFilter.isDefaultDisabled("run_sonarqube_analysis"));
+    }
+
+    @Test
+    @DisplayName("get_sonar_rule_description is default-disabled")
+    void sonarRuleDescriptionDefaultDisabled() {
+        assertTrue(McpToolFilter.isDefaultDisabled("get_sonar_rule_description"));
+    }
+
+    @Test
     @DisplayName("git_status is not default-disabled")
     void gitStatusNotDefaultDisabled() {
         assertFalse(McpToolFilter.isDefaultDisabled("git_status"));
@@ -78,6 +90,26 @@ class McpToolFilterTest {
         for (String toolId : McpToolFilter.DEFAULT_DISABLED) {
             assertFalse(McpToolFilter.isAlwaysHidden(toolId),
                 toolId + " should not be in both always-hidden and DEFAULT_DISABLED");
+        }
+    }
+
+    @Test
+    @DisplayName("DEFAULTS_BY_VERSION union equals DEFAULT_DISABLED")
+    void defaultsByVersionUnionMatchesDefaultDisabled() {
+        var union = new java.util.HashSet<String>();
+        for (var entry : McpToolFilter.DEFAULTS_BY_VERSION.values()) {
+            union.addAll(entry);
+        }
+        assertEquals(McpToolFilter.DEFAULT_DISABLED, union,
+            "DEFAULTS_BY_VERSION entries must cover exactly DEFAULT_DISABLED");
+    }
+
+    @Test
+    @DisplayName("DEFAULTS_BY_VERSION covers versions 1 through CURRENT")
+    void defaultsByVersionCoversAllVersions() {
+        for (int v = 1; v <= McpToolFilter.CURRENT_DEFAULTS_VERSION; v++) {
+            assertTrue(McpToolFilter.DEFAULTS_BY_VERSION.containsKey(v),
+                "Missing DEFAULTS_BY_VERSION entry for version " + v);
         }
     }
 
