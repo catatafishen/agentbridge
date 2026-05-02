@@ -407,8 +407,9 @@ public final class OpenCodeClientExporter {
     private static String generateSlug() {
         String[] adjectives = {"calm", "bold", "kind", "warm", "cool", "fair", "wise", "keen"};
         String[] nouns = {"river", "cliff", "grove", "meadow", "ridge", "trail", "haven", "crest"};
-        int a = (int) (Math.random() * adjectives.length);
-        int n = (int) (Math.random() * nouns.length);
+        java.util.concurrent.ThreadLocalRandom random = java.util.concurrent.ThreadLocalRandom.current();
+        int a = random.nextInt(adjectives.length);
+        int n = random.nextInt(nouns.length);
         return adjectives[a] + "-" + nouns[n];
     }
 

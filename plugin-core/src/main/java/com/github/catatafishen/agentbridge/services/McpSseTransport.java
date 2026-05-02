@@ -231,11 +231,9 @@ final class McpSseTransport {
     }
 
     /**
-     * Returns the SSE keep-alive comment frame. Package-private for testing.
+     * SSE keep-alive comment frame. Visible for testing.
      */
-    static String formatSseKeepAlive() {
-        return ": keepalive\n\n";
-    }
+    static final String SSE_KEEP_ALIVE = ": keepalive\n\n";
 
     /**
      * Builds a simple JSON error response string. Package-private for testing.

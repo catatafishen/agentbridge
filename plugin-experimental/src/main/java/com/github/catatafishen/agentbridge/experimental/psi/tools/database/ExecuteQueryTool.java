@@ -167,7 +167,7 @@ public final class ExecuteQueryTool extends DatabaseTool {
 
         for (int i = 0; i < colCount; i++) {
             if (i > 0) sb.append(" | ");
-            sb.append(String.format("%-" + colWidths[i] + "s", colNames[i]));
+            sb.append(padRight(colNames[i], colWidths[i]));
         }
         sb.append("\n");
 
@@ -181,11 +181,19 @@ public final class ExecuteQueryTool extends DatabaseTool {
             for (int i = 0; i < colCount; i++) {
                 if (i > 0) sb.append(" | ");
                 String val = row[i].length() > 50 ? row[i].substring(0, 47) + "..." : row[i];
-                sb.append(String.format("%-" + colWidths[i] + "s", val));
+                sb.append(padRight(val, colWidths[i]));
             }
             sb.append("\n");
         }
 
         return sb.toString().trim();
+    }
+
+    private static String padRight(String value, int width) {
+        if (value.length() >= width) return value;
+        StringBuilder sb = new StringBuilder(width);
+        sb.append(value);
+        for (int i = value.length(); i < width; i++) sb.append(' ');
+        return sb.toString();
     }
 }

@@ -1601,8 +1601,7 @@ public final class ChatWebServer implements Disposable {
             name = "agentbridge";
         } else {
             switch (profileId) {
-                case "anthropic":
-                case "claude-cli":
+                case "anthropic", "claude-cli":
                     name = "claude";
                     break;
                 case "copilot":

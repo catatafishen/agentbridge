@@ -150,7 +150,7 @@ final class ProjectFilesPanel extends JPanel {
             List<FileNode> sessionFiles = listSessionFiles(sessionDir.toFile(), sessionDir.toFile());
             sessionFiles.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
             addSection("Current Session", sessionFiles);
-        } catch (Throwable ignored) {
+        } catch (Exception ignored) {
             // agent may not be started yet
         }
     }

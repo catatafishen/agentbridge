@@ -125,32 +125,25 @@ class McpSseTransportTest {
         }
     }
 
-    // ── formatSseKeepAlive ─────────────────────────────────
+    // ── SSE_KEEP_ALIVE ─────────────────────────────────
 
     @Nested
-    class FormatSseKeepAliveTest {
+    class SseKeepAliveConstantTest {
 
         @Test
         void isComment() {
-            String result = McpSseTransport.formatSseKeepAlive();
-            assertTrue(result.startsWith(":"), "SSE keep-alive must be a comment (start with ':')");
+            assertTrue(McpSseTransport.SSE_KEEP_ALIVE.startsWith(":"),
+                "SSE keep-alive must be a comment (start with ':')");
         }
 
         @Test
         void exactFormat() {
-            assertEquals(": keepalive\n\n", McpSseTransport.formatSseKeepAlive());
+            assertEquals(": keepalive\n\n", McpSseTransport.SSE_KEEP_ALIVE);
         }
 
         @Test
         void endsWithDoubleNewline() {
-            assertTrue(McpSseTransport.formatSseKeepAlive().endsWith("\n\n"));
-        }
-
-        @Test
-        void isConsistentAcrossCalls() {
-            String first = McpSseTransport.formatSseKeepAlive();
-            String second = McpSseTransport.formatSseKeepAlive();
-            assertEquals(first, second);
+            assertTrue(McpSseTransport.SSE_KEEP_ALIVE.endsWith("\n\n"));
         }
     }
 

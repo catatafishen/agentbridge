@@ -181,7 +181,7 @@ class SearchTextToolStaticMethodsTest {
         void caseInsensitiveFlagSet() throws ReflectiveOperationException {
             Pattern p = compile("test", true, false);
             assertNotNull(p);
-            assertTrue((p.flags() & Pattern.CASE_INSENSITIVE) != 0,
+            assertNotEquals(0, p.flags() & Pattern.CASE_INSENSITIVE,
                 "CASE_INSENSITIVE flag should be set");
         }
 

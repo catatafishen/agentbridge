@@ -373,6 +373,35 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
                 .sorted()
                 .toList();
         }
+
+        private static String formatYLabel(long value, UsageStatisticsData.Metric metric) {
+            if (metric == UsageStatisticsData.Metric.AGENT_TIME) {
+                return formatDuration(value);
+            }
+            return formatCompact(value);
+        }
+
+        private static String formatCompact(long value) {
+            if (value < 0) return "-" + formatCompact(-value);
+            if (value >= 1_000_000) {
+                double v = value / 1_000_000.0;
+                return v == (long) v ? (long) v + "M" : String.format("%.1fM", v);
+            }
+            if (value >= 1_000) {
+                double v = value / 1_000.0;
+                return v == (long) v ? (long) v + "K" : String.format("%.1fK", v);
+            }
+            return Long.toString(value);
+        }
+
+        private static String formatDuration(long minutes) {
+            if (minutes >= 60) {
+                long h = minutes / 60;
+                long m = minutes % 60;
+                return m == 0 ? h + "h" : h + "h " + m + "m";
+            }
+            return minutes + "m";
+        }
     }
 
     static Bounds computeMinMax(List<DataSeries> allSeries) {
@@ -415,34 +444,5 @@ class UsageStatisticsChart extends JBPanel<UsageStatisticsChart> {
         if (scaledMinSpacing <= 0) return 1;
         int maxTicks = Math.max(1, plotH / scaledMinSpacing);
         return Math.min(maxTicks, 5);
-    }
-
-    private static String formatCompact(long value) {
-        if (value < 0) return "-" + formatCompact(-value);
-        if (value >= 1_000_000) {
-            double v = value / 1_000_000.0;
-            return v == (long) v ? (long) v + "M" : String.format("%.1fM", v);
-        }
-        if (value >= 1_000) {
-            double v = value / 1_000.0;
-            return v == (long) v ? (long) v + "K" : String.format("%.1fK", v);
-        }
-        return Long.toString(value);
-    }
-
-    private static String formatDuration(long minutes) {
-        if (minutes >= 60) {
-            long h = minutes / 60;
-            long m = minutes % 60;
-            return m == 0 ? h + "h" : h + "h " + m + "m";
-        }
-        return minutes + "m";
-    }
-
-    private static String formatYLabel(long value, UsageStatisticsData.Metric metric) {
-        if (metric == UsageStatisticsData.Metric.AGENT_TIME) {
-            return formatDuration(value);
-        }
-        return formatCompact(value);
     }
 }

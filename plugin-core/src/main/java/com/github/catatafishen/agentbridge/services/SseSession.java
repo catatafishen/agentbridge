@@ -56,7 +56,7 @@ final class SseSession {
      */
     synchronized void sendKeepAlive() throws IOException {
         if (closed.get()) return;
-        outputStream.write(McpSseTransport.formatSseKeepAlive().getBytes(StandardCharsets.UTF_8));
+        outputStream.write(McpSseTransport.SSE_KEEP_ALIVE.getBytes(StandardCharsets.UTF_8));
         outputStream.flush();
     }
 

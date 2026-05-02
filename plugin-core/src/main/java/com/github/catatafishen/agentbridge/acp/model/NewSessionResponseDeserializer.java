@@ -207,8 +207,12 @@ public class NewSessionResponseDeserializer implements JsonDeserializer<NewSessi
         if (selectedValueId == null) selectedValueId = getString(obj, "currentValue");
 
         List<NewSessionResponse.SessionConfigOptionValue> values = new ArrayList<>();
-        JsonElement valuesEl = obj.has("values") ? obj.get("values")
-            : obj.has("options") ? obj.get("options") : null;
+        JsonElement valuesEl = null;
+        if (obj.has("values")) {
+            valuesEl = obj.get("values");
+        } else if (obj.has("options")) {
+            valuesEl = obj.get("options");
+        }
         if (valuesEl != null && valuesEl.isJsonArray()) {
             for (JsonElement e : valuesEl.getAsJsonArray()) {
                 if (e.isJsonObject()) {
