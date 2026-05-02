@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.custommcp;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -9,25 +11,16 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class CustomMcpServerConfigTest {
 
-    @Test
-    void toolPrefix_simpleAsciiName_addsCmcpPrefix() {
+    @ParameterizedTest(name = "toolPrefix(\"{0}\") = \"{1}\"")
+    @CsvSource({
+        "database, cmcp_database",
+        "My Custom Server, cmcp_my_custom_server",
+        "'---db & tools---', cmcp_db_tools"
+    })
+    void toolPrefix_normalizesName(String name, String expected) {
         CustomMcpServerConfig config = new CustomMcpServerConfig();
-        config.setName("database");
-        assertEquals("cmcp_database", config.toolPrefix());
-    }
-
-    @Test
-    void toolPrefix_mixedCaseWithSpaces_normalisedToLowerUnderscore() {
-        CustomMcpServerConfig config = new CustomMcpServerConfig();
-        config.setName("My Custom Server");
-        assertEquals("cmcp_my_custom_server", config.toolPrefix());
-    }
-
-    @Test
-    void toolPrefix_specialCharsCollapsed() {
-        CustomMcpServerConfig config = new CustomMcpServerConfig();
-        config.setName("---db & tools---");
-        assertEquals("cmcp_db_tools", config.toolPrefix());
+        config.setName(name);
+        assertEquals(expected, config.toolPrefix());
     }
 
     @Test

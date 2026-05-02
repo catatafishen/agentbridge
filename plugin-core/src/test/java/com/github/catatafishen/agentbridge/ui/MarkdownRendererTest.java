@@ -5,7 +5,11 @@ import kotlin.jvm.functions.Function1;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -595,27 +599,20 @@ class MarkdownRendererTest {
             assertEquals(2, count, "Expected 2 rows (header + data): " + html);
         }
 
-        @Test
-        void tableWithInlineFormatting() {
-            String md = "| **Bold** | `code` |\n|---|---|\n| normal | normal |";
-            String html = render(md);
-            assertTrue(html.contains("<b>Bold</b>"), html);
-            assertTrue(html.contains("<code>code</code>"), html);
+        static Stream<Arguments> tableClosingScenarios() {
+            return Stream.of(
+                Arguments.of("| **Bold** | `code` |\n|---|---|\n| normal | normal |", "<b>Bold</b>", "<code>code</code>"),
+                Arguments.of("| H1 | H2 |\n|---|---|\n| D1 | D2 |\nParagraph after", "</table>", "<p>Paragraph after</p>"),
+                Arguments.of("| H1 | H2 |\n| --- | --- |\n| D1 | D2 |", "</table>", "<table>")
+            );
         }
 
-        @Test
-        void tableClosedByNonTableLine() {
-            String md = "| H1 | H2 |\n|---|---|\n| D1 | D2 |\nParagraph after";
+        @ParameterizedTest(name = "table scenario: contains {1} and {2}")
+        @MethodSource("tableClosingScenarios")
+        void tableContainsExpectedElements(String md, String expected1, String expected2) {
             String html = render(md);
-            assertTrue(html.contains("</table>"), html);
-            assertTrue(html.contains("<p>Paragraph after</p>"), html);
-        }
-
-        @Test
-        void tableClosedAtEndOfInput() {
-            String md = "| H1 | H2 |\n| --- | --- |\n| D1 | D2 |";
-            String html = render(md);
-            assertTrue(html.contains("</table>"), html);
+            assertTrue(html.contains(expected1), html);
+            assertTrue(html.contains(expected2), html);
         }
 
         @Test
@@ -896,29 +893,23 @@ class MarkdownRendererTest {
 
     @Nested
     class BlockTransitions {
-        @Test
-        void listFollowedByTable() {
-            String md = "- item\n| H1 | H2 |\n|---|---|\n| A | B |";
-            String html = render(md);
-            assertTrue(html.contains("</ul>"), html);
-            assertTrue(html.contains("<table>"), html);
+        static Stream<Arguments> blockTransitionScenarios() {
+            return Stream.of(
+                Arguments.of("- item\n| H1 | H2 |\n|---|---|\n| A | B |", "</ul>", "<table>"),
+                Arguments.of("| H1 | H2 |\n|---|---|\n| D1 | D2 |\n- item", "</table>", "<ul>"),
+                Arguments.of("> quote\n# Heading", "</blockquote>", "<h2>")
+            );
         }
 
-        @Test
-        void tableFollowedByList() {
-            String md = "| H1 | H2 |\n|---|---|\n| D1 | D2 |\n- item";
+        @ParameterizedTest(name = "block transition: {1} before {2}")
+        @MethodSource("blockTransitionScenarios")
+        void blockTransition(String md, String closingTag, String openingTag) {
             String html = render(md);
-            assertTrue(html.contains("</table>"), html);
-            assertTrue(html.contains("<ul>"), html);
-        }
-
-        @Test
-        void headingClosesOpenBlockquote() {
-            String md = "> quote\n# Heading";
-            String html = render(md);
-            int bqClose = html.indexOf("</blockquote>");
-            int h2Open = html.indexOf("<h2>");
-            assertTrue(bqClose < h2Open, "Blockquote should close before heading: " + html);
+            assertTrue(html.contains(closingTag), html);
+            assertTrue(html.contains(openingTag), html);
+            int closePos = html.indexOf(closingTag);
+            int openPos = html.indexOf(openingTag);
+            assertTrue(closePos < openPos, closingTag + " should appear before " + openingTag + ": " + html);
         }
 
         @Test

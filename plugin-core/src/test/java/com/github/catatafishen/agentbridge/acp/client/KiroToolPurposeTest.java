@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.acp.client;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -129,10 +131,14 @@ class KiroToolPurposeTest {
             assertEquals("Check: is the test passing?", KiroClient.extractPurposeFromArgs(args));
         }
 
-        @Test
-        @DisplayName("different key name containing substring → null")
-        void differentKeyWithSubstring() {
-            String args = "{\"x__tool_use_purpose\": \"should not match\"}";
+        @ParameterizedTest(name = "malformed or mismatched key: {0}")
+        @ValueSource(strings = {
+            "{\"x__tool_use_purpose\": \"should not match\"}",
+            "{\"description\": \"the __tool_use_purpose field\"}",
+            "{\"__tool_use_purpose\"",
+            "{\"__tool_use_purpose\": }"
+        })
+        void malformedOrMismatchedKeyReturnsNull(String args) {
             assertNull(KiroClient.extractPurposeFromArgs(args));
         }
 
@@ -141,27 +147,6 @@ class KiroToolPurposeTest {
         void nestedPurpose() {
             String args = "{\"inner\": {\"__tool_use_purpose\": \"Nested\"}}";
             assertEquals("Nested", KiroClient.extractPurposeFromArgs(args));
-        }
-
-        @Test
-        @DisplayName("purpose appears in a string value but not as a key → null")
-        void purposeInStringValue() {
-            String args = "{\"description\": \"the __tool_use_purpose field\"}";
-            assertNull(KiroClient.extractPurposeFromArgs(args));
-        }
-
-        @Test
-        @DisplayName("purpose key with no colon after it → null")
-        void noColonAfterKey() {
-            String args = "{\"__tool_use_purpose\"";
-            assertNull(KiroClient.extractPurposeFromArgs(args));
-        }
-
-        @Test
-        @DisplayName("purpose key with colon but no value quotes → null")
-        void colonButNoQuotes() {
-            String args = "{\"__tool_use_purpose\": }";
-            assertNull(KiroClient.extractPurposeFromArgs(args));
         }
     }
 }
