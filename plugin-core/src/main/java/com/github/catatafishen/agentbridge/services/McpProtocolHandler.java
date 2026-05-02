@@ -479,6 +479,11 @@ public final class McpProtocolHandler {
         PopupGateResult gateResult = evaluatePopupGate(toolName, sessionKey, msg);
         if (gateResult.blocked != null) return gateResult.blocked;
 
+        LiveToolCallService liveService = LiveToolCallService.getInstance(project);
+        String inputJson = arguments.toString();
+        int liveIdx = liveService.recordStart(toolName, inputJson, null);
+        long callStartMs = System.currentTimeMillis();
+
         McpCallContext.setCurrent(sessionKey);
         try {
             String resultText = PsiBridgeService.getInstance(project)
@@ -489,11 +494,16 @@ public final class McpProtocolHandler {
             if (!isError) {
                 resultText = appendOutputTemplate(resultText, toolName, settings);
             }
-            return buildToolResult(msg, gateResult.prefix + resultText, isError);
+            String fullResult = gateResult.prefix + resultText;
+            liveService.complete(liveIdx, fullResult,
+                System.currentTimeMillis() - callStartMs, !isError);
+            return buildToolResult(msg, fullResult, isError);
         } catch (Exception e) {
             LOG.warn("[MCP] tool error: " + toolName, e);
-            return buildToolResult(msg,
-                ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage()), true);
+            String errorMsg = ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage());
+            liveService.complete(liveIdx, errorMsg,
+                System.currentTimeMillis() - callStartMs, false);
+            return buildToolResult(msg, errorMsg, true);
         } finally {
             McpCallContext.clear();
         }
