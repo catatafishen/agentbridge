@@ -6,6 +6,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mockito;
 
 import java.nio.file.Path;
@@ -16,6 +19,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -603,37 +607,24 @@ class ToolCallStatisticsServiceTest {
         assertEquals("feat/round-trip", results.get(0).branch());
     }
 
-    @Test
-    @DisplayName("recordTurnStats attributes branch to turn end when end is feature branch")
-    void recordTurnStatsUsesEndBranchForAttribution() {
-        service.recordTurnStats(turnRecordWithBranches("s1", "copilot", "2025-01-15",
-            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "master", "feat/end"));
-
-        var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
-        assertEquals(1, results.size());
-        assertEquals("feat/end", results.get(0).branch());
+    static Stream<Arguments> branchAttributionCases() {
+        return Stream.of(
+            Arguments.of("end is feature branch → uses end", "master", "feat/end", "feat/end"),
+            Arguments.of("end is master → falls back to start", "feat/start", "master", "feat/start"),
+            Arguments.of("end is missing → falls back to start", "feat/start", null, "feat/start")
+        );
     }
 
-    @Test
-    @DisplayName("recordTurnStats falls back to start branch when end is master")
-    void recordTurnStatsFallsBackToStartWhenEndIsDefaultBranch() {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("branchAttributionCases")
+    @DisplayName("recordTurnStats branch attribution")
+    void recordTurnStatsBranchAttribution(String desc, String startBranch, String endBranch, String expectedBranch) {
         service.recordTurnStats(turnRecordWithBranches("s1", "copilot", "2025-01-15",
-            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "feat/start", "master"));
+            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", startBranch, endBranch));
 
         var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
         assertEquals(1, results.size());
-        assertEquals("feat/start", results.get(0).branch());
-    }
-
-    @Test
-    @DisplayName("recordTurnStats falls back to start branch when end branch is missing")
-    void recordTurnStatsFallsBackToStartWhenEndMissing() {
-        service.recordTurnStats(turnRecordWithBranches("s1", "copilot", "2025-01-15",
-            100, 200, 3, 5000, 10, 2, 1.0, "2025-01-15T10:00:00Z", "feat/start", null));
-
-        var results = service.queryBranchTotals("2025-01-01", "2025-01-31");
-        assertEquals(1, results.size());
-        assertEquals("feat/start", results.get(0).branch());
+        assertEquals(expectedBranch, results.get(0).branch());
     }
 
     @Test

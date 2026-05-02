@@ -7,6 +7,9 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +19,7 @@ import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -318,28 +322,20 @@ class ClaudeCliExporterTest {
 
     // ── Git branch detection tests ───────────────────────────────────
 
-    @Test
-    void detectsGitBranch(@TempDir Path tmpDir) throws IOException {
-        // Create a fake .git/HEAD file
-        Path gitDir = tmpDir.resolve(".git");
-        Files.createDirectories(gitDir);
-        Files.writeString(gitDir.resolve("HEAD"), "ref: refs/heads/main\n", StandardCharsets.UTF_8);
-
-        List<JsonObject> events = exportAndParse(
-            List.of(prompt("Hi"), text("Hello")), tmpDir);
-
-        JsonObject messageEvent = events.stream()
-            .filter(e -> "user".equals(safeGetType(e)) || "assistant".equals(safeGetType(e)))
-            .findFirst()
-            .orElseThrow();
-        assertEquals("main", messageEvent.get("gitBranch").getAsString());
+    static Stream<Arguments> gitBranchCases() {
+        return Stream.of(
+            Arguments.of("main branch", "ref: refs/heads/main\n", "main"),
+            Arguments.of("feature branch", "ref: refs/heads/feature/my-branch\n", "feature/my-branch"),
+            Arguments.of("detached HEAD", "abc123def456789\n", "abc123def456")
+        );
     }
 
-    @Test
-    void detectsFeatureBranch(@TempDir Path tmpDir) throws IOException {
+    @ParameterizedTest(name = "detects {0}")
+    @MethodSource("gitBranchCases")
+    void detectsGitBranch(String desc, String headContent, String expectedBranch, @TempDir Path tmpDir) throws IOException {
         Path gitDir = tmpDir.resolve(".git");
         Files.createDirectories(gitDir);
-        Files.writeString(gitDir.resolve("HEAD"), "ref: refs/heads/feature/my-branch\n", StandardCharsets.UTF_8);
+        Files.writeString(gitDir.resolve("HEAD"), headContent, StandardCharsets.UTF_8);
 
         List<JsonObject> events = exportAndParse(
             List.of(prompt("Hi"), text("Hello")), tmpDir);
@@ -348,24 +344,7 @@ class ClaudeCliExporterTest {
             .filter(e -> "user".equals(safeGetType(e)) || "assistant".equals(safeGetType(e)))
             .findFirst()
             .orElseThrow();
-        assertEquals("feature/my-branch", messageEvent.get("gitBranch").getAsString());
-    }
-
-    @Test
-    void detectsDetachedHead(@TempDir Path tmpDir) throws IOException {
-        Path gitDir = tmpDir.resolve(".git");
-        Files.createDirectories(gitDir);
-        Files.writeString(gitDir.resolve("HEAD"), "abc123def456789\n", StandardCharsets.UTF_8);
-
-        List<JsonObject> events = exportAndParse(
-            List.of(prompt("Hi"), text("Hello")), tmpDir);
-
-        JsonObject messageEvent = events.stream()
-            .filter(e -> "user".equals(safeGetType(e)) || "assistant".equals(safeGetType(e)))
-            .findFirst()
-            .orElseThrow();
-        // Detached HEAD → uses first 12 chars as branch name
-        assertEquals("abc123def456", messageEvent.get("gitBranch").getAsString());
+        assertEquals(expectedBranch, messageEvent.get("gitBranch").getAsString());
     }
 
     @Test

@@ -4,7 +4,9 @@ import com.github.catatafishen.agentbridge.ui.MessageFormatter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,6 +15,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -51,33 +54,27 @@ class ChatWebServerTest {
         assertEquals("ChatController.addThinkingText('t3','agent-2',", result);
     }
 
-    @Test
-    void buildStreamingPrefix_returnsNullWhenNoQuotes() {
-        String result = ChatWebServer.buildStreamingPrefix(
-            "ChatController.finalizeAgentText(no-quotes)",
-            "ChatController.finalizeAgentText(",
-            "ChatController.appendAgentText("
+    static Stream<Arguments> buildStreamingPrefix_nullCases() {
+        return Stream.of(
+            Arguments.of("no quotes",
+                "ChatController.finalizeAgentText(no-quotes)",
+                "ChatController.finalizeAgentText(",
+                "ChatController.appendAgentText("),
+            Arguments.of("only one quoted arg",
+                "ChatController.finalizeAgentText('t0')",
+                "ChatController.finalizeAgentText(",
+                "ChatController.appendAgentText("),
+            Arguments.of("missing closing quote",
+                "ChatController.finalizeAgentText('t0','main",
+                "ChatController.finalizeAgentText(",
+                "ChatController.appendAgentText(")
         );
-        assertNull(result);
     }
 
-    @Test
-    void buildStreamingPrefix_returnsNullWhenOnlyOneQuotedArg() {
-        String result = ChatWebServer.buildStreamingPrefix(
-            "ChatController.finalizeAgentText('t0')",
-            "ChatController.finalizeAgentText(",
-            "ChatController.appendAgentText("
-        );
-        assertNull(result);
-    }
-
-    @Test
-    void buildStreamingPrefix_returnsNullWhenMissingClosingQuote() {
-        String result = ChatWebServer.buildStreamingPrefix(
-            "ChatController.finalizeAgentText('t0','main",
-            "ChatController.finalizeAgentText(",
-            "ChatController.appendAgentText("
-        );
+    @ParameterizedTest(name = "returns null when {0}")
+    @MethodSource("buildStreamingPrefix_nullCases")
+    void buildStreamingPrefix_returnsNull(String desc, String js, String fromPrefix, String toPrefix) {
+        String result = ChatWebServer.buildStreamingPrefix(js, fromPrefix, toPrefix);
         assertNull(result);
     }
 

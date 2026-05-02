@@ -4,8 +4,11 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.lang.reflect.Method;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -152,33 +155,23 @@ class McpSseTransportTest {
     @Nested
     class BuildJsonErrorResponseTest {
 
-        @Test
-        void basicErrorStructure() {
-            String json = McpSseTransport.buildJsonErrorResponse("Something went wrong");
-            JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
-            assertEquals("Something went wrong", parsed.get("error").getAsString());
+        static Stream<String> errorMessages() {
+            return Stream.of(
+                "Something went wrong",
+                "SSE session limit reached (10)",
+                "Error with \"quotes\"",
+                "",
+                "Unknown or closed session: abc-123",
+                "Missing sessionId parameter"
+            );
         }
 
-        @Test
-        void sessionLimitMessage() {
-            String json = McpSseTransport.buildJsonErrorResponse("SSE session limit reached (10)");
+        @ParameterizedTest(name = "errorMessage=''{0}''")
+        @MethodSource("errorMessages")
+        void errorMessageRoundTrips(String message) {
+            String json = McpSseTransport.buildJsonErrorResponse(message);
             JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
-            assertEquals("SSE session limit reached (10)", parsed.get("error").getAsString());
-        }
-
-        @Test
-        void quotesInMessageAreEscaped() {
-            String json = McpSseTransport.buildJsonErrorResponse("Error with \"quotes\"");
-            // Gson properly escapes double quotes; the result should be valid JSON
-            JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
-            assertEquals("Error with \"quotes\"", parsed.get("error").getAsString());
-        }
-
-        @Test
-        void emptyMessage() {
-            String json = McpSseTransport.buildJsonErrorResponse("");
-            JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
-            assertEquals("", parsed.get("error").getAsString());
+            assertEquals(message, parsed.get("error").getAsString());
         }
 
         @Test
@@ -186,20 +179,6 @@ class McpSseTransportTest {
             String json = McpSseTransport.buildJsonErrorResponse("test");
             JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
             assertEquals(1, parsed.size(), "Error response should have exactly 1 field");
-        }
-
-        @Test
-        void missingSessionMessage() {
-            String json = McpSseTransport.buildJsonErrorResponse("Unknown or closed session: abc-123");
-            JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
-            assertEquals("Unknown or closed session: abc-123", parsed.get("error").getAsString());
-        }
-
-        @Test
-        void missingSessionIdParam() {
-            String json = McpSseTransport.buildJsonErrorResponse("Missing sessionId parameter");
-            JsonObject parsed = JsonParser.parseString(json).getAsJsonObject();
-            assertEquals("Missing sessionId parameter", parsed.get("error").getAsString());
         }
     }
 }

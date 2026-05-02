@@ -1,9 +1,13 @@
 package com.github.catatafishen.agentbridge.services;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.sql.SQLException;
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -76,39 +80,21 @@ class ToolCallStatisticsServiceStaticMethodsTest {
     // isDbMoved tests
     // ──────────────────────────────────────────────
 
-    @Test
-    void isDbMoved_messageContainsDbMoved_returnsTrue() {
-        SQLException ex = new SQLException("[SQLITE_READONLY_DBMOVED] database file has been moved");
-        assertTrue(ToolCallStatisticsService.isDbMoved(ex));
+    static Stream<Arguments> isDbMovedCases() {
+        return Stream.of(
+            Arguments.of("[SQLITE_READONLY_DBMOVED] database file has been moved", true),
+            Arguments.of("SQLITE_READONLY_DBMOVED", true),
+            Arguments.of("table not found", false),
+            Arguments.of(null, false),
+            Arguments.of("", false),
+            Arguments.of("SQLITE_READONLY", false)
+        );
     }
 
-    @Test
-    void isDbMoved_messageExactMatch_returnsTrue() {
-        SQLException ex = new SQLException("SQLITE_READONLY_DBMOVED");
-        assertTrue(ToolCallStatisticsService.isDbMoved(ex));
-    }
-
-    @Test
-    void isDbMoved_unrelatedMessage_returnsFalse() {
-        SQLException ex = new SQLException("table not found");
-        assertFalse(ToolCallStatisticsService.isDbMoved(ex));
-    }
-
-    @Test
-    void isDbMoved_nullMessage_returnsFalse() {
-        SQLException ex = new SQLException((String) null);
-        assertFalse(ToolCallStatisticsService.isDbMoved(ex));
-    }
-
-    @Test
-    void isDbMoved_emptyMessage_returnsFalse() {
-        SQLException ex = new SQLException("");
-        assertFalse(ToolCallStatisticsService.isDbMoved(ex));
-    }
-
-    @Test
-    void isDbMoved_partialMatch_returnsFalse() {
-        SQLException ex = new SQLException("SQLITE_READONLY");
-        assertFalse(ToolCallStatisticsService.isDbMoved(ex));
+    @ParameterizedTest(name = "isDbMoved(\"{0}\") = {1}")
+    @MethodSource("isDbMovedCases")
+    void isDbMoved_parameterized(String message, boolean expected) {
+        SQLException ex = new SQLException(message);
+        assertEquals(expected, ToolCallStatisticsService.isDbMoved(ex));
     }
 }

@@ -5,6 +5,11 @@ import com.intellij.openapi.util.TextRange;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -59,39 +64,21 @@ class QualityToolResolveColumnTest {
         assertEquals(LINE1.indexOf("Foo"), col);
     }
 
-    @Test
-    @DisplayName("symbol not found returns 0 (fallback)")
-    void symbolNotFound() {
-        int col = QualityTool.resolveColumn(doc, 1, "Missing", null);
-        assertEquals(0, col);
+    static Stream<Arguments> resolveColumnFallbackCases() {
+        return Stream.of(
+            Arguments.of("symbol not found returns 0", 1, "Missing", null, 0),
+            Arguments.of("no symbol and no column returns 0", 1, null, null, 0),
+            Arguments.of("blank symbol treated as absent", 1, "  ", null, 0),
+            Arguments.of("column=1 returns 0", 1, null, 1, 0),
+            Arguments.of("explicit column returns column-1", 1, null, 5, 4)
+        );
     }
 
-    @Test
-    @DisplayName("explicit column returns column-1 (0-based)")
-    void explicitColumn() {
-        int col = QualityTool.resolveColumn(doc, 1, null, 5);
-        assertEquals(4, col);
-    }
-
-    @Test
-    @DisplayName("column=1 returns 0")
-    void columnOne() {
-        int col = QualityTool.resolveColumn(doc, 1, null, 1);
-        assertEquals(0, col);
-    }
-
-    @Test
-    @DisplayName("no symbol and no column returns 0")
-    void noSymbolNoColumn() {
-        int col = QualityTool.resolveColumn(doc, 1, null, null);
-        assertEquals(0, col);
-    }
-
-    @Test
-    @DisplayName("blank symbol treated as absent, falls back to 0")
-    void blankSymbol() {
-        int col = QualityTool.resolveColumn(doc, 1, "  ", null);
-        assertEquals(0, col);
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("resolveColumnFallbackCases")
+    void resolveColumn_fallbackAndExplicit(String desc, int line, String symbol, Integer column, int expected) {
+        int col = QualityTool.resolveColumn(doc, line, symbol, column);
+        assertEquals(expected, col);
     }
 
     @Test
