@@ -30,7 +30,8 @@ public final class EmbeddingService implements Disposable, Embedder {
      */
     @FunctionalInterface
     interface InferenceFunction {
-        float[] run(WordPieceTokenizer.TokenizedInput input) throws Exception;
+        // S112: intentional — mirrors Embedder contract; different backends throw different exceptions
+        float[] run(WordPieceTokenizer.TokenizedInput input) throws Exception; // NOSONAR java:S112
     }
 
     public EmbeddingService(@NotNull Project project) {
@@ -65,7 +66,7 @@ public final class EmbeddingService implements Disposable, Embedder {
      * @throws Exception   if inference fails
      */
     @Override
-    public float[] embed(@NotNull String text) throws Exception {
+    public float[] embed(@NotNull String text) throws Exception { // NOSONAR java:S112 — required by Embedder interface
         ensureInitialized();
 
         WordPieceTokenizer.TokenizedInput input = tokenizer.tokenize(text);
@@ -76,7 +77,7 @@ public final class EmbeddingService implements Disposable, Embedder {
      * Batch-embed multiple texts. More efficient than repeated single calls
      * when processing multiple chunks from a turn.
      */
-    public List<float[]> embedBatch(@NotNull List<String> texts) throws Exception {
+    public List<float[]> embedBatch(@NotNull List<String> texts) throws Exception { // NOSONAR java:S112 — delegates to Embedder.embed()
         ensureInitialized();
 
         List<float[]> results = new ArrayList<>(texts.size());

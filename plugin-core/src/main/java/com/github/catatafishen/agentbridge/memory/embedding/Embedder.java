@@ -17,5 +17,7 @@ public interface Embedder {
      * @return float array of dimension {@link EmbeddingService#EMBEDDING_DIM}
      * @throws Exception if embedding fails (I/O, inference, etc.)
      */
-    float[] embed(@NotNull String text) throws Exception;
+    // S112: throws Exception is intentional — this is a generic embedding abstraction allowing any
+    // implementation (ML inference, I/O-based models, test fakes) to throw any checked exception.
+    float[] embed(@NotNull String text) throws Exception; // NOSONAR java:S112
 }

@@ -37,7 +37,9 @@ public abstract class AbstractAgentClient {
     /**
      * Start the agent process and perform handshake.
      */
-    public abstract void start() throws Exception;
+    // S112: throws Exception is intentional — subclasses (AcpClient, ClaudeCliClient, etc.) throw
+    // different checked exceptions during process startup. Narrowing would be a breaking API change.
+    public abstract void start() throws Exception; // NOSONAR java:S112
 
     /**
      * Gracefully stop the agent process.
@@ -89,7 +91,7 @@ public abstract class AbstractAgentClient {
      * @param cwd working directory for the session
      * @return session ID
      */
-    public abstract String createSession(String cwd) throws Exception;
+    public abstract String createSession(String cwd) throws Exception; // NOSONAR java:S112 — see start()
 
     /**
      * Returns conversation history replayed by the agent during the most recent
@@ -135,7 +137,7 @@ public abstract class AbstractAgentClient {
      * @return the final prompt response when the turn completes
      */
     public abstract PromptResponse sendPrompt(PromptRequest request,
-                                              Consumer<SessionUpdate> onUpdate) throws Exception;
+                                              Consumer<SessionUpdate> onUpdate) throws Exception; // NOSONAR java:S112 — see start()
 
     // ─── Modes (built-in interaction modes, e.g. default/agent/plan/autopilot) ──
 

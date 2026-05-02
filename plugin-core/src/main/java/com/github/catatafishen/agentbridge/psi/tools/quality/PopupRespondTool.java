@@ -15,7 +15,9 @@ import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Resolves a pending {@link PendingPopupService.Pending} popup by re-running the original
@@ -240,7 +242,7 @@ public final class PopupRespondTool extends QualityTool {
 
     private static String invokeReplay(@NotNull Replayable replayable,
                                        @NotNull JsonObject args,
-                                       @NotNull PopupHandler.SelectByValue handler) throws Exception {
+                                       @NotNull PopupHandler.SelectByValue handler) throws InterruptedException, ExecutionException, TimeoutException {
         // Replay needs to run on the EDT (same as the original execute()) because most quality
         // tools dispatch their core work via EdtUtil.invokeLater. Calling replay directly from
         // an MCP worker thread would just chain another invokeLater — that's fine, but we

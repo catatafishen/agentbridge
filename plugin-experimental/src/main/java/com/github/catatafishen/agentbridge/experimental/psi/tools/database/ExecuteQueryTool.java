@@ -14,6 +14,8 @@ import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 
+import java.rmi.RemoteException;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -136,7 +138,7 @@ public final class ExecuteQueryTool extends DatabaseTool {
     private static @NotNull String formatResultSet(
         @NotNull RemoteResultSet rs,
         @NotNull String dataSourceName,
-        int maxRows) throws Exception {
+        int maxRows) throws SQLException, RemoteException {
         RemoteResultSetMetaData meta = rs.getMetaData();
         int colCount = meta.getColumnCount();
 
