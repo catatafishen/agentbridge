@@ -12,6 +12,8 @@ import {FileViewer} from './components/FileViewer';
 import {FileNav} from './components/FileNav';
 import {ReviewView} from './components/ReviewView';
 import {TodoView} from './components/TodoView';
+import {ToolCallsView} from './components/ToolCallsView';
+import {SearchView} from './components/SearchView';
 import {SessionView} from './components/SessionView';
 
 // Register PWA-only custom elements
@@ -20,6 +22,8 @@ customElements.define('file-viewer', FileViewer);
 customElements.define('file-nav', FileNav);
 customElements.define('review-view', ReviewView);
 customElements.define('todo-view', TodoView);
+customElements.define('tool-calls-view', ToolCallsView);
+customElements.define('search-view', SearchView);
 customElements.define('session-view', SessionView);
 
 // ── Bridge: replaces native Kotlin bridge with fetch-based implementations ──
@@ -173,17 +177,27 @@ requestAnimationFrame(() => {
         // Refresh the view when switching to it
         if (index === 2) reviewView.refresh();
         else if (index === 3) todoView.refresh();
-        else if (index === 4) sessionView.refresh();
+        else if (index === 4) toolCallsView.refresh();
+        else if (index === 5) searchView.refresh();
+        else if (index === 6) sessionView.refresh();
     });
 
-    // Add side panel panes
-    const reviewPane = swiper.addPane('Review');
+    // Add side panel panes mirroring the IDE side panel tabs.
+    const reviewPane = swiper.addPane('Diff');
     const reviewView = document.createElement('review-view') as ReviewView;
     reviewPane.appendChild(reviewView);
 
-    const todoPane = swiper.addPane('Plan');
+    const todoPane = swiper.addPane('Todo');
     const todoView = document.createElement('todo-view') as TodoView;
     todoPane.appendChild(todoView);
+
+    const toolsPane = swiper.addPane('Tools');
+    const toolCallsView = document.createElement('tool-calls-view') as ToolCallsView;
+    toolsPane.appendChild(toolCallsView);
+
+    const searchPane = swiper.addPane('Search');
+    const searchView = document.createElement('search-view') as SearchView;
+    searchPane.appendChild(searchView);
 
     const sessionPane = swiper.addPane('Session');
     const sessionView = document.createElement('session-view') as SessionView;

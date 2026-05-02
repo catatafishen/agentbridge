@@ -2,10 +2,13 @@ package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.BuildInfo;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings;
 import com.github.catatafishen.agentbridge.settings.ChatWebServerSettings;
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
+import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.MessageFormatter;
+import com.github.catatafishen.agentbridge.ui.side.TodoDatabaseReader;
 import com.google.gson.Gson;
 import com.intellij.credentialStore.CredentialAttributes;
 import com.intellij.credentialStore.Credentials;
@@ -458,6 +461,9 @@ public final class ChatWebServer implements Disposable {
         server.createContext("/file", this::handleFileRead);
         server.createContext("/list-files", this::handleListFiles);
         server.createContext("/plan", this::handlePlan);
+        server.createContext("/todos", this::handleTodos);
+        server.createContext("/prompts", this::handlePrompts);
+        server.createContext("/tool-calls", this::handleToolCalls);
         server.createContext("/session-stats", this::handleSessionStats);
         server.createContext("/review-items", this::handleReviewItems);
     }
@@ -1718,6 +1724,105 @@ public final class ChatWebServer implements Disposable {
             LOG.warn("handlePlan error", e);
             sendJson(exchange, "{\"content\":null}");
         }
+    }
+
+    private void handleTodos(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            java.nio.file.Path sessionDir = resolveAgentSessionDir();
+            com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+            if (sessionDir != null) {
+                java.io.File dbFile = sessionDir.resolve("session.db").toFile();
+                for (TodoDatabaseReader.TodoItem item : TodoDatabaseReader.readTodos(dbFile)) {
+                    com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+                    obj.addProperty("id", item.id());
+                    obj.addProperty("title", item.title());
+                    obj.addProperty("description", item.description());
+                    obj.addProperty("status", item.status());
+                    obj.addProperty("createdAt", item.createdAt());
+                    obj.addProperty("updatedAt", item.updatedAt());
+                    arr.add(obj);
+                }
+            }
+            com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+            json.add("items", arr);
+            sendJson(exchange, GSON.toJson(json));
+        } catch (Exception e) {
+            LOG.warn("handleTodos error", e);
+            sendJson(exchange, "{\"items\":[]}");
+        }
+    }
+
+    private void handlePrompts(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+            for (EntryData entry : loadSessionEntries()) {
+                if (entry instanceof EntryData.Prompt prompt) {
+                    com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+                    obj.addProperty("id", prompt.getEntryId());
+                    obj.addProperty("text", prompt.getText());
+                    obj.addProperty("timestamp", prompt.getTimestamp());
+                    arr.add(obj);
+                }
+            }
+            com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+            json.add("items", arr);
+            sendJson(exchange, GSON.toJson(json));
+        } catch (Exception e) {
+            LOG.warn("handlePrompts error", e);
+            sendJson(exchange, "{\"items\":[]}");
+        }
+    }
+
+    private void handleToolCalls(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        try {
+            com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+            for (EntryData entry : loadSessionEntries()) {
+                if (entry instanceof EntryData.ToolCall toolCall) {
+                    com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+                    obj.addProperty("id", toolCall.getEntryId());
+                    obj.addProperty("title", toolCall.getTitle());
+                    obj.addProperty("kind", toolCall.getKind());
+                    obj.addProperty("status", toolCall.getStatus());
+                    obj.addProperty("timestamp", toolCall.getTimestamp());
+                    obj.addProperty("arguments", toolCall.getArguments());
+                    obj.addProperty("result", toolCall.getResult());
+                    arr.add(obj);
+                }
+            }
+            com.google.gson.JsonObject json = new com.google.gson.JsonObject();
+            json.add("items", arr);
+            sendJson(exchange, GSON.toJson(json));
+        } catch (Exception e) {
+            LOG.warn("handleToolCalls error", e);
+            sendJson(exchange, "{\"items\":[]}");
+        }
+    }
+
+    private @NotNull List<EntryData> loadSessionEntries() {
+        List<EntryData> entries = SessionStoreV2.getInstance(project).loadEntries(project.getBasePath());
+        return entries != null ? entries : Collections.emptyList();
+    }
+
+    private @Nullable java.nio.file.Path resolveAgentSessionDir() {
+        return ActiveAgentManager.getInstance(project).getClient().getSessionDirectory();
     }
 
     private void handleSessionStats(HttpExchange exchange) throws IOException {

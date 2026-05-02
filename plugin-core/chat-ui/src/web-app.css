@@ -1163,6 +1163,221 @@ file-nav {
     padding: 2px 0 2px 8px;
 }
 
+.tv-section {
+    margin-bottom: 18px;
+}
+
+.tv-section h2 {
+    font-size: 14px;
+    margin: 0 0 8px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.tv-db-summary {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.tv-db-item {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: start;
+    padding: 8px;
+    border: 1px solid var(--border, #30363d);
+    border-radius: 8px;
+    background: var(--input-bg, #161b22);
+    margin-bottom: 6px;
+}
+
+.tv-db-status {
+    font-weight: bold;
+}
+
+.tv-db-item.in_progress .tv-db-status {
+    color: var(--blue, #388bfd);
+}
+
+.tv-db-item.done .tv-db-status {
+    color: var(--green, #2ea043);
+}
+
+.tv-db-item.blocked .tv-db-status {
+    color: var(--red, #f85149);
+}
+
+.tv-db-main {
+    min-width: 0;
+}
+
+.tv-db-title {
+    display: block;
+    overflow-wrap: anywhere;
+}
+
+.tv-db-desc {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 3px;
+    overflow-wrap: anywhere;
+}
+
+.tv-db-id {
+    color: var(--muted);
+    font-size: 11px;
+    font-style: italic;
+}
+
+/* ── Tool Calls View ───────────────────────────────────── */
+.tcv-container,
+.pv-container {
+    padding: 12px;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.tcv-empty,
+.pv-empty {
+    color: var(--muted);
+    text-align: center;
+    padding: 40px 16px;
+}
+
+.tcv-item {
+    border: 1px solid var(--border, #30363d);
+    border-radius: 8px;
+    background: var(--input-bg, #161b22);
+    margin-bottom: 8px;
+    padding: 8px;
+    cursor: pointer;
+}
+
+.tcv-summary {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.tcv-kind {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.tcv-read {
+    color: var(--tool-read, #64b9b9);
+}
+
+.tcv-edit {
+    color: var(--tool-edit, #cd9b5f);
+}
+
+.tcv-execute {
+    color: var(--tool-execute, #82be82);
+}
+
+.tcv-other {
+    color: var(--muted);
+}
+
+.tcv-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tcv-status {
+    color: var(--muted);
+    font-size: 11px;
+}
+
+.tcv-status.success,
+.tcv-status.completed,
+.tcv-status.done {
+    color: var(--green, #2ea043);
+}
+
+.tcv-status.error,
+.tcv-status.failed {
+    color: var(--red, #f85149);
+}
+
+.tcv-time {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 3px;
+}
+
+.tcv-detail {
+    margin-top: 8px;
+}
+
+.tcv-label {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    margin: 8px 0 4px;
+    text-transform: uppercase;
+}
+
+.tcv-detail pre {
+    max-height: 160px;
+    overflow: auto;
+    background: var(--bg, #0d1117);
+    border-radius: 6px;
+    padding: 8px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+/* ── Prompt Search View ────────────────────────────────── */
+.pv-search {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--border, #30363d);
+    border-radius: 8px;
+    background: var(--input-bg, #161b22);
+    color: var(--fg, #e6edf3);
+    padding: 8px 10px;
+    margin-bottom: 10px;
+}
+
+.pv-item {
+    all: unset;
+    box-sizing: border-box;
+    display: block;
+    width: 100%;
+    padding: 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid transparent;
+}
+
+.pv-item:hover {
+    background: var(--input-bg, #161b22);
+    border-color: var(--border, #30363d);
+}
+
+.pv-time {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 3px;
+}
+
+.pv-text {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+}
+
 /* ── Session View ──────────────────────────────────────── */
 .sv-container {
     padding: 12px;
