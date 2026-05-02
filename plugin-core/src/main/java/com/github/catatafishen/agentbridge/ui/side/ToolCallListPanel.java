@@ -2,6 +2,9 @@ package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry;
 import com.github.catatafishen.agentbridge.services.LiveToolCallService;
+import com.github.catatafishen.agentbridge.settings.McpServerSettings;
+import com.github.catatafishen.agentbridge.ui.ChatTheme;
+import com.github.catatafishen.agentbridge.ui.ToolKindColors;
 import com.github.catatafishen.agentbridge.ui.util.SidePanelFooter;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
@@ -26,10 +29,11 @@ import java.awt.*;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Side-panel tab showing a live list of MCP tool calls with timestamps.
- * Each row shows timestamp, tool name (color-coded by category), duration,
+ * Each row shows timestamp, tool name (color-coded by tool kind), duration,
  * and success/failure status. Clicking a row expands it to show raw input
  * and output with explicit labels.
  * <p>
@@ -44,16 +48,6 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private static final int ROW_HEIGHT = 28;
-
-    // Category colors matching the chat CSS kind colors
-    private static final Color COLOR_READ = new JBColor(
-        new Color(0x4A9999), new Color(0x64B9B9));
-    private static final Color COLOR_EDIT = new JBColor(
-        new Color(0x9A6B30), new Color(0xCD9B5F));
-    private static final Color COLOR_EXECUTE = new JBColor(
-        new Color(0x4A8C4A), new Color(0x82BE82));
-    private static final Color COLOR_OTHER = new JBColor(
-        new Color(0x7A7E82), new Color(0xA0A5AA));
 
     private static final Color SUCCESS_COLOR = new JBColor(
         new Color(0x2E7D32), new Color(0x81C784));
@@ -74,12 +68,12 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         super(new BorderLayout());
         this.project = project;
 
-        // List panel for tool call rows
-        listPanel = new JPanel();
+        listPanel = new ToolCallRowsPanel();
         listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
 
         scrollPane = new JBScrollPane(listPanel);
         scrollPane.setBorder(JBUI.Borders.empty());
+        scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
         // Empty state
@@ -201,7 +195,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
 
         String time = TIME_FMT.format(entry.timestamp());
         String name = entry.toolName();
-        Color nameColor = colorForCategory(entry.category());
+        Color nameColor = colorForKind(entry.category());
 
         String statusIcon;
         Color statusColor;
@@ -277,6 +271,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
 
         JTextArea inputArea = createReadOnlyTextArea(entry.input());
         JBScrollPane inputScroll = new JBScrollPane(inputArea);
+        inputScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         inputScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
         inputScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
         detail.add(inputScroll);
@@ -292,6 +287,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         String output = entry.isRunning() ? "(still running…)" : entry.output();
         JTextArea outputArea = createReadOnlyTextArea(output);
         JBScrollPane outputScroll = new JBScrollPane(outputArea);
+        outputScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         outputScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
         outputScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
         detail.add(outputScroll);
@@ -310,14 +306,44 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         return area;
     }
 
-    private static Color colorForCategory(String category) {
-        if (category == null) return COLOR_OTHER;
-        return switch (category) {
-            case "READ", "GIT_READ" -> COLOR_READ;
-            case "EDIT", "GIT_WRITE" -> COLOR_EDIT;
-            case "EXECUTE" -> COLOR_EXECUTE;
-            default -> COLOR_OTHER;
+    private Color colorForKind(String kind) {
+        if (kind == null) return ChatTheme.INSTANCE.getKIND_OTHER_COLOR();
+        McpServerSettings settings = McpServerSettings.getInstance(project);
+        return switch (kind.toLowerCase(Locale.ROOT)) {
+            case "read", "file", "git_read" -> ToolKindColors.readColor(settings);
+            case "search" -> ToolKindColors.searchColor(settings);
+            case "edit", "delete", "move", "write", "git_write" -> ToolKindColors.editColor(settings);
+            case "execute", "run", "terminal", "shell" -> ToolKindColors.executeColor(settings);
+            default -> ChatTheme.INSTANCE.getKIND_OTHER_COLOR();
         };
+    }
+
+    private static final class ToolCallRowsPanel extends JPanel implements Scrollable {
+
+        @Override
+        public Dimension getPreferredScrollableViewportSize() {
+            return getPreferredSize();
+        }
+
+        @Override
+        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return JBUI.scale(16);
+        }
+
+        @Override
+        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
+            return visibleRect.height;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportWidth() {
+            return true;
+        }
+
+        @Override
+        public boolean getScrollableTracksViewportHeight() {
+            return false;
+        }
     }
 
     private static String formatDuration(long ms) {
