@@ -40,8 +40,10 @@ public final class MemoryStoreTool extends Tool {
     @Override
     public @NotNull String description() {
         return "Store a new memory drawer. Use to explicitly save decisions, preferences, "
-            + "milestones, problems, or technical insights. Duplicate content is automatically "
-            + "detected and skipped. Returns the drawer ID on success, or a message if skipped.";
+            + "milestones, problems, or technical insights. "
+            + "If a drawer with the same content signature (same wing, room, and first 100 characters) "
+            + "already exists it is overwritten with the new content — re-storing updated decisions "
+            + "is safe and always writes the latest version. Returns the drawer ID on success.";
     }
 
     @Override
@@ -100,9 +102,6 @@ public final class MemoryStoreTool extends Tool {
             .build();
 
         String result = store.addDrawer(drawer, vector);
-        if (result != null) {
-            return "Stored drawer: " + result + " (wing=" + wing + ", room=" + room + ", type=" + memoryType + ")";
-        }
-        return "Skipped: duplicate content already exists in memory store.";
+        return "Stored drawer: " + result + " (wing=" + wing + ", room=" + room + ", type=" + memoryType + ")";
     }
 }

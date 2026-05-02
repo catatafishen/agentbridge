@@ -78,8 +78,6 @@ public final class MemoryStore implements Disposable {
     private static final String FLD_VERIFICATION_STATE = "verification_state";
     private static final String FLD_LAST_VERIFIED_AT = "last_verified_at";
 
-    private static final float DUPLICATE_THRESHOLD = 0.9f;
-
     private final Path indexPath;
     private final WriteAheadLog wal;
     private Directory directory;
@@ -122,12 +120,7 @@ public final class MemoryStore implements Disposable {
         }
     }
 
-    public @Nullable String addDrawer(@NotNull DrawerDocument drawer, float @NotNull [] embedding) throws IOException {
-        if (isDuplicate(embedding)) {
-            LOG.debug("Skipping duplicate drawer: " + drawer.id());
-            return null;
-        }
-
+    public @NotNull String addDrawer(@NotNull DrawerDocument drawer, float @NotNull [] embedding) throws IOException {
         Document doc = buildLuceneDocument(drawer, embedding);
 
         // WAL before write
@@ -138,6 +131,8 @@ public final class MemoryStore implements Disposable {
         walPayload.addProperty("content_length", drawer.content().length());
         wal.log("add_drawer", drawer.id(), walPayload);
 
+        // updateDocument replaces any existing document with the same ID, so
+        // re-storing content with the same first-100-char hash naturally overwrites.
         writer.updateDocument(new Term(FLD_ID, drawer.id()), doc);
         writer.commit();
         searcherManager.maybeRefresh();
@@ -197,24 +192,6 @@ public final class MemoryStore implements Disposable {
                     .merge(room, 1, Integer::sum);
             }
             return taxonomy;
-        } finally {
-            searcherManager.release(searcher);
-        }
-    }
-
-    /**
-     * Check if content with high similarity already exists (duplicate detection).
-     */
-    public boolean isDuplicate(float @NotNull [] embedding) throws IOException {
-        searcherManager.maybeRefresh();
-        IndexSearcher searcher = searcherManager.acquire();
-        try {
-            TopDocs results = searcher.search(
-                new KnnFloatVectorQuery(FLD_EMBEDDING, embedding, 1), 1);
-            if (results.scoreDocs.length > 0) {
-                return results.scoreDocs[0].score >= DUPLICATE_THRESHOLD;
-            }
-            return false;
         } finally {
             searcherManager.release(searcher);
         }
