@@ -29,7 +29,7 @@ public final class ToolReadinessGate {
     private static final Logger LOG = Logger.getInstance(ToolReadinessGate.class);
 
     /** How long we opportunistically wait for indexing to finish. */
-    static final long INDEX_WAIT_MS = 2_000L;
+    static final long INDEX_WAIT_MS = 30_000L;
 
     /** How long we opportunistically wait for project initialisation. */
     static final long PROJECT_INIT_WAIT_MS = 2_000L;
@@ -74,9 +74,9 @@ public final class ToolReadinessGate {
 
     @NotNull
     public static String indexingErrorMessage(@NotNull String toolName) {
-        return "Error: IDE is indexing. Tool '" + toolName
+        return "Error: IDE is still indexing after waiting 30s. Tool '" + toolName
             + "' depends on the symbol index, which is not yet ready. "
-            + "Call get_indexing_status with wait=true to be notified when indexing finishes, then retry.";
+            + "Call get_indexing_status with wait=true to wait longer, then retry.";
     }
 
     @NotNull
