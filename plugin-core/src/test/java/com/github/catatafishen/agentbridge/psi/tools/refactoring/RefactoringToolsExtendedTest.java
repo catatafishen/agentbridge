@@ -210,61 +210,62 @@ public class RefactoringToolsExtendedTest extends BasePlatformTestCase {
     }
 
     /**
-     * Providing {@code symbol} but omitting {@code file} and {@code line} must return
-     * the combined validation error since all three are required.
+     * Providing a simple {@code symbol} but omitting {@code file} and {@code line} must return
+     * the error explaining that file+line are required for non-FQN symbols.
      */
     public void testGetCallHierarchyMissingFile() throws Exception {
         String result = getCallHierarchyTool.execute(args("symbol", "doSomething"));
         assertNotNull("Result must not be null", result);
-        assertTrue("Expected validation error for missing file+line, got: " + result,
-            result.startsWith("Error:") && result.contains("file"));
+        assertTrue("Expected error for missing file+line with simple name, got: " + result,
+            result.startsWith("Error:") && result.contains("file") && result.contains("line"));
     }
 
     /**
-     * Providing {@code symbol} and {@code file} but omitting {@code line} must return
-     * the combined validation error since all three are required.
+     * Providing a simple {@code symbol} and {@code file} but omitting {@code line} must return
+     * the error explaining that file+line are required for non-FQN symbols.
      */
     public void testGetCallHierarchyMissingLine() throws Exception {
         String result = getCallHierarchyTool.execute(
             args("symbol", "doSomething", "file", "/some/path/MyClass.java"));
         assertNotNull("Result must not be null", result);
-        assertTrue("Expected validation error for missing line, got: " + result,
+        assertTrue("Expected error for missing line with simple name, got: " + result,
             result.startsWith("Error:") && result.contains("line"));
     }
 
     // ── GoToDeclarationTool ───────────────────────────────────────────────────
 
     /**
-     * Omitting all required parameters must return the validation error
-     * "Error: 'file', 'symbol', and 'line' parameters are required".
+     * Omitting all parameters must return the validation error
+     * "Error: 'symbol' parameter is required" — symbol is the only
+     * truly required parameter (file+line are optional with FQN).
      */
     public void testGoToDeclarationMissingFile() throws Exception {
         String result = goToDeclarationTool.execute(new JsonObject());
         assertNotNull("Result must not be null", result);
-        assertTrue("Expected validation error for missing file/symbol/line, got: " + result,
-            result.startsWith("Error:") && result.contains("file"));
-    }
-
-    /**
-     * Providing {@code file} but omitting {@code symbol} and {@code line} must return
-     * the same combined validation error.
-     */
-    public void testGoToDeclarationMissingSymbol() throws Exception {
-        String result = goToDeclarationTool.execute(args("file", "/some/path/MyClass.java"));
-        assertNotNull("Result must not be null", result);
-        assertTrue("Expected validation error for missing symbol+line, got: " + result,
+        assertTrue("Expected validation error for missing symbol, got: " + result,
             result.startsWith("Error:") && result.contains("symbol"));
     }
 
     /**
-     * Providing {@code file} and {@code symbol} but omitting {@code line} must return
-     * the same combined validation error.
+     * Providing {@code file} but omitting {@code symbol} must return
+     * the "symbol required" error since symbol is the only truly required parameter.
+     */
+    public void testGoToDeclarationMissingSymbol() throws Exception {
+        String result = goToDeclarationTool.execute(args("file", "/some/path/MyClass.java"));
+        assertNotNull("Result must not be null", result);
+        assertTrue("Expected validation error for missing symbol, got: " + result,
+            result.startsWith("Error:") && result.contains("symbol"));
+    }
+
+    /**
+     * Providing {@code file} and a simple {@code symbol} (not FQN) but omitting {@code line}
+     * must return an error explaining that file+line are required for non-FQN symbols.
      */
     public void testGoToDeclarationMissingLine() throws Exception {
         String result = goToDeclarationTool.execute(
             args("file", "/some/path/MyClass.java", "symbol", "MyClass"));
         assertNotNull("Result must not be null", result);
-        assertTrue("Expected validation error for missing line, got: " + result,
+        assertTrue("Expected validation error for missing line with simple name, got: " + result,
             result.startsWith("Error:") && result.contains("line"));
     }
 

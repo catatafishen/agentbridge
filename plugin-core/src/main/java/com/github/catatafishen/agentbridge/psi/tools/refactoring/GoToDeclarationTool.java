@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi.tools.refactoring;
 
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
+import com.github.catatafishen.agentbridge.psi.tools.FqnResolver;
 import com.github.catatafishen.agentbridge.psi.tools.file.FileTool;
 import com.github.catatafishen.agentbridge.ui.renderers.GoToDeclarationRenderer;
 import com.google.gson.JsonObject;
@@ -53,7 +54,10 @@ public final class GoToDeclarationTool extends RefactoringTool {
     @Override
     public @NotNull String description() {
         return "Navigate to the declaration of a symbol at a given file and line. Returns the source file path, line number, " +
-            "and a code snippet of the declaration. Use get_symbol_info for documentation at a position, " +
+            "and a code snippet of the declaration. " +
+            "Accepts a fully-qualified name (e.g. 'com.example.MyClass.myMethod') as the 'symbol' parameter " +
+            "— when an FQN is provided, 'file' and 'line' are optional. " +
+            "Use get_symbol_info for documentation at a position, " +
             "or get_documentation when you have the fully-qualified name.";
     }
 
@@ -70,9 +74,13 @@ public final class GoToDeclarationTool extends RefactoringTool {
     @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
-            Param.required("file", TYPE_STRING, "Path to the file containing the symbol usage"),
-            Param.required(PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to look up"),
-            Param.required("line", TYPE_INTEGER, "Line number where the symbol appears")
+            Param.optional("file", TYPE_STRING, "Path to the file containing the symbol usage. "
+                + "Optional when 'symbol' is a fully-qualified name (e.g. 'com.example.MyClass')"),
+            Param.required(PARAM_SYMBOL, TYPE_STRING, "Name of the symbol to look up. "
+                + "Can be a simple name (requires file+line) or a fully-qualified name "
+                + "(e.g. 'com.example.MyClass.myMethod') to resolve without file+line"),
+            Param.optional("line", TYPE_INTEGER, "Line number where the symbol appears. "
+                + "Optional when 'symbol' is a fully-qualified name")
         );
     }
 
@@ -83,17 +91,49 @@ public final class GoToDeclarationTool extends RefactoringTool {
 
     @Override
     public @NotNull String execute(@NotNull JsonObject args) throws Exception {
-        if (!args.has("file") || !args.has(PARAM_SYMBOL) || !args.has("line")) {
-            return "Error: 'file', 'symbol', and 'line' parameters are required";
+        if (!args.has(PARAM_SYMBOL)) {
+            return "Error: 'symbol' parameter is required";
         }
-        String pathStr = args.get("file").getAsString();
         String symbolName = args.get(PARAM_SYMBOL).getAsString();
-        int targetLine = args.get("line").getAsInt();
+        String pathStr = args.has("file") ? args.get("file").getAsString() : null;
+        int targetLine = args.has("line") ? args.get("line").getAsInt() : -1;
+
+        // FQN mode: resolve directly by fully-qualified name
+        if (FqnResolver.looksLikeFqn(symbolName) && pathStr == null) {
+            return resolveFqnDeclaration(symbolName);
+        }
+
+        // Standard mode: resolve from file:line
+        if (pathStr == null || targetLine < 1) {
+            return "Error: 'file' and 'line' are required when 'symbol' is not a fully-qualified name. "
+                + "Use a fully-qualified name (e.g. 'com.example.MyClass.myMethod') to resolve without file+line.";
+        }
 
         String[] declInfo = new String[2];
-
         String result = ApplicationManager.getApplication().runReadAction(
             (Computable<String>) () -> findAndFormatDeclaration(pathStr, targetLine, symbolName, declInfo));
+
+        if (declInfo[0] != null && declInfo[1] != null) {
+            int declLine = Integer.parseInt(declInfo[1]);
+            FileTool.followFileIfEnabled(project, declInfo[0], declLine, declLine,
+                FileTool.HIGHLIGHT_READ, FileTool.agentLabel(project) + " found declaration");
+        }
+        return result;
+    }
+
+    private String resolveFqnDeclaration(String fqn) {
+        String[] declInfo = new String[2];
+        String result = ApplicationManager.getApplication().runReadAction(
+            (Computable<String>) () -> {
+                PsiElement resolved = FqnResolver.resolve(fqn, project);
+                if (resolved == null) {
+                    return "Error: Could not resolve FQN '" + fqn + "'. "
+                        + "Ensure it is a valid fully-qualified Java/Kotlin class or member name. "
+                        + "Use 'file' + 'line' parameters for non-Java symbols.";
+                }
+                captureDeclInfo(resolved, declInfo);
+                return formatDeclarationResults(java.util.List.of(resolved), fqn);
+            });
 
         if (declInfo[0] != null && declInfo[1] != null) {
             int declLine = Integer.parseInt(declInfo[1]);

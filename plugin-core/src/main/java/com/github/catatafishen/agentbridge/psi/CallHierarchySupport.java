@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import com.github.catatafishen.agentbridge.psi.tools.FqnResolver;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiNameIdentifierOwner;
@@ -43,7 +44,31 @@ public class CallHierarchySupport {
         if (element == null) {
             return "Error: Could not find '" + elementName + "' at " + filePath + ":" + line;
         }
+        return buildCallHierarchyResult(element, project, depth);
+    }
 
+    /**
+     * Finds all callers of a method resolved by FQN, up to the given depth.
+     * Must be called inside a read action.
+     *
+     * @param fqn   fully-qualified name (e.g. "com.example.MyClass.myMethod")
+     * @param depth how many levels to traverse (1 = direct callers only)
+     */
+    public static String getCallHierarchyByFqn(@NotNull Project project, @NotNull String fqn, int depth) {
+        PsiElement resolved = FqnResolver.resolve(fqn, project);
+        if (resolved == null) {
+            return "Error: Could not resolve FQN '" + fqn + "'. "
+                + "Ensure it is a valid fully-qualified Java/Kotlin class or member name. "
+                + "Use 'file' + 'line' parameters for non-Java symbols.";
+        }
+        if (!(resolved instanceof PsiNameIdentifierOwner named)) {
+            return "Error: Resolved '" + fqn + "' but it is not a named element that can have callers.";
+        }
+        return buildCallHierarchyResult(named, project, depth);
+    }
+
+    private static String buildCallHierarchyResult(@NotNull PsiNameIdentifierOwner element,
+                                                   @NotNull Project project, int depth) {
         String basePath = project.getBasePath();
         StringBuilder sb = new StringBuilder();
         sb.append("Callers of ").append(formatElementSignature(element)).append(":\n");
@@ -83,7 +108,6 @@ public class CallHierarchySupport {
             appendFileLocation(sb, element, basePath);
             sb.append("\n");
 
-            // Recurse into callers if we haven't reached max depth and the containing element is new
             if (currentDepth < maxDepth && containingNamed instanceof PsiNameIdentifierOwner named
                 && visited.add(named)) {
                 collectCallers(sb, named, project, basePath, visited, currentDepth + 1, maxDepth);
