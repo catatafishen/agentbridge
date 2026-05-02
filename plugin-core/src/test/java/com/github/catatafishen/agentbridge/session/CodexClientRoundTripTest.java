@@ -250,7 +250,7 @@ class CodexClientRoundTripTest {
     // ── Round-trip tests ────────────────────────────────────────────
 
     @Test
-    void roundTripPreservesTextContent() throws IOException, SQLException {
+    void roundTripPreservesTextContent() throws SQLException {
         List<EntryData> original = List.of(
             new EntryData.Prompt("What is Rust?"),
             new EntryData.Text("A systems language.")
@@ -272,7 +272,7 @@ class CodexClientRoundTripTest {
     }
 
     @Test
-    void roundTripPreservesToolCalls() throws IOException, SQLException {
+    void roundTripPreservesToolCalls() throws SQLException {
         EntryData.ToolCall toolCall = new EntryData.ToolCall("read_file", "{\"path\":\"/a\"}", "other", "file data");
 
         List<EntryData> original = List.of(
@@ -305,7 +305,7 @@ class CodexClientRoundTripTest {
     }
 
     @Test
-    void roundTripPreservesReasoning() throws IOException, SQLException {
+    void roundTripPreservesReasoning() throws SQLException {
         List<EntryData> original = List.of(
             new EntryData.Prompt("Think"),
             new EntryData.Thinking("Let me think..."),

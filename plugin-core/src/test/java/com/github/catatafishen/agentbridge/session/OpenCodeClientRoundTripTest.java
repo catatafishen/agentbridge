@@ -379,7 +379,7 @@ class OpenCodeClientRoundTripTest {
     }
 
     @Test
-    void roundTripPreservesTextContent() throws SQLException {
+    void roundTripPreservesTextContent() {
         List<EntryData> entries = List.of(
             promptEntry("What is Rust?"),
             textEntry("A systems language.")
@@ -397,7 +397,7 @@ class OpenCodeClientRoundTripTest {
     }
 
     @Test
-    void roundTripPreservesToolInvocations() throws SQLException {
+    void roundTripPreservesToolInvocations() {
         List<EntryData> entries = List.of(
             promptEntry("Read /a"),
             textEntry("Reading file"),
@@ -419,7 +419,7 @@ class OpenCodeClientRoundTripTest {
     }
 
     @Test
-    void roundTripMultipleTurns() throws SQLException {
+    void roundTripMultipleTurns() {
         List<EntryData> entries = List.of(
             promptEntry("Question 1"),
             textEntry("Answer 1"),

@@ -198,7 +198,7 @@ class SessionSwitchServiceStaticMethodsTest {
         }
 
         @Test
-        void nonExistingDirectory_doesNotThrow() throws Exception {
+        void nonExistingDirectory_doesNotThrow() {
             Path nonExistent = Path.of("/tmp/non-existent-dir-" + System.nanoTime());
             List<Path> result = new ArrayList<>();
 

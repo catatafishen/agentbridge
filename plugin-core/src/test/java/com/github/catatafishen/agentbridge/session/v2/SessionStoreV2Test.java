@@ -1336,7 +1336,7 @@ class SessionStoreV2Test {
 
         @Test
         @DisplayName("resetCurrentSessionId deletes the .current-session-id file when it exists")
-        void resetCurrentSessionId_deletesFile() throws IOException {
+        void resetCurrentSessionId_deletesFile() {
             SessionStoreV2 store = newStore();
             store.getCurrentSessionId(tempDir.toString()); // create the file
             assertTrue(currentSessionIdFile().toFile().exists(), "prerequisite: file must exist");

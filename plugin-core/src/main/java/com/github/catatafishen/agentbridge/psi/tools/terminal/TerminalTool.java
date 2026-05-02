@@ -43,7 +43,7 @@ public abstract class TerminalTool extends Tool {
         return ToolRegistry.Category.TERMINAL;
     }
 
-    protected Object findTerminalWidget(Class<?> managerClass, String tabName) throws Exception {
+    protected Object findTerminalWidget(Class<?> managerClass, String tabName) {
         if (tabName != null) {
             return findTerminalWidgetByTabName(managerClass, tabName);
         }

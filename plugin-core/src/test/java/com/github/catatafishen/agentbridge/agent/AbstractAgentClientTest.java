@@ -137,27 +137,27 @@ class AbstractAgentClientTest {
         }
 
         @Test
-        void startConnects() throws Exception {
+        void startConnects() {
             client.start();
             assertTrue(client.isConnected());
         }
 
         @Test
-        void stopDisconnects() throws Exception {
+        void stopDisconnects() {
             client.start();
             client.stop();
             assertFalse(client.isConnected());
         }
 
         @Test
-        void isHealthyDelegatesToIsConnected() throws Exception {
+        void isHealthyDelegatesToIsConnected() {
             assertFalse(client.isHealthy());
             client.start();
             assertTrue(client.isHealthy());
         }
 
         @Test
-        void closeDelegatesToStop() throws Exception {
+        void closeDelegatesToStop() {
             client.start();
             assertTrue(client.isConnected());
             client.close();
@@ -165,7 +165,7 @@ class AbstractAgentClientTest {
         }
 
         @Test
-        void checkAuthenticationReturnsNullWhenConnected() throws Exception {
+        void checkAuthenticationReturnsNullWhenConnected() {
             client.start();
             assertNull(client.checkAuthentication());
         }

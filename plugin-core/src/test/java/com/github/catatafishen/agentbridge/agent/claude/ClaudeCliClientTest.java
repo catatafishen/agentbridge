@@ -355,7 +355,7 @@ class ClaudeCliClientTest {
     class RespondToControlRequest {
 
         @Test
-        void canUseToolSubtype_writesAllowDecision() throws Exception {
+        void canUseToolSubtype_writesAllowDecision() {
             JsonObject event = new JsonObject();
             event.addProperty("subtype", "can_use_tool");
             event.addProperty("requestId", "req-42");
@@ -374,7 +374,7 @@ class ClaudeCliClientTest {
         }
 
         @Test
-        void nonToolSubtype_noResponseField() throws Exception {
+        void nonToolSubtype_noResponseField() {
             JsonObject event = new JsonObject();
             event.addProperty("subtype", "something_else");
             event.addProperty("requestId", "req-99");
@@ -392,7 +392,7 @@ class ClaudeCliClientTest {
         }
 
         @Test
-        void missingSubtype_defaultsToEmpty() throws Exception {
+        void missingSubtype_defaultsToEmpty() {
             JsonObject event = new JsonObject();
             event.addProperty("requestId", "req-1");
 
@@ -408,7 +408,7 @@ class ClaudeCliClientTest {
         }
 
         @Test
-        void missingRequestId_defaultsToEmpty() throws Exception {
+        void missingRequestId_defaultsToEmpty() {
             JsonObject event = new JsonObject();
             event.addProperty("subtype", "can_use_tool");
 
@@ -424,7 +424,7 @@ class ClaudeCliClientTest {
         }
 
         @Test
-        void outputEndsWithNewline() throws Exception {
+        void outputEndsWithNewline() {
             JsonObject event = new JsonObject();
             event.addProperty("subtype", "test");
             event.addProperty("requestId", "r");
