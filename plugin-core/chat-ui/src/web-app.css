@@ -1183,7 +1183,7 @@ file-nav {
 
 .tv-db-item {
     display: grid;
-    grid-template-columns: 20px minmax(0, 1fr) auto;
+    grid-template-columns: 28px minmax(0, 1fr) 24px;
     gap: 8px;
     align-items: start;
     padding: 8px;
@@ -1193,20 +1193,151 @@ file-nav {
     margin-bottom: 6px;
 }
 
-.tv-db-status {
+.tv-status-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
     font-weight: bold;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--muted);
+    border-radius: 4px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.tv-db-item.in_progress .tv-db-status {
+.tv-status-btn:hover {
+    background: var(--hover-bg, rgba(255, 255, 255, .08));
+}
+
+.tv-db-item.in_progress .tv-status-btn {
     color: var(--blue, #388bfd);
 }
 
-.tv-db-item.done .tv-db-status {
+.tv-db-item.done .tv-status-btn {
     color: var(--green, #2ea043);
 }
 
-.tv-db-item.blocked .tv-db-status {
+.tv-db-item.blocked .tv-status-btn {
     color: var(--red, #f85149);
+}
+
+.tv-delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.tv-db-item:hover .tv-delete-btn {
+    opacity: 1;
+}
+
+.tv-delete-btn:hover {
+    color: var(--red, #f85149);
+    background: var(--hover-bg, rgba(255, 255, 255, .08));
+}
+
+.tv-db-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.tv-db-header h2 {
+    margin: 0;
+}
+
+.tv-add-btn {
+    background: none;
+    border: 1px solid var(--border, #30363d);
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.tv-add-btn:hover {
+    color: var(--fg);
+    border-color: var(--fg);
+}
+
+.tv-add-form {
+    background: var(--input-bg, #161b22);
+    border: 1px solid var(--border, #30363d);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tv-hidden {
+    display: none !important;
+}
+
+.tv-input {
+    background: var(--bg, #0d1117);
+    border: 1px solid var(--border, #30363d);
+    border-radius: 6px;
+    color: var(--fg);
+    padding: 5px 8px;
+    font-size: 13px;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+}
+
+.tv-input:focus {
+    outline: none;
+    border-color: var(--blue, #388bfd);
+}
+
+.tv-form-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.tv-btn {
+    background: var(--input-bg, #161b22);
+    border: 1px solid var(--border, #30363d);
+    color: var(--fg);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.tv-btn-primary {
+    background: var(--blue, #388bfd);
+    border-color: var(--blue, #388bfd);
+    color: #fff;
+}
+
+.tv-btn:hover {
+    opacity: 0.85;
 }
 
 .tv-db-main {

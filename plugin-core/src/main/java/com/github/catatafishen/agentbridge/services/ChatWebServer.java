@@ -1750,17 +1750,27 @@ public final class ChatWebServer implements Disposable {
 
     private void handleTodos(HttpExchange exchange) throws IOException {
         exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
-        if (!"GET".equals(exchange.getRequestMethod())) {
-            exchange.sendResponseHeaders(405, -1);
-            exchange.close();
-            return;
+        String method = exchange.getRequestMethod();
+        switch (method) {
+            case "GET" -> handleTodosGet(exchange);
+            case "POST" -> handleTodosCreate(exchange);
+            case "PATCH" -> handleTodosUpdate(exchange);
+            case "DELETE" -> handleTodosDelete(exchange);
+            default -> {
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+            }
         }
+    }
+
+    private void handleTodosGet(HttpExchange exchange) throws IOException {
         try {
             java.nio.file.Path sessionDir = resolveAgentSessionDir();
             com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
             if (sessionDir != null) {
                 java.io.File dbFile = sessionDir.resolve("session.db").toFile();
-                for (TodoDatabaseReader.TodoItem item : TodoDatabaseReader.readTodos(dbFile)) {
+                for (com.github.catatafishen.agentbridge.ui.side.TodoDatabaseReader.TodoItem item
+                    : com.github.catatafishen.agentbridge.ui.side.TodoDatabaseReader.readTodos(dbFile)) {
                     com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
                     obj.addProperty("id", item.id());
                     obj.addProperty("title", item.title());
@@ -1775,8 +1785,82 @@ public final class ChatWebServer implements Disposable {
             json.add("items", arr);
             sendJson(exchange, GSON.toJson(json));
         } catch (Exception e) {
-            LOG.warn("handleTodos error", e);
+            LOG.warn("handleTodosGet error", e);
             sendJson(exchange, "{\"items\":[]}");
+        }
+    }
+
+    private void handleTodosCreate(HttpExchange exchange) throws IOException {
+        try {
+            java.nio.file.Path sessionDir = resolveAgentSessionDir();
+            if (sessionDir == null) {
+                sendErrorJson(exchange, 409, "No active session");
+                return;
+            }
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String id = jsonString(body, "id");
+            String title = jsonString(body, "title");
+            if (id == null || id.isBlank() || title == null || title.isBlank()) {
+                sendErrorJson(exchange, 400, "id and title are required");
+                return;
+            }
+            String description = jsonString(body, "description");
+            java.io.File dbFile = sessionDir.resolve("session.db").toFile();
+            com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.createTodo(dbFile, id, title, description);
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        } catch (Exception e) {
+            LOG.warn("handleTodosCreate error", e);
+            sendErrorJson(exchange, 500, "Failed to create todo");
+        }
+    }
+
+    private void handleTodosUpdate(HttpExchange exchange) throws IOException {
+        try {
+            java.nio.file.Path sessionDir = resolveAgentSessionDir();
+            if (sessionDir == null) {
+                sendErrorJson(exchange, 409, "No active session");
+                return;
+            }
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String id = jsonString(body, "id");
+            if (id == null || id.isBlank()) {
+                sendErrorJson(exchange, 400, "id is required");
+                return;
+            }
+            String title = jsonString(body, "title");
+            String description = jsonString(body, "description");
+            String status = jsonString(body, "status");
+            java.io.File dbFile = sessionDir.resolve("session.db").toFile();
+            com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.updateTodo(dbFile, id, title, description, status);
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        } catch (Exception e) {
+            LOG.warn("handleTodosUpdate error", e);
+            sendErrorJson(exchange, 500, "Failed to update todo");
+        }
+    }
+
+    private void handleTodosDelete(HttpExchange exchange) throws IOException {
+        try {
+            java.nio.file.Path sessionDir = resolveAgentSessionDir();
+            if (sessionDir == null) {
+                sendErrorJson(exchange, 409, "No active session");
+                return;
+            }
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String id = jsonString(body, "id");
+            if (id == null || id.isBlank()) {
+                sendErrorJson(exchange, 400, "id is required");
+                return;
+            }
+            java.io.File dbFile = sessionDir.resolve("session.db").toFile();
+            com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.deleteTodo(dbFile, id);
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+        } catch (Exception e) {
+            LOG.warn("handleTodosDelete error", e);
+            sendErrorJson(exchange, 500, "Failed to delete todo");
         }
     }
 
