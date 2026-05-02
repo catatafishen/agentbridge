@@ -14,18 +14,19 @@ import java.util.regex.Pattern;
  */
 public final class GradleBuildFileScanner {
 
+    private static final String TASK_NAME = "([a-zA-Z]\\w*)";
+
     /**
-     * Regex that matches Kotlin DSL and Groovy DSL test task registrations.
-     * Each alternative captures the task name in its respective group.
+     * Individual patterns for Gradle test task registrations.
+     * Kept separate to stay below Sonar's regex cognitive complexity threshold (S5843).
      */
-    static final Pattern GRADLE_TEST_TASK_PATTERN =
-        Pattern.compile(
-            "tasks\\.register\\(\"([a-zA-Z][a-zA-Z0-9]*)\",\\s*Test::" +
-                "|tasks\\.register<Test>\\(\"([a-zA-Z][a-zA-Z0-9]*)\"" +
-                "|val\\s+([a-zA-Z][a-zA-Z0-9]*)\\s+by\\s+tasks\\.registering\\(Test" +
-                "|\\btask\\s+([a-zA-Z][a-zA-Z0-9]*)\\s*\\(\\s*type\\s*:\\s*Test" +
-                "|tasks\\.register\\('([a-zA-Z][a-zA-Z0-9]*)',\\s*Test"
-        );
+    static final List<Pattern> GRADLE_TEST_TASK_PATTERNS = List.of(
+        Pattern.compile("tasks\\.register\\(\"" + TASK_NAME + "\",\\s*Test::"),
+        Pattern.compile("tasks\\.register<Test>\\(\"" + TASK_NAME + "\""),
+        Pattern.compile("val\\s+" + TASK_NAME + "\\s+by\\s+tasks\\.registering\\(Test"),
+        Pattern.compile("\\btask\\s+" + TASK_NAME + "\\s*\\(\\s*type\\s*:\\s*Test"),
+        Pattern.compile("tasks\\.register\\('" + TASK_NAME + "',\\s*Test")
+    );
 
     private static final List<String> BUILD_FILE_NAMES =
         List.of("build.gradle.kts", "build.gradle");
@@ -82,10 +83,10 @@ public final class GradleBuildFileScanner {
      */
     @Nullable
     public static String findTestTaskInBuildFile(@NotNull String content) {
-        var matcher = GRADLE_TEST_TASK_PATTERN.matcher(content);
-        while (matcher.find()) {
-            for (int i = 1; i <= matcher.groupCount(); i++) {
-                String name = matcher.group(i);
+        for (Pattern pattern : GRADLE_TEST_TASK_PATTERNS) {
+            var matcher = pattern.matcher(content);
+            while (matcher.find()) {
+                String name = matcher.group(1);
                 if (name != null && !"test".equals(name)) return name;
             }
         }
