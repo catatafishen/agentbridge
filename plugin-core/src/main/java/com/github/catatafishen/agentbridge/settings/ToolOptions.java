@@ -7,14 +7,16 @@ import java.util.Objects;
 /**
  * Per-tool configuration stored in {@link McpServerSettings}.
  *
- * <p>Currently holds an output template string that is appended to every
- * successful tool response. The {@code customOptions} map provides
- * forward-compatible storage for future per-tool settings (e.g. timeout
- * overrides, rate limits, custom parameter defaults).
+ * <p>Currently holds output post-processing settings: a static template appended to
+ * successful tool responses and an optional hook command that can rewrite a raw
+ * tool response before AgentBridge returns it to the agent. The {@code customOptions}
+ * map provides forward-compatible storage for future per-tool settings (e.g.
+ * timeout overrides, rate limits, custom parameter defaults).
  */
 public class ToolOptions {
 
     private String outputTemplate = "";
+    private String outputHookCommand = "";
     private Map<String, String> customOptions = new LinkedHashMap<>();
 
     public ToolOptions() {
@@ -32,6 +34,14 @@ public class ToolOptions {
         this.outputTemplate = outputTemplate != null ? outputTemplate : "";
     }
 
+    public String getOutputHookCommand() {
+        return outputHookCommand;
+    }
+
+    public void setOutputHookCommand(String outputHookCommand) {
+        this.outputHookCommand = outputHookCommand != null ? outputHookCommand : "";
+    }
+
     public Map<String, String> getCustomOptions() {
         return customOptions;
     }
@@ -42,12 +52,13 @@ public class ToolOptions {
 
     /**
      * Returns true if this instance has no meaningful configuration
-     * (empty template and no custom options). Used to avoid persisting
-     * default entries.
+     * (empty template, empty hook command, and no custom options). Used to avoid
+     * persisting default entries.
      */
     public boolean isEmpty() {
         return (outputTemplate == null || outputTemplate.isEmpty())
-                && (customOptions == null || customOptions.isEmpty());
+            && (outputHookCommand == null || outputHookCommand.isEmpty())
+            && (customOptions == null || customOptions.isEmpty());
     }
 
     @Override
@@ -55,11 +66,12 @@ public class ToolOptions {
         if (this == o) return true;
         if (!(o instanceof ToolOptions that)) return false;
         return Objects.equals(outputTemplate, that.outputTemplate)
-                && Objects.equals(customOptions, that.customOptions);
+            && Objects.equals(outputHookCommand, that.outputHookCommand)
+            && Objects.equals(customOptions, that.customOptions);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(outputTemplate, customOptions);
+        return Objects.hash(outputTemplate, outputHookCommand, customOptions);
     }
 }

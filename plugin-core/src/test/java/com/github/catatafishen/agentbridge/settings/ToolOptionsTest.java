@@ -9,7 +9,10 @@ import org.junit.jupiter.params.provider.NullAndEmptySource;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link ToolOptions} — per-tool configuration POJO.
@@ -62,6 +65,14 @@ class ToolOptionsTest {
         }
 
         @Test
+        @DisplayName("not empty when hook command is set")
+        void notEmptyWithHookCommand() {
+            ToolOptions opts = new ToolOptions();
+            opts.setOutputHookCommand("python hooks/tool.py");
+            assertFalse(opts.isEmpty());
+        }
+
+        @Test
         @DisplayName("not empty when custom options are set")
         void notEmptyWithCustomOptions() {
             ToolOptions opts = new ToolOptions();
@@ -88,6 +99,23 @@ class ToolOptionsTest {
             ToolOptions opts = new ToolOptions();
             opts.setOutputTemplate("Remember to run tests");
             assertEquals("Remember to run tests", opts.getOutputTemplate());
+        }
+
+        @Test
+        @DisplayName("hook command round-trips correctly")
+        void hookCommandRoundTrip() {
+            ToolOptions opts = new ToolOptions();
+            opts.setOutputHookCommand("python hooks/tool.py");
+            assertEquals("python hooks/tool.py", opts.getOutputHookCommand());
+        }
+
+        @ParameterizedTest
+        @NullAndEmptySource
+        @DisplayName("null/empty hook command normalizes to empty string")
+        void hookCommandNullNormalizesToEmpty(String value) {
+            ToolOptions opts = new ToolOptions();
+            opts.setOutputHookCommand(value);
+            assertEquals("", opts.getOutputHookCommand());
         }
 
         @ParameterizedTest
@@ -143,6 +171,16 @@ class ToolOptionsTest {
         void notEqualDifferentTemplates() {
             ToolOptions a = new ToolOptions("template1");
             ToolOptions b = new ToolOptions("template2");
+            assertNotEquals(a, b);
+        }
+
+        @Test
+        @DisplayName("not equal with different hook commands")
+        void notEqualDifferentHookCommands() {
+            ToolOptions a = new ToolOptions();
+            ToolOptions b = new ToolOptions();
+            a.setOutputHookCommand("python hook-a.py");
+            b.setOutputHookCommand("python hook-b.py");
             assertNotEquals(a, b);
         }
 

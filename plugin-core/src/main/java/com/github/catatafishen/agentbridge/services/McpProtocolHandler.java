@@ -483,6 +483,7 @@ public final class McpProtocolHandler {
         try {
             String resultText = PsiBridgeService.getInstance(project)
                 .callTool(toolName, arguments, meta.toolUseId());
+            resultText = ToolOutputHookRunner.applyHook(project, toolName, arguments, resultText, settings);
             resultText = truncateIfNeeded(resultText);
             boolean isError = ToolError.isError(resultText);
 

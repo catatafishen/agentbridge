@@ -202,6 +202,35 @@ public final class McpServerSettings implements PersistentStateComponent<McpServ
     }
 
     /**
+     * Returns the command used to post-process a tool's raw output, or an empty string if none is configured.
+     */
+    public @NotNull String getToolOutputHookCommand(@NotNull String toolId) {
+        ToolOptions options = myState.toolOptions.get(toolId);
+        if (options == null) return "";
+        String command = options.getOutputHookCommand();
+        return command != null ? command : "";
+    }
+
+    /**
+     * Sets the output hook command for a tool. Pass empty/null to clear.
+     * Empty entries are pruned from the map to keep the XML clean.
+     */
+    public void setToolOutputHookCommand(@NotNull String toolId,
+                                         @org.jetbrains.annotations.Nullable String command) {
+        if (command == null || command.isEmpty()) {
+            ToolOptions existing = myState.toolOptions.get(toolId);
+            if (existing != null) {
+                existing.setOutputHookCommand("");
+                if (existing.isEmpty()) {
+                    myState.toolOptions.remove(toolId);
+                }
+            }
+        } else {
+            myState.toolOptions.computeIfAbsent(toolId, k -> new ToolOptions()).setOutputHookCommand(command);
+        }
+    }
+
+    /**
      * Returns all configured tool options. Keys are tool IDs.
      */
     public @NotNull Map<String, ToolOptions> getAllToolOptions() {
