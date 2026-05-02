@@ -48,20 +48,14 @@ public final class ToolUtils {
 
     // Precompiled patterns for abuse detection — using find() avoids leading/trailing .*
     // which Sonar flags for ReDoS (S5852). All patterns are anchored or use word boundaries.
-    private static final java.util.regex.Pattern FIND_NAME_PATTERN =
-        java.util.regex.Pattern.compile("^find \\S+.*-name");
-    private static final java.util.regex.Pattern FIND_TYPE_PATTERN =
-        java.util.regex.Pattern.compile("^find \\S+.*-type");
+    // Patterns that previously used .* between two literals are replaced with indexOf() chains
+    // in helper methods (see isFindCommand, isGradlewTestCommand, isPythonPytestCommand).
     private static final java.util.regex.Pattern GRADLE_WORD_PATTERN =
         java.util.regex.Pattern.compile("\\bgradle\\s");
     private static final java.util.regex.Pattern COMPILE_TASK_PATTERN =
         java.util.regex.Pattern.compile("compile(test)?(kotlin|java)", java.util.regex.Pattern.CASE_INSENSITIVE);
     private static final java.util.regex.Pattern TEST_RUNNER_PATTERN =
         java.util.regex.Pattern.compile("(gradlew|gradle|mvn|npm|yarn|pnpm|pytest|jest|mocha|go) test");
-    private static final java.util.regex.Pattern GRADLEW_TEST_PATTERN =
-        java.util.regex.Pattern.compile("\\./gradlew.*test");
-    private static final java.util.regex.Pattern PYTHON_PYTEST_PATTERN =
-        java.util.regex.Pattern.compile("python.*-m.*pytest");
     private static final java.util.regex.Pattern NPX_RUNNER_PATTERN =
         java.util.regex.Pattern.compile("(npx|bunx|pnpx)\\s+(jest|vitest|mocha|ava|tap|jasmine)");
     private static final java.util.regex.Pattern NPM_RUN_TEST_PATTERN =
@@ -618,7 +612,7 @@ public final class ToolUtils {
         }
 
         // Block find — should use list_project_files
-        if (FIND_NAME_PATTERN.matcher(cmd).find() || FIND_TYPE_PATTERN.matcher(cmd).find() ||
+        if (isFindCommand(cmd) ||
             cmd.startsWith("find .") || cmd.startsWith("find /")) {
             return "find";
         }
@@ -776,8 +770,8 @@ public final class ToolUtils {
 
     private static boolean isTestCommand(String cmd) {
         return TEST_RUNNER_PATTERN.matcher(cmd).find() ||
-            GRADLEW_TEST_PATTERN.matcher(cmd).find() ||
-            PYTHON_PYTEST_PATTERN.matcher(cmd).find() ||
+            isGradlewTestCommand(cmd) ||
+            isPythonPytestCommand(cmd) ||
             cmd.contains("cargo test") ||
             cmd.contains("dotnet test") ||
             cmd.matches("pytest\\s+.*") ||
@@ -791,6 +785,36 @@ public final class ToolUtils {
         return GRADLE_BUILD_PATTERN.matcher(cmd).find() ||
             GRADLEW_BUILD_PATTERN.matcher(cmd).find() ||
             MVN_LIFECYCLE_PATTERN.matcher(cmd).find();
+    }
+
+    /**
+     * Checks if a command is a {@code find} command with {@code -name} or {@code -type} flags.
+     * Uses indexOf chains instead of regex to avoid Sonar S5852 (ReDoS) hotspots.
+     */
+    private static boolean isFindCommand(String cmd) {
+        if (!cmd.startsWith("find ")) return false;
+        return cmd.contains("-name") || cmd.contains("-type");
+    }
+
+    /**
+     * Checks if a command is a {@code ./gradlew} invocation that runs tests.
+     * Uses indexOf instead of regex to avoid Sonar S5852.
+     */
+    private static boolean isGradlewTestCommand(String cmd) {
+        int idx = cmd.indexOf("./gradlew");
+        return idx >= 0 && cmd.indexOf("test", idx + 9) >= 0;
+    }
+
+    /**
+     * Checks if a command is a {@code python -m pytest} invocation.
+     * Uses indexOf chain instead of regex to avoid Sonar S5852.
+     */
+    private static boolean isPythonPytestCommand(String cmd) {
+        int pyIdx = cmd.indexOf("python");
+        if (pyIdx < 0) return false;
+        int mIdx = cmd.indexOf("-m", pyIdx + 6);
+        if (mIdx < 0) return false;
+        return cmd.indexOf("pytest", mIdx + 2) >= 0;
     }
 
     /**
@@ -831,7 +855,7 @@ public final class ToolUtils {
         }
 
         // find — prefer list_project_files / list_directory_tree
-        if (FIND_NAME_PATTERN.matcher(cmd).find() || FIND_TYPE_PATTERN.matcher(cmd).find() ||
+        if (isFindCommand(cmd) ||
             cmd.startsWith("find .") || cmd.startsWith("find /")) {
             return "⚠️ Prefer list_project_files or list_directory_tree over shell find — "
                 + "they respect project structure and exclusions.";
