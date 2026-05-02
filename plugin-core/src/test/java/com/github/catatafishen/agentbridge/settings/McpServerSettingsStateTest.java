@@ -6,7 +6,10 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link McpServerSettings.State} (pure POJO round-trips and
@@ -304,6 +307,38 @@ class McpServerSettingsStateTest {
         settings.setToolOutputTemplate("git_commit", "");
         assertTrue(settings.getAllToolOptions().isEmpty(),
             "Empty ToolOptions entries should be pruned from the map");
+    }
+
+    @Test
+    @DisplayName("getToolOutputHookCommand returns empty string by default")
+    void defaultOutputHookCommand() {
+        assertEquals("", settings.getToolOutputHookCommand("git_commit"));
+    }
+
+    @Test
+    @DisplayName("setToolOutputHookCommand round-trips correctly")
+    void outputHookCommandRoundTrip() {
+        settings.setToolOutputHookCommand("git_commit", "python hooks/git_commit.py");
+        assertEquals("python hooks/git_commit.py", settings.getToolOutputHookCommand("git_commit"));
+    }
+
+    @Test
+    @DisplayName("clearing hook command preserves template on same tool")
+    void clearingHookPreservesTemplate() {
+        settings.setToolOutputTemplate("git_commit", "template");
+        settings.setToolOutputHookCommand("git_commit", "python hook.py");
+        settings.setToolOutputHookCommand("git_commit", "");
+        assertEquals("template", settings.getToolOutputTemplate("git_commit"));
+        assertEquals("", settings.getToolOutputHookCommand("git_commit"));
+        assertFalse(settings.getAllToolOptions().isEmpty());
+    }
+
+    @Test
+    @DisplayName("clearing hook command prunes map when it is the only option")
+    void clearingHookPrunesMap() {
+        settings.setToolOutputHookCommand("git_commit", "python hook.py");
+        settings.setToolOutputHookCommand("git_commit", null);
+        assertTrue(settings.getAllToolOptions().isEmpty());
     }
 
     @Test

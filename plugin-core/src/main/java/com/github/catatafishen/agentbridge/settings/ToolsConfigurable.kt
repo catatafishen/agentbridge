@@ -42,6 +42,7 @@ class ToolsConfigurable(private val project: Project) :
     private val toolCheckboxes = LinkedHashMap<String, JBCheckBox>()
     private val categoryCheckboxes = LinkedHashMap<ToolRegistry.Category, MutableList<JBCheckBox>>()
     private val toolTemplates = LinkedHashMap<String, String>()
+    private val toolHookCommands = LinkedHashMap<String, String>()
     private val templateIndicators = LinkedHashMap<String, JBLabel>()
 
     private var counterLabel: JBLabel? = null
@@ -220,25 +221,25 @@ class ToolsConfigurable(private val project: Project) :
         categoryCheckboxes.getOrPut(category) { mutableListOf() }.add(cb)
         toolRow.add(cb)
 
-        // Template indicator — shows when an output template is configured
         val currentTemplate = settings.getToolOutputTemplate(toolId)
+        val currentHookCommand = settings.getToolOutputHookCommand(toolId)
         toolTemplates[toolId] = currentTemplate
+        toolHookCommands[toolId] = currentHookCommand
         val indicator = JBLabel().apply {
             border = JBUI.Borders.empty(1, 4, 0, 0)
-            updateTemplateIndicator(this, currentTemplate)
+            updateToolOptionsIndicator(this, currentTemplate, currentHookCommand)
         }
         templateIndicators[toolId] = indicator
         toolRow.add(indicator)
 
-        // Gear button to edit the output template
         val configBtn = JBLabel("⚙").apply {
             cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
-            toolTipText = "Edit output template"
+            toolTipText = "Edit output processing"
             border = JBUI.Borders.empty(1, 4, 0, 0)
             foreground = UIUtil.getContextHelpForeground()
             addMouseListener(object : java.awt.event.MouseAdapter() {
                 override fun mouseClicked(e: java.awt.event.MouseEvent?) {
-                    showOutputTemplateDialog(toolId, tool.displayName())
+                    showToolOptionsDialog(toolId, tool.displayName())
                 }
             })
         }
@@ -377,22 +378,29 @@ class ToolsConfigurable(private val project: Project) :
 
     private fun computeIsModified(): Boolean {
         val settings = McpServerSettings.getInstance(project)
-        for ((id, cb) in toolCheckboxes) {
-            if (cb.isSelected != settings.isToolEnabled(id)) return true
-        }
-        for ((id, template) in toolTemplates) {
-            if (template != settings.getToolOutputTemplate(id)) return true
-        }
-        if (readColorCombo != null && keyOf(readColorCombo!!) != settings.kindReadColorKey) return true
-        if (searchColorCombo != null && keyOf(searchColorCombo!!) != settings.kindSearchColorKey) return true
-        if (editColorCombo != null && keyOf(editColorCombo!!) != settings.kindEditColorKey) return true
-        return executeColorCombo != null && keyOf(executeColorCombo!!) != settings.kindExecuteColorKey
+        return toolEnablementModified(settings) ||
+            toolOutputProcessingModified(settings) ||
+            toolColorSettingsModified(settings)
     }
+
+    private fun toolColorSettingsModified(settings: McpServerSettings): Boolean =
+        readColorCombo != null && keyOf(readColorCombo!!) != settings.kindReadColorKey ||
+            searchColorCombo != null && keyOf(searchColorCombo!!) != settings.kindSearchColorKey ||
+            editColorCombo != null && keyOf(editColorCombo!!) != settings.kindEditColorKey ||
+            executeColorCombo != null && keyOf(executeColorCombo!!) != settings.kindExecuteColorKey
+
+    private fun toolEnablementModified(settings: McpServerSettings): Boolean =
+        toolCheckboxes.any { (id, cb) -> cb.isSelected != settings.isToolEnabled(id) }
+
+    private fun toolOutputProcessingModified(settings: McpServerSettings): Boolean =
+        toolTemplates.any { (id, template) -> template != settings.getToolOutputTemplate(id) } ||
+            toolHookCommands.any { (id, command) -> command != settings.getToolOutputHookCommand(id) }
 
     private fun applySettings() {
         val settings = McpServerSettings.getInstance(project)
         for ((id, cb) in toolCheckboxes) settings.setToolEnabled(id, cb.isSelected)
         for ((id, template) in toolTemplates) settings.setToolOutputTemplate(id, template)
+        for ((id, command) in toolHookCommands) settings.setToolOutputHookCommand(id, command)
         readColorCombo?.let { settings.kindReadColorKey = keyOf(it) }
         searchColorCombo?.let { settings.kindSearchColorKey = keyOf(it) }
         editColorCombo?.let { settings.kindEditColorKey = keyOf(it) }
@@ -404,8 +412,10 @@ class ToolsConfigurable(private val project: Project) :
         for ((id, cb) in toolCheckboxes) cb.isSelected = settings.isToolEnabled(id)
         for (id in toolTemplates.keys) {
             val template = settings.getToolOutputTemplate(id)
+            val hookCommand = settings.getToolOutputHookCommand(id)
             toolTemplates[id] = template
-            templateIndicators[id]?.let { updateTemplateIndicator(it, template) }
+            toolHookCommands[id] = hookCommand
+            templateIndicators[id]?.let { updateToolOptionsIndicator(it, template, hookCommand) }
         }
         readColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindReadColorKey)
         searchColorCombo?.selectedThemeColor = ThemeColor.fromKey(settings.kindSearchColorKey)
@@ -424,36 +434,54 @@ class ToolsConfigurable(private val project: Project) :
         toolCheckboxes.clear()
         categoryCheckboxes.clear()
         toolTemplates.clear()
+        toolHookCommands.clear()
         templateIndicators.clear()
     }
 
     private fun keyOf(combo: ThemeColorComboBox): String? = combo.selectedThemeColor?.name
 
-    private fun updateTemplateIndicator(label: JBLabel, template: String) {
-        if (template.isNotEmpty()) {
-            label.text = "📝"
-            label.toolTipText = "Output template: " + template.take(80) +
-                if (template.length > 80) "…" else ""
-        } else {
-            label.text = ""
-            label.toolTipText = null
+    private fun updateToolOptionsIndicator(label: JBLabel, template: String, hookCommand: String) {
+        val hasTemplate = template.isNotEmpty()
+        val hasHook = hookCommand.isNotEmpty()
+        label.text = when {
+            hasTemplate && hasHook -> "🧩"
+            hasHook -> "🔗"
+            hasTemplate -> "📝"
+            else -> ""
+        }
+        label.toolTipText = when {
+            hasTemplate && hasHook -> "Output template and hook configured"
+            hasHook -> optionPreview("Output hook: ", hookCommand)
+            hasTemplate -> optionPreview("Output template: ", template)
+            else -> null
         }
     }
 
-    private fun showOutputTemplateDialog(toolId: String, displayName: String) {
-        val currentText = toolTemplates[toolId] ?: ""
-        val textArea = javax.swing.JTextArea(currentText, 5, 50).apply {
+    private fun optionPreview(prefix: String, value: String): String =
+        prefix + value.take(80) + (if (value.length > 80) "…" else "")
+
+    private fun showToolOptionsDialog(toolId: String, displayName: String) {
+        val currentTemplate = toolTemplates[toolId] ?: ""
+        val templateArea = JTextArea(currentTemplate, 5, 50).apply {
             lineWrap = true
             wrapStyleWord = true
             font = JBUI.Fonts.label()
         }
-        val scrollPane = JBScrollPane(textArea).apply {
-            preferredSize = Dimension(JBUI.scale(450), JBUI.scale(120))
+        val templateScrollPane = JBScrollPane(templateArea).apply {
+            preferredSize = Dimension(JBUI.scale(450), JBUI.scale(110))
+        }
+
+        val currentHookCommand = toolHookCommands[toolId] ?: ""
+        val hookCommandField = JTextField(currentHookCommand).apply {
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
         }
 
         val hintLabel = JBLabel(
-            "<html>Text appended to every successful response from <b>$displayName</b>. " +
-                "Use to inject reminders, conventions, or instructions into tool output.</html>"
+            "<html>Configure output processing for <b>$displayName</b>. " +
+                "The template is appended to successful responses. The hook command runs after each tool call; " +
+                "it receives JSON on stdin with toolName, arguments, argumentsJson, output, error, projectName, " +
+                "and timestamp. It may return {&quot;output&quot;:&quot;...&quot;} to replace the response or " +
+                "{&quot;append&quot;:&quot;...&quot;} to append text.</html>"
         ).apply {
             font = JBUI.Fonts.smallFont()
             foreground = UIUtil.getContextHelpForeground()
@@ -461,21 +489,39 @@ class ToolsConfigurable(private val project: Project) :
             isAllowAutoWrapping = true
         }
 
+        val templateLabel = JBLabel("Output template")
+        val hookLabel = JBLabel("Output hook command")
+        val hookHint = JBLabel(
+            "<html>Leave empty to disable. Hook failures are returned to the agent as visible tool errors.</html>"
+        ).apply {
+            font = JBUI.Fonts.smallFont()
+            foreground = UIUtil.getContextHelpForeground()
+            border = JBUI.Borders.emptyTop(4)
+            isAllowAutoWrapping = true
+        }
+
         val dialogPanel = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
             add(hintLabel)
-            add(scrollPane)
+            add(templateLabel)
+            add(templateScrollPane)
+            add(Box.createVerticalStrut(JBUI.scale(8)))
+            add(hookLabel)
+            add(hookCommandField)
+            add(hookHint)
         }
 
-        val result = javax.swing.JOptionPane.showConfirmDialog(
-            null, dialogPanel, "Output Template — $displayName",
-            javax.swing.JOptionPane.OK_CANCEL_OPTION, javax.swing.JOptionPane.PLAIN_MESSAGE
+        val result = JOptionPane.showConfirmDialog(
+            null, dialogPanel, "Tool Output Processing — $displayName",
+            JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE
         )
 
-        if (result == javax.swing.JOptionPane.OK_OPTION) {
-            val newTemplate = textArea.text.trim()
+        if (result == JOptionPane.OK_OPTION) {
+            val newTemplate = templateArea.text.trim()
+            val newHookCommand = hookCommandField.text.trim()
             toolTemplates[toolId] = newTemplate
-            templateIndicators[toolId]?.let { updateTemplateIndicator(it, newTemplate) }
+            toolHookCommands[toolId] = newHookCommand
+            templateIndicators[toolId]?.let { updateToolOptionsIndicator(it, newTemplate, newHookCommand) }
         }
     }
 
