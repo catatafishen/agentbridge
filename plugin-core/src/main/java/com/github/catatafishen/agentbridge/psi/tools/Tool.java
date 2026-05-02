@@ -121,6 +121,11 @@ public abstract class Tool implements ToolDefinition {
                     default -> { /* unsupported default value type — skip */ }
                 }
             }
+            if (TYPE_ARRAY.equals(p.type())) {
+                com.google.gson.JsonObject items = new com.google.gson.JsonObject();
+                items.addProperty(KEY_TYPE, TYPE_STRING);
+                prop.add("items", items);
+            }
             props.add(p.name(), prop);
             if (p.required()) {
                 req.add(p.name());

@@ -132,6 +132,25 @@ class ToolSchemaTest {
             JsonArray required = result.getAsJsonArray("required");
             assertEquals(2, required.size());
         }
+
+        @Test
+        void arrayParamGetsAutoItems() throws Exception {
+            JsonObject result = callSchema(
+                Tool.Param.optional("paths", "array", "List of paths")
+            );
+            JsonObject prop = result.getAsJsonObject("properties").getAsJsonObject("paths");
+            assertTrue(prop.has("items"), "Array params must auto-include 'items'");
+            assertEquals("string", prop.getAsJsonObject("items").get("type").getAsString());
+        }
+
+        @Test
+        void nonArrayParamDoesNotGetItems() throws Exception {
+            JsonObject result = callSchema(
+                Tool.Param.required("name", "string", "The name")
+            );
+            JsonObject prop = result.getAsJsonObject("properties").getAsJsonObject("name");
+            assertFalse(prop.has("items"), "Non-array params must not have 'items'");
+        }
     }
 
     @Nested

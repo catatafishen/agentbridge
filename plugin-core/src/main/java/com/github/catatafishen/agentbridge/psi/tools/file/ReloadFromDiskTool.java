@@ -12,7 +12,6 @@ import org.jetbrains.annotations.NotNull;
  * Forces IntelliJ to refresh a file or directory from disk,
  * picking up changes made by external tools.
  */
-@SuppressWarnings("java:S112")
 public final class ReloadFromDiskTool extends FileTool {
 
     private static final String PARAM_PATH = "path";
@@ -53,7 +52,7 @@ public final class ReloadFromDiskTool extends FileTool {
             Param.optional(PARAM_PATH, TYPE_STRING,
                 "Single file or directory path to reload (absolute or project-relative). " +
                     "Omit both 'path' and 'paths' to reload the entire project root."),
-            Param.optional(PARAM_PATHS, "array",
+            Param.optional(PARAM_PATHS, TYPE_ARRAY,
                 "Multiple file/directory paths to reload in one batch — array of strings. " +
                     "Use this for syncing many files at once (e.g., after a bulk external rewrite). " +
                     "Combined with 'path' if both are present.")
