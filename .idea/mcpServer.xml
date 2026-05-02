@@ -5,11 +5,14 @@
     <option name="autoStart" value="true" />
     <option name="debugLoggingEnabled" value="true" />
     <option name="defaultsApplied" value="true" />
+    <option name="defaultsVersion" value="2" />
     <option name="disabledToolIds">
       <set>
         <option value="get_notifications" />
         <option value="set_theme" />
         <option value="list_themes" />
+        <option value="run_sonarqube_analysis" />
+        <option value="get_sonar_rule_description" />
       </set>
     </option>
     <option name="kindEditColorKey" value="PINK" />
@@ -17,5 +20,23 @@
     <option name="kindReadColorKey" value="GREEN" />
     <option name="port" value="8646" />
     <option name="smoothScrollEnabled" value="true" />
+    <option name="toolOptions">
+      <map>
+        <entry key="memory_kg_add">
+          <value>
+            <ToolOptions>
+              <option name="outputTemplate" value="Also store this in an alterntive location. These memory tools are still experimental" />
+            </ToolOptions>
+          </value>
+        </entry>
+        <entry key="memory_store">
+          <value>
+            <ToolOptions>
+              <option name="outputTemplate" value="Also store this in an alterntive location. These memory tools are still experimental" />
+            </ToolOptions>
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
 </project>

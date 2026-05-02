@@ -80,7 +80,15 @@ public final class GitBranchTool extends GitTool {
         String root = resolveRepoRootOrError(repoParam);
         if (root.startsWith(ERR_PREFIX)) return root;
         boolean all = args.has(PARAM_ALL) && args.get(PARAM_ALL).getAsBoolean();
-        return runGitIn(root, CMD_BRANCH, all ? "--all" : "--list", "-v");
+
+        String refPattern = all ? "refs/heads refs/remotes" : "refs/heads";
+        String format = "%(if)%(HEAD)%(then)* %(else)  %(end)"
+            + "%(refname:short)|%(objectname:short)|%(committerdate:relative)|%(upstream:short)|%(upstream:track)";
+        String raw = runGitIn(root, "for-each-ref", "--sort=-committerdate",
+            "--format=" + format, refPattern);
+
+        return BranchListFormatter.formatBranchTable(raw)
+            + "\n\n--- Context ---\n" + getBranchContextIn(root);
     }
 
     private String createBranch(@NotNull JsonObject args, @Nullable String repoParam) throws Exception {
