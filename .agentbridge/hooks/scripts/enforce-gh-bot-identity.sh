@@ -3,15 +3,15 @@
 # that create content (PRs, comments, issues) and enforces bot identity.
 #
 # Detected patterns:
-#   gh pr create|comment|review|edit|merge
-#   gh issue create|comment|edit
+#   gh pr create|comment|review|edit|merge|close
+#   gh issue create|comment|edit|close
 #   gh discussion create|comment
 #   gh release create
 #
-# Behaviour:
-#   - AGENTBRIDGE_BOT_TOKEN set or ~/.agentbridge/bot-token exists:
-#     injects GH_TOKEN into the command silently (merge semantics).
-#   - Neither: BLOCKS the call with an actionable error.
+# Token resolution (in order):
+#   1. AGENTBRIDGE_BOT_TOKEN env var (static PAT)
+#   2. ~/.agentbridge/bot-token file (static PAT)
+#   3. GitHub App token via generate-github-app-token.sh (dynamic, preferred)
 #
 # ⚠️ AGENT INSTRUCTION: If this hook blocks a command, you MUST NOT retry
 #    using built-in bash, run_in_terminal, or any other tool that bypasses
@@ -29,13 +29,13 @@ lcmd=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
 # Check if this is a content-creating gh command
 needs_bot=false
 case "$lcmd" in
-    "gh pr create"*|"gh pr comment"*|"gh pr review"*|"gh pr edit"*|"gh pr merge"*) needs_bot=true ;;
-    "gh issue create"*|"gh issue comment"*|"gh issue edit"*) needs_bot=true ;;
+    "gh pr create"*|"gh pr comment"*|"gh pr review"*|"gh pr edit"*|"gh pr merge"*|"gh pr close"*) needs_bot=true ;;
+    "gh issue create"*|"gh issue comment"*|"gh issue edit"*|"gh issue close"*) needs_bot=true ;;
     "gh discussion create"*|"gh discussion comment"*) needs_bot=true ;;
     "gh release create"*) needs_bot=true ;;
     "gh api "*)
         case "$lcmd" in
-            *"-x post"*|*"-x patch"*|*"-x put"*|*"-method post"*|*"-method patch"*|*"-method put"*)
+            *"-x post"*|*"-x patch"*|*"-x put"*|*"-x delete"*|*"-method post"*|*"-method patch"*|*"-method put"*|*"-method delete"*)
                 needs_bot=true ;;
         esac ;;
 esac
@@ -44,17 +44,24 @@ if [ "$needs_bot" = "false" ]; then
     exit 0
 fi
 
-# Resolve bot token (env var takes precedence over file)
+# Resolve bot token: static PAT → file → GitHub App
 bot_token="${AGENTBRIDGE_BOT_TOKEN:-}"
 
 if [ -z "$bot_token" ] && [ -f "${HOME}/.agentbridge/bot-token" ]; then
     bot_token=$(tr -d '[:space:]' < "${HOME}/.agentbridge/bot-token")
 fi
 
+if [ -z "$bot_token" ]; then
+    # Try GitHub App token generation
+    script_dir="${0%/*}"
+    if [ -x "${script_dir}/generate-github-app-token.sh" ]; then
+        bot_token=$("${script_dir}/generate-github-app-token.sh" 2>/dev/null) || bot_token=""
+    fi
+fi
+
 if [ -n "$bot_token" ]; then
-    # Escape the command for JSON embedding, then prefix with GH_TOKEN
     escaped_cmd=$(hook_escape_json "GH_TOKEN=${bot_token} ${command}")
     printf '{"arguments":{"command":"%s"}}\n' "$escaped_cmd"
 else
-    hook_json_error "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other bypass. Instead, tell the user: 'I cannot create GitHub content with bot identity because AGENTBRIDGE_BOT_TOKEN is not configured. Please set it to a bot PAT (see ~/.agentbridge/bot-token) or perform this action manually.'"
+    hook_json_error "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other bypass. Instead, tell the user: 'I cannot create GitHub content with bot identity because neither AGENTBRIDGE_BOT_TOKEN, ~/.agentbridge/bot-token, nor a GitHub App private key (~/.agentbridge/github-app.pem) is configured.'"
 fi
