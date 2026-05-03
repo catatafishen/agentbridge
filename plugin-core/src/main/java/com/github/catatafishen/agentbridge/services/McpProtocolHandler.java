@@ -482,8 +482,9 @@ public final class McpProtocolHandler {
         LiveToolCallService liveService = LiveToolCallService.getInstance(project);
         ToolDefinition definition = ToolRegistry.getInstance(project).findById(toolName);
         String kind = definition != null ? definition.kind().value() : null;
+        String displayName = definition != null ? definition.displayName() : toolName;
         String inputJson = arguments.toString();
-        int liveIdx = liveService.recordStart(toolName, inputJson, kind);
+        long callId = liveService.recordStart(toolName, displayName, inputJson, kind);
         long callStartMs = System.currentTimeMillis();
 
         McpCallContext.setCurrent(sessionKey);
@@ -498,13 +499,13 @@ public final class McpProtocolHandler {
                 resultText = appendOutputTemplate(resultText, toolName, settings);
             }
             String fullResult = gateResult.prefix + resultText;
-            liveService.complete(liveIdx, fullResult,
+            liveService.complete(callId, fullResult,
                 System.currentTimeMillis() - callStartMs, !isError);
             return buildToolResult(msg, fullResult, isError);
         } catch (Exception e) {
             LOG.warn("[MCP] tool error: " + toolName, e);
             String errorMsg = ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage());
-            liveService.complete(liveIdx, errorMsg,
+            liveService.complete(callId, errorMsg,
                 System.currentTimeMillis() - callStartMs, false);
             return buildToolResult(msg, errorMsg, true);
         } finally {

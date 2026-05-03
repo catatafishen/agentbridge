@@ -27,16 +27,20 @@ import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 import javax.swing.event.ChangeListener;
 import java.awt.*;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 
 /**
- * Side-panel tab showing a live list of MCP tool calls with timestamps.
- * Each row shows timestamp, tool name (color-coded by tool kind), duration,
- * and success/failure status. Clicking a row expands it to show raw input
- * and output with explicit labels.
+ * Side-panel tab showing a live list of MCP tool calls.
+ * Each row shows timestamp (HH:mm), display name (color-coded by kind), and a
+ * live elapsed timer that turns green/red on completion.
+ * <p>
+ * Clicking a row expands it to show tool ID, category, raw input/output, and
+ * other metadata.
  * <p>
  * Uses incremental rendering: only new rows are added on service changes,
  * rather than rebuilding the entire list.
@@ -45,7 +49,9 @@ import java.util.Locale;
  */
 final class ToolCallListPanel extends JPanel implements Disposable {
 
-    private static final DateTimeFormatter TIME_FMT =
+    private static final DateTimeFormatter SHORT_TIME =
+        DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter FULL_TIME =
         DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private static final int ROW_HEIGHT = 28;
@@ -54,15 +60,15 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         new Color(0x2E7D32), new Color(0x81C784));
     private static final Color ERROR_COLOR = new JBColor(
         new Color(0xC62828), new Color(0xEF5350));
-    private static final Color RUNNING_COLOR = new JBColor(
-        new Color(0xF57F17), new Color(0xFFD54F));
+    private static final Color RUNNING_COLOR = UIUtil.getLabelDisabledForeground();
 
     private final transient Project project;
     private final JPanel listPanel;
     private final JBLabel emptyLabel;
     private final JBScrollPane scrollPane;
     private final transient ChangeListener serviceListener;
-    private int expandedIndex = -1;
+    private final transient Timer runningTimer;
+    private long expandedCallId = -1;
     private int renderedCount;
 
     ToolCallListPanel(@NotNull Project project) {
@@ -77,7 +83,6 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         scrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
 
-        // Empty state
         emptyLabel = new JBLabel("No tool calls yet");
         emptyLabel.setForeground(UIUtil.getLabelDisabledForeground());
         emptyLabel.setFont(emptyLabel.getFont().deriveFont(Font.ITALIC));
@@ -91,9 +96,13 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         toolbar.setTargetComponent(this);
         add(SidePanelFooter.createToolbarFooter(toolbar), BorderLayout.SOUTH);
 
-        // Subscribe to service updates
         serviceListener = e -> ApplicationManager.getApplication().invokeLater(this::onServiceChanged);
         LiveToolCallService.getInstance(project).addChangeListener(serviceListener);
+
+        // Tick every second to update running timers
+        runningTimer = new Timer(1000, e -> updateRunningTimers());
+        runningTimer.setRepeats(true);
+        runningTimer.start();
     }
 
     private void onServiceChanged() {
@@ -104,23 +113,20 @@ final class ToolCallListPanel extends JPanel implements Disposable {
             return;
         }
 
-        // If an existing entry was updated (completed), rebuild to update status
         if (entries.size() == renderedCount) {
             rebuild();
             return;
         }
 
-        // Incremental: add only new entries at the top (rendered newest-first)
-        if (entries.size() > renderedCount && expandedIndex < 0) {
+        if (entries.size() > renderedCount && expandedCallId < 0) {
             if (renderedCount == 0) {
                 listPanel.remove(emptyLabel);
             }
-            // Insert new rows at the top
             int newCount = entries.size() - renderedCount;
             for (int k = 0; k < newCount; k++) {
                 int entryIndex = entries.size() - 1 - k;
                 LiveToolCallEntry entry = entries.get(entryIndex);
-                JPanel row = createRow(entry, entryIndex);
+                JPanel row = createRow(entry);
                 listPanel.add(row, k);
             }
             renderedCount = entries.size();
@@ -143,9 +149,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
             renderedCount = 0;
         } else {
             for (int i = entries.size() - 1; i >= 0; i--) {
-                LiveToolCallEntry entry = entries.get(i);
-                JPanel row = createRow(entry, i);
-                listPanel.add(row);
+                listPanel.add(createRow(entries.get(i)));
             }
             renderedCount = entries.size();
         }
@@ -154,6 +158,23 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         listPanel.repaint();
         SwingUtilities.invokeLater(() ->
             scrollPane.getVerticalScrollBar().setValue(0));
+    }
+
+    /**
+     * Refreshes duration labels on running entries without a full rebuild.
+     */
+    private void updateRunningTimers() {
+        List<LiveToolCallEntry> entries = LiveToolCallService.getInstance(project).getEntries();
+        boolean hasRunning = false;
+        for (LiveToolCallEntry entry : entries) {
+            if (entry.isRunning()) {
+                hasRunning = true;
+                break;
+            }
+        }
+        if (hasRunning) {
+            rebuild();
+        }
     }
 
     private @NotNull ActionToolbar createToolbar() {
@@ -167,7 +188,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
             @Override
             public void actionPerformed(@NotNull AnActionEvent e) {
                 LiveToolCallService.getInstance(project).clear();
-                expandedIndex = -1;
+                expandedCallId = -1;
                 rebuild();
             }
 
@@ -179,80 +200,75 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         return ActionManager.getInstance().createActionToolbar("ToolCallsToolbar", group, true);
     }
 
-    private JPanel createRow(LiveToolCallEntry entry, int index) {
+    private JPanel createRow(LiveToolCallEntry entry) {
+        boolean expanded = entry.callId() == expandedCallId;
         JPanel row = new JPanel(new BorderLayout());
         row.setBorder(JBUI.Borders.empty(0, 8));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
-        // Fixed height for summary, unbounded for expansion
         Dimension fixedSize = new Dimension(Integer.MAX_VALUE, ROW_HEIGHT);
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, expandedIndex == index ? Integer.MAX_VALUE : ROW_HEIGHT));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, expanded ? Integer.MAX_VALUE : ROW_HEIGHT));
 
-        // Summary line
         JPanel summary = new JPanel(new BorderLayout());
         summary.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         summary.setPreferredSize(new Dimension(0, ROW_HEIGHT));
         summary.setMinimumSize(new Dimension(0, ROW_HEIGHT));
         summary.setMaximumSize(fixedSize);
 
-        String time = TIME_FMT.format(entry.timestamp());
-        String name = entry.toolName();
-        Color nameColor = colorForKind(entry.category());
-
-        String statusIcon;
-        Color statusColor;
-        String durationStr;
-        if (entry.isRunning()) {
-            statusIcon = "⏳";
-            statusColor = RUNNING_COLOR;
-            durationStr = "";
-        } else if (Boolean.TRUE.equals(entry.success())) {
-            statusIcon = "✓";
-            statusColor = SUCCESS_COLOR;
-            durationStr = formatDuration(entry.durationMs());
-        } else {
-            statusIcon = "✗";
-            statusColor = ERROR_COLOR;
-            durationStr = formatDuration(entry.durationMs());
-        }
-
-        JBLabel timeLabel = new JBLabel(time);
+        // Timestamp: show HH:mm, full HH:mm:ss on hover
+        String shortTime = SHORT_TIME.format(entry.timestamp());
+        String fullTime = FULL_TIME.format(entry.timestamp());
+        JBLabel timeLabel = new JBLabel(shortTime);
+        timeLabel.setToolTipText(fullTime);
         timeLabel.setForeground(UIUtil.getLabelDisabledForeground());
         timeLabel.setFont(timeLabel.getFont().deriveFont(11f));
         timeLabel.setBorder(JBUI.Borders.emptyRight(6));
 
-        JBLabel nameLabel = new JBLabel(name);
+        // Display name (humanized) by default
+        String shownName = entry.displayName();
+        Color nameColor = colorForKind(entry.category());
+        JBLabel nameLabel = new JBLabel(shownName);
         nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 12f));
         nameLabel.setForeground(nameColor);
 
-        JBLabel statusLabel = new JBLabel(statusIcon + " " + durationStr);
-        statusLabel.setForeground(statusColor);
-        statusLabel.setFont(statusLabel.getFont().deriveFont(11f));
+        // Duration/status: gray timer while running, green/red when done
+        String durationStr;
+        Color durationColor;
+        if (entry.isRunning()) {
+            long elapsed = Duration.between(entry.timestamp(), Instant.now()).toMillis();
+            durationStr = formatDuration(elapsed);
+            durationColor = RUNNING_COLOR;
+        } else {
+            durationStr = formatDuration(entry.durationMs());
+            durationColor = Boolean.TRUE.equals(entry.success()) ? SUCCESS_COLOR : ERROR_COLOR;
+        }
+        JBLabel durationLabel = new JBLabel(durationStr);
+        durationLabel.setForeground(durationColor);
+        durationLabel.setFont(durationLabel.getFont().deriveFont(11f));
 
         JPanel leftPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
         leftPanel.setOpaque(false);
         leftPanel.add(timeLabel);
         leftPanel.add(nameLabel);
         summary.add(leftPanel, BorderLayout.WEST);
-        summary.add(statusLabel, BorderLayout.EAST);
+        summary.add(durationLabel, BorderLayout.EAST);
 
+        long callId = entry.callId();
         summary.addMouseListener(new java.awt.event.MouseAdapter() {
             @Override
             public void mouseClicked(java.awt.event.MouseEvent e) {
-                expandedIndex = (expandedIndex == index) ? -1 : index;
+                expandedCallId = (expandedCallId == callId) ? -1 : callId;
                 rebuild();
             }
         });
 
         row.add(summary, BorderLayout.NORTH);
 
-        // Expanded detail: labeled input & output sections
-        if (expandedIndex == index) {
+        if (expanded) {
             JPanel detail = createDetailPanel(entry);
             row.add(detail, BorderLayout.CENTER);
             row.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
         }
 
-        // Separator at bottom
         JSeparator sep = new JSeparator();
         sep.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
         row.add(sep, BorderLayout.SOUTH);
@@ -264,6 +280,13 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         detail.setLayout(new BoxLayout(detail, BoxLayout.Y_AXIS));
         detail.setBorder(JBUI.Borders.empty(4, 12));
 
+        // Metadata section: tool ID, category
+        addMetadataRow(detail, "Tool ID", entry.toolName());
+        if (entry.category() != null) {
+            addMetadataRow(detail, "Category", entry.category());
+        }
+        detail.add(Box.createVerticalStrut(6));
+
         // Input section
         JBLabel inputLabel = new JBLabel("Input:");
         inputLabel.setFont(inputLabel.getFont().deriveFont(Font.BOLD, 11f));
@@ -271,10 +294,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         detail.add(inputLabel);
 
         JTextArea inputArea = createReadOnlyTextArea(entry.input());
-        JBScrollPane inputScroll = new JBScrollPane(inputArea);
-        inputScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        inputScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
-        inputScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+        JBScrollPane inputScroll = wrapInScrollPane(inputArea);
         detail.add(inputScroll);
 
         detail.add(Box.createVerticalStrut(6));
@@ -287,13 +307,35 @@ final class ToolCallListPanel extends JPanel implements Disposable {
 
         String output = entry.isRunning() ? "(still running…)" : entry.output();
         JTextArea outputArea = createReadOnlyTextArea(output);
-        JBScrollPane outputScroll = new JBScrollPane(outputArea);
-        outputScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        outputScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
-        outputScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+        JBScrollPane outputScroll = wrapInScrollPane(outputArea);
         detail.add(outputScroll);
 
         return detail;
+    }
+
+    private static void addMetadataRow(JPanel parent, String label, String value) {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JBLabel keyLabel = new JBLabel(label + ":");
+        keyLabel.setForeground(UIUtil.getLabelDisabledForeground());
+        keyLabel.setFont(keyLabel.getFont().deriveFont(11f));
+        row.add(keyLabel);
+
+        JBLabel valLabel = new JBLabel(value);
+        valLabel.setFont(valLabel.getFont().deriveFont(Font.PLAIN, 11f));
+        row.add(valLabel);
+
+        parent.add(row);
+    }
+
+    private static JBScrollPane wrapInScrollPane(JTextArea area) {
+        JBScrollPane scroll = new JBScrollPane(area);
+        scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        scroll.setAlignmentX(Component.LEFT_ALIGNMENT);
+        scroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+        return scroll;
     }
 
     private static JTextArea createReadOnlyTextArea(String text) {
@@ -304,6 +346,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         area.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 11));
         area.setRows(Math.min(text.split("\n").length, 6));
         area.setBackground(UIUtil.getPanelBackground());
+        area.setBorder(JBUI.Borders.empty(4, 6));
         return area;
     }
 
@@ -327,6 +370,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
 
     @Override
     public void dispose() {
+        runningTimer.stop();
         LiveToolCallService.getInstance(project).removeChangeListener(serviceListener);
     }
 }

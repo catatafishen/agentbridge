@@ -4,7 +4,10 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for {@link LiveToolCallEntry} — data model for the live tool use panel.
@@ -13,34 +16,37 @@ class LiveToolCallEntryTest {
 
     @Test
     void started_creates_running_entry() {
-        LiveToolCallEntry entry = LiveToolCallEntry.started("read_file", "{\"path\":\"/foo\"}", "FILE");
+        LiveToolCallEntry entry = LiveToolCallEntry.started("read_file", "Read File", "{\"path\":\"/foo\"}", "FILE");
         assertEquals("read_file", entry.toolName());
+        assertEquals("Read File", entry.displayName());
         assertEquals("{\"path\":\"/foo\"}", entry.input());
         assertEquals("", entry.output());
         assertEquals(-1, entry.durationMs());
         assertNull(entry.success());
         assertEquals("FILE", entry.category());
         assertTrue(entry.isRunning());
+        assertTrue(entry.callId() > 0);
     }
 
     @Test
     void completed_returns_finished_entry() {
-        LiveToolCallEntry running = LiveToolCallEntry.started("git_status", "{}", "GIT");
+        LiveToolCallEntry running = LiveToolCallEntry.started("git_status", "Git Status", "{}", "GIT");
         LiveToolCallEntry done = running.completed("branch: main\nclean", 42, true);
 
         assertFalse(done.isRunning());
         assertEquals(Boolean.TRUE, done.success());
         assertEquals(42, done.durationMs());
         assertEquals("branch: main\nclean", done.output());
-        // Original fields preserved
         assertEquals("git_status", done.toolName());
+        assertEquals("Git Status", done.displayName());
         assertEquals("{}", done.input());
         assertEquals("GIT", done.category());
+        assertEquals(running.callId(), done.callId());
     }
 
     @Test
     void completed_with_failure() {
-        LiveToolCallEntry running = LiveToolCallEntry.started("run_command", "{\"cmd\":\"ls\"}", null);
+        LiveToolCallEntry running = LiveToolCallEntry.started("run_command", "Run Command", "{\"cmd\":\"ls\"}", null);
         LiveToolCallEntry failed = running.completed("Error: command not found", 100, false);
 
         assertFalse(failed.isRunning());
@@ -51,7 +57,7 @@ class LiveToolCallEntryTest {
     @Test
     void timestamp_is_set_on_start() {
         Instant before = Instant.now();
-        LiveToolCallEntry entry = LiveToolCallEntry.started("search_text", "{}", null);
+        LiveToolCallEntry entry = LiveToolCallEntry.started("search_text", "Search Text", "{}", null);
         Instant after = Instant.now();
 
         assertFalse(entry.timestamp().isBefore(before));
@@ -60,7 +66,7 @@ class LiveToolCallEntryTest {
 
     @Test
     void completed_preserves_original_timestamp() {
-        LiveToolCallEntry running = LiveToolCallEntry.started("edit_text", "{}", null);
+        LiveToolCallEntry running = LiveToolCallEntry.started("edit_text", "Edit Text", "{}", null);
         Instant originalTs = running.timestamp();
 
         LiveToolCallEntry done = running.completed("OK", 50, true);
@@ -70,7 +76,7 @@ class LiveToolCallEntryTest {
     @Test
     void input_truncation_at_max_chars() {
         String longInput = "x".repeat(LiveToolCallEntry.MAX_IO_CHARS + 500);
-        LiveToolCallEntry entry = LiveToolCallEntry.started("big_tool", longInput, null);
+        LiveToolCallEntry entry = LiveToolCallEntry.started("big_tool", "Big Tool", longInput, null);
 
         assertTrue(entry.input().length() < longInput.length());
         assertTrue(entry.input().endsWith("[…truncated]"));
@@ -79,7 +85,7 @@ class LiveToolCallEntryTest {
 
     @Test
     void output_truncation_at_max_chars() {
-        LiveToolCallEntry running = LiveToolCallEntry.started("big_tool", "{}", null);
+        LiveToolCallEntry running = LiveToolCallEntry.started("big_tool", "Big Tool", "{}", null);
         String longOutput = "y".repeat(LiveToolCallEntry.MAX_IO_CHARS + 1000);
         LiveToolCallEntry done = running.completed(longOutput, 10, true);
 
@@ -88,10 +94,9 @@ class LiveToolCallEntryTest {
     }
 
     @Test
-    void null_input_becomes_empty_string() {
-        // The method signature is @NotNull, but truncate handles null defensively
+    void empty_strings_handled_gracefully() {
         LiveToolCallEntry entry = new LiveToolCallEntry(
-            "test", "", "", Instant.now(), -1, null, null);
+            1, "test", "test", "", "", Instant.now(), -1, null, null);
         assertEquals("", entry.input());
         assertEquals("", entry.output());
     }
@@ -99,18 +104,18 @@ class LiveToolCallEntryTest {
     @Test
     void isRunning_when_success_is_null() {
         LiveToolCallEntry running = new LiveToolCallEntry(
-            "test", "{}", "", Instant.now(), -1, null, null);
+            1, "test", "test", "{}", "", Instant.now(), -1, null, null);
         assertTrue(running.isRunning());
     }
 
     @Test
     void isRunning_false_when_success_is_set() {
         LiveToolCallEntry done = new LiveToolCallEntry(
-            "test", "{}", "ok", Instant.now(), 10, true, null);
+            1, "test", "test", "{}", "ok", Instant.now(), 10, true, null);
         assertFalse(done.isRunning());
 
         LiveToolCallEntry failed = new LiveToolCallEntry(
-            "test", "{}", "err", Instant.now(), 5, false, null);
+            2, "test", "test", "{}", "err", Instant.now(), 5, false, null);
         assertFalse(failed.isRunning());
     }
 }

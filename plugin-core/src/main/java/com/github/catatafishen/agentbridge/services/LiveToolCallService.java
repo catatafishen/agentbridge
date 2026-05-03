@@ -22,40 +22,47 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Thread-safe: entries are stored in a synchronized list, listeners fire on
  * the calling thread (expected to be the MCP handler thread). UI listeners
  * must marshal to EDT themselves.
+ * <p>
+ * Completion uses {@link LiveToolCallEntry#callId()} (a monotonic ID) instead
+ * of list indices, so eviction of old entries never causes a completion to
+ * silently fail.
  */
 @Service(Service.Level.PROJECT)
 public final class LiveToolCallService {
 
-    /**
-     * Maximum entries kept in memory. Oldest entries are evicted when exceeded.
-     */
     private static final int MAX_ENTRIES = 200;
 
     private final List<LiveToolCallEntry> entries = new ArrayList<>();
     private final List<ChangeListener> listeners = new CopyOnWriteArrayList<>();
 
     /**
-     * Records a tool call starting. Returns the index for later completion via {@link #complete}.
+     * Records a tool call starting. Returns the call ID for later completion via {@link #complete}.
      */
-    public synchronized int recordStart(@NotNull String toolName, @NotNull String inputJson,
-                                        @org.jetbrains.annotations.Nullable String kind) {
-        LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, inputJson, kind);
+    public synchronized long recordStart(@NotNull String toolName,
+                                         @NotNull String displayName,
+                                         @NotNull String inputJson,
+                                         @org.jetbrains.annotations.Nullable String kind) {
+        LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, displayName, inputJson, kind);
         entries.add(entry);
         evictIfNeeded();
-        int idx = entries.size() - 1;
         fireChanged();
-        return idx;
+        return entry.callId();
     }
 
     /**
-     * Marks the entry at {@code index} as completed with the given output.
-     * If the index is out of range (e.g. after eviction), this is a no-op.
+     * Marks the entry with the given {@code callId} as completed.
+     * Scans from the end (most recent) since completions usually arrive in order.
+     * If the entry has already been evicted, this is a safe no-op.
      */
-    public synchronized void complete(int index, @NotNull String output,
+    public synchronized void complete(long callId, @NotNull String output,
                                       long durationMs, boolean success) {
-        if (index < 0 || index >= entries.size()) return;
-        entries.set(index, entries.get(index).completed(output, durationMs, success));
-        fireChanged();
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            if (entries.get(i).callId() == callId) {
+                entries.set(i, entries.get(i).completed(output, durationMs, success));
+                fireChanged();
+                return;
+            }
+        }
     }
 
     /**
@@ -65,16 +72,10 @@ public final class LiveToolCallService {
         return List.copyOf(entries);
     }
 
-    /**
-     * Returns the number of entries.
-     */
     public synchronized int size() {
         return entries.size();
     }
 
-    /**
-     * Clears all entries.
-     */
     public synchronized void clear() {
         entries.clear();
         fireChanged();
