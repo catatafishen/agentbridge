@@ -27,11 +27,6 @@ export class FileNav extends HTMLElement {
     connectedCallback(): void {
         this.innerHTML = `
             <div class="fn-bar">
-                <button class="fn-toggle" title="Browse files">
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                        <path d="M1.5 1h5l1 1H14.5a.5.5 0 0 1 .5.5v11a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-12A.5.5 0 0 1 1.5 1zm0 1v11h13V3H7.293l-1-1H2V2z"/>
-                    </svg>
-                </button>
                 <div class="fn-breadcrumb"></div>
             </div>
             <div class="fn-dropdown">
@@ -44,9 +39,6 @@ export class FileNav extends HTMLElement {
         this._breadcrumb = this.querySelector('.fn-breadcrumb') as HTMLElement;
         this._dropdown = this.querySelector('.fn-dropdown') as HTMLElement;
         this._list = this.querySelector('.fn-list') as HTMLElement;
-
-        const toggle = this.querySelector('.fn-toggle')!;
-        toggle.addEventListener('click', () => this._toggleDropdown());
 
         const search = this.querySelector('.fn-search') as HTMLInputElement;
         search.addEventListener('input', () => this._filterList(search.value));
@@ -101,7 +93,7 @@ export class FileNav extends HTMLElement {
         });
     }
 
-    private _toggleDropdown(): void {
+    toggleDropdown(): void {
         if (this._expanded) {
             this._closeDropdown();
         } else {

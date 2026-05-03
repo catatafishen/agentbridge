@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.BuildInfo;
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings;
@@ -9,9 +10,13 @@ import com.github.catatafishen.agentbridge.ui.ChatTheme;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.MessageFormatter;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.intellij.credentialStore.CredentialAttributes;
 import com.intellij.credentialStore.Credentials;
 import com.intellij.ide.passwordSafe.PasswordSafe;
+import com.intellij.ide.ui.LafManager;
+import com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
@@ -473,6 +478,8 @@ public final class ChatWebServer implements Disposable {
         server.createContext("/tool-calls", this::handleToolCalls);
         server.createContext("/session-stats", this::handleSessionStats);
         server.createContext("/review-items", this::handleReviewItems);
+        server.createContext("/themes", this::handleThemeList);
+        server.createContext("/set-theme", this::handleSetTheme);
     }
 
     private void registerCertOnlyContext(HttpServer server) {
@@ -2013,6 +2020,84 @@ public final class ChatWebServer implements Disposable {
         }
     }
 
+    private void handleThemeList(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+        var lafManager = LafManager.getInstance();
+        var current = lafManager.getCurrentUIThemeLookAndFeel();
+        String currentName = current != null ? current.getName() : "";
+        var themes = PlatformApiCompat.getInstalledThemes(lafManager);
+
+        var arr = new JsonArray();
+        for (var theme : themes) {
+            var obj = new JsonObject();
+            obj.addProperty("name", theme.getName());
+            obj.addProperty("dark", theme.isDark());
+            obj.addProperty("current", theme.getName().equals(currentName));
+            arr.add(obj);
+        }
+        sendJson(exchange, GSON.toJson(arr));
+    }
+
+    private void handleSetTheme(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set(HDR_ACCESS_CONTROL_ORIGIN, "*");
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
+            return;
+        }
+        try {
+            String bodyStr = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            String themeName = jsonString(bodyStr, "name");
+            if (themeName == null || themeName.isBlank()) {
+                sendErrorJson(exchange, 400, "Missing required field: name");
+                return;
+            }
+            String queryLower = themeName.toLowerCase();
+            var lafManager = LafManager.getInstance();
+            var themes = PlatformApiCompat.getInstalledThemes(lafManager);
+
+            UIThemeLookAndFeelInfo target = null;
+            for (var theme : themes) {
+                if (theme.getName().equals(themeName)) {
+                    target = theme;
+                    break;
+                }
+                if (target == null && theme.getName().toLowerCase().contains(queryLower)) {
+                    target = theme;
+                }
+            }
+            if (target == null) {
+                sendErrorJson(exchange, 404, "Theme not found: " + themeName);
+                return;
+            }
+
+            var finalTarget = target;
+            java.util.concurrent.CompletableFuture<String> resultFuture = new java.util.concurrent.CompletableFuture<>();
+            EdtUtil.invokeLater(() -> {
+                try {
+                    lafManager.setCurrentLookAndFeel(finalTarget, false);
+                    lafManager.updateUI();
+                    resultFuture.complete("Theme changed to '" + finalTarget.getName() + "'.");
+                } catch (Exception e) {
+                    LOG.warn("Failed to set theme", e);
+                    resultFuture.complete("Failed to set theme: " + e.getMessage());
+                }
+            });
+
+            String result = resultFuture.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            var resp = new JsonObject();
+            resp.addProperty("ok", true);
+            resp.addProperty("message", result);
+            sendJson(exchange, GSON.toJson(resp));
+        } catch (Exception e) {
+            LOG.warn("handleSetTheme error", e);
+            sendErrorJson(exchange, 500, "Internal error: " + e.getMessage());
+        }
+    }
+
     private static void writeSse(OutputStream out, String json) throws IOException {
         byte[] bytes = ("data: " + json + "\n\n").getBytes(StandardCharsets.UTF_8);
         out.write(bytes);
@@ -2164,44 +2249,6 @@ public final class ChatWebServer implements Disposable {
             + "    <div id=\"ab-title\">AgentBridge — " + MessageFormatter.INSTANCE.escapeHtml(projectName) + "</div>\n"
             + "    <div id=\"ab-model\"></div>\n"
             + "    <div id=\"ab-status\" title=\"Connecting…\"></div>\n"
-            + "    <button id=\"ab-menu-btn\" aria-label=\"Menu\" title=\"Menu\">☰</button>\n"
-            + "  </div>\n"
-            + "  <div id=\"ab-menu\" hidden>\n"
-            + "    <div id=\"ab-menu-version\"></div>\n"
-            + "    <div id=\"ab-menu-model-section\">\n"
-            + "      <label id=\"ab-menu-model-label\">Model</label>\n"
-            + "      <select id=\"ab-menu-model\"></select>\n"
-            + "    </div>\n"
-            + "    <button id=\"ab-menu-disconnect\">✕️ Disconnect ACP</button>\n"
-            + "    <div class=\"ab-menu-sep\"></div>\n"
-            + "    <button id=\"ab-menu-reload\">\uD83D\uDD04 Hard reload</button>\n"
-            + "  </div>\n"
-            + "  <div id=\"ab-connect-page\" hidden>\n"
-            + "    <div id=\"ab-connect-wrapper\">\n"
-            + "      <div id=\"ab-mcp-card\">\n"
-            + "        <div class=\"ab-card-header\">MCP Server</div>\n"
-            + "        <div class=\"ab-card-content\">\n"
-            + "          <div class=\"ab-status-row\">\n"
-            + "            <span class=\"ab-status-label\">Status:</span>\n"
-            + "            <span class=\"ab-status-indicator\">\n"
-            + "              <span id=\"ab-mcp-dot\" class=\"ab-status-dot\"></span>\n"
-            + "              <span id=\"ab-mcp-text\">Initializing</span>\n"
-            + "            </span>\n"
-            + "          </div>\n"
-            + "        </div>\n"
-            + "      </div>\n"
-            + "      <div id=\"ab-acp-card\">\n"
-            + "        <div class=\"ab-card-header\">\n"
-            + "          <span>Connect to ACP</span>\n"
-            + "          <button id=\"ab-connect-stop-btn\" hidden class=\"ab-card-stop-btn\">⏹</button>\n"
-            + "        </div>\n"
-            + "        <div class=\"ab-card-content\">\n"
-            + "          <select id=\"ab-connect-profile\" aria-label=\"ACP profile\"></select>\n"
-            + "          <button id=\"ab-connect-btn\">Connect</button>\n"
-            + "          <div id=\"ab-connect-status\"></div>\n"
-            + "        </div>\n"
-            + "      </div>\n"
-            + "    </div>\n"
             + "  </div>\n"
             + "  <div id=\"ab-chat\"><chat-container></chat-container></div>\n"
             + "  <div id=\"ab-footer\">\n"

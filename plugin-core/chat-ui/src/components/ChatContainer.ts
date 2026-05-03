@@ -94,6 +94,13 @@ export default class ChatContainer extends HTMLElement {
             if (currentScrollTop < this._prevScrollTop && currentScrollTop <= 30) {
                 this._scheduleLoadMoreClick();
             }
+            // Re-enable auto-scroll when user scrolls back to bottom.
+            // Handles inertial (momentum) scroll on mobile where touchend fires before the
+            // scroll actually reaches the bottom, leaving _autoScroll stuck at false.
+            if (!this._autoScroll && this._isAtBottom()) {
+                this._autoScroll = true;
+                globalThis._bridge?.autoScrollEnabled?.();
+            }
             this._prevScrollTop = currentScrollTop;
         };
         this.addEventListener('scroll', this._onScroll);

@@ -49,6 +49,15 @@ globalThis._bridge = {
     showToolPopup: () => {
     },
     cancelNudge: (id) => webPost('/cancel-nudge', {id}),
+    autoScrollDisabled: () => {
+        atBottom = false;
+        updateScrollFab();
+    },
+    autoScrollEnabled: () => {
+        atBottom = true;
+        unreadCount = 0;
+        updateScrollFab();
+    },
 };
 
 function webPost(path: string, body: Record<string, unknown>): Promise<Response> {
@@ -70,22 +79,8 @@ const offlineEl = document.getElementById('ab-offline')!;
 const inputEl = document.getElementById('ab-input') as HTMLTextAreaElement;
 const sendBtn = document.getElementById('ab-send')!;
 const chatEl = document.querySelector('chat-container')!;
-const menuBtn = document.getElementById('ab-menu-btn')!;
-const menuEl = document.getElementById('ab-menu')!;
-const menuVersionEl = document.getElementById('ab-menu-version')!;
-const menuReloadBtn = document.getElementById('ab-menu-reload')!;
-const menuModelSel = document.getElementById('ab-menu-model') as HTMLSelectElement;
-const menuDisconnectBtn = document.getElementById('ab-menu-disconnect')!;
-const connectPageEl = document.getElementById('ab-connect-page')!;
-const connectProfileSel = document.getElementById('ab-connect-profile') as HTMLSelectElement;
-const connectBtn = document.getElementById('ab-connect-btn') as HTMLButtonElement;
-const connectStatusEl = document.getElementById('ab-connect-status')!;
-const connectStopBtn = document.getElementById('ab-connect-stop-btn') as HTMLButtonElement;
-const mcpDot = document.getElementById('ab-mcp-dot')!;
-const mcpText = document.getElementById('ab-mcp-text')!;
 const chatAreaEl = document.getElementById('ab-chat')!;
 const footerEl = document.getElementById('ab-footer')!;
-const menuModelSection = document.getElementById('ab-menu-model-section')!;
 
 // ── Pane swiper: file viewer (left) + chat (right) ─────────────────────────
 
@@ -121,6 +116,9 @@ requestAnimationFrame(() => {
         },
         (path: string) => openFileInViewer(path),
     );
+
+    // Wire the FAB to toggle the file nav dropdown
+    fileViewer.wireFab(fileNav);
 
     // Handle clicks on recent files in the file viewer empty state
     fileViewer.addEventListener('open-file', (e) => {
@@ -186,6 +184,136 @@ requestAnimationFrame(() => {
     const sessionPane = swiper.addPane('Stats');
     const sessionView = document.createElement('session-view') as SessionView;
     sessionPane.appendChild(sessionView);
+
+    // Settings pane — MCP status, ACP connect/disconnect, model, theme, reload, version
+    const settingsPane = swiper.addPane('Settings');
+    settingsPane.id = 'ab-settings-pane';
+    settingsPane.innerHTML = `
+        <div class="ab-settings-scroll">
+            <div class="ab-card" id="ab-mcp-card">
+                <div class="ab-card-header">MCP Server</div>
+                <div class="ab-card-content">
+                    <div class="ab-status-row">
+                        <span class="ab-status-label">Status:</span>
+                        <span class="ab-status-indicator">
+                            <span id="ab-mcp-dot" class="ab-status-dot"></span>
+                            <span id="ab-mcp-text">Initializing</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="ab-card" id="ab-acp-card">
+                <div class="ab-card-header">
+                    <span>ACP Connection</span>
+                    <button id="ab-connect-stop-btn" hidden class="ab-card-stop-btn">⏹</button>
+                </div>
+                <div class="ab-card-content" id="ab-acp-connect-section">
+                    <select id="ab-connect-profile" aria-label="ACP profile"></select>
+                    <button id="ab-connect-btn">Connect</button>
+                    <div id="ab-connect-status"></div>
+                </div>
+                <div class="ab-card-content" id="ab-acp-disconnect-section" hidden>
+                    <button id="ab-menu-disconnect" class="ab-btn-danger">Disconnect ACP</button>
+                </div>
+            </div>
+            <div class="ab-card">
+                <div class="ab-card-header">Model</div>
+                <div class="ab-card-content">
+                    <select id="ab-menu-model" class="ab-settings-select" aria-label="Model"></select>
+                </div>
+            </div>
+            <div class="ab-card">
+                <div class="ab-card-header">Theme</div>
+                <div class="ab-card-content">
+                    <select id="ab-theme-select" class="ab-settings-select" aria-label="Theme"></select>
+                    <div id="ab-theme-status" class="ab-settings-hint"></div>
+                </div>
+            </div>
+            <div class="ab-card">
+                <div class="ab-card-header">Diagnostics</div>
+                <div class="ab-card-content ab-settings-actions">
+                    <button id="ab-menu-reload" class="ab-btn-secondary">🔄 Hard reload</button>
+                    <div id="ab-menu-version" class="ab-settings-hint"></div>
+                </div>
+            </div>
+        </div>`;
+
+    const connectProfileSel = settingsPane.querySelector('#ab-connect-profile') as HTMLSelectElement;
+    const connectBtn = settingsPane.querySelector('#ab-connect-btn') as HTMLButtonElement;
+    const connectStatusEl = settingsPane.querySelector('#ab-connect-status') as HTMLElement;
+    const connectStopBtn = settingsPane.querySelector('#ab-connect-stop-btn') as HTMLButtonElement;
+    const menuDisconnectBtn = settingsPane.querySelector('#ab-menu-disconnect') as HTMLElement;
+    const menuModelSel = settingsPane.querySelector('#ab-menu-model') as HTMLSelectElement;
+    const menuReloadBtn = settingsPane.querySelector('#ab-menu-reload') as HTMLElement;
+    const themeSelect = settingsPane.querySelector('#ab-theme-select') as HTMLSelectElement;
+    const themeStatus = settingsPane.querySelector('#ab-theme-status') as HTMLElement;
+
+    // ── Settings pane: event handlers ────────────────────────────────────────
+
+    menuReloadBtn.addEventListener('click', () => {
+        if ('serviceWorker' in navigator) {
+            void navigator.serviceWorker.getRegistrations()
+                .then(regs => Promise.all(regs.map(r => r.unregister())));
+            if ('caches' in globalThis) {
+                void caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+            }
+        }
+        setTimeout(() => {
+            location.href = '/?v=' + Date.now();
+        }, 150);
+    });
+
+    menuModelSel.addEventListener('change', () => {
+        const id = menuModelSel.value;
+        if (id) void webPost('/set-model', {modelId: id});
+    });
+
+    menuDisconnectBtn.addEventListener('click', () => void webPost('/disconnect', {}));
+
+    connectBtn.addEventListener('click', () => {
+        const profileId = connectProfileSel.value;
+        if (!profileId) return;
+        connectBtn.disabled = true;
+        connectBtn.textContent = 'Connecting\u2026';
+        connectStatusEl.textContent = '';
+        webPost('/connect', {profileId}).catch(() => {
+            connectBtn.disabled = false;
+            connectBtn.textContent = 'Connect';
+            connectStatusEl.textContent = 'Connection error \u2014 check the IDE plugin.';
+        });
+    });
+
+    connectStopBtn.addEventListener('click', () => void webPost('/stop', {}));
+
+    // ── Settings pane: theme dropdown ────────────────────────────────────────
+
+    fetch('/themes')
+        .then(r => r.json() as Promise<Array<{ name: string; dark: boolean; current: boolean }>>)
+        .then(themes => {
+            themeSelect.innerHTML = themes
+                .map(t => `<option value="${t.name}" ${t.current ? 'selected' : ''}>${t.name}${t.dark ? ' 🌙' : ' ☀️'}</option>`)
+                .join('');
+        })
+        .catch(() => {
+            themeSelect.hidden = true;
+        });
+
+    themeSelect.addEventListener('change', () => {
+        const name = themeSelect.value;
+        if (!name) return;
+        themeStatus.textContent = 'Applying…';
+        webPost('/set-theme', {name})
+            .then(r => r.json() as Promise<{ ok?: boolean; message?: string }>)
+            .then(res => {
+                themeStatus.textContent = res.ok ? 'Applied! Reloading…' : (res.message || 'Failed');
+                if (res.ok) setTimeout(() => {
+                    location.href = '/?v=' + Date.now();
+                }, 600);
+            })
+            .catch(() => {
+                themeStatus.textContent = 'Failed to apply theme';
+            });
+    });
 
     const sideViews = new Map<number, { activate(): void; deactivate(): void }>([
         [2, reviewView],
@@ -290,9 +418,12 @@ ChatController.setCurrentModel = function (m: string) {
 
 function updateButtons(): void {
     statusDot.className = agentRunning ? 'running' : 'connected';
-    mcpDot.className = agentRunning ? 'running' : 'connected';
-    mcpText.textContent = agentRunning ? 'Running' : 'Ready';
-    connectStopBtn.hidden = !agentRunning;
+    const mcpDot = document.getElementById('ab-mcp-dot');
+    if (mcpDot) mcpDot.className = agentRunning ? 'running' : 'connected';
+    const mcpText = document.getElementById('ab-mcp-text');
+    if (mcpText) mcpText.textContent = agentRunning ? 'Running' : 'Ready';
+    const stopBtn = document.getElementById('ab-connect-stop-btn') as HTMLButtonElement | null;
+    if (stopBtn) stopBtn.hidden = !agentRunning;
     sendBtn.innerHTML = globalThis.ICON_SVG + '<span>' + (agentRunning ? 'Nudge' : 'Send') + '</span>';
 }
 
@@ -330,46 +461,55 @@ interface ServerInfo {
     vapidKey?: string;
 }
 
+// ── Connection state helpers ────────────────────────────────────────────────
+
+const SETTINGS_PANE_INDEX = 7;
+
 function showChatView(): void {
-    connectPageEl.hidden = true;
-    chatAreaEl.style.display = '';
-    footerEl.style.display = '';
-    menuDisconnectBtn.style.display = '';
-    menuModelSection.style.display = '';
+    swiper.switchTo(1);
+    const acpConnect = document.getElementById('ab-acp-connect-section') as HTMLElement | null;
+    const acpDisconnect = document.getElementById('ab-acp-disconnect-section') as HTMLElement | null;
+    if (acpConnect) acpConnect.hidden = true;
+    if (acpDisconnect) acpDisconnect.hidden = false;
 }
 
 function showConnectView(profiles?: ProfileInfo[]): void {
-    chatAreaEl.style.display = 'none';
-    footerEl.style.display = 'none';
-    connectPageEl.hidden = false;
-    menuDisconnectBtn.style.display = 'none';
-    menuModelSection.style.display = 'none';
-    connectStatusEl.textContent = '';
-    connectBtn.disabled = false;
-    connectBtn.textContent = 'Connect';
-    connectStopBtn.hidden = !agentRunning;
-    mcpDot.className = agentRunning ? 'running' : 'connected';
-    mcpText.textContent = agentRunning ? 'Running' : 'Ready';
-    if (profiles?.length) {
-        const prev = connectProfileSel.value;
-        connectProfileSel.innerHTML = profiles
-            .map(p => `<option value="${p.id}">${p.name}</option>`)
-            .join('');
-        if (prev) connectProfileSel.value = prev;
+    swiper.switchTo(SETTINGS_PANE_INDEX);
+    const acpConnect = document.getElementById('ab-acp-connect-section') as HTMLElement | null;
+    const acpDisconnect = document.getElementById('ab-acp-disconnect-section') as HTMLElement | null;
+    const statusEl = document.getElementById('ab-connect-status') as HTMLElement | null;
+    const btn = document.getElementById('ab-connect-btn') as HTMLButtonElement | null;
+    const stopBtn = document.getElementById('ab-connect-stop-btn') as HTMLButtonElement | null;
+    const profileSel = document.getElementById('ab-connect-profile') as HTMLSelectElement | null;
+    if (acpConnect) acpConnect.hidden = false;
+    if (acpDisconnect) acpDisconnect.hidden = true;
+    if (statusEl) statusEl.textContent = '';
+    if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Connect';
+    }
+    if (stopBtn) stopBtn.hidden = !agentRunning;
+    if (profiles?.length && profileSel) {
+        const prev = profileSel.value;
+        profileSel.innerHTML = profiles.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+        if (prev) profileSel.value = prev;
     }
 }
 
 // ── Populate model select from info ─────────────────────────────────────────
 
 function populateModels(models?: ModelInfo[], currentModelId?: string): void {
-    menuModelSel.innerHTML = (models || [])
-        .map(m => `<option value="${m.id}">${m.name}</option>`)
-        .join('');
+    const sel = document.getElementById('ab-menu-model') as HTMLSelectElement | null;
+    if (sel) {
+        sel.innerHTML = (models || []).map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    }
     if (currentModelId) syncModelSelect(currentModelId);
 }
 
 function syncModelSelect(modelId: string): void {
-    if (modelId) menuModelSel.value = modelId;
+    if (!modelId) return;
+    const sel = document.getElementById('ab-menu-model') as HTMLSelectElement | null;
+    if (sel) sel.value = modelId;
 }
 
 // ── Info fetch ──────────────────────────────────────────────────────────────
@@ -385,74 +525,20 @@ fetch('/info')
         agentRunning = info.running || false;
         updateButtons();
         pluginVersion = info.version || '';
+        const versionEl = document.getElementById('ab-menu-version');
+        if (versionEl) versionEl.textContent = 'Plugin v' + (pluginVersion || '?');
         populateModels(info.models, info.model);
         if (info.connected) showChatView();
         else showConnectView(info.profiles);
     })
     .catch(() => {
         showConnectView();
-        connectStatusEl.textContent = 'Failed to reach plugin — check that IntelliJ is running';
-        connectStatusEl.classList.add('error');
-    });
-
-// ── Hamburger menu ──────────────────────────────────────────────────────────
-
-menuBtn.addEventListener('click', (e: MouseEvent) => {
-    e.stopPropagation();
-    const isOpen = !menuEl.hidden;
-    menuEl.hidden = isOpen;
-    if (!isOpen) menuVersionEl.textContent = 'Plugin v' + (pluginVersion || '?');
-});
-
-document.addEventListener('click', (e: MouseEvent) => {
-    if (!menuEl.hidden && !menuEl.contains(e.target as Node)) menuEl.hidden = true;
-});
-
-// Hard reload — navigate to /?v=timestamp to bypass HTTP cache
-menuReloadBtn.addEventListener('click', () => {
-    menuEl.hidden = true;
-    if ('serviceWorker' in navigator) {
-        void navigator.serviceWorker.getRegistrations()
-            .then(regs => Promise.all(regs.map(r => r.unregister())));
-        if ('caches' in globalThis) {
-            void caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+        const statusEl = document.getElementById('ab-connect-status');
+        if (statusEl) {
+            statusEl.textContent = 'Failed to reach plugin — check that IntelliJ is running';
+            statusEl.classList.add('error');
         }
-    }
-    setTimeout(() => {
-        location.href = '/?v=' + Date.now();
-    }, 150);
-});
-
-// Model select change
-menuModelSel.addEventListener('change', () => {
-    const id = menuModelSel.value;
-    if (id) void webPost('/set-model', {modelId: id});
-});
-
-// Disconnect
-menuDisconnectBtn.addEventListener('click', () => {
-    menuEl.hidden = true;
-    void webPost('/disconnect', {});
-});
-
-// ── Connect page ────────────────────────────────────────────────────────────
-
-connectBtn.addEventListener('click', () => {
-    const profileId = connectProfileSel.value;
-    if (!profileId) return;
-    connectBtn.disabled = true;
-    connectBtn.textContent = 'Connecting\u2026';
-    connectStatusEl.textContent = '';
-    webPost('/connect', {profileId}).catch(() => {
-        connectBtn.disabled = false;
-        connectBtn.textContent = 'Connect';
-        connectStatusEl.textContent = 'Connection error \u2014 check the IDE plugin.';
     });
-});
-
-connectStopBtn.addEventListener('click', () => {
-    void webPost('/stop', {});
-});
 
 // ── Connected / Disconnected handlers (called from SSE broadcastTransient) ──
 

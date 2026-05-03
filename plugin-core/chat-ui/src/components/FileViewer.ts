@@ -5,8 +5,8 @@
  * PWA-only component: in JCEF, file links open directly in the IDE editor.
  */
 
-import { highlight, detectLanguage } from '../syntaxHighlight';
-import { renderMarkdown } from '../renderMarkdown';
+import {detectLanguage, highlight} from '../syntaxHighlight';
+import {renderMarkdown} from '../renderMarkdown';
 
 export class FileViewer extends HTMLElement {
     private _nav!: HTMLElement;
@@ -36,6 +36,11 @@ export class FileViewer extends HTMLElement {
                     </div>
                     <div class="fv-content" hidden></div>
                 </div>
+                <button class="fv-fab" title="Browse files" aria-label="Browse files">
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                        <path d="M10 4H2v16h20V6H12l-2-2z"/>
+                    </svg>
+                </button>
             </div>`;
 
         this._nav = this.querySelector('.fv-nav-slot') as HTMLElement;
@@ -48,14 +53,29 @@ export class FileViewer extends HTMLElement {
         copyBtn.addEventListener('click', () => {
             navigator.clipboard.writeText(this._currentPath);
             copyBtn.textContent = '✓';
-            setTimeout(() => { copyBtn.textContent = '📋'; }, 1500);
+            setTimeout(() => {
+                copyBtn.textContent = '📋';
+            }, 1500);
         });
     }
 
     /** The slot where the `<file-nav>` should be inserted. */
-    get navSlot(): HTMLElement { return this._nav; }
+    get navSlot(): HTMLElement {
+        return this._nav;
+    }
 
-    get currentPath(): string { return this._currentPath; }
+    /** The FAB button — call this after connectedCallback to wire the FileNav toggle. */
+    wireFab(fileNav: { toggleDropdown(): void }): void {
+        const fab = this.querySelector('.fv-fab') as HTMLButtonElement;
+        fab.addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileNav.toggleDropdown();
+        });
+    }
+
+    get currentPath(): string {
+        return this._currentPath;
+    }
 
     /** Display file content with syntax highlighting or Markdown rendering. */
     showFile(path: string, content: string): void {
@@ -97,7 +117,7 @@ export class FileViewer extends HTMLElement {
     scrollToLine(line: number): void {
         const ln = this._content.querySelector(`.fv-ln:nth-child(${line})`);
         if (ln) {
-            ln.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            ln.scrollIntoView({block: 'center', behavior: 'smooth'});
             // Briefly highlight the target line
             const idx = line - 1;
             const codeLines = this._content.querySelectorAll('.fv-code code');
@@ -139,17 +159,17 @@ export class FileViewer extends HTMLElement {
         this._recentList.innerHTML = `
             <div class="fv-recent-title">Recent files</div>
             ${this._recent.map(p => {
-                const name = p.includes('/') ? p.substring(p.lastIndexOf('/') + 1) : p;
-                return `<div class="fv-recent-item" data-path="${this._escAttr(p)}">
+            const name = p.includes('/') ? p.substring(p.lastIndexOf('/') + 1) : p;
+            return `<div class="fv-recent-item" data-path="${this._escAttr(p)}">
                     <span class="fv-recent-name">${this._escHtml(name)}</span>
                     <span class="fv-recent-path">${this._escHtml(p)}</span>
                 </div>`;
-            }).join('')}`;
+        }).join('')}`;
 
         this._recentList.querySelectorAll('.fv-recent-item').forEach(el => {
             el.addEventListener('click', () => {
                 const path = (el as HTMLElement).dataset.path;
-                if (path) this.dispatchEvent(new CustomEvent('open-file', { detail: { path } }));
+                if (path) this.dispatchEvent(new CustomEvent('open-file', {detail: {path}}));
             });
         });
     }
