@@ -30,16 +30,23 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>The hooks directory is at {@code <storage-dir>/hooks/} where the storage
  * directory is resolved from {@link AgentBridgeStorageSettings}.
+ *
+ * <p>Hook configs are automatically reloaded when the hooks directory changes.
+ * A time-based check (2-second window) prevents redundant rescans within the same
+ * tool execution pipeline.
  */
 public final class HookRegistry {
 
     private static final Logger LOG = Logger.getInstance(HookRegistry.class);
     private static final String HOOKS_DIR_NAME = "hooks";
     private static final String JSON_EXT = ".json";
+    private static final long RELOAD_INTERVAL_MS = 2000;
+    private static final String KEY_PREPEND_STRING = "prependString";
+    private static final String KEY_APPEND_STRING = "appendString";
 
     private final Project project;
     private final ConcurrentHashMap<String, ToolHookConfig> hooksByTool = new ConcurrentHashMap<>();
-    private volatile boolean loaded;
+    private volatile long lastLoadedMs;
 
     public HookRegistry(@NotNull Project project) {
         this.project = project;
@@ -52,6 +59,7 @@ public final class HookRegistry {
 
     /**
      * Returns the hook config for a tool, or null if no hooks are defined for it.
+     * Automatically reloads if the hooks directory has changed since the last scan.
      */
     public @Nullable ToolHookConfig findConfig(@NotNull String toolId) {
         ensureLoaded();
@@ -74,21 +82,55 @@ public final class HookRegistry {
         return List.copyOf(hooksByTool.values());
     }
 
+    /**
+     * Forces an immediate reload of all hook configs from disk.
+     */
     public void reload() {
         synchronized (this) {
             hooksByTool.clear();
-            loaded = false;
             doLoad();
-            loaded = true;
+            lastLoadedMs = System.currentTimeMillis();
         }
     }
 
+    /**
+     * Writes a hook config to disk as a JSON file. Creates the hooks directory if needed.
+     * If the config is empty (no triggers, no prepend/append), deletes the file instead.
+     * Triggers a reload after writing.
+     */
+    public void writeConfig(@NotNull ToolHookConfig config) throws IOException {
+        Path hooksDir = resolveHooksDirectory();
+        Path jsonFile = hooksDir.resolve(config.toolId() + JSON_EXT);
+
+        if (config.isEmpty()) {
+            Files.deleteIfExists(jsonFile);
+        } else {
+            Files.createDirectories(hooksDir);
+            String json = new com.google.gson.GsonBuilder()
+                .setPrettyPrinting()
+                .create()
+                .toJson(config.toJson());
+            Files.writeString(jsonFile, json, StandardCharsets.UTF_8);
+        }
+        reload();
+    }
+
+    /**
+     * Returns the hooks directory path. Used by the settings UI to locate hook files.
+     */
+    public @NotNull Path getHooksDirectory() {
+        return resolveHooksDirectory();
+    }
+
     private void ensureLoaded() {
-        if (loaded) return;
+        long now = System.currentTimeMillis();
+        if ((now - lastLoadedMs) < RELOAD_INTERVAL_MS) return;
         synchronized (this) {
-            if (loaded) return;
+            now = System.currentTimeMillis();
+            if ((now - lastLoadedMs) < RELOAD_INTERVAL_MS) return;
+            hooksByTool.clear();
             doLoad();
-            loaded = true;
+            lastLoadedMs = now;
         }
     }
 
@@ -125,8 +167,8 @@ public final class HookRegistry {
      * Parses a per-tool JSON hook config. Package-private for testing.
      */
     static @NotNull ToolHookConfig parseToolConfig(@NotNull String toolId,
-                                                    @NotNull JsonObject root,
-                                                    @NotNull Path hooksDir) {
+                                                   @NotNull JsonObject root,
+                                                   @NotNull Path hooksDir) {
         Map<HookTrigger, List<HookEntryConfig>> triggers = new EnumMap<>(HookTrigger.class);
 
         for (HookTrigger trigger : HookTrigger.values()) {
@@ -139,11 +181,17 @@ public final class HookRegistry {
             }
         }
 
-        return new ToolHookConfig(toolId, Map.copyOf(triggers), hooksDir);
+        String prependString = root.has(KEY_PREPEND_STRING)
+            ? root.get(KEY_PREPEND_STRING).getAsString() : null;
+        String appendString = root.has(KEY_APPEND_STRING)
+            ? root.get(KEY_APPEND_STRING).getAsString() : null;
+
+        return new ToolHookConfig(toolId, Map.copyOf(triggers), hooksDir,
+            prependString, appendString);
     }
 
     private static @NotNull List<HookEntryConfig> parseEntryArray(@NotNull JsonArray array,
-                                                                   @NotNull HookTrigger trigger) {
+                                                                  @NotNull HookTrigger trigger) {
         List<HookEntryConfig> entries = new ArrayList<>();
         for (JsonElement elem : array) {
             if (elem.isJsonObject()) {
@@ -154,7 +202,7 @@ public final class HookRegistry {
     }
 
     private static @NotNull HookEntryConfig parseEntry(@NotNull JsonObject obj,
-                                                        @NotNull HookTrigger trigger) {
+                                                       @NotNull HookTrigger trigger) {
         String script = obj.get("script").getAsString();
         int timeout = obj.has("timeout") ? obj.get("timeout").getAsInt() : 10;
         boolean async = obj.has("async") && obj.get("async").getAsBoolean();
@@ -191,7 +239,7 @@ public final class HookRegistry {
     }
 
     @NotNull
-    Path resolveHooksDirectory() {
+    private Path resolveHooksDirectory() {
         Path storageDir = AgentBridgeStorageSettings.getInstance().getProjectStorageDir(project);
         return storageDir.resolve(HOOKS_DIR_NAME);
     }

@@ -353,6 +353,10 @@ See [docs/MCP-TOOL-HOOKS.md](docs/MCP-TOOL-HOOKS.md) for the complete reference.
 - **Per-tool configuration** — one JSON file per tool in `<storage-dir>/hooks/<tool-id>.json`
 - **Async mode** — fire-and-forget hooks for notifications and logging
 - **Configurable timeout, failSilently, and env vars** per hook entry
+- **Static text modifiers** — `prependString` / `appendString` fields for simple text prepend/append without scripts
+- **Hot-reload** — hook configs are automatically reloaded within 2 seconds, no IDE restart needed
+- **Settings UI** — configure hooks per tool via the Settings dialog (🪝 indicator on hooked tools)
+- **Side panel indicator** — 🪝 icon on tool calls with active hooks in the Tool Calls panel
 
 ---
 

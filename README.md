@@ -123,7 +123,8 @@ as an experimental tool.
 **MCP Tool Hooks** — Intercept any tool call with shell scripts at four lifecycle points:
 permission (gate), pre (modify arguments), success (transform output), and failure (recover
 or augment errors). Hooks can chain, override error state, and enforce policies like bot
-identity for commits and GitHub API calls. See
+identity for commits and GitHub API calls. Static `prependString`/`appendString` fields
+allow simple text modifications without scripts. Hot-reloads within 2 seconds. See
 [docs/MCP-TOOL-HOOKS.md](docs/MCP-TOOL-HOOKS.md).
 
 See [FEATURES.md](FEATURES.md) for the complete tool reference.

@@ -249,6 +249,12 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         leftPanel.setOpaque(false);
         leftPanel.add(timeLabel);
         leftPanel.add(nameLabel);
+        if (entry.hasHooks()) {
+            JBLabel hookLabel = new JBLabel(" 🪝");
+            hookLabel.setToolTipText("Hook config active for this tool");
+            hookLabel.setFont(hookLabel.getFont().deriveFont(10f));
+            leftPanel.add(hookLabel);
+        }
         summary.add(leftPanel, BorderLayout.WEST);
         summary.add(durationLabel, BorderLayout.EAST);
 
@@ -280,10 +286,13 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         detail.setLayout(new BoxLayout(detail, BoxLayout.Y_AXIS));
         detail.setBorder(JBUI.Borders.empty(4, 12));
 
-        // Metadata section: tool ID, category
+        // Metadata section: tool ID, category, hooks
         addMetadataRow(detail, "Tool ID", entry.toolName());
         if (entry.category() != null) {
             addMetadataRow(detail, "Category", entry.category());
+        }
+        if (entry.hasHooks()) {
+            addMetadataRow(detail, "Hooks", "Active 🪝");
         }
         detail.add(Box.createVerticalStrut(6));
 

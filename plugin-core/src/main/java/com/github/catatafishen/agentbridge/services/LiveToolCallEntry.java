@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * @param durationMs  wall-clock execution time; -1 while still running
  * @param success     true if completed without error; null while running
  * @param category    legacy field carrying the tool kind wire value (e.g. "read", "edit")
+ * @param hasHooks    whether this tool call has active hook configuration
  */
 public record LiveToolCallEntry(
     long callId,
@@ -30,7 +31,8 @@ public record LiveToolCallEntry(
     @NotNull Instant timestamp,
     long durationMs,
     @Nullable Boolean success,
-    @Nullable String category
+    @Nullable String category,
+    boolean hasHooks
 ) {
     static final int MAX_IO_CHARS = 8_000;
     private static final AtomicLong ID_SEQ = new AtomicLong();
@@ -41,10 +43,11 @@ public record LiveToolCallEntry(
     public static LiveToolCallEntry started(@NotNull String toolName,
                                             @NotNull String displayName,
                                             @NotNull String input,
-                                            @Nullable String category) {
+                                            @Nullable String category,
+                                            boolean hasHooks) {
         return new LiveToolCallEntry(
             ID_SEQ.incrementAndGet(), toolName, displayName,
-            truncate(input), "", Instant.now(), -1, null, category);
+            truncate(input), "", Instant.now(), -1, null, category, hasHooks);
     }
 
     /**
@@ -53,7 +56,7 @@ public record LiveToolCallEntry(
     public LiveToolCallEntry completed(@NotNull String output, long durationMs, boolean success) {
         return new LiveToolCallEntry(
             callId, toolName, displayName, input, truncate(output),
-            timestamp, durationMs, success, category);
+            timestamp, durationMs, success, category, hasHooks);
     }
 
     /**

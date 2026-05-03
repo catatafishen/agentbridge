@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
-import com.google.gson.JsonParser;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
@@ -10,6 +10,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HookRegistryTest {
@@ -187,5 +188,115 @@ class HookRegistryTest {
         for (HookTrigger trigger : HookTrigger.values()) {
             assertEquals(trigger, HookTrigger.fromJsonKey(trigger.jsonKey()));
         }
+    }
+
+    @Test
+    void parseToolConfig_prependAndAppendStrings() {
+        String json = """
+            {
+              "prependString": "⚠ Bot identity required",
+              "appendString": "Remember: use the bot token for all GitHub API calls.",
+              "success": [
+                {
+                  "script": "remind.sh"
+                }
+              ]
+            }
+            """;
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        ToolHookConfig config = HookRegistry.parseToolConfig("git_commit", root, HOOKS_DIR);
+
+        assertEquals("⚠ Bot identity required", config.prependString());
+        assertEquals("Remember: use the bot token for all GitHub API calls.", config.appendString());
+        assertTrue(config.hasTrigger(HookTrigger.SUCCESS));
+        assertFalse(config.isEmpty());
+    }
+
+    @Test
+    void parseToolConfig_noPrependAppend_returnsNull() {
+        String json = """
+            {
+              "success": [{"script": "hook.sh"}]
+            }
+            """;
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        ToolHookConfig config = HookRegistry.parseToolConfig("read_file", root, HOOKS_DIR);
+
+        assertNull(config.prependString());
+        assertNull(config.appendString());
+    }
+
+    @Test
+    void isEmpty_trueWhenNoTriggersOrText() {
+        String json = "{}";
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        ToolHookConfig config = HookRegistry.parseToolConfig("empty_tool", root, HOOKS_DIR);
+
+        assertTrue(config.isEmpty());
+    }
+
+    @Test
+    void isEmpty_falseWithAppendStringOnly() {
+        String json = """
+            {
+              "appendString": "Some text"
+            }
+            """;
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        ToolHookConfig config = HookRegistry.parseToolConfig("text_only", root, HOOKS_DIR);
+
+        assertFalse(config.isEmpty());
+    }
+
+    @Test
+    void toJson_roundTrips() {
+        String json = """
+            {
+              "prependString": "Before",
+              "appendString": "After",
+              "pre": [
+                {
+                  "script": "check.sh",
+                  "timeout": 5,
+                  "failSilently": false
+                }
+              ],
+              "success": [
+                {
+                  "script": "notify.sh",
+                  "async": true
+                }
+              ]
+            }
+            """;
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        ToolHookConfig config = HookRegistry.parseToolConfig("round_trip", root, HOOKS_DIR);
+
+        JsonObject serialized = config.toJson();
+        ToolHookConfig reparsed = HookRegistry.parseToolConfig("round_trip", serialized, HOOKS_DIR);
+
+        assertEquals(config.prependString(), reparsed.prependString());
+        assertEquals(config.appendString(), reparsed.appendString());
+        assertEquals(config.entriesFor(HookTrigger.PRE).size(),
+            reparsed.entriesFor(HookTrigger.PRE).size());
+        assertEquals(config.entriesFor(HookTrigger.SUCCESS).size(),
+            reparsed.entriesFor(HookTrigger.SUCCESS).size());
+
+        HookEntryConfig preEntry = reparsed.entriesFor(HookTrigger.PRE).getFirst();
+        assertEquals("check.sh", preEntry.script());
+        assertEquals(5, preEntry.timeout());
+        assertFalse(preEntry.failSilently());
+
+        HookEntryConfig successEntry = reparsed.entriesFor(HookTrigger.SUCCESS).getFirst();
+        assertEquals("notify.sh", successEntry.script());
+        assertTrue(successEntry.async());
+    }
+
+    @Test
+    void triggerDisplayName_capitalizedJsonKey() {
+        assertEquals("Permission", HookTrigger.PERMISSION.displayName());
+        assertEquals("Pre", HookTrigger.PRE.displayName());
+        assertEquals("Success", HookTrigger.SUCCESS.displayName());
+        assertEquals("Failure", HookTrigger.FAILURE.displayName());
     }
 }

@@ -13,6 +13,8 @@ import com.github.catatafishen.agentbridge.psi.tools.quality.PendingPopupService
 import com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic;
 import com.github.catatafishen.agentbridge.services.hooks.HookExecutor;
 import com.github.catatafishen.agentbridge.services.hooks.HookPipeline;
+import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
+import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -496,7 +498,9 @@ public final class McpProtocolHandler {
         String kind = definition != null ? definition.kind().value() : null;
         String displayName = definition != null ? definition.displayName() : toolName;
         String inputJson = arguments.toString();
-        long callId = liveService.recordStart(toolName, displayName, inputJson, kind);
+        ToolHookConfig hookConfig = HookRegistry.getInstance(project).findConfig(toolName);
+        boolean hasHooks = hookConfig != null && !hookConfig.isEmpty();
+        long callId = liveService.recordStart(toolName, displayName, inputJson, kind, hasHooks);
         long callStartMs = System.currentTimeMillis();
 
         McpCallContext.setCurrent(sessionKey);
@@ -512,7 +516,7 @@ public final class McpProtocolHandler {
             boolean isError = postOutcome.isError() || ToolError.isError(resultText);
 
             if (!isError) {
-                resultText = appendOutputTemplate(resultText, toolName, settings);
+                resultText = applyTextModifiers(resultText, toolName, settings);
             }
             String fullResult = gateResult.prefix + resultText;
             liveService.complete(callId, fullResult,
@@ -626,12 +630,31 @@ public final class McpProtocolHandler {
         return new PopupGateResult("", null);
     }
 
-    private static String appendOutputTemplate(String resultText, String toolName,
-                                               McpServerSettings settings) {
-        String template = settings.getToolOutputTemplate(toolName);
-        if (!template.isEmpty()) {
-            return resultText + "\n\n" + template;
+    /**
+     * Applies static text modifiers (prependString/appendString) from hook config,
+     * falling back to the legacy outputTemplate from settings when no hook config
+     * appendString is defined.
+     */
+    private String applyTextModifiers(String resultText, String toolName,
+                                      McpServerSettings settings) {
+        ToolHookConfig hookConfig = HookRegistry.getInstance(project).findConfig(toolName);
+
+        if (hookConfig != null && hookConfig.prependString() != null
+            && !hookConfig.prependString().isEmpty()) {
+            resultText = hookConfig.prependString() + "\n\n" + resultText;
         }
+
+        if (hookConfig != null && hookConfig.appendString() != null
+            && !hookConfig.appendString().isEmpty()) {
+            resultText = resultText + "\n\n" + hookConfig.appendString();
+        } else {
+            // Legacy fallback: outputTemplate from settings
+            String template = settings.getToolOutputTemplate(toolName);
+            if (!template.isEmpty()) {
+                resultText = resultText + "\n\n" + template;
+            }
+        }
+
         return resultText;
     }
 

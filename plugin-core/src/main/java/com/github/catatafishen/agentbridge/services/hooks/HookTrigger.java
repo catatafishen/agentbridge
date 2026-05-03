@@ -42,6 +42,13 @@ public enum HookTrigger {
     }
 
     /**
+     * Human-readable label for UI display (e.g. "Permission", "Pre", "Success", "Failure").
+     */
+    public String displayName() {
+        return jsonKey.substring(0, 1).toUpperCase() + jsonKey.substring(1);
+    }
+
+    /**
      * Resolves a trigger from its JSON key. Throws if the key is not recognized.
      */
     public static HookTrigger fromJsonKey(String key) {

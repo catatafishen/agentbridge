@@ -41,8 +41,9 @@ public final class LiveToolCallService {
     public synchronized long recordStart(@NotNull String toolName,
                                          @NotNull String displayName,
                                          @NotNull String inputJson,
-                                         @org.jetbrains.annotations.Nullable String kind) {
-        LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, displayName, inputJson, kind);
+                                         @org.jetbrains.annotations.Nullable String kind,
+                                         boolean hasHooks) {
+        LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, displayName, inputJson, kind, hasHooks);
         entries.add(entry);
         evictIfNeeded();
         fireChanged();
