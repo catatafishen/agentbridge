@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -38,19 +39,20 @@ public final class HookExecutor {
     public static @NotNull HookResult execute(@NotNull HookEntryConfig entry,
                                               @NotNull HookTrigger trigger,
                                               @NotNull HookPayload payload,
-                                              @NotNull ToolHookConfig config) throws HookExecutionException {
+                                              @NotNull ToolHookConfig config,
+                                              @NotNull Map<String, String> projectEnv) throws HookExecutionException {
         Path scriptPath = config.resolveScript(entry);
         if (scriptPath == null) {
             return new HookResult.NoOp();
         }
 
         if (entry.async()) {
-            startAsync(scriptPath, entry, payload, config.toolId());
+            startAsync(scriptPath, entry, payload, config.toolId(), projectEnv);
             return new HookResult.NoOp();
         }
 
         try {
-            String stdout = runScript(scriptPath, entry, payload);
+            String stdout = runScript(scriptPath, entry, payload, projectEnv);
             return parseResult(trigger, stdout);
         } catch (IOException e) {
             if (entry.failSilently()) {
@@ -62,16 +64,14 @@ public final class HookExecutor {
         }
     }
 
-    /**
-     * Starts a hook script asynchronously (fire-and-forget). Errors are logged but never propagated.
-     */
     private static void startAsync(@NotNull Path scriptPath,
                                    @NotNull HookEntryConfig entry,
                                    @NotNull HookPayload payload,
-                                   @NotNull String toolId) {
+                                   @NotNull String toolId,
+                                   @NotNull Map<String, String> projectEnv) {
         CompletableFuture.runAsync(() -> {
             try {
-                runScript(scriptPath, entry, payload);
+                runScript(scriptPath, entry, payload, projectEnv);
             } catch (IOException e) {
                 LOG.warn("Async hook script failed for tool '" + toolId + "': " + e.getMessage());
             }
@@ -80,14 +80,22 @@ public final class HookExecutor {
 
     private static @NotNull String runScript(@NotNull Path scriptPath,
                                              @NotNull HookEntryConfig entry,
-                                             @NotNull HookPayload payload) throws IOException {
+                                             @NotNull HookPayload payload,
+                                             @NotNull Map<String, String> projectEnv) throws IOException {
         List<String> command = buildCommand(scriptPath);
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.directory(scriptPath.getParent().toFile());
 
+        // Layer environment variables: project context → per-entry overrides → argument values
+        Map<String, String> env = builder.environment();
+        env.putAll(projectEnv);
+
         if (!entry.env().isEmpty()) {
-            builder.environment().putAll(entry.env());
+            env.putAll(entry.env());
         }
+
+        Map<String, String> argEnv = HookEnvironmentProvider.getArgumentEnvironment(payload.arguments());
+        env.putAll(argEnv);
 
         Process process = builder.start();
         CompletableFuture<String> stdout = readAsync(process.getInputStream());

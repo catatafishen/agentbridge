@@ -8,6 +8,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -79,10 +80,6 @@ public final class HookPipeline {
     public record PostHookOutcome(@Nullable String output, boolean isError) {
     }
 
-    /**
-     * Runs the permission hook chain for a tool. All entries must allow; any deny stops the chain.
-     * If no hooks are registered, returns allowed.
-     */
     public static @NotNull PermissionResult runPermissionHooks(@NotNull Project project,
                                                                @NotNull String toolName,
                                                                @NotNull JsonObject arguments)
@@ -95,11 +92,13 @@ public final class HookPipeline {
         ToolHookConfig config = Objects.requireNonNull(
             HookRegistry.getInstance(project).findConfig(toolName));
 
+        Map<String, String> projectEnv = HookEnvironmentProvider.getProjectEnvironment(project);
+
         HookPayload payload = HookPayload.forPreExecution(
             toolName, arguments, project.getName(), Instant.now().toString());
 
         for (HookEntryConfig entry : entries) {
-            HookResult result = HookExecutor.execute(entry, HookTrigger.PERMISSION, payload, config);
+            HookResult result = HookExecutor.execute(entry, HookTrigger.PERMISSION, payload, config, projectEnv);
             if (result instanceof HookResult.PermissionDecision(boolean allowed, String reason) && !allowed) {
                 String resolvedReason = reason != null ? reason : "Denied by permission hook";
                 LOG.info("Permission hook denied tool " + toolName + ": " + resolvedReason);
@@ -109,14 +108,6 @@ public final class HookPipeline {
         return new PermissionResult.Allowed();
     }
 
-    /**
-     * Runs the pre-tool hook chain. Each entry can modify arguments or block execution.
-     * Modified arguments are passed to subsequent entries in the chain. Any per-entry
-     * {@code prependString}/{@code appendString} are accumulated and returned as pending
-     * output modifiers — they are applied to the tool output after the tool runs successfully.
-     *
-     * <p>If no hooks are registered, returns unchanged arguments with no pending modifiers.
-     */
     public static @NotNull PreHookOutput runPreHooks(@NotNull Project project,
                                                      @NotNull String toolName,
                                                      @NotNull JsonObject arguments)
@@ -130,6 +121,7 @@ public final class HookPipeline {
 
         ToolHookConfig config = Objects.requireNonNull(
             HookRegistry.getInstance(project).findConfig(toolName));
+        Map<String, String> projectEnv = HookEnvironmentProvider.getProjectEnvironment(project);
         JsonObject currentArgs = arguments;
         boolean modified = false;
         StringBuilder pendingPrepend = new StringBuilder();
@@ -139,14 +131,19 @@ public final class HookPipeline {
             HookPayload payload = HookPayload.forPreExecution(
                 toolName, currentArgs, project.getName(), Instant.now().toString());
 
-            HookResult result = HookExecutor.execute(entry, HookTrigger.PRE, payload, config);
+            HookResult result = HookExecutor.execute(entry, HookTrigger.PRE, payload, config, projectEnv);
 
             if (result instanceof HookResult.PreHookFailure(String error)) {
                 LOG.info("Pre-hook blocked tool " + toolName + ": " + error);
                 return new PreHookOutput(new PreHookResult.Blocked(error), null, null);
             }
             if (result instanceof HookResult.ModifiedArguments(JsonObject modifiedArguments)) {
-                currentArgs = modifiedArguments;
+                if (!modified) {
+                    currentArgs = currentArgs.deepCopy();
+                }
+                for (var argEntry : modifiedArguments.entrySet()) {
+                    currentArgs.add(argEntry.getKey(), argEntry.getValue());
+                }
                 modified = true;
                 LOG.info("Pre-hook modified arguments for " + toolName);
             }
@@ -176,6 +173,7 @@ public final class HookPipeline {
 
         ToolHookConfig config = Objects.requireNonNull(
             HookRegistry.getInstance(project).findConfig(toolName));
+        Map<String, String> projectEnv = HookEnvironmentProvider.getProjectEnvironment(project);
         String currentOutput = output;
         boolean isError = false;
 
@@ -184,7 +182,7 @@ public final class HookPipeline {
                 toolName, arguments, currentOutput, isError, project.getName(),
                 Instant.now().toString(), durationMs);
 
-            HookResult result = HookExecutor.execute(entry, HookTrigger.SUCCESS, payload, config);
+            HookResult result = HookExecutor.execute(entry, HookTrigger.SUCCESS, payload, config, projectEnv);
             if (result instanceof HookResult.OutputModification mod) {
                 currentOutput = applyOutputText(mod, currentOutput);
                 if (mod.stateOverride() != null) {
@@ -210,6 +208,7 @@ public final class HookPipeline {
 
         ToolHookConfig config = Objects.requireNonNull(
             HookRegistry.getInstance(project).findConfig(toolName));
+        Map<String, String> projectEnv = HookEnvironmentProvider.getProjectEnvironment(project);
         String currentOutput = errorMessage;
         boolean isError = true;
 
@@ -218,7 +217,7 @@ public final class HookPipeline {
                 toolName, arguments, currentOutput, isError, project.getName(),
                 Instant.now().toString(), durationMs);
 
-            HookResult result = HookExecutor.execute(entry, HookTrigger.FAILURE, payload, config);
+            HookResult result = HookExecutor.execute(entry, HookTrigger.FAILURE, payload, config, projectEnv);
             if (result instanceof HookResult.OutputModification mod) {
                 String modifiedOutput = applyOutputText(mod, currentOutput);
                 if (modifiedOutput != null) {
