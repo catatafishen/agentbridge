@@ -1,34 +1,32 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Permission hook for run_in_terminal: blocks commands that cause IDE state desync.
-# Only hard-blocks git and sed — commands with better MCP alternatives are handled
-# by the success hook (run-in-terminal-reprimand.sh) as soft warnings.
+# Only hard-blocks git and sed. Other suboptimal commands get soft warnings via
+# run-in-terminal-reprimand.sh (SUCCESS hook).
 #
-# Receives JSON payload on stdin: { toolName, arguments: {command, ...}, projectName, timestamp }
-# Returns: {"decision":"deny","reason":"..."} to block, or nothing to allow.
+# Trigger: PERMISSION
+# Input:   JSON payload on stdin with toolName, arguments.command
+# Output:  {"decision":"deny","reason":"..."} to block, or nothing to allow
+. "${0%/*}/_lib.sh"
+hook_read_payload
 
-set -euo pipefail
+cmd=$(hook_get_arg command)
+lcmd=$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')
 
-result=$(cat | python3 -c "
-import sys, json
+# --- git commands ---
+case "$lcmd" in
+    git\ *|git)
+        hook_json_deny "git commands are not allowed via run_in_terminal (causes IntelliJ buffer desync). Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, etc."
+        exit 0 ;;
+esac
+case "$lcmd" in
+    *"&& git "*|*"; git "*|*"| git "*)
+        hook_json_deny "git commands are not allowed via run_in_terminal (causes IntelliJ buffer desync). Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, etc."
+        exit 0 ;;
+esac
 
-payload = json.load(sys.stdin)
-cmd = (payload.get('arguments') or {}).get('command', '').lower().strip()
-
-def is_git(c):
-    if c.startswith('git ') or c == 'git': return True
-    if '&& git ' in c or '; git ' in c or '| git ' in c: return True
-    if c.startswith(('sudo git', 'env git', 'command git', 'nohup git')): return True
-    idx = c.find(' git')
-    return idx > 0 and (idx + 4 >= len(c) or c[idx + 4] == ' ')
-
-if is_git(cmd):
-    print(json.dumps({'decision': 'deny', 'reason':
-        'git commands are not allowed via run_in_terminal (causes IntelliJ buffer desync). '
-        'Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, etc.'}))
-elif cmd.startswith('sed ') or '| sed' in cmd:
-    print(json.dumps({'decision': 'deny', 'reason':
-        'sed is not allowed via run_in_terminal (bypasses IntelliJ editor buffers). '
-        'Use edit_text with old_str/new_str for file editing instead.'}))
-" 2>/dev/null) || exit 0
-
-echo "$result"
+# --- sed ---
+case "$lcmd" in
+    sed\ *|*"| sed"*)
+        hook_json_deny "sed is not allowed via run_in_terminal (bypasses IntelliJ editor buffers). Use edit_text with old_str/new_str for file editing instead."
+        exit 0 ;;
+esac

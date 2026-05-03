@@ -1,18 +1,11 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Pre-hook for git_commit: silently sets the commit author to the bot identity.
+# Uses merge semantics — only the "author" field is returned and merged into
+# the original arguments by HookPipeline.
 #
-# Reads the full arguments from stdin, overrides the "author" field, and returns
-# the modified arguments so the agent never needs to know about the change.
+# Trigger: PRE
+# Input:   JSON payload on stdin (not used — returns static override)
+# Output:  {"arguments":{"author":"..."}} merged into original args
+. "${0%/*}/_lib.sh"
 
-set -euo pipefail
-
-payload=$(</dev/stdin)
-args=$(echo "$payload" | python3 -c "
-import sys, json
-p = json.load(sys.stdin)
-args = p.get('arguments', {})
-args['author'] = 'Copilot <223556219+Copilot@users.noreply.github.com>'
-print(json.dumps({'arguments': args}))
-")
-
-echo "$args"
+hook_json_args '"author":"Copilot <223556219+Copilot@users.noreply.github.com>"'

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Pre-hook for run_command and run_in_terminal: intercepts GitHub CLI commands
 # that create content (PRs, comments, issues) and enforces bot identity.
 #
@@ -7,57 +7,41 @@
 #   gh issue create|comment|edit
 #   gh discussion create|comment
 #   gh release create
-#   gh api ... -X POST/PATCH/PUT (to github.com repos)
 #
 # Behaviour:
-#   - AGENTBRIDGE_BOT_TOKEN set: injects GH_TOKEN into the command silently.
-#   - ~/.agentbridge/bot-token present: same as above.
+#   - AGENTBRIDGE_BOT_TOKEN set or ~/.agentbridge/bot-token exists:
+#     injects GH_TOKEN into the command silently (merge semantics).
 #   - Neither: BLOCKS the call with an actionable error.
 #
-# ⚠️  AGENT INSTRUCTION: If this hook blocks a command, you MUST NOT retry
-#     using built-in bash, run_in_terminal, or any other tool that bypasses
-#     this check. Instead, stop and tell the user:
-#       "I cannot create GitHub content (PRs, comments, etc.) using your
-#        account identity. Please either:
-#          1. Set AGENTBRIDGE_BOT_TOKEN to a bot PAT and retry, or
-#          2. Create the PR / perform the action manually."
-#     Never silently fall back to creating content as the repository owner.
+# ⚠️ AGENT INSTRUCTION: If this hook blocks a command, you MUST NOT retry
+#    using built-in bash, run_in_terminal, or any other tool that bypasses
+#    this check. Instead, stop and tell the user the bot token is not configured.
+#
+# Trigger: PRE
+# Input:   JSON payload on stdin with arguments.command
+# Output:  {"arguments":{"command":"GH_TOKEN=... <original>"}} or {"error":"..."}
+. "${0%/*}/_lib.sh"
+hook_read_payload
 
-set -euo pipefail
+command=$(hook_get_arg command)
+lcmd=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
 
-payload=$(</dev/stdin)
+# Check if this is a content-creating gh command
+needs_bot=false
+case "$lcmd" in
+    "gh pr create"*|"gh pr comment"*|"gh pr review"*|"gh pr edit"*|"gh pr merge"*) needs_bot=true ;;
+    "gh issue create"*|"gh issue comment"*|"gh issue edit"*) needs_bot=true ;;
+    "gh discussion create"*|"gh discussion comment"*) needs_bot=true ;;
+    "gh release create"*) needs_bot=true ;;
+    "gh api "*)
+        case "$lcmd" in
+            *"-x post"*|*"-x patch"*|*"-x put"*|*"-method post"*|*"-method patch"*|*"-method put"*)
+                needs_bot=true ;;
+        esac ;;
+esac
 
-command=$(echo "$payload" | python3 -c "
-import sys, json
-p = json.load(sys.stdin)
-# Support both run_command (arguments.command) and run_in_terminal (arguments.command)
-print(p.get('arguments', {}).get('command', ''))
-")
-
-needs_bot_identity=$(echo "$command" | python3 -c "
-import sys, re
-
-cmd = sys.stdin.read().strip()
-
-content_patterns = [
-    r'^gh\s+pr\s+(create|comment|review|edit|merge)\b',
-    r'^gh\s+issue\s+(create|comment|edit)\b',
-    r'^gh\s+discussion\s+(create|comment)\b',
-    r'^gh\s+release\s+create\b',
-    r'^gh\s+api\s+.*\s+-(X|method)\s+(POST|PATCH|PUT)\b',
-    r'^gh\s+api\s+-(X|method)\s+(POST|PATCH|PUT)\b',
-]
-
-for pattern in content_patterns:
-    if re.search(pattern, cmd, re.IGNORECASE):
-        print('true')
-        sys.exit(0)
-
-print('false')
-")
-
-if [ "$needs_bot_identity" != "true" ]; then
-    exit 0  # Not a content-creating command, pass through unchanged
+if [ "$needs_bot" = "false" ]; then
+    exit 0
 fi
 
 # Resolve bot token (env var takes precedence over file)
@@ -68,19 +52,9 @@ if [ -z "$bot_token" ] && [ -f "${HOME}/.agentbridge/bot-token" ]; then
 fi
 
 if [ -n "$bot_token" ]; then
-    # Silent fix: inject bot token so gh uses bot identity
-    echo "$payload" | python3 -c "
-import sys, json, os
-p = json.load(sys.stdin)
-args = p.get('arguments', {})
-cmd = args.get('command', '')
-token = os.environ.get('AGENTBRIDGE_BOT_TOKEN', '')
-args['command'] = 'GH_TOKEN=' + token + ' ' + cmd
-print(json.dumps({'arguments': args}))
-"
+    # Escape the command for JSON embedding, then prefix with GH_TOKEN
+    escaped_cmd=$(hook_escape_json "GH_TOKEN=${bot_token} ${command}")
+    printf '{"arguments":{"command":"%s"}}\n' "$escaped_cmd"
 else
-    # No bot token — block with an actionable error and explicit agent instructions
-    cat <<'EOF'
-{"error": "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other bypass. Instead, tell the user: 'I cannot create GitHub content with bot identity because AGENTBRIDGE_BOT_TOKEN is not configured. Please set it to a bot PAT (see ~/.agentbridge/bot-token) or perform this action manually.'"}
-EOF
+    hook_json_error "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other bypass. Instead, tell the user: 'I cannot create GitHub content with bot identity because AGENTBRIDGE_BOT_TOKEN is not configured. Please set it to a bot PAT (see ~/.agentbridge/bot-token) or perform this action manually.'"
 fi

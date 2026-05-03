@@ -1,67 +1,72 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Permission hook for run_command: blocks shell commands that should use dedicated MCP tools.
 # Prevents IntelliJ buffer desync and guides agents toward IDE-integrated equivalents.
 #
-# Receives JSON payload on stdin: { toolName, arguments: {command, ...}, projectName, timestamp }
-# Returns: {"decision":"deny","reason":"..."} to block, or nothing to allow.
+# Trigger: PERMISSION
+# Input:   JSON payload on stdin with toolName, arguments.command, projectName, timestamp
+# Output:  {"decision":"deny","reason":"..."} to block, or nothing to allow
 #
-# Note: grep and test/build commands are intentionally NOT blocked here —
-#   grep may legitimately target non-source paths (checked by the tool itself),
-#   and test/build commands are redirected to the dedicated RunTestsTool.
+# Note: grep is intentionally NOT blocked — may target non-source paths (checked by tool itself).
+# Test/build commands are redirected to dedicated tools.
+. "${0%/*}/_lib.sh"
+hook_read_payload
 
-set -euo pipefail
+cmd=$(hook_get_arg command)
+# Normalize to lowercase for matching
+lcmd=$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')
 
-result=$(cat | python3 -c "
-import sys, json
+# --- git commands (must use dedicated git tools) ---
+case "$lcmd" in
+    git\ *|git)
+        hook_json_deny "git commands are not allowed via run_command (causes IntelliJ buffer desync). Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset."
+        exit 0 ;;
+esac
+# Check for git in compound commands
+case "$lcmd" in
+    *"&& git "*|*"; git "*|*"| git "*)
+        hook_json_deny "git commands are not allowed via run_command (causes IntelliJ buffer desync). Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset."
+        exit 0 ;;
+esac
 
-payload = json.load(sys.stdin)
-cmd = (payload.get('arguments') or {}).get('command', '').lower().strip()
+# --- cat/head/tail/less/more (must use read_file) ---
+case "$lcmd" in
+    cat\ *|head\ *|tail\ *|less\ *|more\ *)
+        hook_json_deny "cat/head/tail/less/more are not allowed via run_command (reads stale disk files). Use read_file to read live editor buffers instead."
+        exit 0 ;;
+esac
+case "$lcmd" in
+    *"| cat "*|*"&& cat "*|*"; cat "*)
+        hook_json_deny "cat/head/tail/less/more are not allowed via run_command (reads stale disk files). Use read_file to read live editor buffers instead."
+        exit 0 ;;
+esac
 
-def is_git(c):
-    if c.startswith('git ') or c == 'git': return True
-    if '&& git ' in c or '; git ' in c or '| git ' in c: return True
-    if c.startswith(('sudo git', 'env git', 'command git', 'nohup git')): return True
-    idx = c.find(' git')
-    return idx > 0 and (idx + 4 >= len(c) or c[idx + 4] == ' ')
+# --- sed (must use edit_text) ---
+case "$lcmd" in
+    sed\ *)
+        hook_json_deny "sed is not allowed via run_command (bypasses IntelliJ editor buffers). Use edit_text with old_str/new_str for file editing instead."
+        exit 0 ;;
+esac
+case "$lcmd" in
+    *"| sed"*|*"&& sed"*|*"; sed"*)
+        hook_json_deny "sed is not allowed via run_command (bypasses IntelliJ editor buffers). Use edit_text with old_str/new_str for file editing instead."
+        exit 0 ;;
+esac
 
-def is_cat(c):
-    return (c.startswith(('cat ', 'head ', 'tail ', 'less ', 'more ')) or
-            '| cat ' in c or '&& cat ' in c or '; cat ' in c)
+# --- find (must use list_project_files) ---
+case "$lcmd" in
+    "find "*)
+        hook_json_deny "find commands are not allowed via run_command. Use list_project_files or list_directory_tree to find files instead."
+        exit 0 ;;
+esac
 
-def is_sed(c):
-    return c.startswith('sed ') or '| sed' in c or '&& sed' in c or '; sed' in c
-
-def is_find(c):
-    return c.startswith('find ') or c.startswith('find.')
-
-def is_gradle_compile_only(c):
-    if 'gradlew' not in c: return False
-    compile_tasks = ['compilejava', 'compilekotlin', 'compiletestjava', 'compiletestkotlin', 'classes', 'testclasses']
-    return any(t in c for t in compile_tasks) and not any(t in c for t in ['test', 'check', 'build', 'assemble'])
-
-if is_git(cmd):
-    print(json.dumps({'decision': 'deny', 'reason':
-        'git commands are not allowed via run_command (causes IntelliJ buffer desync). '
-        'Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, '
-        'git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, '
-        'git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, '
-        'git_tag, git_reset.'}))
-elif is_cat(cmd):
-    print(json.dumps({'decision': 'deny', 'reason':
-        'cat/head/tail/less/more are not allowed via run_command (reads stale disk files). '
-        'Use read_file to read live editor buffers instead.'}))
-elif is_sed(cmd):
-    print(json.dumps({'decision': 'deny', 'reason':
-        'sed is not allowed via run_command (bypasses IntelliJ editor buffers). '
-        'Use edit_text with old_str/new_str for file editing instead.'}))
-elif is_find(cmd):
-    print(json.dumps({'decision': 'deny', 'reason':
-        'find commands are not allowed via run_command. '
-        'Use list_project_files or list_directory_tree to find files instead.'}))
-elif is_gradle_compile_only(cmd):
-    print(json.dumps({'decision': 'deny', 'reason':
-        'Gradle compile tasks are not allowed via run_command. '
-        'Use build_project to compile via IntelliJ incremental compiler instead.'}))
-" 2>/dev/null) || exit 0
-
-echo "$result"
+# --- Gradle compile-only tasks (must use build_project) ---
+case "$lcmd" in
+    *gradlew*compilejava*|*gradlew*compilekotlin*|*gradlew*classes*|*gradlew*testclasses*)
+        # Only block if it's JUST compilation, not a full test/build
+        case "$lcmd" in
+            *test*|*check*|*build*|*assemble*) ;;
+            *)
+                hook_json_deny "Gradle compile tasks are not allowed via run_command. Use build_project to compile via IntelliJ incremental compiler instead."
+                exit 0 ;;
+        esac ;;
+esac

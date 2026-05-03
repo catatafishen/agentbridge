@@ -1,28 +1,26 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Success hook for git_push: appends PR creation tip after pushing feature branches.
 #
-# Receives JSON payload on stdin with: toolName, arguments, output, error, projectName, timestamp, durationMs
-# Returns JSON with "append" to add text to tool output, or exits silently to leave output unchanged.
+# Trigger: SUCCESS
+# Input:   JSON payload on stdin with output, error
+# Output:  {"append":"..."} with PR tip, or nothing for main/master branches
+. "${0%/*}/_lib.sh"
+hook_read_payload
 
-set -euo pipefail
+error=$(hook_get error)
+case "$error" in true|True) exit 0 ;; esac
 
-payload=$(cat)
-
-is_error=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error', False))" 2>/dev/null || echo "false")
-if [ "$is_error" = "True" ] || [ "$is_error" = "true" ]; then
-    exit 0
-fi
-
-output=$(echo "$payload" | python3 -c "import sys,json; print(json.load(sys.stdin).get('output',''))" 2>/dev/null || echo "")
-branch=$(echo "$output" | grep -oP 'Pushed \K[^ ]+' | head -1 || true)
+output=$(hook_get output)
+# Extract branch name from "Pushed <branch>" pattern
+branch=$(printf '%s' "$output" | sed -n 's/.*Pushed \([^ ]*\).*/\1/p' | head -1)
 
 if [ -z "$branch" ]; then
     exit 0
 fi
 
-# Only append the PR reminder for feature branches.
-if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
-    exit 0
-fi
+# Skip main/master branches
+case "$branch" in
+    main|master) exit 0 ;;
+esac
 
-echo '{"append": "\nTip: create a PR with: gh pr create\nReminder: PRs, issues, and discussions should use the bot identity. If only user credentials are available, say explicitly that the action was authored by the bot on behalf of the user."}'
+hook_json_append "\\nTip: create a PR with: gh pr create\\nReminder: PRs, issues, and discussions should use the bot identity. If only user credentials are available, say explicitly that the action was authored by the bot on behalf of the user."
