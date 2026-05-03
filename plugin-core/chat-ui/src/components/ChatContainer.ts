@@ -347,6 +347,20 @@ export default class ChatContainer extends HTMLElement {
     }
 
     /**
+     * Re-enable auto-scroll and schedule a deferred scroll to bottom, using the same
+     * two-rAF pattern as _scheduleDeferredScroll() (Fix 8/9).
+     *
+     * Use this instead of forceScroll() when a new message is appended outside of streaming
+     * (e.g. a user nudge or queued message). forceScroll() writes scrollTop synchronously,
+     * causing the DOM mutation and scroll to land in the same CEF paint frame and triggering
+     * the OSR tile-cache tearing described in Fix 8.
+     */
+    scheduleForceScroll(): void {
+        this._autoScroll = true;
+        this._scheduleDeferredScroll();
+    }
+
+    /**
      * Schedule an autoscroll to bottom that runs one rAF *after* the DOM mutation paint.
      *
      * Why two rAFs instead of one (Fix 8 — see SCREEN-TEARING-BUG.md):

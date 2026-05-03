@@ -420,6 +420,40 @@ remove after Fix 8 is proven stable.
 
 ---
 
+### Fix 9 — Extend two-rAF deferral to non-streaming scroll triggers (2025)
+
+**Status**: In testing.
+
+**Problem**: Fix 8 eliminated streaming tearing but two scenarios remained:
+
+1. **User message / nudge append** (`addUserMessage()`): called `forceScroll()` directly after
+   inserting the new message DOM node. `forceScroll()` writes `scrollTop` synchronously, which
+   means the DOM mutation (message node insert) and the `scrollTop` write landed in the *same* CEF
+   paint frame — the identical batching pattern that Fix 8 fixed for streaming.
+
+2. **Tool chip horizontal scroll** (`MessageMeta._scrollToEnd()`): when a new chip was appended to
+   `.chip-strip`, the code called `strip.scrollTo({behavior: 'smooth'})` in a single rAF. One-rAF
+   deferral is insufficient — it fires in the same frame that Chromium processes the layout change
+   from the newly inserted chip, so the horizontal scroll and chip-layout dirty rects batch
+   together. The `'smooth'` mode compound the issue by producing multiple sequential scroll-write
+   frames, each potentially overlapping with the next chip insertion.
+
+**Fix**:
+
+- `ChatContainer.ts`: Added `scheduleForceScroll()` — sets `_autoScroll = true`, then calls
+  `_scheduleDeferredScroll()`. Identical to the `scheduleScrollIfNeeded()` path but also re-arms
+  auto-scroll, matching the semantics of the old `forceScroll()` call at the user-message site.
+
+- `ChatController.ts` `addUserMessage()`: replaced `this._container()?.forceScroll()` with
+  `this._container()?.scheduleForceScroll()`.
+
+- `MessageMeta.ts` `_scrollToEnd()`: changed from one rAF to two rAFs (matching Fix 8 pattern),
+  and changed `behavior: 'smooth'` → `behavior: 'instant'`. Instant makes the horizontal scroll
+  atomic in one CEF paint frame; smooth was causing a multi-frame animation chain with each frame
+  creating a new scroll-write + potential mutation overlap.
+
+---
+
 ## Code Locations
 
 | File                       | Component                        | Purpose                                                                                            |
@@ -439,9 +473,12 @@ remove after Fix 8 is proven stable.
 | `ChatContainer.ts`         | `setStreaming()`                 | Toggles CSS smooth-scroll policy between streaming and idle                                        |
 | `ChatContainer.ts`         | `_scrollToInstant()`             | Temporarily forces `scroll-behavior: auto` for scroll                                              |
 | `ChatContainer.ts`         | `scheduleScrollIfNeeded()`       | rAF-deferred autoscroll entry point for DOM mutation paths                                         |
+| `ChatContainer.ts`         | `scheduleForceScroll()`          | Like `scheduleScrollIfNeeded()` but also re-arms auto-scroll — used for user-message appends (Fix 9) |
 | `ChatController.ts`        | `appendAgentText()`              | No longer calls synchronous `scrollIfNeeded()` (Fix 3)                                             |
 | `ChatController.ts`        | Remaining autoscroll call sites  | Use `scheduleScrollIfNeeded()` instead of direct scroll writes (Fix 6)                             |
 | `ChatController.ts`        | `upsertToolChip()`               | No longer calls synchronous `scrollIfNeeded()` (Fix 5)                                             |
+| `ChatController.ts`        | `addUserMessage()`               | Uses `scheduleForceScroll()` — two-rAF deferred, not synchronous `forceScroll()` (Fix 9)           |
+| `MessageMeta.ts`           | `_scrollToEnd()`                 | Two-rAF deferred, `behavior: 'instant'` — chip-strip horizontal scroll (Fix 9)                    |
 | `chat.css`                 | `chat-container`, `chat-message` | No paint containment, content-visibility virtualization, or hover tooltip overlays in OSR          |
 | `MessageBubble.ts`         | `appendStreamingText()`          | rAF-debounced markdown re-render                                                                   |
 | `MonitorSwitchRecovery.kt` | `triggerRecovery()`              | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes                    |

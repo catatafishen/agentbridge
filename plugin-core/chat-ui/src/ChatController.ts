@@ -121,6 +121,7 @@ const ChatController = {
     _container(): HTMLElement & {
         scrollIfNeeded(): void;
         scheduleScrollIfNeeded(): void;
+        scheduleForceScroll(): void;
         forceScroll(): void;
         pauseAutoScrollForRestore(): void;
         stopAutoScrollRestore(): void;
@@ -132,6 +133,7 @@ const ChatController = {
         return document.querySelector<HTMLElement & {
             scrollIfNeeded(): void;
             scheduleScrollIfNeeded(): void;
+            scheduleForceScroll(): void;
             forceScroll(): void;
             pauseAutoScrollForRestore(): void;
             stopAutoScrollRestore(): void;
@@ -269,7 +271,10 @@ const ChatController = {
         }
         msg.appendChild(bubble);
         this._insertMsg(msg);
-        this._container()?.forceScroll();
+        // scheduleForceScroll() re-enables autoScroll and defers the scroll by two rAFs (Fix 9).
+        // Using forceScroll() here caused the DOM mutation and scrollTop write to land in the same
+        // CEF paint frame, triggering OSR tile-cache tearing — same mechanism as streaming tearing.
+        this._container()?.scheduleForceScroll();
     },
 
     removeUserMessage(entryId: string): void {

@@ -138,8 +138,13 @@ export default class MessageMeta extends HTMLElement {
     private _scrollToEnd(): void {
         const strip = this._strip;
         if (!strip) return;
+        // Two rAFs (same Fix 8/9 pattern): first lets the mutation paint with the new chip,
+        // second writes scrollLeft. Using 'instant' avoids multi-frame smooth-scroll animation
+        // frames that can overlap with further mutations and trigger OSR tile-cache tearing.
         requestAnimationFrame(() => {
-            strip.scrollTo({left: strip.scrollWidth, behavior: 'smooth'});
+            requestAnimationFrame(() => {
+                strip.scrollTo({left: strip.scrollWidth, behavior: 'instant'});
+            });
         });
     }
 
