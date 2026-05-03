@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -17,28 +18,26 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Discovers and caches {@link HookDefinition}s from the project's hooks directory.
- * Scans for {@code hook.json} files in immediate subdirectories of the hooks root.
+ * Discovers and caches {@link ToolHookConfig}s from the project's hooks directory.
+ * Scans for {@code <tool-id>.json} files in {@code <storage-dir>/hooks/}.
  *
- * <p>The hooks directory defaults to {@code hooks/} in the project root but can be
- * overridden in project settings.
+ * <p>The hooks directory is at {@code <storage-dir>/hooks/} where the storage
+ * directory is resolved from {@link AgentBridgeStorageSettings}.
  */
 public final class HookRegistry {
 
     private static final Logger LOG = Logger.getInstance(HookRegistry.class);
-    private static final String HOOK_DEFINITION_FILE = "hook.json";
-    private static final String HOOKS_JSON_KEY = "hooks";
-    static final String DEFAULT_HOOKS_DIR = "hooks";
+    private static final String HOOKS_DIR_NAME = "hooks";
+    private static final String JSON_EXT = ".json";
 
     private final Project project;
-    private final ConcurrentHashMap<String, List<HookDefinition>> hooksByTool = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ToolHookConfig> hooksByTool = new ConcurrentHashMap<>();
     private volatile boolean loaded;
 
     public HookRegistry(@NotNull Project project) {
@@ -51,33 +50,27 @@ public final class HookRegistry {
     }
 
     /**
-     * Returns hook definitions that apply to the given tool and trigger, or an empty list.
+     * Returns the hook config for a tool, or null if no hooks are defined for it.
      */
-    public @NotNull List<HookDefinition> findHooks(@NotNull String toolId, @NotNull HookTrigger trigger) {
+    public @Nullable ToolHookConfig findConfig(@NotNull String toolId) {
         ensureLoaded();
-        List<HookDefinition> forTool = hooksByTool.getOrDefault(toolId, List.of());
-        return forTool.stream()
-            .filter(def -> def.triggerConfig(trigger) != null)
-            .toList();
+        return hooksByTool.get(toolId);
     }
 
     /**
-     * Returns the first hook definition that applies to the given tool and trigger, or null.
-     * Per the design, there should be at most one hook per tool per trigger.
+     * Returns the hook entries for a specific tool and trigger, or an empty list.
      */
-    public @Nullable HookDefinition findHook(@NotNull String toolId, @NotNull HookTrigger trigger) {
-        List<HookDefinition> hooks = findHooks(toolId, trigger);
-        return hooks.isEmpty() ? null : hooks.getFirst();
+    public @NotNull List<HookEntryConfig> findEntries(@NotNull String toolId, @NotNull HookTrigger trigger) {
+        ToolHookConfig config = findConfig(toolId);
+        return config != null ? config.entriesFor(trigger) : List.of();
     }
 
     /**
-     * Returns all loaded hook definitions.
+     * Returns all loaded hook configs.
      */
-    public @NotNull List<HookDefinition> getAllHooks() {
+    public @NotNull List<ToolHookConfig> getAllConfigs() {
         ensureLoaded();
-        List<HookDefinition> all = new ArrayList<>();
-        hooksByTool.values().forEach(all::addAll);
-        return all.stream().distinct().toList();
+        return List.copyOf(hooksByTool.values());
     }
 
     public void reload() {
@@ -100,63 +93,72 @@ public final class HookRegistry {
 
     private void doLoad() {
         Path hooksDir = resolveHooksDirectory();
-        if (hooksDir == null || !Files.isDirectory(hooksDir)) return;
+        if (!Files.isDirectory(hooksDir)) return;
 
-        try (DirectoryStream<Path> subdirs = Files.newDirectoryStream(hooksDir, Files::isDirectory)) {
-            for (Path subdir : subdirs) {
-                Path hookFile = subdir.resolve(HOOK_DEFINITION_FILE);
-                if (Files.isRegularFile(hookFile)) {
-                    loadHookFile(hookFile);
-                }
+        try (DirectoryStream<Path> files = Files.newDirectoryStream(hooksDir,
+            path -> Files.isRegularFile(path) && path.getFileName().toString().endsWith(JSON_EXT))) {
+
+            for (Path jsonFile : files) {
+                loadToolHookFile(jsonFile, hooksDir);
             }
         } catch (IOException e) {
             LOG.warn("Failed to scan hooks directory: " + hooksDir, e);
         }
     }
 
-    private void loadHookFile(@NotNull Path hookFile) {
-        try (Reader reader = Files.newBufferedReader(hookFile, StandardCharsets.UTF_8)) {
+    private void loadToolHookFile(@NotNull Path jsonFile, @NotNull Path hooksDir) {
+        String fileName = jsonFile.getFileName().toString();
+        String toolId = fileName.substring(0, fileName.length() - JSON_EXT.length());
+
+        try (Reader reader = Files.newBufferedReader(jsonFile, StandardCharsets.UTF_8)) {
             JsonObject root = JsonParser.parseReader(reader).getAsJsonObject();
-            HookDefinition definition = parseDefinition(root, hookFile.getParent());
-
-            for (String toolId : definition.tools()) {
-                hooksByTool.computeIfAbsent(toolId, k -> Collections.synchronizedList(new ArrayList<>()))
-                    .add(definition);
-            }
-            LOG.info("Loaded hook '" + definition.id() + "' for tools: " + definition.tools());
+            ToolHookConfig config = parseToolConfig(toolId, root, hooksDir);
+            hooksByTool.put(toolId, config);
+            LOG.info("Loaded hooks for tool '" + toolId + "' from " + jsonFile.getFileName());
         } catch (Exception e) {
-            LOG.warn("Failed to load hook definition: " + hookFile, e);
+            LOG.warn("Failed to load hook config: " + jsonFile, e);
         }
     }
 
-    static @NotNull HookDefinition parseDefinition(@NotNull JsonObject root, @NotNull Path sourceDir) {
-        int version = root.has("version") ? root.get("version").getAsInt() : 1;
-        String id = root.get("id").getAsString();
-        String name = root.get("name").getAsString();
-        String description = root.has("description") ? root.get("description").getAsString() : null;
+    /**
+     * Parses a per-tool JSON hook config. Package-private for testing.
+     */
+    static @NotNull ToolHookConfig parseToolConfig(@NotNull String toolId,
+                                                    @NotNull JsonObject root,
+                                                    @NotNull Path hooksDir) {
+        Map<HookTrigger, List<HookEntryConfig>> triggers = new HashMap<>();
 
-        List<String> tools = new ArrayList<>();
-        JsonArray toolsArray = root.getAsJsonArray("tools");
-        for (JsonElement elem : toolsArray) {
-            tools.add(elem.getAsString());
+        for (HookTrigger trigger : HookTrigger.values()) {
+            if (root.has(trigger.jsonKey())) {
+                JsonArray array = root.getAsJsonArray(trigger.jsonKey());
+                List<HookEntryConfig> entries = parseEntryArray(array, trigger);
+                if (!entries.isEmpty()) {
+                    triggers.put(trigger, List.copyOf(entries));
+                }
+            }
         }
 
-        Map<HookTrigger, HookTriggerConfig> hooksMap = new HashMap<>();
-        JsonObject hooksObj = root.getAsJsonObject(HOOKS_JSON_KEY);
-        for (String triggerKey : hooksObj.keySet()) {
-            HookTrigger trigger = HookTrigger.fromJsonKey(triggerKey);
-            JsonObject triggerObj = hooksObj.getAsJsonObject(triggerKey);
-            hooksMap.put(trigger, parseTriggerConfig(triggerObj));
-        }
-
-        return new HookDefinition(version, id, name, description, List.copyOf(tools), Map.copyOf(hooksMap), sourceDir);
+        return new ToolHookConfig(toolId, Map.copyOf(triggers), hooksDir);
     }
 
-    private static @NotNull HookTriggerConfig parseTriggerConfig(@NotNull JsonObject obj) {
-        String bash = obj.has("bash") ? obj.get("bash").getAsString() : null;
-        String powershell = obj.has("powershell") ? obj.get("powershell").getAsString() : null;
-        int timeoutSec = obj.has("timeoutSec") ? obj.get("timeoutSec").getAsInt() : 10;
-        boolean failOpen = !obj.has("failOpen") || obj.get("failOpen").getAsBoolean();
+    private static @NotNull List<HookEntryConfig> parseEntryArray(@NotNull JsonArray array,
+                                                                   @NotNull HookTrigger trigger) {
+        List<HookEntryConfig> entries = new ArrayList<>();
+        for (JsonElement elem : array) {
+            if (elem.isJsonObject()) {
+                entries.add(parseEntry(elem.getAsJsonObject(), trigger));
+            }
+        }
+        return entries;
+    }
+
+    private static @NotNull HookEntryConfig parseEntry(@NotNull JsonObject obj,
+                                                        @NotNull HookTrigger trigger) {
+        String script = obj.get("script").getAsString();
+        int timeout = obj.has("timeout") ? obj.get("timeout").getAsInt() : 10;
+        boolean async = obj.has("async") && obj.get("async").getAsBoolean();
+
+        boolean failSilently = resolveFailSilently(obj, trigger);
 
         Map<String, String> env = new HashMap<>();
         if (obj.has("env")) {
@@ -166,13 +168,30 @@ public final class HookRegistry {
             }
         }
 
-        String cwd = obj.has("cwd") ? obj.get("cwd").getAsString() : null;
-        return new HookTriggerConfig(bash, powershell, timeoutSec, failOpen, Map.copyOf(env), cwd);
+        return new HookEntryConfig(script, timeout, failSilently, async, Map.copyOf(env));
     }
 
-    @Nullable Path resolveHooksDirectory() {
-        String basePath = project.getBasePath();
-        if (basePath == null) return null;
-        return Path.of(basePath, DEFAULT_HOOKS_DIR);
+    /**
+     * Resolves the failSilently behavior from JSON fields.
+     * Permission hooks use {@code rejectOnFailure} (default true → failSilently=false).
+     * Other hooks use {@code failSilently} (default true).
+     */
+    private static boolean resolveFailSilently(@NotNull JsonObject obj, @NotNull HookTrigger trigger) {
+        if (trigger == HookTrigger.PERMISSION) {
+            if (obj.has("rejectOnFailure")) {
+                return !obj.get("rejectOnFailure").getAsBoolean();
+            }
+            return false; // default: rejectOnFailure=true → failSilently=false
+        }
+        if (obj.has("failSilently")) {
+            return obj.get("failSilently").getAsBoolean();
+        }
+        return true; // default: fail silently for non-permission hooks
+    }
+
+    @NotNull
+    Path resolveHooksDirectory() {
+        Path storageDir = AgentBridgeStorageSettings.getInstance().getProjectStorageDir(project);
+        return storageDir.resolve(HOOKS_DIR_NAME);
     }
 }

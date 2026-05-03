@@ -530,11 +530,11 @@ public final class McpProtocolHandler {
     }
 
     /**
-     * Evaluates the permission hook for a tool. Returns an error message if denied, or null if allowed.
+     * Evaluates the permission hook chain for a tool. Returns an error message if denied, or null if allowed.
      */
     private @Nullable String evaluatePermissionHook(@NotNull String toolName, @NotNull JsonObject arguments) {
         try {
-            HookPipeline.PermissionResult result = HookPipeline.runPermissionHook(project, toolName, arguments);
+            HookPipeline.PermissionResult result = HookPipeline.runPermissionHooks(project, toolName, arguments);
             if (result instanceof HookPipeline.PermissionResult.Denied(String reason)) {
                 return ToolError.of(McpErrorCode.NOT_APPLICABLE, "Hook denied: " + reason);
             }
@@ -546,12 +546,12 @@ public final class McpProtocolHandler {
     }
 
     /**
-     * Applies the pre-tool hook, returning possibly modified arguments or an immediate failure.
+     * Applies the pre-tool hook chain, returning possibly modified arguments or an immediate failure.
      * On hook failure, returns original arguments and logs the error.
      */
     private @NotNull PreHookApplication applyPreHook(@NotNull String toolName, @NotNull JsonObject arguments) {
         try {
-            HookPipeline.PreHookResult result = HookPipeline.runPreHook(project, toolName, arguments);
+            HookPipeline.PreHookResult result = HookPipeline.runPreHooks(project, toolName, arguments);
             if (result instanceof HookPipeline.PreHookResult.Blocked(String error)) {
                 return new PreHookApplication(arguments, error);
             }
@@ -565,27 +565,27 @@ public final class McpProtocolHandler {
     }
 
     /**
-     * Applies the post-tool hook, returning possibly modified output.
+     * Applies the success hook chain, returning possibly modified output.
      */
     private @Nullable String applyPostHook(@NotNull String toolName, @NotNull JsonObject arguments,
                                            @Nullable String output, long durationMs) {
         try {
-            return HookPipeline.runPostHook(project, toolName, arguments, output, durationMs);
+            return HookPipeline.runSuccessHooks(project, toolName, arguments, output, durationMs);
         } catch (HookExecutor.HookExecutionException e) {
-            LOG.warn("[MCP] post-hook failed for " + toolName, e);
+            LOG.warn("[MCP] success hook failed for " + toolName, e);
             return output;
         }
     }
 
     /**
-     * Applies the onFailure hook, returning possibly modified error message.
+     * Applies the failure hook chain, returning possibly modified error message.
      */
     private @NotNull String applyFailureHook(@NotNull String toolName, @NotNull JsonObject arguments,
                                              @NotNull String errorMsg, long durationMs) {
         try {
-            return HookPipeline.runFailureHook(project, toolName, arguments, errorMsg, durationMs);
+            return HookPipeline.runFailureHooks(project, toolName, arguments, errorMsg, durationMs);
         } catch (HookExecutor.HookExecutionException e) {
-            LOG.warn("[MCP] onFailure hook failed for " + toolName, e);
+            LOG.warn("[MCP] failure hook failed for " + toolName, e);
             return errorMsg;
         }
     }

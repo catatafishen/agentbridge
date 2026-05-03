@@ -3,7 +3,7 @@ package com.github.catatafishen.agentbridge.services.hooks;
 /**
  * Defines the four trigger points in the MCP tool execution pipeline where hooks can run.
  *
- * <p>Execution order: {@code PERMISSION → PRE → (tool executes) → POST / ON_FAILURE}
+ * <p>Execution order: {@code PERMISSION → PRE → (tool executes) → SUCCESS / FAILURE}
  */
 public enum HookTrigger {
 
@@ -21,12 +21,12 @@ public enum HookTrigger {
     /**
      * Runs after successful execution. Can modify or append to tool output.
      */
-    POST("post"),
+    SUCCESS("success"),
 
     /**
      * Runs after failed execution. Can modify or append to the error message.
      */
-    ON_FAILURE("onFailure");
+    FAILURE("failure");
 
     private final String jsonKey;
 
@@ -35,7 +35,7 @@ public enum HookTrigger {
     }
 
     /**
-     * The key used in hook.json's {@code "hooks"} object (e.g. {@code "permission"}, {@code "onFailure"}).
+     * The key used in the per-tool JSON hook config (e.g. {@code "permission"}, {@code "failure"}).
      */
     public String jsonKey() {
         return jsonKey;

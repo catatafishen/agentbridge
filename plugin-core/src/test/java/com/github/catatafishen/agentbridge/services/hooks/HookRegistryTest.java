@@ -5,144 +5,181 @@ import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HookRegistryTest {
 
-    private static final Path DUMMY_DIR = Path.of("/hooks/example");
+    private static final Path HOOKS_DIR = Path.of("/storage/hooks");
 
     @Test
-    void parseDefinition_fullHookJson() {
+    void parseToolConfig_successHookWithAllFields() {
         String json = """
             {
-              "version": 1,
-              "id": "git-push-pr-tip",
-              "name": "PR creation tip",
-              "description": "Appends a PR creation tip after pushing feature branches",
-              "tools": ["git_push", "git_commit"],
-              "hooks": {
-                "post": {
-                  "bash": "git-push-tip.sh",
-                  "powershell": "git-push-tip.ps1",
-                  "timeoutSec": 15,
-                  "failOpen": true,
+              "success": [
+                {
+                  "script": "scripts/bot-identity-reminder.sh",
+                  "timeout": 15,
+                  "failSilently": true,
+                  "async": false,
                   "env": {"CUSTOM_VAR": "value"}
                 }
-              }
+              ]
             }
             """;
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-        HookDefinition def = HookRegistry.parseDefinition(root, DUMMY_DIR);
+        ToolHookConfig config = HookRegistry.parseToolConfig("git_commit", root, HOOKS_DIR);
 
-        assertEquals(1, def.version());
-        assertEquals("git-push-pr-tip", def.id());
-        assertEquals("PR creation tip", def.name());
-        assertEquals("Appends a PR creation tip after pushing feature branches", def.description());
-        assertEquals(2, def.tools().size());
-        assertTrue(def.appliesTo("git_push"));
-        assertTrue(def.appliesTo("git_commit"));
-        assertFalse(def.appliesTo("read_file"));
+        assertEquals("git_commit", config.toolId());
+        assertTrue(config.hasTrigger(HookTrigger.SUCCESS));
+        assertFalse(config.hasTrigger(HookTrigger.PERMISSION));
+        assertFalse(config.hasTrigger(HookTrigger.PRE));
+        assertFalse(config.hasTrigger(HookTrigger.FAILURE));
 
-        HookTriggerConfig postConfig = def.triggerConfig(HookTrigger.POST);
-        assertNotNull(postConfig);
-        assertEquals("git-push-tip.sh", postConfig.bash());
-        assertEquals("git-push-tip.ps1", postConfig.powershell());
-        assertEquals(15, postConfig.timeoutSec());
-        assertTrue(postConfig.failOpen());
-        assertEquals("value", postConfig.env().get("CUSTOM_VAR"));
+        List<HookEntryConfig> entries = config.entriesFor(HookTrigger.SUCCESS);
+        assertEquals(1, entries.size());
+
+        HookEntryConfig entry = entries.getFirst();
+        assertEquals("scripts/bot-identity-reminder.sh", entry.script());
+        assertEquals(15, entry.timeout());
+        assertTrue(entry.failSilently());
+        assertFalse(entry.async());
+        assertEquals("value", entry.env().get("CUSTOM_VAR"));
     }
 
     @Test
-    void parseDefinition_multipleTriggersIncludingPermission() {
+    void parseToolConfig_multipleTriggersWithChaining() {
         String json = """
             {
-              "version": 1,
-              "id": "security-scan",
-              "name": "Security scan",
-              "tools": ["run_command"],
-              "hooks": {
-                "permission": {
-                  "bash": "check-allowed.sh",
-                  "timeoutSec": 5,
-                  "failOpen": false
+              "permission": [
+                {
+                  "script": "check-allowed.sh",
+                  "timeout": 5,
+                  "rejectOnFailure": true
+                }
+              ],
+              "success": [
+                {
+                  "script": "first-hook.sh",
+                  "failSilently": true
                 },
-                "post": {
-                  "bash": "redact-secrets.sh",
-                  "failOpen": true
+                {
+                  "script": "second-hook.sh",
+                  "failSilently": false,
+                  "async": true
                 }
-              }
+              ]
             }
             """;
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-        HookDefinition def = HookRegistry.parseDefinition(root, DUMMY_DIR);
+        ToolHookConfig config = HookRegistry.parseToolConfig("run_command", root, HOOKS_DIR);
 
-        assertEquals("security-scan", def.id());
-        assertNotNull(def.triggerConfig(HookTrigger.PERMISSION));
-        assertNotNull(def.triggerConfig(HookTrigger.POST));
-        assertNull(def.triggerConfig(HookTrigger.PRE));
-        assertNull(def.triggerConfig(HookTrigger.ON_FAILURE));
+        assertTrue(config.hasTrigger(HookTrigger.PERMISSION));
+        assertTrue(config.hasTrigger(HookTrigger.SUCCESS));
+        assertFalse(config.hasTrigger(HookTrigger.PRE));
+        assertFalse(config.hasTrigger(HookTrigger.FAILURE));
 
-        HookTriggerConfig permConfig = def.triggerConfig(HookTrigger.PERMISSION);
-        assertNotNull(permConfig);
-        assertEquals("check-allowed.sh", permConfig.bash());
-        assertEquals(5, permConfig.timeoutSec());
-        assertFalse(permConfig.failOpen());
+        List<HookEntryConfig> permEntries = config.entriesFor(HookTrigger.PERMISSION);
+        assertEquals(1, permEntries.size());
+        assertEquals("check-allowed.sh", permEntries.getFirst().script());
+        assertEquals(5, permEntries.getFirst().timeout());
+        assertFalse(permEntries.getFirst().failSilently()); // rejectOnFailure=true → failSilently=false
+
+        List<HookEntryConfig> successEntries = config.entriesFor(HookTrigger.SUCCESS);
+        assertEquals(2, successEntries.size());
+        assertEquals("first-hook.sh", successEntries.getFirst().script());
+        assertTrue(successEntries.getFirst().failSilently());
+        assertFalse(successEntries.getFirst().async());
+        assertEquals("second-hook.sh", successEntries.get(1).script());
+        assertFalse(successEntries.get(1).failSilently());
+        assertTrue(successEntries.get(1).async());
     }
 
     @Test
-    void parseDefinition_defaultsAppliedForMissingFields() {
+    void parseToolConfig_defaultsApplied() {
         String json = """
             {
-              "version": 1,
-              "id": "minimal",
-              "name": "Minimal hook",
-              "tools": ["read_file"],
-              "hooks": {
-                "post": {
-                  "bash": "my-hook.sh"
+              "success": [
+                {
+                  "script": "my-hook.sh"
                 }
-              }
+              ]
             }
             """;
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-        HookDefinition def = HookRegistry.parseDefinition(root, DUMMY_DIR);
+        ToolHookConfig config = HookRegistry.parseToolConfig("read_file", root, HOOKS_DIR);
 
-        HookTriggerConfig config = def.triggerConfig(HookTrigger.POST);
-        assertNotNull(config);
-        assertEquals(10, config.timeoutSec());
-        assertTrue(config.failOpen());
-        assertTrue(config.env().isEmpty());
-        assertNull(config.powershell());
-        assertNull(config.cwd());
-        assertNull(def.description());
+        List<HookEntryConfig> entries = config.entriesFor(HookTrigger.SUCCESS);
+        assertEquals(1, entries.size());
+
+        HookEntryConfig entry = entries.getFirst();
+        assertEquals(10, entry.timeout()); // default
+        assertTrue(entry.failSilently()); // default for non-permission
+        assertFalse(entry.async()); // default
+        assertTrue(entry.env().isEmpty());
     }
 
     @Test
-    void resolveScript_returnsPathRelativeToSourceDir() {
+    void parseToolConfig_permissionDefaultsRejectOnFailure() {
         String json = """
             {
-              "version": 1,
-              "id": "test",
-              "name": "Test",
-              "tools": ["git_push"],
-              "hooks": {
-                "pre": {
-                  "bash": "scripts/pre-hook.sh"
+              "permission": [
+                {
+                  "script": "security-check.sh"
                 }
-              }
+              ]
             }
             """;
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-        HookDefinition def = HookRegistry.parseDefinition(root, DUMMY_DIR);
+        ToolHookConfig config = HookRegistry.parseToolConfig("run_command", root, HOOKS_DIR);
 
-        Path resolved = def.resolveScript(HookTrigger.PRE);
+        List<HookEntryConfig> entries = config.entriesFor(HookTrigger.PERMISSION);
+        assertEquals(1, entries.size());
+        // Default: rejectOnFailure=true → failSilently=false
+        assertFalse(entries.getFirst().failSilently());
+    }
+
+    @Test
+    void resolveScript_returnsPathRelativeToHooksDir() {
+        String json = """
+            {
+              "pre": [
+                {
+                  "script": "scripts/pre-hook.sh"
+                }
+              ]
+            }
+            """;
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        ToolHookConfig config = HookRegistry.parseToolConfig("git_push", root, HOOKS_DIR);
+
+        HookEntryConfig entry = config.entriesFor(HookTrigger.PRE).getFirst();
+        Path resolved = config.resolveScript(entry);
         assertNotNull(resolved);
-        assertEquals(DUMMY_DIR.resolve("scripts/pre-hook.sh"), resolved);
+        assertEquals(HOOKS_DIR.resolve("scripts/pre-hook.sh"), resolved);
+    }
+
+    @Test
+    void parseToolConfig_allFourTriggers() {
+        String json = """
+            {
+              "permission": [{"script": "perm.sh"}],
+              "pre": [{"script": "pre.sh"}],
+              "success": [{"script": "success.sh"}],
+              "failure": [{"script": "failure.sh"}]
+            }
+            """;
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        ToolHookConfig config = HookRegistry.parseToolConfig("write_file", root, HOOKS_DIR);
+
+        assertTrue(config.hasTrigger(HookTrigger.PERMISSION));
+        assertTrue(config.hasTrigger(HookTrigger.PRE));
+        assertTrue(config.hasTrigger(HookTrigger.SUCCESS));
+        assertTrue(config.hasTrigger(HookTrigger.FAILURE));
     }
 
     @Test

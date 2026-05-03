@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Executes hook scripts with the stdin/stdout JSON protocol.
- * Handles timeout enforcement, failOpen behavior, and result parsing.
+ * Handles timeout enforcement, failSilently behavior, async mode, and result parsing.
  */
 public final class HookExecutor {
 
@@ -34,50 +34,64 @@ public final class HookExecutor {
     }
 
     /**
-     * Runs a hook script and returns the parsed result.
+     * Runs a single hook entry and returns the parsed result.
      *
-     * @param definition the hook definition
-     * @param trigger    the trigger type being executed
-     * @param payload    the JSON payload to send on stdin
+     * @param entry   the hook entry configuration
+     * @param trigger the trigger type being executed
+     * @param payload the JSON payload to send on stdin
+     * @param config  the tool hook config (for resolving script paths)
      * @return the parsed hook result, or {@link HookResult.NoOp} if the hook produces no output
-     * @throws HookExecutionException if the hook fails and is not failOpen
+     * @throws HookExecutionException if the hook fails and is not failSilently
      */
-    public static @NotNull HookResult execute(@NotNull HookDefinition definition,
+    public static @NotNull HookResult execute(@NotNull HookEntryConfig entry,
                                               @NotNull HookTrigger trigger,
-                                              @NotNull HookPayload payload) throws HookExecutionException {
-        HookTriggerConfig config = definition.triggerConfig(trigger);
-        if (config == null) return new HookResult.NoOp();
+                                              @NotNull HookPayload payload,
+                                              @NotNull ToolHookConfig config) throws HookExecutionException {
+        Path scriptPath = config.resolveScript(entry);
 
-        Path scriptPath = definition.resolveScript(trigger);
-        if (scriptPath == null) {
-            LOG.warn("No script for OS in hook '" + definition.id() + "' trigger " + trigger.jsonKey());
+        if (entry.async()) {
+            startAsync(scriptPath, entry, payload, config.toolId());
             return new HookResult.NoOp();
         }
 
         try {
-            String stdout = runScript(scriptPath, config, payload, definition.sourceDir());
+            String stdout = runScript(scriptPath, entry, payload);
             return parseResult(trigger, stdout);
         } catch (IOException e) {
-            if (config.failOpen()) {
-                LOG.warn("Hook '" + definition.id() + "' (" + trigger.jsonKey() + ") failed (failOpen=true): " + e.getMessage());
+            if (entry.failSilently()) {
+                LOG.warn("Hook script failed (failSilently=true) for tool '"
+                    + config.toolId() + "' trigger " + trigger.jsonKey() + ": " + e.getMessage());
                 return new HookResult.NoOp();
             }
-            throw new HookExecutionException(definition.id(), trigger, e.getMessage(), e);
+            throw new HookExecutionException(config.toolId(), trigger, e.getMessage(), e);
         }
     }
 
+    /**
+     * Starts a hook script asynchronously (fire-and-forget). Errors are logged but never propagated.
+     */
+    private static void startAsync(@NotNull Path scriptPath,
+                                   @NotNull HookEntryConfig entry,
+                                   @NotNull HookPayload payload,
+                                   @NotNull String toolId) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                runScript(scriptPath, entry, payload);
+            } catch (IOException e) {
+                LOG.warn("Async hook script failed for tool '" + toolId + "': " + e.getMessage());
+            }
+        });
+    }
+
     private static @NotNull String runScript(@NotNull Path scriptPath,
-                                             @NotNull HookTriggerConfig config,
-                                             @NotNull HookPayload payload,
-                                             @NotNull Path hookSourceDir) throws IOException {
+                                             @NotNull HookEntryConfig entry,
+                                             @NotNull HookPayload payload) throws IOException {
         List<String> command = buildCommand(scriptPath);
         ProcessBuilder builder = new ProcessBuilder(command);
+        builder.directory(scriptPath.getParent().toFile());
 
-        Path workingDir = config.cwd() != null ? hookSourceDir.resolve(config.cwd()) : hookSourceDir;
-        builder.directory(workingDir.toFile());
-
-        if (!config.env().isEmpty()) {
-            builder.environment().putAll(config.env());
+        if (!entry.env().isEmpty()) {
+            builder.environment().putAll(entry.env());
         }
 
         Process process = builder.start();
@@ -90,7 +104,7 @@ public final class HookExecutor {
 
         boolean finished;
         try {
-            finished = process.waitFor(config.timeoutSec(), TimeUnit.SECONDS);
+            finished = process.waitFor(entry.timeout(), TimeUnit.SECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             process.destroyForcibly();
@@ -99,7 +113,7 @@ public final class HookExecutor {
 
         if (!finished) {
             process.destroyForcibly();
-            throw new IOException("Hook timed out after " + config.timeoutSec() + "s: " + scriptPath);
+            throw new IOException("Hook timed out after " + entry.timeout() + "s: " + scriptPath);
         }
 
         String out = await(stdout, "stdout");
@@ -124,7 +138,7 @@ public final class HookExecutor {
         JsonElement element = parseJsonOrNull(trimmed);
 
         if (element == null || !element.isJsonObject()) {
-            if (trigger == HookTrigger.POST || trigger == HookTrigger.ON_FAILURE) {
+            if (trigger == HookTrigger.SUCCESS || trigger == HookTrigger.FAILURE) {
                 return new HookResult.OutputModification(stripTrailingLineBreaks(stdout), null);
             }
             return new HookResult.NoOp();
@@ -135,7 +149,7 @@ public final class HookExecutor {
         return switch (trigger) {
             case PERMISSION -> parsePermissionResult(obj);
             case PRE -> parsePreResult(obj);
-            case POST, ON_FAILURE -> parseOutputResult(obj, stdout);
+            case SUCCESS, FAILURE -> parseOutputResult(obj, stdout);
         };
     }
 
@@ -245,20 +259,20 @@ public final class HookExecutor {
     }
 
     /**
-     * Thrown when a hook script fails and is configured with {@code failOpen: false}.
+     * Thrown when a hook script fails and is configured with {@code failSilently: false}.
      */
     public static final class HookExecutionException extends Exception {
-        private final String hookId;
+        private final String toolId;
         private final HookTrigger trigger;
 
-        public HookExecutionException(String hookId, HookTrigger trigger, String message, Throwable cause) {
-            super("Hook '" + hookId + "' (" + trigger.jsonKey() + ") failed: " + message, cause);
-            this.hookId = hookId;
+        public HookExecutionException(String toolId, HookTrigger trigger, String message, Throwable cause) {
+            super("Hook for tool '" + toolId + "' (" + trigger.jsonKey() + ") failed: " + message, cause);
+            this.toolId = toolId;
             this.trigger = trigger;
         }
 
-        public String hookId() {
-            return hookId;
+        public String toolId() {
+            return toolId;
         }
 
         public HookTrigger trigger() {

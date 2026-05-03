@@ -7,12 +7,17 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * Orchestrates hook execution at each point in the MCP tool call pipeline.
  * Called from {@code McpProtocolHandler.handleToolsCall()} at the four trigger points.
  *
- * <p>Pipeline: {@code permission → pre → (tool executes) → post / onFailure}
+ * <p>Pipeline: {@code permission → pre → (tool executes) → success / failure}
+ *
+ * <p>Each trigger supports chaining: multiple hook entries are executed sequentially,
+ * with each entry's output feeding into the next.
  */
 public final class HookPipeline {
 
@@ -22,7 +27,7 @@ public final class HookPipeline {
     }
 
     /**
-     * Result of the permission hook check.
+     * Result of the permission hook chain.
      */
     public sealed interface PermissionResult {
         record Allowed() implements PermissionResult {
@@ -33,7 +38,7 @@ public final class HookPipeline {
     }
 
     /**
-     * Result of the pre-tool hook.
+     * Result of the pre-tool hook chain.
      */
     public sealed interface PreHookResult {
         record Unchanged(@NotNull JsonObject arguments) implements PreHookResult {
@@ -47,97 +52,139 @@ public final class HookPipeline {
     }
 
     /**
-     * Runs the permission hook for a tool. Returns allowed/denied.
-     * If no hook is registered, returns allowed.
+     * Runs the permission hook chain for a tool. All entries must allow; any deny stops the chain.
+     * If no hooks are registered, returns allowed.
      */
-    public static @NotNull PermissionResult runPermissionHook(@NotNull Project project,
-                                                              @NotNull String toolName,
-                                                              @NotNull JsonObject arguments)
+    public static @NotNull PermissionResult runPermissionHooks(@NotNull Project project,
+                                                               @NotNull String toolName,
+                                                               @NotNull JsonObject arguments)
         throws HookExecutor.HookExecutionException {
 
-        HookDefinition hook = HookRegistry.getInstance(project).findHook(toolName, HookTrigger.PERMISSION);
-        if (hook == null) return new PermissionResult.Allowed();
+        List<HookEntryConfig> entries = HookRegistry.getInstance(project)
+            .findEntries(toolName, HookTrigger.PERMISSION);
+        if (entries.isEmpty()) return new PermissionResult.Allowed();
+
+        ToolHookConfig config = Objects.requireNonNull(
+            HookRegistry.getInstance(project).findConfig(toolName));
 
         HookPayload payload = HookPayload.forPreExecution(
             toolName, arguments, project.getName(), Instant.now().toString());
 
-        HookResult result = HookExecutor.execute(hook, HookTrigger.PERMISSION, payload);
-        if (result instanceof HookResult.PermissionDecision(boolean allowed, String reason) && !allowed) {
-            String resolvedReason = reason != null ? reason : "Denied by hook: " + hook.id();
-            LOG.info("Permission hook '" + hook.id() + "' denied tool " + toolName + ": " + resolvedReason);
-            return new PermissionResult.Denied(resolvedReason);
+        for (HookEntryConfig entry : entries) {
+            HookResult result = HookExecutor.execute(entry, HookTrigger.PERMISSION, payload, config);
+            if (result instanceof HookResult.PermissionDecision(boolean allowed, String reason) && !allowed) {
+                String resolvedReason = reason != null ? reason : "Denied by permission hook";
+                LOG.info("Permission hook denied tool " + toolName + ": " + resolvedReason);
+                return new PermissionResult.Denied(resolvedReason);
+            }
         }
         return new PermissionResult.Allowed();
     }
 
     /**
-     * Runs the pre-tool hook. Returns possibly modified arguments or an immediate block.
-     * If no hook is registered, returns the original arguments unchanged.
+     * Runs the pre-tool hook chain. Each entry can modify arguments or block execution.
+     * Modified arguments are passed to subsequent entries in the chain.
+     * If no hooks are registered, returns the original arguments unchanged.
      */
-    public static @NotNull PreHookResult runPreHook(@NotNull Project project,
-                                                    @NotNull String toolName,
-                                                    @NotNull JsonObject arguments)
+    public static @NotNull PreHookResult runPreHooks(@NotNull Project project,
+                                                     @NotNull String toolName,
+                                                     @NotNull JsonObject arguments)
         throws HookExecutor.HookExecutionException {
 
-        HookDefinition hook = HookRegistry.getInstance(project).findHook(toolName, HookTrigger.PRE);
-        if (hook == null) return new PreHookResult.Unchanged(arguments);
+        List<HookEntryConfig> entries = HookRegistry.getInstance(project)
+            .findEntries(toolName, HookTrigger.PRE);
+        if (entries.isEmpty()) return new PreHookResult.Unchanged(arguments);
 
-        HookPayload payload = HookPayload.forPreExecution(
-            toolName, arguments, project.getName(), Instant.now().toString());
+        ToolHookConfig config = Objects.requireNonNull(
+            HookRegistry.getInstance(project).findConfig(toolName));
+        JsonObject currentArgs = arguments;
+        boolean modified = false;
 
-        HookResult result = HookExecutor.execute(hook, HookTrigger.PRE, payload);
-        if (result instanceof HookResult.PreHookFailure(String error)) {
-            LOG.info("Pre-hook '" + hook.id() + "' blocked tool " + toolName + ": " + error);
-            return new PreHookResult.Blocked(error);
+        for (HookEntryConfig entry : entries) {
+            HookPayload payload = HookPayload.forPreExecution(
+                toolName, currentArgs, project.getName(), Instant.now().toString());
+
+            HookResult result = HookExecutor.execute(entry, HookTrigger.PRE, payload, config);
+
+            if (result instanceof HookResult.PreHookFailure(String error)) {
+                LOG.info("Pre-hook blocked tool " + toolName + ": " + error);
+                return new PreHookResult.Blocked(error);
+            }
+            if (result instanceof HookResult.ModifiedArguments(JsonObject modifiedArguments)) {
+                currentArgs = modifiedArguments;
+                modified = true;
+                LOG.info("Pre-hook modified arguments for " + toolName);
+            }
         }
-        if (result instanceof HookResult.ModifiedArguments(JsonObject modifiedArguments)) {
-            LOG.info("Pre-hook '" + hook.id() + "' modified arguments for " + toolName);
-            return new PreHookResult.Modified(modifiedArguments);
-        }
-        return new PreHookResult.Unchanged(arguments);
+
+        return modified ? new PreHookResult.Modified(currentArgs) : new PreHookResult.Unchanged(arguments);
     }
 
     /**
-     * Runs the post-tool hook. Returns possibly modified output.
-     * If no hook is registered, returns the original output unchanged.
+     * Runs the success hook chain. Each entry can modify or append to tool output.
+     * Modified output is passed to subsequent entries in the chain.
+     * If no hooks are registered, returns the original output unchanged.
      */
-    public static @Nullable String runPostHook(@NotNull Project project,
-                                               @NotNull String toolName,
-                                               @NotNull JsonObject arguments,
-                                               @Nullable String output,
-                                               long durationMs)
+    public static @Nullable String runSuccessHooks(@NotNull Project project,
+                                                   @NotNull String toolName,
+                                                   @NotNull JsonObject arguments,
+                                                   @Nullable String output,
+                                                   long durationMs)
         throws HookExecutor.HookExecutionException {
 
-        HookDefinition hook = HookRegistry.getInstance(project).findHook(toolName, HookTrigger.POST);
-        if (hook == null) return output;
+        List<HookEntryConfig> entries = HookRegistry.getInstance(project)
+            .findEntries(toolName, HookTrigger.SUCCESS);
+        if (entries.isEmpty()) return output;
 
-        HookPayload payload = HookPayload.forPostExecution(
-            toolName, arguments, output, false, project.getName(), Instant.now().toString(), durationMs);
+        ToolHookConfig config = Objects.requireNonNull(
+            HookRegistry.getInstance(project).findConfig(toolName));
+        String currentOutput = output;
 
-        HookResult result = HookExecutor.execute(hook, HookTrigger.POST, payload);
-        return applyOutputResult(result, output);
+        for (HookEntryConfig entry : entries) {
+            HookPayload payload = HookPayload.forPostExecution(
+                toolName, arguments, currentOutput, false, project.getName(),
+                Instant.now().toString(), durationMs);
+
+            HookResult result = HookExecutor.execute(entry, HookTrigger.SUCCESS, payload, config);
+            currentOutput = applyOutputResult(result, currentOutput);
+        }
+
+        return currentOutput;
     }
 
     /**
-     * Runs the onFailure hook. Returns possibly modified error message.
-     * If no hook is registered, returns the original error unchanged.
+     * Runs the failure hook chain. Each entry can modify or append to the error message.
+     * Modified error messages are passed to subsequent entries in the chain.
+     * If no hooks are registered, returns the original error unchanged.
      */
-    public static @NotNull String runFailureHook(@NotNull Project project,
-                                                 @NotNull String toolName,
-                                                 @NotNull JsonObject arguments,
-                                                 @NotNull String errorMessage,
-                                                 long durationMs)
+    public static @NotNull String runFailureHooks(@NotNull Project project,
+                                                  @NotNull String toolName,
+                                                  @NotNull JsonObject arguments,
+                                                  @NotNull String errorMessage,
+                                                  long durationMs)
         throws HookExecutor.HookExecutionException {
 
-        HookDefinition hook = HookRegistry.getInstance(project).findHook(toolName, HookTrigger.ON_FAILURE);
-        if (hook == null) return errorMessage;
+        List<HookEntryConfig> entries = HookRegistry.getInstance(project)
+            .findEntries(toolName, HookTrigger.FAILURE);
+        if (entries.isEmpty()) return errorMessage;
 
-        HookPayload payload = HookPayload.forPostExecution(
-            toolName, arguments, errorMessage, true, project.getName(), Instant.now().toString(), durationMs);
+        ToolHookConfig config = Objects.requireNonNull(
+            HookRegistry.getInstance(project).findConfig(toolName));
+        String currentError = errorMessage;
 
-        HookResult result = HookExecutor.execute(hook, HookTrigger.ON_FAILURE, payload);
-        String modified = applyOutputResult(result, errorMessage);
-        return modified != null ? modified : errorMessage;
+        for (HookEntryConfig entry : entries) {
+            HookPayload payload = HookPayload.forPostExecution(
+                toolName, arguments, currentError, true, project.getName(),
+                Instant.now().toString(), durationMs);
+
+            HookResult result = HookExecutor.execute(entry, HookTrigger.FAILURE, payload, config);
+            String modified = applyOutputResult(result, currentError);
+            if (modified != null) {
+                currentError = modified;
+            }
+        }
+
+        return currentError;
     }
 
     private static @Nullable String applyOutputResult(@NotNull HookResult result, @Nullable String original) {
