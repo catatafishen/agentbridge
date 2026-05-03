@@ -13,13 +13,11 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -133,28 +131,11 @@ final class ToolOutputHookRunner {
     }
 
     private static CompletableFuture<String> readAsync(InputStream stream) {
-        return CompletableFuture.supplyAsync(() -> {
-            try (stream) {
-                return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        });
+        return ProcessStreamUtils.readAsync(stream, Integer.MAX_VALUE);
     }
 
     private static String await(CompletableFuture<String> future, String streamName) throws IOException {
-        try {
-            return future.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while reading tool output hook " + streamName, e);
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof UncheckedIOException unchecked) {
-                throw unchecked.getCause();
-            }
-            throw new IOException("Could not read tool output hook " + streamName, cause);
-        }
+        return ProcessStreamUtils.await(future, streamName);
     }
 
     private static String formatHookOutput(String stdout, String stderr) {
