@@ -1,6 +1,10 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -9,21 +13,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HookExecutorTest {
 
-    @Test
-    void parseResult_emptyStdout_returnsNoOp() {
-        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "");
-        assertInstanceOfNoOp(result);
-    }
-
-    @Test
-    void parseResult_blankStdout_returnsNoOp() {
-        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "   \n  ");
-        assertInstanceOfNoOp(result);
-    }
-
-    @Test
-    void parseResult_nullStdout_returnsNoOp() {
-        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, null);
+    @ParameterizedTest(name = "parseResult returns NoOp for {0} stdout")
+    @NullSource
+    @ValueSource(strings = {"", "   \n  "})
+    void parseResult_blankOrNullStdout_returnsNoOp(String stdout) {
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, stdout);
         assertInstanceOfNoOp(result);
     }
 
@@ -80,27 +74,30 @@ class HookExecutorTest {
         assertInstanceOfNoOp(result);
     }
 
-    @Test
-    void parseResult_success_replaceOutput() {
-        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "{\"output\":\"replaced text\"}");
+    @ParameterizedTest(name = "parseResult for {0} trigger parses output field as replacement")
+    @EnumSource(value = HookTrigger.class, names = {"SUCCESS", "FAILURE"})
+    void parseResult_outputField_replaceOutput(HookTrigger trigger) {
+        var result = HookExecutor.parseResult(trigger, "{\"output\":\"replaced text\"}");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertTrue(mod.isReplacement());
         assertEquals("replaced text", mod.replacedOutput());
     }
 
-    @Test
-    void parseResult_success_appendOutput() {
-        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "{\"append\":\"\\nTip: create a PR\"}");
+    @ParameterizedTest(name = "parseResult for {0} trigger parses append field")
+    @EnumSource(value = HookTrigger.class, names = {"SUCCESS", "FAILURE"})
+    void parseResult_appendField_appendOutput(HookTrigger trigger) {
+        var result = HookExecutor.parseResult(trigger, "{\"append\":\"\\nTip: create a PR\"}");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertFalse(mod.isReplacement());
         assertEquals("\nTip: create a PR", mod.appendedText());
     }
 
-    @Test
-    void parseResult_success_plainText_treatedAsReplacement() {
-        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "plain text output\n");
+    @ParameterizedTest(name = "parseResult for {0} trigger treats plain text as replacement")
+    @EnumSource(value = HookTrigger.class, names = {"SUCCESS", "FAILURE"})
+    void parseResult_plainText_treatedAsReplacement(HookTrigger trigger) {
+        var result = HookExecutor.parseResult(trigger, "plain text output\n");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertTrue(mod.isReplacement());
@@ -114,24 +111,6 @@ class HookExecutorTest {
         var mod = (HookResult.OutputModification) result;
         assertTrue(mod.isReplacement());
         assertEquals("", mod.replacedOutput());
-    }
-
-    @Test
-    void parseResult_failure_replaceError() {
-        var result = HookExecutor.parseResult(HookTrigger.FAILURE, "{\"output\":\"Friendly error\"}");
-        assertInstanceOf(HookResult.OutputModification.class, result);
-        var mod = (HookResult.OutputModification) result;
-        assertTrue(mod.isReplacement());
-        assertEquals("Friendly error", mod.replacedOutput());
-    }
-
-    @Test
-    void parseResult_failure_appendSuggestion() {
-        var result = HookExecutor.parseResult(HookTrigger.FAILURE, "{\"append\":\"\\nSuggestion: check permissions\"}");
-        assertInstanceOf(HookResult.OutputModification.class, result);
-        var mod = (HookResult.OutputModification) result;
-        assertFalse(mod.isReplacement());
-        assertEquals("\nSuggestion: check permissions", mod.appendedText());
     }
 
     @Test

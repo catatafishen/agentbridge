@@ -18,6 +18,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -126,7 +127,7 @@ public final class HookRegistry {
     static @NotNull ToolHookConfig parseToolConfig(@NotNull String toolId,
                                                     @NotNull JsonObject root,
                                                     @NotNull Path hooksDir) {
-        Map<HookTrigger, List<HookEntryConfig>> triggers = new HashMap<>();
+        Map<HookTrigger, List<HookEntryConfig>> triggers = new EnumMap<>(HookTrigger.class);
 
         for (HookTrigger trigger : HookTrigger.values()) {
             if (root.has(trigger.jsonKey())) {

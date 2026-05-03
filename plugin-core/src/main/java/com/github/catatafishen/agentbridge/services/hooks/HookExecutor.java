@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services.hooks;
 
+import com.github.catatafishen.agentbridge.services.ProcessStreamUtils;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -11,13 +12,11 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -204,30 +203,11 @@ public final class HookExecutor {
     }
 
     private static CompletableFuture<String> readAsync(InputStream stream) {
-        return CompletableFuture.supplyAsync(() -> {
-            try (stream) {
-                byte[] bytes = stream.readAllBytes();
-                String text = new String(bytes, StandardCharsets.UTF_8);
-                return text.length() > MAX_HOOK_OUTPUT_CHARS
-                    ? text.substring(0, MAX_HOOK_OUTPUT_CHARS)
-                    : text;
-            } catch (IOException e) {
-                throw new UncheckedIOException(e);
-            }
-        });
+        return ProcessStreamUtils.readAsync(stream, MAX_HOOK_OUTPUT_CHARS);
     }
 
     private static String await(CompletableFuture<String> future, String streamName) throws IOException {
-        try {
-            return future.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted reading hook " + streamName, e);
-        } catch (ExecutionException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof UncheckedIOException unchecked) throw unchecked.getCause();
-            throw new IOException("Failed reading hook " + streamName, cause);
-        }
+        return ProcessStreamUtils.await(future, streamName);
     }
 
     private static @Nullable JsonElement parseJsonOrNull(String text) {
