@@ -1,0 +1,9 @@
+{
+  "pre": [
+    {
+      "script": "scripts/enforce-gh-bot-identity.sh",
+      "failSilently": false,
+      "timeout": 5
+    }
+  ]
+}

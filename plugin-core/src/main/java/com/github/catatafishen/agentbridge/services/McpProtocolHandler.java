@@ -554,7 +554,9 @@ public final class McpProtocolHandler {
 
     /**
      * Applies the pre-tool hook chain, returning possibly modified arguments or an immediate failure.
-     * On hook failure, returns original arguments and logs the error.
+     * If a hook with {@code failSilently: false} throws, the tool is blocked (fail-closed),
+     * consistent with permission hook behavior. Only {@code failSilently: true} hooks silently
+     * allow the tool through on failure.
      */
     private @NotNull PreHookApplication applyPreHook(@NotNull String toolName, @NotNull JsonObject arguments) {
         try {
@@ -569,8 +571,8 @@ public final class McpProtocolHandler {
             return new PreHookApplication(resolvedArgs, null, output.pendingPrepend(), output.pendingAppend());
         } catch (HookExecutor.HookExecutionException e) {
             LOG.warn("[MCP] pre-hook failed for " + toolName, e);
+            return new PreHookApplication(arguments, "Pre-hook failed: " + e.getMessage(), null, null);
         }
-        return new PreHookApplication(arguments, null, null, null);
     }
 
     private @NotNull HookPipeline.PostHookOutcome applyPostHook(@NotNull String toolName,
