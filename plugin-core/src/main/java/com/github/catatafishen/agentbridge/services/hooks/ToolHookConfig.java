@@ -15,24 +15,17 @@ import java.util.Map;
  *
  * <p>The tool ID is derived from the filename (e.g. {@code git_commit.json} → {@code "git_commit"}).
  * Each trigger point maps to a list of {@link HookEntryConfig} entries that are executed
- * sequentially (chaining).
+ * sequentially (chaining). Each entry can carry optional {@code prependString}/{@code appendString}
+ * that are applied to the tool output at the respective trigger stage.
  *
- * <p>Optional {@code prependString} and {@code appendString} fields provide static text that is
- * prepended/appended to successful tool output without requiring a script. These replace the
- * legacy {@code outputTemplate} setting.
- *
- * @param toolId        the MCP tool ID this config applies to (from the filename)
- * @param triggers      trigger → ordered list of hook entries
- * @param hooksDir      the hooks directory (used to resolve relative script paths)
- * @param prependString optional static text prepended to successful tool output
- * @param appendString  optional static text appended to successful tool output
+ * @param toolId   the MCP tool ID this config applies to (from the filename)
+ * @param triggers trigger → ordered list of hook entries
+ * @param hooksDir the hooks directory (used to resolve relative script paths)
  */
 public record ToolHookConfig(
     @NotNull String toolId,
     @NotNull Map<HookTrigger, List<HookEntryConfig>> triggers,
-    @NotNull Path hooksDir,
-    @Nullable String prependString,
-    @Nullable String appendString
+    @NotNull Path hooksDir
 ) {
 
     /**
@@ -52,18 +45,18 @@ public record ToolHookConfig(
 
     /**
      * Resolves a script path from an entry against the hooks directory.
+     * Returns null if the entry has no script.
      */
-    public @NotNull Path resolveScript(@NotNull HookEntryConfig entry) {
+    public @Nullable Path resolveScript(@NotNull HookEntryConfig entry) {
+        if (entry.script() == null) return null;
         return hooksDir.resolve(entry.script());
     }
 
     /**
-     * Returns true if this config has no triggers, no prepend/append text — effectively empty.
+     * Returns true if this config has no triggers — effectively empty.
      */
     public boolean isEmpty() {
-        return triggers.isEmpty()
-            && (prependString == null || prependString.isEmpty())
-            && (appendString == null || appendString.isEmpty());
+        return triggers.isEmpty();
     }
 
     /**
@@ -71,43 +64,48 @@ public record ToolHookConfig(
      */
     public @NotNull JsonObject toJson() {
         JsonObject root = new JsonObject();
-
-        if (prependString != null && !prependString.isEmpty()) {
-            root.addProperty("prependString", prependString);
-        }
-        if (appendString != null && !appendString.isEmpty()) {
-            root.addProperty("appendString", appendString);
-        }
-
         for (HookTrigger trigger : HookTrigger.values()) {
             List<HookEntryConfig> entries = entriesFor(trigger);
             if (entries.isEmpty()) continue;
-
             JsonArray array = new JsonArray();
             for (HookEntryConfig entry : entries) {
-                JsonObject entryObj = new JsonObject();
-                entryObj.addProperty("script", entry.script());
-                if (entry.timeout() != 10) {
-                    entryObj.addProperty("timeout", entry.timeout());
-                }
-                if (trigger == HookTrigger.PERMISSION) {
-                    entryObj.addProperty("rejectOnFailure", !entry.failSilently());
-                } else if (!entry.failSilently()) {
-                    entryObj.addProperty("failSilently", false);
-                }
-                if (entry.async()) {
-                    entryObj.addProperty("async", true);
-                }
-                if (!entry.env().isEmpty()) {
-                    JsonObject envObj = new JsonObject();
-                    entry.env().forEach(envObj::addProperty);
-                    entryObj.add("env", envObj);
-                }
-                array.add(entryObj);
+                array.add(serializeEntry(entry, trigger));
             }
             root.add(trigger.jsonKey(), array);
         }
-
         return root;
+    }
+
+    private static @NotNull JsonObject serializeEntry(@NotNull HookEntryConfig entry,
+                                                      @NotNull HookTrigger trigger) {
+        JsonObject obj = new JsonObject();
+        if (entry.script() != null && !entry.script().isBlank()) {
+            serializeScriptFields(obj, entry, trigger);
+        }
+        if (trigger != HookTrigger.PERMISSION) {
+            if (entry.prependString() != null && !entry.prependString().isEmpty())
+                obj.addProperty("prependString", entry.prependString());
+            if (entry.appendString() != null && !entry.appendString().isEmpty())
+                obj.addProperty("appendString", entry.appendString());
+        }
+        return obj;
+    }
+
+    private static void serializeScriptFields(@NotNull JsonObject obj,
+                                              @NotNull HookEntryConfig entry,
+                                              @NotNull HookTrigger trigger) {
+        obj.addProperty("script", entry.script());
+        if (entry.timeout() != 10) obj.addProperty("timeout", entry.timeout());
+        if (trigger == HookTrigger.PERMISSION) {
+            obj.addProperty("rejectOnFailure", !entry.failSilently());
+        } else if (!entry.failSilently()) {
+            obj.addProperty("failSilently", false);
+        }
+        if (entry.async()) obj.addProperty("async", true);
+        if (!entry.env().isEmpty()) {
+            JsonObject envObj = new JsonObject();
+            entry.env().forEach(envObj::addProperty);
+            obj.add("env", envObj);
+        }
     }
 }

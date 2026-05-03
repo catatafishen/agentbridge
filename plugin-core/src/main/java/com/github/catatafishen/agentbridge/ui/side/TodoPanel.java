@@ -107,7 +107,7 @@ final class TodoPanel extends JPanel implements Disposable {
 
         sessionFilesPanel = new ProjectFilesPanel(project, true);
         JPanel sessionSection = new JPanel(new BorderLayout());
-        JBLabel sessionHeader = new JBLabel("Current Session");
+        JBLabel sessionHeader = new JBLabel("Session Files");
         sessionHeader.setFont(UIUtil.getLabelFont().deriveFont(Font.BOLD, 11f));
         sessionHeader.setBorder(JBUI.Borders.empty(8, 8, 4, 8));
         sessionSection.add(sessionHeader, BorderLayout.NORTH);

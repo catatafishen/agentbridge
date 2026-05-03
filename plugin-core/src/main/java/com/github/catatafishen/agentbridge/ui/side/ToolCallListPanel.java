@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
+import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry;
 import com.github.catatafishen.agentbridge.services.LiveToolCallService;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
@@ -94,7 +95,13 @@ final class ToolCallListPanel extends JPanel implements Disposable {
 
         ActionToolbar toolbar = createToolbar();
         toolbar.setTargetComponent(this);
-        add(SidePanelFooter.createToolbarFooter(toolbar), BorderLayout.SOUTH);
+
+        ProjectFilesPanel hookFilesPanel = new ProjectFilesPanel(
+            project, HookRegistry.getInstance(project).getHooksDirectory());
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        bottomPanel.add(hookFilesPanel, BorderLayout.CENTER);
+        bottomPanel.add(SidePanelFooter.createToolbarFooter(toolbar), BorderLayout.SOUTH);
+        add(bottomPanel, BorderLayout.SOUTH);
 
         serviceListener = e -> ApplicationManager.getApplication().invokeLater(this::onServiceChanged);
         LiveToolCallService.getInstance(project).addChangeListener(serviceListener);

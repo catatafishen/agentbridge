@@ -17,7 +17,9 @@ import java.util.Objects;
  * <p>Pipeline: {@code permission → pre → (tool executes) → success / failure}
  *
  * <p>Each trigger supports chaining: multiple hook entries are executed sequentially,
- * with each entry's output feeding into the next.
+ * with each entry's output feeding into the next. Per-entry {@code prependString}/
+ * {@code appendString} are applied to the tool output after the entry's script runs
+ * (or directly, for text-only entries with no script).
  */
 public final class HookPipeline {
 
@@ -49,6 +51,22 @@ public final class HookPipeline {
 
         record Blocked(@NotNull String error) implements PreHookResult {
         }
+    }
+
+    /**
+     * Wraps the pre-hook chain result together with any static text modifiers accumulated
+     * from pre-hook entries that have {@code prependString}/{@code appendString} set.
+     * These modifiers are applied to the final tool output after the tool executes successfully.
+     *
+     * @param result         the hook chain result (modified args, unchanged, or blocked)
+     * @param pendingPrepend static text to prepend to success output (from pre-hook entries), or null
+     * @param pendingAppend  static text to append to success output (from pre-hook entries), or null
+     */
+    public record PreHookOutput(
+        @NotNull PreHookResult result,
+        @Nullable String pendingPrepend,
+        @Nullable String pendingAppend
+    ) {
     }
 
     /**
@@ -93,22 +111,29 @@ public final class HookPipeline {
 
     /**
      * Runs the pre-tool hook chain. Each entry can modify arguments or block execution.
-     * Modified arguments are passed to subsequent entries in the chain.
-     * If no hooks are registered, returns the original arguments unchanged.
+     * Modified arguments are passed to subsequent entries in the chain. Any per-entry
+     * {@code prependString}/{@code appendString} are accumulated and returned as pending
+     * output modifiers — they are applied to the tool output after the tool runs successfully.
+     *
+     * <p>If no hooks are registered, returns unchanged arguments with no pending modifiers.
      */
-    public static @NotNull PreHookResult runPreHooks(@NotNull Project project,
+    public static @NotNull PreHookOutput runPreHooks(@NotNull Project project,
                                                      @NotNull String toolName,
                                                      @NotNull JsonObject arguments)
         throws HookExecutor.HookExecutionException {
 
         List<HookEntryConfig> entries = HookRegistry.getInstance(project)
             .findEntries(toolName, HookTrigger.PRE);
-        if (entries.isEmpty()) return new PreHookResult.Unchanged(arguments);
+        if (entries.isEmpty()) {
+            return new PreHookOutput(new PreHookResult.Unchanged(arguments), null, null);
+        }
 
         ToolHookConfig config = Objects.requireNonNull(
             HookRegistry.getInstance(project).findConfig(toolName));
         JsonObject currentArgs = arguments;
         boolean modified = false;
+        StringBuilder pendingPrepend = new StringBuilder();
+        StringBuilder pendingAppend = new StringBuilder();
 
         for (HookEntryConfig entry : entries) {
             HookPayload payload = HookPayload.forPreExecution(
@@ -118,16 +143,30 @@ public final class HookPipeline {
 
             if (result instanceof HookResult.PreHookFailure(String error)) {
                 LOG.info("Pre-hook blocked tool " + toolName + ": " + error);
-                return new PreHookResult.Blocked(error);
+                return new PreHookOutput(new PreHookResult.Blocked(error), null, null);
             }
             if (result instanceof HookResult.ModifiedArguments(JsonObject modifiedArguments)) {
                 currentArgs = modifiedArguments;
                 modified = true;
                 LOG.info("Pre-hook modified arguments for " + toolName);
             }
+
+            if (entry.prependString() != null && !entry.prependString().isEmpty()) {
+                if (!pendingPrepend.isEmpty()) pendingPrepend.append("\n\n");
+                pendingPrepend.append(entry.prependString());
+            }
+            if (entry.appendString() != null && !entry.appendString().isEmpty()) {
+                if (!pendingAppend.isEmpty()) pendingAppend.append("\n\n");
+                pendingAppend.append(entry.appendString());
+            }
         }
 
-        return modified ? new PreHookResult.Modified(currentArgs) : new PreHookResult.Unchanged(arguments);
+        PreHookResult hookResult = modified
+            ? new PreHookResult.Modified(currentArgs)
+            : new PreHookResult.Unchanged(arguments);
+        String prepend = pendingPrepend.isEmpty() ? null : pendingPrepend.toString();
+        String append = pendingAppend.isEmpty() ? null : pendingAppend.toString();
+        return new PreHookOutput(hookResult, prepend, append);
     }
 
     public static @NotNull PostHookOutcome runSuccessHooks(@NotNull Project project,
@@ -158,6 +197,7 @@ public final class HookPipeline {
                     isError = !mod.stateOverride();
                 }
             }
+            currentOutput = applyEntryTextModifiers(entry, currentOutput);
         }
 
         return new PostHookOutcome(currentOutput, isError);
@@ -197,9 +237,24 @@ public final class HookPipeline {
                     }
                 }
             }
+            currentOutput = applyEntryTextModifiers(entry, currentOutput);
         }
 
         return new PostHookOutcome(currentOutput, isError);
+    }
+
+    /**
+     * Applies an entry's static text modifiers (prependString/appendString) to the current output.
+     */
+    private static @Nullable String applyEntryTextModifiers(@NotNull HookEntryConfig entry,
+                                                            @Nullable String current) {
+        if (entry.prependString() != null && !entry.prependString().isEmpty()) {
+            current = entry.prependString() + "\n\n" + (current != null ? current : "");
+        }
+        if (entry.appendString() != null && !entry.appendString().isEmpty()) {
+            current = (current != null ? current : "") + "\n\n" + entry.appendString();
+        }
+        return current;
     }
 
     private static @Nullable String applyOutputText(@NotNull HookResult.OutputModification mod,

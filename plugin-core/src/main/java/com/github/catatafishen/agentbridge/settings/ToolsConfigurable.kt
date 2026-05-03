@@ -48,6 +48,8 @@ class ToolsConfigurable(private val project: Project) :
     private var searchColorCombo: ThemeColorComboBox? = null
     private var editColorCombo: ThemeColorComboBox? = null
     private var executeColorCombo: ThemeColorComboBox? = null
+    private var toolNameFilter: JTextField? = null
+    private var hooksOnlyFilter: JCheckBox? = null
 
     override fun createPanel() = panel {
         row {
@@ -134,7 +136,49 @@ class ToolsConfigurable(private val project: Project) :
         }
         toolsPanel.add(topRow)
 
-        addToolRows(toolsPanel, settings)
+        val searchField = JTextField().apply {
+            toolTipText = "Filter by tool name or ID"
+            maximumSize = Dimension(JBUI.scale(240), preferredSize.height)
+        }
+        toolNameFilter = searchField
+        val hooksOnlyBox = JCheckBox("Has hooks").apply {
+            toolTipText = "Only show tools with hook configurations"
+            isOpaque = false
+        }
+        hooksOnlyFilter = hooksOnlyBox
+        val filterRow = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            border = JBUI.Borders.emptyBottom(4)
+            add(JBLabel("Filter: ").apply { font = JBUI.Fonts.smallFont() })
+            add(searchField)
+            add(Box.createHorizontalStrut(JBUI.scale(12)))
+            add(hooksOnlyBox)
+            add(Box.createHorizontalGlue())
+            alignmentX = Component.LEFT_ALIGNMENT
+            maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
+        }
+        toolsPanel.add(filterRow)
+
+        val toolListPanel = JBPanel<JBPanel<*>>().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            alignmentX = Component.LEFT_ALIGNMENT
+        }
+        toolsPanel.add(toolListPanel)
+
+        val refreshToolList = {
+            toolListPanel.removeAll()
+            addToolRows(toolListPanel, settings)
+            toolListPanel.revalidate()
+            toolListPanel.repaint()
+        }
+        searchField.document.addDocumentListener(object : javax.swing.event.DocumentListener {
+            override fun insertUpdate(e: javax.swing.event.DocumentEvent) = refreshToolList()
+            override fun removeUpdate(e: javax.swing.event.DocumentEvent) = refreshToolList()
+            override fun changedUpdate(e: javax.swing.event.DocumentEvent) = refreshToolList()
+        })
+        hooksOnlyBox.addItemListener { refreshToolList() }
+
+        addToolRows(toolListPanel, settings)
 
         toolsPanel.add(buildColorPickerSection(settings))
         toolsPanel.add(Box.createVerticalGlue())
@@ -174,8 +218,20 @@ class ToolsConfigurable(private val project: Project) :
     }
 
     private fun addToolRows(toolsPanel: JPanel, settings: McpServerSettings) {
+        val query = toolNameFilter?.text?.trim()?.lowercase(Locale.ROOT) ?: ""
+        val hooksOnly = hooksOnlyFilter?.isSelected ?: false
+        val hookRegistry = com.github.catatafishen.agentbridge.services.hooks.HookRegistry.getInstance(project)
+
         var currentCategory: ToolRegistry.Category? = null
         for (tool in sortedConfigurableTools()) {
+            if (query.isNotEmpty() &&
+                !tool.displayName().lowercase(Locale.ROOT).contains(query) &&
+                !tool.id().lowercase(Locale.ROOT).contains(query)
+            ) continue
+            if (hooksOnly) {
+                val config = hookRegistry.findConfig(tool.id())
+                if (config == null || config.isEmpty) continue
+            }
             val category = tool.category()
             if (category != currentCategory) {
                 currentCategory = category
@@ -420,6 +476,8 @@ class ToolsConfigurable(private val project: Project) :
         searchColorCombo = null
         editColorCombo = null
         executeColorCombo = null
+        toolNameFilter = null
+        hooksOnlyFilter = null
         toolCheckboxes.clear()
         categoryCheckboxes.clear()
         templateIndicators.clear()
@@ -428,7 +486,9 @@ class ToolsConfigurable(private val project: Project) :
     private fun keyOf(combo: ThemeColorComboBox): String? = combo.selectedThemeColor?.name
 
     private fun updateHookIndicator(indicator: JBLabel, hasHooks: Boolean) {
-        indicator.text = if (hasHooks) "🪝" else ""
+        indicator.text = if (hasHooks) "[hooks]" else ""
+        indicator.font = if (hasHooks) JBUI.Fonts.miniFont() else indicator.font
+        indicator.foreground = if (hasHooks) JBUI.CurrentTheme.Link.Foreground.ENABLED else indicator.foreground
         indicator.toolTipText = if (hasHooks) "Hook configured" else null
     }
 

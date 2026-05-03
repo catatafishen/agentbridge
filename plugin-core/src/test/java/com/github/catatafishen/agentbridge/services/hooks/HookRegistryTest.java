@@ -191,14 +191,14 @@ class HookRegistryTest {
     }
 
     @Test
-    void parseToolConfig_prependAndAppendStrings() {
+    void parseToolConfig_perEntryPrependAndAppend() {
         String json = """
             {
-              "prependString": "⚠ Bot identity required",
-              "appendString": "Remember: use the bot token for all GitHub API calls.",
               "success": [
                 {
-                  "script": "remind.sh"
+                  "script": "remind.sh",
+                  "prependString": "⚠ Bot identity required",
+                  "appendString": "Remember: use the bot token for all GitHub API calls."
                 }
               ]
             }
@@ -206,14 +206,16 @@ class HookRegistryTest {
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         ToolHookConfig config = HookRegistry.parseToolConfig("git_commit", root, HOOKS_DIR);
 
-        assertEquals("⚠ Bot identity required", config.prependString());
-        assertEquals("Remember: use the bot token for all GitHub API calls.", config.appendString());
         assertTrue(config.hasTrigger(HookTrigger.SUCCESS));
         assertFalse(config.isEmpty());
+        HookEntryConfig entry = config.entriesFor(HookTrigger.SUCCESS).getFirst();
+        assertEquals("remind.sh", entry.script());
+        assertEquals("⚠ Bot identity required", entry.prependString());
+        assertEquals("Remember: use the bot token for all GitHub API calls.", entry.appendString());
     }
 
     @Test
-    void parseToolConfig_noPrependAppend_returnsNull() {
+    void parseToolConfig_noPerEntryText_returnsNullFields() {
         String json = """
             {
               "success": [{"script": "hook.sh"}]
@@ -222,8 +224,9 @@ class HookRegistryTest {
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         ToolHookConfig config = HookRegistry.parseToolConfig("read_file", root, HOOKS_DIR);
 
-        assertNull(config.prependString());
-        assertNull(config.appendString());
+        HookEntryConfig entry = config.entriesFor(HookTrigger.SUCCESS).getFirst();
+        assertNull(entry.prependString());
+        assertNull(entry.appendString());
     }
 
     @Test
@@ -236,35 +239,42 @@ class HookRegistryTest {
     }
 
     @Test
-    void isEmpty_falseWithAppendStringOnly() {
+    void isEmpty_falseWithSuccessEntryWithAppendStringOnly() {
         String json = """
             {
-              "appendString": "Some text"
+              "success": [
+                {
+                  "appendString": "Some text"
+                }
+              ]
             }
             """;
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         ToolHookConfig config = HookRegistry.parseToolConfig("text_only", root, HOOKS_DIR);
 
         assertFalse(config.isEmpty());
+        HookEntryConfig entry = config.entriesFor(HookTrigger.SUCCESS).getFirst();
+        assertNull(entry.script());
+        assertEquals("Some text", entry.appendString());
     }
 
     @Test
     void toJson_roundTrips() {
         String json = """
             {
-              "prependString": "Before",
-              "appendString": "After",
               "pre": [
                 {
                   "script": "check.sh",
                   "timeout": 5,
-                  "failSilently": false
+                  "failSilently": false,
+                  "prependString": "Before"
                 }
               ],
               "success": [
                 {
                   "script": "notify.sh",
-                  "async": true
+                  "async": true,
+                  "appendString": "After"
                 }
               ]
             }
@@ -275,8 +285,6 @@ class HookRegistryTest {
         JsonObject serialized = config.toJson();
         ToolHookConfig reparsed = HookRegistry.parseToolConfig("round_trip", serialized, HOOKS_DIR);
 
-        assertEquals(config.prependString(), reparsed.prependString());
-        assertEquals(config.appendString(), reparsed.appendString());
         assertEquals(config.entriesFor(HookTrigger.PRE).size(),
             reparsed.entriesFor(HookTrigger.PRE).size());
         assertEquals(config.entriesFor(HookTrigger.SUCCESS).size(),
@@ -286,10 +294,33 @@ class HookRegistryTest {
         assertEquals("check.sh", preEntry.script());
         assertEquals(5, preEntry.timeout());
         assertFalse(preEntry.failSilently());
+        assertEquals("Before", preEntry.prependString());
 
         HookEntryConfig successEntry = reparsed.entriesFor(HookTrigger.SUCCESS).getFirst();
         assertEquals("notify.sh", successEntry.script());
         assertTrue(successEntry.async());
+        assertEquals("After", successEntry.appendString());
+    }
+
+    @Test
+    void parseEntry_permissionHookIgnoresPerEntryText() {
+        String json = """
+            {
+              "permission": [
+                {
+                  "script": "check.sh",
+                  "prependString": "Should be ignored",
+                  "appendString": "Also ignored"
+                }
+              ]
+            }
+            """;
+        JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+        ToolHookConfig config = HookRegistry.parseToolConfig("perm_tool", root, HOOKS_DIR);
+
+        HookEntryConfig entry = config.entriesFor(HookTrigger.PERMISSION).getFirst();
+        assertNull(entry.prependString());
+        assertNull(entry.appendString());
     }
 
     @Test

@@ -35,21 +35,14 @@ public final class HookExecutor {
     private HookExecutor() {
     }
 
-    /**
-     * Runs a single hook entry and returns the parsed result.
-     *
-     * @param entry   the hook entry configuration
-     * @param trigger the trigger type being executed
-     * @param payload the JSON payload to send on stdin
-     * @param config  the tool hook config (for resolving script paths)
-     * @return the parsed hook result, or {@link HookResult.NoOp} if the hook produces no output
-     * @throws HookExecutionException if the hook fails and is not failSilently
-     */
     public static @NotNull HookResult execute(@NotNull HookEntryConfig entry,
                                               @NotNull HookTrigger trigger,
                                               @NotNull HookPayload payload,
                                               @NotNull ToolHookConfig config) throws HookExecutionException {
         Path scriptPath = config.resolveScript(entry);
+        if (scriptPath == null) {
+            return new HookResult.NoOp();
+        }
 
         if (entry.async()) {
             startAsync(scriptPath, entry, payload, config.toolId());

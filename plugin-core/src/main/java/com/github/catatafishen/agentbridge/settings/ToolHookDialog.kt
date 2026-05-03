@@ -26,8 +26,9 @@ import javax.swing.*
  * Dialog for editing the full hook configuration of a single MCP tool.
  * Reads from and writes to the per-tool JSON file in the hooks directory.
  *
- * <p>Shows prependString/appendString text areas and hook entries per trigger,
- * with add/remove capabilities. Changes are persisted via {@link HookRegistry#writeConfig}.
+ * <p>Each hook entry carries its own optional prependString/appendString.
+ * At least one of script, prependString, or appendString is required per entry.
+ * PERMISSION entries require a script and do not support text modifiers.
  */
 class ToolHookDialog(
     private val project: Project,
@@ -35,16 +36,6 @@ class ToolHookDialog(
     displayName: String
 ) : DialogWrapper(project) {
 
-    private val prependArea = JTextArea("", 3, 50).apply {
-        lineWrap = true
-        wrapStyleWord = true
-        font = JBUI.Fonts.label()
-    }
-    private val appendArea = JTextArea("", 3, 50).apply {
-        lineWrap = true
-        wrapStyleWord = true
-        font = JBUI.Fonts.label()
-    }
     private val triggerSections = EnumMap<HookTrigger, TriggerSection>(HookTrigger::class.java)
 
     init {
@@ -54,16 +45,11 @@ class ToolHookDialog(
     }
 
     private fun loadFromConfig() {
-        val registry = HookRegistry.getInstance(project)
-        val config = registry.findConfig(toolId)
-        if (config != null) {
-            prependArea.text = config.prependString() ?: ""
-            appendArea.text = config.appendString() ?: ""
-            for (trigger in HookTrigger.entries) {
-                val entries = config.entriesFor(trigger)
-                if (entries.isNotEmpty()) {
-                    getSection(trigger).entries.addAll(entries)
-                }
+        val config = HookRegistry.getInstance(project).findConfig(toolId) ?: return
+        for (trigger in HookTrigger.entries) {
+            val entries = config.entriesFor(trigger)
+            if (entries.isNotEmpty()) {
+                getSection(trigger).entries.addAll(entries)
             }
         }
     }
@@ -78,20 +64,6 @@ class ToolHookDialog(
         }
 
         root.add(buildHintLabel())
-        root.add(Box.createVerticalStrut(JBUI.scale(8)))
-        root.add(
-            buildTextSection(
-                "Prepend text", prependArea,
-                "Static text prepended to successful tool output."
-            )
-        )
-        root.add(Box.createVerticalStrut(JBUI.scale(8)))
-        root.add(
-            buildTextSection(
-                "Append text", appendArea,
-                "Static text appended to successful tool output."
-            )
-        )
         root.add(Box.createVerticalStrut(JBUI.scale(12)))
 
         for (trigger in HookTrigger.entries) {
@@ -103,7 +75,7 @@ class ToolHookDialog(
         root.add(buildOpenJsonLink())
 
         val scrollPane = JBScrollPane(root).apply {
-            preferredSize = Dimension(JBUI.scale(550), JBUI.scale(500))
+            preferredSize = Dimension(JBUI.scale(580), JBUI.scale(500))
             border = JBUI.Borders.empty()
         }
         return scrollPane
@@ -129,45 +101,18 @@ class ToolHookDialog(
                 triggers[trigger] = section.entries.toList()
             }
         }
-
-        val hooksDir = HookRegistry.getInstance(project).hooksDirectory
-        val prepend = prependArea.text.trim().ifEmpty { null }
-        val append = appendArea.text.trim().ifEmpty { null }
-
-        return ToolHookConfig(toolId, triggers, hooksDir, prepend, append)
+        return ToolHookConfig(toolId, triggers, HookRegistry.getInstance(project).hooksDirectory)
     }
 
     private fun buildHintLabel(): JComponent = JBLabel(
         "<html>Configure hooks for <b>$toolId</b>. " +
             "Hook scripts receive JSON on stdin and can modify tool behavior. " +
-            "Prepend/append text is added to successful responses without a script.</html>"
+            "Prepend/append text is added per-entry — at least one of script, prepend, or append is required.</html>"
     ).apply {
         font = JBUI.Fonts.smallFont()
         foreground = UIUtil.getContextHelpForeground()
         alignmentX = Component.LEFT_ALIGNMENT
         isAllowAutoWrapping = true
-    }
-
-    private fun buildTextSection(
-        label: String, textArea: JTextArea, hint: String
-    ): JComponent {
-        val panel = JBPanel<JBPanel<*>>().apply {
-            layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            alignmentX = Component.LEFT_ALIGNMENT
-        }
-        panel.add(JBLabel(label).apply { alignmentX = Component.LEFT_ALIGNMENT })
-        panel.add(Box.createVerticalStrut(JBUI.scale(2)))
-        panel.add(JBScrollPane(textArea).apply {
-            preferredSize = Dimension(JBUI.scale(520), JBUI.scale(60))
-            maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(80))
-            alignmentX = Component.LEFT_ALIGNMENT
-        })
-        panel.add(JBLabel(hint).apply {
-            font = JBUI.Fonts.smallFont()
-            foreground = UIUtil.getContextHelpForeground()
-            alignmentX = Component.LEFT_ALIGNMENT
-        })
-        return panel
     }
 
     private fun buildTriggerSection(trigger: HookTrigger): JComponent {
@@ -205,7 +150,6 @@ class ToolHookDialog(
     }
 
     private fun rebuildEntryRows(section: TriggerSection, panel: JComponent) {
-        // Remove all entry rows (keep header at index 0)
         while (panel.componentCount > 1) {
             panel.remove(panel.componentCount - 1)
         }
@@ -233,9 +177,21 @@ class ToolHookDialog(
             maximumSize = Dimension(Int.MAX_VALUE, JBUI.scale(24))
         }
 
-        row.add(JBLabel("  📜 ${entry.script()}").apply {
-            font = JBUI.Fonts.smallFont()
-        })
+        if (entry.script() != null) {
+            row.add(JBLabel("  ${entry.script()}").apply { font = JBUI.Fonts.smallFont() })
+        }
+        entry.prependString()?.takeIf { it.isNotEmpty() }?.let { prepend ->
+            row.add(JBLabel("↑ ${prepend.take(20)}${if (prepend.length > 20) "…" else ""}").apply {
+                font = JBUI.Fonts.miniFont()
+                foreground = UIUtil.getContextHelpForeground()
+            })
+        }
+        entry.appendString()?.takeIf { it.isNotEmpty() }?.let { append ->
+            row.add(JBLabel("↓ ${append.take(20)}${if (append.length > 20) "…" else ""}").apply {
+                font = JBUI.Fonts.miniFont()
+                foreground = UIUtil.getContextHelpForeground()
+            })
+        }
         row.add(JBLabel("${entry.timeout()}s").apply {
             font = JBUI.Fonts.miniFont()
             foreground = UIUtil.getContextHelpForeground()
@@ -245,13 +201,11 @@ class ToolHookDialog(
                 font = JBUI.Fonts.miniFont()
                 foreground = UIUtil.getContextHelpForeground()
             })
-        } else {
-            if (!entry.failSilently()) {
-                row.add(JBLabel("Strict").apply {
-                    font = JBUI.Fonts.miniFont()
-                    foreground = UIUtil.getContextHelpForeground()
-                })
-            }
+        } else if (!entry.failSilently()) {
+            row.add(JBLabel("Strict").apply {
+                font = JBUI.Fonts.miniFont()
+                foreground = UIUtil.getContextHelpForeground()
+            })
         }
         if (entry.async()) {
             row.add(JBLabel("Async").apply {
@@ -260,7 +214,7 @@ class ToolHookDialog(
             })
         }
 
-        val removeBtn = JBLabel("✖").apply {
+        row.add(JBLabel("✖").apply {
             foreground = UIUtil.getContextHelpForeground()
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             toolTipText = "Remove this hook entry"
@@ -270,58 +224,83 @@ class ToolHookDialog(
                     rebuildEntryRows(section, section.containerPanel!!)
                 }
             })
-        }
-        row.add(removeBtn)
+        })
         return row
     }
 
     private fun showAddEntryDialog(trigger: HookTrigger, section: TriggerSection, panel: JComponent) {
+        val isPermission = trigger == HookTrigger.PERMISSION
+        val scriptLabel = if (isPermission) "Script path (required):" else "Script path (optional):"
         val scriptField = JTextField("", 30)
         val timeoutSpinner = JSpinner(SpinnerNumberModel(10, 1, 300, 1))
-
-        val failBehavior = if (trigger == HookTrigger.PERMISSION) {
-            JCheckBox("Reject on failure", true)
-        } else {
-            JCheckBox("Fail silently", true)
-        }
+        val failBehavior = if (isPermission) JCheckBox("Reject on failure", true)
+        else JCheckBox("Fail silently", true)
         val asyncBox = JCheckBox("Async (fire-and-forget)", false).apply {
             isEnabled = trigger == HookTrigger.SUCCESS || trigger == HookTrigger.FAILURE
         }
 
         val formPanel = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.Y_AXIS)
-            add(JBLabel("Script path (relative to hooks directory):"))
+            add(JBLabel(scriptLabel))
             add(scriptField)
             add(Box.createVerticalStrut(JBUI.scale(6)))
-            add(JBLabel("Timeout (seconds):"))
-            add(timeoutSpinner)
-            add(Box.createVerticalStrut(JBUI.scale(6)))
-            add(failBehavior)
-            add(asyncBox)
         }
+
+        var prependArea: JTextArea? = null
+        var appendArea: JTextArea? = null
+        if (!isPermission) {
+            prependArea = JTextArea("", 2, 40).apply { lineWrap = true; wrapStyleWord = true }
+            appendArea = JTextArea("", 2, 40).apply { lineWrap = true; wrapStyleWord = true }
+            formPanel.add(JBLabel("Prepend text (optional, added before tool output):"))
+            formPanel.add(JBScrollPane(prependArea).apply {
+                preferredSize = Dimension(JBUI.scale(420), JBUI.scale(50))
+            })
+            formPanel.add(Box.createVerticalStrut(JBUI.scale(4)))
+            formPanel.add(JBLabel("Append text (optional, added after tool output):"))
+            formPanel.add(JBScrollPane(appendArea).apply {
+                preferredSize = Dimension(JBUI.scale(420), JBUI.scale(50))
+            })
+            formPanel.add(Box.createVerticalStrut(JBUI.scale(6)))
+        }
+
+        formPanel.add(JBLabel("Timeout (seconds):"))
+        formPanel.add(timeoutSpinner)
+        formPanel.add(Box.createVerticalStrut(JBUI.scale(6)))
+        formPanel.add(failBehavior)
+        formPanel.add(asyncBox)
 
         val result = JOptionPane.showConfirmDialog(
             contentPanel, formPanel,
-            "Add ${trigger.displayName()} Hook",
+            "Add ${trigger.displayName()} Hook Entry",
             JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE
         )
+        if (result != JOptionPane.OK_OPTION) return
 
-        if (result == JOptionPane.OK_OPTION && scriptField.text.isNotBlank()) {
-            val failSilently = if (trigger == HookTrigger.PERMISSION) {
-                !failBehavior.isSelected
-            } else {
-                failBehavior.isSelected
-            }
-            val entry = HookEntryConfig(
-                scriptField.text.trim(),
-                timeoutSpinner.value as Int,
-                failSilently,
-                asyncBox.isSelected,
-                emptyMap()
-            )
-            section.entries.add(entry)
-            rebuildEntryRows(section, panel)
+        val script = scriptField.text.trim().ifEmpty { null }
+        val prepend = prependArea?.text?.trim()?.ifEmpty { null }
+        val append = appendArea?.text?.trim()?.ifEmpty { null }
+
+        if (isPermission && script == null) {
+            Messages.showErrorDialog(contentPanel, "A script path is required for permission hooks.", "Missing Script")
+            return
         }
+        if (!isPermission && script == null && prepend == null && append == null) {
+            Messages.showErrorDialog(
+                contentPanel,
+                "At least one of script, prepend text, or append text is required.",
+                "Empty Entry"
+            )
+            return
+        }
+
+        val failSilently = if (isPermission) !failBehavior.isSelected else failBehavior.isSelected
+        section.entries.add(
+            HookEntryConfig(
+                script, timeoutSpinner.value as Int, failSilently, asyncBox.isSelected,
+                emptyMap(), prepend, append
+            )
+        )
+        rebuildEntryRows(section, panel)
     }
 
     private fun buildOpenJsonLink(): JComponent {
@@ -337,11 +316,10 @@ class ToolHookDialog(
             })
         }
 
-        val panel = JBPanel<JBPanel<*>>(BorderLayout()).apply {
+        return JBPanel<JBPanel<*>>(BorderLayout()).apply {
             alignmentX = Component.LEFT_ALIGNMENT
             add(link, BorderLayout.WEST)
         }
-        return panel
     }
 
     private fun openJsonInEditor() {

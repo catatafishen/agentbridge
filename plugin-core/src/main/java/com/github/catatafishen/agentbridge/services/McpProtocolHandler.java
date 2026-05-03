@@ -515,7 +515,12 @@ public final class McpProtocolHandler {
             boolean isError = postOutcome.isError() || ToolError.isError(resultText);
 
             if (!isError) {
-                resultText = applyTextModifiers(resultText, toolName);
+                if (preHookResult.pendingPrepend() != null && !preHookResult.pendingPrepend().isEmpty()) {
+                    resultText = preHookResult.pendingPrepend() + "\n\n" + resultText;
+                }
+                if (preHookResult.pendingAppend() != null && !preHookResult.pendingAppend().isEmpty()) {
+                    resultText = resultText + "\n\n" + preHookResult.pendingAppend();
+                }
             }
             String fullResult = gateResult.prefix + resultText;
             liveService.complete(callId, fullResult,
@@ -558,17 +563,19 @@ public final class McpProtocolHandler {
      */
     private @NotNull PreHookApplication applyPreHook(@NotNull String toolName, @NotNull JsonObject arguments) {
         try {
-            HookPipeline.PreHookResult result = HookPipeline.runPreHooks(project, toolName, arguments);
+            HookPipeline.PreHookOutput output = HookPipeline.runPreHooks(project, toolName, arguments);
+            HookPipeline.PreHookResult result = output.result();
             if (result instanceof HookPipeline.PreHookResult.Blocked(String error)) {
-                return new PreHookApplication(arguments, error);
+                return new PreHookApplication(arguments, error, null, null);
             }
-            if (result instanceof HookPipeline.PreHookResult.Modified(JsonObject modified)) {
-                return new PreHookApplication(modified, null);
-            }
+            JsonObject resolvedArgs = result instanceof HookPipeline.PreHookResult.Modified(
+                JsonObject m
+            ) ? m : arguments;
+            return new PreHookApplication(resolvedArgs, null, output.pendingPrepend(), output.pendingAppend());
         } catch (HookExecutor.HookExecutionException e) {
             LOG.warn("[MCP] pre-hook failed for " + toolName, e);
         }
-        return new PreHookApplication(arguments, null);
+        return new PreHookApplication(arguments, null, null, null);
     }
 
     private @NotNull HookPipeline.PostHookOutcome applyPostHook(@NotNull String toolName,
@@ -604,7 +611,10 @@ public final class McpProtocolHandler {
         }
     }
 
-    private record PreHookApplication(@NotNull JsonObject arguments, @Nullable String blockedMessage) {
+    private record PreHookApplication(@NotNull JsonObject arguments,
+                                      @Nullable String blockedMessage,
+                                      @Nullable String pendingPrepend,
+                                      @Nullable String pendingAppend) {
     }
 
     private record PopupGateResult(String prefix, @Nullable JsonObject blocked) {
@@ -627,25 +637,6 @@ public final class McpProtocolHandler {
             pps.recordUnrelatedCall(sessionKey);
         }
         return new PopupGateResult("", null);
-    }
-
-    /**
-     * Applies static text modifiers (prependString/appendString) from hook config.
-     */
-    private String applyTextModifiers(String resultText, String toolName) {
-        ToolHookConfig hookConfig = HookRegistry.getInstance(project).findConfig(toolName);
-
-        if (hookConfig != null && hookConfig.prependString() != null
-            && !hookConfig.prependString().isEmpty()) {
-            resultText = hookConfig.prependString() + "\n\n" + resultText;
-        }
-
-        if (hookConfig != null && hookConfig.appendString() != null
-            && !hookConfig.appendString().isEmpty()) {
-            resultText = resultText + "\n\n" + hookConfig.appendString();
-        }
-
-        return resultText;
     }
 
     private static String truncateIfNeeded(String text) {

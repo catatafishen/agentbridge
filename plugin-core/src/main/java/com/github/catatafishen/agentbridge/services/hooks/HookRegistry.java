@@ -41,8 +41,6 @@ public final class HookRegistry {
     private static final String HOOKS_DIR_NAME = "hooks";
     private static final String JSON_EXT = ".json";
     private static final long RELOAD_INTERVAL_MS = 2000;
-    private static final String KEY_PREPEND_STRING = "prependString";
-    private static final String KEY_APPEND_STRING = "appendString";
 
     private final Project project;
     private final ConcurrentHashMap<String, ToolHookConfig> hooksByTool = new ConcurrentHashMap<>();
@@ -170,7 +168,6 @@ public final class HookRegistry {
                                                    @NotNull JsonObject root,
                                                    @NotNull Path hooksDir) {
         Map<HookTrigger, List<HookEntryConfig>> triggers = new EnumMap<>(HookTrigger.class);
-
         for (HookTrigger trigger : HookTrigger.values()) {
             if (root.has(trigger.jsonKey())) {
                 JsonArray array = root.getAsJsonArray(trigger.jsonKey());
@@ -180,14 +177,7 @@ public final class HookRegistry {
                 }
             }
         }
-
-        String prependString = root.has(KEY_PREPEND_STRING)
-            ? root.get(KEY_PREPEND_STRING).getAsString() : null;
-        String appendString = root.has(KEY_APPEND_STRING)
-            ? root.get(KEY_APPEND_STRING).getAsString() : null;
-
-        return new ToolHookConfig(toolId, Map.copyOf(triggers), hooksDir,
-            prependString, appendString);
+        return new ToolHookConfig(toolId, Map.copyOf(triggers), hooksDir);
     }
 
     private static @NotNull List<HookEntryConfig> parseEntryArray(@NotNull JsonArray array,
@@ -203,10 +193,9 @@ public final class HookRegistry {
 
     private static @NotNull HookEntryConfig parseEntry(@NotNull JsonObject obj,
                                                        @NotNull HookTrigger trigger) {
-        String script = obj.get("script").getAsString();
+        String script = obj.has("script") ? obj.get("script").getAsString() : null;
         int timeout = obj.has("timeout") ? obj.get("timeout").getAsInt() : 10;
         boolean async = obj.has("async") && obj.get("async").getAsBoolean();
-
         boolean failSilently = resolveFailSilently(obj, trigger);
 
         Map<String, String> env = new HashMap<>();
@@ -217,7 +206,13 @@ public final class HookRegistry {
             }
         }
 
-        return new HookEntryConfig(script, timeout, failSilently, async, Map.copyOf(env));
+        String prependString = (trigger != HookTrigger.PERMISSION && obj.has("prependString"))
+            ? obj.get("prependString").getAsString() : null;
+        String appendString = (trigger != HookTrigger.PERMISSION && obj.has("appendString"))
+            ? obj.get("appendString").getAsString() : null;
+
+        return new HookEntryConfig(script, timeout, failSilently, async, Map.copyOf(env),
+            prependString, appendString);
     }
 
     /**

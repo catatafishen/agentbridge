@@ -12,6 +12,7 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.treeStructure.Tree;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.tree.DefaultMutableTreeNode;
@@ -32,8 +33,10 @@ import java.util.List;
  * Tree view of project agent-definition / instruction files.
  * <p>
  * In normal mode, shows sections for each supported agent client (Copilot CLI, OpenCode,
- * Junie, Kiro). In session-only mode (used by the Plan tab), shows only the
- * "Current Session" section with files from the active agent's session directory.
+ * Junie, Kiro). In session-only mode (used by the Plan tab), shows session files from the
+ * active agent's session directory directly in the root (no extra section header node, since
+ * the outer panel already provides a label). In hooks mode, lists {@code *.json} files from
+ * the hooks directory.
  * <ul>
  *   <li>Copilot CLI — {@code .agent-work/copilot/{agents,skills,instructions}}</li>
  *   <li>OpenCode — {@code .agent-work/opencode/agent/*.md}</li>
@@ -45,6 +48,8 @@ final class ProjectFilesPanel extends JPanel {
 
     private final transient Project project;
     private final boolean sessionOnly;
+    @Nullable
+    private final Path hooksDir;
     private final DefaultMutableTreeNode root = new DefaultMutableTreeNode("Project Files");
     private final DefaultTreeModel treeModel = new DefaultTreeModel(root);
     private final Tree tree = new Tree(treeModel);
@@ -54,9 +59,21 @@ final class ProjectFilesPanel extends JPanel {
     }
 
     ProjectFilesPanel(@NotNull Project project, boolean sessionOnly) {
+        this(project, sessionOnly, null);
+    }
+
+    /**
+     * Creates a panel in hooks mode, listing {@code *.json} files from {@code hooksDir}.
+     */
+    ProjectFilesPanel(@NotNull Project project, @NotNull Path hooksDir) {
+        this(project, false, hooksDir);
+    }
+
+    private ProjectFilesPanel(@NotNull Project project, boolean sessionOnly, @Nullable Path hooksDir) {
         super(new BorderLayout());
         this.project = project;
         this.sessionOnly = sessionOnly;
+        this.hooksDir = hooksDir;
         setOpaque(false);
 
         tree.setRootVisible(false);
@@ -101,7 +118,9 @@ final class ProjectFilesPanel extends JPanel {
             return;
         }
 
-        if (sessionOnly) {
+        if (hooksDir != null) {
+            addHooksSection();
+        } else if (sessionOnly) {
             addSessionSection();
         } else {
             List<FileNode> copilot = new ArrayList<>();
@@ -142,7 +161,8 @@ final class ProjectFilesPanel extends JPanel {
     }
 
     /**
-     * Adds a "Current Session" section listing files from the active agent's session directory.
+     * In session-only mode, adds files directly to the root (no section header node)
+     * since the outer panel label already serves as the section heading.
      */
     private void addSessionSection() {
         try {
@@ -153,9 +173,35 @@ final class ProjectFilesPanel extends JPanel {
 
             List<FileNode> sessionFiles = listSessionFiles(sessionDir.toFile(), sessionDir.toFile());
             sessionFiles.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
-            addSection("Current Session", sessionFiles);
+            for (FileNode fn : sessionFiles) {
+                root.add(new DefaultMutableTreeNode(fn));
+            }
         } catch (Exception ignored) {
             // agent may not be started yet
+        }
+    }
+
+    /**
+     * In hooks mode, lists all {@code *.json} files from the hooks directory,
+     * grouped under a "Hook Files" section node.
+     */
+    private void addHooksSection() {
+        if (hooksDir == null || !Files.isDirectory(hooksDir)) return;
+        String hooksBase = hooksDir.getParent() != null ? hooksDir.getParent().toString()
+            : hooksDir.toString();
+        try {
+            List<FileNode> nodes = new ArrayList<>();
+            try (var stream = Files.newDirectoryStream(hooksDir, "*.json")) {
+                for (Path p : stream) {
+                    String rel = hooksDir.relativize(p).toString();
+                    nodes.add(new FileNode(hooksBase, hooksDir.getFileName() + "/" + rel,
+                        p.getFileName().toString(), false));
+                }
+            }
+            nodes.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
+            addSection("Hook Files", nodes);
+        } catch (IOException ignored) {
+            // hooks dir may not exist yet
         }
     }
 
