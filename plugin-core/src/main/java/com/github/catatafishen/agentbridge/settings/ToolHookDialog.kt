@@ -65,9 +65,6 @@ class ToolHookDialog(
                     getSection(trigger).entries.addAll(entries)
                 }
             }
-        } else {
-            val settings = McpServerSettings.getInstance(project)
-            appendArea.text = settings.getToolOutputTemplate(toolId)
         }
     }
 
@@ -92,7 +89,7 @@ class ToolHookDialog(
         root.add(
             buildTextSection(
                 "Append text", appendArea,
-                "Static text appended to successful tool output. Replaces the legacy output template."
+                "Static text appended to successful tool output."
             )
         )
         root.add(Box.createVerticalStrut(JBUI.scale(12)))
@@ -116,12 +113,6 @@ class ToolHookDialog(
         try {
             val config = buildConfig()
             HookRegistry.getInstance(project).writeConfig(config)
-
-            // Clear legacy outputTemplate if we're now using appendString
-            if (appendArea.text.isNotBlank()) {
-                val settings = McpServerSettings.getInstance(project)
-                settings.setToolOutputTemplate(toolId, "")
-            }
         } catch (e: IOException) {
             LOG.warn("Failed to write hook config for $toolId", e)
             Messages.showErrorDialog(project, "Failed to save hook config: ${e.message}", "Error")

@@ -511,12 +511,11 @@ public final class McpProtocolHandler {
             long durationMs = System.currentTimeMillis() - callStartMs;
             var postOutcome = applyPostHook(toolName, arguments, resultText, durationMs);
             resultText = postOutcome.output();
-            resultText = ToolOutputHookRunner.applyHook(project, toolName, arguments, resultText, settings);
             resultText = truncateIfNeeded(resultText);
             boolean isError = postOutcome.isError() || ToolError.isError(resultText);
 
             if (!isError) {
-                resultText = applyTextModifiers(resultText, toolName, settings);
+                resultText = applyTextModifiers(resultText, toolName);
             }
             String fullResult = gateResult.prefix + resultText;
             liveService.complete(callId, fullResult,
@@ -631,12 +630,9 @@ public final class McpProtocolHandler {
     }
 
     /**
-     * Applies static text modifiers (prependString/appendString) from hook config,
-     * falling back to the legacy outputTemplate from settings when no hook config
-     * appendString is defined.
+     * Applies static text modifiers (prependString/appendString) from hook config.
      */
-    private String applyTextModifiers(String resultText, String toolName,
-                                      McpServerSettings settings) {
+    private String applyTextModifiers(String resultText, String toolName) {
         ToolHookConfig hookConfig = HookRegistry.getInstance(project).findConfig(toolName);
 
         if (hookConfig != null && hookConfig.prependString() != null
@@ -647,12 +643,6 @@ public final class McpProtocolHandler {
         if (hookConfig != null && hookConfig.appendString() != null
             && !hookConfig.appendString().isEmpty()) {
             resultText = resultText + "\n\n" + hookConfig.appendString();
-        } else {
-            // Legacy fallback: outputTemplate from settings
-            String template = settings.getToolOutputTemplate(toolName);
-            if (!template.isEmpty()) {
-                resultText = resultText + "\n\n" + template;
-            }
         }
 
         return resultText;

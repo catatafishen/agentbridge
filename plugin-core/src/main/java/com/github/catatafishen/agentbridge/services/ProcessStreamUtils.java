@@ -11,8 +11,7 @@ import java.util.concurrent.ExecutionException;
 
 /**
  * Shared async I/O utilities for reading process streams.
- * Used by both {@link ToolOutputHookRunner} and
- * {@link com.github.catatafishen.agentbridge.services.hooks.HookExecutor}.
+ * Used by {@link com.github.catatafishen.agentbridge.services.hooks.HookExecutor}.
  */
 public final class ProcessStreamUtils {
 
