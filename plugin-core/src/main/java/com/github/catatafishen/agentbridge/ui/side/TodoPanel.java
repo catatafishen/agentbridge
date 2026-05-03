@@ -62,6 +62,8 @@ final class TodoPanel extends JPanel implements Disposable {
     private final transient Timer pollTimer;
     private transient @Nullable Runnable onProgressChanged;
     private boolean splitVisible;
+    private final JPanel body;
+    private final ProjectFilesPanel sessionFilesPanel;
 
     /**
      * Last observed (path, mtime, done, total) so the poll timer can skip work when nothing changed.
@@ -98,10 +100,19 @@ final class TodoPanel extends JPanel implements Disposable {
 
         databasePanel = new TodoDatabasePanel();
 
-        JPanel body = new JPanel(new BorderLayout());
+        body = new JPanel(new BorderLayout());
         body.add(headerLabel, BorderLayout.NORTH);
         body.add(markdownContentPanel, BorderLayout.CENTER);
         add(body, BorderLayout.CENTER);
+
+        sessionFilesPanel = new ProjectFilesPanel(project, true);
+        JPanel sessionSection = new JPanel(new BorderLayout());
+        JBLabel sessionHeader = new JBLabel("Current Session");
+        sessionHeader.setFont(UIUtil.getLabelFont().deriveFont(Font.BOLD, 11f));
+        sessionHeader.setBorder(JBUI.Borders.empty(8, 8, 4, 8));
+        sessionSection.add(sessionHeader, BorderLayout.NORTH);
+        sessionSection.add(sessionFilesPanel, BorderLayout.CENTER);
+        add(sessionSection, BorderLayout.SOUTH);
 
         pollTimer = new Timer(POLL_INTERVAL_MS, e -> pollIfVisible());
         pollTimer.setRepeats(true);
@@ -172,6 +183,7 @@ final class TodoPanel extends JPanel implements Disposable {
      * Re-reads the plan file and repaints if anything changed. Safe to call from the EDT.
      */
     void refresh() {
+        sessionFilesPanel.refresh();
         Path sessionDir = resolveSessionDir();
         updateDatabasePanel(sessionDir);
 
@@ -251,12 +263,11 @@ final class TodoPanel extends JPanel implements Disposable {
      * Returns the JPanel containing headerLabel + markdownContentPanel.
      */
     private @Nullable Component getMainBody() {
-        if (getComponentCount() == 0) return null;
-        Component c = getComponent(0);
-        if (c instanceof JSplitPane split) {
-            return split.getTopComponent();
-        }
-        return c;
+        if (!splitVisible) return body;
+        // When the split is visible, body is the top component of the JSplitPane at CENTER.
+        Container center = (Container) ((BorderLayout) getLayout()).getLayoutComponent(BorderLayout.CENTER);
+        if (center instanceof JSplitPane split) return split.getTopComponent();
+        return body;
     }
 
     private void renderEmpty() {

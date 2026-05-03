@@ -19,9 +19,9 @@ import java.awt.*;
  *   <li><b>Diff</b> — the existing {@link DiffPanel} with pending agent edits.</li>
  *   <li><b>Plan</b> — rendered view of the active agent session's {@code plan.md},
  *       with a {@code (done/total)} badge in the tab title when checkbox-style task items exist.</li>
- *   <li><b>Tools</b> — live list of MCP tool calls with timestamps, categories, and expandable I/O.</li>
- *   <li><b>Search</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
- *   <li><b>Session</b> — session statistics, billing info, and a project-files tree.</li>
+ *   <li><b>MCP</b> — live list of MCP tool calls with timestamps, categories, and expandable I/O.</li>
+ *   <li><b>Prompt DB</b> — searchable list of user prompts across the current conversation history, click to scroll.</li>
+ *   <li><b>Stats</b> — session statistics, billing info, and a project-files tree.</li>
  * </ol>
  * Tab order is deliberate: review is the most time-sensitive and sits first.
  */
@@ -50,15 +50,15 @@ public final class SidePanel extends JPanel implements Disposable {
 
         tabsPanel = PlatformApiCompat.createJBTabsPanel(project, this);
         tabsPanel.addTab(reviewPanel, "Diff");
-        tabsPanel.addTab(todoPanel, "Todo");
-        tabsPanel.addTab(toolCallPanel, "Tools");
-        tabsPanel.addTab(promptsPanel, "Search");
-        tabsPanel.addTab(sessionStatsPanel, "Session");
+        tabsPanel.addTab(todoPanel, "Plan");
+        tabsPanel.addTab(toolCallPanel, "MCP");
+        tabsPanel.addTab(promptsPanel, "Prompt DB");
+        tabsPanel.addTab(sessionStatsPanel, "Stats");
 
         todoPanel.setOnProgressChanged(() -> {
             int total = todoPanel.getTotal();
             int done = todoPanel.getDone();
-            String title = total > 0 ? "Todo (" + done + "/" + total + ")" : "Todo";
+            String title = total > 0 ? "Plan (" + done + "/" + total + ")" : "Plan";
             tabsPanel.setTabTitle(TAB_TODOS, title);
         });
 

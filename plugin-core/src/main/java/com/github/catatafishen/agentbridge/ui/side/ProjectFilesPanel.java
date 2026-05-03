@@ -9,6 +9,7 @@ import com.intellij.openapi.fileTypes.UnknownFileType;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.ui.JBColor;
 import com.intellij.ui.treeStructure.Tree;
 import org.jetbrains.annotations.NotNull;
 
@@ -30,26 +31,32 @@ import java.util.List;
 /**
  * Tree view of project agent-definition / instruction files.
  * <p>
- * Mirrors the former title-bar "Project Files" dropdown. Sections:
+ * In normal mode, shows sections for each supported agent client (Copilot CLI, OpenCode,
+ * Junie, Kiro). In session-only mode (used by the Plan tab), shows only the
+ * "Current Session" section with files from the active agent's session directory.
  * <ul>
- *   <li>Shared — {@code AGENTS.md} and the agent task-list file, created on first click if missing</li>
  *   <li>Copilot CLI — {@code .agent-work/copilot/{agents,skills,instructions}}</li>
  *   <li>OpenCode — {@code .agent-work/opencode/agent/*.md}</li>
  *   <li>Junie — {@code .agent-work/junie/{guidelines.md, agents/*.md}}</li>
  *   <li>Kiro — {@code .agent-work/kiro/{agents/*.json, skills/SKILL.md}}</li>
  * </ul>
- * Missing "shared" files render with a dim bulb icon and are created empty on click.
  */
 final class ProjectFilesPanel extends JPanel {
 
     private final transient Project project;
+    private final boolean sessionOnly;
     private final DefaultMutableTreeNode root = new DefaultMutableTreeNode("Project Files");
     private final DefaultTreeModel treeModel = new DefaultTreeModel(root);
     private final Tree tree = new Tree(treeModel);
 
     ProjectFilesPanel(@NotNull Project project) {
+        this(project, false);
+    }
+
+    ProjectFilesPanel(@NotNull Project project, boolean sessionOnly) {
         super(new BorderLayout());
         this.project = project;
+        this.sessionOnly = sessionOnly;
         setOpaque(false);
 
         tree.setRootVisible(false);
@@ -67,7 +74,7 @@ final class ProjectFilesPanel extends JPanel {
         // Let the parent's background show through so dark mode doesn't
         // paint a gray rectangle behind the file rows.
         tree.setOpaque(false);
-        tree.setBackground(new Color(0, 0, 0, 0));
+        tree.setBackground(new JBColor(new Color(0, 0, 0, 0), new Color(0, 0, 0, 0)));
         tree.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -94,33 +101,30 @@ final class ProjectFilesPanel extends JPanel {
             return;
         }
 
-        addSection("Shared", List.of(
-            new FileNode(base, "TODO.md", "TODO", true),
-            new FileNode(base, "AGENTS.md", "AGENTS", true)
-        ));
+        if (sessionOnly) {
+            addSessionSection();
+        } else {
+            List<FileNode> copilot = new ArrayList<>();
+            copilot.addAll(glob(base, ".agent-work/copilot/agents", "*.md"));
+            copilot.addAll(glob(base, ".agent-work/copilot/skills", "*/SKILL.md"));
+            copilot.addAll(glob(base, ".agent-work/copilot/instructions", "*.instructions.md"));
+            addSection("Copilot CLI", copilot);
 
-        List<FileNode> copilot = new ArrayList<>();
-        copilot.addAll(glob(base, ".agent-work/copilot/agents", "*.md"));
-        copilot.addAll(glob(base, ".agent-work/copilot/skills", "*/SKILL.md"));
-        copilot.addAll(glob(base, ".agent-work/copilot/instructions", "*.instructions.md"));
-        addSection("Copilot CLI", copilot);
+            addSection("OpenCode", glob(base, ".agent-work/opencode/agent", "*.md"));
 
-        addSection("OpenCode", glob(base, ".agent-work/opencode/agent", "*.md"));
+            List<FileNode> junie = new ArrayList<>();
+            File junieGuidelines = new File(base, ".agent-work/junie/guidelines.md");
+            if (junieGuidelines.exists()) {
+                junie.add(new FileNode(base, ".agent-work/junie/guidelines.md", "guidelines.md", false));
+            }
+            junie.addAll(glob(base, ".agent-work/junie/agents", "*.md"));
+            addSection("Junie", junie);
 
-        List<FileNode> junie = new ArrayList<>();
-        File junieGuidelines = new File(base, ".agent-work/junie/guidelines.md");
-        if (junieGuidelines.exists()) {
-            junie.add(new FileNode(base, ".agent-work/junie/guidelines.md", "guidelines.md", false));
+            List<FileNode> kiro = new ArrayList<>();
+            kiro.addAll(glob(base, ".agent-work/kiro/agents", "*.json"));
+            kiro.addAll(glob(base, ".agent-work/kiro/skills", "*/SKILL.md"));
+            addSection("Kiro", kiro);
         }
-        junie.addAll(glob(base, ".agent-work/junie/agents", "*.md"));
-        addSection("Junie", junie);
-
-        List<FileNode> kiro = new ArrayList<>();
-        kiro.addAll(glob(base, ".agent-work/kiro/agents", "*.json"));
-        kiro.addAll(glob(base, ".agent-work/kiro/skills", "*/SKILL.md"));
-        addSection("Kiro", kiro);
-
-        addSessionSection();
 
         treeModel.reload();
         for (int i = 0; i < tree.getRowCount(); i++) {
