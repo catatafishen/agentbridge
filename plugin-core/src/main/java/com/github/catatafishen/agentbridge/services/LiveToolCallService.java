@@ -67,6 +67,20 @@ public final class LiveToolCallService {
     }
 
     /**
+     * Attaches hook stage results to the entry with the given {@code callId}.
+     * Called from McpProtocolHandler after each hook stage completes.
+     */
+    public synchronized void setHookStages(long callId, @NotNull java.util.List<com.github.catatafishen.agentbridge.services.hooks.HookStageResult> stages) {
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            if (entries.get(i).callId() == callId) {
+                entries.set(i, entries.get(i).withHookStages(stages));
+                fireChanged();
+                return;
+            }
+        }
+    }
+
+    /**
      * Returns a snapshot of all current entries (newest last).
      */
     public synchronized @NotNull List<LiveToolCallEntry> getEntries() {

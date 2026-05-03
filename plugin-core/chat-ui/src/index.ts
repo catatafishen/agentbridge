@@ -21,6 +21,9 @@ import LoadMore from './components/LoadMore';
 import TurnDetails from './components/TurnDetails';
 
 import ChatController from './ChatController';
+import ToolCallsController from './ToolCallsController';
+
+import {ToolCallsView} from './components/ToolCallsView';
 
 import PermissionRequest from './components/PermissionRequest';
 import WorkingIndicator from './components/WorkingIndicator';
@@ -41,10 +44,12 @@ customElements.define('load-more', LoadMore);
 customElements.define('turn-details', TurnDetails);
 customElements.define('permission-request', PermissionRequest);
 customElements.define('working-indicator', WorkingIndicator);
+customElements.define('tool-calls-view', ToolCallsView);
 
 // ── Expose controller to Kotlin bridge ────────────────
 
 globalThis.ChatController = ChatController;
+globalThis.ToolCallsController = ToolCallsController;
 (globalThis as any).showPermissionRequest = (turnId: string, agentId: string, reqId: string, toolDisplayName: string, argsJson: string) => {
     ChatController.showPermissionRequest(turnId, agentId, reqId, toolDisplayName, argsJson);
 };

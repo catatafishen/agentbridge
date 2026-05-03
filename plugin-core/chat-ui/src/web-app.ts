@@ -12,7 +12,7 @@ import {FileViewer} from './components/FileViewer';
 import {FileNav} from './components/FileNav';
 import {ReviewView} from './components/ReviewView';
 import {TodoView} from './components/TodoView';
-import {ToolCallsView} from './components/ToolCallsView';
+import type {ToolCallsView} from './components/ToolCallsView';
 import {SearchView} from './components/SearchView';
 import {SessionView} from './components/SessionView';
 
@@ -22,7 +22,6 @@ customElements.define('file-viewer', FileViewer);
 customElements.define('file-nav', FileNav);
 customElements.define('review-view', ReviewView);
 customElements.define('todo-view', TodoView);
-customElements.define('tool-calls-view', ToolCallsView);
 customElements.define('search-view', SearchView);
 customElements.define('session-view', SessionView);
 

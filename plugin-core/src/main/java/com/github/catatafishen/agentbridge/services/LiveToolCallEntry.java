@@ -1,9 +1,11 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -21,6 +23,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * @param success     true if completed without error; null while running
  * @param category    legacy field carrying the tool kind wire value (e.g. "read", "edit")
  * @param hasHooks    whether this tool call has active hook configuration
+ * @param hookStages  ordered list of hook stage results captured during execution (empty if no hooks fired)
  */
 public record LiveToolCallEntry(
     long callId,
@@ -32,7 +35,8 @@ public record LiveToolCallEntry(
     long durationMs,
     @Nullable Boolean success,
     @Nullable String category,
-    boolean hasHooks
+    boolean hasHooks,
+    @NotNull List<HookStageResult> hookStages
 ) {
     static final int MAX_IO_CHARS = 8_000;
     private static final AtomicLong ID_SEQ = new AtomicLong();
@@ -47,7 +51,8 @@ public record LiveToolCallEntry(
                                             boolean hasHooks) {
         return new LiveToolCallEntry(
             ID_SEQ.incrementAndGet(), toolName, displayName,
-            truncate(input), "", Instant.now(), -1, null, category, hasHooks);
+            truncate(input), "", Instant.now(), -1, null, category, hasHooks,
+            List.of());
     }
 
     /**
@@ -56,7 +61,16 @@ public record LiveToolCallEntry(
     public LiveToolCallEntry completed(@NotNull String output, long durationMs, boolean success) {
         return new LiveToolCallEntry(
             callId, toolName, displayName, input, truncate(output),
-            timestamp, durationMs, success, category, hasHooks);
+            timestamp, durationMs, success, category, hasHooks, hookStages);
+    }
+
+    /**
+     * Returns a copy with the given hook stage results.
+     */
+    public LiveToolCallEntry withHookStages(@NotNull List<HookStageResult> stages) {
+        return new LiveToolCallEntry(
+            callId, toolName, displayName, input, output,
+            timestamp, durationMs, success, category, hasHooks, List.copyOf(stages));
     }
 
     /**

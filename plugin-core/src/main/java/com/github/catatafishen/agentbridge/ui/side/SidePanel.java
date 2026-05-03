@@ -5,11 +5,15 @@ import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
 import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.Splitter;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.ui.components.JBLabel;
+import com.intellij.util.ui.UIUtil;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 import java.awt.*;
+import java.nio.file.Path;
 
 /**
  * Tabbed container for the left-hand tool-window pane.
@@ -45,13 +49,12 @@ public final class SidePanel extends JPanel implements Disposable {
         PromptsPanel promptsPanel = new PromptsPanel(project, chatConsole);
         Disposer.register(this, promptsPanel);
 
-        ToolCallListPanel toolCallPanel = new ToolCallListPanel(project);
-        Disposer.register(this, toolCallPanel);
+        JPanel mcpTab = buildMcpTab(project);
 
         tabsPanel = PlatformApiCompat.createJBTabsPanel(project, this);
         tabsPanel.addTab(reviewPanel, "Diff");
         tabsPanel.addTab(todoPanel, "Plan");
-        tabsPanel.addTab(toolCallPanel, "MCP");
+        tabsPanel.addTab(mcpTab, "MCP");
         tabsPanel.addTab(promptsPanel, "Prompt DB");
         tabsPanel.addTab(sessionStatsPanel, "Stats");
 
@@ -70,6 +73,38 @@ public final class SidePanel extends JPanel implements Disposable {
         }, this);
 
         add(tabsPanel.getComponent(), BorderLayout.CENTER);
+    }
+
+    /**
+     * Builds the MCP tab with a resizable vertical split: JCEF tool calls on top,
+     * hooks file browser on the bottom.
+     */
+    private @NotNull JPanel buildMcpTab(@NotNull Project project) {
+        ToolCallsWebPanel toolCallsPanel = new ToolCallsWebPanel(project);
+        Disposer.register(this, toolCallsPanel);
+
+        Path hooksDir = project.getBasePath() != null
+            ? Path.of(project.getBasePath(), ".agentbridge", "hooks")
+            : null;
+
+        JPanel bottomPanel = new JPanel(new BorderLayout());
+        JBLabel hooksLabel = new JBLabel("Hooks");
+        hooksLabel.setFont(UIUtil.getLabelFont().deriveFont(Font.BOLD, 11f));
+        hooksLabel.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        bottomPanel.add(hooksLabel, BorderLayout.NORTH);
+
+        if (hooksDir != null) {
+            ProjectFilesPanel hooksPanel = new ProjectFilesPanel(project, hooksDir);
+            bottomPanel.add(hooksPanel, BorderLayout.CENTER);
+        }
+
+        Splitter splitter = new Splitter(true, 0.65f);
+        splitter.setFirstComponent(toolCallsPanel);
+        splitter.setSecondComponent(bottomPanel);
+
+        JPanel tab = new JPanel(new BorderLayout());
+        tab.add(splitter, BorderLayout.CENTER);
+        return tab;
     }
 
     /**

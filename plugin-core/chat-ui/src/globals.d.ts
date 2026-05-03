@@ -6,6 +6,7 @@
  */
 
 import type ChatControllerType from './ChatController';
+import type ToolCallsControllerType from './ToolCallsController';
 
 /** Extended bridge for the web app — adds methods not needed by the in-IDE panel. */
 export interface WebBridge {
@@ -39,6 +40,9 @@ export interface WebBridge {
 declare global {
     // eslint-disable-next-line no-var
     var ChatController: typeof ChatControllerType;
+
+    // eslint-disable-next-line no-var
+    var ToolCallsController: typeof ToolCallsControllerType;
 
     // eslint-disable-next-line no-var
     var ICON_SVG: string;

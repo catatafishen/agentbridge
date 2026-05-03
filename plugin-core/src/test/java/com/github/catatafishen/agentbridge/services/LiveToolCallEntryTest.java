@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.services;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -96,7 +97,7 @@ class LiveToolCallEntryTest {
     @Test
     void empty_strings_handled_gracefully() {
         LiveToolCallEntry entry = new LiveToolCallEntry(
-            1, "test", "test", "", "", Instant.now(), -1, null, null, false);
+            1, "test", "test", "", "", Instant.now(), -1, null, null, false, List.of());
         assertEquals("", entry.input());
         assertEquals("", entry.output());
     }
@@ -104,18 +105,18 @@ class LiveToolCallEntryTest {
     @Test
     void isRunning_when_success_is_null() {
         LiveToolCallEntry running = new LiveToolCallEntry(
-            1, "test", "test", "{}", "", Instant.now(), -1, null, null, false);
+            1, "test", "test", "{}", "", Instant.now(), -1, null, null, false, List.of());
         assertTrue(running.isRunning());
     }
 
     @Test
     void isRunning_false_when_success_is_set() {
         LiveToolCallEntry done = new LiveToolCallEntry(
-            1, "test", "test", "{}", "ok", Instant.now(), 10, true, null, false);
+            1, "test", "test", "{}", "ok", Instant.now(), 10, true, null, false, List.of());
         assertFalse(done.isRunning());
 
         LiveToolCallEntry failed = new LiveToolCallEntry(
-            2, "test", "test", "{}", "err", Instant.now(), 5, false, null, false);
+            2, "test", "test", "{}", "err", Instant.now(), 5, false, null, false, List.of());
         assertFalse(failed.isRunning());
     }
 }

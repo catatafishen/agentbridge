@@ -14,6 +14,7 @@ import com.github.catatafishen.agentbridge.psi.tools.quality.PopupGateLogic;
 import com.github.catatafishen.agentbridge.services.hooks.HookExecutor;
 import com.github.catatafishen.agentbridge.services.hooks.HookPipeline;
 import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
+import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
@@ -38,6 +39,7 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
@@ -50,6 +52,14 @@ import java.util.Objects;
 public final class McpProtocolHandler {
     private static final Logger LOG = Logger.getInstance(McpProtocolHandler.class);
     private static final Gson GSON = new GsonBuilder().create();
+
+    private static final String STAGE_PERMISSION = "permission";
+    private static final String STAGE_PRE = "pre";
+    private static final String STAGE_SUCCESS = "success";
+    private static final String STAGE_FAILURE = "failure";
+    private static final String STAGE_HOOK_CHAIN = "hook-chain";
+    private static final String OUTCOME_ERROR = "error";
+    private static final String OUTCOME_MODIFIED = "modified";
 
     /**
      * Hard cap on tool result size. Keeps output below client-side truncation thresholds.
@@ -509,8 +519,10 @@ public final class McpProtocolHandler {
         PopupGateResult gateResult = evaluatePopupGate(toolName, sessionKey, msg);
         if (gateResult.blocked != null) return gateResult.blocked;
 
+        List<HookStageResult> hookStages = new ArrayList<>();
+
         // Permission hook: deny/allow before any execution
-        String permissionDenial = evaluatePermissionHook(toolName, arguments);
+        String permissionDenial = evaluatePermissionHook(toolName, arguments, hookStages);
         if (permissionDenial != null) return buildToolResult(msg, permissionDenial, true);
 
         // Snapshot the original arguments before hooks can mutate them.
@@ -519,7 +531,7 @@ public final class McpProtocolHandler {
         JsonObject originalArguments = arguments.deepCopy();
 
         // Pre hook: can modify arguments or stop execution before tool execution
-        PreHookApplication preHookResult = applyPreHook(toolName, arguments);
+        PreHookApplication preHookResult = applyPreHook(toolName, arguments, hookStages);
         if (preHookResult.blockedMessage != null) return buildToolResult(msg, preHookResult.blockedMessage, true);
         arguments = preHookResult.arguments;
 
@@ -539,7 +551,7 @@ public final class McpProtocolHandler {
                 .callTool(toolName, arguments, meta.toolUseId(), originalArguments);
 
             long durationMs = System.currentTimeMillis() - callStartMs;
-            var postOutcome = applyPostHook(toolName, arguments, resultText, durationMs);
+            var postOutcome = applyPostHook(toolName, arguments, resultText, durationMs, hookStages);
             resultText = postOutcome.output();
             resultText = truncateIfNeeded(resultText);
             boolean isError = postOutcome.isError() || ToolError.isError(resultText);
@@ -548,6 +560,9 @@ public final class McpProtocolHandler {
                 resultText = applyPreHookTextModifiers(preHookResult, resultText);
             }
             String fullResult = gateResult.prefix + resultText;
+            if (!hookStages.isEmpty()) {
+                liveService.setHookStages(callId, hookStages);
+            }
             liveService.complete(callId, fullResult,
                 System.currentTimeMillis() - callStartMs, !isError);
             return buildToolResult(msg, fullResult, isError);
@@ -555,9 +570,12 @@ public final class McpProtocolHandler {
             LOG.warn("[MCP] tool error: " + toolName, e);
             String errorMsg = ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage());
             long durationMs = System.currentTimeMillis() - callStartMs;
-            var failOutcome = applyFailureHook(toolName, arguments, errorMsg, durationMs);
+            var failOutcome = applyFailureHook(toolName, arguments, errorMsg, durationMs, hookStages);
             String finalOutput = Objects.requireNonNullElse(failOutcome.output(), errorMsg);
             boolean isError = failOutcome.isError();
+            if (!hookStages.isEmpty()) {
+                liveService.setHookStages(callId, hookStages);
+            }
             liveService.complete(callId, finalOutput,
                 System.currentTimeMillis() - callStartMs, !isError);
             return buildToolResult(msg, finalOutput, isError);
@@ -566,63 +584,93 @@ public final class McpProtocolHandler {
         }
     }
 
-    /**
-     * Evaluates the permission hook chain for a tool. Returns an error message if denied, or null if allowed.
-     */
-    private @Nullable String evaluatePermissionHook(@NotNull String toolName, @NotNull JsonObject arguments) {
+    private @Nullable String evaluatePermissionHook(@NotNull String toolName,
+                                                    @NotNull JsonObject arguments,
+                                                    @NotNull List<HookStageResult> hookStages) {
         try {
+            long start = System.currentTimeMillis();
             HookPipeline.PermissionResult result = HookPipeline.runPermissionHooks(project, toolName, arguments);
+            long elapsed = System.currentTimeMillis() - start;
             if (result instanceof HookPipeline.PermissionResult.Denied(String reason)) {
+                hookStages.add(new HookStageResult(STAGE_PERMISSION, STAGE_HOOK_CHAIN, "denied", elapsed, reason));
                 return ToolError.of(McpErrorCode.NOT_APPLICABLE, "Hook denied: " + reason);
+            }
+            if (elapsed > 0) {
+                hookStages.add(new HookStageResult(STAGE_PERMISSION, STAGE_HOOK_CHAIN, "allowed", elapsed, null));
             }
         } catch (HookExecutor.HookExecutionException e) {
             LOG.warn("[MCP] permission hook failed for " + toolName, e);
+            hookStages.add(new HookStageResult(STAGE_PERMISSION, STAGE_HOOK_CHAIN, OUTCOME_ERROR, 0, e.getMessage()));
             return ToolError.of(McpErrorCode.INTERNAL_ERROR, e.getMessage());
         }
         return null;
     }
 
-    /**
-     * Applies the pre-tool hook chain, returning possibly modified arguments or an immediate failure.
-     * If a hook with {@code failSilently: false} throws, the tool is blocked (fail-closed),
-     * consistent with permission hook behavior. Only {@code failSilently: true} hooks silently
-     * allow the tool through on failure.
-     */
-    private @NotNull PreHookApplication applyPreHook(@NotNull String toolName, @NotNull JsonObject arguments) {
+    private @NotNull PreHookApplication applyPreHook(@NotNull String toolName,
+                                                     @NotNull JsonObject arguments,
+                                                     @NotNull List<HookStageResult> hookStages) {
         try {
+            long start = System.currentTimeMillis();
             HookPipeline.PreHookOutput output = HookPipeline.runPreHooks(project, toolName, arguments);
+            long elapsed = System.currentTimeMillis() - start;
             HookPipeline.PreHookResult result = output.result();
             if (result instanceof HookPipeline.PreHookResult.Blocked(String error)) {
+                hookStages.add(new HookStageResult(STAGE_PRE, STAGE_HOOK_CHAIN, "blocked", elapsed, error));
                 return new PreHookApplication(arguments, error, null, null);
             }
             JsonObject resolvedArgs = result instanceof HookPipeline.PreHookResult.Modified(
                 JsonObject m
             ) ? m : arguments;
+            String outcome = result instanceof HookPipeline.PreHookResult.Modified ? OUTCOME_MODIFIED : "unchanged";
+            if (elapsed > 0) {
+                hookStages.add(new HookStageResult(STAGE_PRE, STAGE_HOOK_CHAIN, outcome, elapsed, null));
+            }
             return new PreHookApplication(resolvedArgs, null, output.pendingPrepend(), output.pendingAppend());
         } catch (HookExecutor.HookExecutionException e) {
             LOG.warn("[MCP] pre-hook failed for " + toolName, e);
+            hookStages.add(new HookStageResult(STAGE_PRE, STAGE_HOOK_CHAIN, OUTCOME_ERROR, 0, e.getMessage()));
             return new PreHookApplication(arguments, "Pre-hook failed: " + e.getMessage(), null, null);
         }
     }
 
     private @NotNull HookPipeline.PostHookOutcome applyPostHook(@NotNull String toolName,
                                                                 @NotNull JsonObject arguments,
-                                                                @Nullable String output, long durationMs) {
+                                                                @Nullable String output, long durationMs,
+                                                                @NotNull List<HookStageResult> hookStages) {
         try {
-            return HookPipeline.runSuccessHooks(project, toolName, arguments, output, durationMs);
+            long start = System.currentTimeMillis();
+            HookPipeline.PostHookOutcome outcome = HookPipeline.runSuccessHooks(project, toolName, arguments, output, durationMs);
+            long elapsed = System.currentTimeMillis() - start;
+            if (elapsed > 0) {
+                boolean modified = !Objects.equals(output, outcome.output()) || outcome.isError();
+                hookStages.add(new HookStageResult(STAGE_SUCCESS, STAGE_HOOK_CHAIN,
+                    modified ? OUTCOME_MODIFIED : "pass-through", elapsed, null));
+            }
+            return outcome;
         } catch (HookExecutor.HookExecutionException e) {
             LOG.warn("[MCP] success hook failed for " + toolName, e);
+            hookStages.add(new HookStageResult(STAGE_SUCCESS, STAGE_HOOK_CHAIN, OUTCOME_ERROR, 0, e.getMessage()));
             return new HookPipeline.PostHookOutcome(output, false);
         }
     }
 
     private @NotNull HookPipeline.PostHookOutcome applyFailureHook(@NotNull String toolName,
                                                                    @NotNull JsonObject arguments,
-                                                                   @NotNull String errorMsg, long durationMs) {
+                                                                   @NotNull String errorMsg, long durationMs,
+                                                                   @NotNull List<HookStageResult> hookStages) {
         try {
-            return HookPipeline.runFailureHooks(project, toolName, arguments, errorMsg, durationMs);
+            long start = System.currentTimeMillis();
+            HookPipeline.PostHookOutcome outcome = HookPipeline.runFailureHooks(project, toolName, arguments, errorMsg, durationMs);
+            long elapsed = System.currentTimeMillis() - start;
+            if (elapsed > 0) {
+                boolean modified = !Objects.equals(errorMsg, outcome.output()) || !outcome.isError();
+                hookStages.add(new HookStageResult(STAGE_FAILURE, STAGE_HOOK_CHAIN,
+                    modified ? OUTCOME_MODIFIED : "pass-through", elapsed, null));
+            }
+            return outcome;
         } catch (HookExecutor.HookExecutionException e) {
             LOG.warn("[MCP] failure hook failed for " + toolName, e);
+            hookStages.add(new HookStageResult(STAGE_FAILURE, STAGE_HOOK_CHAIN, OUTCOME_ERROR, 0, e.getMessage()));
             return new HookPipeline.PostHookOutcome(errorMsg, true);
         }
     }

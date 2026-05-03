@@ -1887,19 +1887,12 @@ public final class ChatWebServer implements Disposable {
             return;
         }
         try {
+            LiveToolCallService liveService = LiveToolCallService.getInstance(project);
+            List<LiveToolCallEntry> liveEntries = liveService.getEntries();
+
             com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
-            for (EntryData entry : loadSessionEntries()) {
-                if (entry instanceof EntryData.ToolCall toolCall) {
-                    com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
-                    obj.addProperty("id", toolCall.getEntryId());
-                    obj.addProperty(KEY_TITLE, toolCall.getTitle());
-                    obj.addProperty("kind", toolCall.getKind());
-                    obj.addProperty(KEY_STATUS, toolCall.getStatus());
-                    obj.addProperty("timestamp", toolCall.getTimestamp());
-                    obj.addProperty("arguments", toolCall.getArguments());
-                    obj.addProperty("result", toolCall.getResult());
-                    arr.add(obj);
-                }
+            for (LiveToolCallEntry entry : liveEntries) {
+                arr.add(liveEntryToJson(entry));
             }
             com.google.gson.JsonObject json = new com.google.gson.JsonObject();
             json.add(KEY_ITEMS, arr);
@@ -1908,6 +1901,40 @@ public final class ChatWebServer implements Disposable {
             LOG.warn("handleToolCalls error", e);
             sendJson(exchange, EMPTY_ITEMS_JSON);
         }
+    }
+
+    private static com.google.gson.JsonObject liveEntryToJson(LiveToolCallEntry entry) {
+        com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
+        obj.addProperty("id", entry.callId());
+        obj.addProperty(KEY_TITLE, entry.displayName());
+        obj.addProperty("toolName", entry.toolName());
+        if (entry.category() != null) {
+            obj.addProperty("kind", entry.category());
+        }
+        obj.addProperty(KEY_STATUS, entry.isRunning() ? "running"
+            : Boolean.TRUE.equals(entry.success()) ? "success" : "error");
+        obj.addProperty("timestamp", entry.timestamp().toString());
+        obj.addProperty("arguments", entry.input());
+        obj.addProperty("result", entry.output());
+        obj.addProperty("durationMs", entry.durationMs());
+        obj.addProperty("hasHooks", entry.hasHooks());
+
+        if (!entry.hookStages().isEmpty()) {
+            com.google.gson.JsonArray stages = new com.google.gson.JsonArray();
+            for (var stage : entry.hookStages()) {
+                com.google.gson.JsonObject s = new com.google.gson.JsonObject();
+                s.addProperty("trigger", stage.trigger());
+                s.addProperty("scriptName", stage.scriptName());
+                s.addProperty("outcome", stage.outcome());
+                s.addProperty("durationMs", stage.durationMs());
+                if (stage.detail() != null) {
+                    s.addProperty("detail", stage.detail());
+                }
+                stages.add(s);
+            }
+            obj.add("hookStages", stages);
+        }
+        return obj;
     }
 
     private @NotNull List<EntryData> loadSessionEntries() {
