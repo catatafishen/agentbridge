@@ -47,6 +47,8 @@ public final class PlatformApiCompat {
     private static final String LANG_SHELL_SCRIPT = "Shell Script";
     private static final String LANG_JAVASCRIPT = "JavaScript";
     private static final String LANG_PYTHON = "Python";
+    private static final String ROOT_TYPE_RESOURCES = "resources";
+    private static final String ROOT_TYPE_GENERATED_SOURCES = "generated_sources";
 
     /**
      * Categories of source root types, used by {@link #classifySourceRootType(String)}.
@@ -968,10 +970,10 @@ public final class PlatformApiCompat {
      */
     static SourceRootKind classifySourceRootType(@NotNull String type) {
         boolean isTest = type.startsWith("test_");
-        if (type.contains("resources")) {
+        if (type.contains(ROOT_TYPE_RESOURCES)) {
             return isTest ? SourceRootKind.TEST_RESOURCE : SourceRootKind.RESOURCE;
         }
-        if ("generated_sources".equals(type)) {
+        if (ROOT_TYPE_GENERATED_SOURCES.equals(type)) {
             return SourceRootKind.GENERATED_SOURCE;
         }
         return isTest ? SourceRootKind.TEST_SOURCE : SourceRootKind.SOURCE;
@@ -1027,10 +1029,10 @@ public final class PlatformApiCompat {
             && rootType == org.jetbrains.jps.model.java.JavaResourceRootType.TEST_RESOURCE;
         boolean isResource = rootType instanceof org.jetbrains.jps.model.java.JavaResourceRootType;
 
-        if (isGenerated) return isTest || isTestResource ? "generated_test_sources" : "generated_sources";
+        if (isGenerated) return isTest || isTestResource ? "generated_test_sources" : ROOT_TYPE_GENERATED_SOURCES;
         if (isTestResource) return "test_resources";
         if (isTest) return "test_sources";
-        if (isResource) return "resources";
+        if (isResource) return ROOT_TYPE_RESOURCES;
         return "sources";
     }
 
@@ -1052,9 +1054,9 @@ public final class PlatformApiCompat {
         var result = new java.util.LinkedHashMap<String, java.util.List<String>>();
         result.put("sources", new java.util.ArrayList<>());
         result.put("test_sources", new java.util.ArrayList<>());
-        result.put("resources", new java.util.ArrayList<>());
+        result.put(ROOT_TYPE_RESOURCES, new java.util.ArrayList<>());
         result.put("test_resources", new java.util.ArrayList<>());
-        result.put("generated_sources", new java.util.ArrayList<>());
+        result.put(ROOT_TYPE_GENERATED_SOURCES, new java.util.ArrayList<>());
         result.put("generated_test_sources", new java.util.ArrayList<>());
         result.put("excluded", new java.util.ArrayList<>());
 
@@ -1064,24 +1066,37 @@ public final class PlatformApiCompat {
         for (var module : com.intellij.openapi.module.ModuleManager.getInstance(project).getModules()) {
             var rootManager = com.intellij.openapi.roots.ModuleRootManager.getInstance(module);
             for (var contentEntry : rootManager.getContentEntries()) {
-                for (var sourceFolder : contentEntry.getSourceFolders()) {
-                    com.intellij.openapi.vfs.VirtualFile file = sourceFolder.getFile();
-                    if (file == null) continue;
-                    String classification = classifyFileSourceRoot(fileIndex, file);
-                    java.util.List<String> bucket = result.get(classification);
-                    if (bucket != null) {
-                        bucket.add(file.getPath());
-                    }
-                }
-                for (var excludeFolder : contentEntry.getExcludeFolders()) {
-                    com.intellij.openapi.vfs.VirtualFile file = excludeFolder.getFile();
-                    if (file != null) {
-                        result.get("excluded").add(file.getPath());
-                    }
-                }
+                classifySourceFolders(contentEntry, fileIndex, result);
+                collectExcludedFolders(contentEntry, result);
             }
         }
         return result;
+    }
+
+    private static void classifySourceFolders(
+        @NotNull com.intellij.openapi.roots.ContentEntry contentEntry,
+        @NotNull com.intellij.openapi.roots.ProjectFileIndex fileIndex,
+        @NotNull java.util.Map<String, java.util.List<String>> result) {
+        for (var sourceFolder : contentEntry.getSourceFolders()) {
+            com.intellij.openapi.vfs.VirtualFile file = sourceFolder.getFile();
+            if (file == null) continue;
+            String classification = classifyFileSourceRoot(fileIndex, file);
+            java.util.List<String> bucket = result.get(classification);
+            if (bucket != null) {
+                bucket.add(file.getPath());
+            }
+        }
+    }
+
+    private static void collectExcludedFolders(
+        @NotNull com.intellij.openapi.roots.ContentEntry contentEntry,
+        @NotNull java.util.Map<String, java.util.List<String>> result) {
+        for (var excludeFolder : contentEntry.getExcludeFolders()) {
+            com.intellij.openapi.vfs.VirtualFile file = excludeFolder.getFile();
+            if (file != null) {
+                result.get("excluded").add(file.getPath());
+            }
+        }
     }
 
     /**
