@@ -11,8 +11,17 @@ only sees the final result.
 
 ## Quick Start
 
-1. **Create the hooks directory** inside your project's AgentBridge storage directory
-   (default: `<project>/.agentbridge/hooks/`):
+The plugin ships with **built-in default hooks** that are automatically provisioned when
+you first open a project (if no hook configs exist yet). These defaults include identity
+enforcement, command safety gates, and post-execution tips.
+
+To customize: edit the files in `<project>/.agentbridge/hooks/`.
+To reset: use **Settings → Tools → Restore Default Hooks**.
+
+### Directory Structure
+
+The hooks directory lives inside your project's AgentBridge storage directory
+(default: `<project>/.agentbridge/hooks/`):
 
    ```
    .agentbridge/
@@ -280,6 +289,7 @@ executor. These are available to every hook script without configuration.
 | `AGENTBRIDGE_PROJECT_DIR`     | Absolute path to the project root                      | `/home/user/my-project`        |
 | `AGENTBRIDGE_HOOKS_DIR`       | Absolute path to the hooks directory                   | `/home/user/my-project/.agentbridge/hooks` |
 | `AGENTBRIDGE_MCP_PORT`        | HTTP port of the running MCP server                    | `8580`                         |
+| `AGENTBRIDGE_AGENT_NAME`      | Name of the connected agent (from MCP initialize)      | `Claude Code`, `github-copilot` |
 | `AGENTBRIDGE_SOURCE_ROOTS`    | Newline-separated list of source root directories      | `/home/user/my-project/src/main/java` |
 | `AGENTBRIDGE_TEST_ROOTS`      | Newline-separated list of test source directories      | `/home/user/my-project/src/test/java` |
 | `AGENTBRIDGE_GENERATED_ROOTS` | Newline-separated list of generated source directories | `/home/user/my-project/build/generated` |
@@ -519,7 +529,9 @@ esac
 ## Identity Enforcement Example
 
 A common use case is preventing the agent from posting GitHub content (PRs, comments, issues)
-as the repository owner. This project ships with three enforcement hooks:
+as the repository owner. The built-in hooks use `AGENTBRIDGE_AGENT_NAME` — automatically set
+from the MCP `initialize` handshake — so commits and content are attributed to whichever
+agent is actually connected (Copilot, Claude Code, etc.) rather than a hardcoded name.
 
 ### `git_commit.json` — Silent Author Fix
 
@@ -665,6 +677,30 @@ The storage location is configured in **Settings → Tools → AgentBridge → S
 | User Home | `~/.agentbridge/projects/<project-name>-<hash>/hooks/` |
 | Custom    | `<custom-root>/projects/<project-name>-<hash>/hooks/`  |
 
+## Built-in Hooks
+
+The plugin bundles a set of default hooks that are **automatically provisioned** when you first
+open a project (if no hook JSON configs exist in the hooks directory). These provide:
+
+- **Identity enforcement** — commits authored by the connected agent name, GitHub CLI and
+  API calls use bot credentials
+- **Command safety** — dangerous `run_command` patterns blocked, terminal abuse detection
+- **Post-execution tips** — PR creation guidance after push, naming convention checks after writes
+
+### Automatic Provisioning
+
+On first project open, if the hooks directory has no `.json` configs, the plugin copies all
+bundled defaults (JSON configs + shell scripts) to `<storage-dir>/hooks/`. After that, the
+files are yours to customize.
+
+### Restore Defaults
+
+If you've customized hooks and want to reset to the original bundled versions:
+
+**Settings → Tools → Restore Default Hooks**
+
+This overwrites all existing hook configs and scripts with the bundled originals.
+
 ## Comparison with GitHub Copilot Hooks
 
 | Capability                     | Copilot Hooks | AgentBridge Hooks |
@@ -684,4 +720,6 @@ The storage location is configured in **Settings → Tools → AgentBridge → S
 | IDE project model queries      | ❌             | ✅                 |
 | Environment variable injection | ❌             | ✅                 |
 | POSIX shell library            | ❌             | ✅                 |
+| Connected agent identity       | ❌             | ✅                 |
+| Built-in defaults with restore | ❌             | ✅                 |
 | Hooks outside of tool calls    | ✅             | ❌                 |

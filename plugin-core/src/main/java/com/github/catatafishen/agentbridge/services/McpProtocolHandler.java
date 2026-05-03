@@ -78,8 +78,23 @@ public final class McpProtocolHandler {
 
     private final Project project;
 
+    /**
+     * The name of the connected agent, extracted from the MCP {@code initialize}
+     * request's {@code clientInfo.name} field. {@code null} until the first
+     * {@code initialize} handshake completes.
+     */
+    private volatile @Nullable String connectedAgentName;
+
     public McpProtocolHandler(@NotNull Project project) {
         this.project = project;
+    }
+
+    /**
+     * Returns the name of the agent that connected via MCP {@code initialize},
+     * or {@code null} if no agent has connected yet.
+     */
+    public @Nullable String getConnectedAgentName() {
+        return connectedAgentName;
     }
 
     /**
@@ -116,6 +131,16 @@ public final class McpProtocolHandler {
     }
 
     private JsonObject handleInitialize(JsonObject msg) {
+        // Extract connected agent identity from clientInfo (MCP spec)
+        JsonObject params = msg.has(KEY_PARAMS) ? msg.getAsJsonObject(KEY_PARAMS) : null;
+        if (params != null && params.has("clientInfo")) {
+            JsonObject clientInfo = params.getAsJsonObject("clientInfo");
+            if (clientInfo.has("name")) {
+                connectedAgentName = clientInfo.get("name").getAsString();
+                LOG.info("[MCP] connected agent: " + connectedAgentName);
+            }
+        }
+
         JsonObject serverInfo = new JsonObject();
         String projectName = project.getName();
         serverInfo.addProperty("name", SERVER_NAME + " (" + projectName + ")");

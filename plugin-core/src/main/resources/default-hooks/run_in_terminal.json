@@ -1,0 +1,23 @@
+{
+  "permission": [
+    {
+      "script": "scripts/run-in-terminal-abort.sh",
+      "rejectOnFailure": true,
+      "timeout": 10
+    }
+  ],
+  "pre": [
+    {
+      "script": "scripts/enforce-gh-bot-identity.sh",
+      "failSilently": false,
+      "timeout": 5
+    }
+  ],
+  "success": [
+    {
+      "script": "scripts/run-in-terminal-reprimand.sh",
+      "timeout": 10,
+      "failSilently": true
+    }
+  ]
+}

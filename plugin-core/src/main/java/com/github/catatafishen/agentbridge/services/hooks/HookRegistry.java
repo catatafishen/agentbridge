@@ -126,6 +126,12 @@ public final class HookRegistry {
         synchronized (this) {
             now = System.currentTimeMillis();
             if ((now - lastLoadedMs) < RELOAD_INTERVAL_MS) return;
+
+            // Provision default hooks on first load if none exist
+            if (lastLoadedMs == 0) {
+                DefaultHookProvisioner.provisionIfEmpty(project);
+            }
+
             hooksByTool.clear();
             doLoad();
             lastLoadedMs = now;

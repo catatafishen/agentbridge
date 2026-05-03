@@ -11,6 +11,7 @@ import com.intellij.util.messages.Topic;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -186,6 +187,15 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
     public boolean isRunning() {
         return running;
+    }
+
+    /**
+     * Returns the name of the agent that connected via MCP {@code initialize},
+     * or {@code null} if no agent has connected yet or the server is not running.
+     */
+    public @Nullable String getConnectedAgentName() {
+        McpProtocolHandler handler = protocolHandler;
+        return handler != null ? handler.getConnectedAgentName() : null;
     }
 
     public TransportMode getActiveTransportMode() {

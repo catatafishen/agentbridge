@@ -57,6 +57,12 @@ public final class HookEnvironmentProvider {
             McpHttpServer server = McpHttpServer.getInstance(project);
             if (server != null && server.isRunning()) {
                 env.put("AGENTBRIDGE_MCP_PORT", String.valueOf(server.getPort()));
+
+                // Connected agent identity (from MCP initialize handshake)
+                String agentName = server.getConnectedAgentName();
+                if (agentName != null && !agentName.isBlank()) {
+                    env.put("AGENTBRIDGE_AGENT_NAME", agentName);
+                }
             }
         } catch (Exception e) {
             LOG.warn("Failed to get MCP server port", e);

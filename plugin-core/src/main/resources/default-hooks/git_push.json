@@ -1,0 +1,10 @@
+{
+  "success": [
+    {
+      "script": "scripts/pr-creation-tip.sh",
+      "timeout": 10,
+      "failSilently": true,
+      "async": false
+    }
+  ]
+}

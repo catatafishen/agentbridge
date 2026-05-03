@@ -1,0 +1,17 @@
+git_commit.json
+git_push.json
+http_request.json
+run_command.json
+run_in_terminal.json
+write_file.json
+scripts/_lib.sh
+scripts/bot-identity-reminder.sh
+scripts/check-stale-naming.sh
+scripts/enforce-commit-author.sh
+scripts/enforce-gh-bot-identity.sh
+scripts/enforce-http-bot-identity.sh
+scripts/generate-github-app-token.sh
+scripts/pr-creation-tip.sh
+scripts/run-command-abuse.sh
+scripts/run-in-terminal-abort.sh
+scripts/run-in-terminal-reprimand.sh

@@ -124,12 +124,18 @@ class ToolsConfigurable(private val project: Project) :
                 updateCounter()
             }
         }
+        val restoreHooksBtn = JButton("Restore Default Hooks").apply {
+            toolTipText = "Reset hook configs and scripts to the bundled plugin defaults"
+            addActionListener { restoreDefaultHooks() }
+        }
         val topRow = JBPanel<JBPanel<*>>().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             border = JBUI.Borders.emptyBottom(4)
             add(enableAllBtn)
             add(Box.createHorizontalStrut(JBUI.scale(8)))
             add(disableAllBtn)
+            add(Box.createHorizontalStrut(JBUI.scale(16)))
+            add(restoreHooksBtn)
             add(Box.createHorizontalGlue())
             alignmentX = Component.LEFT_ALIGNMENT
             maximumSize = Dimension(Int.MAX_VALUE, preferredSize.height)
@@ -500,6 +506,30 @@ class ToolsConfigurable(private val project: Project) :
                 .getInstance(project).findConfig(toolId)
             val hasHooks = config != null && !config.isEmpty
             templateIndicators[toolId]?.let { indicator ->
+                updateHookIndicator(indicator, hasHooks)
+            }
+        }
+    }
+
+    private fun restoreDefaultHooks() {
+        val result = com.intellij.openapi.ui.Messages.showYesNoDialog(
+            project,
+            "This will overwrite all hook configs and scripts with the bundled defaults.\nAny customizations will be lost.\n\nContinue?",
+            "Restore Default Hooks",
+            com.intellij.openapi.ui.Messages.getWarningIcon()
+        )
+        if (result != com.intellij.openapi.ui.Messages.YES) return
+
+        val restored = com.github.catatafishen.agentbridge.services.hooks.DefaultHookProvisioner
+            .restoreDefaults(project)
+        if (restored) {
+            com.github.catatafishen.agentbridge.services.hooks.HookRegistry
+                .getInstance(project).reload()
+            // Refresh all hook indicators
+            for ((toolId, indicator) in templateIndicators) {
+                val config = com.github.catatafishen.agentbridge.services.hooks.HookRegistry
+                    .getInstance(project).findConfig(toolId)
+                val hasHooks = config != null && !config.isEmpty
                 updateHookIndicator(indicator, hasHooks)
             }
         }

@@ -349,13 +349,18 @@ See [docs/MCP-TOOL-HOOKS.md](docs/MCP-TOOL-HOOKS.md) for the complete reference.
 - **State override** — success and failure hooks can flip the error state via `"state": "success"` / `"error"`
 - **Hook chaining** — multiple entries per trigger run sequentially, each seeing the previous output
 - **Identity enforcement** — built-in hook scripts prevent agents from impersonating the repository
-  owner when creating commits, PRs, issues, and comments
+  owner when creating commits, PRs, issues, and comments. Uses the connected agent's name
+  (from MCP `initialize` handshake) for attribution
+- **Connected agent identity** — `AGENTBRIDGE_AGENT_NAME` env var injected into every hook script,
+  extracted from the MCP `clientInfo.name` field
 - **Per-tool configuration** — one JSON file per tool in `<storage-dir>/hooks/<tool-id>.json`
 - **Async mode** — fire-and-forget hooks for notifications and logging
 - **Configurable timeout, failSilently, and env vars** per hook entry
 - **Static text modifiers** — `prependString` / `appendString` fields for simple text prepend/append without scripts
 - **Hot-reload** — hook configs are automatically reloaded within 2 seconds, no IDE restart needed
 - **Settings UI** — configure hooks per tool via the Settings dialog (🪝 indicator on hooked tools)
+- **Built-in defaults** — sensible hooks provisioned on first project open; **Restore Default Hooks**
+  button in settings resets to bundled originals
 - **Side panel indicator** — 🪝 icon on tool calls with active hooks in the Tool Calls panel
 
 ---
