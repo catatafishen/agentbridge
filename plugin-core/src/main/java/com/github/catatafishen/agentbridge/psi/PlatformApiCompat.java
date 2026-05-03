@@ -1035,6 +1035,56 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Collects all source root paths in the project, grouped by classification.
+     * Returns a map with keys matching the {@link #classifyFileSourceRoot} vocabulary:
+     * "sources", "test_sources", "resources", "test_resources", "generated_sources",
+     * "generated_test_sources". An additional key "excluded" contains excluded directory paths.
+     *
+     * <p><b>Why extracted:</b> {@code ModuleRootManager.getContentEntries()},
+     * {@code ContentEntry.getSourceFolders()}, and {@code ContentEntry.getExcludeFolders()}
+     * all resolve through JPS model types that differ between dev IDE and target SDK,
+     * causing daemon false positives. Centralising here confines the errors.</p>
+     *
+     * <p>Must be called inside a {@code ReadAction}.</p>
+     */
+    public static @NotNull java.util.Map<String, java.util.List<String>> collectSourceRootsByClassification(
+        @NotNull Project project) {
+        var result = new java.util.LinkedHashMap<String, java.util.List<String>>();
+        result.put("sources", new java.util.ArrayList<>());
+        result.put("test_sources", new java.util.ArrayList<>());
+        result.put("resources", new java.util.ArrayList<>());
+        result.put("test_resources", new java.util.ArrayList<>());
+        result.put("generated_sources", new java.util.ArrayList<>());
+        result.put("generated_test_sources", new java.util.ArrayList<>());
+        result.put("excluded", new java.util.ArrayList<>());
+
+        com.intellij.openapi.roots.ProjectFileIndex fileIndex =
+            com.intellij.openapi.roots.ProjectFileIndex.getInstance(project);
+
+        for (var module : com.intellij.openapi.module.ModuleManager.getInstance(project).getModules()) {
+            var rootManager = com.intellij.openapi.roots.ModuleRootManager.getInstance(module);
+            for (var contentEntry : rootManager.getContentEntries()) {
+                for (var sourceFolder : contentEntry.getSourceFolders()) {
+                    com.intellij.openapi.vfs.VirtualFile file = sourceFolder.getFile();
+                    if (file == null) continue;
+                    String classification = classifyFileSourceRoot(fileIndex, file);
+                    java.util.List<String> bucket = result.get(classification);
+                    if (bucket != null) {
+                        bucket.add(file.getPath());
+                    }
+                }
+                for (var excludeFolder : contentEntry.getExcludeFolders()) {
+                    com.intellij.openapi.vfs.VirtualFile file = excludeFolder.getFile();
+                    if (file != null) {
+                        result.get("excluded").add(file.getPath());
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
      * Lists available SDK types with their suggested entries.
      *
      * <p><b>Why extracted:</b> {@code SdkType.EP_NAME.getExtensionList()} cannot be resolved
