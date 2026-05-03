@@ -8,7 +8,6 @@ import com.github.catatafishen.agentbridge.settings.ChatWebServerSettings;
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.MessageFormatter;
-import com.github.catatafishen.agentbridge.ui.side.TodoDatabaseReader;
 import com.google.gson.Gson;
 import com.intellij.credentialStore.CredentialAttributes;
 import com.intellij.credentialStore.Credentials;
@@ -91,6 +90,13 @@ public final class ChatWebServer implements Disposable {
     private static final String CACHE_PUBLIC = "public, max-age=86400";
     private static final String BIND_ALL_INTERFACES = "0.0.0.0";
     private static final long MAX_PWA_FILE_BYTES = 1_048_576;
+    private static final String KEY_ITEMS = "items";
+    private static final String KEY_STATUS = "status";
+    private static final String KEY_TITLE = "title";
+    private static final String KEY_DESCRIPTION = "description";
+    private static final String KEY_NO_SESSION = "No active session";
+    private static final String SESSION_DB_FILE = "session.db";
+    private static final String EMPTY_ITEMS_JSON = "{\"items\":[]}";
 
     private final Project project;
     private HttpsServer httpsServer;
@@ -1768,25 +1774,25 @@ public final class ChatWebServer implements Disposable {
             java.nio.file.Path sessionDir = resolveAgentSessionDir();
             com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
             if (sessionDir != null) {
-                java.io.File dbFile = sessionDir.resolve("session.db").toFile();
+                java.io.File dbFile = sessionDir.resolve(SESSION_DB_FILE).toFile();
                 for (com.github.catatafishen.agentbridge.ui.side.TodoDatabaseReader.TodoItem item
                     : com.github.catatafishen.agentbridge.ui.side.TodoDatabaseReader.readTodos(dbFile)) {
                     com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
                     obj.addProperty("id", item.id());
-                    obj.addProperty("title", item.title());
-                    obj.addProperty("description", item.description());
-                    obj.addProperty("status", item.status());
+                    obj.addProperty(KEY_TITLE, item.title());
+                    obj.addProperty(KEY_DESCRIPTION, item.description());
+                    obj.addProperty(KEY_STATUS, item.status());
                     obj.addProperty("createdAt", item.createdAt());
                     obj.addProperty("updatedAt", item.updatedAt());
                     arr.add(obj);
                 }
             }
             com.google.gson.JsonObject json = new com.google.gson.JsonObject();
-            json.add("items", arr);
+            json.add(KEY_ITEMS, arr);
             sendJson(exchange, GSON.toJson(json));
         } catch (Exception e) {
             LOG.warn("handleTodosGet error", e);
-            sendJson(exchange, "{\"items\":[]}");
+            sendJson(exchange, EMPTY_ITEMS_JSON);
         }
     }
 
@@ -1794,18 +1800,18 @@ public final class ChatWebServer implements Disposable {
         try {
             java.nio.file.Path sessionDir = resolveAgentSessionDir();
             if (sessionDir == null) {
-                sendErrorJson(exchange, 409, "No active session");
+                sendErrorJson(exchange, 409, KEY_NO_SESSION);
                 return;
             }
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             String id = jsonString(body, "id");
-            String title = jsonString(body, "title");
+            String title = jsonString(body, KEY_TITLE);
             if (id == null || id.isBlank() || title == null || title.isBlank()) {
                 sendErrorJson(exchange, 400, "id and title are required");
                 return;
             }
-            String description = jsonString(body, "description");
-            java.io.File dbFile = sessionDir.resolve("session.db").toFile();
+            String description = jsonString(body, KEY_DESCRIPTION);
+            java.io.File dbFile = sessionDir.resolve(SESSION_DB_FILE).toFile();
             com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.createTodo(dbFile, id, title, description);
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
@@ -1819,7 +1825,7 @@ public final class ChatWebServer implements Disposable {
         try {
             java.nio.file.Path sessionDir = resolveAgentSessionDir();
             if (sessionDir == null) {
-                sendErrorJson(exchange, 409, "No active session");
+                sendErrorJson(exchange, 409, KEY_NO_SESSION);
                 return;
             }
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
@@ -1828,10 +1834,10 @@ public final class ChatWebServer implements Disposable {
                 sendErrorJson(exchange, 400, "id is required");
                 return;
             }
-            String title = jsonString(body, "title");
-            String description = jsonString(body, "description");
-            String status = jsonString(body, "status");
-            java.io.File dbFile = sessionDir.resolve("session.db").toFile();
+            String title = jsonString(body, KEY_TITLE);
+            String description = jsonString(body, KEY_DESCRIPTION);
+            String status = jsonString(body, KEY_STATUS);
+            java.io.File dbFile = sessionDir.resolve(SESSION_DB_FILE).toFile();
             com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.updateTodo(dbFile, id, title, description, status);
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
@@ -1845,7 +1851,7 @@ public final class ChatWebServer implements Disposable {
         try {
             java.nio.file.Path sessionDir = resolveAgentSessionDir();
             if (sessionDir == null) {
-                sendErrorJson(exchange, 409, "No active session");
+                sendErrorJson(exchange, 409, KEY_NO_SESSION);
                 return;
             }
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
@@ -1854,7 +1860,7 @@ public final class ChatWebServer implements Disposable {
                 sendErrorJson(exchange, 400, "id is required");
                 return;
             }
-            java.io.File dbFile = sessionDir.resolve("session.db").toFile();
+            java.io.File dbFile = sessionDir.resolve(SESSION_DB_FILE).toFile();
             com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.deleteTodo(dbFile, id);
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
@@ -1883,11 +1889,11 @@ public final class ChatWebServer implements Disposable {
                 }
             }
             com.google.gson.JsonObject json = new com.google.gson.JsonObject();
-            json.add("items", arr);
+            json.add(KEY_ITEMS, arr);
             sendJson(exchange, GSON.toJson(json));
         } catch (Exception e) {
             LOG.warn("handlePrompts error", e);
-            sendJson(exchange, "{\"items\":[]}");
+            sendJson(exchange, EMPTY_ITEMS_JSON);
         }
     }
 
@@ -1904,9 +1910,9 @@ public final class ChatWebServer implements Disposable {
                 if (entry instanceof EntryData.ToolCall toolCall) {
                     com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
                     obj.addProperty("id", toolCall.getEntryId());
-                    obj.addProperty("title", toolCall.getTitle());
+                    obj.addProperty(KEY_TITLE, toolCall.getTitle());
                     obj.addProperty("kind", toolCall.getKind());
-                    obj.addProperty("status", toolCall.getStatus());
+                    obj.addProperty(KEY_STATUS, toolCall.getStatus());
                     obj.addProperty("timestamp", toolCall.getTimestamp());
                     obj.addProperty("arguments", toolCall.getArguments());
                     obj.addProperty("result", toolCall.getResult());
@@ -1914,11 +1920,11 @@ public final class ChatWebServer implements Disposable {
                 }
             }
             com.google.gson.JsonObject json = new com.google.gson.JsonObject();
-            json.add("items", arr);
+            json.add(KEY_ITEMS, arr);
             sendJson(exchange, GSON.toJson(json));
         } catch (Exception e) {
             LOG.warn("handleToolCalls error", e);
-            sendJson(exchange, "{\"items\":[]}");
+            sendJson(exchange, EMPTY_ITEMS_JSON);
         }
     }
 
@@ -1960,18 +1966,18 @@ public final class ChatWebServer implements Disposable {
             for (com.github.catatafishen.agentbridge.psi.review.ReviewItem item : items) {
                 com.google.gson.JsonObject obj = new com.google.gson.JsonObject();
                 obj.addProperty("path", item.relativePath());
-                obj.addProperty("status", item.status().name());
+                obj.addProperty(KEY_STATUS, item.status().name());
                 obj.addProperty("approved", item.approved());
                 obj.addProperty("linesAdded", item.linesAdded());
                 obj.addProperty("linesRemoved", item.linesRemoved());
                 arr.add(obj);
             }
             com.google.gson.JsonObject json = new com.google.gson.JsonObject();
-            json.add("items", arr);
+            json.add(KEY_ITEMS, arr);
             sendJson(exchange, GSON.toJson(json));
         } catch (Exception e) {
             LOG.warn("handleReviewItems error", e);
-            sendJson(exchange, "{\"items\":[]}");
+            sendJson(exchange, EMPTY_ITEMS_JSON);
         }
     }
 

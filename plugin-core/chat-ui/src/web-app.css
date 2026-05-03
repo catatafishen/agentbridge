@@ -1460,6 +1460,7 @@ file-nav {
     max-height: 160px;
     overflow: auto;
     background: var(--bg, #0d1117);
+    color: var(--fg, #c9d1d9);
     border-radius: 6px;
     padding: 8px;
     white-space: pre-wrap;

@@ -37,9 +37,7 @@ export class ToolCallsView extends HTMLElement {
 
     activate(): void {
         void this.refresh();
-        if (this._pollTimer == null) {
-            this._pollTimer = globalThis.setInterval(() => void this.refresh(), 2000);
-        }
+        this._pollTimer ??= globalThis.setInterval(() => void this.refresh(), 2000);
     }
 
     deactivate(): void {
@@ -80,13 +78,17 @@ export class ToolCallsView extends HTMLElement {
         const kind = this._kindClass(item.kind);
         const status = item.status || 'running';
         const statusClass = status.toLowerCase().replaceAll(/[^a-z0-9_-]/g, '-');
-        const detail = expanded ? `
+        let detail = '';
+        if (expanded) {
+            const resultText = item.result || (status === 'running' ? '(still running)' : '');
+            detail = `
             <div class="tcv-detail">
                 <div class="tcv-label">Input</div>
                 <pre>${this._esc(item.arguments || '')}</pre>
                 <div class="tcv-label">Output</div>
-                <pre>${this._esc(item.result || (status === 'running' ? '(still running)' : ''))}</pre>
-            </div>` : '';
+                <pre>${this._esc(resultText)}</pre>
+            </div>`;
+        }
         return `<div class="tcv-item" data-id="${this._esc(item.id)}">
             <div class="tcv-summary">
                 <span class="tcv-kind ${kind}">${this._esc(item.kind || 'other')}</span>

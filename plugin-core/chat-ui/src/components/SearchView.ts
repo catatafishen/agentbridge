@@ -36,9 +36,7 @@ export class SearchView extends HTMLElement {
 
     activate(): void {
         void this.refresh();
-        if (this._pollTimer == null) {
-            this._pollTimer = globalThis.setInterval(() => void this.refresh(), 3000);
-        }
+        this._pollTimer ??= globalThis.setInterval(() => void this.refresh(), 3000);
     }
 
     deactivate(): void {

@@ -15,7 +15,7 @@ export class PaneSwiper extends HTMLElement {
     private _track!: HTMLElement;
     private _dots!: HTMLElement;
     private _tabBar!: HTMLElement;
-    private _panes: HTMLElement[] = [];
+    private readonly _panes: HTMLElement[] = [];
     private _tabLabels: string[] = [];
 
     /** Currently visible pane index */

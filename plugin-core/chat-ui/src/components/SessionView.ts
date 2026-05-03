@@ -13,9 +13,7 @@ export class SessionView extends HTMLElement {
 
     activate(): void {
         void this.refresh();
-        if (this._pollTimer == null) {
-            this._pollTimer = globalThis.setInterval(() => void this.refresh(), 2000);
-        }
+        this._pollTimer ??= globalThis.setInterval(() => void this.refresh(), 2000);
     }
 
     deactivate(): void {
@@ -32,15 +30,28 @@ export class SessionView extends HTMLElement {
             const data = await resp.json() as { isRunning: boolean; model: string; connected: boolean };
             this._render(data);
         } catch (e) {
+            console.warn('[AB] SessionView refresh failed:', e);
             this._content.innerHTML = '<div class="sv-row sv-offline">IDE disconnected</div>';
         }
     }
 
     private _render(data: { isRunning: boolean; model: string; connected: boolean }): void {
-        const statusClass = data.isRunning ? 'sv-running' : data.connected ? 'sv-idle' : 'sv-offline';
-        const statusText = data.isRunning ? 'Agent running' : data.connected ? 'Connected' : 'Disconnected';
-        const dot = data.isRunning ? '🟢' : data.connected ? '🔵' : '🔴';
-
+        let statusClass: string;
+        let statusText: string;
+        let dot: string;
+        if (data.isRunning) {
+            statusClass = 'sv-running';
+            statusText = 'Agent running';
+            dot = '🟢';
+        } else if (data.connected) {
+            statusClass = 'sv-idle';
+            statusText = 'Connected';
+            dot = '🔵';
+        } else {
+            statusClass = 'sv-offline';
+            statusText = 'Disconnected';
+            dot = '🔴';
+        }
         this._content.innerHTML = `
             <div class="sv-row ${statusClass}">
                 <span class="sv-dot">${dot}</span>
