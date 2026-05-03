@@ -11,19 +11,19 @@ class HookExecutorTest {
 
     @Test
     void parseResult_emptyStdout_returnsNoOp() {
-        var result = HookExecutor.parseResult(HookTrigger.POST, "");
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "");
         assertInstanceOfNoOp(result);
     }
 
     @Test
     void parseResult_blankStdout_returnsNoOp() {
-        var result = HookExecutor.parseResult(HookTrigger.POST, "   \n  ");
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "   \n  ");
         assertInstanceOfNoOp(result);
     }
 
     @Test
     void parseResult_nullStdout_returnsNoOp() {
-        var result = HookExecutor.parseResult(HookTrigger.POST, null);
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, null);
         assertInstanceOfNoOp(result);
     }
 
@@ -81,8 +81,8 @@ class HookExecutorTest {
     }
 
     @Test
-    void parseResult_post_replaceOutput() {
-        var result = HookExecutor.parseResult(HookTrigger.POST, "{\"output\":\"replaced text\"}");
+    void parseResult_success_replaceOutput() {
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "{\"output\":\"replaced text\"}");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertTrue(mod.isReplacement());
@@ -90,8 +90,8 @@ class HookExecutorTest {
     }
 
     @Test
-    void parseResult_post_appendOutput() {
-        var result = HookExecutor.parseResult(HookTrigger.POST, "{\"append\":\"\\nTip: create a PR\"}");
+    void parseResult_success_appendOutput() {
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "{\"append\":\"\\nTip: create a PR\"}");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertFalse(mod.isReplacement());
@@ -99,8 +99,8 @@ class HookExecutorTest {
     }
 
     @Test
-    void parseResult_post_plainText_treatedAsReplacement() {
-        var result = HookExecutor.parseResult(HookTrigger.POST, "plain text output\n");
+    void parseResult_success_plainText_treatedAsReplacement() {
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "plain text output\n");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertTrue(mod.isReplacement());
@@ -108,8 +108,8 @@ class HookExecutorTest {
     }
 
     @Test
-    void parseResult_post_nullOutput_replacesWithEmpty() {
-        var result = HookExecutor.parseResult(HookTrigger.POST, "{\"output\":null}");
+    void parseResult_success_nullOutput_replacesWithEmpty() {
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "{\"output\":null}");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertTrue(mod.isReplacement());
@@ -117,8 +117,8 @@ class HookExecutorTest {
     }
 
     @Test
-    void parseResult_onFailure_replaceError() {
-        var result = HookExecutor.parseResult(HookTrigger.ON_FAILURE, "{\"output\":\"Friendly error\"}");
+    void parseResult_failure_replaceError() {
+        var result = HookExecutor.parseResult(HookTrigger.FAILURE, "{\"output\":\"Friendly error\"}");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertTrue(mod.isReplacement());
@@ -126,8 +126,8 @@ class HookExecutorTest {
     }
 
     @Test
-    void parseResult_onFailure_appendSuggestion() {
-        var result = HookExecutor.parseResult(HookTrigger.ON_FAILURE, "{\"append\":\"\\nSuggestion: check permissions\"}");
+    void parseResult_failure_appendSuggestion() {
+        var result = HookExecutor.parseResult(HookTrigger.FAILURE, "{\"append\":\"\\nSuggestion: check permissions\"}");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertFalse(mod.isReplacement());
@@ -135,8 +135,8 @@ class HookExecutorTest {
     }
 
     @Test
-    void parseResult_post_jsonWithoutOutputOrAppend_treatedAsPlainText() {
-        var result = HookExecutor.parseResult(HookTrigger.POST, "{\"message\":\"ignored\"}");
+    void parseResult_success_jsonWithoutOutputOrAppend_treatedAsPlainText() {
+        var result = HookExecutor.parseResult(HookTrigger.SUCCESS, "{\"message\":\"ignored\"}");
         assertInstanceOf(HookResult.OutputModification.class, result);
         var mod = (HookResult.OutputModification) result;
         assertTrue(mod.isReplacement());
