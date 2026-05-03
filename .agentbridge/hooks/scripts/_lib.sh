@@ -108,3 +108,27 @@ hook_query() {
         -H "Content-Type: application/json" \
         -d "$1" 2>/dev/null
 }
+
+# Call a read-only MCP tool directly from a hook script.
+# Bypasses the entire agentic pipeline (no permissions, no hooks, no UI).
+# Only READ and SEARCH tools are available — write tools are rejected.
+#
+# Usage:
+#   result=$(hook_tool "search_text" '{"query":"pattern","file_pattern":"*.java"}')
+#   result=$(hook_tool "get_file_outline" '{"path":"src/Main.java"}')
+#   result=$(hook_tool "find_references" '{"symbol":"MyClass"}')
+#
+# Returns JSON: {"result":"...","error":false} or {"error":true,"message":"..."}
+# Use with sed/grep to extract the result field, or pipe to jq if available.
+hook_tool() {
+    if [ -z "${AGENTBRIDGE_MCP_PORT:-}" ]; then
+        printf '{"error":true,"message":"AGENTBRIDGE_MCP_PORT not set"}\n'
+        return 1
+    fi
+    _tool_id="$1"
+    _tool_args="$2"
+    [ -z "$_tool_args" ] && _tool_args="{}"
+    curl -s -X POST "http://localhost:${AGENTBRIDGE_MCP_PORT}/hooks/tool" \
+        -H "Content-Type: application/json" \
+        -d "{\"tool\":\"${_tool_id}\",\"arguments\":${_tool_args}}" 2>/dev/null
+}
