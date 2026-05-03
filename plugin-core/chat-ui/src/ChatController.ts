@@ -811,6 +811,10 @@ const ChatController = {
         row.querySelectorAll('.turn-summary-bar').forEach(el => el.remove());
 
         row.appendChild(_buildTurnSummaryBar(stats));
+        // Explicit deferred scroll: the bar append triggers MutationObserver → _scheduleDeferredScroll,
+        // but calling it here ensures it fires even if the gate was already cleared and the observer
+        // fires in a different microtask batch. Deferred two rAFs per Fix 9.
+        this._container()?.scheduleScrollIfNeeded();
     },
 
     _lastAgentRow(): Element | null {

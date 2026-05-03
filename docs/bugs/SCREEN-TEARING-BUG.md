@@ -456,32 +456,32 @@ remove after Fix 8 is proven stable.
 
 ## Code Locations
 
-| File                       | Component                        | Purpose                                                                                            |
-|----------------------------|----------------------------------|----------------------------------------------------------------------------------------------------|
-| `ChatConsolePanel.kt`      | `startStreaming()`               | Sets 60fps, marks `streaming=true`, disables smooth scroll                                         |
-| `ChatConsolePanel.kt`      | `finishResponse()`               | Sets 30fps unless active scroll still needs 60fps, marks `streaming=false`, restores smooth scroll |
-| `ChatConsolePanel.kt`      | `executeJs()`                    | Plain `executeJavaScript` — no manual `invalidate()` (Fix 4)                                       |
-| `ChatConsolePanel.kt`      | `setFrameRate()`                 | Wraps `setWindowlessFrameRate()`                                                                   |
-| `ChatConsolePanel.kt`      | Scroll bridge handlers           | Temporarily boosts JCEF OSR to 60fps while the user is actively scrolling                          |
-| `ChatContainer.ts`         | `_scrollRAF`                     | rAF debounce gate for scroll writes (now holds nested 2-rAF chain — Fix 8)                         |
-| `ChatContainer.ts`         | `_scheduleDeferredScroll()`      | Two-rAF deferral helper — separates DOM-mutation paint from scroll paint (Fix 8)                   |
-| `ChatContainer.ts`         | `ResizeObserver`                 | Debounced via `_scheduleDeferredScroll()` — never writes scrollTop directly                        |
-| `ChatContainer.ts`         | `MutationObserver`               | Auto-scroll trigger — debounced via `_scrollRAF`                                                   |
-| `ChatContainer.ts`         | Scroll handler                   | Adds `is-scrolling` during active scroll and rAF-defers load-more clicks                           |
-| `ChatContainer.ts`         | `_copyObs`                       | Code block buttons — skips streaming bubbles                                                       |
-| `ChatContainer.ts`         | `_setupCodeBlocks()`             | Checks `pre.closest('message-bubble[streaming]')`                                                  |
-| `ChatContainer.ts`         | `setStreaming()`                 | Toggles CSS smooth-scroll policy between streaming and idle                                        |
-| `ChatContainer.ts`         | `_scrollToInstant()`             | Temporarily forces `scroll-behavior: auto` for scroll                                              |
-| `ChatContainer.ts`         | `scheduleScrollIfNeeded()`       | rAF-deferred autoscroll entry point for DOM mutation paths                                         |
+| File                       | Component                        | Purpose                                                                                              |
+|----------------------------|----------------------------------|------------------------------------------------------------------------------------------------------|
+| `ChatConsolePanel.kt`      | `startStreaming()`               | Sets 60fps, marks `streaming=true`, disables smooth scroll                                           |
+| `ChatConsolePanel.kt`      | `finishResponse()`               | Sets 30fps unless active scroll still needs 60fps, marks `streaming=false`, restores smooth scroll   |
+| `ChatConsolePanel.kt`      | `executeJs()`                    | Plain `executeJavaScript` — no manual `invalidate()` (Fix 4)                                         |
+| `ChatConsolePanel.kt`      | `setFrameRate()`                 | Wraps `setWindowlessFrameRate()`                                                                     |
+| `ChatConsolePanel.kt`      | Scroll bridge handlers           | Temporarily boosts JCEF OSR to 60fps while the user is actively scrolling                            |
+| `ChatContainer.ts`         | `_scrollRAF`                     | rAF debounce gate for scroll writes (now holds nested 2-rAF chain — Fix 8)                           |
+| `ChatContainer.ts`         | `_scheduleDeferredScroll()`      | Two-rAF deferral helper — separates DOM-mutation paint from scroll paint (Fix 8)                     |
+| `ChatContainer.ts`         | `ResizeObserver`                 | Debounced via `_scheduleDeferredScroll()` — never writes scrollTop directly                          |
+| `ChatContainer.ts`         | `MutationObserver`               | Auto-scroll trigger — debounced via `_scrollRAF`                                                     |
+| `ChatContainer.ts`         | Scroll handler                   | Adds `is-scrolling` during active scroll and rAF-defers load-more clicks                             |
+| `ChatContainer.ts`         | `_copyObs`                       | Code block buttons — skips streaming bubbles                                                         |
+| `ChatContainer.ts`         | `_setupCodeBlocks()`             | Checks `pre.closest('message-bubble[streaming]')`                                                    |
+| `ChatContainer.ts`         | `setStreaming()`                 | Toggles CSS smooth-scroll policy between streaming and idle                                          |
+| `ChatContainer.ts`         | `_scrollToInstant()`             | Temporarily forces `scroll-behavior: auto` for scroll                                                |
+| `ChatContainer.ts`         | `scheduleScrollIfNeeded()`       | rAF-deferred autoscroll entry point for DOM mutation paths                                           |
 | `ChatContainer.ts`         | `scheduleForceScroll()`          | Like `scheduleScrollIfNeeded()` but also re-arms auto-scroll — used for user-message appends (Fix 9) |
-| `ChatController.ts`        | `appendAgentText()`              | No longer calls synchronous `scrollIfNeeded()` (Fix 3)                                             |
-| `ChatController.ts`        | Remaining autoscroll call sites  | Use `scheduleScrollIfNeeded()` instead of direct scroll writes (Fix 6)                             |
-| `ChatController.ts`        | `upsertToolChip()`               | No longer calls synchronous `scrollIfNeeded()` (Fix 5)                                             |
-| `ChatController.ts`        | `addUserMessage()`               | Uses `scheduleForceScroll()` — two-rAF deferred, not synchronous `forceScroll()` (Fix 9)           |
-| `MessageMeta.ts`           | `_scrollToEnd()`                 | Two-rAF deferred, `behavior: 'instant'` — chip-strip horizontal scroll (Fix 9)                    |
-| `chat.css`                 | `chat-container`, `chat-message` | No paint containment, content-visibility virtualization, or hover tooltip overlays in OSR          |
-| `MessageBubble.ts`         | `appendStreamingText()`          | rAF-debounced markdown re-render                                                                   |
-| `MonitorSwitchRecovery.kt` | `triggerRecovery()`              | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes                    |
+| `ChatController.ts`        | `appendAgentText()`              | No longer calls synchronous `scrollIfNeeded()` (Fix 3)                                               |
+| `ChatController.ts`        | Remaining autoscroll call sites  | Use `scheduleScrollIfNeeded()` instead of direct scroll writes (Fix 6)                               |
+| `ChatController.ts`        | `upsertToolChip()`               | No longer calls synchronous `scrollIfNeeded()` (Fix 5)                                               |
+| `ChatController.ts`        | `addUserMessage()`               | Uses `scheduleForceScroll()` — two-rAF deferred, not synchronous `forceScroll()` (Fix 9)             |
+| `MessageMeta.ts`           | `_scrollToEnd()`                 | Two-rAF deferred, `behavior: 'instant'` — chip-strip horizontal scroll (Fix 9)                       |
+| `chat.css`                 | `chat-container`, `chat-message` | No paint containment, content-visibility virtualization, or hover tooltip overlays in OSR            |
+| `MessageBubble.ts`         | `appendStreamingText()`          | rAF-debounced markdown re-render                                                                     |
+| `MonitorSwitchRecovery.kt` | `triggerRecovery()`              | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes                      |
 
 ---
 
