@@ -49,7 +49,7 @@ final class ProjectFilesPanel extends JPanel {
     private final transient Project project;
     private final boolean sessionOnly;
     @Nullable
-    private final Path hooksDir;
+    private final transient Path hooksDir;
     private final DefaultMutableTreeNode root = new DefaultMutableTreeNode("Project Files");
     private final DefaultTreeModel treeModel = new DefaultTreeModel(root);
     private final Tree tree = new Tree(treeModel);

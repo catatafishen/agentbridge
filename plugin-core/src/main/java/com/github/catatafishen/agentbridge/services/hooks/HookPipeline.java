@@ -151,14 +151,8 @@ public final class HookPipeline {
                 LOG.info("Pre-hook modified arguments for " + toolName);
             }
 
-            if (entry.prependString() != null && !entry.prependString().isEmpty()) {
-                if (!pendingPrepend.isEmpty()) pendingPrepend.append("\n\n");
-                pendingPrepend.append(entry.prependString());
-            }
-            if (entry.appendString() != null && !entry.appendString().isEmpty()) {
-                if (!pendingAppend.isEmpty()) pendingAppend.append("\n\n");
-                pendingAppend.append(entry.appendString());
-            }
+            accumulateText(pendingPrepend, entry.prependString());
+            accumulateText(pendingAppend, entry.appendString());
         }
 
         PreHookResult hookResult = modified
@@ -255,6 +249,13 @@ public final class HookPipeline {
             current = (current != null ? current : "") + "\n\n" + entry.appendString();
         }
         return current;
+    }
+
+    private static void accumulateText(@NotNull StringBuilder sb, @Nullable String text) {
+        if (text != null && !text.isEmpty()) {
+            if (!sb.isEmpty()) sb.append("\n\n");
+            sb.append(text);
+        }
     }
 
     private static @Nullable String applyOutputText(@NotNull HookResult.OutputModification mod,

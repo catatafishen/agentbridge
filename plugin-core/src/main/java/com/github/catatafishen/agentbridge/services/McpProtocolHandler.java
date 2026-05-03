@@ -515,12 +515,7 @@ public final class McpProtocolHandler {
             boolean isError = postOutcome.isError() || ToolError.isError(resultText);
 
             if (!isError) {
-                if (preHookResult.pendingPrepend() != null && !preHookResult.pendingPrepend().isEmpty()) {
-                    resultText = preHookResult.pendingPrepend() + "\n\n" + resultText;
-                }
-                if (preHookResult.pendingAppend() != null && !preHookResult.pendingAppend().isEmpty()) {
-                    resultText = resultText + "\n\n" + preHookResult.pendingAppend();
-                }
+                resultText = applyPreHookTextModifiers(preHookResult, resultText);
             }
             String fullResult = gateResult.prefix + resultText;
             liveService.complete(callId, fullResult,
@@ -598,6 +593,22 @@ public final class McpProtocolHandler {
             LOG.warn("[MCP] failure hook failed for " + toolName, e);
             return new HookPipeline.PostHookOutcome(errorMsg, true);
         }
+    }
+
+    /**
+     * Applies the pending prepend/append text modifiers produced by PRE hooks to the tool output.
+     * These modifiers are accumulated during the PRE phase and applied only on success.
+     */
+    private static @NotNull String applyPreHookTextModifiers(@NotNull PreHookApplication preHook,
+                                                             @Nullable String resultText) {
+        String base = resultText != null ? resultText : "";
+        if (preHook.pendingPrepend() != null && !preHook.pendingPrepend().isEmpty()) {
+            base = preHook.pendingPrepend() + "\n\n" + base;
+        }
+        if (preHook.pendingAppend() != null && !preHook.pendingAppend().isEmpty()) {
+            base = base + "\n\n" + preHook.pendingAppend();
+        }
+        return base;
     }
 
     private static void logToolCall(String toolName, @Nullable String progressToken,
