@@ -37,8 +37,7 @@ public final class GitPushTool extends GitTool {
     @Override
     public @NotNull String description() {
         return "Push commits to a remote repository. Auto-fetches from origin before pushing "
-            + "to detect divergence. Returns push result with remote URL, branch tracking status, "
-            + "and a hint to create a PR if pushing a feature branch.";
+            + "to detect divergence. Returns push result with remote URL and branch tracking status.";
     }
 
     @Override
@@ -171,13 +170,6 @@ public final class GitPushTool extends GitTool {
 
         String remoteUrl = runGitInQuiet(root, PARAM_REMOTE, "get-url", actualRemote);
         if (remoteUrl != null) ctx.append("Remote: ").append(remoteUrl).append('\n');
-        if (isFeatureBranch(actualBranch)) {
-            ctx.append("Tip: create a PR with `gh pr create` if ready for review\n");
-        }
-    }
-
-    private static boolean isFeatureBranch(@Nullable String branch) {
-        return branch != null && !"main".equals(branch) && !"master".equals(branch);
     }
 
     private static boolean hasFlag(@NotNull JsonObject args, @NotNull String parameter) {

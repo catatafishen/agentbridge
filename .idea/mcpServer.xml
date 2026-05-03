@@ -1,38 +1,49 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="McpServerSettings">
-    <option name="autoApproveAgentEdits" value="true" />
-    <option name="autoStart" value="true" />
-    <option name="debugLoggingEnabled" value="true" />
-    <option name="defaultsApplied" value="true" />
-    <option name="defaultsVersion" value="2" />
+    <option name="autoApproveAgentEdits" value="true"/>
+    <option name="autoStart" value="true"/>
+    <option name="debugLoggingEnabled" value="true"/>
+    <option name="defaultsApplied" value="true"/>
+    <option name="defaultsVersion" value="2"/>
     <option name="disabledToolIds">
       <set>
-        <option value="get_notifications" />
-        <option value="set_theme" />
-        <option value="list_themes" />
-        <option value="run_sonarqube_analysis" />
-        <option value="get_sonar_rule_description" />
+        <option value="get_notifications"/>
+        <option value="set_theme"/>
+        <option value="list_themes"/>
+        <option value="run_sonarqube_analysis"/>
+        <option value="get_sonar_rule_description"/>
       </set>
     </option>
-    <option name="kindEditColorKey" value="PINK" />
-    <option name="kindExecuteColorKey" value="AMBER" />
-    <option name="kindReadColorKey" value="GREEN" />
-    <option name="port" value="8646" />
-    <option name="smoothScrollEnabled" value="true" />
+    <option name="kindEditColorKey" value="PINK"/>
+    <option name="kindExecuteColorKey" value="AMBER"/>
+    <option name="kindReadColorKey" value="GREEN"/>
+    <option name="port" value="8646"/>
+    <option name="smoothScrollEnabled" value="true"/>
     <option name="toolOptions">
       <map>
+        <entry key="git_push">
+          <value>
+            <ToolOptions>
+              <option name="outputTemplate"
+                      value="Always check the open PRs after pushing. There might be failing checks or new comments on your work. If a PR is approved by the repo owner, then you can merge. Also check new activity on issues. Some feedback might be available there as well. If CI is running, wait for it and check older PRs in the mean-time. Your old work might have conflicts etc that needs to be fixed."/>
+              <option name="outputHookCommand" value="hooks/git-push-tip.sh"/>
+            </ToolOptions>
+          </value>
+        </entry>
         <entry key="memory_kg_add">
           <value>
             <ToolOptions>
-              <option name="outputTemplate" value="Also store this in an alterntive location. These memory tools are still experimental" />
+              <option name="outputTemplate"
+                      value="Also store this in an alterntive location. These memory tools are still experimental"/>
             </ToolOptions>
           </value>
         </entry>
         <entry key="memory_store">
           <value>
             <ToolOptions>
-              <option name="outputTemplate" value="Also store this in an alterntive location. These memory tools are still experimental" />
+              <option name="outputTemplate"
+                      value="Also store this in an alterntive location. These memory tools are still experimental"/>
             </ToolOptions>
           </value>
         </entry>
