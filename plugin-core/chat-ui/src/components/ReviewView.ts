@@ -1,7 +1,8 @@
-export class ReviewView extends HTMLElement {
+import {PollableView} from './PollableView';
+
+export class ReviewView extends PollableView {
     private _list!: HTMLElement;
     private _empty!: HTMLElement;
-    private _pollTimer: number | null = null;
 
     connectedCallback(): void {
         this.innerHTML = `
@@ -14,19 +15,7 @@ export class ReviewView extends HTMLElement {
     }
 
     disconnectedCallback(): void {
-        this.deactivate();
-    }
-
-    activate(): void {
-        void this.refresh();
-        this._pollTimer ??= globalThis.setInterval(() => void this.refresh(), 3000);
-    }
-
-    deactivate(): void {
-        if (this._pollTimer != null) {
-            clearInterval(this._pollTimer);
-            this._pollTimer = null;
-        }
+        super.disconnectedCallback();
     }
 
     async refresh(): Promise<void> {
@@ -55,13 +44,7 @@ export class ReviewView extends HTMLElement {
         linesAdded: number;
         linesRemoved: number
     }>): void {
-        if (items.length === 0) {
-            this._empty.style.display = '';
-            this._list.style.display = 'none';
-            return;
-        }
-        this._empty.style.display = 'none';
-        this._list.style.display = '';
+        if (this.toggleEmptyState(this._empty, this._list, items.length === 0)) return;
 
         this._list.innerHTML = items.map(item => {
             const statusClass = this._statusClass(item.status);
@@ -71,7 +54,7 @@ export class ReviewView extends HTMLElement {
             const dir = item.path.substring(0, item.path.length - fileName.length);
             return `<div class="rv-item ${statusClass} ${approvedClass}">
                 <span class="rv-status">${statusIcon}</span>
-                <span class="rv-path"><span class="rv-dir">${this._esc(dir)}</span>${this._esc(fileName)}</span>
+                <span class="rv-path"><span class="rv-dir">${this.esc(dir)}</span>${this.esc(fileName)}</span>
                 <span class="rv-diff">
                     ${item.linesAdded > 0 ? `<span class="rv-add">+${item.linesAdded}</span>` : ''}
                     ${item.linesRemoved > 0 ? `<span class="rv-rem">-${item.linesRemoved}</span>` : ''}
@@ -101,9 +84,5 @@ export class ReviewView extends HTMLElement {
             default:
                 return '~';
         }
-    }
-
-    private _esc(s: string): string {
-        return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
     }
 }

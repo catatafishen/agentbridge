@@ -1,26 +1,19 @@
-export class SessionView extends HTMLElement {
+import {PollableView} from './PollableView';
+
+export class SessionView extends PollableView {
     private _content!: HTMLElement;
-    private _pollTimer: number | null = null;
+
+    constructor() {
+        super(2000);
+    }
 
     connectedCallback(): void {
         this.innerHTML = `<div class="sv-container"><div class="sv-content"></div></div>`;
-        this._content = this.querySelector('.sv-content')!;
+        this._content = this.querySelector<HTMLElement>('.sv-content')!;
     }
 
     disconnectedCallback(): void {
-        this.deactivate();
-    }
-
-    activate(): void {
-        void this.refresh();
-        this._pollTimer ??= globalThis.setInterval(() => void this.refresh(), 2000);
-    }
-
-    deactivate(): void {
-        if (this._pollTimer != null) {
-            clearInterval(this._pollTimer);
-            this._pollTimer = null;
-        }
+        super.disconnectedCallback();
     }
 
     async refresh(): Promise<void> {
@@ -55,13 +48,9 @@ export class SessionView extends HTMLElement {
         this._content.innerHTML = `
             <div class="sv-row ${statusClass}">
                 <span class="sv-dot">${dot}</span>
-                <span class="sv-label">${this._esc(statusText)}</span>
+                <span class="sv-label">${this.esc(statusText)}</span>
             </div>
-            ${data.model ? `<div class="sv-row"><span class="sv-key">Model</span><span class="sv-val">${this._esc(data.model)}</span></div>` : ''}
+            ${data.model ? `<div class="sv-row"><span class="sv-key">Model</span><span class="sv-val">${this.esc(data.model)}</span></div>` : ''}
         `;
-    }
-
-    private _esc(s: string): string {
-        return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
     }
 }

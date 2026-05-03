@@ -1,3 +1,5 @@
+import {PollableView} from './PollableView';
+
 type ToolCallItem = {
     id: string;
     title: string;
@@ -8,12 +10,15 @@ type ToolCallItem = {
     result: string | null;
 };
 
-export class ToolCallsView extends HTMLElement {
+export class ToolCallsView extends PollableView {
     private _list!: HTMLElement;
     private _empty!: HTMLElement;
-    private _pollTimer: number | null = null;
     private _items: ToolCallItem[] = [];
     private _expandedId: string | null = null;
+
+    constructor() {
+        super(2000);
+    }
 
     connectedCallback(): void {
         this.innerHTML = `
@@ -32,19 +37,7 @@ export class ToolCallsView extends HTMLElement {
     }
 
     disconnectedCallback(): void {
-        this.deactivate();
-    }
-
-    activate(): void {
-        void this.refresh();
-        this._pollTimer ??= globalThis.setInterval(() => void this.refresh(), 2000);
-    }
-
-    deactivate(): void {
-        if (this._pollTimer != null) {
-            clearInterval(this._pollTimer);
-            this._pollTimer = null;
-        }
+        super.disconnectedCallback();
     }
 
     async refresh(): Promise<void> {
@@ -63,13 +56,7 @@ export class ToolCallsView extends HTMLElement {
     }
 
     private _render(): void {
-        if (this._items.length === 0) {
-            this._empty.style.display = '';
-            this._list.style.display = 'none';
-            return;
-        }
-        this._empty.style.display = 'none';
-        this._list.style.display = '';
+        if (this.toggleEmptyState(this._empty, this._list, this._items.length === 0)) return;
         this._list.innerHTML = this._items.map(item => this._renderItem(item)).join('');
     }
 
@@ -84,18 +71,18 @@ export class ToolCallsView extends HTMLElement {
             detail = `
             <div class="tcv-detail">
                 <div class="tcv-label">Input</div>
-                <pre>${this._esc(item.arguments || '')}</pre>
+                <pre>${this.esc(item.arguments || '')}</pre>
                 <div class="tcv-label">Output</div>
-                <pre>${this._esc(resultText)}</pre>
+                <pre>${this.esc(resultText)}</pre>
             </div>`;
         }
-        return `<div class="tcv-item" data-id="${this._esc(item.id)}">
+        return `<div class="tcv-item" data-id="${this.escAttr(item.id)}">
             <div class="tcv-summary">
-                <span class="tcv-kind ${kind}">${this._esc(item.kind || 'other')}</span>
-                <span class="tcv-title">${this._esc(item.title)}</span>
-                <span class="tcv-status ${statusClass}">${this._esc(status)}</span>
+                <span class="tcv-kind ${kind}">${this.esc(item.kind || 'other')}</span>
+                <span class="tcv-title">${this.esc(item.title)}</span>
+                <span class="tcv-status ${statusClass}">${this.esc(status)}</span>
             </div>
-            <div class="tcv-time">${this._esc(this._formatTime(item.timestamp))}</div>
+            <div class="tcv-time">${this.esc(this._formatTime(item.timestamp))}</div>
             ${detail}
         </div>`;
     }
@@ -113,9 +100,5 @@ export class ToolCallsView extends HTMLElement {
         const date = new Date(timestamp);
         if (Number.isNaN(date.getTime())) return timestamp;
         return date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
-    }
-
-    private _esc(s: string): string {
-        return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     }
 }

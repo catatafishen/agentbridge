@@ -1,15 +1,16 @@
+import {PollableView} from './PollableView';
+
 type PromptItem = {
     id: string;
     text: string;
     timestamp: string;
 };
 
-export class SearchView extends HTMLElement {
+export class SearchView extends PollableView {
     private _input!: HTMLInputElement;
     private _list!: HTMLElement;
     private _empty!: HTMLElement;
     private _items: PromptItem[] = [];
-    private _pollTimer: number | null = null;
 
     connectedCallback(): void {
         this.innerHTML = `
@@ -31,19 +32,7 @@ export class SearchView extends HTMLElement {
     }
 
     disconnectedCallback(): void {
-        this.deactivate();
-    }
-
-    activate(): void {
-        void this.refresh();
-        this._pollTimer ??= globalThis.setInterval(() => void this.refresh(), 3000);
-    }
-
-    deactivate(): void {
-        if (this._pollTimer != null) {
-            clearInterval(this._pollTimer);
-            this._pollTimer = null;
-        }
+        super.disconnectedCallback();
     }
 
     async refresh(): Promise<void> {
@@ -67,17 +56,12 @@ export class SearchView extends HTMLElement {
             ? this._items.filter(item => item.text.toLowerCase().includes(query))
             : this._items;
         const visible = filtered.slice(-100).reverse();
-        if (visible.length === 0) {
-            this._empty.style.display = '';
-            this._list.style.display = 'none';
-            return;
-        }
-        this._empty.style.display = 'none';
-        this._list.style.display = '';
+        if (this.toggleEmptyState(this._empty, this._list, visible.length === 0)) return;
+
         this._list.innerHTML = visible.map(item => `
-            <button class="pv-item" data-id="${this._esc(item.id)}" type="button">
-                <span class="pv-time">${this._esc(this._formatTime(item.timestamp))}</span>
-                <span class="pv-text">${this._esc(item.text)}</span>
+            <button class="pv-item" data-id="${this.escAttr(item.id)}" type="button">
+                <span class="pv-time">${this.esc(this._formatTime(item.timestamp))}</span>
+                <span class="pv-text">${this.esc(item.text)}</span>
             </button>`).join('');
     }
 
@@ -86,9 +70,5 @@ export class SearchView extends HTMLElement {
         const date = new Date(timestamp);
         if (Number.isNaN(date.getTime())) return timestamp;
         return date.toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
-    }
-
-    private _esc(s: string): string {
-        return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
     }
 }
