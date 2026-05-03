@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.services.hooks.HookQueryHandler;
+import com.github.catatafishen.agentbridge.services.hooks.HookToolHandler;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.TransportMode;
 import com.intellij.openapi.Disposable;
@@ -79,6 +80,7 @@ public final class McpHttpServer implements Disposable, McpServerControl {
 
             httpServer.createContext("/health", this::handleHealth);
             httpServer.createContext("/hooks/query", new HookQueryHandler(project)::handle);
+            httpServer.createContext("/hooks/tool", new HookToolHandler(project)::handle);
 
             if (activeTransportMode == TransportMode.SSE) {
                 sseTransport = new McpSseTransport(protocolHandler);

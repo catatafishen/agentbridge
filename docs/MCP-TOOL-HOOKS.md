@@ -20,6 +20,7 @@ only sees the final result.
        ├── git_commit.json        ← hooks for the git_commit tool
        ├── run_command.json        ← hooks for the run_command tool
        └── scripts/
+           ├── _lib.sh             ← shared POSIX shell library
            ├── enforce-author.sh   ← shared script
            └── enforce-gh-bot.sh
    ```
@@ -39,17 +40,13 @@ only sees the final result.
 
 3. **Write the hook script** — receives JSON on stdin, writes JSON to stdout:
 
-   ```bash
-   #!/usr/bin/env bash
-   set -euo pipefail
-   payload=$(</dev/stdin)
-   echo "$payload" | python3 -c "
-   import sys, json
-   p = json.load(sys.stdin)
-   args = p['arguments']
-   args['author'] = 'Bot <bot@example.com>'
-   print(json.dumps({'arguments': args}))
-   "
+   ```sh
+   #!/bin/sh
+   . "${0%/*}/_lib.sh"
+   hook_read_payload
+
+   author=$(hook_get_arg author)
+   hook_json_args "\"author\":\"Bot <bot@example.com>\""
    ```
 
 That's it. The next time the agent calls `git_commit`, the pre-hook silently sets the author.
@@ -193,8 +190,9 @@ Runs after permission, before the tool executes. Can modify arguments or block w
 {"error": "Commit message does not follow conventional commits"}
 ```
 
-**Important:** When modifying arguments, return the **complete** arguments object — the entire
-object is replaced, not merged.
+**Merge semantics:** When modifying arguments, return only the fields you want to change.
+The returned fields are merged onto the original arguments — unmentioned fields are preserved.
+This means you don't need to echo the entire arguments object back.
 
 ### `success` — Transform Successful Output
 
@@ -268,6 +266,256 @@ Multiple entries per trigger run sequentially. Each entry receives the **current
 
 The second script sees the output as modified by the first.
 
+## Script Protocol Reference
+
+### Environment Variables
+
+Scripts run with the following environment variables, injected automatically by the hook
+executor. These are available to every hook script without configuration.
+
+#### Project Context
+
+| Variable                      | Description                                            | Example                        |
+|-------------------------------|--------------------------------------------------------|--------------------------------|
+| `AGENTBRIDGE_PROJECT_DIR`     | Absolute path to the project root                      | `/home/user/my-project`        |
+| `AGENTBRIDGE_HOOKS_DIR`       | Absolute path to the hooks directory                   | `/home/user/my-project/.agentbridge/hooks` |
+| `AGENTBRIDGE_MCP_PORT`        | HTTP port of the running MCP server                    | `8580`                         |
+| `AGENTBRIDGE_SOURCE_ROOTS`    | Newline-separated list of source root directories      | `/home/user/my-project/src/main/java` |
+| `AGENTBRIDGE_TEST_ROOTS`      | Newline-separated list of test source directories      | `/home/user/my-project/src/test/java` |
+| `AGENTBRIDGE_GENERATED_ROOTS` | Newline-separated list of generated source directories | `/home/user/my-project/build/generated` |
+| `AGENTBRIDGE_RESOURCE_ROOTS`  | Newline-separated list of resource directories         | `/home/user/my-project/src/main/resources` |
+| `AGENTBRIDGE_EXCLUDED_DIRS`   | Newline-separated list of excluded directories         | `/home/user/my-project/build`  |
+
+#### Tool Arguments
+
+Every top-level string or primitive argument is also injected as `HOOK_ARG_<key>`:
+
+| Variable              | Source                           | Example            |
+|-----------------------|----------------------------------|--------------------|
+| `HOOK_ARG_command`    | `arguments.command`              | `npm run build`    |
+| `HOOK_ARG_path`       | `arguments.path`                 | `src/Main.java`    |
+| `HOOK_ARG_message`    | `arguments.message`              | `feat: add hooks`  |
+
+This lets scripts access arguments directly from env vars without JSON parsing:
+
+```sh
+#!/bin/sh
+. "${0%/*}/_lib.sh"
+command="$HOOK_ARG_command"
+case "$command" in
+    git*) hook_json_deny "Use the git_* tools instead of shell git" ;;
+    *)    printf '{"decision":"allow"}\n' ;;
+esac
+```
+
+#### Custom Environment
+
+Additional env vars can be set per-entry via the `env` field in the hook config:
+
+```json
+{
+  "pre": [{
+    "script": "scripts/enforce-author.sh",
+    "env": { "BOT_NAME": "my-bot", "BOT_EMAIL": "bot@example.com" }
+  }]
+}
+```
+
+### Working Directory
+
+Scripts run with the hooks directory as their working directory (where the JSON config lives).
+
+### stdin / stdout / stderr
+
+- **stdin:** JSON payload (tool name, arguments, output, error state, timing)
+- **stdout:** JSON response (the hook's decision/modification)
+- **stderr:** Logged by AgentBridge but otherwise ignored
+
+### Exit Codes
+
+| Code | Meaning                                                                              |
+|------|--------------------------------------------------------------------------------------|
+| `0`  | Success — stdout is parsed as the hook's response                                    |
+| `≠0` | Failure — if `failSilently: true`, logged and skipped; otherwise propagated as error |
+
+### Payload Fields
+
+| Field           | Type    | Triggers         | Description                   |
+|-----------------|---------|------------------|-------------------------------|
+| `toolName`      | string  | all              | MCP tool ID                   |
+| `arguments`     | object  | all              | Tool arguments as JSON object |
+| `argumentsJson` | string  | all              | Arguments as JSON string      |
+| `projectName`   | string  | all              | IntelliJ project name         |
+| `timestamp`     | string  | all              | ISO 8601 timestamp            |
+| `output`        | string  | success, failure | Tool output text              |
+| `error`         | boolean | success, failure | Current error state           |
+| `durationMs`    | long    | success, failure | Tool execution time in ms     |
+
+## Hook API
+
+Hook scripts can call back into the IDE using HTTP endpoints on `localhost`. These endpoints
+are available via the `AGENTBRIDGE_MCP_PORT` environment variable.
+
+### `POST /hooks/query` — Query IDE State
+
+Query IDE-specific information that shell scripts cannot compute on their own.
+
+**Actions:**
+
+#### `classify_path`
+
+Classifies a file path using IntelliJ's project file index.
+
+```sh
+result=$(hook_query '{"action":"classify_path","path":"/home/user/project/src/Main.java"}')
+# → {"path":"/home/user/project/src/Main.java","inProject":true,"classification":"sources","inContentRoot":true}
+```
+
+| Response field    | Type    | Description                                                       |
+|-------------------|---------|-------------------------------------------------------------------|
+| `path`            | string  | The requested path                                                |
+| `inProject`       | boolean | Whether the path is under the project base directory              |
+| `classification`  | string  | One of: `sources`, `test_sources`, `resources`, `generated_sources`, `excluded`, `content`, or `""` |
+| `inContentRoot`   | boolean | Whether the file is inside a content root (and not excluded)      |
+
+### `POST /hooks/tool` — Call Read-Only MCP Tools
+
+Call any read-only or search MCP tool directly from a hook script. The call goes straight to the
+tool's core `execute()` method — bypassing the entire agentic pipeline (no permission checks,
+no hook triggering, no focus guards, no chip registry, no auto-highlights).
+
+Only tools with `READ` or `SEARCH` kind are available. Write, execute, and delete tools are
+rejected with an error.
+
+**Request:**
+
+```json
+{"tool": "search_text", "arguments": {"query": "deprecated", "file_pattern": "*.java"}}
+```
+
+**Response (success):**
+
+```json
+{"result": "5 matches:\nsrc/Foo.java:12: ...", "error": false, "truncated": false}
+```
+
+**Response (error):**
+
+```json
+{"error": true, "message": "Tool 'write_file' is not allowed from hooks. Only read-only and search tools are available."}
+```
+
+**Available tool categories** (non-exhaustive):
+
+| Tool                    | Kind   | Description                                    |
+|-------------------------|--------|------------------------------------------------|
+| `search_text`           | SEARCH | Search for text patterns across project files  |
+| `search_symbols`        | SEARCH | Search for classes, methods, fields by name    |
+| `find_references`       | SEARCH | Find all usages of a symbol                    |
+| `read_file`             | READ   | Read file content                              |
+| `get_file_outline`      | READ   | Get structure of a file (classes, methods)      |
+| `list_project_files`    | READ   | List files with optional pattern filtering     |
+| `list_directory_tree`   | READ   | Tree-formatted directory listing               |
+| `find_file`             | READ   | Find files by name pattern                     |
+| `get_project_info`      | READ   | Project name, SDK, modules                     |
+| `git_status`            | READ   | Working tree status and branch info            |
+| `git_diff`              | READ   | Show changes as diff                           |
+| `git_log`               | READ   | Commit history                                 |
+| `get_compilation_errors` | READ  | Check for compilation errors                   |
+| `get_highlights`        | READ   | Get editor highlights (errors, warnings)       |
+
+**Shell helper:**
+
+```sh
+# Search for a pattern
+result=$(hook_tool "search_text" '{"query":"pattern","file_pattern":"*.java"}')
+
+# Check compilation errors
+result=$(hook_tool "get_compilation_errors" '{}')
+
+# Read a specific file
+result=$(hook_tool "read_file" '{"path":"src/Main.java"}')
+```
+
+## POSIX Shell Library (`_lib.sh`)
+
+AgentBridge ships a shared POSIX shell library that provides helpers for all common hook
+operations. Source it at the top of every hook script:
+
+```sh
+#!/bin/sh
+. "${0%/*}/_lib.sh"
+```
+
+### Payload Helpers
+
+| Function               | Description                                         |
+|------------------------|-----------------------------------------------------|
+| `hook_read_payload`    | Reads and caches stdin JSON payload                 |
+| `hook_get <field>`     | Extract a top-level string from the cached payload  |
+| `hook_get_arg <field>` | Extract `arguments.<field>` (prefers `HOOK_ARG_*` env var) |
+
+### Response Helpers
+
+| Function                     | Description                                |
+|------------------------------|--------------------------------------------|
+| `hook_json_deny <reason>`    | Emit deny decision (PERMISSION hooks)      |
+| `hook_json_error <msg>`      | Emit blocking error (PRE hooks)            |
+| `hook_json_append <text>`    | Emit append modifier (SUCCESS/FAILURE)     |
+| `hook_json_args <json>`      | Emit modified arguments (PRE hooks, merge) |
+
+### Path Helpers
+
+| Function                        | Description                                    |
+|---------------------------------|------------------------------------------------|
+| `hook_is_in_project <path>`     | Check if path is under `AGENTBRIDGE_PROJECT_DIR` |
+| `hook_is_in_source_root <path>` | Check if path is under any `AGENTBRIDGE_SOURCE_ROOTS` |
+
+### IDE API Helpers
+
+| Function                     | Description                                      |
+|------------------------------|--------------------------------------------------|
+| `hook_query <json>`          | Query `/hooks/query` endpoint (classify paths)   |
+| `hook_tool <id> [args_json]` | Call a read-only MCP tool via `/hooks/tool`       |
+
+### Utility Helpers
+
+| Function                   | Description                                     |
+|----------------------------|-------------------------------------------------|
+| `hook_escape_json <text>`  | Escape text for safe JSON embedding             |
+
+### Example: Full Hook Script
+
+```sh
+#!/bin/sh
+# Permission hook: block writes to generated source roots
+. "${0%/*}/_lib.sh"
+hook_read_payload
+
+path=$(hook_get_arg path)
+if [ -z "$path" ]; then
+    printf '{"decision":"allow"}\n'
+    exit 0
+fi
+
+# Quick check using env var
+if hook_is_in_source_root "$path"; then
+    printf '{"decision":"allow"}\n'
+    exit 0
+fi
+
+# Detailed check using IDE's project model
+result=$(hook_query "{\"action\":\"classify_path\",\"path\":\"$path\"}")
+classification=$(printf '%s' "$result" | sed -n 's/.*"classification"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+case "$classification" in
+    generated_sources)
+        hook_json_deny "Cannot write to generated source directories. Edit the source and rebuild." ;;
+    *)
+        printf '{"decision":"allow"}\n' ;;
+esac
+```
+
 ## Identity Enforcement Example
 
 A common use case is preventing the agent from posting GitHub content (PRs, comments, issues)
@@ -321,39 +569,90 @@ Injects or replaces the `Authorization` header with the bot token.
 2. **Store it** in one of:
     - Environment variable: `export AGENTBRIDGE_BOT_TOKEN=ghp_...`
     - File: `~/.agentbridge/bot-token` (single line, no trailing newline)
+    - GitHub App: `~/.agentbridge/github-app.pem` + `~/.agentbridge/github-app-id`
+      (generates short-lived installation tokens via JWT/RS256 signing)
 3. The hooks read the token at runtime — no restart needed.
 
-## Script Protocol Reference
+**Token resolution chain** (all identity hooks):
 
-### Environment
+1. `AGENTBRIDGE_BOT_TOKEN` env var (static PAT)
+2. `~/.agentbridge/bot-token` file (static PAT)
+3. GitHub App: `~/.agentbridge/github-app.pem` + `github-app-id` (dynamic)
 
-Scripts run with:
+## Best Practices
 
-- **Working directory:** The hooks directory (where the JSON config lives)
-- **stdin:** JSON payload (tool name, arguments, output, error state, timing)
-- **stdout:** JSON response (the hook's decision/modification)
-- **stderr:** Logged by AgentBridge but otherwise ignored
-- **Extra env vars:** From the `env` field in the hook entry
+### Hooks Should Be Read-Only Observers
 
-### Exit Codes
+Hook scripts should **check state and provide guidance** — not silently change the project.
+If a hook modifies files, creates branches, or makes other project-state changes behind the
+agent's back, the agent will have a stale model of the project state and make confused decisions.
 
-| Code | Meaning                                                                              |
-|------|--------------------------------------------------------------------------------------|
-| `0`  | Success — stdout is parsed as the hook's response                                    |
-| `≠0` | Failure — if `failSilently: true`, logged and skipped; otherwise propagated as error |
+**Good patterns:**
 
-### Payload Fields
+- ✅ Check if a file is in a generated directory → deny the write with an explanation
+- ✅ Verify commit message follows conventional commits → block with a helpful error
+- ✅ Search for related test files → append a reminder to the tool output
+- ✅ Inject authentication headers → transparent to the agent, external-only side effect
 
-| Field           | Type    | Triggers         | Description                   |
-|-----------------|---------|------------------|-------------------------------|
-| `toolName`      | string  | all              | MCP tool ID                   |
-| `arguments`     | object  | all              | Tool arguments as JSON object |
-| `argumentsJson` | string  | all              | Arguments as JSON string      |
-| `projectName`   | string  | all              | IntelliJ project name         |
-| `timestamp`     | string  | all              | ISO 8601 timestamp            |
-| `output`        | string  | success, failure | Tool output text              |
-| `error`         | boolean | success, failure | Current error state           |
-| `durationMs`    | long    | success, failure | Tool execution time in ms     |
+**Anti-patterns:**
+
+- ❌ Run `git stash` in a hook → the agent doesn't know its changes were stashed
+- ❌ Auto-format files in a post-hook → the agent's next read sees unexpected changes
+- ❌ Create or delete files → the agent's mental model of the project is now wrong
+- ❌ Run build commands → may conflict with the agent's own build/test strategy
+
+The principle: **if the agent would be confused by what the hook did, the hook shouldn't do it.**
+
+Hooks that modify tool arguments (pre-hooks) or output (success/failure hooks) are fine because
+the agent sees the modified result — the feedback loop is maintained. The problem is
+modifications to the project *state* that bypass the agent's awareness.
+
+### Keep Scripts Fast
+
+Hook scripts run synchronously in the tool call path. A slow script delays the agent's response.
+
+- **Permission and pre hooks:** Target < 1 second. These block tool execution.
+- **Success and failure hooks:** Target < 2 seconds. These delay the response to the agent.
+- **Use `async: true`** for fire-and-forget operations (logging, notifications) that don't need
+  to modify the tool result.
+
+### Use the POSIX Shell Library
+
+Always source `_lib.sh` instead of reimplementing JSON parsing. The library provides reliable
+helpers that work across all POSIX shells (sh, dash, bash, zsh) without external dependencies
+like Python or jq.
+
+### Prefer Environment Variables Over JSON Parsing
+
+Tool arguments are injected as `HOOK_ARG_<key>` environment variables. This is faster and more
+reliable than parsing the JSON payload for simple string values:
+
+```sh
+# Good: direct env var access
+command="$HOOK_ARG_command"
+
+# Slower: JSON parsing
+hook_read_payload
+command=$(hook_get_arg command)
+```
+
+The env var approach is especially useful in permission hooks where speed matters.
+
+### Use `/hooks/tool` for IDE-Aware Decisions
+
+When a hook needs to check IDE state (compilation errors, symbol references, file structure),
+use the `/hooks/tool` endpoint to call read-only MCP tools instead of reimplementing the logic
+in shell:
+
+```sh
+# Check if there are compilation errors before allowing a commit
+errors=$(hook_tool "get_compilation_errors" '{}')
+has_errors=$(printf '%s' "$errors" | grep -c '"error":true')
+if [ "$has_errors" -gt 0 ]; then
+    hook_json_deny "Fix compilation errors before committing"
+    exit 0
+fi
+```
 
 ## Storage Location
 
@@ -381,4 +680,8 @@ The storage location is configured in **Settings → Tools → AgentBridge → S
 | Async (fire-and-forget) mode   | ✅             | ✅                 |
 | JSON stdin/stdout protocol     | ❌             | ✅                 |
 | Hot-reload without restart     | ❌             | ✅                 |
+| Read-only tool access from hooks | ❌           | ✅                 |
+| IDE project model queries      | ❌             | ✅                 |
+| Environment variable injection | ❌             | ✅                 |
+| POSIX shell library            | ❌             | ✅                 |
 | Hooks outside of tool calls    | ✅             | ❌                 |
