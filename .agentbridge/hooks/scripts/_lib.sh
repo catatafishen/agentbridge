@@ -95,3 +95,16 @@ hook_is_in_source_root() {
     IFS="$_IFS"
     return 1
 }
+
+# Query the Hook API endpoint for dynamic IDE state.
+# Usage: hook_query '{"action":"classify_path","path":"/some/file.java"}'
+# Returns the JSON response on stdout. Requires curl and AGENTBRIDGE_MCP_PORT.
+hook_query() {
+    if [ -z "${AGENTBRIDGE_MCP_PORT:-}" ]; then
+        printf '{"error":"AGENTBRIDGE_MCP_PORT not set"}\n'
+        return 1
+    fi
+    curl -s -X POST "http://localhost:${AGENTBRIDGE_MCP_PORT}/hooks/query" \
+        -H "Content-Type: application/json" \
+        -d "$1" 2>/dev/null
+}
