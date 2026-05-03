@@ -138,12 +138,15 @@ export default class MessageMeta extends HTMLElement {
     private _scrollToEnd(): void {
         const strip = this._strip;
         if (!strip) return;
-        // Two rAFs (same Fix 8/9 pattern): first lets the mutation paint with the new chip,
-        // second writes scrollLeft. Using 'instant' avoids multi-frame smooth-scroll animation
-        // frames that can overlap with further mutations and trigger OSR tile-cache tearing.
+        // Two rAFs (Fix 9): let the mutation paint first, then write scrollLeft.
+        // Behavior is read at execution time from chat-container's scrollBehavior, which
+        // reflects both the user's smooth-scroll preference and streaming state ('auto'
+        // during streaming, 'smooth' or 'auto' afterward per McpServerSettings).
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
-                strip.scrollTo({left: strip.scrollWidth, behavior: 'instant'});
+                const behavior = ((document.querySelector('chat-container') as HTMLElement | null)
+                    ?.style.scrollBehavior || 'auto') as ScrollBehavior;
+                strip.scrollTo({left: strip.scrollWidth, behavior});
             });
         });
     }
