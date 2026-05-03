@@ -1825,22 +1825,12 @@ public final class ChatWebServer implements Disposable {
 
     private void handleTodosUpdate(HttpExchange exchange) throws IOException {
         try {
-            java.nio.file.Path sessionDir = resolveAgentSessionDir();
-            if (sessionDir == null) {
-                sendErrorJson(exchange, 409, KEY_NO_SESSION);
-                return;
-            }
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            String id = jsonString(body, "id");
-            if (id == null || id.isBlank()) {
-                sendErrorJson(exchange, 400, "id is required");
-                return;
-            }
-            String title = jsonString(body, KEY_TITLE);
-            String description = jsonString(body, KEY_DESCRIPTION);
-            String status = jsonString(body, KEY_STATUS);
-            java.io.File dbFile = sessionDir.resolve(SESSION_DB_FILE).toFile();
-            com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.updateTodo(dbFile, id, title, description, status);
+            TodoRequestContext ctx = parseTodoRequest(exchange);
+            if (ctx == null) return;
+            String title = jsonString(ctx.body(), KEY_TITLE);
+            String description = jsonString(ctx.body(), KEY_DESCRIPTION);
+            String status = jsonString(ctx.body(), KEY_STATUS);
+            com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.updateTodo(ctx.dbFile(), ctx.id(), title, description, status);
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
         } catch (Exception e) {
@@ -1851,19 +1841,9 @@ public final class ChatWebServer implements Disposable {
 
     private void handleTodosDelete(HttpExchange exchange) throws IOException {
         try {
-            java.nio.file.Path sessionDir = resolveAgentSessionDir();
-            if (sessionDir == null) {
-                sendErrorJson(exchange, 409, KEY_NO_SESSION);
-                return;
-            }
-            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            String id = jsonString(body, "id");
-            if (id == null || id.isBlank()) {
-                sendErrorJson(exchange, 400, "id is required");
-                return;
-            }
-            java.io.File dbFile = sessionDir.resolve(SESSION_DB_FILE).toFile();
-            com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.deleteTodo(dbFile, id);
+            TodoRequestContext ctx = parseTodoRequest(exchange);
+            if (ctx == null) return;
+            com.github.catatafishen.agentbridge.ui.side.TodoDatabaseWriter.deleteTodo(ctx.dbFile(), ctx.id());
             exchange.sendResponseHeaders(204, -1);
             exchange.close();
         } catch (Exception e) {
@@ -1937,6 +1917,29 @@ public final class ChatWebServer implements Disposable {
 
     private @Nullable java.nio.file.Path resolveAgentSessionDir() {
         return ActiveAgentManager.getInstance(project).getClient().getSessionDirectory();
+    }
+
+    /**
+     * Resolves the session directory, reads the request body, and extracts + validates the "id" field.
+     * Returns {@code null} and sends an error response if any step fails.
+     */
+    private @Nullable TodoRequestContext parseTodoRequest(HttpExchange exchange) throws IOException {
+        java.nio.file.Path sessionDir = resolveAgentSessionDir();
+        if (sessionDir == null) {
+            sendErrorJson(exchange, 409, KEY_NO_SESSION);
+            return null;
+        }
+        String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+        String id = jsonString(body, "id");
+        if (id == null || id.isBlank()) {
+            sendErrorJson(exchange, 400, "id is required");
+            return null;
+        }
+        java.io.File dbFile = sessionDir.resolve(SESSION_DB_FILE).toFile();
+        return new TodoRequestContext(dbFile, id, body);
+    }
+
+    private record TodoRequestContext(java.io.File dbFile, String id, String body) {
     }
 
     private void handleSessionStats(HttpExchange exchange) throws IOException {
