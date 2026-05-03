@@ -1,8 +1,8 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
-import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry;
 import com.github.catatafishen.agentbridge.services.LiveToolCallService;
+import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
 import com.github.catatafishen.agentbridge.ui.ToolKindColors;
