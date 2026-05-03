@@ -11,7 +11,9 @@ import org.junit.jupiter.params.provider.CsvSource;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for the private static/pure methods in {@link RunCommandTool} using reflection.
@@ -19,8 +21,6 @@ import static org.junit.jupiter.api.Assertions.*;
  * <ul>
  *   <li>{@code truncateForTitle(String)} — title truncation logic</li>
  *   <li>{@code formatExecuteOutput(ProcessResult, JsonObject, int, int, int)} — output formatting</li>
- *   <li>{@code extractCommandFromToolCall(JsonObject)} — JSON command extraction
- *       (complements {@link RunCommandToolAbuseDetectionTest})</li>
  * </ul>
  */
 class RunCommandToolStaticMethodsTest {
@@ -30,7 +30,6 @@ class RunCommandToolStaticMethodsTest {
     // --- Reflection handles, set up once ---------------------------------------------------
     private static Method truncateForTitle;
     private static Method formatExecuteOutput;
-    private static Method extractCommandFromToolCall;
     private static Constructor<?> processResultCtor;
 
     @BeforeAll
@@ -38,19 +37,15 @@ class RunCommandToolStaticMethodsTest {
         truncateForTitle = RunCommandTool.class.getDeclaredMethod("truncateForTitle", String.class);
         truncateForTitle.setAccessible(true);
 
-        extractCommandFromToolCall = RunCommandTool.class.getDeclaredMethod(
-                "extractCommandFromToolCall", com.google.gson.JsonObject.class);
-        extractCommandFromToolCall.setAccessible(true);
-
         // ProcessResult is a protected record inside Tool
         Class<?> processResultClass = Class.forName(
-                "com.github.catatafishen.agentbridge.psi.tools.Tool$ProcessResult");
+            "com.github.catatafishen.agentbridge.psi.tools.Tool$ProcessResult");
         processResultCtor = processResultClass.getDeclaredConstructor(int.class, String.class, boolean.class);
         processResultCtor.setAccessible(true);
 
         formatExecuteOutput = RunCommandTool.class.getDeclaredMethod(
-                "formatExecuteOutput", processResultClass, JsonObject.class,
-                int.class, int.class, int.class);
+            "formatExecuteOutput", processResultClass, JsonObject.class,
+            int.class, int.class, int.class);
         formatExecuteOutput.setAccessible(true);
     }
 
@@ -58,10 +53,6 @@ class RunCommandToolStaticMethodsTest {
 
     private static String invokeTruncateForTitle(String command) throws Exception {
         return (String) truncateForTitle.invoke(null, command);
-    }
-
-    private static String invokeExtractCommand(JsonObject toolCall) throws Exception {
-        return (String) extractCommandFromToolCall.invoke(null, toolCall);
     }
 
     private static Object processResult(int exitCode, String output, boolean timedOut) throws Exception {
@@ -143,9 +134,9 @@ class RunCommandToolStaticMethodsTest {
         @ParameterizedTest
         @DisplayName("boundary: 39/40/41 chars")
         @CsvSource({
-                "39, false",
-                "40, false",
-                "41, true",
+            "39, false",
+            "40, false",
+            "41, true",
         })
         void boundaryLengths(int length, boolean shouldTruncate) throws Exception {
             String input = "x".repeat(length);
@@ -173,131 +164,6 @@ class RunCommandToolStaticMethodsTest {
             String result = invokeTruncateForTitle(input);
             assertEquals(40, result.length());
             assertTrue(result.endsWith("..."));
-        }
-    }
-
-    // ======================================================================================
-    //  extractCommandFromToolCall — complements RunCommandToolAbuseDetectionTest
-    // ======================================================================================
-    @Nested
-    @DisplayName("extractCommandFromToolCall")
-    class ExtractCommandFromToolCall {
-
-        @Test
-        @DisplayName("extracts from parameters.command with lowercase+trim")
-        void fromParametersLowercasedAndTrimmed() throws Exception {
-            JsonObject params = new JsonObject();
-            params.addProperty("command", "  Echo Hello  ");
-            JsonObject toolCall = new JsonObject();
-            toolCall.add("parameters", params);
-
-            assertEquals("echo hello", invokeExtractCommand(toolCall));
-        }
-
-        @Test
-        @DisplayName("extracts from arguments.command")
-        void fromArguments() throws Exception {
-            JsonObject args = new JsonObject();
-            args.addProperty("command", "NPM Install");
-            JsonObject toolCall = new JsonObject();
-            toolCall.add("arguments", args);
-
-            assertEquals("npm install", invokeExtractCommand(toolCall));
-        }
-
-        @Test
-        @DisplayName("extracts from input.command")
-        void fromInput() throws Exception {
-            JsonObject input = new JsonObject();
-            input.addProperty("command", "Gradle Build");
-            JsonObject toolCall = new JsonObject();
-            toolCall.add("input", input);
-
-            assertEquals("gradle build", invokeExtractCommand(toolCall));
-        }
-
-        @Test
-        @DisplayName("parameters takes priority over arguments and input")
-        void parametersPriority() throws Exception {
-            JsonObject toolCall = new JsonObject();
-            JsonObject params = new JsonObject();
-            params.addProperty("command", "FROM PARAMS");
-            toolCall.add("parameters", params);
-            JsonObject args = new JsonObject();
-            args.addProperty("command", "FROM ARGS");
-            toolCall.add("arguments", args);
-
-            assertEquals("from params", invokeExtractCommand(toolCall));
-        }
-
-        @Test
-        @DisplayName("arguments takes priority over input when no parameters")
-        void argumentsPriorityOverInput() throws Exception {
-            JsonObject args = new JsonObject();
-            args.addProperty("command", "FROM ARGS");
-            JsonObject input = new JsonObject();
-            input.addProperty("command", "FROM INPUT");
-            JsonObject toolCall = new JsonObject();
-            toolCall.add("arguments", args);
-            toolCall.add("input", input);
-
-            assertEquals("from args", invokeExtractCommand(toolCall));
-        }
-
-        @Test
-        @DisplayName("returns null for empty JSON object")
-        void emptyObject() throws Exception {
-            assertNull(invokeExtractCommand(new JsonObject()));
-        }
-
-        @Test
-        @DisplayName("returns null when wrapper exists but has no command field")
-        void noCommandField() throws Exception {
-            JsonObject params = new JsonObject();
-            params.addProperty("timeout", 30);
-            JsonObject toolCall = new JsonObject();
-            toolCall.add("parameters", params);
-
-            assertNull(invokeExtractCommand(toolCall));
-        }
-
-        @Test
-        @DisplayName("returns null when parameters is a primitive (not JSON object)")
-        void nonObjectParameters() throws Exception {
-            JsonObject toolCall = new JsonObject();
-            toolCall.addProperty("parameters", "string-value");
-
-            assertNull(invokeExtractCommand(toolCall));
-        }
-
-        @Test
-        @DisplayName("returns null when command value is a nested object (not primitive)")
-        void commandIsNotPrimitive() throws Exception {
-            JsonObject params = new JsonObject();
-            JsonObject nested = new JsonObject();
-            nested.addProperty("shell", "bash");
-            params.add("command", nested);
-            JsonObject toolCall = new JsonObject();
-            toolCall.add("parameters", params);
-
-            assertNull(invokeExtractCommand(toolCall));
-        }
-
-        @Test
-        @DisplayName("falls through all wrappers when none has command → null")
-        void noWrapperHasCommand() throws Exception {
-            JsonObject toolCall = new JsonObject();
-            JsonObject params = new JsonObject();
-            params.addProperty("timeout", 60);
-            toolCall.add("parameters", params);
-            JsonObject args = new JsonObject();
-            args.addProperty("env", "prod");
-            toolCall.add("arguments", args);
-            JsonObject input = new JsonObject();
-            input.addProperty("file", "test.txt");
-            toolCall.add("input", input);
-
-            assertNull(invokeExtractCommand(toolCall));
         }
     }
 
