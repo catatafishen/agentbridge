@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.statistics;
 
+import com.github.catatafishen.agentbridge.ui.util.VerticalScrollablePanel;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.diagnostic.Logger;
@@ -66,7 +67,7 @@ class BranchComparisonPanel extends JBPanel<BranchComparisonPanel> {
         toolbar.add(sortCombo);
         add(toolbar, BorderLayout.NORTH);
 
-        BranchChartsPanel chartsPanel = new BranchChartsPanel();
+        VerticalScrollablePanel chartsPanel = new VerticalScrollablePanel();
         chartsPanel.setLayout(new BoxLayout(chartsPanel, BoxLayout.Y_AXIS));
 
         for (UsageStatisticsData.Metric metric : UsageStatisticsData.Metric.values()) {
@@ -138,31 +139,4 @@ class BranchComparisonPanel extends JBPanel<BranchComparisonPanel> {
         }
     }
 
-    private static final class BranchChartsPanel extends JPanel implements Scrollable {
-
-        @Override
-        public Dimension getPreferredScrollableViewportSize() {
-            return getPreferredSize();
-        }
-
-        @Override
-        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
-            return JBUI.scale(16);
-        }
-
-        @Override
-        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
-            return visibleRect.height;
-        }
-
-        @Override
-        public boolean getScrollableTracksViewportWidth() {
-            return true;
-        }
-
-        @Override
-        public boolean getScrollableTracksViewportHeight() {
-            return false;
-        }
-    }
 }

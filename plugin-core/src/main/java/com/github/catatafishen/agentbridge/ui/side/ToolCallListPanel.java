@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
 import com.github.catatafishen.agentbridge.ui.ToolKindColors;
 import com.github.catatafishen.agentbridge.ui.util.SidePanelFooter;
+import com.github.catatafishen.agentbridge.ui.util.VerticalScrollablePanel;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.actionSystem.ActionManager;
@@ -68,7 +69,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         super(new BorderLayout());
         this.project = project;
 
-        listPanel = new ToolCallRowsPanel();
+        listPanel = new VerticalScrollablePanel();
         listPanel.setLayout(new BoxLayout(listPanel, BoxLayout.Y_AXIS));
 
         scrollPane = new JBScrollPane(listPanel);
@@ -316,34 +317,6 @@ final class ToolCallListPanel extends JPanel implements Disposable {
             case "execute", "run", "terminal", "shell" -> ToolKindColors.executeColor(settings);
             default -> ChatTheme.INSTANCE.getKIND_OTHER_COLOR();
         };
-    }
-
-    private static final class ToolCallRowsPanel extends JPanel implements Scrollable {
-
-        @Override
-        public Dimension getPreferredScrollableViewportSize() {
-            return getPreferredSize();
-        }
-
-        @Override
-        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
-            return JBUI.scale(16);
-        }
-
-        @Override
-        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
-            return visibleRect.height;
-        }
-
-        @Override
-        public boolean getScrollableTracksViewportWidth() {
-            return true;
-        }
-
-        @Override
-        public boolean getScrollableTracksViewportHeight() {
-            return false;
-        }
     }
 
     private static String formatDuration(long ms) {

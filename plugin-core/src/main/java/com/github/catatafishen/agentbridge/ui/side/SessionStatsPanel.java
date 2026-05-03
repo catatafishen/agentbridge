@@ -11,6 +11,7 @@ import com.github.catatafishen.agentbridge.ui.SessionStatsSnapshot;
 import com.github.catatafishen.agentbridge.ui.TimerDisplayFormatter;
 import com.github.catatafishen.agentbridge.ui.UsageGraphPanel;
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers;
+import com.github.catatafishen.agentbridge.ui.util.VerticalScrollablePanel;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
@@ -286,7 +287,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         // scroll pane (below) handles scrolling for the entire side panel.
         filesPanel = new ProjectFilesPanel(project);
 
-        JPanel wrapper = new ScrollablePanel();
+        JPanel wrapper = new VerticalScrollablePanel();
         wrapper.setLayout(new BoxLayout(wrapper, BoxLayout.Y_AXIS));
         wrapper.setOpaque(false);
         // Each child sticks to its preferred height; together they grow the
@@ -741,35 +742,4 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
         static final TodayTotals EMPTY = new TodayTotals(0, 0, 0, 0, 0, 0, 0, 0.0);
     }
 
-    /**
-     * A {@link JPanel} that implements {@link Scrollable} so that the containing
-     * {@link JBScrollPane} tracks the viewport width and never shows a horizontal
-     * scrollbar even when a child (e.g. the file tree) has a wide preferred width.
-     */
-    private static final class ScrollablePanel extends JPanel implements Scrollable {
-        @Override
-        public Dimension getPreferredScrollableViewportSize() {
-            return getPreferredSize();
-        }
-
-        @Override
-        public int getScrollableUnitIncrement(Rectangle visibleRect, int orientation, int direction) {
-            return 16;
-        }
-
-        @Override
-        public int getScrollableBlockIncrement(Rectangle visibleRect, int orientation, int direction) {
-            return visibleRect.height;
-        }
-
-        @Override
-        public boolean getScrollableTracksViewportWidth() {
-            return true;
-        }
-
-        @Override
-        public boolean getScrollableTracksViewportHeight() {
-            return false;
-        }
-    }
 }
