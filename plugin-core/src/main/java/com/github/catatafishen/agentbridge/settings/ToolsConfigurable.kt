@@ -41,8 +41,6 @@ class ToolsConfigurable(private val project: Project) :
 
     private val toolCheckboxes = LinkedHashMap<String, JBCheckBox>()
     private val categoryCheckboxes = LinkedHashMap<ToolRegistry.Category, MutableList<JBCheckBox>>()
-    private val toolTemplates = LinkedHashMap<String, String>()
-    private val toolHookCommands = LinkedHashMap<String, String>()
     private val templateIndicators = LinkedHashMap<String, JBLabel>()
 
     private var counterLabel: JBLabel? = null
@@ -378,7 +376,6 @@ class ToolsConfigurable(private val project: Project) :
     private fun computeIsModified(): Boolean {
         val settings = McpServerSettings.getInstance(project)
         return toolEnablementModified(settings) ||
-            toolOutputProcessingModified(settings) ||
             toolColorSettingsModified(settings)
     }
 
@@ -391,15 +388,9 @@ class ToolsConfigurable(private val project: Project) :
     private fun toolEnablementModified(settings: McpServerSettings): Boolean =
         toolCheckboxes.any { (id, cb) -> cb.isSelected != settings.isToolEnabled(id) }
 
-    private fun toolOutputProcessingModified(settings: McpServerSettings): Boolean =
-        toolTemplates.any { (id, template) -> template != settings.getToolOutputTemplate(id) } ||
-            toolHookCommands.any { (id, command) -> command != settings.getToolOutputHookCommand(id) }
-
     private fun applySettings() {
         val settings = McpServerSettings.getInstance(project)
         for ((id, cb) in toolCheckboxes) settings.setToolEnabled(id, cb.isSelected)
-        for ((id, template) in toolTemplates) settings.setToolOutputTemplate(id, template)
-        for ((id, command) in toolHookCommands) settings.setToolOutputHookCommand(id, command)
         readColorCombo?.let { settings.kindReadColorKey = keyOf(it) }
         searchColorCombo?.let { settings.kindSearchColorKey = keyOf(it) }
         editColorCombo?.let { settings.kindEditColorKey = keyOf(it) }
@@ -410,9 +401,7 @@ class ToolsConfigurable(private val project: Project) :
         val settings = McpServerSettings.getInstance(project)
         val registry = com.github.catatafishen.agentbridge.services.hooks.HookRegistry.getInstance(project)
         for ((id, cb) in toolCheckboxes) cb.isSelected = settings.isToolEnabled(id)
-        for (id in toolTemplates.keys) {
-            toolTemplates[id] = settings.getToolOutputTemplate(id)
-            toolHookCommands[id] = settings.getToolOutputHookCommand(id)
+        for (id in templateIndicators.keys) {
             val hookConfig = registry.findConfig(id)
             val hasHooks = hookConfig != null && !hookConfig.isEmpty
             templateIndicators[id]?.let { updateHookIndicator(it, hasHooks) }
@@ -433,8 +422,6 @@ class ToolsConfigurable(private val project: Project) :
         executeColorCombo = null
         toolCheckboxes.clear()
         categoryCheckboxes.clear()
-        toolTemplates.clear()
-        toolHookCommands.clear()
         templateIndicators.clear()
     }
 

@@ -116,11 +116,6 @@ without writing a script, use the top-level `prependString` and `appendString` f
 These fields are applied **after** all success hook scripts have run. They can be combined with
 scripts — the `prependString` is added before the output, and `appendString` after it.
 
-**Migration from legacy `outputTemplate`:** If you previously configured per-tool output templates
-in the settings UI, those are automatically migrated. When a hook config has an `appendString`,
-it takes priority over the legacy `outputTemplate`. The legacy template serves as a fallback when
-no hook `appendString` is defined.
-
 ## Hot-Reload
 
 Hook configs are **automatically reloaded** without restarting the IDE. The registry uses a
@@ -386,6 +381,4 @@ The storage location is configured in **Settings → Tools → AgentBridge → S
 | Async (fire-and-forget) mode   | ✅             | ✅                 |
 | JSON stdin/stdout protocol     | ❌             | ✅                 |
 | Hot-reload without restart     | ❌             | ✅                 |
-| Settings UI for hook config    | ❌             | ✅                 |
-| Side panel hook indicator      | ❌             | ✅                 |
 | Hooks outside of tool calls    | ✅             | ❌                 |
