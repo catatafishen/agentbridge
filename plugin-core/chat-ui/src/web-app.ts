@@ -171,19 +171,19 @@ requestAnimationFrame(() => {
     const reviewView = document.createElement('review-view') as ReviewView;
     reviewPane.appendChild(reviewView);
 
-    const todoPane = swiper.addPane('Todo');
+    const todoPane = swiper.addPane('Plan');
     const todoView = document.createElement('todo-view') as TodoView;
     todoPane.appendChild(todoView);
 
-    const toolsPane = swiper.addPane('Tools');
+    const toolsPane = swiper.addPane('MCP');
     const toolCallsView = document.createElement('tool-calls-view') as ToolCallsView;
     toolsPane.appendChild(toolCallsView);
 
-    const searchPane = swiper.addPane('Search');
+    const searchPane = swiper.addPane('Prompt DB');
     const searchView = document.createElement('search-view') as SearchView;
     searchPane.appendChild(searchView);
 
-    const sessionPane = swiper.addPane('Session');
+    const sessionPane = swiper.addPane('Stats');
     const sessionView = document.createElement('session-view') as SessionView;
     sessionPane.appendChild(sessionView);
 
