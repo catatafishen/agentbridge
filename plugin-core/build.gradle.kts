@@ -316,34 +316,13 @@ tasks.register("deployToMainIde") {
     }
 }
 
-/**
- * Reads the IntelliJ built-in HTTP server port from the IDE config directory.
- * IntelliJ writes the port to ~/.config/JetBrains/IntelliJIdea<version>/port on startup.
- * Falls back to the default port 63342 if no port file is found.
- */
-fun detectIdePort(): Int {
-    val home = System.getProperty("user.home")
-    val configBase = File(home, ".config/JetBrains")
-    val fromFile = configBase.takeIf { it.exists() }
-        ?.listFiles()
-        ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
-        ?.sortedByDescending { it.name }
-        ?.firstNotNullOfOrNull { ideDir ->
-            File(ideDir, "port").takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
-        }
-    return fromFile ?: 63342
-}
-
 /** Triggers a restart of the running IntelliJ IDE. */
 fun restartMainIde(logger: Logger) {
-    // Try the IDE Remote Control plugin (https://plugins.jetbrains.com/plugin/19991), port 8580.
+    // Requires the IDE Remote Control plugin (https://plugins.jetbrains.com/plugin/19991) to be installed.
     if (tryRestartViaHttp("http://localhost:8580/api/action/RestartIde", "IDE Remote Control plugin (port 8580)", logger)) return
 
-    // Fallback: find the running IDEA process and kill+relaunch it.
-    if (tryRestartViaKillRelaunch(logger)) return
-
     logger.lifecycle("⚠️  Could not trigger IDE restart automatically.")
-    logger.lifecycle("   Restart IntelliJ manually to apply the new plugin version.")
+    logger.lifecycle("   Install the IDE Remote Control plugin or restart IntelliJ manually.")
 }
 
 private fun tryRestartViaHttp(url: String, label: String, logger: Logger): Boolean {
@@ -369,42 +348,6 @@ private fun tryRestartViaHttp(url: String, label: String, logger: Logger): Boole
     } catch (_: Exception) {
         false
     }
-}
-
-/**
- * Finds the running IntelliJ IDEA process via /proc, sends SIGTERM (graceful save+exit),
- * waits for it to exit, then relaunches it in the background.
- */
-private fun tryRestartViaKillRelaunch(logger: Logger): Boolean {
-    val proc = File("/proc").listFiles()
-        ?.filter { it.isDirectory && it.name.all(Char::isDigit) }
-        ?.firstOrNull { dir ->
-            runCatching { File(dir, "exe").canonicalPath }.getOrNull()
-                ?.contains("idea", ignoreCase = true) == true
-        } ?: return false
-
-    val pid = proc.name
-    val exePath = runCatching { File(proc, "exe").canonicalPath }.getOrElse { return false }
-
-    logger.lifecycle("🔄 Restarting IntelliJ (PID $pid)...")
-    ProcessBuilder("kill", "-15", pid).start().waitFor()
-
-    // Wait up to 15 s for the process to exit
-    repeat(30) {
-        if (!File("/proc/$pid").exists()) return@repeat
-        Thread.sleep(500)
-    }
-    if (File("/proc/$pid").exists()) {
-        logger.lifecycle("⚠️  IDEA did not exit after SIGTERM. Restart manually.")
-        return false
-    }
-
-    ProcessBuilder(exePath)
-        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-        .redirectError(ProcessBuilder.Redirect.DISCARD)
-        .start()
-    logger.lifecycle("✅ IntelliJ relaunched.")
-    return true
 }
 
 /** Finds the plugin install directory in the running IDE's plugin folder. */
