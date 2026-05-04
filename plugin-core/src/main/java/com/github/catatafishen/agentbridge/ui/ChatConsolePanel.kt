@@ -299,7 +299,6 @@ class ChatConsolePanel(
             browser.jbCefClient.addLoadHandler(
                 PlatformApiCompat.createMainFrameLoadEndHandler {
                     ApplicationManager.getApplication().invokeLater {
-                        browser.zoomLevel = 0.0
                         browser.cefBrowser.executeJavaScript(
                             "window.addEventListener('wheel',function(e){if(e.ctrlKey){e.preventDefault();e.stopPropagation();}},{passive:false,capture:true});",
                             "", 0
