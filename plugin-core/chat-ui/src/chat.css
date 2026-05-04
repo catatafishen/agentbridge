@@ -193,7 +193,6 @@ chat-container.is-scrolling #messages * {
     max-width: 94%;
     font-weight: normal;
     white-space: pre-wrap;
-    font-size: 0.88em;
     word-break: break-word;
     overflow-wrap: anywhere;
 }

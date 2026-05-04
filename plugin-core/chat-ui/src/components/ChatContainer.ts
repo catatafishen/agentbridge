@@ -313,7 +313,8 @@ export default class ChatContainer extends HTMLElement {
     set autoScroll(enabled: boolean) {
         this._autoScroll = enabled;
         if (enabled) {
-            this._scrollToInstant(this.scrollHeight);
+            // Defer scroll to avoid same-frame mutation+scroll tearing (Fix 8 pattern)
+            this._scheduleDeferredScroll();
         }
     }
 

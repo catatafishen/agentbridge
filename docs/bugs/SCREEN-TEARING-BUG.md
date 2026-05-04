@@ -454,6 +454,36 @@ remove after Fix 8 is proven stable.
 
 ---
 
+### Fix 10 — Defer `set autoScroll` bridge setter (2025)
+
+**Status**: In testing.
+
+**Problem**: When the Kotlin bridge calls `setAutoScroll(true)` (e.g., after the user clicks
+a "scroll to bottom" button or when switching conversations), the `set autoScroll` setter
+wrote `scrollTop` synchronously via `_scrollToInstant()`. If any DOM mutation occurred in the
+same frame (e.g., from a concurrent tool call insertion or message append), the mutation +
+scroll landed in the same CEF paint frame — the same batching pattern that causes tearing.
+
+**Fix**: Changed `set autoScroll` to call `_scheduleDeferredScroll()` instead of
+`_scrollToInstant()` directly. This ensures all scroll-to-bottom paths, including the
+bridge-initiated toggle, go through the two-rAF deferral pattern.
+
+**All scroll-to-bottom paths now deferred**:
+
+| Trigger                   | Method                        | Deferral                    |
+|---------------------------|-------------------------------|-----------------------------|
+| DOM mutation              | MutationObserver              | `_scheduleDeferredScroll()` |
+| Resize                    | ResizeObserver                | `_scheduleDeferredScroll()` |
+| User message append       | `scheduleForceScroll()`       | `_scheduleDeferredScroll()` |
+| Nudge/queued message      | `scheduleScrollIfNeeded()`    | `_scheduleDeferredScroll()` |
+| Markdown finalize         | `scheduleScrollIfNeeded()`    | `_scheduleDeferredScroll()` |
+| Bridge `setAutoScroll()`  | `set autoScroll`              | `_scheduleDeferredScroll()` |
+| First tool chip insertion | MutationObserver (implicit)   | `_scheduleDeferredScroll()` |
+| Chip-strip horizontal     | `MessageMeta._scrollToEnd()`  | Two-rAF inline              |
+| History restore final     | `restoreBatchFinal()` → rAF×2 | Two-rAF wrapper             |
+
+---
+
 ## Code Locations
 
 | File                       | Component                        | Purpose                                                                                              |
@@ -474,6 +504,7 @@ remove after Fix 8 is proven stable.
 | `ChatContainer.ts`         | `_scrollToInstant()`             | Temporarily forces `scroll-behavior: auto` for scroll                                                |
 | `ChatContainer.ts`         | `scheduleScrollIfNeeded()`       | rAF-deferred autoscroll entry point for DOM mutation paths                                           |
 | `ChatContainer.ts`         | `scheduleForceScroll()`          | Like `scheduleScrollIfNeeded()` but also re-arms auto-scroll — used for user-message appends (Fix 9) |
+| `ChatContainer.ts`         | `set autoScroll`                 | Bridge-initiated scroll toggle — deferred via `_scheduleDeferredScroll()` (Fix 10)                   |
 | `ChatController.ts`        | `appendAgentText()`              | No longer calls synchronous `scrollIfNeeded()` (Fix 3)                                               |
 | `ChatController.ts`        | Remaining autoscroll call sites  | Use `scheduleScrollIfNeeded()` instead of direct scroll writes (Fix 6)                               |
 | `ChatController.ts`        | `upsertToolChip()`               | No longer calls synchronous `scrollIfNeeded()` (Fix 5)                                               |
