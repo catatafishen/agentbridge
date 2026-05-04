@@ -83,7 +83,10 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     }
 
     private fun onBrowserReady() {
-        browser?.zoomLevel = 0.0
+        browser?.cefBrowser?.executeJavaScript(
+            "window.addEventListener('wheel',function(e){if(e.ctrlKey){e.preventDefault();e.stopPropagation();}},{passive:false,capture:true});",
+            "", 0
+        )
         browserReady = true
         ApplicationManager.getApplication().invokeLater {
             val service = LiveToolCallService.getInstance(project)
