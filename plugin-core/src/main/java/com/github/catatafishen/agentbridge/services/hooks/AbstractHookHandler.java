@@ -56,7 +56,7 @@ abstract class AbstractHookHandler {
             JsonObject request = JsonParser.parseString(body).getAsJsonObject();
             String response = processPost(request);
             sendJson(exchange, 200, response);
-        } catch (Exception e) {
+        } catch (HookRequestException | IOException | RuntimeException e) {
             log.warn(handlerName() + " error", e);
             sendError(exchange, 500, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         } finally {
@@ -76,8 +76,11 @@ abstract class AbstractHookHandler {
 
     /**
      * Processes the parsed request body and returns a JSON response string.
+     *
+     * @throws HookRequestException if the request is malformed or missing required fields
+     * @throws java.io.IOException  if an I/O error occurs reading tool results
      */
-    abstract String processPost(@NotNull JsonObject request) throws Exception;
+    abstract String processPost(@NotNull JsonObject request) throws HookRequestException, java.io.IOException;
 
     /**
      * Sends an error response in this handler's error JSON format.
