@@ -21,7 +21,8 @@ import javax.swing.SwingConstants
 /**
  * Non-modal floating window showing conversation history centred on a specific prompt.
  *
- * Initially displays the target prompt turn plus one turn before and one turn after.
+ * Initially displays exactly the target prompt turn (user input + AI response).
+ * The window is scrolled to the top so the user prompt is immediately visible.
  * "Load more" links at the top and bottom expand by one turn at a time using
  * [ChatConsolePanel.prependEntries] and [ChatConsolePanel.appendEntries] — the JCEF
  * panel is never recreated on load-more, so there is no flash or re-scroll.
@@ -73,8 +74,8 @@ internal class HistoryContextWindow private constructor(
 
     private val turns: List<List<EntryData>> = splitIntoTurns(allEntries)
     private val targetTurnIdx: Int = findTurnIndex(turns, targetEntryId)
-    private var displayStartTurnIdx: Int = (targetTurnIdx - 1).coerceAtLeast(0)
-    private var displayEndTurnIdx: Int = (targetTurnIdx + 1).coerceAtMost(turns.size - 1)
+    private var displayStartTurnIdx: Int = targetTurnIdx
+    private var displayEndTurnIdx: Int = targetTurnIdx
 
     private val chatPanel = ChatConsolePanel(project, registerAsMain = false)
 
@@ -105,7 +106,7 @@ internal class HistoryContextWindow private constructor(
 
         chatPanel.setDomMessageLimit(100_000)
         chatPanel.appendEntries(turns.subList(displayStartTurnIdx, displayEndTurnIdx + 1).flatten())
-        chatPanel.scrollToEntry(targetEntryId)
+        chatPanel.scrollToTop()
 
         loadEarlierLabel.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) = loadEarlier()
