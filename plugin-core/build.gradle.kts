@@ -1,7 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
-import java.net.HttpURLConnection
-import java.net.URI
 import java.util.zip.ZipInputStream
 
 plugins {
@@ -282,115 +280,6 @@ tasks.named<Zip>("buildPlugin") {
     }
 }
 
-// Deploy built plugin to the main (outer) IDE installation
-tasks.register("deployToMainIde") {
-    group = "deployment"
-    description = "Builds the plugin ZIP and installs it into the running IDE's plugin directory."
-    dependsOn("buildPlugin")
-    doLast {
-        val distDir = layout.buildDirectory.dir("distributions").get().asFile
-        val latestZip = distDir.listFiles()
-            ?.filter { it.extension == "zip" }
-            ?.maxByOrNull { it.lastModified() }
-            ?: error("No ZIP found in $distDir — build failed?")
-
-        logger.lifecycle("📦 ZIP: ${latestZip.name}")
-
-        val installDir = detectPluginInstallDir()
-        logger.lifecycle("📂 Target: $installDir")
-        if (installDir.exists()) installDir.deleteRecursively()
-        ZipInputStream(latestZip.inputStream()).use { zis: ZipInputStream ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                val dest = File(installDir.parentFile, entry.name)
-                if (entry.isDirectory) dest.mkdirs()
-                else {
-                    dest.parentFile.mkdirs(); dest.outputStream().use { zis.copyTo(it) }
-                }
-                zis.closeEntry()
-                entry = zis.nextEntry
-            }
-        }
-        logger.lifecycle("✅ Plugin deployed to $installDir")
-        restartMainIde(logger)
-    }
-}
-
-/** Triggers a restart of the running IntelliJ IDE. */
-fun restartMainIde(logger: Logger) {
-    // Requires the IDE Remote Control plugin (https://plugins.jetbrains.com/plugin/19991) to be installed.
-    if (tryRestartViaHttp("http://localhost:8580/api/action/RestartIde", "IDE Remote Control plugin (port 8580)", logger)) return
-
-    logger.lifecycle("⚠️  Could not trigger IDE restart automatically.")
-    logger.lifecycle("   Install the IDE Remote Control plugin or restart IntelliJ manually.")
-}
-
-private fun tryRestartViaHttp(url: String, label: String, logger: Logger): Boolean {
-    return try {
-        val conn = URI.create(url).toURL().openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.connectTimeout = 2000
-        conn.readTimeout = 2000
-        val code = try {
-            conn.responseCode
-        } catch (e: java.net.SocketException) {
-            // ConnectException (port not open) is a SocketException subtype — treat as failure
-            if (e is java.net.ConnectException) return false
-            // Connection reset mid-response — IDE is restarting
-            logger.lifecycle("🔄 IDE restart triggered via $label")
-            return true
-        }
-        if (code in 200..299) {
-            logger.lifecycle("🔄 IDE restart triggered via $label")
-            true
-        } else false
-    } catch (_: Exception) {
-        false
-    }
-}
-
-/** Finds the plugin install directory in the running IDE's plugin folder. */
-fun detectPluginInstallDir(): File {
-    val home = System.getProperty("user.home")
-    val pluginDirNames = listOf("agentbridge", "ide-agent-for-copilot", "plugin-core")
-
-    // 1. Toolbox per-IDE plugin dir: ~/.local/share/JetBrains/IntelliJIdea*/<plugin>
-    val dataBase = File(home, ".local/share/JetBrains")
-    if (dataBase.exists()) {
-        val found = dataBase.listFiles()
-            ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
-            ?.sortedByDescending { it.name }
-            ?.firstNotNullOfOrNull { ideDir ->
-                pluginDirNames.map { ideDir.resolve(it) }.firstOrNull { it.exists() }
-            }
-        if (found != null) return found
-    }
-
-    // 2. Toolbox app-level plugins: ~/.local/share/JetBrains/Toolbox/apps/.../plugins/<plugin>
-    val toolboxBase = File(home, ".local/share/JetBrains/Toolbox/apps")
-    if (toolboxBase.exists()) {
-        val found = toolboxBase.walkTopDown().maxDepth(3)
-            .filter { it.isDirectory && it.name == "plugins" }
-            .firstNotNullOfOrNull { pluginsDir ->
-                pluginDirNames.map { File(pluginsDir, it) }.firstOrNull { it.exists() }
-            }
-        if (found != null) return found
-    }
-
-    // 3. Standard config layout: ~/.config/JetBrains/IntelliJIdea*/plugins/<plugin>
-    val configBase = File(home, ".config/JetBrains")
-    if (configBase.exists()) {
-        val found = configBase.listFiles()
-            ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
-            ?.sortedByDescending { it.name }
-            ?.firstNotNullOfOrNull { ideDir ->
-                pluginDirNames.map { ideDir.resolve("plugins").resolve(it) }.firstOrNull { it.exists() }
-            }
-        if (found != null) return found
-    }
-    error("Could not find plugin install directory. Install the plugin first via IDE.")
-}
 
 sourceSets {
     main {
