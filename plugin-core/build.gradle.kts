@@ -334,24 +334,69 @@ fun detectIdePort(): Int {
     return fromFile ?: 63342
 }
 
-/** Triggers a restart of the running IntelliJ IDE via its built-in HTTP REST API. */
+/** Triggers a restart of the running IntelliJ IDE via the IDE Remote Control plugin. */
 fun restartMainIde(logger: Logger) {
-    val port = detectIdePort()
-    try {
-        val conn =
-            URI.create("http://localhost:$port/api/ide/action/RestartIde").toURL().openConnection() as HttpURLConnection
+    // IDE Remote Control plugin (https://plugins.jetbrains.com/plugin/19991) runs on port 8580.
+    // It exposes a REST API to execute IDE actions without auth tokens.
+    val ideRemoteControlPort = 8580
+    if (tryRestartViaRemoteControl(ideRemoteControlPort, logger)) return
+
+    // Fallback: built-in HTTP server (requires IDE Remote Control plugin to NOT be needed, but
+    // newer IntelliJ versions removed the action execution endpoint from the built-in server).
+    val builtInPort = detectIdePort()
+    if (tryRestartViaBuiltInServer(builtInPort, logger)) return
+
+    logger.lifecycle("⚠️  Could not trigger IDE restart automatically.")
+    logger.lifecycle("   Ensure the 'IDE Remote Control' plugin (id 19991) is installed and the IDE")
+    logger.lifecycle("   has been restarted at least once after installation, then deploy again.")
+    logger.lifecycle("   For now: restart IntelliJ manually to apply the new plugin version.")
+}
+
+private fun tryRestartViaRemoteControl(port: Int, logger: Logger): Boolean {
+    return try {
+        val conn = URI.create("http://localhost:$port/api/action/RestartIde")
+            .toURL().openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
+        conn.setRequestProperty("Content-Type", "application/json")
         conn.connectTimeout = 3000
-        conn.readTimeout = 1000 // IDE may restart before responding
+        conn.readTimeout = 1000
         try {
-            conn.responseCode
+            val code = conn.responseCode
+            if (code in 200..299) {
+                logger.lifecycle("🔄 IDE restart triggered via IDE Remote Control (port $port)")
+                return true
+            }
         } catch (_: java.net.SocketException) {
-            // IDE closed the connection as part of restarting — that's fine
+            // IDE closed the connection while restarting — that's expected
+            logger.lifecycle("🔄 IDE restart triggered via IDE Remote Control (port $port)")
+            return true
         }
-        logger.lifecycle("🔄 IDE restart triggered (port $port)")
-    } catch (e: Exception) {
-        logger.lifecycle("⚠️  Could not trigger IDE restart automatically: ${e.message}")
-        logger.lifecycle("   Restart IntelliJ manually to apply the new version.")
+        false
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private fun tryRestartViaBuiltInServer(port: Int, logger: Logger): Boolean {
+    return try {
+        val conn = URI.create("http://localhost:$port/api/action/RestartIde")
+            .toURL().openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 2000
+        conn.readTimeout = 1000
+        try {
+            val code = conn.responseCode
+            if (code in 200..299) {
+                logger.lifecycle("🔄 IDE restart triggered via built-in server (port $port)")
+                return true
+            }
+        } catch (_: java.net.SocketException) {
+            logger.lifecycle("🔄 IDE restart triggered via built-in server (port $port)")
+            return true
+        }
+        false
+    } catch (_: Exception) {
+        false
     }
 }
 
