@@ -14,6 +14,9 @@ import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.util.ui.JBUI
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
+import org.cef.callback.CefContextMenuParams
+import org.cef.callback.CefMenuModel
+import org.cef.handler.CefContextMenuHandlerAdapter
 import org.cef.handler.CefLoadHandlerAdapter
 import java.awt.BorderLayout
 import javax.swing.JPanel
@@ -53,6 +56,15 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
                 }
             }, browser.cefBrowser)
 
+            browser.jbCefClient.addContextMenuHandler(object : CefContextMenuHandlerAdapter() {
+                override fun onBeforeContextMenu(
+                    cefBrowser: CefBrowser, frame: CefFrame,
+                    params: CefContextMenuParams, model: CefMenuModel
+                ) {
+                    model.clear()
+                }
+            }, browser.cefBrowser)
+
             browser.loadHTML(buildPage())
             add(browser.component, BorderLayout.CENTER)
 
@@ -71,6 +83,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     }
 
     private fun onBrowserReady() {
+        browser?.zoomLevel = 0.0
         browserReady = true
         ApplicationManager.getApplication().invokeLater {
             val service = LiveToolCallService.getInstance(project)
@@ -103,6 +116,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             <style>$webAppCss</style>
             <style>:root { $cssVars }</style>
             <style>body { margin: 0; background: var(--bg); }</style>
+            <script>window.addEventListener('wheel',function(e){if(e.ctrlKey)e.preventDefault();},{passive:false});</script>
             </head><body>
             <tool-calls-view></tool-calls-view>
             <script>$js</script>
