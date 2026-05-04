@@ -299,6 +299,7 @@ class ChatConsolePanel(
             browser.jbCefClient.addLoadHandler(
                 PlatformApiCompat.createMainFrameLoadEndHandler {
                     ApplicationManager.getApplication().invokeLater {
+                        browser.zoomLevel = 0.0
                         browserReady = true
                         pendingJs.forEach { browser.cefBrowser.executeJavaScript(it, "", 0) }
                         pendingJs.clear()
@@ -317,6 +318,15 @@ class ChatConsolePanel(
                     com.intellij.openapi.diagnostic.Logger.getInstance(ChatConsolePanel::class.java)
                 ), browser.cefBrowser
             )
+
+            browser.jbCefClient.addContextMenuHandler(object : org.cef.handler.CefContextMenuHandlerAdapter() {
+                override fun onBeforeContextMenu(
+                    cefBrowser: org.cef.browser.CefBrowser, frame: org.cef.browser.CefFrame,
+                    params: org.cef.callback.CefContextMenuParams, model: org.cef.callback.CefMenuModel
+                ) {
+                    model.clear()
+                }
+            }, browser.cefBrowser)
 
             browser.loadHTML(buildInitialPage())
             fallbackArea = null
@@ -1311,7 +1321,7 @@ class ChatConsolePanel(
 
         if (autoDenied) {
             container.add(JBLabel("<html><body style='width: 450px'><span style='color: #FF0000; font-weight: bold;'>Tool call was automatically denied.</span><br/>Reason: ${denialReason ?: "Security policy"}</body></html>").apply {
-                border = JBUI.Borders.empty(0, 0, 8, 0)
+                border = JBUI.Borders.emptyBottom(8)
                 alignmentX = LEFT_ALIGNMENT
             })
         }
@@ -1319,7 +1329,7 @@ class ChatConsolePanel(
         // 1. Show natural language description/explanation if available
         if (!description.isNullOrBlank()) {
             container.add(JBLabel("<html><body style='width: 450px'>${markdownToHtml(description)}</body></html>").apply {
-                border = JBUI.Borders.empty(0, 0, 8, 0)
+                border = JBUI.Borders.emptyBottom(8)
                 alignmentX = LEFT_ALIGNMENT
             })
         }
@@ -1403,12 +1413,12 @@ class ChatConsolePanel(
             container.add(JBLabel(toolLabel).apply {
                 foreground = ToolRenderers.FAIL_COLOR
                 font = JBUI.Fonts.label().asBold()
-                border = JBUI.Borders.empty(4, 0, 4, 0)
+                border = JBUI.Borders.empty(4, 0)
                 alignmentX = LEFT_ALIGNMENT
             })
             container.add(JBLabel("<html><body style='width:450px'>No error details were provided. This typically happens when the tool was denied in the terminal's permission prompt, or when the agent exited before producing output.</body></html>").apply {
                 foreground = com.intellij.util.ui.UIUtil.getContextHelpForeground()
-                border = JBUI.Borders.empty(0, 0, 4, 0)
+                border = JBUI.Borders.emptyBottom(4)
                 alignmentX = LEFT_ALIGNMENT
             })
             return container
@@ -1418,7 +1428,7 @@ class ChatConsolePanel(
         container.add(JBLabel("✖ Error").apply {
             foreground = ToolRenderers.FAIL_COLOR
             font = JBUI.Fonts.label().asBold()
-            border = JBUI.Borders.empty(4, 0, 4, 0)
+            border = JBUI.Borders.empty(4, 0)
             alignmentX = LEFT_ALIGNMENT
         })
 
@@ -1953,6 +1963,7 @@ class ChatConsolePanel(
         val css = loadResource("/chat/chat.css")
         val js = loadResource("/chat/chat-components.js")
         return """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<script>window.addEventListener('wheel',function(e){if(e.ctrlKey)e.preventDefault();},{passive:false});</script>
 <style>$css</style>
 <style>:root { $cssVars }</style></head><body>
 <chat-container></chat-container>
