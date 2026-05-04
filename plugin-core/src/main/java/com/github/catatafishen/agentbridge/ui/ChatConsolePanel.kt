@@ -956,6 +956,22 @@ class ChatConsolePanel(
         )
     }
 
+    fun scrollToTop() {
+        executeJs(
+            """
+            (function attempt(n){
+                var container = document.querySelector('chat-container');
+                if (!container) {
+                    if (n > 0) { setTimeout(function(){ attempt(n-1); }, 80); }
+                    return;
+                }
+                ChatController.setAutoScroll(false);
+                container.scrollTop = 0;
+            })(15)
+            """.trimIndent()
+        )
+    }
+
     fun showLoadMore(deferredCount: Int) {
         executeJs("ChatController.showLoadMore($deferredCount)")
     }
