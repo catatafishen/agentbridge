@@ -395,6 +395,24 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Subscribes a callback to UI settings change events (e.g. IDE font size changes triggered
+     * by Increase/Decrease IDE Font Size actions).
+     *
+     * <p><b>Why extracted:</b> {@code UISettings.TOPIC} has the same Kotlin platform-type
+     * inference issue as {@code LafManagerListener.TOPIC} — the inferred {@code Topic!} type
+     * does not satisfy the generic bound in {@code MessageBusConnection.subscribe()} from
+     * Kotlin call sites.</p>
+     */
+    public static void subscribeUiSettingsChanges(
+        @NotNull com.intellij.openapi.Disposable parentDisposable,
+        @NotNull Runnable onUiSettingsChanged) {
+        var conn = com.intellij.openapi.application.ApplicationManager.getApplication()
+            .getMessageBus().connect(parentDisposable);
+        conn.subscribe(com.intellij.ide.ui.UISettings.TOPIC,
+            (com.intellij.ide.ui.UISettingsListener) settings -> onUiSettingsChanged.run());
+    }
+
+    /**
      * Returns {@code true} if the current IDE UI theme is dark.
      *
      * <p><b>Why extracted:</b> {@code UIThemeLookAndFeelInfo.isDark()} is only available from

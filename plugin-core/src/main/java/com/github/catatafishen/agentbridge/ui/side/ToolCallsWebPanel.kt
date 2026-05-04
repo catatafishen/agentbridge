@@ -69,6 +69,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             add(browser.component, BorderLayout.CENTER)
 
             PlatformApiCompat.subscribeLafChanges(this) { updateThemeColors() }
+            PlatformApiCompat.subscribeUiSettingsChanges(this) { updateThemeColors() }
 
             val service = LiveToolCallService.getInstance(project)
             val listener = ChangeListener { pushAllEntries(service.entries) }
@@ -83,6 +84,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     }
 
     private fun onBrowserReady() {
+        browser?.zoomLevel = 0.0
         browser?.cefBrowser?.executeJavaScript(
             "window.addEventListener('wheel',function(e){if(e.ctrlKey){e.preventDefault();e.stopPropagation();}},{passive:false,capture:true});",
             "", 0
