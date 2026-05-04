@@ -1578,36 +1578,36 @@ file-nav {
     }
 }
 
-/* ── JSON syntax highlighting (sh-* classes from syntaxHighlight.ts) ── */
-.sh-key {
+/* ── JSON syntax highlighting in tool call detail panels ── */
+.tcv-detail .sh-key, .tcv-stage-detail .sh-key {
     color: var(--tool-read, #64b9b9);
 }
 
-.sh-str {
+.tcv-detail .sh-str, .tcv-stage-detail .sh-str {
     color: var(--tool-execute, #82be82);
 }
 
-.sh-num {
+.tcv-detail .sh-num, .tcv-stage-detail .sh-num {
     color: var(--link, #58a6ff);
 }
 
-.sh-kw {
+.tcv-detail .sh-kw, .tcv-stage-detail .sh-kw {
     color: var(--tool-edit, #cd9b5f);
 }
 
-.sh-cmt {
+.tcv-detail .sh-cmt, .tcv-stage-detail .sh-cmt {
     color: var(--muted, #8b949e);
 }
 
-.sh-attr {
+.tcv-detail .sh-attr, .tcv-stage-detail .sh-attr {
     color: var(--tool-edit, #cd9b5f);
 }
 
-.sh-tag {
+.tcv-detail .sh-tag, .tcv-stage-detail .sh-tag {
     color: var(--tool-read, #64b9b9);
 }
 
-.sh-pun {
+.tcv-detail .sh-pun, .tcv-stage-detail .sh-pun {
     color: var(--muted, #8b949e);
 }
 

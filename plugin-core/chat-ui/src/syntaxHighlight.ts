@@ -229,7 +229,7 @@ function highlightCode(code: string, lang: string): string {
 
 // ── JSON highlighter ────────────────────────────────────────────────────
 
-const JSON_STRING_RE = /("(?:[^"\\]|\\.)*")\s*(:)?/g;
+const JSON_STRING_RE = /("(?:[^"\\]*(?:\\.[^"\\]*)*)")\s*(:)?/g;
 const JSON_LITERAL_RE = /\b(true|false|null)\b/g;
 const JSON_NUMBER_RE = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
 
@@ -254,7 +254,7 @@ function highlightJson(code: string): string {
 
 // ── XML/HTML highlighter ────────────────────────────────────────────────
 
-const XML_COMMENT_RE = /<!--[\s\S]*?-->/g;
+const XML_COMMENT_RE = /<!--(?:[^-]|-(?!->))*-->/g;
 const XML_TAG_RE = /<\/?[\w:.-]+|\/?>/g;
 const XML_ATTR_RE = /[\w:.'-][\w:.-]{0,200}=(?:"[^"]*"|'[^']*')/g;
 
@@ -320,7 +320,7 @@ function highlightProperties(code: string): string {
 
 // ── CSS highlighter ─────────────────────────────────────────────────────
 
-const CSS_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
+const CSS_COMMENT_RE = /\/\*(?:[^*]|\*(?!\/))*\*\//g;
 const CSS_SELECTOR_RE = /([.#]?\w[\w-]{0,200})(?=[\s{])\s*\{/g;
 const CSS_VALUE_RE = /:\s*([\w#-]+(?:\([\w%,.\s-]*\))?)/g;
 const CSS_STRING_RE = /"[^"]*"|'[^']*'/g;

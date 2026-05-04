@@ -515,7 +515,7 @@ public final class McpProtocolHandler {
         ToolCallMeta meta = extractMeta(params);
         logToolCall(toolName, meta.progressToken(), settings);
 
-        String sessionKey = project.getLocationHash() + ":" + System.identityHashCode(this);
+        String sessionKey = sessionKey(project);
         PopupGateResult gateResult = evaluatePopupGate(toolName, sessionKey, msg);
         if (gateResult.blocked != null) return gateResult.blocked;
 
@@ -535,6 +535,17 @@ public final class McpProtocolHandler {
         if (preHookResult.blockedMessage != null) return buildToolResult(msg, preHookResult.blockedMessage, true);
         arguments = preHookResult.arguments;
 
+        return executeToolCall(msg, toolName, arguments, preHookResult, hookStages,
+            meta.toolUseId(), originalArguments, gateResult.prefix);
+    }
+
+    @SuppressWarnings("java:S107")
+    // Parameters are all semantically distinct; a wrapper object would add indirection without clarity
+    private JsonObject executeToolCall(JsonObject msg, String toolName, JsonObject arguments,
+                                       PreHookApplication preHookResult,
+                                       List<HookStageResult> hookStages,
+                                       @Nullable String toolUseId, JsonObject originalArguments,
+                                       String resultPrefix) {
         LiveToolCallService liveService = LiveToolCallService.getInstance(project);
         ToolDefinition definition = ToolRegistry.getInstance(project).findById(toolName);
         String kind = definition != null ? definition.kind().value() : null;
@@ -545,10 +556,10 @@ public final class McpProtocolHandler {
         long callId = liveService.recordStart(toolName, displayName, inputJson, kind, hasHooks);
         long callStartMs = System.currentTimeMillis();
 
-        McpCallContext.setCurrent(sessionKey);
+        McpCallContext.setCurrent(sessionKey(project));
         try {
             String resultText = PsiBridgeService.getInstance(project)
-                .callTool(toolName, arguments, meta.toolUseId(), originalArguments);
+                .callTool(toolName, arguments, toolUseId, originalArguments);
 
             long durationMs = System.currentTimeMillis() - callStartMs;
             var postOutcome = applyPostHook(toolName, arguments, resultText, durationMs, hookStages);
@@ -559,7 +570,7 @@ public final class McpProtocolHandler {
             if (!isError) {
                 resultText = applyPreHookTextModifiers(preHookResult, resultText);
             }
-            String fullResult = gateResult.prefix + resultText;
+            String fullResult = resultPrefix + resultText;
             if (!hookStages.isEmpty()) {
                 liveService.setHookStages(callId, hookStages);
             }
@@ -582,6 +593,10 @@ public final class McpProtocolHandler {
         } finally {
             McpCallContext.clear();
         }
+    }
+
+    private String sessionKey(com.intellij.openapi.project.Project proj) {
+        return proj.getLocationHash() + ":" + System.identityHashCode(this);
     }
 
     private @Nullable String evaluatePermissionHook(@NotNull String toolName,
@@ -773,7 +788,7 @@ public final class McpProtocolHandler {
         if (request != null && request.has("id")) {
             response.add("id", request.get("id"));
         }
-        response.add("error", error);
+        response.add(OUTCOME_ERROR, error);
         return response;
     }
 
@@ -787,7 +802,7 @@ public final class McpProtocolHandler {
         if (id != null) {
             response.add("id", id);
         }
-        response.add("error", error);
+        response.add(OUTCOME_ERROR, error);
         return response;
     }
 

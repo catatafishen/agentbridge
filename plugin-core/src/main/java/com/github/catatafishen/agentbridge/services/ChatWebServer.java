@@ -1918,8 +1918,15 @@ public final class ChatWebServer implements Disposable {
         if (entry.category() != null) {
             obj.addProperty("kind", entry.category());
         }
-        obj.addProperty(KEY_STATUS, entry.isRunning() ? "running"
-            : Boolean.TRUE.equals(entry.success()) ? "success" : "error");
+        String status;
+        if (entry.isRunning()) {
+            status = "running";
+        } else if (Boolean.TRUE.equals(entry.success())) {
+            status = "success";
+        } else {
+            status = "error";
+        }
+        obj.addProperty(KEY_STATUS, status);
         obj.addProperty("timestamp", entry.timestamp().toString());
         obj.addProperty("arguments", entry.input());
         obj.addProperty("result", entry.output());
@@ -2091,6 +2098,9 @@ public final class ChatWebServer implements Disposable {
             resp.addProperty("ok", true);
             resp.addProperty("message", result);
             sendJson(exchange, GSON.toJson(resp));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            sendErrorJson(exchange, 500, "Interrupted");
         } catch (Exception e) {
             LOG.warn("handleSetTheme error", e);
             sendErrorJson(exchange, 500, "Internal error: " + e.getMessage());

@@ -168,7 +168,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             sb.append(",\"durationMs\":").append(entry.durationMs())
             sb.append(",\"hasHooks\":").append(entry.hasHooks())
 
-            val stages = entry.hookStages()
+            val stages = entry.hookStages().toList()
             if (stages.isNotEmpty()) {
                 sb.append(",\"hookStages\":[")
                 stages.forEachIndexed { i, s ->

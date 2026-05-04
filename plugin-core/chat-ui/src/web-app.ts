@@ -467,17 +467,17 @@ const SETTINGS_PANE_INDEX = 7;
 
 function showChatView(): void {
     swiper.switchTo(1);
-    const acpConnect = document.getElementById('ab-acp-connect-section') as HTMLElement | null;
-    const acpDisconnect = document.getElementById('ab-acp-disconnect-section') as HTMLElement | null;
+    const acpConnect = document.getElementById('ab-acp-connect-section');
+    const acpDisconnect = document.getElementById('ab-acp-disconnect-section');
     if (acpConnect) acpConnect.hidden = true;
     if (acpDisconnect) acpDisconnect.hidden = false;
 }
 
 function showConnectView(profiles?: ProfileInfo[]): void {
     swiper.switchTo(SETTINGS_PANE_INDEX);
-    const acpConnect = document.getElementById('ab-acp-connect-section') as HTMLElement | null;
-    const acpDisconnect = document.getElementById('ab-acp-disconnect-section') as HTMLElement | null;
-    const statusEl = document.getElementById('ab-connect-status') as HTMLElement | null;
+    const acpConnect = document.getElementById('ab-acp-connect-section');
+    const acpDisconnect = document.getElementById('ab-acp-disconnect-section');
+    const statusEl = document.getElementById('ab-connect-status');
     const btn = document.getElementById('ab-connect-btn') as HTMLButtonElement | null;
     const stopBtn = document.getElementById('ab-connect-stop-btn') as HTMLButtonElement | null;
     const profileSel = document.getElementById('ab-connect-profile') as HTMLSelectElement | null;
