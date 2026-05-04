@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.acp.client.AcpClient
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
 import com.intellij.openapi.editor.colors.EditorColorsManager
+import com.intellij.ui.Gray
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -19,7 +20,7 @@ object ChatTheme {
     val USER_COLOR: JBColor = JBColor(Color(0x28, 0x6B, 0xC0), Color(86, 156, 214))
     val AGENT_COLOR: JBColor = JBColor(Color(0x2A, 0x80, 0x2A), Color(150, 200, 150))
     val TOOL_COLOR: JBColor = JBColor(Color(0x6A, 0x4C, 0xB0), Color(180, 160, 220))
-    val THINK_COLOR: JBColor = JBColor(Color(0x68, 0x68, 0x68), Color(176, 176, 176))
+    val THINK_COLOR: JBColor = JBColor(Gray._104, Gray._176)
     val ERROR_COLOR: JBColor = JBColor(Color(0xC7, 0x22, 0x22), Color(199, 34, 34))
 
     val SA_COLORS: Array<JBColor> = arrayOf(
@@ -49,17 +50,18 @@ object ChatTheme {
         val fg = UIUtil.getLabelForeground()
         val bg = JBUI.CurrentTheme.ToolWindow.background()
         val codeBg =
-            UIManager.getColor("Editor.backgroundColor") ?: JBColor(Color(0xF0, 0xF0, 0xF0), Color(0x2B, 0x2D, 0x30))
+            UIManager.getColor("Editor.backgroundColor") ?: JBColor(Gray._240, Color(0x2B, 0x2D, 0x30))
         val tblBorder =
-            UIManager.getColor("TableCell.borderColor") ?: JBColor(Color(0xD0, 0xD0, 0xD0), Color(0x45, 0x48, 0x4A))
+            UIManager.getColor("TableCell.borderColor") ?: JBColor(Gray._208, Color(0x45, 0x48, 0x4A))
         val thBg =
-            UIManager.getColor("TableHeader.background") ?: JBColor(Color(0xE8, 0xE8, 0xE8), Color(0x35, 0x38, 0x3B))
-        val spinBg = UIManager.getColor("Panel.background") ?: JBColor(Color(0xDD, 0xDD, 0xDD), Color(0x55, 0x55, 0x55))
+            UIManager.getColor("TableHeader.background") ?: JBColor(Gray._232, Color(0x35, 0x38, 0x3B))
+        val spinBg = UIManager.getColor("Panel.background") ?: JBColor(Gray._221, Gray._85)
         val linkColor = UIManager.getColor(LINK_COLOR_KEY) ?: JBColor(Color(0x28, 0x7B, 0xDE), Color(0x58, 0x9D, 0xF6))
         val tooltipBg =
-            UIManager.getColor("ToolTip.background") ?: JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x3C, 0x3F, 0x41))
+            UIManager.getColor("ToolTip.background") ?: JBColor(Gray._247, Color(0x3C, 0x3F, 0x41))
         val sb = StringBuilder()
-        sb.append("--font-family:'${labelFont.family}',sans-serif;--font-size:${editorFontSize}pt;--code-font-size:${editorFontSize}pt;--code-font:'JetBrains Mono','${labelFont.family}',monospace;")
+        val proseFontSize = maxOf(editorFontSize - 2, 6)
+        sb.append("--font-family:'${labelFont.family}',sans-serif;--font-size:${proseFontSize}pt;--code-font-size:${editorFontSize}pt;--code-font:'JetBrains Mono','${labelFont.family}',monospace;")
         sb.append(
             "--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${
                 rgba(
