@@ -171,6 +171,10 @@ object ChatTheme {
         val diffAdd = ToolRenderers.SUCCESS_COLOR as Color
         val diffDel = ToolRenderers.FAIL_COLOR as Color
         sb.append("--diff-add:${rgb(diffAdd)};--diff-del:${rgb(diffDel)};")
+        // Aliases for web-app.css generic var names (used by tool-calls-view, shared with PWA)
+        sb.append("--border:${rgb(tblBorder)};--input-bg:${rgb(codeBg)};--accent:${rgb(linkColor)};")
+        sb.append("--green:${rgb(diffAdd)};--red:${rgb(ERROR_COLOR)};--muted:${rgba(fg, 0.55)};")
+        sb.append("--tool-read:${rgb(kindRead)};--tool-edit:${rgb(kindEdit)};--tool-execute:${rgb(kindExecute)};")
         // Per-agent bubble color overrides — injected only when the user has chosen a custom color.
         // The CSS uses var(--client-X-bubble-bg, fallback) so these only take effect when present.
         for (clientType in listOf("copilot", "claude", "opencode", "junie", "kiro", "codex")) {

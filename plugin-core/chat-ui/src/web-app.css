@@ -1376,7 +1376,7 @@ file-nav {
 }
 
 .tcv-kind {
-    font-size: 9px;
+    font-size: 0.65em;
     font-weight: 700;
     text-transform: uppercase;
 }
@@ -1402,12 +1402,12 @@ file-nav {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 0.85em;
 }
 
 .tcv-status {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 0.78em;
 }
 
 .tcv-status.success,
@@ -1423,7 +1423,7 @@ file-nav {
 
 .tcv-time {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 0.78em;
     margin-top: 3px;
 }
 
@@ -1433,7 +1433,7 @@ file-nav {
 
 .tcv-label {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 0.78em;
     font-weight: 700;
     margin: 8px 0 4px;
     text-transform: uppercase;
@@ -1458,7 +1458,7 @@ file-nav {
 
 .tcv-duration {
     color: var(--muted);
-    font-size: 11px;
+    font-size: 0.78em;
 }
 
 .tcv-expanded {
@@ -1480,7 +1480,7 @@ file-nav {
 .tcv-pipe-node {
     padding: 4px 10px;
     border-radius: 6px;
-    font-size: 11px;
+    font-size: 0.78em;
     font-weight: 600;
     cursor: pointer;
     border: 1px solid var(--border, #30363d);
@@ -1500,7 +1500,7 @@ file-nav {
 
 .tcv-pipe-connector {
     color: var(--muted);
-    font-size: 12px;
+    font-size: 0.85em;
     padding: 0 4px;
     user-select: none;
 }
@@ -1538,7 +1538,7 @@ file-nav {
 .tcv-stage-meta {
     display: flex;
     gap: 16px;
-    font-size: 12px;
+    font-size: 0.85em;
     color: var(--muted);
     margin: 4px 0;
 }
