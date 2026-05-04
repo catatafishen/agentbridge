@@ -1,6 +1,7 @@
 import {PollableView} from './PollableView';
 import type {HookStage, ToolCallData} from '../ToolCallsController';
 import ToolCallsController from '../ToolCallsController';
+import {highlight} from '../syntaxHighlight';
 
 /**
  * Web component for displaying MCP tool calls with an interactive pipeline visualization.
@@ -16,11 +17,14 @@ import ToolCallsController from '../ToolCallsController';
 export class ToolCallsView extends PollableView {
     private _list!: HTMLElement;
     private _empty!: HTMLElement;
+    private _container!: HTMLElement;
     private _expandedId: number | null = null;
     private _selectedStage: string | null = null;
     private _unsubscribe: (() => void) | null = null;
     /** True when running inside a JCEF panel (data pushed by Java). */
     private _pushMode = false;
+    /** Auto-scroll to bottom when new items arrive. Disabled when user scrolls up. */
+    private _autoScroll = true;
 
     constructor() {
         super(2000);
@@ -32,9 +36,22 @@ export class ToolCallsView extends PollableView {
                 <div class="tcv-empty">No tool calls yet</div>
                 <div class="tcv-list"></div>
             </div>`;
+        this._container = this.querySelector<HTMLElement>('.tcv-container')!;
         this._list = this.querySelector<HTMLElement>('.tcv-list')!;
         this._empty = this.querySelector<HTMLElement>('.tcv-empty')!;
         this._list.addEventListener('click', (e) => this._handleClick(e));
+
+        // Scrolling upward disables auto-scroll; reaching the bottom re-enables it.
+        this._container.addEventListener('wheel', (e: WheelEvent) => {
+            if (e.deltaY < 0 && this._autoScroll) {
+                this._autoScroll = false;
+            }
+        }, {passive: true});
+        this._container.addEventListener('scroll', () => {
+            if (!this._autoScroll && this._isAtBottom()) {
+                this._autoScroll = true;
+            }
+        }, {passive: true});
 
         this._unsubscribe = ToolCallsController.onChange(() => this._render());
     }
@@ -85,9 +102,34 @@ export class ToolCallsView extends PollableView {
     }
 
     private _render(): void {
-        const items = ToolCallsController.getAll();
+        // Controller returns newest-first; reverse for chronological order (newest at bottom).
+        const items = ToolCallsController.getAll().reverse();
         if (this.toggleEmptyState(this._empty, this._list, items.length === 0)) return;
+
+        // Preserve scroll positions of <pre> blocks inside the expanded item across re-renders.
+        const savedPreScrolls: number[] = [];
+        if (this._expandedId !== null) {
+            this._list.querySelectorAll<HTMLElement>('.tcv-detail pre, .tcv-stage-detail pre')
+                .forEach(pre => savedPreScrolls.push(pre.scrollTop));
+        }
+
         this._list.innerHTML = items.map(item => this._renderItem(item)).join('');
+
+        if (this._expandedId !== null && savedPreScrolls.length > 0) {
+            const pres = this._list.querySelectorAll<HTMLElement>('.tcv-detail pre, .tcv-stage-detail pre');
+            pres.forEach((pre, i) => {
+                if (i < savedPreScrolls.length) pre.scrollTop = savedPreScrolls[i];
+            });
+        }
+
+        // Only auto-scroll when no item is expanded — don't yank the view away from what the user is reading.
+        if (this._autoScroll && this._expandedId === null) {
+            this._container.scrollTop = this._container.scrollHeight;
+        }
+    }
+
+    private _isAtBottom(): boolean {
+        return this._container.scrollHeight - this._container.scrollTop - this._container.clientHeight < 50;
     }
 
     private _renderItem(item: ToolCallData): string {
@@ -133,11 +175,11 @@ export class ToolCallsView extends PollableView {
             <div class="tcv-io">
                 <div class="tcv-io-section">
                     <div class="tcv-label">Input</div>
-                    <pre>${this.esc(item.arguments || '')}</pre>
+                    ${this._renderContent(item.arguments || '')}
                 </div>
                 <div class="tcv-io-section">
                     <div class="tcv-label">Output</div>
-                    <pre>${this.esc(resultText)}</pre>
+                    ${this._renderContent(resultText)}
                 </div>
             </div>`;
 
@@ -231,14 +273,14 @@ export class ToolCallsView extends PollableView {
         if (stage === 'input') {
             return `<div class="tcv-stage-detail">
                 <div class="tcv-label">Input Arguments</div>
-                <pre>${this.esc(item.arguments || '')}</pre>
+                ${this._renderContent(item.arguments || '')}
             </div>`;
         }
         if (stage === 'output') {
             const resultText = item.result || (item.status === 'running' ? '(still running)' : '');
             return `<div class="tcv-stage-detail">
                 <div class="tcv-label">Final Output</div>
-                <pre>${this.esc(resultText)}</pre>
+                ${this._renderContent(resultText)}
             </div>`;
         }
         if (stage === 'execution') {
@@ -246,7 +288,7 @@ export class ToolCallsView extends PollableView {
                 <div class="tcv-label">Tool Execution: ${this.esc(item.toolName)}</div>
                 ${item.durationMs > 0 ? `<div class="tcv-stage-meta">Duration: ${this._formatDuration(item.durationMs)}</div>` : ''}
                 <div class="tcv-label">Raw Output</div>
-                <pre>${this.esc(item.result || '(still running)')}</pre>
+                ${this._renderContent(item.result || '(still running)')}
             </div>`;
         }
 
@@ -267,8 +309,25 @@ export class ToolCallsView extends PollableView {
                 <span>Outcome: <strong>${this.esc(hookStage.outcome)}</strong></span>
                 ${hookStage.durationMs > 0 ? `<span>Duration: ${this._formatDuration(hookStage.durationMs)}</span>` : ''}
             </div>
-            ${hookStage.detail ? `<div class="tcv-label">Detail</div><pre>${this.esc(hookStage.detail)}</pre>` : ''}
+            ${hookStage.detail ? `<div class="tcv-label">Detail</div>${this._renderContent(hookStage.detail)}` : ''}
         </div>`;
+    }
+
+    /**
+     * Renders text content as a `<pre><code>` block. If the text is valid JSON it is
+     * pretty-printed and syntax-highlighted; otherwise it is plain-escaped.
+     */
+    private _renderContent(text: string): string {
+        if (!text) return '<pre><code></code></pre>';
+        let inner: string;
+        try {
+            const parsed = JSON.parse(text);
+            const pretty = JSON.stringify(parsed, null, 2);
+            inner = highlight(pretty, 'json');
+        } catch {
+            inner = this.esc(text);
+        }
+        return `<pre><code>${inner}</code></pre>`;
     }
 
     private _kindClass(kind?: string): string {
@@ -279,8 +338,14 @@ export class ToolCallsView extends PollableView {
         return 'tcv-other';
     }
 
+    /**
+     * Formats a duration in milliseconds.
+     * Shows one decimal place for durations under 10 seconds (e.g. "3.2s") for
+     * precision when quick tool calls are being compared.
+     */
     private _formatDuration(ms: number): string {
         if (ms <= 0) return '';
+        if (ms < 10_000) return (ms / 1000).toFixed(1) + 's';
         const totalSec = Math.round(ms / 1000);
         if (totalSec < 60) return totalSec + 's';
         const min = Math.floor(totalSec / 60);

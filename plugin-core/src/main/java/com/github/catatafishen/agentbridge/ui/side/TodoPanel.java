@@ -10,6 +10,7 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.ui.JBColor;
+import com.intellij.ui.OnePixelSplitter;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
 import com.intellij.util.ui.JBUI;
@@ -64,6 +65,8 @@ final class TodoPanel extends JPanel implements Disposable {
     private boolean splitVisible;
     private final JPanel body;
     private final ProjectFilesPanel sessionFilesPanel;
+    /** Holds either {@code body} alone, or an inner {@link OnePixelSplitter} of body + database. */
+    private final JPanel mainArea;
 
     /**
      * Last observed (path, mtime, done, total) so the poll timer can skip work when nothing changed.
@@ -103,7 +106,9 @@ final class TodoPanel extends JPanel implements Disposable {
         body = new JPanel(new BorderLayout());
         body.add(headerLabel, BorderLayout.NORTH);
         body.add(markdownContentPanel, BorderLayout.CENTER);
-        add(body, BorderLayout.CENTER);
+
+        mainArea = new JPanel(new BorderLayout());
+        mainArea.add(body, BorderLayout.CENTER);
 
         sessionFilesPanel = new ProjectFilesPanel(project, true);
         JPanel sessionSection = new JPanel(new BorderLayout());
@@ -112,7 +117,11 @@ final class TodoPanel extends JPanel implements Disposable {
         sessionHeader.setBorder(JBUI.Borders.empty(8, 8, 4, 8));
         sessionSection.add(sessionHeader, BorderLayout.NORTH);
         sessionSection.add(sessionFilesPanel, BorderLayout.CENTER);
-        add(sessionSection, BorderLayout.SOUTH);
+
+        OnePixelSplitter outerSplitter = new OnePixelSplitter(true, 0.7f);
+        outerSplitter.setFirstComponent(mainArea);
+        outerSplitter.setSecondComponent(sessionSection);
+        add(outerSplitter, BorderLayout.CENTER);
 
         pollTimer = new Timer(POLL_INTERVAL_MS, e -> pollIfVisible());
         pollTimer.setRepeats(true);
@@ -226,48 +235,23 @@ final class TodoPanel extends JPanel implements Disposable {
         splitVisible = true;
         databasePanel.setDatabaseFile(dbFile);
 
-        Component mainBody = getMainBody();
-        if (mainBody == null) return;
-
-        Container parent = mainBody.getParent();
-        parent.remove(mainBody);
-
-        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, mainBody, databasePanel);
-        split.setResizeWeight(0.6);
-        split.setBorder(JBUI.Borders.empty());
-        split.setDividerSize(4);
-
-        parent.add(split, BorderLayout.CENTER);
-        parent.revalidate();
-        parent.repaint();
+        mainArea.removeAll();
+        OnePixelSplitter innerSplit = new OnePixelSplitter(true, 0.6f);
+        innerSplit.setFirstComponent(body);
+        innerSplit.setSecondComponent(databasePanel);
+        mainArea.add(innerSplit, BorderLayout.CENTER);
+        mainArea.revalidate();
+        mainArea.repaint();
     }
 
     private void hideSplit() {
         splitVisible = false;
         databasePanel.setDatabaseFile(null);
 
-        Component mainBody = getMainBody();
-        if (mainBody == null) return;
-
-        Container splitParent = mainBody.getParent();
-        if (splitParent instanceof JSplitPane split) {
-            Container grandParent = split.getParent();
-            grandParent.remove(split);
-            grandParent.add(mainBody, BorderLayout.CENTER);
-            grandParent.revalidate();
-            grandParent.repaint();
-        }
-    }
-
-    /**
-     * Returns the JPanel containing headerLabel + markdownContentPanel.
-     */
-    private @Nullable Component getMainBody() {
-        if (!splitVisible) return body;
-        // When the split is visible, body is the top component of the JSplitPane at CENTER.
-        Container center = (Container) ((BorderLayout) getLayout()).getLayoutComponent(BorderLayout.CENTER);
-        if (center instanceof JSplitPane split) return split.getTopComponent();
-        return body;
+        mainArea.removeAll();
+        mainArea.add(body, BorderLayout.CENTER);
+        mainArea.revalidate();
+        mainArea.repaint();
     }
 
     private void renderEmpty() {
