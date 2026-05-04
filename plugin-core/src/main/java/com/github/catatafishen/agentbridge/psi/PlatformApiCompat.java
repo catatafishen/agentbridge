@@ -1597,8 +1597,8 @@ public final class PlatformApiCompat {
             com.intellij.openapi.editor.colors.EditorColorsScheme scheme = ecm.getScheme(schemeId);
             if (scheme == null) {
                 // Theme references a color scheme that is not registered (IntelliJ platform bug).
-                // Pre-set the IDE default scheme so getSchemeForCurrentUITheme() does not log an error.
-                ecm.setGlobalScheme(ecm.getDefaultScheme());
+                // Pre-set the IDE's current global scheme so getSchemeForCurrentUITheme() does not log an error.
+                ecm.setGlobalScheme(ecm.getGlobalScheme());
             }
         }
         lafManager.setCurrentLookAndFeel(theme, true);
