@@ -336,6 +336,7 @@ class ChatConsolePanel(
 
             PlatformApiCompat.subscribeLafChanges(this) { updateThemeColors() }
             PlatformApiCompat.subscribeUiSettingsChanges(this) { updateThemeColors() }
+            PlatformApiCompat.subscribeEditorColorSchemeChanges(this) { updateThemeColors() }
             setupMonitorChangeListener()
         } else {
             browser = null; openFileQuery = null

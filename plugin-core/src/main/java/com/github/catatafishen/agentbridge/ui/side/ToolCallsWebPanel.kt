@@ -70,6 +70,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
 
             PlatformApiCompat.subscribeLafChanges(this) { updateThemeColors() }
             PlatformApiCompat.subscribeUiSettingsChanges(this) { updateThemeColors() }
+            PlatformApiCompat.subscribeEditorColorSchemeChanges(this) { updateThemeColors() }
 
             val service = LiveToolCallService.getInstance(project)
             val listener = ChangeListener { pushAllEntries(service.entries) }

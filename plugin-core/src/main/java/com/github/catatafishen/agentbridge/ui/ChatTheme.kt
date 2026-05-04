@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.acp.client.AcpClient
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.renderers.ToolRenderers
+import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -43,7 +44,8 @@ object ChatTheme {
      * overrides from [mcpSettings] when provided.
      */
     fun buildCssVars(mcpSettings: McpServerSettings?): String {
-        val font = UIUtil.getLabelFont()
+        val labelFont = UIUtil.getLabelFont()
+        val editorFontSize = EditorColorsManager.getInstance().globalScheme.editorFontSize
         val fg = UIUtil.getLabelForeground()
         val bg = JBUI.CurrentTheme.ToolWindow.background()
         val codeBg =
@@ -57,7 +59,7 @@ object ChatTheme {
         val tooltipBg =
             UIManager.getColor("ToolTip.background") ?: JBColor(Color(0xF7, 0xF7, 0xF7), Color(0x3C, 0x3F, 0x41))
         val sb = StringBuilder()
-        sb.append("--font-family:'${font.family}',sans-serif;--font-size:${font.size - 2}pt;--code-font-size:${font.size - 3}pt;--code-font:'JetBrains Mono','${font.family}',monospace;")
+        sb.append("--font-family:'${labelFont.family}',sans-serif;--font-size:${editorFontSize}pt;--code-font-size:${editorFontSize}pt;--code-font:'JetBrains Mono','${labelFont.family}',monospace;")
         sb.append(
             "--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${
                 rgba(

@@ -413,6 +413,24 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Subscribes a callback to editor color scheme changes (e.g. fired by Alt+Shift+./,,
+     * which change the global editor font size via {@code IncreaseFontSizeAction}).
+     *
+     * <p><b>Why extracted:</b> {@code EditorColorsManager.TOPIC} has the same Kotlin
+     * platform-type inference issue as other {@code TOPIC} fields — the inferred
+     * {@code Topic!} type does not satisfy the generic bound in
+     * {@code MessageBusConnection.subscribe()} from Kotlin call sites.</p>
+     */
+    public static void subscribeEditorColorSchemeChanges(
+        @NotNull com.intellij.openapi.Disposable parentDisposable,
+        @NotNull Runnable onSchemeChanged) {
+        var conn = com.intellij.openapi.application.ApplicationManager.getApplication()
+            .getMessageBus().connect(parentDisposable);
+        conn.subscribe(com.intellij.openapi.editor.colors.EditorColorsManager.TOPIC,
+            (com.intellij.openapi.editor.colors.EditorColorsListener) scheme -> onSchemeChanged.run());
+    }
+
+    /**
      * Returns {@code true} if the current IDE UI theme is dark.
      *
      * <p><b>Why extracted:</b> {@code UIThemeLookAndFeelInfo.isDark()} is only available from
