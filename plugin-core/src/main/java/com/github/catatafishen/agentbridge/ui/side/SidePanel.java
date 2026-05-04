@@ -5,7 +5,7 @@ import com.github.catatafishen.agentbridge.ui.ChatConsolePanel;
 import com.github.catatafishen.agentbridge.ui.review.DiffPanel;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.ui.Splitter;
+import com.intellij.ui.OnePixelSplitter;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.util.ui.UIUtil;
@@ -98,7 +98,7 @@ public final class SidePanel extends JPanel implements Disposable {
             bottomPanel.add(hooksPanel, BorderLayout.CENTER);
         }
 
-        Splitter splitter = new Splitter(true, 0.65f);
+        OnePixelSplitter splitter = new OnePixelSplitter(true, 0.65f);
         splitter.setFirstComponent(toolCallsPanel);
         splitter.setSecondComponent(bottomPanel);
 

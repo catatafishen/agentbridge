@@ -182,8 +182,9 @@ final class ProjectFilesPanel extends JPanel {
     }
 
     /**
-     * In hooks mode, lists all {@code *.json} files from the hooks directory,
-     * grouped under a "Hook Files" section node.
+     * In hooks mode, lists all {@code *.json} files from the hooks directory
+     * directly in the root (no collapsible section node — the outer panel already
+     * provides the "Hooks" label as a heading).
      */
     private void addHooksSection() {
         if (hooksDir == null || !Files.isDirectory(hooksDir)) return;
@@ -199,7 +200,9 @@ final class ProjectFilesPanel extends JPanel {
                 }
             }
             nodes.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
-            addSection("Hook Files", nodes);
+            for (FileNode fn : nodes) {
+                root.add(new DefaultMutableTreeNode(fn));
+            }
         } catch (IOException ignored) {
             // hooks dir may not exist yet
         }
