@@ -1,5 +1,7 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
+import java.net.HttpURLConnection
+import java.net.URI
 import java.util.zip.ZipInputStream
 
 plugins {
@@ -310,7 +312,47 @@ tasks.register("deployToMainIde") {
             }
         }
         logger.lifecycle("✅ Plugin deployed to $installDir")
-        logger.lifecycle("⚠️  Restart IntelliJ to apply the new version.")
+        restartMainIde(logger)
+    }
+}
+
+/**
+ * Reads the IntelliJ built-in HTTP server port from the IDE config directory.
+ * IntelliJ writes the port to ~/.config/JetBrains/IntelliJIdea<version>/port on startup.
+ */
+fun detectIdePort(): Int? {
+    val home = System.getProperty("user.home")
+    val configBase = File(home, ".config/JetBrains")
+    if (!configBase.exists()) return null
+    return configBase.listFiles()
+        ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
+        ?.sortedByDescending { it.name }
+        ?.firstNotNullOfOrNull { ideDir ->
+            File(ideDir, "port").takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
+        }
+}
+
+/** Triggers a restart of the running IntelliJ IDE via its built-in HTTP REST API. */
+fun restartMainIde(logger: Logger) {
+    val port = detectIdePort()
+    if (port == null) {
+        logger.lifecycle("⚠️  Could not find IDE port file — restart IntelliJ manually to apply the new version.")
+        return
+    }
+    try {
+        val conn = URI.create("http://localhost:$port/api/ide/action/RestartIde").toURL().openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.connectTimeout = 3000
+        conn.readTimeout = 1000 // IDE may restart before responding
+        try {
+            conn.responseCode
+        } catch (_: java.net.SocketException) {
+            // IDE closed the connection as part of restarting — that's fine
+        }
+        logger.lifecycle("🔄 IDE restart triggered (port $port)")
+    } catch (e: Exception) {
+        logger.lifecycle("⚠️  Could not trigger IDE restart automatically: ${e.message}")
+        logger.lifecycle("   Restart IntelliJ manually to apply the new version.")
     }
 }
 
