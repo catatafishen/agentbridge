@@ -408,7 +408,7 @@ public final class PlatformApiCompat {
         @NotNull Runnable onUiSettingsChanged) {
         var conn = com.intellij.openapi.application.ApplicationManager.getApplication()
             .getMessageBus().connect(parentDisposable);
-        conn.subscribe(com.intellij.ide.ui.UISettings.TOPIC,
+        conn.subscribe(com.intellij.ide.ui.UISettingsListener.TOPIC,
             (com.intellij.ide.ui.UISettingsListener) settings -> onUiSettingsChanged.run());
     }
 
