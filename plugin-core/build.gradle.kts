@@ -319,28 +319,27 @@ tasks.register("deployToMainIde") {
 /**
  * Reads the IntelliJ built-in HTTP server port from the IDE config directory.
  * IntelliJ writes the port to ~/.config/JetBrains/IntelliJIdea<version>/port on startup.
+ * Falls back to the default port 63342 if no port file is found.
  */
-fun detectIdePort(): Int? {
+fun detectIdePort(): Int {
     val home = System.getProperty("user.home")
     val configBase = File(home, ".config/JetBrains")
-    if (!configBase.exists()) return null
-    return configBase.listFiles()
+    val fromFile = configBase.takeIf { it.exists() }
+        ?.listFiles()
         ?.filter { it.isDirectory && it.name.startsWith("IntelliJIdea") }
         ?.sortedByDescending { it.name }
         ?.firstNotNullOfOrNull { ideDir ->
             File(ideDir, "port").takeIf { it.exists() }?.readText()?.trim()?.toIntOrNull()
         }
+    return fromFile ?: 63342
 }
 
 /** Triggers a restart of the running IntelliJ IDE via its built-in HTTP REST API. */
 fun restartMainIde(logger: Logger) {
     val port = detectIdePort()
-    if (port == null) {
-        logger.lifecycle("⚠️  Could not find IDE port file — restart IntelliJ manually to apply the new version.")
-        return
-    }
     try {
-        val conn = URI.create("http://localhost:$port/api/ide/action/RestartIde").toURL().openConnection() as HttpURLConnection
+        val conn =
+            URI.create("http://localhost:$port/api/ide/action/RestartIde").toURL().openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.connectTimeout = 3000
         conn.readTimeout = 1000 // IDE may restart before responding
