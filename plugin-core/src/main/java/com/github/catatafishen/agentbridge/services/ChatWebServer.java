@@ -2078,8 +2078,7 @@ public final class ChatWebServer implements Disposable {
             java.util.concurrent.CompletableFuture<String> resultFuture = new java.util.concurrent.CompletableFuture<>();
             EdtUtil.invokeLater(() -> {
                 try {
-                    lafManager.setCurrentLookAndFeel(finalTarget, false);
-                    lafManager.updateUI();
+                    PlatformApiCompat.applyLookAndFeel(lafManager, finalTarget);
                     resultFuture.complete("Theme changed to '" + finalTarget.getName() + "'.");
                 } catch (Exception e) {
                     LOG.warn("Failed to set theme", e);

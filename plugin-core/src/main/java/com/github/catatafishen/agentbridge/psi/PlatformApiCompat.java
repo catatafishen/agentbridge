@@ -1536,6 +1536,43 @@ public final class PlatformApiCompat {
     }
 
     /**
+     * Applies a look-and-feel theme and updates the UI.
+     *
+     * <p><b>Why extracted:</b> Calling {@code LafManager.updateUI()} directly can trigger
+     * {@code EditorColorsManagerImpl.getSchemeForCurrentUITheme()}, which logs a platform-level
+     * error when the theme's declared {@code editorSchemeId} (e.g. "IntelliJ Light") is not
+     * registered as a color scheme in the current IDE installation. This is an IntelliJ platform
+     * bug (the bundled "IntelliJ Light" theme references a scheme that doesn't always exist).
+     *
+     * <p>To prevent the error we pre-set the global color scheme to the theme's declared scheme
+     * when it exists, or fall back to the IDE default scheme when it doesn't — so the registry
+     * lookup inside {@code updateUI()} succeeds silently. We then use
+     * {@code setCurrentLookAndFeel(theme, true)} (the integrated single-call form) rather than
+     * the two-step {@code setCurrentLookAndFeel(theme, false)} + explicit {@code updateUI()}.</p>
+     */
+    public static void applyLookAndFeel(
+        @NotNull com.intellij.ide.ui.LafManager lafManager,
+        @NotNull com.intellij.ide.ui.laf.UIThemeLookAndFeelInfo theme
+    ) {
+        String schemeId = theme.getEditorSchemeId();
+        if (schemeId != null) {
+            com.intellij.openapi.editor.colors.EditorColorsManager ecm =
+                com.intellij.openapi.editor.colors.EditorColorsManager.getInstance();
+            com.intellij.openapi.editor.colors.EditorColorsScheme scheme = ecm.getScheme(schemeId);
+            if (scheme == null) {
+                // Theme references a color scheme that is not registered (IntelliJ platform bug).
+                // Pre-set the IDE default scheme so getSchemeForCurrentUITheme() does not log an error.
+                com.intellij.openapi.editor.colors.EditorColorsScheme defaultScheme =
+                    ecm.getScheme(com.intellij.openapi.editor.colors.EditorColorsScheme.DEFAULT_SCHEME_NAME);
+                if (defaultScheme != null) {
+                    ecm.setGlobalScheme(defaultScheme);
+                }
+            }
+        }
+        lafManager.setCurrentLookAndFeel(theme, true);
+    }
+
+    /**
      * Creates an {@link com.intellij.xdebugger.XExpression} from plain text (language-agnostic, expression mode).
      *
      * <p><b>Why extracted:</b> {@code XExpression} is a public interface but the platform provides no
