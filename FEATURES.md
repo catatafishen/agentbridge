@@ -359,8 +359,9 @@ See [docs/MCP-TOOL-HOOKS.md](docs/MCP-TOOL-HOOKS.md) for the complete reference.
 - **Static text modifiers** — `prependString` / `appendString` fields for simple text prepend/append without scripts
 - **Hot-reload** — hook configs are automatically reloaded within 2 seconds, no IDE restart needed
 - **Settings UI** — configure hooks per tool via the Settings dialog (🪝 indicator on hooked tools)
-- **Built-in defaults** — sensible hooks provisioned on first project open; **Restore Default Hooks**
-  button in settings resets to bundled originals
+- **Built-in defaults** — generic safety hooks (command abuse detection, terminal guardrails,
+  naming checks) provisioned on first project open; **Restore Default Hooks** button in settings
+  resets to bundled originals
 - **Side panel indicator** — 🪝 icon on tool calls with active hooks in the Tool Calls panel
 
 ---

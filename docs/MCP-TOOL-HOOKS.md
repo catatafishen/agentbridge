@@ -682,10 +682,12 @@ The storage location is configured in **Settings → Tools → AgentBridge → S
 The plugin bundles a set of default hooks that are **automatically provisioned** when you first
 open a project (if no hook JSON configs exist in the hooks directory). These provide:
 
-- **Identity enforcement** — commits authored by the connected agent name, GitHub CLI and
-  API calls use bot credentials
 - **Command safety** — dangerous `run_command` patterns blocked, terminal abuse detection
-- **Post-execution tips** — PR creation guidance after push, naming convention checks after writes
+- **Post-execution quality checks** — naming convention checks after file writes
+
+The defaults focus on generic safety and quality guardrails that apply to any project.
+Project-specific hooks (e.g. bot identity enforcement, custom commit authoring) should be
+configured separately in your project's hooks directory.
 
 ### Automatic Provisioning
 

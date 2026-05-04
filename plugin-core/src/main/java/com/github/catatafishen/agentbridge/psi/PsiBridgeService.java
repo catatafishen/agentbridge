@@ -321,6 +321,25 @@ public final class PsiBridgeService implements Disposable {
     }
 
     public String callTool(String toolName, JsonObject arguments, @Nullable String toolUseId) {
+        return callTool(toolName, arguments, toolUseId, null);
+    }
+
+    /**
+     * Executes a tool, optionally using separate arguments for chip registry correlation.
+     *
+     * <p>When MCP pre-hooks modify the arguments (e.g. adding an {@code author} field),
+     * the post-hook args differ from what the ACP client sees. Since the ACP side hashes
+     * the <em>original</em> arguments, the chip registry must also hash the originals to
+     * find a match. Pass the pre-hook snapshot as {@code originalArguments}; if {@code null},
+     * {@code arguments} is used for both execution and correlation (no-hook path).</p>
+     *
+     * @param toolName          MCP tool name
+     * @param arguments         post-hook arguments used for actual tool execution
+     * @param toolUseId         optional tool-use ID for direct correlation (Claude)
+     * @param originalArguments pre-hook arguments for hash-based correlation, or {@code null}
+     */
+    public String callTool(String toolName, JsonObject arguments, @Nullable String toolUseId,
+                           @Nullable JsonObject originalArguments) {
         LOG.info("PSI Bridge: calling " + toolName + " with args: " + arguments);
         long inputSize = arguments != null ? arguments.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
 
@@ -349,8 +368,11 @@ public final class PsiBridgeService implements Disposable {
         boolean isWriteOp = needsGlobalLock && isWriteToolName(toolName);
         java.util.concurrent.atomic.AtomicBoolean writeRegistered = new java.util.concurrent.atomic.AtomicBoolean(false);
 
+        // Use original (pre-hook) arguments for chip correlation when available
+        JsonObject chipArgs = originalArguments != null ? originalArguments : arguments;
+
         ToolCallRequest req = new ToolCallRequest(
-            toolName, def, arguments, toolUseId,
+            toolName, def, arguments, toolUseId, chipArgs,
             inputSize, categoryName, startMs, chatWasActive);
 
         try {
@@ -368,12 +390,15 @@ public final class PsiBridgeService implements Disposable {
     /**
      * Bundles all per-call parameters that {@link #acquireExecutionContext} and
      * {@link #runToolExecution} both need, avoiding long parameter lists.
+     *
+     * @param chipArgs pre-hook arguments for chip registry hash correlation (same content ACP sees)
      */
     private record ToolCallRequest(
         String toolName,
         ToolDefinition def,
         JsonObject arguments,
         @Nullable String toolUseId,
+        JsonObject chipArgs,
         long inputSize,
         @Nullable String categoryName,
         long startMs,
@@ -448,12 +473,12 @@ public final class PsiBridgeService implements Disposable {
                 // Register the chip first so the result is correlated with a real chip,
                 // matching the normal execution path in executeWithSyncLock().
                 ToolChipRegistry chipRegistry = ToolChipRegistry.getInstance(project);
-                chipRegistry.registerMcp(req.toolName(), req.arguments(), req.def().kind().value(), req.toolUseId());
-                chipRegistry.storeMcpResult(req.toolName(), req.arguments(), readinessError);
+                chipRegistry.registerMcp(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
+                chipRegistry.storeMcpResult(req.toolName(), req.chipArgs(), readinessError);
                 return readinessError;
             }
 
-            String result = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), req.toolUseId(), requiresSync);
+            String result = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), req.toolUseId(), req.chipArgs(), requiresSync);
             if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
 
             result = appendHighlightsIfApplicable(
@@ -464,7 +489,7 @@ public final class PsiBridgeService implements Disposable {
                 errorMessage = result;
             }
             outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), result);
+            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.chipArgs(), result);
             return result;
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
             // The instanceof + early-return pattern is intentional: splitting into a separate
@@ -514,10 +539,12 @@ public final class PsiBridgeService implements Disposable {
      * {@code AgentEditSession.awaitReviewCompletion} can yield it while blocking for user review,
      * preventing the deadlock described in {@link #currentSyncLock}.</p>
      *
+     * @param chipArgs pre-hook arguments for chip registry correlation (matches what ACP hashes)
      * @throws Exception any exception from {@link ToolDefinition#execute} — caller handles it
      */
     private String executeWithSyncLock(ToolDefinition def, JsonObject arguments,
                                        String toolName, @Nullable String toolUseId,
+                                       JsonObject chipArgs,
                                        boolean requiresSync) throws Exception {
         String argumentsHash = ToolChipRegistry.computeBaseHash(arguments);
         ReentrantLock syncLock = requiresSync
@@ -530,8 +557,9 @@ public final class PsiBridgeService implements Disposable {
         }
         try {
             // Register with chip registry BEFORE executing so the chip can transition to "running".
+            // Use chipArgs (pre-hook) for hash correlation — matches what the ACP client sees.
             ToolChipRegistry.getInstance(project).registerMcp(
-                toolName, arguments, def.kind().value(), toolUseId);
+                toolName, chipArgs, def.kind().value(), toolUseId);
             return def.execute(arguments, argumentsHash);
         } finally {
             if (syncLock != null) {

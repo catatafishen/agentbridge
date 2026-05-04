@@ -513,6 +513,11 @@ public final class McpProtocolHandler {
         String permissionDenial = evaluatePermissionHook(toolName, arguments);
         if (permissionDenial != null) return buildToolResult(msg, permissionDenial, true);
 
+        // Snapshot the original arguments before hooks can mutate them.
+        // ToolChipRegistry needs the pre-hook args for hash-based correlation with ACP,
+        // which only sees the original arguments (before our MCP-side hooks modify them).
+        JsonObject originalArguments = arguments.deepCopy();
+
         // Pre hook: can modify arguments or stop execution before tool execution
         PreHookApplication preHookResult = applyPreHook(toolName, arguments);
         if (preHookResult.blockedMessage != null) return buildToolResult(msg, preHookResult.blockedMessage, true);
@@ -531,7 +536,7 @@ public final class McpProtocolHandler {
         McpCallContext.setCurrent(sessionKey);
         try {
             String resultText = PsiBridgeService.getInstance(project)
-                .callTool(toolName, arguments, meta.toolUseId());
+                .callTool(toolName, arguments, meta.toolUseId(), originalArguments);
 
             long durationMs = System.currentTimeMillis() - callStartMs;
             var postOutcome = applyPostHook(toolName, arguments, resultText, durationMs);

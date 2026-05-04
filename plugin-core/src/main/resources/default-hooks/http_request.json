@@ -1,9 +1,0 @@
-{
-  "pre": [
-    {
-      "script": "scripts/enforce-http-bot-identity.sh",
-      "failSilently": false,
-      "timeout": 5
-    }
-  ]
-}
