@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.session.db;
 
+import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.ui.ContextFileRef;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.FileRef;
@@ -310,5 +311,112 @@ class ConversationWriterTest {
         writer.markToolCallMcp("does-not-exist");
         assertNotNull(database.getConnection());
         assertNull(null);
+    }
+
+    @Test
+    void autoDetectsIsMcpFromToolNamePrefix() throws Exception {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            // MCP tool (agentbridge- prefix)
+            new EntryData.ToolCall("agentbridge-read_file", null, "fs", null, null, null, null,
+                false, null, null, "", "", "", "ev-mcp"),
+            // MCP tool (agentbridge_ prefix — OpenCode style)
+            new EntryData.ToolCall("agentbridge_search_text", null, "search", null, null, null, null,
+                false, null, null, "", "", "", "ev-mcp2"),
+            // Non-MCP tool (agent built-in)
+            new EntryData.ToolCall("bash", null, "shell", null, null, null, null,
+                false, null, null, "", "", "", "ev-builtin")
+        ));
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT event_id, is_mcp FROM tool_call_events ORDER BY event_id")) {
+            assertTrue(rs.next());
+            assertEquals("ev-builtin", rs.getString(1));
+            assertEquals(0, rs.getInt(2), "bash should not be flagged as MCP");
+            assertTrue(rs.next());
+            assertEquals("ev-mcp", rs.getString(1));
+            assertEquals(1, rs.getInt(2), "agentbridge- prefix should be MCP");
+            assertTrue(rs.next());
+            assertEquals("ev-mcp2", rs.getString(1));
+            assertEquals(1, rs.getInt(2), "agentbridge_ prefix should be MCP");
+        }
+    }
+
+    @Test
+    void enrichToolCallStatsUpdatesExistingRow() throws Exception {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            new EntryData.ToolCall("agentbridge-read_file", null, "fs", null, null, null, null,
+                false, null, null, "", "", "", "ev-enrich")
+        ));
+
+        writer.enrichToolCallStats("ev-enrich", 256, 1024, 150, true, null, "file");
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT input_size_bytes, output_size_bytes, duration_ms, success, category "
+                     + "FROM tool_call_events WHERE event_id = 'ev-enrich'")) {
+            assertTrue(rs.next());
+            assertEquals(256, rs.getLong(1));
+            assertEquals(1024, rs.getLong(2));
+            assertEquals(150, rs.getLong(3));
+            assertEquals(1, rs.getInt(4));
+            assertEquals("file", rs.getString(5));
+        }
+    }
+
+    @Test
+    void enrichToolCallStatsWithFailure() throws Exception {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            new EntryData.ToolCall("agentbridge-run_command", null, "shell", null, null, null, null,
+                false, null, null, "", "", "", "ev-fail")
+        ));
+
+        writer.enrichToolCallStats("ev-fail", 100, 500, 3000, false, "timeout expired", "shell");
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT success, error_message FROM tool_call_events WHERE event_id = 'ev-fail'")) {
+            assertTrue(rs.next());
+            assertEquals(0, rs.getInt(1));
+            assertEquals("timeout expired", rs.getString(2));
+        }
+    }
+
+    @Test
+    void recordHookStagesInsertsRows() throws Exception {
+        writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
+            new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
+            new EntryData.ToolCall("agentbridge-run_command", null, "shell", null, null, null, null,
+                false, null, null, "", "", "", "ev-hooks")
+        ));
+
+        List<HookStageResult> stages = List.of(
+            new HookStageResult("permission", "check-auth.sh", "allowed", 5, null),
+            new HookStageResult("pre", "inject-env.sh", "modified", 12, "added GH_TOKEN")
+        );
+        writer.recordHookStages("ev-hooks", stages);
+
+        try (Statement s = conn.createStatement();
+             ResultSet rs = s.executeQuery(
+                 "SELECT trigger_kind, entry_id, outcome, duration_ms, outcome_reason "
+                     + "FROM hook_executions WHERE tool_event_id = 'ev-hooks' "
+                     + "ORDER BY trigger_kind")) {
+            assertTrue(rs.next());
+            assertEquals("permission", rs.getString(1));
+            assertEquals("check-auth.sh", rs.getString(2));
+            assertEquals("allowed", rs.getString(3));
+            assertEquals(5, rs.getLong(4));
+            assertNull(rs.getString(5));
+
+            assertTrue(rs.next());
+            assertEquals("pre", rs.getString(1));
+            assertEquals("inject-env.sh", rs.getString(2));
+            assertEquals("modified", rs.getString(3));
+            assertEquals(12, rs.getLong(4));
+            assertEquals("added GH_TOKEN", rs.getString(5));
+        }
     }
 }

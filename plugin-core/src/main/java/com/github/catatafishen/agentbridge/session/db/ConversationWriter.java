@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.session.db;
 
+import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.ui.ContextFileRef;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.FileRef;
@@ -52,7 +53,9 @@ public final class ConversationWriter {
 
     private final ConversationDatabase database;
 
-    /** Per-session cursor: tracks the most recently opened turn for sequencing. */
+    /**
+     * Per-session cursor: tracks the most recently opened turn for sequencing.
+     */
     private final Map<String, SessionCursor> cursors = new HashMap<>();
 
     public ConversationWriter(@NotNull ConversationDatabase database) {
@@ -324,10 +327,20 @@ public final class ConversationWriter {
             ps.setString(9, tc.getFilePath());
             ps.setInt(10, tc.getAutoDenied() ? 1 : 0);
             ps.setString(11, tc.getDenialReason());
-            // is_mcp is set by the MCP dispatch path via a separate update; default 0 here.
-            ps.setInt(12, 0);
+            ps.setInt(12, isMcpToolName(tc.getTitle()) ? 1 : 0);
             ps.executeUpdate();
         }
+    }
+
+    /**
+     * Detects whether a tool name belongs to our MCP server based on known prefixes.
+     * Different ACP clients use different naming conventions for our tools.
+     */
+    private static boolean isMcpToolName(@Nullable String toolName) {
+        if (toolName == null) return false;
+        return toolName.startsWith("agentbridge-")
+            || toolName.startsWith("agentbridge_")
+            || toolName.startsWith("@agentbridge/");
     }
 
     private void insertSubAgent(
@@ -394,7 +407,56 @@ public final class ConversationWriter {
         }
     }
 
-    // ── MCP flag + hook executions ────────────────────────────────────────────
+    // ── MCP stats enrichment + hook executions ─────────────────────────────────
+
+    /**
+     * Enriches an existing tool-call event row with performance stats collected
+     * at MCP dispatch time. Called from {@code McpProtocolHandler} after a tool
+     * returns (or throws). This is a best-effort UPDATE — if the row doesn't
+     * exist yet (ACP entry hasn't been written), it simply does nothing.
+     *
+     * @param toolUseId       the tool_use ID from the MCP request (maps to event_id)
+     * @param inputSizeBytes  size of the arguments JSON in bytes
+     * @param outputSizeBytes size of the result text in bytes
+     * @param durationMs      total wall-clock time of the tool execution
+     * @param success         whether the tool completed without error
+     * @param errorMessage    error message if !success; null otherwise
+     * @param category        tool category (e.g. "git", "file", "editor"); may be null
+     */
+    public synchronized void enrichToolCallStats(
+        @NotNull String toolUseId,
+        long inputSizeBytes,
+        long outputSizeBytes,
+        long durationMs,
+        boolean success,
+        @Nullable String errorMessage,
+        @Nullable String category
+    ) {
+        Connection conn = database.getConnection();
+        if (conn == null) return;
+        try (PreparedStatement ps = conn.prepareStatement("""
+            UPDATE tool_call_events SET
+                input_size_bytes  = ?,
+                output_size_bytes = ?,
+                duration_ms       = ?,
+                success           = ?,
+                error_message     = COALESCE(?, error_message),
+                category          = COALESCE(?, category),
+                is_mcp            = 1
+            WHERE event_id = ?
+            """)) {
+            ps.setLong(1, inputSizeBytes);
+            ps.setLong(2, outputSizeBytes);
+            ps.setLong(3, durationMs);
+            ps.setInt(4, success ? 1 : 0);
+            ps.setString(5, errorMessage);
+            ps.setString(6, category);
+            ps.setString(7, toolUseId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.warn("ConversationWriter: failed to enrich stats for event " + toolUseId, e);
+        }
+    }
 
     /**
      * Marks an existing tool-call event as handled by our MCP server. Called from
@@ -413,17 +475,57 @@ public final class ConversationWriter {
     }
 
     /**
+     * Records hook stage results (from {@code McpProtocolHandler}'s hook evaluation)
+     * as {@code hook_executions} rows linked to the given tool event.
+     *
+     * @param toolEventId the event_id of the tool call these hooks ran for
+     * @param stages      collected hook stage results (permission, pre, success, failure)
+     */
+    public synchronized void recordHookStages(
+        @NotNull String toolEventId,
+        @NotNull List<HookStageResult> stages
+    ) {
+        if (stages.isEmpty()) return;
+        Connection conn = database.getConnection();
+        if (conn == null) return;
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT INTO hook_executions (
+                tool_event_id, trigger_kind, entry_id, command,
+                duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            String now = Instant.now().toString();
+            for (HookStageResult stage : stages) {
+                ps.setString(1, toolEventId);
+                ps.setString(2, stage.trigger());
+                ps.setString(3, stage.scriptName());
+                ps.setString(4, stage.scriptName());
+                ps.setLong(5, stage.durationMs());
+                ps.setNull(6, java.sql.Types.VARCHAR);
+                ps.setNull(7, java.sql.Types.VARCHAR);
+                ps.setString(8, stage.outcome());
+                ps.setString(9, stage.detail());
+                ps.setString(10, now);
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        } catch (SQLException e) {
+            LOG.warn("ConversationWriter: failed to record hook stages for " + toolEventId, e);
+        }
+    }
+
+    /**
      * Records a single hook execution (permission / pre / success / failure).
      *
-     * @param toolEventId id of the tool_call event the hook ran for
-     * @param triggerKind one of {@code "permission"|"pre"|"success"|"failure"}
-     * @param entryId     stable hook config entry id
-     * @param command     resolved hook command (after substitutions); may be null
-     * @param exitCode    process exit code; null when n/a (e.g. transport error)
-     * @param durationMs  hook runtime in ms
-     * @param input       input payload sent to the hook (JSON); may be null
-     * @param output      raw stdout/stderr produced by the hook; may be null
-     * @param outcome     one of {@code "allow"|"deny"|"approve"|"ok"|"error"|"timeout"}
+     * @param toolEventId   id of the tool_call event the hook ran for
+     * @param triggerKind   one of {@code "permission"|"pre"|"success"|"failure"}
+     * @param entryId       stable hook config entry id
+     * @param command       resolved hook command (after substitutions); may be null
+     * @param exitCode      process exit code; null when n/a (e.g. transport error)
+     * @param durationMs    hook runtime in ms
+     * @param input         input payload sent to the hook (JSON); may be null
+     * @param output        raw stdout/stderr produced by the hook; may be null
+     * @param outcome       one of {@code "allow"|"deny"|"approve"|"ok"|"error"|"timeout"}
      * @param outcomeReason human-readable reason for the outcome; may be null
      */
     public synchronized void recordHookExecution(
@@ -477,7 +579,9 @@ public final class ConversationWriter {
         return (value == null || value.isEmpty()) ? null : value;
     }
 
-    /** Per-session position cursor: latest turn id and next event sequence number. */
+    /**
+     * Per-session position cursor: latest turn id and next event sequence number.
+     */
     private static final class SessionCursor {
         @Nullable String turnId;
         int sequenceNum;

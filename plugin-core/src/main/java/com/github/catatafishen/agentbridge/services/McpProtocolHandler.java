@@ -16,6 +16,8 @@ import com.github.catatafishen.agentbridge.services.hooks.HookPipeline;
 import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
 import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
+import com.github.catatafishen.agentbridge.session.db.ConversationWriter;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -576,6 +578,10 @@ public final class McpProtocolHandler {
             }
             liveService.complete(callId, fullResult,
                 System.currentTimeMillis() - callStartMs, !isError);
+
+            enrichConversationDb(toolUseId, inputJson, fullResult, durationMs, !isError,
+                isError ? resultText : null, kind, hookStages);
+
             return buildToolResult(msg, fullResult, isError);
         } catch (Exception e) {
             LOG.warn("[MCP] tool error: " + toolName, e);
@@ -589,10 +595,44 @@ public final class McpProtocolHandler {
             }
             liveService.complete(callId, finalOutput,
                 System.currentTimeMillis() - callStartMs, !isError);
+
+            enrichConversationDb(toolUseId, inputJson, finalOutput, durationMs, false,
+                e.getMessage(), kind, hookStages);
+
             return buildToolResult(msg, finalOutput, isError);
         } finally {
             McpCallContext.clear();
         }
+    }
+
+    /**
+     * Enriches the conversation database with MCP-side performance stats and hook
+     * execution records. Best-effort — failures are logged, never propagated.
+     */
+    @SuppressWarnings("java:S107")
+    // All parameters carry distinct data needed for the SQL update; no natural grouping
+    private void enrichConversationDb(@Nullable String toolUseId, @NotNull String inputJson,
+                                      @Nullable String output, long durationMs, boolean success,
+                                      @Nullable String errorMessage, @Nullable String category,
+                                      @NotNull List<HookStageResult> hookStages) {
+        if (toolUseId == null) return;
+        ConversationWriter writer = getConversationWriter();
+        if (writer == null) return;
+        long inputSize = inputJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        long outputSize = output != null
+            ? output.getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
+        writer.enrichToolCallStats(toolUseId, inputSize, outputSize, durationMs,
+            success, errorMessage, category);
+        if (!hookStages.isEmpty()) {
+            writer.recordHookStages(toolUseId, hookStages);
+        }
+    }
+
+    @Nullable
+    private ConversationWriter getConversationWriter() {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        if (!db.isReady()) return null;
+        return new ConversationWriter(db);
     }
 
     private String sessionKey(com.intellij.openapi.project.Project proj) {
