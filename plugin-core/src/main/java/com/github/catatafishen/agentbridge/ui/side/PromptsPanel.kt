@@ -56,6 +56,9 @@ internal class PromptsPanel(
     @Volatile
     private var historyEntries: List<EntryData> = emptyList()
 
+    @Volatile
+    private var promptSessionMap: Map<String, String> = emptyMap()
+
     private val loadMoreLabel = JLabel("↑ Load earlier prompts").apply {
         font = JBUI.Fonts.miniFont()
         foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
@@ -91,7 +94,8 @@ internal class PromptsPanel(
                 if (chatConsole.isEntryRendered(entryId)) {
                     chatConsole.scrollToEntry(entryId)
                 } else {
-                    HistoryContextWindow.open(project, historyEntries, entryId)
+                    val sessionId = promptSessionMap[entryId] ?: return
+                    HistoryContextWindow.open(project, sessionId, entryId)
                 }
             }
         })
@@ -148,10 +152,19 @@ internal class PromptsPanel(
     private fun reloadHistoryAsync() {
         val serial = historyLoadSerial.incrementAndGet()
         ApplicationManager.getApplication().executeOnPooledThread {
-            val loaded = sessionStore.loadEntries(project.basePath).orEmpty()
+            val allPrompts = sessionStore.loadPromptsFromAllSessions(project)
+            val entries = mutableListOf<EntryData>()
+            val sessionMap = mutableMapOf<String, String>()
+            for (pwc in allPrompts) {
+                entries.add(pwc.prompt)
+                pwc.stats?.let { entries.add(it) }
+                val key = promptEntryId(pwc.prompt)
+                if (key.isNotEmpty()) sessionMap[key] = pwc.sessionId
+            }
             ApplicationManager.getApplication().invokeLater {
                 if (serial != historyLoadSerial.get()) return@invokeLater
-                historyEntries = loaded
+                historyEntries = entries
+                promptSessionMap = sessionMap
                 refresh()
             }
         }

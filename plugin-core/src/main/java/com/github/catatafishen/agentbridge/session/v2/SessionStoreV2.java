@@ -19,8 +19,10 @@ import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -75,6 +77,7 @@ public final class SessionStoreV2 implements Disposable {
     private static final String KEY_STATUS = "status";
     private static final String KEY_DESCRIPTION = "description";
     private static final String KEY_RESULT = "result";
+    private static final String LOG_JSONL_PARSE_FAIL = "Failed to parse v2 JSONL for session ";
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
@@ -437,10 +440,133 @@ public final class SessionStoreV2 implements Disposable {
         try {
             return loadEntriesFromFiles(files);
         } catch (Exception e) {
-            LOG.warn("Failed to parse v2 JSONL for session " + sessionId, e);
+            LOG.warn(LOG_JSONL_PARSE_FAIL + sessionId, e);
             return null;
         }
     }
+
+    /**
+     * A prompt entry paired with the session it belongs to and its optional turn statistics.
+     * Used by {@link #loadPromptsFromAllSessions(Project)} to build cross-session prompt lists
+     * without loading full session entry graphs into memory.
+     *
+     * @param sessionId  the UUID of the session this prompt came from
+     * @param prompt     the prompt entry
+     * @param stats      the TurnStats immediately following the prompt, or {@code null} if not present
+     */
+    public record PromptWithContext(
+        @NotNull String sessionId,
+        @NotNull EntryData.Prompt prompt,
+        @Nullable EntryData.TurnStats stats) {
+    }
+
+    /**
+     * Efficiently loads prompts and their associated turn statistics from <em>all</em> known
+     * sessions by scanning JSONL files for {@code "type":"prompt"} and {@code "type":"turnStats"}
+     * lines only.
+     *
+     * <p>Unlike {@link #loadEntries(String)} (which parses every entry), this method reads each
+     * JSONL file line-by-line and only parses the two lightweight types needed for the prompts
+     * list, making it practical even for sessions with hundreds of megabytes of tool-call data.
+     *
+     * @param project the IntelliJ project (used to resolve the configured sessions directory)
+     * @return prompts sorted chronologically (oldest first), each with its session ID
+     */
+    @NotNull
+    public List<PromptWithContext> loadPromptsFromAllSessions(@NotNull Project project) {
+        File dir = ExportUtils.sessionsDir(project);
+        List<SessionRecord> sessions = listSessions(project.getBasePath());
+        List<PromptWithContext> result = new ArrayList<>();
+        for (SessionRecord session : sessions) {
+            List<Path> files = SessionFileRotation.listAllFiles(dir, session.id());
+            result.addAll(scanPromptsFromFiles(session.id(), files));
+        }
+        result.sort(Comparator.comparing(p -> p.prompt().getTimestamp()));
+        return result;
+    }
+
+    /** Scans JSONL files for prompt + turnStats entries only (skips everything else). */
+    @NotNull
+    private List<PromptWithContext> scanPromptsFromFiles(
+        @NotNull String sessionId, @NotNull List<Path> files) {
+        List<PromptWithContext> result = new ArrayList<>();
+        EntryData.Prompt pending = null;
+        for (Path file : files) {
+            try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.isBlank() || !line.contains("\"type\"")) continue;
+                    if (line.contains("\"type\":\"" + EntryDataJsonAdapter.TYPE_PROMPT + "\"")) {
+                        pending = tryParsePrompt(line, sessionId, result, pending);
+                    } else if (pending != null
+                        && line.contains("\"type\":\"" + EntryDataJsonAdapter.TYPE_TURN_STATS + "\"")) {
+                        pending = tryParseTurnStats(line, sessionId, result, pending);
+                    }
+                }
+            } catch (IOException e) {
+                LOG.warn("Failed to scan session file for prompts: " + file, e);
+            }
+        }
+        if (pending != null) {
+            result.add(new PromptWithContext(sessionId, pending, null));
+        }
+        return result;
+    }
+
+    @Nullable
+    private EntryData.Prompt tryParsePrompt(
+        @NotNull String line, @NotNull String sessionId,
+        @NotNull List<PromptWithContext> result, @Nullable EntryData.Prompt pending) {
+        if (pending != null) {
+            result.add(new PromptWithContext(sessionId, pending, null));
+        }
+        try {
+            JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
+            EntryData entry = EntryDataJsonAdapter.deserialize(obj);
+            return entry instanceof EntryData.Prompt p ? p : pending;
+        } catch (Exception e) {
+            LOG.warn("Failed to parse prompt line in session " + sessionId, e);
+            return pending;
+        }
+    }
+
+    @Nullable
+    private EntryData.Prompt tryParseTurnStats(
+        @NotNull String line, @NotNull String sessionId,
+        @NotNull List<PromptWithContext> result, @NotNull EntryData.Prompt pending) {
+        try {
+            JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
+            EntryData entry = EntryDataJsonAdapter.deserialize(obj);
+            if (entry instanceof EntryData.TurnStats stats) {
+                result.add(new PromptWithContext(sessionId, pending, stats));
+                return null;
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to parse turnStats line in session " + sessionId, e);
+        }
+        return pending;
+    }
+
+    /**
+     * Loads entries for a specific session by ID from V2 JSONL, using the configured sessions
+     * directory resolved from {@link ExportUtils#sessionsDir(Project)}.
+     * Returns {@code null} if no session files exist.
+     */
+    @Nullable
+    public List<EntryData> loadEntriesBySessionId(
+        @NotNull Project project, @NotNull String sessionId) {
+        File dir = ExportUtils.sessionsDir(project);
+        List<Path> files = SessionFileRotation.listAllFiles(dir, sessionId);
+        if (files.isEmpty()) return null;
+        try {
+            return loadEntriesFromFiles(files);
+        } catch (Exception e) {
+            LOG.warn(LOG_JSONL_PARSE_FAIL + sessionId, e);
+            return null;
+        }
+    }
+
 
     /**
      * Loads entries directly from V2 JSONL file(s) for the current session.
@@ -469,7 +595,7 @@ public final class SessionStoreV2 implements Disposable {
         try {
             return loadEntriesFromFiles(files);
         } catch (Exception e) {
-            LOG.warn("Failed to parse v2 JSONL for session " + sessionId, e);
+            LOG.warn(LOG_JSONL_PARSE_FAIL + sessionId, e);
             return null;
         }
     }
@@ -958,6 +1084,10 @@ public final class SessionStoreV2 implements Disposable {
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
+    // Intentional: this private helper wraps the deprecated ExportUtils.sessionsDir(String)
+    // to avoid duplicating the path logic. The deprecation is meant for external callers —
+    // internal methods that haven't migrated to the Project-based API still use this shim.
+    @SuppressWarnings("deprecation")
     @NotNull
     private static File sessionsDir(@Nullable String basePath) {
         return ExportUtils.sessionsDir(basePath);
