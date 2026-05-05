@@ -121,6 +121,28 @@ public final class ConversationReader {
         }
     }
 
+    /**
+     * Returns the total number of turns in the given session.
+     * Used by {@link ConversationService#loadRecentEntries} to determine whether
+     * older turns exist beyond the page limit.
+     */
+    public int countTurns(@NotNull String sessionId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return 0;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT COUNT(*) FROM turns WHERE session_id = ?")) {
+                ps.setString(1, sessionId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? rs.getInt(1) : 0;
+                }
+            } catch (SQLException e) {
+                LOG.warn("ConversationReader: failed to count turns for session " + sessionId, e);
+                return 0;
+            }
+        }
+    }
+
     @NotNull
     public List<PromptWithStats> loadAllPrompts() {
         synchronized (database) {
@@ -505,7 +527,7 @@ public final class ConversationReader {
     private List<ContextFileRef> loadContextFiles(
         @NotNull Connection conn, @NotNull String turnId) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT file_name, file_path, file_line FROM turn_context_files WHERE turn_id = ?")) {
+            "SELECT file_name, file_path, file_line FROM turn_context_files WHERE turn_id = ? ORDER BY rowid")) {
             ps.setString(1, turnId);
             List<ContextFileRef> files = new ArrayList<>();
             try (ResultSet rs = ps.executeQuery()) {

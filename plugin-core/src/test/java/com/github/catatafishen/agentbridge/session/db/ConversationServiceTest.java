@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.session.db;
 
 import com.github.catatafishen.agentbridge.ui.EntryData;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,11 @@ class ConversationServiceTest {
         database = new ConversationDatabase();
         Connection conn = DriverManager.getConnection("jdbc:sqlite::memory:");
         database.initializeWithConnection(conn);
+    }
+
+    @AfterEach
+    void tearDown() {
+        database.dispose();
     }
 
     private ConversationService newService() {
@@ -99,11 +105,21 @@ class ConversationServiceTest {
     void getCurrentSessionId_differentBasePaths() throws IOException {
         ConversationService service = newService();
         Path otherDir = Files.createTempDirectory("other");
+        try {
+            String id1 = service.getCurrentSessionId(tempDir.toString());
+            String id2 = service.getCurrentSessionId(otherDir.toString());
 
-        String id1 = service.getCurrentSessionId(tempDir.toString());
-        String id2 = service.getCurrentSessionId(otherDir.toString());
-
-        assertNotEquals(id1, id2, "different base paths should produce different session IDs");
+            assertNotEquals(id1, id2, "different base paths should produce different session IDs");
+        } finally {
+            // Clean up manually — otherDir is not managed by @TempDir.
+            try (var s = java.nio.file.Files.walk(otherDir)) {
+                s.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (IOException ignore) { /* best effort */ }
+                });
+            }
+        }
     }
 
     // ── resetCurrentSessionId ─────────────────────────────────────────────
