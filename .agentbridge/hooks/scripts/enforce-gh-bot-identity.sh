@@ -60,8 +60,15 @@ if [ -z "$bot_token" ]; then
 fi
 
 if [ -n "$bot_token" ]; then
-    escaped_cmd=$(hook_escape_json "export GH_TOKEN=${bot_token}; ${command}")
-    printf '{"arguments":{"command":"%s"}}\n' "$escaped_cmd"
+    # Use Python for reliable JSON construction — shell escaping is fragile with
+    # multiline commands containing quotes, backslashes, and special characters.
+    _BOT_TOKEN="$bot_token" python3 -c "
+import sys, json, os
+cmd = os.environ.get('HOOK_ARG_command', '')
+token = os.environ.get('_BOT_TOKEN', '')
+modified = 'export GH_TOKEN=' + token + '; ' + cmd
+print(json.dumps({'arguments': {'command': modified}}))
+"
 else
     hook_json_error "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other bypass. Instead, tell the user: 'I cannot create GitHub content with bot identity because neither AGENTBRIDGE_BOT_TOKEN, ~/.agentbridge/bot-token, nor a GitHub App private key (~/.agentbridge/github-app.pem) is configured.'"
 fi
