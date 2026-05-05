@@ -1,7 +1,7 @@
 package com.github.catatafishen.agentbridge.memory.mining;
 
 import com.github.catatafishen.agentbridge.memory.MemorySettings;
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -93,10 +93,9 @@ public final class BackfillMiner {
     private BackfillResult doBackfill(Consumer<String> textCallback,
                                       DoubleConsumer fractionCallback,
                                       BooleanSupplier isCancelled) {
-        SessionStoreV2 sessionStore = SessionStoreV2.getInstance(project);
-        String basePath = project.getBasePath();
+        ConversationService conversationService = ConversationService.getInstance(project);
 
-        List<SessionStoreV2.SessionRecord> sessions = sessionStore.listSessions(basePath);
+        List<ConversationService.SessionRecord> sessions = conversationService.listSessions();
         if (sessions.isEmpty()) {
             textCallback.accept("No sessions found to mine.");
             MemorySettings.getInstance(project).setBackfillCompleted(true);
@@ -104,7 +103,7 @@ public final class BackfillMiner {
         }
 
         TurnMiner miner = new TurnMiner(project);
-        EntryLoader loader = sessionId -> sessionStore.loadEntriesBySessionId(basePath, sessionId);
+        EntryLoader loader = conversationService::loadEntriesBySessionId;
         MineFunction mineFn = miner::mineTurnSync;
 
         BackfillResult result = executeBackfill(sessions, loader, mineFn,
@@ -117,7 +116,7 @@ public final class BackfillMiner {
      * Package-private for testing — runs the backfill iteration with explicit dependencies.
      * Overload without fraction or cancellation support.
      */
-    BackfillResult executeBackfill(List<SessionStoreV2.SessionRecord> sessions,
+    BackfillResult executeBackfill(List<ConversationService.SessionRecord> sessions,
                                    EntryLoader entryLoader,
                                    MineFunction miner,
                                    Consumer<String> progressCallback) {
@@ -129,7 +128,7 @@ public final class BackfillMiner {
     /**
      * Package-private for testing — runs the backfill iteration with explicit dependencies.
      */
-    BackfillResult executeBackfill(List<SessionStoreV2.SessionRecord> sessions,
+    BackfillResult executeBackfill(List<ConversationService.SessionRecord> sessions,
                                    EntryLoader entryLoader,
                                    MineFunction miner,
                                    Consumer<String> textCallback,
@@ -144,7 +143,7 @@ public final class BackfillMiner {
         int totalDuplicates = 0;
         int totalExchanges = 0;
 
-        for (SessionStoreV2.SessionRecord session : sessions) {
+        for (ConversationService.SessionRecord session : sessions) {
             if (isCancelled.getAsBoolean()) {
                 textCallback.accept("Mining cancelled after " + processedSessions + " of " + totalSessions + " sessions.");
                 LOG.info("Backfill cancelled by user after " + processedSessions + " sessions.");

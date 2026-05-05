@@ -16,6 +16,7 @@ import com.github.catatafishen.agentbridge.services.hooks.HookPipeline;
 import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
 import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -576,6 +577,11 @@ public final class McpProtocolHandler {
             }
             liveService.complete(callId, fullResult,
                 System.currentTimeMillis() - callStartMs, !isError);
+
+            enrichConversationDb(new ToolCallEnrichmentData(
+                toolUseId, inputJson, fullResult, durationMs, !isError,
+                isError ? resultText : null, kind, hookStages));
+
             return buildToolResult(msg, fullResult, isError);
         } catch (Exception e) {
             LOG.warn("[MCP] tool error: " + toolName, e);
@@ -589,9 +595,39 @@ public final class McpProtocolHandler {
             }
             liveService.complete(callId, finalOutput,
                 System.currentTimeMillis() - callStartMs, !isError);
+
+            enrichConversationDb(new ToolCallEnrichmentData(
+                toolUseId, inputJson, finalOutput, durationMs, false,
+                e.getMessage(), kind, hookStages));
+
             return buildToolResult(msg, finalOutput, isError);
         } finally {
             McpCallContext.clear();
+        }
+    }
+
+    private record ToolCallEnrichmentData(
+        @Nullable String toolUseId,
+        @NotNull String inputJson,
+        @Nullable String output,
+        long durationMs,
+        boolean success,
+        @Nullable String errorMessage,
+        @Nullable String category,
+        @NotNull List<HookStageResult> hookStages
+    ) {
+    }
+
+    private void enrichConversationDb(@NotNull ToolCallEnrichmentData data) {
+        if (data.toolUseId() == null) return;
+        ConversationService service = ConversationService.getInstance(project);
+        long inputSize = data.inputJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        long outputSize = data.output() != null
+            ? data.output().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
+        service.enrichToolCallStats(data.toolUseId(), inputSize, outputSize, data.durationMs(),
+            data.success(), data.errorMessage(), data.category());
+        if (!data.hookStages().isEmpty()) {
+            service.recordHookStages(data.toolUseId(), data.hookStages());
         }
     }
 

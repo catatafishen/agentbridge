@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side
 
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
@@ -32,13 +32,14 @@ internal class PromptsPanel(
     private data class PromptItem(
         val prompt: EntryData.Prompt,
         val stats: EntryData.TurnStats?,
-        val commits: List<String>
+        val commits: List<String>,
+        val sessionId: String = ""
     )
 
     private val searchField = SearchTextField()
     private val listModel = DefaultListModel<PromptItem>()
     private val promptList = JBList(listModel)
-    private val sessionStore = SessionStoreV2.getInstance(project)
+    private val sessionStore = ConversationService.getInstance(project)
     private val historyLoadSerial = AtomicInteger()
     private val entriesListener = Runnable {
         ApplicationManager.getApplication().invokeLater(::onEntriesChanged)
@@ -55,6 +56,9 @@ internal class PromptsPanel(
 
     @Volatile
     private var historyEntries: List<EntryData> = emptyList()
+
+    @Volatile
+    private var promptSessionMap: Map<String, String> = emptyMap()
 
     private val loadMoreLabel = JLabel("↑ Load earlier prompts").apply {
         font = JBUI.Fonts.miniFont()
@@ -91,7 +95,8 @@ internal class PromptsPanel(
                 if (chatConsole.isEntryRendered(entryId)) {
                     chatConsole.scrollToEntry(entryId)
                 } else {
-                    HistoryContextWindow.open(project, historyEntries, entryId)
+                    val sessionId = item.sessionId.ifEmpty { promptSessionMap[entryId] ?: return }
+                    HistoryContextWindow.open(project, sessionId, entryId)
                 }
             }
         })
@@ -148,10 +153,19 @@ internal class PromptsPanel(
     private fun reloadHistoryAsync() {
         val serial = historyLoadSerial.incrementAndGet()
         ApplicationManager.getApplication().executeOnPooledThread {
-            val loaded = sessionStore.loadEntries(project.basePath).orEmpty()
+            val allPrompts = sessionStore.loadPromptsFromAllSessions().toList()
+            val entries = ArrayList<EntryData>()
+            val sessionMap = HashMap<String, String>()
+            for (pwc in allPrompts) {
+                entries.add(pwc.prompt)
+                pwc.stats?.let { entries.add(it) }
+                val key = promptEntryId(pwc.prompt)
+                if (key.isNotEmpty()) sessionMap[key] = pwc.sessionId
+            }
             ApplicationManager.getApplication().invokeLater {
                 if (serial != historyLoadSerial.get()) return@invokeLater
-                historyEntries = loaded
+                historyEntries = entries
+                promptSessionMap = sessionMap
                 refresh()
             }
         }
@@ -175,8 +189,10 @@ internal class PromptsPanel(
 
         listModel.clear()
         visible.forEach { p ->
-            val data = turnDataMap[promptEntryId(p)]
-            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList()))
+            val key = promptEntryId(p)
+            val data = turnDataMap[key]
+            val sid = promptSessionMap[key] ?: ""
+            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList(), sid))
         }
 
         if (scrollToBottom && listModel.size() > 0) {

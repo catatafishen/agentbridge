@@ -2,10 +2,10 @@ package com.github.catatafishen.agentbridge.ui.statistics;
 
 import com.github.catatafishen.agentbridge.services.AgentIdMapper;
 import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.session.v2.EntryDataJsonAdapter;
 import com.github.catatafishen.agentbridge.session.v2.SessionFileRotation;
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -122,13 +122,12 @@ final class UsageStatisticsLoader {
         if (aggregates.isEmpty()) return null;
 
         // Build agent display names from the sessions index
-        String basePath = project.getBasePath();
         Map<String, String> agentDisplayNames = new LinkedHashMap<>();
         Set<String> agentIds = new LinkedHashSet<>();
 
-        List<SessionStoreV2.SessionRecord> sessions =
-            SessionStoreV2.getInstance(project).listSessions(basePath);
-        for (SessionStoreV2.SessionRecord session : sessions) {
+        List<ConversationService.SessionRecord> sessions =
+            ConversationService.getInstance(project).listSessions();
+        for (ConversationService.SessionRecord session : sessions) {
             String agentId = toAgentId(session.agent());
             agentIds.add(agentId);
             agentDisplayNames.putIfAbsent(agentId, session.agent());
@@ -165,9 +164,6 @@ final class UsageStatisticsLoader {
             dailyStats, startDate, endDate, agentIds, agentDisplayNames);
     }
 
-    /**
-     * Original JSONL-based loader — used as fallback when the SQLite table is empty.
-     */
     private static UsageStatisticsData.StatisticsSnapshot loadFromJsonl(
         @NotNull Project project,
         @NotNull UsageStatisticsData.TimeRange range,
@@ -175,8 +171,8 @@ final class UsageStatisticsLoader {
         @NotNull LocalDate endDate) {
 
         String basePath = project.getBasePath();
-        List<SessionStoreV2.SessionRecord> sessions =
-            SessionStoreV2.getInstance(project).listSessions(basePath);
+        List<ConversationService.SessionRecord> sessions =
+            ConversationService.getInstance(project).listSessions();
         if (sessions.isEmpty()) {
             LOG.info("Statistics: no sessions found for basePath=" + basePath);
             return emptySnapshot(startDate, endDate);
@@ -186,15 +182,21 @@ final class UsageStatisticsLoader {
         Set<String> agentIds = new LinkedHashSet<>();
         Map<String, String> agentDisplayNames = new LinkedHashMap<>();
 
-        File sessionsDir = ExportUtils.sessionsDir(basePath);
+        File sessionsDir = ExportUtils.sessionsDir(project);
+        // Also check the backup directory where JSONL files are moved after migration
+        File backupDir = new File(sessionsDir.getParentFile(),
+            com.github.catatafishen.agentbridge.session.db.JsonlToSqliteMigrator.BACKUP_DIRNAME);
 
-        for (SessionStoreV2.SessionRecord session : sessions) {
+        for (ConversationService.SessionRecord session : sessions) {
             String agentDisplay = session.agent();
             String fallbackAgentId = toAgentId(agentDisplay);
             agentIds.add(fallbackAgentId);
             agentDisplayNames.putIfAbsent(fallbackAgentId, agentDisplay);
 
             List<Path> jsonlFiles = SessionFileRotation.listAllFiles(sessionsDir, session.id());
+            if (jsonlFiles.isEmpty() && backupDir.isDirectory()) {
+                jsonlFiles = SessionFileRotation.listAllFiles(backupDir, session.id());
+            }
             if (jsonlFiles.isEmpty()) {
                 LOG.debug("Statistics: no JSONL files found for session " + session.id());
                 continue;
