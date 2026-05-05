@@ -229,26 +229,69 @@ function highlightCode(code: string, lang: string): string {
 
 // ── JSON highlighter ────────────────────────────────────────────────────
 
-const JSON_STRING_RE = /("(?:[^"\\]+|\\.)*")\s*(:)?/g;
 const JSON_LITERAL_RE = /\b(true|false|null)\b/g;
 const JSON_NUMBER_RE = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
 
+/**
+ * Find the next JSON string starting at {@code from}, scanning character-by-character.
+ * Returns {@code [matchStart, matchEnd]} covering {@code "..."} plus optional
+ * trailing {@code \s*:}, or {@code null} if no string is found.
+ * Guaranteed O(n) — no regex backtracking.
+ */
+function findJsonString(code: string, from: number): [number, number, boolean] | null {
+    const qi = code.indexOf('"', from);
+    if (qi === -1) return null;
+
+    let i = qi + 1;
+    while (i < code.length) {
+        const ch = code[i];
+        if (ch === '\\') {
+            i += 2;
+            continue;
+        }
+        if (ch === '"') {
+            const strEnd = i + 1;
+            let j = strEnd;
+            while (j < code.length && (code[j] === ' ' || code[j] === '\t')) j++;
+            const isKey = j < code.length && code[j] === ':';
+            return [qi, isKey ? j + 1 : strEnd, isKey];
+        }
+        i++;
+    }
+    return null;
+}
+
 function highlightJson(code: string): string {
-    let result = code.replaceAll(JSON_STRING_RE,
-        (m, str, colon) => {
-            if (str) return span(colon ? 'key' : 'str', str) + (colon ? esc(':') : '');
-            return esc(m);
+    const parts: string[] = [];
+    let pos = 0;
+
+    for (; ;) {
+        const match = findJsonString(code, pos);
+        if (!match) break;
+
+        const [start, end, isKey] = match;
+        if (start > pos) {
+            parts.push(highlightJsonNonString(code.substring(pos, start)));
         }
-    );
-    result = result.replaceAll(JSON_LITERAL_RE,
-        (m) => span('kw', m)
-    );
-    result = result.replaceAll(JSON_NUMBER_RE,
-        (m) => {
-            // Avoid replacing numbers already inside spans
-            return span('num', m);
+
+        if (isKey) {
+            const colonIdx = code.lastIndexOf(':', end);
+            parts.push(span('key', code.substring(start, colonIdx)) + esc(':'));
+        } else {
+            parts.push(span('str', code.substring(start, end)));
         }
-    );
+        pos = end;
+    }
+
+    if (pos < code.length) {
+        parts.push(highlightJsonNonString(code.substring(pos)));
+    }
+    return parts.join('');
+}
+
+function highlightJsonNonString(text: string): string {
+    let result = text.replaceAll(JSON_LITERAL_RE, (m) => span('kw', m));
+    result = result.replaceAll(JSON_NUMBER_RE, (m) => span('num', m));
     return result;
 }
 
