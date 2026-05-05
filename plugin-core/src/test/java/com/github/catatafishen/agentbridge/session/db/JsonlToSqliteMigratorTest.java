@@ -14,6 +14,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -206,13 +207,15 @@ class JsonlToSqliteMigratorTest {
         Files.writeString(sessionsDir.resolve("sess-1.jsonl"),
             "{\"type\":\"prompt\",\"text\":\"Hello\",\"timestamp\":\"2026-01-01T10:00:00Z\",\"entryId\":\"t1\"}\n");
 
-        JsonlToSqliteMigrator.migrate(sessionsDir, writer);
-        // Run again — should not fail or duplicate
-        int count = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
-        assertEquals(1, count); // Still reports 1 (entries written via INSERT OR IGNORE)
+        int firstCount = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
+        assertEquals(1, firstCount);
+
+        // JSONL files are moved to backup on first migration — second run finds nothing
+        int secondCount = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
+        assertEquals(0, secondCount);
 
         List<ConversationReader.SessionRecord> sessions = reader.listSessions();
-        assertEquals(1, sessions.size()); // No duplicates
+        assertEquals(1, sessions.size()); // No duplicates in SQLite
     }
 
     @Test
@@ -226,8 +229,8 @@ class JsonlToSqliteMigratorTest {
         List<EntryData> entries = new ArrayList<>();
         JsonlToSqliteMigrator.parseJsonlFile(file, entries);
         assertEquals(2, entries.size());
-        assertTrue(entries.get(0) instanceof EntryData.Prompt);
-        assertTrue(entries.get(1) instanceof EntryData.Thinking);
+        assertInstanceOf(EntryData.Prompt.class, entries.get(0));
+        assertInstanceOf(EntryData.Thinking.class, entries.get(1));
     }
 
     @Test
@@ -238,8 +241,28 @@ class JsonlToSqliteMigratorTest {
         List<JsonlToSqliteMigrator.SessionInfo> sessions =
             JsonlToSqliteMigrator.discoverSessions(sessionsDir);
         assertEquals(2, sessions.size());
-        assertEquals("s1", sessions.get(0).id());
-        assertEquals("A", sessions.get(0).agent());
+        assertEquals("s1", sessions.getFirst().id());
+        assertEquals("A", sessions.getFirst().agent());
+    }
+
+    @Test
+    void discoverSessionsMergesIndexWithFileScan() throws Exception {
+        // Index has s1; s2 is a JSONL file not listed in the index.
+        Files.writeString(sessionsDir.resolve("sessions-index.json"),
+            "[{\"id\":\"s1\",\"agent\":\"A\"}]");
+        Files.writeString(sessionsDir.resolve("s1.jsonl"), "");
+        Files.writeString(sessionsDir.resolve("s2.jsonl"), "");
+
+        List<JsonlToSqliteMigrator.SessionInfo> sessions =
+            JsonlToSqliteMigrator.discoverSessions(sessionsDir);
+
+        assertEquals(2, sessions.size());
+        // Index entry retains its agent name
+        var s1 = sessions.stream().filter(s -> s.id().equals("s1")).findFirst().orElseThrow();
+        assertEquals("A", s1.agent());
+        // Scanned entry gets Unknown agent
+        var s2 = sessions.stream().filter(s -> s.id().equals("s2")).findFirst().orElseThrow();
+        assertEquals("Unknown", s2.agent());
     }
 
     @Test

@@ -3,6 +3,8 @@ package com.github.catatafishen.agentbridge.session.db;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -69,33 +71,16 @@ class ConversationDatabaseTest {
         }
     }
 
-    @Test
-    void initializeSetsSynchronousNormal() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "PRAGMA synchronous",
+        "PRAGMA foreign_keys",
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'"
+    })
+    void initializeConfiguresSqliteCorrectly(String query) throws Exception {
         database.initializeWithConnection(conn);
         try (Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery("PRAGMA synchronous")) {
-            assertTrue(rs.next());
-            // NORMAL = 1
-            assertEquals(1, rs.getInt(1));
-        }
-    }
-
-    @Test
-    void initializeEnablesForeignKeys() throws Exception {
-        database.initializeWithConnection(conn);
-        try (Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery("PRAGMA foreign_keys")) {
-            assertTrue(rs.next());
-            assertEquals(1, rs.getInt(1));
-        }
-    }
-
-    @Test
-    void initializeCreatesSchemaTablesAutomatically() throws Exception {
-        database.initializeWithConnection(conn);
-        try (Statement s = conn.createStatement();
-             ResultSet rs = s.executeQuery(
-                 "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'")) {
+             ResultSet rs = s.executeQuery(query)) {
             assertTrue(rs.next());
             assertEquals(1, rs.getInt(1));
         }

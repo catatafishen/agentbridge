@@ -94,7 +94,6 @@ public final class BackfillMiner {
                                       DoubleConsumer fractionCallback,
                                       BooleanSupplier isCancelled) {
         ConversationService conversationService = ConversationService.getInstance(project);
-        String basePath = project.getBasePath();
 
         List<ConversationService.SessionRecord> sessions = conversationService.listSessions();
         if (sessions.isEmpty()) {
@@ -104,7 +103,7 @@ public final class BackfillMiner {
         }
 
         TurnMiner miner = new TurnMiner(project);
-        EntryLoader loader = sessionId -> conversationService.loadEntriesBySessionId(sessionId);
+        EntryLoader loader = conversationService::loadEntriesBySessionId;
         MineFunction mineFn = miner::mineTurnSync;
 
         BackfillResult result = executeBackfill(sessions, loader, mineFn,

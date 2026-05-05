@@ -16,8 +16,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Imports legacy JSONL session files into {@link ConversationDatabase}.
@@ -35,6 +38,13 @@ import java.util.List;
 public final class JsonlToSqliteMigrator {
 
     private static final Logger LOG = Logger.getInstance(JsonlToSqliteMigrator.class);
+    static final String BACKUP_DIRNAME = "sessions-backup-jsonl";
+    private static final String BACKUP_README = """
+        This directory contains backups of your session history in the legacy JSONL format.
+        They were automatically moved here after a successful migration to the SQLite database.
+
+        These files are no longer needed and can be safely deleted.
+        """;
 
     private JsonlToSqliteMigrator() {
     }
@@ -63,14 +73,6 @@ public final class JsonlToSqliteMigrator {
         migrate(sessionsDir, writer);
     }
 
-    /**
-     * Core migration logic — reads JSONL files from {@code sessionsDir} and writes
-     * to SQLite via {@code writer}. Testable without any IntelliJ platform API.
-     *
-     * @param sessionsDir directory containing {@code sessions-index.json} and JSONL files
-     * @param writer      the SQLite writer to use
-     * @return the number of sessions successfully migrated
-     */
     public static int migrate(@NotNull Path sessionsDir, @NotNull ConversationWriter writer) {
         List<SessionInfo> sessions = discoverSessions(sessionsDir);
         if (sessions.isEmpty()) {
@@ -78,11 +80,19 @@ public final class JsonlToSqliteMigrator {
             return 0;
         }
 
+        Path backupDir = sessionsDir.resolveSibling(BACKUP_DIRNAME);
+        boolean readmeWritten = false;
+
         int migrated = 0;
         for (SessionInfo session : sessions) {
             try {
                 if (migrateSession(sessionsDir, session, writer)) {
                     migrated++;
+                    if (!readmeWritten) {
+                        writeBackupReadme(backupDir);
+                        readmeWritten = true;
+                    }
+                    moveSessionFilesToBackup(sessionsDir, session, backupDir);
                 }
             } catch (Exception e) {
                 LOG.warn("JsonlToSqliteMigrator: failed to migrate session " + session.id, e);
@@ -111,6 +121,32 @@ public final class JsonlToSqliteMigrator {
 
         writer.recordEntries(session.id, session.agent, "", entries);
         return true;
+    }
+
+    private static void writeBackupReadme(@NotNull Path backupDir) {
+        try {
+            Files.createDirectories(backupDir);
+            Files.writeString(backupDir.resolve("README.txt"), BACKUP_README, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            LOG.warn("JsonlToSqliteMigrator: could not write backup README", e);
+        }
+    }
+
+    private static void moveSessionFilesToBackup(
+        @NotNull Path sessionsDir,
+        @NotNull SessionInfo session,
+        @NotNull Path backupDir
+    ) {
+        List<Path> files = SessionFileRotation.listAllFiles(sessionsDir.toFile(), session.id);
+        for (Path file : files) {
+            try {
+                Path dest = backupDir.resolve(sessionsDir.relativize(file));
+                Files.createDirectories(dest.getParent());
+                Files.move(file, dest, StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                LOG.warn("JsonlToSqliteMigrator: could not move " + file + " to backup", e);
+            }
+        }
     }
 
     /**
@@ -143,16 +179,38 @@ public final class JsonlToSqliteMigrator {
     }
 
     /**
-     * Discovers sessions by reading the sessions-index.json file.
-     * Falls back to scanning for .jsonl files if the index is missing.
+     * Discovers sessions by reading the sessions-index.json file and supplementing with a
+     * directory scan for any JSONL files not listed in the index.
+     *
+     * <p>The index provides the agent display name but may be incomplete (e.g. if the plugin
+     * was upgraded mid-session). The directory scan ensures every JSONL file is migrated even
+     * when the index is missing or out-of-date.
      */
     @NotNull
     static List<SessionInfo> discoverSessions(@NotNull Path sessionsDir) {
         Path indexFile = sessionsDir.resolve("sessions-index.json");
-        if (Files.isRegularFile(indexFile)) {
-            return readSessionsFromIndex(indexFile);
+        List<SessionInfo> fromIndex = Files.isRegularFile(indexFile)
+            ? readSessionsFromIndex(indexFile)
+            : List.of();
+
+        List<SessionInfo> fromScan = scanForSessionFiles(sessionsDir);
+
+        if (fromIndex.isEmpty()) return fromScan;
+        if (fromScan.isEmpty()) return fromIndex;
+
+        // Merge: index entries take precedence (they carry the agent name).
+        // Supplement with any JSONL files not listed in the index.
+        Set<String> indexIds = new HashSet<>();
+        List<SessionInfo> merged = new ArrayList<>(fromIndex);
+        for (SessionInfo s : fromIndex) {
+            indexIds.add(s.id());
         }
-        return scanForSessionFiles(sessionsDir);
+        for (SessionInfo s : fromScan) {
+            if (!indexIds.contains(s.id())) {
+                merged.add(s);
+            }
+        }
+        return merged;
     }
 
     @NotNull

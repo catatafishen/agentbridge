@@ -343,7 +343,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         }
         try {
             // Snapshot the current session before it starts so the user can revert to it.
-            tryBranchSessionAtStartup(cwd);
+            tryBranchSessionAtStartup();
             beforeCreateSession(cwd);
             requestedResumeId = loadResumeSessionId();
 
@@ -859,17 +859,17 @@ public abstract class AcpClient extends AbstractAgentClient {
      * Failures are logged and swallowed — a missing snapshot must never abort session creation.
      * Package-private so the branch guard can be exercised in unit tests without a live platform.
      */
-    void tryBranchSessionAtStartup(String cwd) {
+    void tryBranchSessionAtStartup() {
         try {
             if (ActiveAgentManager.getInstance(project).isBranchSessionAtStartup()) {
-                branchCurrentSession(cwd);
+                branchCurrentSession();
             }
         } catch (Exception e) {
             LOG.warn("Branch-at-startup check failed — continuing without snapshot", e);
         }
     }
 
-    private void branchCurrentSession(String cwd) {
+    private void branchCurrentSession() {
         try {
             ConversationService.getInstance(project).branchCurrentSession();
         } catch (Exception e) {

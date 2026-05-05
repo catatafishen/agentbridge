@@ -22,7 +22,7 @@ public final class ExportUtils {
     private static final String AGENTBRIDGE_KIRO = "@agentbridge/";
 
     private static final String SESSIONS_SUBDIR = "sessions";
-    private static final String LEGACY_SESSIONS_DIR = ".agent-work/sessions";
+    public static final String LEGACY_SESSIONS_DIR = ".agent-work/sessions";
 
     private ExportUtils() {
     }
@@ -114,7 +114,7 @@ public final class ExportUtils {
      * @param basePath project base path (may be {@code null})
      * @return the sessions directory (may not yet exist on disk)
      * @deprecated Prefer {@link #sessionsDir(Project)} when a {@link Project} is available;
-     *     it uses the configured storage root instead of the hardcoded legacy path.
+     * it uses the configured storage root instead of the hardcoded legacy path.
      */
     @Deprecated(since = "0.9")
     @NotNull

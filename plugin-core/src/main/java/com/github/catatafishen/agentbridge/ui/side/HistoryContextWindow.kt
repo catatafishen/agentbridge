@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.ui.side
 
 import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
+import com.github.catatafishen.agentbridge.ui.EntryData
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
@@ -97,9 +98,9 @@ internal class HistoryContextWindow private constructor(
     private fun loadTargetTurnAsync() {
         val service = ConversationService.getInstance(project)
         ApplicationManager.getApplication().executeOnPooledThread {
-            val entries = service.loadTurnEntries(targetTurnId)
-            val earlier = service.loadAdjacentTurnIds(sessionId, targetTurnId, -1)
-            val later = service.loadAdjacentTurnIds(sessionId, targetTurnId, 1)
+            val entries: List<EntryData> = service.loadTurnEntries(targetTurnId)
+            val earlier: List<String> = service.loadAdjacentTurnIds(sessionId, targetTurnId, -1)
+            val later: List<String> = service.loadAdjacentTurnIds(sessionId, targetTurnId, 1)
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
                 displayedTurnIds.add(targetTurnId)
@@ -118,11 +119,11 @@ internal class HistoryContextWindow private constructor(
         val firstDisplayed = displayedTurnIds.first()
         val service = ConversationService.getInstance(project)
         ApplicationManager.getApplication().executeOnPooledThread {
-            val earlierIds = service.loadAdjacentTurnIds(sessionId, firstDisplayed, -1)
+            val earlierIds: List<String> = service.loadAdjacentTurnIds(sessionId, firstDisplayed, -1)
             if (earlierIds.isEmpty()) return@executeOnPooledThread
             val turnId = earlierIds.last()
-            val entries = service.loadTurnEntries(turnId)
-            val moreEarlier = service.loadAdjacentTurnIds(sessionId, turnId, -1)
+            val entries: List<EntryData> = service.loadTurnEntries(turnId)
+            val moreEarlier: List<String> = service.loadAdjacentTurnIds(sessionId, turnId, -1)
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
                 displayedTurnIds.add(0, turnId)
@@ -140,11 +141,11 @@ internal class HistoryContextWindow private constructor(
         val lastDisplayed = displayedTurnIds.last()
         val service = ConversationService.getInstance(project)
         ApplicationManager.getApplication().executeOnPooledThread {
-            val laterIds = service.loadAdjacentTurnIds(sessionId, lastDisplayed, 1)
+            val laterIds: List<String> = service.loadAdjacentTurnIds(sessionId, lastDisplayed, 1)
             if (laterIds.isEmpty()) return@executeOnPooledThread
             val turnId = laterIds.first()
-            val entries = service.loadTurnEntries(turnId)
-            val moreLater = service.loadAdjacentTurnIds(sessionId, turnId, 1)
+            val entries: List<EntryData> = service.loadTurnEntries(turnId)
+            val moreLater: List<String> = service.loadAdjacentTurnIds(sessionId, turnId, 1)
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
                 displayedTurnIds.add(turnId)

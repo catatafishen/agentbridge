@@ -211,7 +211,7 @@ public final class ConversationService implements Disposable {
                 sr.agentName(),
                 sr.displayName(),
                 parseIsoToEpochMillis(sr.startedAt()),
-                parseIsoToEpochMillis(sr.endedAt()),
+                parseIsoToEpochMillis(sr.lastActivity()),
                 sr.turnCount()
             ));
         }

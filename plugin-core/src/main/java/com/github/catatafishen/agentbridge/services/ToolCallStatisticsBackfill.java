@@ -70,7 +70,7 @@ public final class ToolCallStatisticsBackfill {
         }
 
         Map<String, String> sessionToClient = buildSessionClientMap(sessions);
-        File sessionsDir = ExportUtils.sessionsDir(basePath);
+        File sessionsDir = new File(basePath, ExportUtils.LEGACY_SESSIONS_DIR);
         int inserted = 0;
         int skipped = 0;
         int errors = 0;

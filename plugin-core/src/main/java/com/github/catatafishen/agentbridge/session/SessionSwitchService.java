@@ -639,7 +639,7 @@ public final class SessionSwitchService implements Disposable {
      */
     private static void writeClaudeResumeIdFile(@Nullable String basePath, @NotNull String sessionId) {
         try {
-            File dir = sessionsDir(basePath);
+            File dir = legacySessionsDir(basePath);
             //noinspection ResultOfMethodCallIgnored — best-effort
             dir.mkdirs();
             Path resumeFile = dir.toPath().resolve(CLAUDE_RESUME_ID_FILE);
@@ -664,7 +664,7 @@ public final class SessionSwitchService implements Disposable {
         String basePath = project.getBasePath();
         if (basePath != null) {
             try {
-                Path resumeFile = sessionsDir(basePath).toPath().resolve(CLAUDE_RESUME_ID_FILE);
+                Path resumeFile = legacySessionsDir(basePath).toPath().resolve(CLAUDE_RESUME_ID_FILE);
                 Files.deleteIfExists(resumeFile);
             } catch (IOException e) {
                 LOG.warn("Failed to delete Claude resume ID file", e);
@@ -680,7 +680,7 @@ public final class SessionSwitchService implements Disposable {
     @Nullable
     public static String readAndConsumeClaudeResumeIdFile(@Nullable String basePath) {
         try {
-            File dir = sessionsDir(basePath);
+            File dir = legacySessionsDir(basePath);
             Path resumeFile = dir.toPath().resolve(CLAUDE_RESUME_ID_FILE);
             if (!Files.exists(resumeFile)) return null;
 
@@ -713,8 +713,11 @@ public final class SessionSwitchService implements Disposable {
     }
 
     @NotNull
-    private static File sessionsDir(@Nullable String basePath) {
-        return ExportUtils.sessionsDir(basePath);
+    private static File legacySessionsDir(@Nullable String basePath) {
+        if (basePath == null || basePath.isEmpty()) {
+            return new File(ExportUtils.LEGACY_SESSIONS_DIR);
+        }
+        return new File(basePath, ExportUtils.LEGACY_SESSIONS_DIR);
     }
 
     // ── Disposable ────────────────────────────────────────────────────────────

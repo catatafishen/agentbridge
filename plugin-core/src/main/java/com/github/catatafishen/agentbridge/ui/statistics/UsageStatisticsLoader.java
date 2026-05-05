@@ -122,7 +122,6 @@ final class UsageStatisticsLoader {
         if (aggregates.isEmpty()) return null;
 
         // Build agent display names from the sessions index
-        String basePath = project.getBasePath();
         Map<String, String> agentDisplayNames = new LinkedHashMap<>();
         Set<String> agentIds = new LinkedHashSet<>();
 
@@ -186,7 +185,7 @@ final class UsageStatisticsLoader {
         Set<String> agentIds = new LinkedHashSet<>();
         Map<String, String> agentDisplayNames = new LinkedHashMap<>();
 
-        File sessionsDir = ExportUtils.sessionsDir(basePath);
+        File sessionsDir = ExportUtils.sessionsDir(project);
 
         for (ConversationService.SessionRecord session : sessions) {
             String agentDisplay = session.agent();

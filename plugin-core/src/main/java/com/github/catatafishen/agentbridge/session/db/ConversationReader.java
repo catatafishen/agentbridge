@@ -36,13 +36,18 @@ public final class ConversationReader {
 
     /**
      * Metadata record for a session, suitable for display in a session picker.
+     *
+     * <p>{@code lastActivity} is the most recent timestamp we can derive for the session:
+     * {@code sessions.ended_at} if set, otherwise the latest turn end/start time, otherwise
+     * {@code sessions.started_at}. It is always non-null and used as the display date in the
+     * session picker.
      */
     public record SessionRecord(
         @NotNull String id,
         @NotNull String agentName,
         @NotNull String displayName,
         @NotNull String startedAt,
-        @Nullable String endedAt,
+        @NotNull String lastActivity,
         int turnCount
     ) {
     }
@@ -65,10 +70,15 @@ public final class ConversationReader {
         Connection conn = database.getConnection();
         if (conn == null) return List.of();
         try (PreparedStatement ps = conn.prepareStatement("""
-            SELECT s.id, s.agent_name, COALESCE(s.display_name, ''), s.started_at, s.ended_at,
+            SELECT s.id, s.agent_name, COALESCE(s.display_name, ''), s.started_at,
+                   COALESCE(
+                       s.ended_at,
+                       (SELECT MAX(COALESCE(t.ended_at, t.started_at)) FROM turns t WHERE t.session_id = s.id),
+                       s.started_at
+                   ) AS last_activity,
                    (SELECT COUNT(*) FROM turns WHERE session_id = s.id) AS turn_count
             FROM sessions s
-            ORDER BY s.started_at DESC
+            ORDER BY last_activity DESC
             """)) {
             ResultSet rs = ps.executeQuery();
             List<SessionRecord> result = new ArrayList<>();
@@ -216,7 +226,7 @@ public final class ConversationReader {
                     loadEventsForTurn(conn, turnId, result);
 
                     // Emit TurnStats if turn is finalised
-                    addTurnStatsIfPresent(conn, turnId, sessionId, result);
+                    addTurnStatsIfPresent(conn, turnId, result);
                 }
             }
         }
@@ -255,7 +265,7 @@ public final class ConversationReader {
                 }
             }
             loadEventsForTurn(conn, turnId, result);
-            addTurnStatsIfPresent(conn, turnId, sessionId, result);
+            addTurnStatsIfPresent(conn, turnId, result);
         }
         return result;
     }
@@ -304,10 +314,7 @@ public final class ConversationReader {
                     result.add(new EntryData.Prompt(promptText, startedAt,
                         ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId));
                     loadEventsForTurn(conn, turnId, result);
-                    String sessionId = loadSessionIdForTurn(conn, turnId);
-                    if (sessionId != null) {
-                        addTurnStatsIfPresent(conn, turnId, sessionId, result);
-                    }
+                    addTurnStatsIfPresent(conn, turnId, result);
                 }
             }
         }
@@ -361,17 +368,6 @@ public final class ConversationReader {
             }
         }
         return ids;
-    }
-
-    @Nullable
-    private String loadSessionIdForTurn(@NotNull Connection conn, @NotNull String turnId) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT session_id FROM turns WHERE id = ?")) {
-            ps.setString(1, turnId);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? rs.getString(1) : null;
-            }
-        }
     }
 
     // ── Event loading ─────────────────────────────────────────────────────────
@@ -460,7 +456,7 @@ public final class ConversationReader {
             ps.setString(1, eventId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
-                EntryData.ToolCall tc = new EntryData.ToolCall(
+                return new EntryData.ToolCall(
                     rs.getString(1),  // title = tool_name
                     rs.getString(2),  // arguments
                     nullToEmpty(rs.getString(3)),  // kind
@@ -473,7 +469,6 @@ public final class ConversationReader {
                     rs.getString(9),  // pluginTool = display_name
                     timestamp, agent, model, eventId
                 );
-                return tc;
             }
         }
     }
@@ -547,7 +542,7 @@ public final class ConversationReader {
     // ── TurnStats reconstruction ──────────────────────────────────────────────
 
     private void addTurnStatsIfPresent(
-        @NotNull Connection conn, @NotNull String turnId, @NotNull String sessionId,
+        @NotNull Connection conn, @NotNull String turnId,
         @NotNull List<EntryData> result) throws SQLException {
 
         try (PreparedStatement ps = conn.prepareStatement("""

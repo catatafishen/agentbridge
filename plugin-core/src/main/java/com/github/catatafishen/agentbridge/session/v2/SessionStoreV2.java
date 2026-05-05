@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.ui.FileRef;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -39,6 +40,8 @@ public final class SessionStoreV2 {
 
     private static final Logger LOG = Logger.getInstance(SessionStoreV2.class);
 
+    private static final String KEY_AGENT = "agent";
+    private static final String KEY_CREATED_AT = "createdAt";
     private static final String KEY_DENIAL_REASON = "denialReason";
     private static final String KEY_MODEL = "model";
     private static final String KEY_FILENAME = "filename";
@@ -75,34 +78,18 @@ public final class SessionStoreV2 {
 
     // ── Legacy JSONL index reading ───────────────────────────────────────────
 
-    /**
-     * Reads session metadata from the legacy {@code sessions-index.json} file.
-     * Used by backfill services that scan JSONL files without a Project context.
-     *
-     * @param basePath the project base path
-     * @return sessions sorted by most recently updated first
-     */
     @NotNull
     public static List<SessionRecord> listSessionsFromJsonlIndex(@Nullable String basePath) {
         if (basePath == null) return List.of();
-        @SuppressWarnings("deprecation")
-        File indexFile = new File(ExportUtils.sessionsDir(basePath), "sessions-index.json");
+        File indexFile = new File(new File(basePath, ExportUtils.LEGACY_SESSIONS_DIR), "sessions-index.json");
         if (!indexFile.isFile()) return List.of();
         try {
             String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
             JsonArray arr = com.google.gson.JsonParser.parseString(content).getAsJsonArray();
             List<SessionRecord> result = new ArrayList<>();
             for (var element : arr) {
-                if (!element.isJsonObject()) continue;
-                JsonObject obj = element.getAsJsonObject();
-                String id = obj.has("id") ? obj.get("id").getAsString() : "";
-                if (id.isEmpty()) continue;
-                String agent = obj.has("agent") ? obj.get("agent").getAsString() : "";
-                String name = obj.has("name") ? obj.get("name").getAsString() : "";
-                long createdAt = obj.has("createdAt") ? obj.get("createdAt").getAsLong() : 0;
-                long updatedAt = obj.has("updatedAt") ? obj.get("updatedAt").getAsLong() : 0;
-                int turnCount = obj.has("turnCount") ? obj.get("turnCount").getAsInt() : 0;
-                result.add(new SessionRecord(id, agent, name, createdAt, updatedAt, turnCount));
+                SessionRecord parsed = parseSessionIndexEntry(element);
+                if (parsed != null) result.add(parsed);
             }
             result.sort(Comparator.comparingLong(SessionRecord::updatedAt).reversed());
             return result;
@@ -110,6 +97,20 @@ public final class SessionStoreV2 {
             LOG.debug("Failed to read JSONL sessions index: " + e.getMessage());
             return List.of();
         }
+    }
+
+    @Nullable
+    private static SessionRecord parseSessionIndexEntry(JsonElement element) {
+        if (!element.isJsonObject()) return null;
+        JsonObject obj = element.getAsJsonObject();
+        String id = obj.has("id") ? obj.get("id").getAsString() : "";
+        if (id.isEmpty()) return null;
+        String agent = obj.has(KEY_AGENT) ? obj.get(KEY_AGENT).getAsString() : "";
+        String name = obj.has("name") ? obj.get("name").getAsString() : "";
+        long createdAt = obj.has(KEY_CREATED_AT) ? obj.get(KEY_CREATED_AT).getAsLong() : 0;
+        long updatedAt = obj.has("updatedAt") ? obj.get("updatedAt").getAsLong() : 0;
+        int turnCount = obj.has("turnCount") ? obj.get("turnCount").getAsInt() : 0;
+        return new SessionRecord(id, agent, name, createdAt, updatedAt, turnCount);
     }
 
     // ── Session name truncation ──────────────────────────────────────────────
@@ -184,9 +185,9 @@ public final class SessionStoreV2 {
 
     private static LegacyMsgHeader parseLegacyMessageHeader(@NotNull JsonObject msg) {
         String role = msg.has("role") ? msg.get("role").getAsString() : "";
-        long createdAt = msg.has("createdAt") ? msg.get("createdAt").getAsLong() : 0;
-        String agent = msg.has("agent") && !msg.get("agent").isJsonNull()
-            ? msg.get("agent").getAsString() : "";
+        long createdAt = msg.has(KEY_CREATED_AT) ? msg.get(KEY_CREATED_AT).getAsLong() : 0;
+        String agent = msg.has(KEY_AGENT) && !msg.get(KEY_AGENT).isJsonNull()
+            ? msg.get(KEY_AGENT).getAsString() : "";
         String model = msg.has(KEY_MODEL) && !msg.get(KEY_MODEL).isJsonNull()
             ? msg.get(KEY_MODEL).getAsString() : "";
         String ts = createdAt > 0 ? Instant.ofEpochMilli(createdAt).toString() : "";

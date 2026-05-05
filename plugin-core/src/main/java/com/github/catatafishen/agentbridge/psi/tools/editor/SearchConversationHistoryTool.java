@@ -259,7 +259,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
         }
 
         String currentId = addCurrentSession(store, basePath, result);
-        addIndexedSessions(store, basePath, currentId, result);
+        addIndexedSessions(store, currentId, result);
         return result;
     }
 
@@ -273,14 +273,14 @@ public final class SearchConversationHistoryTool extends EditorTool {
         return currentId;
     }
 
-    private static void addIndexedSessions(ConversationService store, String basePath, String currentId,
+    private static void addIndexedSessions(ConversationService store, String currentId,
                                            Map<String, List<EntryData>> result) {
         for (ConversationService.SessionRecord rec : store.listSessions()) {
-            addIndexedSession(store, basePath, currentId, result, rec);
+            addIndexedSession(store, currentId, result, rec);
         }
     }
 
-    private static void addIndexedSession(ConversationService store, String basePath, String currentId,
+    private static void addIndexedSession(ConversationService store, String currentId,
                                           Map<String, List<EntryData>> result,
                                           ConversationService.SessionRecord rec) {
         if (rec.id().equals(currentId)) return;

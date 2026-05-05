@@ -71,7 +71,7 @@ public final class TurnStatisticsBackfill {
         }
 
         Map<String, String> sessionToAgent = buildSessionAgentMap(sessions);
-        File sessionsDir = ExportUtils.sessionsDir(basePath);
+        File sessionsDir = new File(basePath, ExportUtils.LEGACY_SESSIONS_DIR);
         int inserted = 0;
         int skipped = 0;
         int errors = 0;
