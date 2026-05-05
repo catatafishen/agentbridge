@@ -18,13 +18,13 @@ lcmd=$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')
 # --- git commands (must use dedicated git tools) ---
 case "$lcmd" in
     git\ *|git)
-        hook_json_deny "git commands are not allowed via run_command (causes IntelliJ buffer desync). Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset."
+        hook_json_deny "git commands are not allowed via run_command (causes IntelliJ buffer desync). Use the dedicated git_* tools instead: git_status, git_diff, git_log, git_commit, git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset. Note: run_command IS the correct MCP tool for all other shell commands (gh, python3, npm, curl, etc.) — only git requires the dedicated tools."
         exit 0 ;;
 esac
 # Check for git in compound commands
 case "$lcmd" in
     *"&& git "*|*"; git "*|*"| git "*)
-        hook_json_deny "git commands are not allowed via run_command (causes IntelliJ buffer desync). Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset."
+        hook_json_deny "git commands are not allowed via run_command (causes IntelliJ buffer desync). Use the dedicated git_* tools instead: git_status, git_diff, git_log, git_commit, git_stage, git_unstage, git_branch, git_stash, git_show, git_blame, git_push, git_remote, git_fetch, git_pull, git_merge, git_rebase, git_cherry_pick, git_tag, git_reset. Note: run_command IS the correct MCP tool for all other shell commands (gh, python3, npm, curl, etc.) — only git requires the dedicated tools."
         exit 0 ;;
 esac
 

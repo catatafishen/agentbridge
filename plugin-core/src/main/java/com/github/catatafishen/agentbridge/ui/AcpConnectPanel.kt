@@ -426,7 +426,8 @@ class AcpConnectPanel(
         connection.subscribe(
             PsiBridgeService.TOOL_CALL_TOPIC,
             PsiBridgeService.ToolCallListener { event ->
-                ApplicationManager.getApplication().invokeLater { addToolCallEntry(event.toolName(), event.durationMs(), event.success()) }
+                ApplicationManager.getApplication()
+                    .invokeLater { addToolCallEntry(event.toolName(), event.durationMs(), event.success()) }
             })
     }
 
@@ -678,6 +679,7 @@ class AcpConnectPanel(
                         onSignIn = { startInlineAuth() },
                         onRetry = { doConnect() }
                     )
+
                 authService.isAuthenticationError(message) && profile.terminalSignInCommand != null -> {
                     val signInCmd = profile.terminalSignInCommand!!
                     statusBanner.showAuthError(
@@ -686,8 +688,10 @@ class AcpConnectPanel(
                         onRetry = { doConnect() }
                     )
                 }
+
                 authService.isAuthenticationError(message) ->
                     statusBanner.showError("$message — check your credentials and click Connect to retry.")
+
                 else -> statusBanner.showError(message)
             }
         }
