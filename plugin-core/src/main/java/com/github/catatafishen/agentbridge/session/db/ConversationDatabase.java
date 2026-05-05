@@ -45,11 +45,11 @@ public final class ConversationDatabase implements Disposable {
     static final int SCHEMA_VERSION = 2;
 
     private final Project project;
-    // All access is inside synchronized(database) blocks in ConversationReader/Writer.
-    // volatile alone would not be sufficient (S3077) and is redundant here.
+    // All access is inside synchronized(database) blocks — both volatile fields
+    // were removed as redundant (synchronized already provides visibility).
     private Connection connection;
 
-    private volatile boolean initAttempted;
+    private boolean initAttempted;
 
     @SuppressWarnings("unused") // instantiated by IntelliJ service container
     public ConversationDatabase(@NotNull Project project) {
