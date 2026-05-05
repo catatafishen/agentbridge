@@ -322,11 +322,16 @@ public final class ConversationService implements Disposable {
     }
 
     /**
-     * Archives the current conversation by resetting the session ID file.
-     * The SQLite data remains intact.
+     * Signals that the current conversation session has ended.
+     *
+     * <p>The SQLite data and the {@code .current-session-id} file are deliberately left intact
+     * so that {@link #loadRecentEntries} can restore them immediately after
+     * {@code buildAndShowChatPanel()} calls {@code archiveConversation()}. Explicit deletion of
+     * the session ID file is handled only by {@link #resetCurrentSessionId}, which callers must
+     * invoke separately when a genuinely fresh session is required.
      */
     public void archive(@Nullable String basePath) {
-        resetCurrentSessionId(basePath);
+        // Intentional no-op: the session ID file must survive for restoreConversation() to read.
     }
 
     /**
