@@ -12,11 +12,14 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -269,7 +272,8 @@ class JsonlToSqliteMigratorTest {
     void discoverSessionsFallsBackToFileScan() throws Exception {
         Files.writeString(sessionsDir.resolve("session-abc.jsonl"), "");
         Files.writeString(sessionsDir.resolve("session-def.jsonl"), "");
-        Files.writeString(sessionsDir.resolve("session-abc.part-001.jsonl"), ""); // Should be excluded
+        // Part file for session-abc — contributes the same session ID, deduplicated.
+        Files.writeString(sessionsDir.resolve("session-abc.part-001.jsonl"), "");
 
         List<JsonlToSqliteMigrator.SessionInfo> sessions =
             JsonlToSqliteMigrator.discoverSessions(sessionsDir);
@@ -318,5 +322,176 @@ class JsonlToSqliteMigratorTest {
 
         int count = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
         assertEquals(0, count); // Empty file = no entries = not migrated
+    }
+
+    // ── Regression tests for the bugs fixed in feat/sqlite-only-storage ───────
+
+    /**
+     * sessions.started_at must equal the timestamp from the first JSONL entry,
+     * never the migration wall-clock time.
+     */
+    @Test
+    void sessionStartedAtMatchesFirstEntryTimestamp() throws Exception {
+        Files.writeString(sessionsDir.resolve("sessions-index.json"),
+            "[{\"id\": \"sess-ts\", \"agent\": \"Copilot\"}]");
+        Files.writeString(sessionsDir.resolve("sess-ts.jsonl"), """
+            {"type":"prompt","text":"Hi","timestamp":"2025-03-10T08:30:00Z","entryId":"t1"}
+            {"type":"turnStats","turnId":"t1","durationMs":1000,"inputTokens":10,"outputTokens":20,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"gpt-4","timestamp":"2025-03-10T08:30:01Z","entryId":"s1"}
+            """);
+
+        JsonlToSqliteMigrator.migrate(sessionsDir, writer);
+
+        List<ConversationReader.SessionRecord> sessions = reader.listSessions();
+        assertEquals(1, sessions.size());
+        String startedAt = sessions.getFirst().startedAt();
+        assertEquals("2025-03-10T08:30:00Z", startedAt,
+            "started_at must come from the JSONL entry, not Instant.now()");
+    }
+
+    /**
+     * Multiple sessions must each be migrated as their own distinct session row with
+     * the correct number of turns.
+     */
+    @Test
+    void multipleSessionsAllMigratedWithCorrectTurnCounts() throws Exception {
+        String index = """
+            [
+              {"id": "session-a", "agent": "Copilot"},
+              {"id": "session-b", "agent": "Claude"},
+              {"id": "session-c", "agent": "Gemini"}
+            ]
+            """;
+        Files.writeString(sessionsDir.resolve("sessions-index.json"), index);
+
+        // session-a: 3 turns
+        Files.writeString(sessionsDir.resolve("session-a.jsonl"), """
+            {"type":"prompt","text":"P1","timestamp":"2025-01-01T10:00:00Z","entryId":"a-t1"}
+            {"type":"turnStats","turnId":"a-t1","durationMs":1000,"inputTokens":5,"outputTokens":10,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"m","timestamp":"2025-01-01T10:01:00Z","entryId":"a-s1"}
+            {"type":"prompt","text":"P2","timestamp":"2025-01-01T10:02:00Z","entryId":"a-t2"}
+            {"type":"turnStats","turnId":"a-t2","durationMs":500,"inputTokens":3,"outputTokens":6,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"m","timestamp":"2025-01-01T10:03:00Z","entryId":"a-s2"}
+            {"type":"prompt","text":"P3","timestamp":"2025-01-01T10:04:00Z","entryId":"a-t3"}
+            {"type":"turnStats","turnId":"a-t3","durationMs":200,"inputTokens":2,"outputTokens":4,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"m","timestamp":"2025-01-01T10:05:00Z","entryId":"a-s3"}
+            """);
+
+        // session-b: 1 turn
+        Files.writeString(sessionsDir.resolve("session-b.jsonl"), """
+            {"type":"prompt","text":"Q1","timestamp":"2025-01-02T09:00:00Z","entryId":"b-t1"}
+            {"type":"turnStats","turnId":"b-t1","durationMs":800,"inputTokens":8,"outputTokens":16,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"m","timestamp":"2025-01-02T09:01:00Z","entryId":"b-s1"}
+            """);
+
+        // session-c: 2 turns
+        Files.writeString(sessionsDir.resolve("session-c.jsonl"), """
+            {"type":"prompt","text":"R1","timestamp":"2025-01-03T11:00:00Z","entryId":"c-t1"}
+            {"type":"turnStats","turnId":"c-t1","durationMs":300,"inputTokens":1,"outputTokens":2,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"m","timestamp":"2025-01-03T11:01:00Z","entryId":"c-s1"}
+            {"type":"prompt","text":"R2","timestamp":"2025-01-03T11:02:00Z","entryId":"c-t2"}
+            {"type":"turnStats","turnId":"c-t2","durationMs":400,"inputTokens":2,"outputTokens":4,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"m","timestamp":"2025-01-03T11:03:00Z","entryId":"c-s2"}
+            """);
+
+        int count = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
+        assertEquals(3, count);
+
+        List<ConversationReader.SessionRecord> sessions = reader.listSessions();
+        assertEquals(3, sessions.size(), "All three sessions must appear in SQLite");
+
+        Map<String, Integer> turnCounts = new HashMap<>();
+        for (ConversationReader.SessionRecord s : sessions) {
+            turnCounts.put(s.id(), s.turnCount());
+        }
+        assertEquals(3, turnCounts.get("session-a"), "session-a must have 3 turns");
+        assertEquals(1, turnCounts.get("session-b"), "session-b must have 1 turn");
+        assertEquals(2, turnCounts.get("session-c"), "session-c must have 2 turns");
+    }
+
+    /**
+     * A session that has only .part-NNN.jsonl files (no active .jsonl) must be
+     * discovered and migrated.  This is the root cause of "single session with all turns".
+     */
+    @Test
+    void sessionWithOnlyPartFilesIsDiscoveredAndMigrated() throws Exception {
+        // No sessions-index.json — rely solely on directory scan.
+        // The session has been fully rotated: only part files remain.
+        Files.writeString(sessionsDir.resolve("rotated-sess.part-001.jsonl"), """
+            {"type":"prompt","text":"OldPrompt","timestamp":"2024-12-01T08:00:00Z","entryId":"rp1"}
+            {"type":"turnStats","turnId":"rp1","durationMs":1000,"inputTokens":10,"outputTokens":20,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"gpt-4","timestamp":"2024-12-01T08:01:00Z","entryId":"rs1"}
+            """);
+        Files.writeString(sessionsDir.resolve("rotated-sess.part-002.jsonl"), """
+            {"type":"prompt","text":"NewerPrompt","timestamp":"2024-12-02T09:00:00Z","entryId":"rp2"}
+            {"type":"turnStats","turnId":"rp2","durationMs":500,"inputTokens":5,"outputTokens":10,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"gpt-4","timestamp":"2024-12-02T09:01:00Z","entryId":"rs2"}
+            """);
+        // No "rotated-sess.jsonl" base file exists.
+
+        int count = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
+        assertEquals(1, count, "Part-only session must be migrated");
+
+        assertTrue(reader.sessionExists("rotated-sess"),
+            "rotated-sess must exist in SQLite");
+        List<ConversationReader.SessionRecord> sessions = reader.listSessions();
+        assertEquals(1, sessions.size());
+        assertEquals(2, sessions.getFirst().turnCount(),
+            "Both turns from both part files must be migrated");
+        assertEquals("2024-12-01T08:00:00Z", sessions.getFirst().startedAt(),
+            "started_at must come from the oldest part file entry");
+    }
+
+    /**
+     * Each session must receive only its own turns — entries from session A must never
+     * appear under session B.
+     */
+    @Test
+    void eachSessionReceivesOnlyItsOwnEntries() throws Exception {
+        String index = """
+            [
+              {"id": "alpha", "agent": "Copilot"},
+              {"id": "beta",  "agent": "Claude"}
+            ]
+            """;
+        Files.writeString(sessionsDir.resolve("sessions-index.json"), index);
+
+        Files.writeString(sessionsDir.resolve("alpha.jsonl"), """
+            {"type":"prompt","text":"Alpha question","timestamp":"2025-06-01T10:00:00Z","entryId":"alpha-t1"}
+            {"type":"text","raw":"Alpha answer","timestamp":"2025-06-01T10:00:01Z","agent":"assistant","model":"m","entryId":"alpha-e1"}
+            {"type":"turnStats","turnId":"alpha-t1","durationMs":100,"inputTokens":1,"outputTokens":2,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"m","timestamp":"2025-06-01T10:00:02Z","entryId":"alpha-s1"}
+            """);
+
+        Files.writeString(sessionsDir.resolve("beta.jsonl"), """
+            {"type":"prompt","text":"Beta question","timestamp":"2025-06-02T10:00:00Z","entryId":"beta-t1"}
+            {"type":"text","raw":"Beta answer","timestamp":"2025-06-02T10:00:01Z","agent":"assistant","model":"m","entryId":"beta-e1"}
+            {"type":"turnStats","turnId":"beta-t1","durationMs":100,"inputTokens":1,"outputTokens":2,"costUsd":0.0,"toolCallCount":0,"linesAdded":0,"linesRemoved":0,"model":"m","timestamp":"2025-06-02T10:00:02Z","entryId":"beta-s1"}
+            """);
+
+        JsonlToSqliteMigrator.migrate(sessionsDir, writer);
+
+        List<EntryData> alphaEntries = reader.loadEntries("alpha");
+        List<EntryData> betaEntries = reader.loadEntries("beta");
+
+        assertTrue(alphaEntries.stream().anyMatch(e ->
+            e instanceof EntryData.Prompt p && "Alpha question".equals(p.getText())));
+        assertTrue(betaEntries.stream().anyMatch(e ->
+            e instanceof EntryData.Prompt p && "Beta question".equals(p.getText())));
+
+        // Cross-contamination check: alpha must not contain beta's entries and vice versa.
+        assertFalse(alphaEntries.stream().anyMatch(e ->
+                e instanceof EntryData.Prompt p && "Beta question".equals(p.getText())),
+            "Alpha session must not contain Beta's prompt");
+        assertFalse(betaEntries.stream().anyMatch(e ->
+                e instanceof EntryData.Prompt p && "Alpha question".equals(p.getText())),
+            "Beta session must not contain Alpha's prompt");
+    }
+
+    /**
+     * extractSessionIdFromFilename must correctly strip both the active extension
+     * and part-file extensions.
+     */
+    @Test
+    void extractSessionIdFromFilenameHandlesBothFileTypes() {
+        assertEquals("my-session",
+            JsonlToSqliteMigrator.extractSessionIdFromFilename("my-session.jsonl"));
+        assertEquals("my-session",
+            JsonlToSqliteMigrator.extractSessionIdFromFilename("my-session.part-001.jsonl"));
+        assertEquals("my-session",
+            JsonlToSqliteMigrator.extractSessionIdFromFilename("my-session.part-099.jsonl"));
+        assertNull(
+            JsonlToSqliteMigrator.extractSessionIdFromFilename("README.txt"),
+            "Non-JSONL file should return null");
     }
 }

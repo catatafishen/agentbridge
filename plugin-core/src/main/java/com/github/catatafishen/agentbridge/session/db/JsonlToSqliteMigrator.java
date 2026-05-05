@@ -10,6 +10,7 @@ import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -18,7 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -39,6 +40,7 @@ public final class JsonlToSqliteMigrator {
 
     private static final Logger LOG = Logger.getInstance(JsonlToSqliteMigrator.class);
     static final String BACKUP_DIRNAME = "sessions-backup-jsonl";
+    private static final String JSONL_EXT = ".jsonl";
     private static final String BACKUP_README = """
         This directory contains backups of your session history in the legacy JSONL format.
         They were automatically moved here after a successful migration to the SQLite database.
@@ -200,7 +202,7 @@ public final class JsonlToSqliteMigrator {
 
         // Merge: index entries take precedence (they carry the agent name).
         // Supplement with any JSONL files not listed in the index.
-        Set<String> indexIds = new HashSet<>();
+        Set<String> indexIds = new LinkedHashSet<>();
         List<SessionInfo> merged = new ArrayList<>(fromIndex);
         for (SessionInfo s : fromIndex) {
             indexIds.add(s.id());
@@ -234,19 +236,38 @@ public final class JsonlToSqliteMigrator {
 
     @NotNull
     private static List<SessionInfo> scanForSessionFiles(@NotNull Path sessionsDir) {
+        Set<String> seenIds = new LinkedHashSet<>();
         List<SessionInfo> result = new ArrayList<>();
         try (var stream = Files.list(sessionsDir)) {
-            stream.filter(p -> p.toString().endsWith(".jsonl"))
-                .filter(p -> !p.getFileName().toString().contains(".part-"))
-                .forEach(p -> {
-                    String filename = p.getFileName().toString();
-                    String id = filename.substring(0, filename.length() - ".jsonl".length());
-                    result.add(new SessionInfo(id, "Unknown"));
+            stream.filter(p -> p.toString().endsWith(JSONL_EXT))
+                .map(p -> extractSessionIdFromFilename(p.getFileName().toString()))
+                .filter(id -> id != null && !id.isEmpty())
+                .forEach(id -> {
+                    if (seenIds.add(id)) {
+                        result.add(new SessionInfo(id, "Unknown"));
+                    }
                 });
         } catch (IOException e) {
             LOG.warn("JsonlToSqliteMigrator: failed to scan sessions directory", e);
         }
         return result;
+    }
+
+    /**
+     * Extracts the session ID from a JSONL filename.
+     * Handles both the active file ({@code <id>.jsonl}) and part files
+     * ({@code <id>.part-NNN.jsonl}).  Returns {@code null} for unrecognised names.
+     */
+    @Nullable
+    static String extractSessionIdFromFilename(@NotNull String filename) {
+        int partIdx = filename.indexOf(".part-");
+        if (partIdx >= 0) {
+            return filename.substring(0, partIdx);
+        }
+        if (filename.endsWith(JSONL_EXT)) {
+            return filename.substring(0, filename.length() - JSONL_EXT.length());
+        }
+        return null;
     }
 
     /**

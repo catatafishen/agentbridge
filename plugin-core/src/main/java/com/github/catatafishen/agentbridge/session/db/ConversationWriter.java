@@ -92,6 +92,9 @@ public final class ConversationWriter {
         } catch (SQLException e) {
             LOG.warn("ConversationWriter: failed to record " + entries.size()
                 + " entries for session " + sessionId, e);
+        } catch (IllegalArgumentException e) {
+            LOG.error("ConversationWriter: invalid entry data for session " + sessionId
+                + " — " + e.getMessage(), e);
         }
     }
 
@@ -102,15 +105,16 @@ public final class ConversationWriter {
         @NotNull String clientId,
         @NotNull List<EntryData> entries
     ) throws SQLException {
+        String startedAt = extractStartedAt(entries);
         conn.setAutoCommit(false);
         try {
-            ensureSession(conn, sessionId, agentName, clientId);
+            ensureSession(conn, sessionId, agentName, clientId, startedAt);
             for (EntryData entry : entries) {
                 writeEntry(conn, sessionId, clientId, entry);
             }
             updateSessionEndedAt(conn, sessionId);
             conn.commit();
-        } catch (SQLException e) {
+        } catch (SQLException | IllegalArgumentException e) {
             conn.rollback();
             throw e;
         } finally {
@@ -174,14 +178,15 @@ public final class ConversationWriter {
         @NotNull Connection conn,
         @NotNull String sessionId,
         @NotNull String agentName,
-        @NotNull String clientId
+        @NotNull String clientId,
+        @NotNull String startedAt
     ) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
             "INSERT OR IGNORE INTO sessions (id, agent_name, client_id, started_at) VALUES (?, ?, ?, ?)")) {
             ps.setString(1, sessionId);
             ps.setString(2, agentName);
             ps.setString(3, clientId);
-            ps.setString(4, Instant.now().toString());
+            ps.setString(4, startedAt);
             ps.executeUpdate();
         }
     }
@@ -210,7 +215,11 @@ public final class ConversationWriter {
         @NotNull EntryData.Prompt prompt
     ) throws SQLException {
         String turnId = prompt.getEntryId();
-        String startedAt = nonEmpty(prompt.getTimestamp(), Instant.now().toString());
+        String startedAt = prompt.getTimestamp();
+        if (startedAt == null || startedAt.isEmpty()) {
+            throw new IllegalArgumentException(
+                "Prompt entry has no timestamp — cannot determine turn start time: id=" + turnId);
+        }
         try (PreparedStatement ps = conn.prepareStatement(
             "INSERT OR IGNORE INTO turns (id, session_id, prompt_text, started_at) VALUES (?, ?, ?, ?)")) {
             ps.setString(1, turnId);
@@ -274,6 +283,11 @@ public final class ConversationWriter {
         @NotNull String turnId,
         @NotNull EntryData.TurnStats stats
     ) throws SQLException {
+        String endedAt = stats.getTimestamp();
+        if (endedAt == null || endedAt.isEmpty()) {
+            throw new IllegalArgumentException(
+                "TurnStats entry has no timestamp — cannot set turn end time: turnId=" + turnId);
+        }
         try (PreparedStatement ps = conn.prepareStatement("""
             UPDATE turns SET
                 ended_at        = COALESCE(?, ended_at),
@@ -288,7 +302,7 @@ public final class ConversationWriter {
                 lines_removed   = ?
             WHERE id = ?
             """)) {
-            ps.setString(1, nonEmpty(stats.getTimestamp(), Instant.now().toString()));
+            ps.setString(1, endedAt);
             ps.setString(2, emptyToNull(stats.getModel()));
             setMultiplier(ps, 3, stats.getMultiplier());
             ps.setLong(4, stats.getInputTokens());
@@ -345,6 +359,10 @@ public final class ConversationWriter {
         @NotNull String agentName,
         @NotNull String model
     ) throws SQLException {
+        if (timestamp.isEmpty()) {
+            throw new IllegalArgumentException(
+                "Event has no timestamp: id=" + eventId + " type=" + eventType);
+        }
         SessionCursor cursor = cursors.computeIfAbsent(sessionId, k -> new SessionCursor());
         int seq = cursor.nextSequence();
         try (PreparedStatement ps = conn.prepareStatement(
@@ -361,7 +379,7 @@ public final class ConversationWriter {
             ps.setString(4, eventType);
             ps.setString(5, emptyToNull(agentName));
             ps.setString(6, emptyToNull(model));
-            ps.setString(7, nonEmpty(timestamp, Instant.now().toString()));
+            ps.setString(7, timestamp);
             ps.executeUpdate();
         }
     }
@@ -636,14 +654,27 @@ public final class ConversationWriter {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    @NotNull
-    private static String nonEmpty(@Nullable String value, @NotNull String fallback) {
-        return (value == null || value.isEmpty()) ? fallback : value;
-    }
-
     @Nullable
     private static String emptyToNull(@Nullable String value) {
         return (value == null || value.isEmpty()) ? null : value;
+    }
+
+    /**
+     * Returns the first non-null, non-empty timestamp found in {@code entries}.
+     * Throws {@link IllegalArgumentException} if no entry carries a timestamp —
+     * callers must not proceed without a real timestamp (fail fast).
+     */
+    @NotNull
+    private static String extractStartedAt(@NotNull List<EntryData> entries) {
+        for (EntryData entry : entries) {
+            String ts = entry.getTimestamp();
+            if (ts != null && !ts.isEmpty()) {
+                return ts;
+            }
+        }
+        throw new IllegalArgumentException(
+            "None of the " + entries.size() + " entries carry a timestamp"
+                + " — cannot determine session start time");
     }
 
     /**
