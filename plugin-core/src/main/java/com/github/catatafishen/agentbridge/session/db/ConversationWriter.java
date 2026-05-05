@@ -12,6 +12,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -51,11 +52,12 @@ public final class ConversationWriter {
 
     private static final Logger LOG = Logger.getInstance(ConversationWriter.class);
 
+    private static final String INSERT_CONTEXT_FILE_SQL =
+        "INSERT INTO turn_context_files (turn_id, file_name, file_path, file_line) VALUES (?, ?, ?, ?)";
+
     private final ConversationDatabase database;
 
-    /**
-     * Per-session cursor: tracks the most recently opened turn for sequencing.
-     */
+    /** Per-session cursor: tracks the most recently opened turn for sequencing. */
     private final Map<String, SessionCursor> cursors = new HashMap<>();
 
     public ConversationWriter(@NotNull ConversationDatabase database) {
@@ -84,22 +86,32 @@ public final class ConversationWriter {
             return;
         }
         try {
-            conn.setAutoCommit(false);
-            try {
-                ensureSession(conn, sessionId, agentName, clientId);
-                for (EntryData entry : entries) {
-                    writeEntry(conn, sessionId, agentName, clientId, entry);
-                }
-                conn.commit();
-            } catch (SQLException e) {
-                conn.rollback();
-                throw e;
-            } finally {
-                conn.setAutoCommit(true);
-            }
+            writeEntriesInTransaction(conn, sessionId, agentName, clientId, entries);
         } catch (SQLException e) {
             LOG.warn("ConversationWriter: failed to record " + entries.size()
                 + " entries for session " + sessionId, e);
+        }
+    }
+
+    private void writeEntriesInTransaction(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull String agentName,
+        @NotNull String clientId,
+        @NotNull List<EntryData> entries
+    ) throws SQLException {
+        conn.setAutoCommit(false);
+        try {
+            ensureSession(conn, sessionId, agentName, clientId);
+            for (EntryData entry : entries) {
+                writeEntry(conn, sessionId, clientId, entry);
+            }
+            conn.commit();
+        } catch (SQLException e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
         }
     }
 
@@ -108,7 +120,6 @@ public final class ConversationWriter {
     private void writeEntry(
         @NotNull Connection conn,
         @NotNull String sessionId,
-        @NotNull String agentName,
         @NotNull String clientId,
         @NotNull EntryData entry
     ) throws SQLException {
@@ -135,18 +146,23 @@ public final class ConversationWriter {
                 sa.getAgent(), sa.getModel());
             insertSubAgent(conn, sa);
         } else if (entry instanceof EntryData.Nudge n) {
-            // Only persist sent nudges (pending nudges are transient UI state).
-            if (!n.getSent()) return;
-            insertEvent(conn, sessionId, n.getEntryId(), "nudge", n.getTimestamp(), "", "");
-            insertSubtype(conn,
-                "INSERT INTO nudge_events (event_id, text, nudge_id) VALUES (?, ?, ?)",
-                n.getEntryId(), n.getText(), n.getId());
+            writeNudge(conn, sessionId, n);
         } else if (entry instanceof EntryData.TurnStats ts) {
             finaliseTurn(conn, sessionId, ts);
         } else if (entry instanceof EntryData.ContextFiles cf) {
             insertContextFiles(conn, sessionId, cf.getFiles());
         }
         // Status / SessionSeparator are intentionally not persisted (UI markers only).
+    }
+
+    private void writeNudge(@NotNull Connection conn, @NotNull String sessionId,
+                            @NotNull EntryData.Nudge n) throws SQLException {
+        // Only persist sent nudges (pending nudges are transient UI state).
+        if (!n.getSent()) return;
+        insertEvent(conn, sessionId, n.getEntryId(), "nudge", n.getTimestamp(), "", "");
+        insertSubtype(conn,
+            "INSERT INTO nudge_events (event_id, text, nudge_id) VALUES (?, ?, ?)",
+            n.getEntryId(), n.getText(), n.getId());
     }
 
     // ── Sessions ──────────────────────────────────────────────────────────────
@@ -158,8 +174,7 @@ public final class ConversationWriter {
         @NotNull String clientId
     ) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
-            "INSERT OR IGNORE INTO sessions (id, agent_name, client_id, started_at) "
-                + "VALUES (?, ?, ?, ?)")) {
+            "INSERT OR IGNORE INTO sessions (id, agent_name, client_id, started_at) VALUES (?, ?, ?, ?)")) {
             ps.setString(1, sessionId);
             ps.setString(2, agentName);
             ps.setString(3, clientId);
@@ -178,8 +193,7 @@ public final class ConversationWriter {
         String turnId = prompt.getEntryId();
         String startedAt = nonEmpty(prompt.getTimestamp(), Instant.now().toString());
         try (PreparedStatement ps = conn.prepareStatement(
-            "INSERT OR IGNORE INTO turns (id, session_id, prompt_text, started_at) "
-                + "VALUES (?, ?, ?, ?)")) {
+            "INSERT OR IGNORE INTO turns (id, session_id, prompt_text, started_at) VALUES (?, ?, ?, ?)")) {
             ps.setString(1, turnId);
             ps.setString(2, sessionId);
             ps.setString(3, prompt.getText());
@@ -202,12 +216,26 @@ public final class ConversationWriter {
         @NotNull String sessionId,
         @NotNull EntryData.TurnStats stats
     ) throws SQLException {
-        String turnId = stats.getTurnId();
-        if (turnId == null || turnId.isEmpty()) {
-            SessionCursor cursor = cursors.get(sessionId);
-            if (cursor == null || cursor.turnId == null) return;
-            turnId = cursor.turnId;
+        String turnId = resolveTurnId(stats.getTurnId(), sessionId);
+        if (turnId == null) return;
+        updateTurnTotals(conn, turnId, stats);
+        insertCommitHashes(conn, turnId, stats.getCommitHashes());
+    }
+
+    @Nullable
+    private String resolveTurnId(@Nullable String explicitTurnId, @NotNull String sessionId) {
+        if (explicitTurnId != null && !explicitTurnId.isEmpty()) {
+            return explicitTurnId;
         }
+        SessionCursor cursor = cursors.get(sessionId);
+        return (cursor != null) ? cursor.turnId : null;
+    }
+
+    private void updateTurnTotals(
+        @NotNull Connection conn,
+        @NotNull String turnId,
+        @NotNull EntryData.TurnStats stats
+    ) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement("""
             UPDATE turns SET
                 ended_at        = COALESCE(?, ended_at),
@@ -224,16 +252,7 @@ public final class ConversationWriter {
             """)) {
             ps.setString(1, nonEmpty(stats.getTimestamp(), Instant.now().toString()));
             ps.setString(2, emptyToNull(stats.getModel()));
-            String multiplier = stats.getMultiplier();
-            if (multiplier == null || multiplier.isEmpty()) {
-                ps.setNull(3, java.sql.Types.REAL);
-            } else {
-                try {
-                    ps.setDouble(3, Double.parseDouble(multiplier));
-                } catch (NumberFormatException e) {
-                    ps.setNull(3, java.sql.Types.REAL);
-                }
-            }
+            setMultiplier(ps, 3, stats.getMultiplier());
             ps.setLong(4, stats.getInputTokens());
             ps.setLong(5, stats.getOutputTokens());
             ps.setDouble(6, stats.getCostUsd());
@@ -244,19 +263,36 @@ public final class ConversationWriter {
             ps.setString(11, turnId);
             ps.executeUpdate();
         }
+    }
 
-        List<String> hashes = stats.getCommitHashes();
-        if (hashes != null && !hashes.isEmpty()) {
-            try (PreparedStatement ps = conn.prepareStatement(
-                "INSERT INTO commits (turn_id, commit_hash) VALUES (?, ?)")) {
-                for (String hash : hashes) {
-                    if (hash == null || hash.isEmpty()) continue;
-                    ps.setString(1, turnId);
-                    ps.setString(2, hash);
-                    ps.addBatch();
-                }
-                ps.executeBatch();
+    private static void setMultiplier(@NotNull PreparedStatement ps, int index,
+                                      @Nullable String multiplier) throws SQLException {
+        if (multiplier == null || multiplier.isEmpty()) {
+            ps.setNull(index, Types.REAL);
+            return;
+        }
+        try {
+            ps.setDouble(index, Double.parseDouble(multiplier));
+        } catch (NumberFormatException e) {
+            ps.setNull(index, Types.REAL);
+        }
+    }
+
+    private void insertCommitHashes(
+        @NotNull Connection conn,
+        @NotNull String turnId,
+        @Nullable List<String> hashes
+    ) throws SQLException {
+        if (hashes == null || hashes.isEmpty()) return;
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT INTO commits (turn_id, commit_hash) VALUES (?, ?)")) {
+            ps.setString(1, turnId);
+            for (String hash : hashes) {
+                if (hash == null || hash.isEmpty()) continue;
+                ps.setString(2, hash);
+                ps.addBatch();
             }
+            ps.executeBatch();
         }
     }
 
@@ -279,7 +315,7 @@ public final class ConversationWriter {
                 + "VALUES (?, ?, ?, ?, ?, ?, ?)")) {
             ps.setString(1, eventId);
             if (cursor.turnId == null) {
-                ps.setNull(2, java.sql.Types.VARCHAR);
+                ps.setNull(2, Types.VARCHAR);
             } else {
                 ps.setString(2, cursor.turnId);
             }
@@ -374,11 +410,10 @@ public final class ConversationWriter {
         SessionCursor cursor = cursors.get(sessionId);
         if (cursor == null || cursor.turnId == null) return;
         if (files.isEmpty()) return;
-        try (PreparedStatement ps = conn.prepareStatement(
-            "INSERT INTO turn_context_files (turn_id, file_name, file_path, file_line) "
-                + "VALUES (?, ?, ?, ?)")) {
+        String turnId = cursor.turnId;
+        try (PreparedStatement ps = conn.prepareStatement(INSERT_CONTEXT_FILE_SQL)) {
+            ps.setString(1, turnId);
             for (FileRef ref : files) {
-                ps.setString(1, cursor.turnId);
                 ps.setString(2, ref.getName());
                 ps.setString(3, ref.getPath());
                 ps.setInt(4, 0);
@@ -393,11 +428,9 @@ public final class ConversationWriter {
         @NotNull String turnId,
         @NotNull List<ContextFileRef> files
     ) throws SQLException {
-        try (PreparedStatement ps = conn.prepareStatement(
-            "INSERT INTO turn_context_files (turn_id, file_name, file_path, file_line) "
-                + "VALUES (?, ?, ?, ?)")) {
+        try (PreparedStatement ps = conn.prepareStatement(INSERT_CONTEXT_FILE_SQL)) {
+            ps.setString(1, turnId);
             for (ContextFileRef ref : files) {
-                ps.setString(1, turnId);
                 ps.setString(2, ref.getName());
                 ps.setString(3, ref.getPath());
                 ps.setInt(4, ref.getLine());
@@ -495,17 +528,17 @@ public final class ConversationWriter {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)) {
             String now = Instant.now().toString();
+            ps.setString(1, toolEventId);
+            ps.setString(10, now);
+            ps.setNull(6, Types.VARCHAR);
+            ps.setNull(7, Types.VARCHAR);
             for (HookStageResult stage : stages) {
-                ps.setString(1, toolEventId);
                 ps.setString(2, stage.trigger());
                 ps.setString(3, stage.scriptName());
                 ps.setString(4, stage.scriptName());
                 ps.setLong(5, stage.durationMs());
-                ps.setNull(6, java.sql.Types.VARCHAR);
-                ps.setNull(7, java.sql.Types.VARCHAR);
                 ps.setString(8, stage.outcome());
                 ps.setString(9, stage.detail());
-                ps.setString(10, now);
                 ps.addBatch();
             }
             ps.executeBatch();
@@ -515,20 +548,41 @@ public final class ConversationWriter {
     }
 
     /**
-     * Records a single hook execution (permission / pre / success / failure).
-     *
-     * @param toolEventId   id of the tool_call event the hook ran for
-     * @param triggerKind   one of {@code "permission"|"pre"|"success"|"failure"}
-     * @param entryId       stable hook config entry id
-     * @param command       resolved hook command (after substitutions); may be null
-     * @param exitCode      process exit code; null when n/a (e.g. transport error)
-     * @param durationMs    hook runtime in ms
-     * @param input         input payload sent to the hook (JSON); may be null
-     * @param output        raw stdout/stderr produced by the hook; may be null
-     * @param outcome       one of {@code "allow"|"deny"|"approve"|"ok"|"error"|"timeout"}
-     * @param outcomeReason human-readable reason for the outcome; may be null
+     * Records a single hook execution with full detail (exit code, payloads).
+     * Used when per-entry granularity is available (e.g. from a modified HookPipeline).
      */
-    public synchronized void recordHookExecution(
+    public synchronized void recordHookExecution(@NotNull HookExecutionRecord record) {
+        Connection conn = database.getConnection();
+        if (conn == null) return;
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT INTO hook_executions (
+                tool_event_id, trigger_kind, entry_id, command, exit_code,
+                duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            ps.setString(1, record.toolEventId());
+            ps.setString(2, record.triggerKind());
+            ps.setString(3, record.entryId());
+            ps.setString(4, record.command());
+            if (record.exitCode() == null) ps.setNull(5, Types.INTEGER);
+            else ps.setInt(5, record.exitCode());
+            ps.setLong(6, record.durationMs());
+            ps.setString(7, record.input());
+            ps.setString(8, record.output());
+            ps.setString(9, record.outcome());
+            ps.setString(10, record.outcomeReason());
+            ps.setString(11, Instant.now().toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.warn("ConversationWriter: failed to record hook execution for "
+                + record.toolEventId(), e);
+        }
+    }
+
+    /**
+     * Full-detail hook execution record — used when per-entry granularity is available.
+     */
+    public record HookExecutionRecord(
         @NotNull String toolEventId,
         @NotNull String triggerKind,
         @NotNull String entryId,
@@ -540,31 +594,6 @@ public final class ConversationWriter {
         @NotNull String outcome,
         @Nullable String outcomeReason
     ) {
-        Connection conn = database.getConnection();
-        if (conn == null) return;
-        try (PreparedStatement ps = conn.prepareStatement("""
-            INSERT INTO hook_executions (
-                tool_event_id, trigger_kind, entry_id, command, exit_code,
-                duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """)) {
-            ps.setString(1, toolEventId);
-            ps.setString(2, triggerKind);
-            ps.setString(3, entryId);
-            ps.setString(4, command);
-            if (exitCode == null) ps.setNull(5, java.sql.Types.INTEGER);
-            else ps.setInt(5, exitCode);
-            ps.setLong(6, durationMs);
-            ps.setString(7, input);
-            ps.setString(8, output);
-            ps.setString(9, outcome);
-            ps.setString(10, outcomeReason);
-            ps.setString(11, Instant.now().toString());
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            LOG.warn("ConversationWriter: failed to record hook execution for "
-                + toolEventId, e);
-        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -579,9 +608,7 @@ public final class ConversationWriter {
         return (value == null || value.isEmpty()) ? null : value;
     }
 
-    /**
-     * Per-session position cursor: latest turn id and next event sequence number.
-     */
+    /** Per-session position cursor: latest turn id and next event sequence number. */
     private static final class SessionCursor {
         @Nullable String turnId;
         int sequenceNum;

@@ -152,9 +152,9 @@ internal class PromptsPanel(
     private fun reloadHistoryAsync() {
         val serial = historyLoadSerial.incrementAndGet()
         ApplicationManager.getApplication().executeOnPooledThread {
-            val allPrompts = sessionStore.loadPromptsFromAllSessions(project)
-            val entries = mutableListOf<EntryData>()
-            val sessionMap = mutableMapOf<String, String>()
+            val allPrompts = sessionStore.loadPromptsFromAllSessions(project).toList()
+            val entries = ArrayList<EntryData>()
+            val sessionMap = HashMap<String, String>()
             for (pwc in allPrompts) {
                 entries.add(pwc.prompt)
                 pwc.stats?.let { entries.add(it) }

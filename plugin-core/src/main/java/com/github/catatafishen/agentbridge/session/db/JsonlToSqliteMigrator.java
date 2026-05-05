@@ -7,11 +7,11 @@ import org.jetbrains.annotations.NotNull;
 /**
  * Imports legacy JSONL session files into {@link ConversationDatabase}.
  *
- * <p>Phase 2 task — see {@code .copilot/session-state/.../plan.md}. Runs once
+ * <p>Phase 2 implementation — see {@code .copilot/session-state/.../plan.md}. Runs once
  * on first start after upgrade, in the background, and is idempotent (rows
  * already in the DB are skipped via {@code INSERT OR IGNORE}).
  *
- * <p>Stub for now; implementation lands with the {@code p2-migrator} todo.
+ * <p>Not yet implemented; body is a no-op placeholder for the {@code p2-migrator} work item.
  */
 public final class JsonlToSqliteMigrator {
 
@@ -25,7 +25,6 @@ public final class JsonlToSqliteMigrator {
      * {@link ConversationDatabase}. Returns silently if there is nothing to migrate.
      */
     public static void migrateIfNeeded(@NotNull Project project) {
-        // Phase 2 — to be implemented.
         LOG.debug("JsonlToSqliteMigrator.migrateIfNeeded: stub (not yet implemented) for "
             + project.getName());
     }

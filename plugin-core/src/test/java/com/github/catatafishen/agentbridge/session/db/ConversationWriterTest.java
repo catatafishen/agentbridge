@@ -204,11 +204,11 @@ class ConversationWriterTest {
         // First entry was a tool call without prior prompt → cursor.turnId is null.
         // This proves standalone events work.
 
-        writer.recordHookExecution(
+        writer.recordHookExecution(new ConversationWriter.HookExecutionRecord(
             "ev-tc", "permission", "block-deletes",
             "/usr/bin/policy --check", 0, 25L,
             "{\"tool\":\"delete_file\"}", "{\"allow\":false}",
-            "deny", "delete blocked by policy");
+            "deny", "delete blocked by policy"));
 
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
