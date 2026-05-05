@@ -106,12 +106,6 @@ public final class CopilotClient extends AcpClient {
     private static final String EXCLUDED_BUILTIN_TOOLS =
         "view,edit,create,bash,glob,grep,task,report_intent";
 
-    /**
-     * Tracks built-in tools that were auto-approved but should have used MCP alternatives.
-     * Consumed and cleared on the next {@code session/prompt} via {@link #beforeSendPrompt}.
-     */
-    private final java.util.Set<String> misusedBuiltInTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
     // ─── Lifecycle ───────────────────────────────────
 
     public CopilotClient(Project project) {
@@ -528,78 +522,4 @@ public final class CopilotClient extends AcpClient {
         return result;
     }
 
-    // ─── Built-in tool reprimand (Copilot-specific workaround for bug #556) ───
-
-    @Override
-    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
-        if (!userApproved) {
-            misusedBuiltInTools.add(toolId);
-            // Inject reprimand into the next MCP tool result for immediate mid-turn
-            // feedback — the agent corrects behaviour within the same turn instead of
-            // waiting until the user sends another prompt.
-            String notice = buildSingleToolReprimand(toolId);
-            PsiBridgeService psi = PsiBridgeService.getInstance(project);
-            psi.setPendingNudge(notice);
-            // Once the nudge is consumed (agent saw it), clear the tracking set so
-            // beforeSendPrompt() doesn't repeat the same reprimand on the next prompt.
-            // Use addOnNudgeConsumed (not set) to chain with any existing callback,
-            // e.g. the UI callback from onNudgeClicked that clears pendingNudgeId.
-            psi.addOnNudgeConsumed(misusedBuiltInTools::clear);
-        }
-    }
-
-    @Override
-    protected PromptRequest beforeSendPrompt(PromptRequest request) {
-        if (misusedBuiltInTools.isEmpty()) {
-            return request;
-        }
-        java.util.Set<String> tools = new java.util.LinkedHashSet<>(misusedBuiltInTools);
-        misusedBuiltInTools.clear();
-
-        // The same reprimand is also queued in pendingNudge for mid-turn delivery via tool
-        // results. If the previous turn ended without any MCP tool call, that nudge is still
-        // pending — clear it so the agent doesn't see the same notice TWICE in this turn
-        // (once prepended to the prompt, once appended to the next tool result).
-        PsiBridgeService.getInstance(project).setPendingNudge(null);
-
-        String reprimand = buildToolReprimand(tools);
-        LOG.info(displayName() + ": prepending tool reprimand for: " + tools);
-
-        java.util.List<ContentBlock> augmented = new java.util.ArrayList<>();
-        augmented.add(new ContentBlock.Text(reprimand));
-        augmented.addAll(request.prompt());
-        return new PromptRequest(request.sessionId(), augmented, request.modelId(), request.modeSlug());
-    }
-
-    private static String buildToolReprimand(java.util.Set<String> tools) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("[System notice] You used the following built-in tools which duplicate our MCP tools. ");
-        sb.append("Do NOT use these again — use the MCP alternatives instead:\n");
-        for (String tool : tools) {
-            sb.append("  • ").append(tool).append(" → use ").append(mcpAlternative(tool)).append('\n');
-        }
-        sb.append("All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.");
-        return sb.toString();
-    }
-
-    private static String buildSingleToolReprimand(String toolId) {
-        return "[System notice] You used the following built-in tools which duplicate our MCP tools. "
-            + "Do NOT use these again — use the MCP alternatives instead:\n"
-            + "  • " + toolId + " → use " + mcpAlternative(toolId) + "\n"
-            + "All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.";
-    }
-
-    private static String mcpAlternative(String builtInTool) {
-        return switch (builtInTool) {
-            case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
-            case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
-            case "create" -> "agentbridge-create_file";
-            case "view" -> "agentbridge-read_file";
-            case "glob" -> "agentbridge-list_project_files";
-            case "grep" -> "agentbridge-search_text";
-            case "task" -> "agentbridge-run_command (for shell tasks)";
-            case "report_intent" -> "(not needed — IDE tracks intent automatically)";
-            default -> "the corresponding agentbridge-* tool";
-        };
-    }
 }
