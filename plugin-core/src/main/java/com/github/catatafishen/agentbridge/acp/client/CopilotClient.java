@@ -115,12 +115,6 @@ public final class CopilotClient extends AcpClient {
         "web_fetch", "web_search", "task_complete", "sql", "skill"
     );
 
-    /**
-     * Tracks built-in tools that were auto-approved but should have used MCP alternatives.
-     * Consumed and cleared on the next {@code session/prompt} via {@link #beforeSendPrompt}.
-     */
-    private final java.util.Set<String> misusedBuiltInTools = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
     // ─── Lifecycle ───────────────────────────────────
 
     public CopilotClient(Project project) {
