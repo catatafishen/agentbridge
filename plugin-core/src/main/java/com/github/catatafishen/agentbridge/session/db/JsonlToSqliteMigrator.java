@@ -18,10 +18,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Imports legacy JSONL session files into {@link ConversationDatabase}.
@@ -167,17 +169,131 @@ public final class JsonlToSqliteMigrator {
         }
     }
 
+    // ── Legacy role/parts format ──────────────────────────────────────────────
+
     private static void parseOneLine(@NotNull String line, @NotNull Path file,
                                      @NotNull List<EntryData> entries) {
         try {
             JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
-            if (EntryDataJsonAdapter.isEntryFormat(line)) {
+            if (EntryDataJsonAdapter.isEntryFormat(obj)) {
                 EntryData entry = EntryDataJsonAdapter.deserialize(obj);
                 if (entry != null) entries.add(entry);
+            } else if (obj.has(LEGACY_KEY_ROLE) && obj.has(LEGACY_KEY_PARTS)) {
+                parseLegacyMessage(obj, entries);
             }
         } catch (Exception e) {
             LOG.debug("JsonlToSqliteMigrator: skipped malformed line in " + file.getFileName());
         }
+    }
+
+    private static final String LEGACY_KEY_ROLE = "role";
+    private static final String LEGACY_KEY_AGENT = "agent";
+    private static final String LEGACY_KEY_PARTS = "parts";
+    private static final String LEGACY_KEY_CREATED_AT = "createdAt";
+    private static final String LEGACY_KEY_TOOL_INVOCATION = "toolInvocation";
+    private static final String LEGACY_KEY_RESULT = "result";
+    private static final String LEGACY_KEY_STATE = "state";
+    private static final String LEGACY_KEY_TOOL_NAME = "toolName";
+
+    /**
+     * Parses a legacy role/parts format message into one or more {@link EntryData} entries.
+     *
+     * <p>The legacy format predates the type-discriminated entry format. Each message line
+     * has the structure:
+     * <pre>{@code {"id":"...","role":"user"|"assistant","parts":[{"type":"text","text":"..."},...],"createdAt":millis}}</pre>
+     *
+     * <p>Each part is mapped to the nearest {@link EntryData} equivalent:
+     * <ul>
+     *   <li>{@code user/text} → {@link EntryData.Prompt}
+     *   <li>{@code assistant/text} → {@link EntryData.Text}
+     *   <li>{@code assistant/reasoning} → {@link EntryData.Thinking}
+     *   <li>{@code assistant/tool-invocation} → {@link EntryData.ToolCall}
+     *   <li>{@code assistant/subagent} → {@link EntryData.SubAgent}
+     * </ul>
+     *
+     * <p>Parts with an unrecognised type are silently skipped.
+     */
+    static void parseLegacyMessage(@NotNull JsonObject obj, @NotNull List<EntryData> entries) {
+        String role = legacyStr(obj, LEGACY_KEY_ROLE);
+        String msgId = obj.has("id") ? obj.get("id").getAsString() : UUID.randomUUID().toString();
+        String agent = legacyStr(obj, LEGACY_KEY_AGENT);
+        long createdAt = obj.has(LEGACY_KEY_CREATED_AT) ? obj.get(LEGACY_KEY_CREATED_AT).getAsLong() : 0L;
+        String timestamp = createdAt > 0 ? Instant.ofEpochMilli(createdAt).toString() : "";
+
+        if (!obj.has(LEGACY_KEY_PARTS) || !obj.get(LEGACY_KEY_PARTS).isJsonArray()) return;
+        JsonArray parts = obj.getAsJsonArray(LEGACY_KEY_PARTS);
+
+        for (int i = 0; i < parts.size(); i++) {
+            if (!parts.get(i).isJsonObject()) continue;
+            JsonObject part = parts.get(i).getAsJsonObject();
+            // Multi-part messages get per-part entryIds derived from the message id.
+            String entryId = parts.size() == 1 ? msgId : msgId + "-p" + i;
+            EntryData entry = convertLegacyPart(role, part, entryId, timestamp, agent);
+            if (entry != null) entries.add(entry);
+        }
+    }
+
+    @Nullable
+    private static EntryData convertLegacyPart(
+        @NotNull String role,
+        @NotNull JsonObject part,
+        @NotNull String entryId,
+        @NotNull String timestamp,
+        @NotNull String agent
+    ) {
+        String partType = legacyStr(part, "type");
+        String text = legacyStr(part, "text");
+        return switch (partType) {
+            case "text" -> "user".equals(role)
+                ? new EntryData.Prompt(text, timestamp, null, "", entryId)
+                : new EntryData.Text(text, timestamp, agent, "", entryId);
+            case "reasoning" -> new EntryData.Thinking(text, timestamp, agent, "", entryId);
+            case "tool-invocation" -> convertLegacyToolInvocation(part, timestamp, agent, entryId);
+            case "subagent" -> new EntryData.SubAgent(
+                legacyStr(part, "agentType"),
+                legacyStr(part, "description"),
+                legacyStrOrNull(part, "prompt"),
+                legacyStrOrNull(part, LEGACY_KEY_RESULT),
+                legacyStrOrNull(part, "status"),
+                part.has("colorIndex") ? part.get("colorIndex").getAsInt() : 0,
+                null, false, null,
+                timestamp, agent, "", entryId);
+            default -> null;
+        };
+    }
+
+    @Nullable
+    private static EntryData.ToolCall convertLegacyToolInvocation(
+        @NotNull JsonObject part, @NotNull String timestamp,
+        @NotNull String agent, @NotNull String entryId
+    ) {
+        if (!part.has(LEGACY_KEY_TOOL_INVOCATION) || !part.get(LEGACY_KEY_TOOL_INVOCATION).isJsonObject()) {
+            return null;
+        }
+        JsonObject ti = part.getAsJsonObject(LEGACY_KEY_TOOL_INVOCATION);
+        return new EntryData.ToolCall(
+            legacyStr(ti, LEGACY_KEY_TOOL_NAME),
+            legacyStrOrNull(ti, "args"),
+            "", // kind unknown in legacy format
+            legacyStrOrNull(ti, LEGACY_KEY_RESULT),
+            legacyStrOrNull(ti, LEGACY_KEY_STATE),
+            "", null, false, null, null,
+            timestamp, agent, "", entryId);
+    }
+
+    /**
+     * Returns the string value of a field in a legacy JSON object, or {@code ""} if absent.
+     */
+    private static String legacyStr(@NotNull JsonObject obj, @NotNull String key) {
+        return obj.has(key) ? obj.get(key).getAsString() : "";
+    }
+
+    /**
+     * Returns the string value of a field in a legacy JSON object, or {@code null} if absent.
+     */
+    @Nullable
+    private static String legacyStrOrNull(@NotNull JsonObject obj, @NotNull String key) {
+        return obj.has(key) ? obj.get(key).getAsString() : null;
     }
 
     /**
@@ -225,7 +341,7 @@ public final class JsonlToSqliteMigrator {
                 JsonObject rec = elem.getAsJsonObject();
                 String id = rec.has("id") ? rec.get("id").getAsString() : null;
                 if (id == null || id.isEmpty()) continue;
-                String agent = rec.has("agent") ? rec.get("agent").getAsString() : "Unknown";
+                String agent = rec.has(LEGACY_KEY_AGENT) ? rec.get(LEGACY_KEY_AGENT).getAsString() : "Unknown";
                 result.add(new SessionInfo(id, agent));
             }
         } catch (Exception e) {

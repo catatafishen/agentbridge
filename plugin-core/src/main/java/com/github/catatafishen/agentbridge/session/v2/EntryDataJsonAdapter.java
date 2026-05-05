@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.FileRef;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -376,12 +377,28 @@ public final class EntryDataJsonAdapter {
     // ── Format detection ──────────────────────────────────────────────────────
 
     /**
-     * Returns {@code true} if the JSON line uses the entry-per-line format
-     * (has a {@code "type"} field) as opposed to the old legacy role-based
-     * format (which uses a {@code "role"} field).
+     * Returns {@code true} if the given JSON object uses the entry-per-line format
+     * (has a top-level {@code "type"} field) as opposed to the old legacy role-based
+     * format (which uses a top-level {@code "role"} field).
+     */
+    public static boolean isEntryFormat(@NotNull JsonObject json) {
+        return json.has("type");
+    }
+
+    /**
+     * String-based overload for callers that have not yet parsed the JSON.
+     *
+     * <p><b>Prefer {@link #isEntryFormat(JsonObject)}</b> when the object is already parsed.
+     * This overload parses the JSON to perform an accurate top-level check, avoiding
+     * false positives from {@code "type"} appearing inside nested objects (e.g. legacy
+     * {@code "parts"} arrays).
      */
     public static boolean isEntryFormat(@NotNull String line) {
-        return line.contains("\"type\":");
+        try {
+            return isEntryFormat(JsonParser.parseString(line).getAsJsonObject());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
