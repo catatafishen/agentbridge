@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.memory.mining;
 
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import org.junit.jupiter.api.Test;
 
@@ -68,7 +68,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillSingleSession() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Fix auth bug")
         );
 
@@ -96,7 +96,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillMultipleSessions() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Fix auth"),
             session("s2", "claude", "Add tests"),
             session("s3", "copilot", "Refactor DB")
@@ -122,7 +122,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillSkipsEmptyEntries() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Has entries"),
             session("s2", "copilot", "Empty session")
         );
@@ -146,7 +146,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillSkipsNullEntries() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Null entries")
         );
 
@@ -165,7 +165,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillHandlesExceptionPerSession() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Good session"),
             session("s2", "copilot", "Bad session"),
             session("s3", "copilot", "Good session 2")
@@ -191,7 +191,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillAggregatesResults() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Session 1"),
             session("s2", "copilot", "Session 2")
         );
@@ -218,7 +218,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillUsesSessionNameForLabel() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("abcdef1234567890", "copilot", "")
         );
 
@@ -236,7 +236,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillSummaryMessage() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Session 1")
         );
 
@@ -259,7 +259,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillHandlesLoaderException() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Session 1"),
             session("s2", "copilot", "Session 2")
         );
@@ -286,7 +286,7 @@ class BackfillMinerTest {
     @Test
     void executeBackfillShortSessionIdTruncation() {
         // Session ID shorter than 8 chars, empty name → should truncate correctly
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("ab", "copilot", "")
         );
 
@@ -304,7 +304,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillRespectsCancel() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Session 1"),
             session("s2", "copilot", "Session 2"),
             session("s3", "copilot", "Session 3")
@@ -341,7 +341,7 @@ class BackfillMinerTest {
 
     @Test
     void executeBackfillReportsExchangeProgress() {
-        List<SessionStoreV2.SessionRecord> sessions = List.of(
+        List<ConversationService.SessionRecord> sessions = List.of(
             session("s1", "copilot", "Session 1")
         );
 
@@ -374,8 +374,8 @@ class BackfillMinerTest {
 
     // --- Helpers ---
 
-    private static SessionStoreV2.SessionRecord session(String id, String agent, String name) {
-        return new SessionStoreV2.SessionRecord(id, agent, name, 0L, 0L, 0);
+    private static ConversationService.SessionRecord session(String id, String agent, String name) {
+        return new ConversationService.SessionRecord(id, agent, name, 0L, 0L, 0);
     }
 
     private static EntryData prompt(String text) {

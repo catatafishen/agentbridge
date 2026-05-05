@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.memory
 
 import com.github.catatafishen.agentbridge.memory.mining.BackfillMiner
 import com.github.catatafishen.agentbridge.memory.mining.MiningTracker
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.BoundConfigurable
@@ -13,14 +13,9 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.text.StringUtil
-import com.intellij.ui.dsl.builder.Cell
-import com.intellij.ui.dsl.builder.bindIntValue
-import com.intellij.ui.dsl.builder.bindSelected
-import com.intellij.ui.dsl.builder.bindText
-import com.intellij.ui.dsl.builder.panel
-import com.intellij.ui.dsl.builder.selected
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.dsl.builder.*
 import com.intellij.util.ui.UIUtil
 import java.nio.file.Path
 
@@ -129,8 +124,8 @@ class MemorySettingsConfigurable(private val project: Project) :
         if (s.isBackfillCompleted) {
             backfillStatusLabel.text = "✓ History has been mined into memory."
         } else {
-            val sessionCount = SessionStoreV2.getInstance(project)
-                .listSessions(project.basePath).size
+            val sessionCount = ConversationService.getInstance(project)
+                .listSessions().size
             backfillStatusLabel.text = if (sessionCount > 0) {
                 "<html><b>$sessionCount past sessions</b> available to mine. " +
                     "Click below to populate memory from your conversation history.</html>"
@@ -194,8 +189,8 @@ class MemorySettingsConfigurable(private val project: Project) :
     }
 
     private fun offerBackfill() {
-        val sessionCount = SessionStoreV2.getInstance(project)
-            .listSessions(project.basePath).size
+        val sessionCount = ConversationService.getInstance(project)
+            .listSessions().size
         if (sessionCount == 0) return
         val choice = Messages.showYesNoDialog(
             project,

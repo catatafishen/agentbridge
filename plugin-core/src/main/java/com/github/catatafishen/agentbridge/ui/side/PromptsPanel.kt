@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side
 
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
 import com.github.catatafishen.agentbridge.ui.side.PromptsPanel.Companion.MAX_CHARS
@@ -38,7 +38,7 @@ internal class PromptsPanel(
     private val searchField = SearchTextField()
     private val listModel = DefaultListModel<PromptItem>()
     private val promptList = JBList(listModel)
-    private val sessionStore = SessionStoreV2.getInstance(project)
+    private val sessionStore = ConversationService.getInstance(project)
     private val historyLoadSerial = AtomicInteger()
     private val entriesListener = Runnable {
         ApplicationManager.getApplication().invokeLater(::onEntriesChanged)
@@ -152,7 +152,7 @@ internal class PromptsPanel(
     private fun reloadHistoryAsync() {
         val serial = historyLoadSerial.incrementAndGet()
         ApplicationManager.getApplication().executeOnPooledThread {
-            val allPrompts = sessionStore.loadPromptsFromAllSessions(project).toList()
+            val allPrompts = sessionStore.loadPromptsFromAllSessions().toList()
             val entries = ArrayList<EntryData>()
             val sessionMap = HashMap<String, String>()
             for (pwc in allPrompts) {

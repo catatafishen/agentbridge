@@ -2,7 +2,7 @@ package com.github.catatafishen.agentbridge.memory;
 
 import com.github.catatafishen.agentbridge.memory.mining.BackfillMiner;
 import com.github.catatafishen.agentbridge.memory.store.MemoryStore;
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit;
  * Platform tests for {@link BackfillMiner} — covers the private {@code doBackfill()} method
  * that resolves project services and the public {@code run()} async entry point.
  *
- * <p>Uses a real IntelliJ project with real {@link SessionStoreV2} (backed by temp filesystem).
+ * <p>Uses a real IntelliJ project with real {@link ConversationService} (backed by temp filesystem).
  * On a fresh project, listSessions returns empty — testing the no-sessions path.
  */
 public class BackfillMinerPlatformTest extends MemoryPlatformTestCase {
@@ -63,12 +63,12 @@ public class BackfillMinerPlatformTest extends MemoryPlatformTestCase {
         assertEquals(0, result.duplicates());
     }
 
-    public void testSessionStoreResolvesFromProject() {
-        SessionStoreV2 store = SessionStoreV2.getInstance(getProject());
-        assertNotNull("SessionStoreV2 should resolve", store);
+    public void testConversationServiceResolvesFromProject() {
+        ConversationService service = ConversationService.getInstance(getProject());
+        assertNotNull("ConversationService should resolve", service);
 
         // listSessions on a fresh project should return empty
-        List<SessionStoreV2.SessionRecord> sessions = store.listSessions(getProject().getBasePath());
+        List<ConversationService.SessionRecord> sessions = service.listSessions();
         assertNotNull("listSessions should return non-null", sessions);
         assertTrue("listSessions on fresh project should be empty", sessions.isEmpty());
     }
@@ -102,9 +102,9 @@ public class BackfillMinerPlatformTest extends MemoryPlatformTestCase {
 
     public void testRunDoesNotStoreWhenDisabled() throws Exception {
         // Memory disabled — BackfillMiner.doBackfill() should still run
-        // (it resolves SessionStoreV2 independently) but TurnMiner won't store anything
+        // (it resolves ConversationService independently) but TurnMiner won't store anything
         // because MemoryService returns nulls.
-        // Note: this test verifies doBackfill can resolve the session store even when
+        // Note: this test verifies doBackfill can resolve the conversation service even when
         // MemoryService's getStore/getEmbeddingService return null.
         enableMemory();
         MemoryStore store = replaceMemoryServiceWithTestComponents();
