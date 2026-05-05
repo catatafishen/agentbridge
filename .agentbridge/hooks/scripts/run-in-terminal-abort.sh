@@ -15,12 +15,12 @@ lcmd=$(printf '%s' "$cmd" | tr '[:upper:]' '[:lower:]')
 # --- git commands ---
 case "$lcmd" in
     git\ *|git)
-        hook_json_deny "git commands are not allowed via run_in_terminal (causes IntelliJ buffer desync). Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, etc."
+        hook_json_deny "git commands are not allowed via run_in_terminal (causes IntelliJ buffer desync). Use the dedicated git_* tools instead: git_status, git_diff, git_log, git_commit, etc. Note: run_in_terminal IS the correct MCP tool for interactive shell commands (e.g. a REPL or long-running process) — only git requires the dedicated tools."
         exit 0 ;;
 esac
 case "$lcmd" in
     *"&& git "*|*"; git "*|*"| git "*)
-        hook_json_deny "git commands are not allowed via run_in_terminal (causes IntelliJ buffer desync). Use the dedicated git tools instead: git_status, git_diff, git_log, git_commit, etc."
+        hook_json_deny "git commands are not allowed via run_in_terminal (causes IntelliJ buffer desync). Use the dedicated git_* tools instead: git_status, git_diff, git_log, git_commit, etc. Note: run_in_terminal IS the correct MCP tool for interactive shell commands (e.g. a REPL or long-running process) — only git requires the dedicated tools."
         exit 0 ;;
 esac
 
