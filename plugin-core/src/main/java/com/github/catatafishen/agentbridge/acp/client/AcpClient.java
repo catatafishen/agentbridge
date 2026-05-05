@@ -750,18 +750,6 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     /**
-     * Hook called when a non-allowed built-in tool is approved. Subclasses may
-     * override to track tool misuse for corrective guidance. Default: no-op.
-     *
-     * @param toolId       the tool that was approved
-     * @param userApproved {@code true} if the user explicitly approved via a prompt;
-     *                     {@code false} if the plugin auto-approved without asking
-     */
-    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
-        // no-op — subclasses like CopilotClient may track for reprimand
-    }
-
-    /**
      * Called in the finally block after {@code sendPrompt} completes (success or failure).
      * Default: clears {@code updateConsumer}. Override to retain it (e.g. Kiro sends
      * thought chunks asynchronously after the prompt response).
@@ -1636,16 +1624,14 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
             chosenOption = handleBlockedTool(toolId, toolCallId, params);
         } else if (isBuiltInTool(protocolTitle)) {
-            if (isAllowedBuiltInTool(toolId)) {
-                LOG.info(displayName() + ": auto-approving built-in web tool '" + toolId + "' — no MCP alternative exists");
+            if (shouldAutoDenyBuiltInTool(toolId)) {
+                chosenOption = handleAutoDeniedBuiltInTool(toolId, toolCallId, params);
             } else {
-                LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
-                    + "' — should use MCP tools instead");
-                onBuiltInToolApproved(toolId, false);
-            }
-            chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
-            if (chosenOption == null) {
-                chosenOption = findFirstOption(params);
+                LOG.info(displayName() + ": auto-approving built-in tool '" + toolId + "' — no MCP alternative exists");
+                chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
+                if (chosenOption == null) {
+                    chosenOption = findFirstOption(params);
+                }
             }
         } else {
             LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
@@ -1677,6 +1663,40 @@ public abstract class AcpClient extends AbstractAgentClient {
         return findDenyOption(params);
     }
 
+    private @Nullable JsonObject handleAutoDeniedBuiltInTool(String toolId, String toolCallId, @Nullable JsonObject params) {
+        String reason = "Native tool '" + toolId + "' is blocked — use " + mcpAlternative(toolId)
+            + " instead. All agentbridge-* MCP tools are available.";
+        LOG.warn(displayName() + ": auto-denying native tool '" + toolId + "'");
+
+        Consumer<SessionUpdate> consumer = updateConsumer;
+        if (consumer != null && !toolCallId.isEmpty()) {
+            consumer.accept(new SessionUpdate.ToolCallUpdate(
+                toolCallId,
+                SessionUpdate.ToolCallStatus.FAILED,
+                null,
+                "Auto-denied: " + reason,
+                null,
+                true,
+                reason
+            ));
+        }
+        return findDenyOption(params);
+    }
+
+    static String mcpAlternative(String builtInTool) {
+        return switch (builtInTool) {
+            case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
+            case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
+            case "create" -> "agentbridge-create_file";
+            case "view" -> "agentbridge-read_file";
+            case "glob" -> "agentbridge-list_project_files";
+            case "grep" -> "agentbridge-search_text";
+            case "task" -> "agentbridge-run_command (for shell tasks)";
+            case "report_intent" -> "(not needed — IDE tracks intent automatically)";
+            default -> "the corresponding agentbridge-* tool";
+        };
+    }
+
     private void sendPermissionResponse(JsonElement id, String requestKey, @Nullable JsonObject chosenOption) {
         String optionId = chosenOption != null && chosenOption.has(KEY_OPTION_ID)
             ? chosenOption.get(KEY_OPTION_ID).getAsString()
@@ -1688,9 +1708,11 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     /**
-     * Whether this agent should block all built-in (non-MCP) tool calls,
-     * forcing the model to use agentbridge tools exclusively.
-     * Override in subclasses that require exclusive agentbridge usage.
+     * Whether to also block the small set of allowed built-in tools ({@code web_fetch},
+     * {@code web_search}, {@code task_complete}). By default, non-allowed built-in tools
+     * (e.g. {@code bash}, {@code edit}, {@code grep}) are always auto-denied via
+     * {@link #shouldAutoDenyBuiltInTool}. Override to return {@code true} to additionally
+     * block the allowed web tools in agents that require exclusive agentbridge usage.
      */
     protected boolean excludeBuiltInTools() {
         return false;
