@@ -108,6 +108,7 @@ public final class ConversationWriter {
             for (EntryData entry : entries) {
                 writeEntry(conn, sessionId, clientId, entry);
             }
+            updateSessionEndedAt(conn, sessionId);
             conn.commit();
         } catch (SQLException e) {
             conn.rollback();
@@ -181,6 +182,22 @@ public final class ConversationWriter {
             ps.setString(2, agentName);
             ps.setString(3, clientId);
             ps.setString(4, Instant.now().toString());
+            ps.executeUpdate();
+        }
+    }
+
+    private void updateSessionEndedAt(@NotNull Connection conn, @NotNull String sessionId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+            UPDATE sessions
+               SET ended_at = (
+                     SELECT MAX(COALESCE(t.ended_at, t.started_at))
+                     FROM turns t
+                     WHERE t.session_id = ?
+                   )
+             WHERE id = ?
+            """)) {
+            ps.setString(1, sessionId);
+            ps.setString(2, sessionId);
             ps.executeUpdate();
         }
     }

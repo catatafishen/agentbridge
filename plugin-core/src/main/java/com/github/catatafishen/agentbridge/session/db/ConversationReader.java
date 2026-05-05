@@ -37,10 +37,9 @@ public final class ConversationReader {
     /**
      * Metadata record for a session, suitable for display in a session picker.
      *
-     * <p>{@code lastActivity} is the most recent timestamp we can derive for the session:
-     * {@code sessions.ended_at} if set, otherwise the latest turn end/start time, otherwise
-     * {@code sessions.started_at}. It is always non-null and used as the display date in the
-     * session picker.
+     * <p>{@code lastActivity} equals {@code sessions.ended_at}, which is set by
+     * {@link ConversationWriter} after every entry batch write. Falls back to
+     * {@code sessions.started_at} only for sessions with no turns yet.
      */
     public record SessionRecord(
         @NotNull String id,
@@ -63,7 +62,7 @@ public final class ConversationReader {
     }
 
     /**
-     * Lists all sessions ordered by most recently started first.
+     * Lists all sessions ordered by most-recent activity first.
      */
     @NotNull
     public synchronized List<SessionRecord> listSessions() {
@@ -71,11 +70,7 @@ public final class ConversationReader {
         if (conn == null) return List.of();
         try (PreparedStatement ps = conn.prepareStatement("""
             SELECT s.id, s.agent_name, COALESCE(s.display_name, ''), s.started_at,
-                   COALESCE(
-                       s.ended_at,
-                       (SELECT MAX(COALESCE(t.ended_at, t.started_at)) FROM turns t WHERE t.session_id = s.id),
-                       s.started_at
-                   ) AS last_activity,
+                   COALESCE(s.ended_at, s.started_at) AS last_activity,
                    (SELECT COUNT(*) FROM turns WHERE session_id = s.id) AS turn_count
             FROM sessions s
             ORDER BY last_activity DESC
