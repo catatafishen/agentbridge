@@ -42,10 +42,10 @@ public final class ConversationDatabase implements Disposable {
     /**
      * Bumped whenever {@link ConversationSchema} changes. Stored in {@code schema_version} table.
      */
-    static final int SCHEMA_VERSION = 1;
+    static final int SCHEMA_VERSION = 2;
 
     private final Project project;
-    private Connection connection;
+    private volatile Connection connection;
 
     private volatile boolean initAttempted;
 

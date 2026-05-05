@@ -578,8 +578,9 @@ public final class McpProtocolHandler {
             liveService.complete(callId, fullResult,
                 System.currentTimeMillis() - callStartMs, !isError);
 
-            enrichConversationDb(toolUseId, inputJson, fullResult, durationMs, !isError,
-                isError ? resultText : null, kind, hookStages);
+            enrichConversationDb(new ToolCallEnrichmentData(
+                toolUseId, inputJson, fullResult, durationMs, !isError,
+                isError ? resultText : null, kind, hookStages));
 
             return buildToolResult(msg, fullResult, isError);
         } catch (Exception e) {
@@ -595,8 +596,9 @@ public final class McpProtocolHandler {
             liveService.complete(callId, finalOutput,
                 System.currentTimeMillis() - callStartMs, !isError);
 
-            enrichConversationDb(toolUseId, inputJson, finalOutput, durationMs, false,
-                e.getMessage(), kind, hookStages);
+            enrichConversationDb(new ToolCallEnrichmentData(
+                toolUseId, inputJson, finalOutput, durationMs, false,
+                e.getMessage(), kind, hookStages));
 
             return buildToolResult(msg, finalOutput, isError);
         } finally {
@@ -604,21 +606,28 @@ public final class McpProtocolHandler {
         }
     }
 
-    @SuppressWarnings("java:S107")
-    // All parameters carry distinct data needed for the SQL update; no natural grouping
-    private void enrichConversationDb(@Nullable String toolUseId, @NotNull String inputJson,
-                                      @Nullable String output, long durationMs, boolean success,
-                                      @Nullable String errorMessage, @Nullable String category,
-                                      @NotNull List<HookStageResult> hookStages) {
-        if (toolUseId == null) return;
+    private record ToolCallEnrichmentData(
+        @Nullable String toolUseId,
+        @NotNull String inputJson,
+        @Nullable String output,
+        long durationMs,
+        boolean success,
+        @Nullable String errorMessage,
+        @Nullable String category,
+        @NotNull List<HookStageResult> hookStages
+    ) {
+    }
+
+    private void enrichConversationDb(@NotNull ToolCallEnrichmentData data) {
+        if (data.toolUseId() == null) return;
         ConversationService service = ConversationService.getInstance(project);
-        long inputSize = inputJson.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-        long outputSize = output != null
-            ? output.getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
-        service.enrichToolCallStats(toolUseId, inputSize, outputSize, durationMs,
-            success, errorMessage, category);
-        if (!hookStages.isEmpty()) {
-            service.recordHookStages(toolUseId, hookStages);
+        long inputSize = data.inputJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
+        long outputSize = data.output() != null
+            ? data.output().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
+        service.enrichToolCallStats(data.toolUseId(), inputSize, outputSize, data.durationMs(),
+            data.success(), data.errorMessage(), data.category());
+        if (!data.hookStages().isEmpty()) {
+            service.recordHookStages(data.toolUseId(), data.hookStages());
         }
     }
 

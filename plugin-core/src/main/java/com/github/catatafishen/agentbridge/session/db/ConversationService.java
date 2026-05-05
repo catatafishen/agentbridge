@@ -455,7 +455,12 @@ public final class ConversationService implements Disposable {
 
     @NotNull
     @SuppressWarnings("deprecation")
-    private static File currentSessionIdFile(@Nullable String basePath) {
+    private File currentSessionIdFile(@Nullable String basePath) {
+        if (project != null) {
+            // Production path: use the configured storage root via ExportUtils
+            return new File(ExportUtils.sessionsDir(project), CURRENT_SESSION_FILE);
+        }
+        // Test path (project == null): fall back to legacy basePath-based resolution
         return new File(ExportUtils.sessionsDir(basePath), CURRENT_SESSION_FILE);
     }
 

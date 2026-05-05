@@ -49,6 +49,7 @@ final class ConversationSchema {
             }
 
             if (currentVersion < 1) applyV1(stmt);
+            if (currentVersion < 2) applyV2(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -69,7 +70,9 @@ final class ConversationSchema {
         }
     }
 
-    /** Initial schema. Creates all tables and indexes. */
+    /**
+     * Initial schema. Creates all tables and indexes.
+     */
     private static void applyV1(@NotNull Statement stmt) throws SQLException {
         // ── Sessions ──────────────────────────────────────────────────────────
         stmt.execute("""
@@ -210,7 +213,8 @@ final class ConversationSchema {
             CREATE TABLE commits (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 turn_id     TEXT NOT NULL REFERENCES turns(id) ON DELETE CASCADE,
-                commit_hash TEXT NOT NULL
+                commit_hash TEXT NOT NULL,
+                UNIQUE(turn_id, commit_hash)
             )
             """);
         stmt.execute("CREATE INDEX idx_commits_turn ON commits(turn_id)");
@@ -234,5 +238,13 @@ final class ConversationSchema {
             """);
         stmt.execute("CREATE INDEX idx_hook_tool ON hook_executions(tool_event_id)");
         stmt.execute("CREATE INDEX idx_hook_time ON hook_executions(timestamp)");
+    }
+
+    /**
+     * V2: add UNIQUE constraint to commits table (idempotent for existing databases).
+     */
+    private static void applyV2(@NotNull Statement stmt) throws SQLException {
+        stmt.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_commits_unique ON commits(turn_id, commit_hash)");
     }
 }

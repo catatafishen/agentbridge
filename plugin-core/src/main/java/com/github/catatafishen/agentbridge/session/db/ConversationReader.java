@@ -61,137 +61,120 @@ public final class ConversationReader {
     ) {
     }
 
-    /**
-     * Lists all sessions ordered by most-recent activity first.
-     */
     @NotNull
-    public synchronized List<SessionRecord> listSessions() {
-        Connection conn = database.getConnection();
-        if (conn == null) return List.of();
-        try (PreparedStatement ps = conn.prepareStatement("""
-            SELECT s.id, s.agent_name, COALESCE(s.display_name, ''), s.started_at,
-                   COALESCE(s.ended_at, s.started_at) AS last_activity,
-                   (SELECT COUNT(*) FROM turns WHERE session_id = s.id) AS turn_count
-            FROM sessions s
-            ORDER BY last_activity DESC
-            """)) {
-            ResultSet rs = ps.executeQuery();
-            List<SessionRecord> result = new ArrayList<>();
-            while (rs.next()) {
-                result.add(new SessionRecord(
-                    rs.getString(1),
-                    rs.getString(2),
-                    rs.getString(3),
-                    rs.getString(4),
-                    rs.getString(5),
-                    rs.getInt(6)
-                ));
+    public List<SessionRecord> listSessions() {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT s.id, s.agent_name, COALESCE(s.display_name, ''), s.started_at,
+                       COALESCE(s.ended_at, s.started_at) AS last_activity,
+                       (SELECT COUNT(*) FROM turns WHERE session_id = s.id) AS turn_count
+                FROM sessions s
+                ORDER BY last_activity DESC
+                """)) {
+                ResultSet rs = ps.executeQuery();
+                List<SessionRecord> result = new ArrayList<>();
+                while (rs.next()) {
+                    result.add(new SessionRecord(
+                        rs.getString(1),
+                        rs.getString(2),
+                        rs.getString(3),
+                        rs.getString(4),
+                        rs.getString(5),
+                        rs.getInt(6)
+                    ));
+                }
+                return result;
+            } catch (SQLException e) {
+                LOG.warn("ConversationReader: failed to list sessions", e);
+                return List.of();
             }
-            return result;
-        } catch (SQLException e) {
-            LOG.warn("ConversationReader: failed to list sessions", e);
-            return List.of();
         }
     }
 
-    /**
-     * Loads all entries for a session in chronological order, reconstructing
-     * the full {@link EntryData} graph from the normalised schema.
-     *
-     * <p>Reconstruction order per turn: Prompt → events (by sequence_num) → TurnStats.
-     * Context files are emitted as a {@link EntryData.ContextFiles} entry after the prompt.
-     *
-     * @return entries in chronological order, or empty list if session not found
-     */
     @NotNull
-    public synchronized List<EntryData> loadEntries(@NotNull String sessionId) {
-        Connection conn = database.getConnection();
-        if (conn == null) return List.of();
-        try {
-            return loadEntriesInternal(conn, sessionId);
-        } catch (SQLException e) {
-            LOG.warn("ConversationReader: failed to load entries for session " + sessionId, e);
-            return List.of();
+    public List<EntryData> loadEntries(@NotNull String sessionId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try {
+                return loadEntriesInternal(conn, sessionId);
+            } catch (SQLException e) {
+                LOG.warn("ConversationReader: failed to load entries for session " + sessionId, e);
+                return List.of();
+            }
         }
     }
 
-    /**
-     * Loads entries for the most recent N turns of a session. Useful for
-     * UI restore where only recent context is needed.
-     */
     @NotNull
-    public synchronized List<EntryData> loadRecentEntries(@NotNull String sessionId, int maxTurns) {
-        Connection conn = database.getConnection();
-        if (conn == null) return List.of();
-        try {
-            return loadRecentEntriesInternal(conn, sessionId, maxTurns);
-        } catch (SQLException e) {
-            LOG.warn("ConversationReader: failed to load recent entries for session " + sessionId, e);
-            return List.of();
+    public List<EntryData> loadRecentEntries(@NotNull String sessionId, int maxTurns) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try {
+                return loadRecentEntriesInternal(conn, sessionId, maxTurns);
+            } catch (SQLException e) {
+                LOG.warn("ConversationReader: failed to load recent entries for session " + sessionId, e);
+                return List.of();
+            }
         }
     }
 
-    /**
-     * Loads prompts with their turn statistics from all sessions.
-     * Ordered chronologically (oldest first).
-     */
     @NotNull
-    public synchronized List<PromptWithStats> loadAllPrompts() {
-        Connection conn = database.getConnection();
-        if (conn == null) return List.of();
-        try {
-            return loadAllPromptsInternal(conn);
-        } catch (SQLException e) {
-            LOG.warn("ConversationReader: failed to load all prompts", e);
-            return List.of();
+    public List<PromptWithStats> loadAllPrompts() {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try {
+                return loadAllPromptsInternal(conn);
+            } catch (SQLException e) {
+                LOG.warn("ConversationReader: failed to load all prompts", e);
+                return List.of();
+            }
         }
     }
 
-    /**
-     * Loads all entries for a single turn by its turn ID.
-     * Returns the prompt followed by all events in sequence order.
-     */
     @NotNull
-    public synchronized List<EntryData> loadTurnEntries(@NotNull String turnId) {
-        Connection conn = database.getConnection();
-        if (conn == null) return List.of();
-        try {
-            return loadTurnEntriesInternal(conn, turnId);
-        } catch (SQLException e) {
-            LOG.warn("ConversationReader: failed to load turn " + turnId, e);
-            return List.of();
+    public List<EntryData> loadTurnEntries(@NotNull String turnId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try {
+                return loadTurnEntriesInternal(conn, turnId);
+            } catch (SQLException e) {
+                LOG.warn("ConversationReader: failed to load turn " + turnId, e);
+                return List.of();
+            }
         }
     }
 
-    /**
-     * Returns ordered turn IDs for a session that are adjacent to a reference turn.
-     * Negative {@code count} returns turns before the reference (earlier); positive returns after (later).
-     */
     @NotNull
-    public synchronized List<String> loadAdjacentTurnIds(
+    public List<String> loadAdjacentTurnIds(
         @NotNull String sessionId, @NotNull String referenceTurnId, int count) {
-        Connection conn = database.getConnection();
-        if (conn == null) return List.of();
-        try {
-            return loadAdjacentTurnIdsInternal(conn, sessionId, referenceTurnId, count);
-        } catch (SQLException e) {
-            LOG.warn("ConversationReader: failed to load adjacent turns for " + referenceTurnId, e);
-            return List.of();
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return List.of();
+            try {
+                return loadAdjacentTurnIdsInternal(conn, sessionId, referenceTurnId, count);
+            } catch (SQLException e) {
+                LOG.warn("ConversationReader: failed to load adjacent turns for " + referenceTurnId, e);
+                return List.of();
+            }
         }
     }
 
-    /**
-     * Checks whether a session with the given ID exists in the database.
-     */
-    public synchronized boolean sessionExists(@NotNull String sessionId) {
-        Connection conn = database.getConnection();
-        if (conn == null) return false;
-        try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT 1 FROM sessions WHERE id = ?")) {
-            ps.setString(1, sessionId);
-            return ps.executeQuery().next();
-        } catch (SQLException e) {
-            return false;
+    public boolean sessionExists(@NotNull String sessionId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return false;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT 1 FROM sessions WHERE id = ?")) {
+                ps.setString(1, sessionId);
+                return ps.executeQuery().next();
+            } catch (SQLException e) {
+                return false;
+            }
         }
     }
 

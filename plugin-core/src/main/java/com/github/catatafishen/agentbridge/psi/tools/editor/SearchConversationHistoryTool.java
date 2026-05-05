@@ -21,7 +21,7 @@ import java.util.Map;
 
 /**
  * Lists, reads, and searches past conversation sessions from the chat history.
- * Reads V2 JSONL sessions via {@link ConversationService}.
+ * Reads sessions from the SQLite-backed {@link ConversationService}.
  */
 public final class SearchConversationHistoryTool extends EditorTool {
 
