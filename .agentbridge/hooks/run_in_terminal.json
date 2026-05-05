@@ -8,9 +8,9 @@
   ],
   "pre": [
     {
-      "script": "scripts/enforce-gh-bot-identity.sh",
+      "script": "scripts/enforce-gh-bot-identity.js",
       "failSilently": false,
-      "timeout": 5
+      "timeout": 15
     }
   ],
   "success": [
