@@ -74,27 +74,29 @@ public final class ConversationWriter {
      * @param clientId  ACP client identifier (e.g. "copilot", "opencode"); may be empty
      * @param entries   batch of entries in chronological order
      */
-    public synchronized void recordEntries(
+    public void recordEntries(
         @NotNull String sessionId,
         @NotNull String agentName,
         @NotNull String clientId,
         @NotNull List<EntryData> entries
     ) {
-        if (entries.isEmpty()) return;
-        Connection conn = database.getConnection();
-        if (conn == null) {
-            LOG.debug("ConversationDatabase not initialised — skipping write of "
-                + entries.size() + " entries");
-            return;
-        }
-        try {
-            writeEntriesInTransaction(conn, sessionId, agentName, clientId, entries);
-        } catch (SQLException e) {
-            LOG.warn("ConversationWriter: failed to record " + entries.size()
-                + " entries for session " + sessionId, e);
-        } catch (IllegalArgumentException e) {
-            LOG.error("ConversationWriter: invalid entry data for session " + sessionId
-                + " — " + e.getMessage(), e);
+        synchronized (database) {
+            if (entries.isEmpty()) return;
+            Connection conn = database.getConnection();
+            if (conn == null) {
+                LOG.debug("ConversationDatabase not initialised — skipping write of "
+                    + entries.size() + " entries");
+                return;
+            }
+            try {
+                writeEntriesInTransaction(conn, sessionId, agentName, clientId, entries);
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to record " + entries.size()
+                    + " entries for session " + sessionId, e);
+            } catch (IllegalArgumentException e) {
+                LOG.error("ConversationWriter: invalid entry data for session " + sessionId
+                    + " — " + e.getMessage(), e);
+            }
         }
     }
 
@@ -136,13 +138,13 @@ public final class ConversationWriter {
             insertEvent(conn, sessionId, t.getEntryId(), "text", t.getTimestamp(),
                 t.getAgent(), t.getModel());
             insertSubtype(conn,
-                "INSERT INTO text_events (event_id, content) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO text_events (event_id, content) VALUES (?, ?)",
                 t.getEntryId(), t.getRaw());
         } else if (entry instanceof EntryData.Thinking th) {
             insertEvent(conn, sessionId, th.getEntryId(), "thinking", th.getTimestamp(),
                 th.getAgent(), th.getModel());
             insertSubtype(conn,
-                "INSERT INTO thinking_events (event_id, content) VALUES (?, ?)",
+                "INSERT OR IGNORE INTO thinking_events (event_id, content) VALUES (?, ?)",
                 th.getEntryId(), th.getRaw());
         } else if (entry instanceof EntryData.ToolCall tc) {
             insertEvent(conn, sessionId, tc.getEntryId(), "tool_call", tc.getTimestamp(),
@@ -168,7 +170,7 @@ public final class ConversationWriter {
         if (!n.getSent()) return;
         insertEvent(conn, sessionId, n.getEntryId(), "nudge", n.getTimestamp(), "", "");
         insertSubtype(conn,
-            "INSERT INTO nudge_events (event_id, text, nudge_id) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO nudge_events (event_id, text, nudge_id) VALUES (?, ?, ?)",
             n.getEntryId(), n.getText(), n.getId());
     }
 
@@ -220,24 +222,63 @@ public final class ConversationWriter {
             throw new IllegalArgumentException(
                 "Prompt entry has no timestamp — cannot determine turn start time: id=" + turnId);
         }
-        try (PreparedStatement ps = conn.prepareStatement(
-            "INSERT OR IGNORE INTO turns (id, session_id, prompt_text, started_at) VALUES (?, ?, ?, ?)")) {
-            ps.setString(1, turnId);
-            ps.setString(2, sessionId);
-            ps.setString(3, prompt.getText());
-            ps.setString(4, startedAt);
-            ps.executeUpdate();
-        }
+        String storedTurnId = insertOrResolveConflict(conn, sessionId, turnId, prompt.getText(), startedAt);
         updateSessionDisplayName(conn, sessionId, prompt.getText());
         SessionCursor cursor = cursors.computeIfAbsent(sessionId, k -> new SessionCursor());
-        cursor.turnId = turnId;
+        cursor.turnId = storedTurnId;
         cursor.sequenceNum = 0;
 
-        // Persist any context files attached to this prompt.
         List<ContextFileRef> contextFiles = prompt.getContextFiles();
         if (contextFiles != null && !contextFiles.isEmpty()) {
-            insertPromptContextFiles(conn, turnId, contextFiles);
+            insertPromptContextFiles(conn, storedTurnId, contextFiles);
         }
+    }
+
+    /**
+     * Inserts a turn row, detecting cross-session ID collisions.
+     * Returns the turn ID that was ultimately stored (may differ from {@code desiredId}
+     * if a genuine collision was found and a fresh UUID was generated).
+     */
+    private String insertOrResolveConflict(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull String desiredId,
+        @Nullable String promptText,
+        @NotNull String startedAt
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT OR IGNORE INTO turns (id, session_id, prompt_text, started_at) VALUES (?, ?, ?, ?)")) {
+            ps.setString(1, desiredId);
+            ps.setString(2, sessionId);
+            ps.setString(3, promptText);
+            ps.setString(4, startedAt);
+            ps.executeUpdate();
+            if (ps.getUpdateCount() > 0) {
+                return desiredId; // inserted successfully, no collision
+            }
+        }
+        // INSERT was ignored — check if existing row belongs to our session
+        try (PreparedStatement check = conn.prepareStatement(
+            "SELECT id FROM turns WHERE id = ? AND session_id = ?")) {
+            check.setString(1, desiredId);
+            check.setString(2, sessionId);
+            try (java.sql.ResultSet rs = check.executeQuery()) {
+                if (rs.next()) {
+                    return desiredId; // our own row — idempotent re-insert, safe
+                }
+            }
+        }
+        // Genuine cross-session collision — generate a fresh UUID
+        String newId = java.util.UUID.randomUUID().toString();
+        try (PreparedStatement ps2 = conn.prepareStatement(
+            "INSERT INTO turns (id, session_id, prompt_text, started_at) VALUES (?, ?, ?, ?)")) {
+            ps2.setString(1, newId);
+            ps2.setString(2, sessionId);
+            ps2.setString(3, promptText);
+            ps2.setString(4, startedAt);
+            ps2.executeUpdate();
+        }
+        return newId;
     }
 
     /**
@@ -337,7 +378,7 @@ public final class ConversationWriter {
     ) throws SQLException {
         if (hashes == null || hashes.isEmpty()) return;
         try (PreparedStatement ps = conn.prepareStatement(
-            "INSERT INTO commits (turn_id, commit_hash) VALUES (?, ?)")) {
+            "INSERT OR IGNORE INTO commits (turn_id, commit_hash) VALUES (?, ?)")) {
             ps.setString(1, turnId);
             for (String hash : hashes) {
                 if (hash == null || hash.isEmpty()) continue;
@@ -498,21 +539,7 @@ public final class ConversationWriter {
 
     // ── MCP stats enrichment + hook executions ─────────────────────────────────
 
-    /**
-     * Enriches an existing tool-call event row with performance stats collected
-     * at MCP dispatch time. Called from {@code McpProtocolHandler} after a tool
-     * returns (or throws). This is a best-effort UPDATE — if the row doesn't
-     * exist yet (ACP entry hasn't been written), it simply does nothing.
-     *
-     * @param toolUseId       the tool_use ID from the MCP request (maps to event_id)
-     * @param inputSizeBytes  size of the arguments JSON in bytes
-     * @param outputSizeBytes size of the result text in bytes
-     * @param durationMs      total wall-clock time of the tool execution
-     * @param success         whether the tool completed without error
-     * @param errorMessage    error message if !success; null otherwise
-     * @param category        tool category (e.g. "git", "file", "editor"); may be null
-     */
-    public synchronized void enrichToolCallStats(
+    public void enrichToolCallStats(
         @NotNull String toolUseId,
         long inputSizeBytes,
         long outputSizeBytes,
@@ -521,117 +548,110 @@ public final class ConversationWriter {
         @Nullable String errorMessage,
         @Nullable String category
     ) {
-        Connection conn = database.getConnection();
-        if (conn == null) return;
-        try (PreparedStatement ps = conn.prepareStatement("""
-            UPDATE tool_call_events SET
-                input_size_bytes  = ?,
-                output_size_bytes = ?,
-                duration_ms       = ?,
-                success           = ?,
-                error_message     = COALESCE(?, error_message),
-                category          = COALESCE(?, category),
-                is_mcp            = 1
-            WHERE event_id = ?
-            """)) {
-            ps.setLong(1, inputSizeBytes);
-            ps.setLong(2, outputSizeBytes);
-            ps.setLong(3, durationMs);
-            ps.setInt(4, success ? 1 : 0);
-            ps.setString(5, errorMessage);
-            ps.setString(6, category);
-            ps.setString(7, toolUseId);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            LOG.warn("ConversationWriter: failed to enrich stats for event " + toolUseId, e);
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("""
+                UPDATE tool_call_events SET
+                    input_size_bytes  = ?,
+                    output_size_bytes = ?,
+                    duration_ms       = ?,
+                    success           = ?,
+                    error_message     = COALESCE(?, error_message),
+                    category          = COALESCE(?, category),
+                    is_mcp            = 1
+                WHERE event_id = ?
+                """)) {
+                ps.setLong(1, inputSizeBytes);
+                ps.setLong(2, outputSizeBytes);
+                ps.setLong(3, durationMs);
+                ps.setInt(4, success ? 1 : 0);
+                ps.setString(5, errorMessage);
+                ps.setString(6, category);
+                ps.setString(7, toolUseId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to enrich stats for event " + toolUseId, e);
+            }
         }
     }
 
-    /**
-     * Marks an existing tool-call event as handled by our MCP server. Called from
-     * the MCP dispatch boundary after a tool returns (or is denied).
-     */
-    public synchronized void markToolCallMcp(@NotNull String eventId) {
-        Connection conn = database.getConnection();
-        if (conn == null) return;
-        try (PreparedStatement ps = conn.prepareStatement(
-            "UPDATE tool_call_events SET is_mcp = 1 WHERE event_id = ?")) {
-            ps.setString(1, eventId);
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            LOG.warn("ConversationWriter: failed to mark MCP for event " + eventId, e);
+    public void markToolCallMcp(@NotNull String eventId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE tool_call_events SET is_mcp = 1 WHERE event_id = ?")) {
+                ps.setString(1, eventId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to mark MCP for event " + eventId, e);
+            }
         }
     }
 
-    /**
-     * Records hook stage results (from {@code McpProtocolHandler}'s hook evaluation)
-     * as {@code hook_executions} rows linked to the given tool event.
-     *
-     * @param toolEventId the event_id of the tool call these hooks ran for
-     * @param stages      collected hook stage results (permission, pre, success, failure)
-     */
-    public synchronized void recordHookStages(
+    public void recordHookStages(
         @NotNull String toolEventId,
         @NotNull List<HookStageResult> stages
     ) {
-        if (stages.isEmpty()) return;
-        Connection conn = database.getConnection();
-        if (conn == null) return;
-        try (PreparedStatement ps = conn.prepareStatement("""
-            INSERT INTO hook_executions (
-                tool_event_id, trigger_kind, entry_id, command,
-                duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """)) {
-            String now = Instant.now().toString();
-            ps.setString(1, toolEventId);
-            ps.setString(10, now);
-            ps.setNull(6, Types.VARCHAR);
-            ps.setNull(7, Types.VARCHAR);
-            for (HookStageResult stage : stages) {
-                ps.setString(2, stage.trigger());
-                ps.setString(3, stage.scriptName());
-                ps.setString(4, stage.scriptName());
-                ps.setLong(5, stage.durationMs());
-                ps.setString(8, stage.outcome());
-                ps.setString(9, stage.detail());
-                ps.addBatch();
+        synchronized (database) {
+            if (stages.isEmpty()) return;
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT INTO hook_executions (
+                    tool_event_id, trigger_kind, entry_id, command,
+                    duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """)) {
+                String now = Instant.now().toString();
+                ps.setString(1, toolEventId);
+                ps.setString(10, now);
+                ps.setNull(6, Types.VARCHAR);
+                ps.setNull(7, Types.VARCHAR);
+                for (HookStageResult stage : stages) {
+                    ps.setString(2, stage.trigger());
+                    ps.setString(3, stage.scriptName());
+                    ps.setString(4, stage.scriptName());
+                    ps.setLong(5, stage.durationMs());
+                    ps.setString(8, stage.outcome());
+                    ps.setString(9, stage.detail());
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to record hook stages for " + toolEventId, e);
             }
-            ps.executeBatch();
-        } catch (SQLException e) {
-            LOG.warn("ConversationWriter: failed to record hook stages for " + toolEventId, e);
         }
     }
 
-    /**
-     * Records a single hook execution with full detail (exit code, payloads).
-     * Used when per-entry granularity is available (e.g. from a modified HookPipeline).
-     */
-    public synchronized void recordHookExecution(@NotNull HookExecutionRecord execution) {
-        Connection conn = database.getConnection();
-        if (conn == null) return;
-        try (PreparedStatement ps = conn.prepareStatement("""
-            INSERT INTO hook_executions (
-                tool_event_id, trigger_kind, entry_id, command, exit_code,
-                duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """)) {
-            ps.setString(1, execution.toolEventId());
-            ps.setString(2, execution.triggerKind());
-            ps.setString(3, execution.entryId());
-            ps.setString(4, execution.command());
-            if (execution.exitCode() == null) ps.setNull(5, Types.INTEGER);
-            else ps.setInt(5, execution.exitCode());
-            ps.setLong(6, execution.durationMs());
-            ps.setString(7, execution.input());
-            ps.setString(8, execution.output());
-            ps.setString(9, execution.outcome());
-            ps.setString(10, execution.outcomeReason());
-            ps.setString(11, Instant.now().toString());
-            ps.executeUpdate();
-        } catch (SQLException e) {
-            LOG.warn("ConversationWriter: failed to record hook execution for "
-                + execution.toolEventId(), e);
+    public void recordHookExecution(@NotNull HookExecutionRecord execution) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement("""
+                INSERT INTO hook_executions (
+                    tool_event_id, trigger_kind, entry_id, command, exit_code,
+                    duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """)) {
+                ps.setString(1, execution.toolEventId());
+                ps.setString(2, execution.triggerKind());
+                ps.setString(3, execution.entryId());
+                ps.setString(4, execution.command());
+                if (execution.exitCode() == null) ps.setNull(5, Types.INTEGER);
+                else ps.setInt(5, execution.exitCode());
+                ps.setLong(6, execution.durationMs());
+                ps.setString(7, execution.input());
+                ps.setString(8, execution.output());
+                ps.setString(9, execution.outcome());
+                ps.setString(10, execution.outcomeReason());
+                ps.setString(11, Instant.now().toString());
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to record hook execution for "
+                    + execution.toolEventId(), e);
+            }
         }
     }
 
@@ -689,33 +709,30 @@ public final class ConversationWriter {
         }
     }
 
-    /**
-     * Restores in-memory cursor state for a session — used at startup to resume
-     * sequencing past existing rows. Reads {@code MAX(sequence_num)} for the most
-     * recent turn and seeds the cursor accordingly.
-     */
-    public synchronized void restoreCursor(@NotNull String sessionId) {
-        Connection conn = database.getConnection();
-        if (conn == null) return;
-        try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT id FROM turns WHERE session_id = ? ORDER BY started_at DESC LIMIT 1")) {
-            ps.setString(1, sessionId);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) return;
-                String turnId = rs.getString(1);
-                SessionCursor cursor = cursors.computeIfAbsent(sessionId,
-                    k -> new SessionCursor());
-                cursor.turnId = turnId;
-                try (PreparedStatement ps2 = conn.prepareStatement(
-                    "SELECT COALESCE(MAX(sequence_num), -1) + 1 FROM events WHERE turn_id = ?")) {
-                    ps2.setString(1, turnId);
-                    try (ResultSet rs2 = ps2.executeQuery()) {
-                        if (rs2.next()) cursor.sequenceNum = rs2.getInt(1);
+    public void restoreCursor(@NotNull String sessionId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT id FROM turns WHERE session_id = ? ORDER BY started_at DESC LIMIT 1")) {
+                ps.setString(1, sessionId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) return;
+                    String turnId = rs.getString(1);
+                    SessionCursor cursor = cursors.computeIfAbsent(sessionId,
+                        k -> new SessionCursor());
+                    cursor.turnId = turnId;
+                    try (PreparedStatement ps2 = conn.prepareStatement(
+                        "SELECT COALESCE(MAX(sequence_num), -1) + 1 FROM events WHERE turn_id = ?")) {
+                        ps2.setString(1, turnId);
+                        try (ResultSet rs2 = ps2.executeQuery()) {
+                            if (rs2.next()) cursor.sequenceNum = rs2.getInt(1);
+                        }
                     }
                 }
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to restore cursor for " + sessionId, e);
             }
-        } catch (SQLException e) {
-            LOG.warn("ConversationWriter: failed to restore cursor for " + sessionId, e);
         }
     }
 }

@@ -164,9 +164,6 @@ final class UsageStatisticsLoader {
             dailyStats, startDate, endDate, agentIds, agentDisplayNames);
     }
 
-    /**
-     * Original JSONL-based loader — used as fallback when the SQLite table is empty.
-     */
     private static UsageStatisticsData.StatisticsSnapshot loadFromJsonl(
         @NotNull Project project,
         @NotNull UsageStatisticsData.TimeRange range,
@@ -186,6 +183,9 @@ final class UsageStatisticsLoader {
         Map<String, String> agentDisplayNames = new LinkedHashMap<>();
 
         File sessionsDir = ExportUtils.sessionsDir(project);
+        // Also check the backup directory where JSONL files are moved after migration
+        File backupDir = new File(sessionsDir.getParentFile(),
+            com.github.catatafishen.agentbridge.session.db.JsonlToSqliteMigrator.BACKUP_DIRNAME);
 
         for (ConversationService.SessionRecord session : sessions) {
             String agentDisplay = session.agent();
@@ -194,6 +194,9 @@ final class UsageStatisticsLoader {
             agentDisplayNames.putIfAbsent(fallbackAgentId, agentDisplay);
 
             List<Path> jsonlFiles = SessionFileRotation.listAllFiles(sessionsDir, session.id());
+            if (jsonlFiles.isEmpty() && backupDir.isDirectory()) {
+                jsonlFiles = SessionFileRotation.listAllFiles(backupDir, session.id());
+            }
             if (jsonlFiles.isEmpty()) {
                 LOG.debug("Statistics: no JSONL files found for session " + session.id());
                 continue;

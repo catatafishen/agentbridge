@@ -41,7 +41,7 @@ import java.util.UUID;
 public final class JsonlToSqliteMigrator {
 
     private static final Logger LOG = Logger.getInstance(JsonlToSqliteMigrator.class);
-    static final String BACKUP_DIRNAME = "sessions-backup-jsonl";
+    public static final String BACKUP_DIRNAME = "sessions-backup-jsonl";
     private static final String JSONL_EXT = ".jsonl";
     private static final String BACKUP_README = """
         This directory contains backups of your session history in the legacy JSONL format.
