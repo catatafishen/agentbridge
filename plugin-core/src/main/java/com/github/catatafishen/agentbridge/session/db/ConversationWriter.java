@@ -57,7 +57,9 @@ public final class ConversationWriter {
 
     private final ConversationDatabase database;
 
-    /** Per-session cursor: tracks the most recently opened turn for sequencing. */
+    /**
+     * Per-session cursor: tracks the most recently opened turn for sequencing.
+     */
     private final Map<String, SessionCursor> cursors = new HashMap<>();
 
     public ConversationWriter(@NotNull ConversationDatabase database) {
@@ -200,6 +202,7 @@ public final class ConversationWriter {
             ps.setString(4, startedAt);
             ps.executeUpdate();
         }
+        updateSessionDisplayName(conn, sessionId, prompt.getText());
         SessionCursor cursor = cursors.computeIfAbsent(sessionId, k -> new SessionCursor());
         cursor.turnId = turnId;
         cursor.sequenceNum = 0;
@@ -208,6 +211,24 @@ public final class ConversationWriter {
         List<ContextFileRef> contextFiles = prompt.getContextFiles();
         if (contextFiles != null && !contextFiles.isEmpty()) {
             insertPromptContextFiles(conn, turnId, contextFiles);
+        }
+    }
+
+    /**
+     * Sets the session display_name from the first prompt text (only if currently NULL).
+     */
+    private void updateSessionDisplayName(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @Nullable String promptText
+    ) throws SQLException {
+        if (promptText == null || promptText.isBlank()) return;
+        String truncated = promptText.length() > 60 ? promptText.substring(0, 60) : promptText;
+        try (PreparedStatement ps = conn.prepareStatement(
+            "UPDATE sessions SET display_name = ? WHERE id = ? AND display_name IS NULL")) {
+            ps.setString(1, truncated);
+            ps.setString(2, sessionId);
+            ps.executeUpdate();
         }
     }
 
@@ -608,7 +629,9 @@ public final class ConversationWriter {
         return (value == null || value.isEmpty()) ? null : value;
     }
 
-    /** Per-session position cursor: latest turn id and next event sequence number. */
+    /**
+     * Per-session position cursor: latest turn id and next event sequence number.
+     */
     private static final class SessionCursor {
         @Nullable String turnId;
         int sequenceNum;

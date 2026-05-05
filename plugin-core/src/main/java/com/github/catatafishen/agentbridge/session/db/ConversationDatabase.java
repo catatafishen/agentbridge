@@ -57,7 +57,7 @@ public final class ConversationDatabase implements Disposable {
     /**
      * Test-only — use {@link #initializeWithConnection(Connection)} after construction.
      */
-    ConversationDatabase() {
+    public ConversationDatabase() {
         this.project = null;
     }
 
@@ -91,13 +91,15 @@ public final class ConversationDatabase implements Disposable {
         } catch (SQLException | IOException e) {
             throw new IllegalStateException("Failed to initialize ConversationDatabase", e);
         }
+        // Migrate legacy JSONL data on first initialization.
+        JsonlToSqliteMigrator.migrateIfNeeded(project);
     }
 
     /**
      * Configures an already-open connection. Used both by production
      * {@link #initialize()} and by tests that pass an in-memory connection.
      */
-    void initializeWithConnection(@NotNull Connection conn) throws SQLException {
+    public void initializeWithConnection(@NotNull Connection conn) throws SQLException {
         this.connection = conn;
         try (Statement stmt = conn.createStatement()) {
             // Reasonable defaults for a chatty single-writer workload.
