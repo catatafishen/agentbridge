@@ -29,11 +29,11 @@ lcmd=$(printf '%s' "$command" | tr '[:upper:]' '[:lower:]')
 # Check if this is a content-creating gh command
 needs_bot=false
 case "$lcmd" in
-    "gh pr create"*|"gh pr comment"*|"gh pr review"*|"gh pr edit"*|"gh pr merge"*|"gh pr close"*) needs_bot=true ;;
-    "gh issue create"*|"gh issue comment"*|"gh issue edit"*|"gh issue close"*) needs_bot=true ;;
-    "gh discussion create"*|"gh discussion comment"*) needs_bot=true ;;
-    "gh release create"*) needs_bot=true ;;
-    "gh api "*)
+    *"gh pr create"*|*"gh pr comment"*|*"gh pr review"*|*"gh pr edit"*|*"gh pr merge"*|*"gh pr close"*) needs_bot=true ;;
+    *"gh issue create"*|*"gh issue comment"*|*"gh issue edit"*|*"gh issue close"*) needs_bot=true ;;
+    *"gh discussion create"*|*"gh discussion comment"*) needs_bot=true ;;
+    *"gh release create"*) needs_bot=true ;;
+    *"gh api "*)
         case "$lcmd" in
             *"-x post"*|*"-x patch"*|*"-x put"*|*"-x delete"*|*"-method post"*|*"-method patch"*|*"-method put"*|*"-method delete"*)
                 needs_bot=true ;;
@@ -60,7 +60,7 @@ if [ -z "$bot_token" ]; then
 fi
 
 if [ -n "$bot_token" ]; then
-    escaped_cmd=$(hook_escape_json "GH_TOKEN=${bot_token} ${command}")
+    escaped_cmd=$(hook_escape_json "export GH_TOKEN=${bot_token}; ${command}")
     printf '{"arguments":{"command":"%s"}}\n' "$escaped_cmd"
 else
     hook_json_error "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other bypass. Instead, tell the user: 'I cannot create GitHub content with bot identity because neither AGENTBRIDGE_BOT_TOKEN, ~/.agentbridge/bot-token, nor a GitHub App private key (~/.agentbridge/github-app.pem) is configured.'"
