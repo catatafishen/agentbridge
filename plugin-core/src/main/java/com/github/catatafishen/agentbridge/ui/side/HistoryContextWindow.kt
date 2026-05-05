@@ -1,7 +1,9 @@
 package com.github.catatafishen.agentbridge.ui.side
 
+import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.WindowManager
@@ -22,20 +24,22 @@ import javax.swing.SwingConstants
  * Non-modal floating window showing conversation history centred on a specific prompt.
  *
  * Initially displays exactly the target prompt turn (user input + AI response).
- * The window is scrolled to the top so the user prompt is immediately visible.
  * "Load more" links at the top and bottom expand by one turn at a time using
  * [ChatConsolePanel.prependEntries] and [ChatConsolePanel.appendEntries] — the JCEF
  * panel is never recreated on load-more, so there is no flash or re-scroll.
+ *
+ * Entries are loaded asynchronously from [sessionId] so the window appears immediately
+ * while data is fetched in the background.
  */
 internal class HistoryContextWindow private constructor(
-    project: Project,
-    allEntries: List<EntryData>,
-    targetEntryId: String,
+    private val project: Project,
+    private val sessionId: String,
+    private val targetEntryId: String,
 ) : JDialog(WindowManager.getInstance().getFrame(project), "Conversation History", false) {
 
     companion object {
-        fun open(project: Project, allEntries: List<EntryData>, targetEntryId: String) {
-            val win = HistoryContextWindow(project, allEntries, targetEntryId)
+        fun open(project: Project, sessionId: String, targetEntryId: String) {
+            val win = HistoryContextWindow(project, sessionId, targetEntryId)
             win.pack()
             win.setLocationRelativeTo(WindowManager.getInstance().getFrame(project))
             win.isVisible = true
@@ -72,10 +76,9 @@ internal class HistoryContextWindow private constructor(
         }
     }
 
-    private val turns: List<List<EntryData>> = splitIntoTurns(allEntries)
-    private val targetTurnIdx: Int = findTurnIndex(turns, targetEntryId)
-    private var displayStartTurnIdx: Int = targetTurnIdx
-    private var displayEndTurnIdx: Int = targetTurnIdx
+    private var turns: List<List<EntryData>> = emptyList()
+    private var displayStartTurnIdx: Int = 0
+    private var displayEndTurnIdx: Int = 0
 
     private val chatPanel = ChatConsolePanel(project, registerAsMain = false)
 
@@ -86,11 +89,13 @@ internal class HistoryContextWindow private constructor(
         isOpaque = false
         border = JBUI.Borders.empty(4)
         add(loadEarlierLabel, BorderLayout.CENTER)
+        isVisible = false
     }
     private val bottomBar = JPanel(BorderLayout()).apply {
         isOpaque = false
         border = JBUI.Borders.empty(4)
         add(loadLaterLabel, BorderLayout.CENTER)
+        isVisible = false
     }
 
     init {
@@ -105,8 +110,6 @@ internal class HistoryContextWindow private constructor(
         isResizable = true
 
         chatPanel.setDomMessageLimit(100_000)
-        chatPanel.appendEntries(turns.subList(displayStartTurnIdx, displayEndTurnIdx + 1).flatten())
-        chatPanel.scrollToTop()
 
         loadEarlierLabel.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) = loadEarlier()
@@ -115,11 +118,33 @@ internal class HistoryContextWindow private constructor(
             override fun mouseClicked(e: MouseEvent) = loadLater()
         })
 
-        updateBars()
-
         addWindowListener(object : WindowAdapter() {
             override fun windowClosed(e: WindowEvent) = Disposer.dispose(chatPanel)
         })
+
+        loadEntriesAsync()
+    }
+
+    private fun loadEntriesAsync() {
+        val sessionStore = SessionStoreV2.getInstance(project)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val entries = sessionStore.loadEntriesBySessionId(project, sessionId).orEmpty()
+            ApplicationManager.getApplication().invokeLater {
+                if (!isDisplayable) return@invokeLater
+                onEntriesLoaded(entries)
+            }
+        }
+    }
+
+    private fun onEntriesLoaded(entries: List<EntryData>) {
+        turns = splitIntoTurns(entries)
+        val targetTurnIdx = findTurnIndex(turns, targetEntryId)
+        displayStartTurnIdx = targetTurnIdx
+        displayEndTurnIdx = targetTurnIdx
+        if (turns.isNotEmpty()) {
+            chatPanel.appendEntries(turns.subList(displayStartTurnIdx, displayEndTurnIdx + 1).flatten())
+        }
+        updateBars()
     }
 
     private fun loadEarlier() {
