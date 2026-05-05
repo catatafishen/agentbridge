@@ -226,9 +226,14 @@ public final class JsonlToSqliteMigrator {
         for (int i = 0; i < parts.size(); i++) {
             if (!parts.get(i).isJsonObject()) continue;
             JsonObject part = parts.get(i).getAsJsonObject();
-            // Multi-part messages get per-part entryIds derived from the message id.
-            String entryId = parts.size() == 1 ? msgId : msgId + "-p" + i;
-            EntryData entry = convertLegacyPart(role, part, entryId, timestamp, agent);
+            // Use stable per-part eid when present; fall back to synthetic msgId-pN.
+            String entryId = part.has("eid") ? part.get("eid").getAsString()
+                : (parts.size() == 1 ? msgId : msgId + "-p" + i);
+            // Use per-part ts when present; fall back to message-level createdAt.
+            String partTimestamp = part.has("ts")
+                ? Instant.ofEpochMilli(part.get("ts").getAsLong()).toString()
+                : timestamp;
+            EntryData entry = convertLegacyPart(role, part, entryId, partTimestamp, agent);
             if (entry != null) entries.add(entry);
         }
     }

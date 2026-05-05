@@ -267,7 +267,8 @@ public final class ConversationService implements Disposable {
 
             List<EntryData> entries = reader.loadRecentEntries(sessionId, 50);
             if (entries.isEmpty()) return null;
-            return new RecentEntriesResult(entries, false);
+            boolean hasMore = reader.countTurns(sessionId) > 50;
+            return new RecentEntriesResult(entries, hasMore);
         } catch (IOException e) {
             LOG.warn("Could not read current-session-id", e);
             return null;
