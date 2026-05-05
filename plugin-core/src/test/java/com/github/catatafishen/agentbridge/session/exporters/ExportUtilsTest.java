@@ -140,7 +140,7 @@ class ExportUtilsTest {
 
     @Test
     void sessionsDirWithNullBasePathReturnsRelativePath() {
-        File dir = ExportUtils.sessionsDir(null);
+        File dir = ExportUtils.sessionsDir((String) null);
         assertEquals(".agent-work/sessions", dir.getPath().replace('\\', '/'));
     }
 
