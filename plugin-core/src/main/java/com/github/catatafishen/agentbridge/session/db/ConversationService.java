@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.session.db;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.intellij.openapi.Disposable;
@@ -350,6 +351,52 @@ public final class ConversationService implements Disposable {
         String name = promptText.replaceAll("\\s+", " ").trim();
         if (name.length() <= MAX_SESSION_NAME_LENGTH) return name;
         return name.substring(0, MAX_SESSION_NAME_LENGTH - 1) + "…";
+    }
+
+    /**
+     * Loads all entries for a single turn by its turn ID.
+     */
+    @NotNull
+    public List<EntryData> loadTurnEntries(@NotNull String turnId) {
+        ConversationReader reader = getOrCreateReader();
+        if (reader == null) return List.of();
+        return reader.loadTurnEntries(turnId);
+    }
+
+    /**
+     * Returns adjacent turn IDs for a session relative to a reference turn.
+     * Negative count = earlier turns, positive = later turns.
+     */
+    @NotNull
+    public List<String> loadAdjacentTurnIds(@NotNull String sessionId,
+                                            @NotNull String referenceTurnId, int count) {
+        ConversationReader reader = getOrCreateReader();
+        if (reader == null) return List.of();
+        return reader.loadAdjacentTurnIds(sessionId, referenceTurnId, count);
+    }
+
+    /**
+     * Enriches an existing tool-call event row with performance stats.
+     * Best-effort — silently returns if the writer is unavailable.
+     */
+    public void enrichToolCallStats(@NotNull String toolEventId, long inputSize, long outputSize,
+                                    long durationMs, boolean success, @Nullable String errorMessage,
+                                    @Nullable String category) {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) return;
+        writer.enrichToolCallStats(toolEventId, inputSize, outputSize, durationMs,
+            success, errorMessage, category);
+    }
+
+    /**
+     * Records hook execution stages for a tool call.
+     * Best-effort — silently returns if the writer is unavailable.
+     */
+    public void recordHookStages(@NotNull String toolEventId,
+                                 @NotNull List<HookStageResult> stages) {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) return;
+        writer.recordHookStages(toolEventId, stages);
     }
 
     @Override

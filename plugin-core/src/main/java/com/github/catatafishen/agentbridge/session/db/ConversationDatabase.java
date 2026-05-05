@@ -66,13 +66,8 @@ public final class ConversationDatabase implements Disposable {
         return PlatformApiCompat.getService(project, ConversationDatabase.class);
     }
 
-    /**
-     * Opens the SQLite database, creating it (and the schema) if missing.
-     * Safe to call multiple times — subsequent calls are no-ops.
-     */
     public synchronized void initialize() {
         if (initAttempted) return;
-        initAttempted = true;
         if (project == null || project.getBasePath() == null) {
             throw new IllegalStateException(
                 "Cannot initialize ConversationDatabase: project has no base path");
@@ -91,23 +86,19 @@ public final class ConversationDatabase implements Disposable {
         } catch (SQLException | IOException e) {
             throw new IllegalStateException("Failed to initialize ConversationDatabase", e);
         }
+        initAttempted = true;
         // Migrate legacy JSONL data on first initialization.
         JsonlToSqliteMigrator.migrateIfNeeded(project);
     }
 
-    /**
-     * Configures an already-open connection. Used both by production
-     * {@link #initialize()} and by tests that pass an in-memory connection.
-     */
     public void initializeWithConnection(@NotNull Connection conn) throws SQLException {
-        this.connection = conn;
         try (Statement stmt = conn.createStatement()) {
-            // Reasonable defaults for a chatty single-writer workload.
             stmt.execute("PRAGMA journal_mode = WAL");
             stmt.execute("PRAGMA synchronous = NORMAL");
             stmt.execute("PRAGMA foreign_keys = ON");
         }
         ConversationSchema.createOrMigrate(conn);
+        this.connection = conn;
     }
 
     /**

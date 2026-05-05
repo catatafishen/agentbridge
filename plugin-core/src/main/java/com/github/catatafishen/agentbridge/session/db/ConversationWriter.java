@@ -434,10 +434,10 @@ public final class ConversationWriter {
         String turnId = cursor.turnId;
         try (PreparedStatement ps = conn.prepareStatement(INSERT_CONTEXT_FILE_SQL)) {
             ps.setString(1, turnId);
+            ps.setInt(4, 0);
             for (FileRef ref : files) {
                 ps.setString(2, ref.getName());
                 ps.setString(3, ref.getPath());
-                ps.setInt(4, 0);
                 ps.addBatch();
             }
             ps.executeBatch();
@@ -572,7 +572,7 @@ public final class ConversationWriter {
      * Records a single hook execution with full detail (exit code, payloads).
      * Used when per-entry granularity is available (e.g. from a modified HookPipeline).
      */
-    public synchronized void recordHookExecution(@NotNull HookExecutionRecord record) {
+    public synchronized void recordHookExecution(@NotNull HookExecutionRecord execution) {
         Connection conn = database.getConnection();
         if (conn == null) return;
         try (PreparedStatement ps = conn.prepareStatement("""
@@ -581,22 +581,22 @@ public final class ConversationWriter {
                 duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)) {
-            ps.setString(1, record.toolEventId());
-            ps.setString(2, record.triggerKind());
-            ps.setString(3, record.entryId());
-            ps.setString(4, record.command());
-            if (record.exitCode() == null) ps.setNull(5, Types.INTEGER);
-            else ps.setInt(5, record.exitCode());
-            ps.setLong(6, record.durationMs());
-            ps.setString(7, record.input());
-            ps.setString(8, record.output());
-            ps.setString(9, record.outcome());
-            ps.setString(10, record.outcomeReason());
+            ps.setString(1, execution.toolEventId());
+            ps.setString(2, execution.triggerKind());
+            ps.setString(3, execution.entryId());
+            ps.setString(4, execution.command());
+            if (execution.exitCode() == null) ps.setNull(5, Types.INTEGER);
+            else ps.setInt(5, execution.exitCode());
+            ps.setLong(6, execution.durationMs());
+            ps.setString(7, execution.input());
+            ps.setString(8, execution.output());
+            ps.setString(9, execution.outcome());
+            ps.setString(10, execution.outcomeReason());
             ps.setString(11, Instant.now().toString());
             ps.executeUpdate();
         } catch (SQLException e) {
             LOG.warn("ConversationWriter: failed to record hook execution for "
-                + record.toolEventId(), e);
+                + execution.toolEventId(), e);
         }
     }
 

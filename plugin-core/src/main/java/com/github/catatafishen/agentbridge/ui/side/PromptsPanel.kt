@@ -32,7 +32,8 @@ internal class PromptsPanel(
     private data class PromptItem(
         val prompt: EntryData.Prompt,
         val stats: EntryData.TurnStats?,
-        val commits: List<String>
+        val commits: List<String>,
+        val sessionId: String = ""
     )
 
     private val searchField = SearchTextField()
@@ -94,7 +95,7 @@ internal class PromptsPanel(
                 if (chatConsole.isEntryRendered(entryId)) {
                     chatConsole.scrollToEntry(entryId)
                 } else {
-                    val sessionId = promptSessionMap[entryId] ?: return
+                    val sessionId = item.sessionId.ifEmpty { promptSessionMap[entryId] ?: return }
                     HistoryContextWindow.open(project, sessionId, entryId)
                 }
             }
@@ -188,8 +189,10 @@ internal class PromptsPanel(
 
         listModel.clear()
         visible.forEach { p ->
-            val data = turnDataMap[promptEntryId(p)]
-            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList()))
+            val key = promptEntryId(p)
+            val data = turnDataMap[key]
+            val sid = promptSessionMap[key] ?: ""
+            listModel.addElement(PromptItem(p, data?.stats, data?.commits ?: emptyList(), sid))
         }
 
         if (scrollToBottom && listModel.size() > 0) {

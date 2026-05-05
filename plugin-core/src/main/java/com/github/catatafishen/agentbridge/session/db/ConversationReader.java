@@ -143,6 +143,39 @@ public final class ConversationReader {
     }
 
     /**
+     * Loads all entries for a single turn by its turn ID.
+     * Returns the prompt followed by all events in sequence order.
+     */
+    @NotNull
+    public synchronized List<EntryData> loadTurnEntries(@NotNull String turnId) {
+        Connection conn = database.getConnection();
+        if (conn == null) return List.of();
+        try {
+            return loadTurnEntriesInternal(conn, turnId);
+        } catch (SQLException e) {
+            LOG.warn("ConversationReader: failed to load turn " + turnId, e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Returns ordered turn IDs for a session that are adjacent to a reference turn.
+     * Negative {@code count} returns turns before the reference (earlier); positive returns after (later).
+     */
+    @NotNull
+    public synchronized List<String> loadAdjacentTurnIds(
+        @NotNull String sessionId, @NotNull String referenceTurnId, int count) {
+        Connection conn = database.getConnection();
+        if (conn == null) return List.of();
+        try {
+            return loadAdjacentTurnIdsInternal(conn, sessionId, referenceTurnId, count);
+        } catch (SQLException e) {
+            LOG.warn("ConversationReader: failed to load adjacent turns for " + referenceTurnId, e);
+            return List.of();
+        }
+    }
+
+    /**
      * Checks whether a session with the given ID exists in the database.
      */
     public synchronized boolean sessionExists(@NotNull String sessionId) {
@@ -254,6 +287,91 @@ public final class ConversationReader {
             }
         }
         return result;
+    }
+
+    @NotNull
+    private List<EntryData> loadTurnEntriesInternal(
+        @NotNull Connection conn, @NotNull String turnId) throws SQLException {
+        List<EntryData> result = new ArrayList<>();
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT id, prompt_text, started_at FROM turns WHERE id = ?")) {
+            ps.setString(1, turnId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    String promptText = rs.getString(2);
+                    String startedAt = rs.getString(3);
+                    List<ContextFileRef> ctxFiles = loadContextFiles(conn, turnId);
+                    result.add(new EntryData.Prompt(promptText, startedAt,
+                        ctxFiles.isEmpty() ? null : ctxFiles, turnId, turnId));
+                    loadEventsForTurn(conn, turnId, result);
+                    String sessionId = loadSessionIdForTurn(conn, turnId);
+                    if (sessionId != null) {
+                        addTurnStatsIfPresent(conn, turnId, sessionId, result);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    @NotNull
+    private List<String> loadAdjacentTurnIdsInternal(
+        @NotNull Connection conn, @NotNull String sessionId,
+        @NotNull String referenceTurnId, int count) throws SQLException {
+        // Get the started_at of the reference turn for comparison
+        String refStartedAt = null;
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT started_at FROM turns WHERE id = ?")) {
+            ps.setString(1, referenceTurnId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) refStartedAt = rs.getString(1);
+            }
+        }
+        if (refStartedAt == null) return List.of();
+
+        List<String> ids = new ArrayList<>();
+        if (count < 0) {
+            // Earlier turns
+            try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT id FROM turns
+                WHERE session_id = ? AND started_at < ?
+                ORDER BY started_at DESC LIMIT ?
+                """)) {
+                ps.setString(1, sessionId);
+                ps.setString(2, refStartedAt);
+                ps.setInt(3, -count);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) ids.add(rs.getString(1));
+                }
+            }
+            java.util.Collections.reverse(ids);
+        } else {
+            // Later turns
+            try (PreparedStatement ps = conn.prepareStatement("""
+                SELECT id FROM turns
+                WHERE session_id = ? AND started_at > ?
+                ORDER BY started_at ASC LIMIT ?
+                """)) {
+                ps.setString(1, sessionId);
+                ps.setString(2, refStartedAt);
+                ps.setInt(3, count);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) ids.add(rs.getString(1));
+                }
+            }
+        }
+        return ids;
+    }
+
+    @Nullable
+    private String loadSessionIdForTurn(@NotNull Connection conn, @NotNull String turnId) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT session_id FROM turns WHERE id = ?")) {
+            ps.setString(1, turnId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString(1) : null;
+            }
+        }
     }
 
     // ── Event loading ─────────────────────────────────────────────────────────
