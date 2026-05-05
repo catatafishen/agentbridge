@@ -2624,7 +2624,7 @@ class ChatToolWindowContent(
                     .whenComplete { _, _ -> tracker.stop() }
             }
         }
-        conversationStore.archive(project.basePath)
+        conversationStore.archive()
         persistedEntryCount = 0
     }
 

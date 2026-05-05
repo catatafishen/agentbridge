@@ -216,7 +216,7 @@ public final class ConversationWriter {
     ) throws SQLException {
         String turnId = prompt.getEntryId();
         String startedAt = prompt.getTimestamp();
-        if (startedAt == null || startedAt.isEmpty()) {
+        if (startedAt.isEmpty()) {
             throw new IllegalArgumentException(
                 "Prompt entry has no timestamp — cannot determine turn start time: id=" + turnId);
         }
@@ -284,7 +284,7 @@ public final class ConversationWriter {
         @NotNull EntryData.TurnStats stats
     ) throws SQLException {
         String endedAt = stats.getTimestamp();
-        if (endedAt == null || endedAt.isEmpty()) {
+        if (endedAt.isEmpty()) {
             throw new IllegalArgumentException(
                 "TurnStats entry has no timestamp — cannot set turn end time: turnId=" + turnId);
         }
@@ -668,7 +668,7 @@ public final class ConversationWriter {
     private static String extractStartedAt(@NotNull List<EntryData> entries) {
         for (EntryData entry : entries) {
             String ts = entry.getTimestamp();
-            if (ts != null && !ts.isEmpty()) {
+            if (!ts.isEmpty()) {
                 return ts;
             }
         }

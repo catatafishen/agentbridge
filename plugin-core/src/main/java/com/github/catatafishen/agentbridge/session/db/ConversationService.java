@@ -330,7 +330,7 @@ public final class ConversationService implements Disposable {
      * the session ID file is handled only by {@link #resetCurrentSessionId}, which callers must
      * invoke separately when a genuinely fresh session is required.
      */
-    public void archive(@Nullable String basePath) {
+    public void archive() {
         // Intentional no-op: the session ID file must survive for restoreConversation() to read.
     }
 
