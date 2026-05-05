@@ -1,9 +1,12 @@
 package com.github.catatafishen.agentbridge.session.exporters;
 
+import com.github.catatafishen.agentbridge.settings.AgentBridgeStorageSettings;
+import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
+import java.nio.file.Path;
 import java.util.regex.Pattern;
 
 /**
@@ -17,6 +20,9 @@ public final class ExportUtils {
     private static final String AGENTBRIDGE_DASH = "agentbridge-";
     private static final String AGENTBRIDGE_UNDERSCORE = "agentbridge_";
     private static final String AGENTBRIDGE_KIRO = "@agentbridge/";
+
+    private static final String SESSIONS_SUBDIR = "sessions";
+    public static final String LEGACY_SESSIONS_DIR = ".agent-work/sessions";
 
     private ExportUtils() {
     }
@@ -73,16 +79,49 @@ public final class ExportUtils {
     }
 
     /**
+     * Returns the project-specific v2 sessions directory using the configured storage root.
+     *
+     * <p>Uses {@link AgentBridgeStorageSettings} to resolve the storage root (e.g.
+     * {@code {project}/.agentbridge}), then appends {@code sessions/}. Falls back to the
+     * legacy {@code .agent-work/sessions/} path when the configured directory does not yet
+     * exist, ensuring backwards-compatibility with existing data.</p>
+     *
+     * <b>Prefer this overload over {@link #sessionsDir(String)} when a {@link Project} is
+     * available.</b>
+     *
+     * @param project the IntelliJ project
+     * @return the sessions directory (may not yet exist on disk)
+     */
+    @NotNull
+    public static File sessionsDir(@NotNull Project project) {
+        Path storageRoot = AgentBridgeStorageSettings.getInstance().getProjectStorageDir(project);
+        File configured = storageRoot.resolve(SESSIONS_SUBDIR).toFile();
+        if (!configured.exists() || !configured.isDirectory()) {
+            String basePath = project.getBasePath();
+            if (basePath != null) {
+                File legacy = new File(basePath, LEGACY_SESSIONS_DIR);
+                if (legacy.exists() && legacy.isDirectory()) {
+                    return legacy;
+                }
+            }
+        }
+        return configured;
+    }
+
+    /**
      * Returns the project-specific v2 sessions directory.
      *
      * @param basePath project base path (may be {@code null})
      * @return the sessions directory (may not yet exist on disk)
+     * @deprecated Prefer {@link #sessionsDir(Project)} when a {@link Project} is available;
+     * it uses the configured storage root instead of the hardcoded legacy path.
      */
+    @Deprecated(since = "0.9")
     @NotNull
     public static File sessionsDir(@Nullable String basePath) {
         if (basePath == null || basePath.isEmpty()) {
-            return new File(".agent-work/sessions");
+            return new File(LEGACY_SESSIONS_DIR);
         }
-        return new File(basePath, ".agent-work/sessions");
+        return new File(basePath, LEGACY_SESSIONS_DIR);
     }
 }

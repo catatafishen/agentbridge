@@ -136,20 +136,23 @@ class ExportUtilsTest {
         assertEquals(canonical, ExportUtils.normalizeToolNameForCodex(canonical));
     }
 
-    // ── sessionsDir ───────────────────────────────────────────────────────────
+    // ── sessionsDir (deprecated overloads — tests kept to verify backward compat during migration) ──
 
+    @SuppressWarnings("deprecation")
     @Test
     void sessionsDirWithNullBasePathReturnsRelativePath() {
-        File dir = ExportUtils.sessionsDir(null);
+        File dir = ExportUtils.sessionsDir((String) null);
         assertEquals(".agent-work/sessions", dir.getPath().replace('\\', '/'));
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void sessionsDirWithEmptyBasePathReturnsRelativePath() {
         File dir = ExportUtils.sessionsDir("");
         assertEquals(".agent-work/sessions", dir.getPath().replace('\\', '/'));
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void sessionsDirWithAbsoluteBasePathCombinesCorrectly() {
         File dir = ExportUtils.sessionsDir("/projects/myapp");
@@ -157,6 +160,7 @@ class ExportUtilsTest {
             "Expected path to end with .agent-work/sessions, got: " + dir.getPath());
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void sessionsDirDoesNotRequireDirectoryToExist() {
         File dir = ExportUtils.sessionsDir("/nonexistent/path");

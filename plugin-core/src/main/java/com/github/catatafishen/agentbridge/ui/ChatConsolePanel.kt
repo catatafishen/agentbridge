@@ -374,7 +374,8 @@ class ChatConsolePanel(
         toolJustCompleted = false
         finalizeCurrentText()
         collapseThinking()
-        currentTurnId = "t${turnCounter++}"
+        turnCounter++
+        currentTurnId = java.util.UUID.randomUUID().toString()
         val ts = timestamp()
         val ctxRefs = contextFiles?.map { (name, path, line) -> ContextFileRef(name, path, line) }
         entries.add(EntryData.Prompt(text, ts, ctxRefs, id = currentTurnId))
@@ -1601,7 +1602,7 @@ class ChatConsolePanel(
         val safeId = escJs(reqId)
         val safeName = escJs(toolDisplayName)
         val safeDesc = escJs(description)
-        val turnId = currentTurnId.ifEmpty { "t${turnCounter++}".also { currentTurnId = it } }
+        val turnId = currentTurnId.ifEmpty { java.util.UUID.randomUUID().toString().also { currentTurnId = it } }
         executeJs("window.showPermissionRequest('$turnId','main','$safeId','$safeName','$safeDesc');")
     }
 
@@ -1627,7 +1628,7 @@ class ChatConsolePanel(
         val safeId = escJs(reqId)
         val safeQuestion = escJs(question)
         val optionJson = options.joinToString(",") { "'${escJs(it)}'" }
-        val turnId = currentTurnId.ifEmpty { "t${turnCounter++}".also { currentTurnId = it } }
+        val turnId = currentTurnId.ifEmpty { java.util.UUID.randomUUID().toString().also { currentTurnId = it } }
         executeJs(
             "window.showAskUserRequest('$turnId','main','$safeId','$safeQuestion',[$optionJson],$deadlineEpochMs);"
         )

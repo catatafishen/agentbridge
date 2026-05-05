@@ -3,7 +3,7 @@ package com.github.catatafishen.agentbridge.services;
 import com.github.catatafishen.agentbridge.BuildInfo;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings;
 import com.github.catatafishen.agentbridge.settings.ChatWebServerSettings;
 import com.github.catatafishen.agentbridge.ui.ChatTheme;
@@ -1952,7 +1952,7 @@ public final class ChatWebServer implements Disposable {
     }
 
     private @NotNull List<EntryData> loadSessionEntries() {
-        List<EntryData> entries = SessionStoreV2.getInstance(project).loadEntries(project.getBasePath());
+        List<EntryData> entries = ConversationService.getInstance(project).loadEntries(project.getBasePath());
         return entries != null ? entries : Collections.emptyList();
     }
 

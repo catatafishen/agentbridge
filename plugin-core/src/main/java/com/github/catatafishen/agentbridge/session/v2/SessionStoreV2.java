@@ -1,74 +1,47 @@
 package com.github.catatafishen.agentbridge.session.v2;
 
-import com.github.catatafishen.agentbridge.bridge.ConversationStore;
-import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.ui.ContextFileRef;
-import com.github.catatafishen.agentbridge.ui.ConversationSerializer;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.FileRef;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.intellij.openapi.Disposable;
 import com.intellij.openapi.diagnostic.Logger;
-import com.intellij.openapi.project.Project;
-import com.intellij.util.concurrency.AppExecutorUtil;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
- * Project-level singleton that manages v2 JSONL session persistence.
+ * Legacy JSONL parsing utilities for migration and backfill purposes.
  *
- * <p>Reads v1 {@code conversation.json} as a fallback via {@link ConversationStore},
- * but all new writes go to v2 JSONL only.
+ * <p>This class exists solely to support:
+ * <ul>
+ *   <li>{@link com.github.catatafishen.agentbridge.session.db.JsonlToSqliteMigrator} —
+ *       converts JSONL session files to SQLite records</li>
+ *   <li>Backfill services ({@code ToolCallStatisticsBackfill}, {@code TurnStatisticsBackfill}) —
+ *       read legacy session index to enumerate sessions for statistics extraction</li>
+ * </ul>
  *
- * <p>Directory layout:
- * <pre>
- * &lt;projectBase&gt;/.agent-work/
- *   conversation.json          ← v1 (read-only fallback, no longer written)
- *   conversations/             ← v1 archives
- *   sessions/
- *     sessions-index.json      ← JSON array of session metadata objects
- *     &lt;uuid&gt;.jsonl             ← one file per session (v2, canonical format)
- * </pre>
+ * <p>For runtime conversation persistence, use
+ * {@link com.github.catatafishen.agentbridge.session.db.ConversationService} instead.
  */
-public final class SessionStoreV2 implements Disposable {
+public final class SessionStoreV2 {
 
     private static final Logger LOG = Logger.getInstance(SessionStoreV2.class);
 
-    private static final String SESSIONS_INDEX = "sessions-index.json";
-    private static final String CURRENT_SESSION_FILE = ".current-session-id";
-    private static final String JSONL_EXT = ".jsonl";
-
-    private static final String KEY_ID = "id";
     private static final String KEY_AGENT = "agent";
     private static final String KEY_CREATED_AT = "createdAt";
-    private static final String KEY_UPDATED_AT = "updatedAt";
-    private static final String KEY_JSONL_PATH = "jsonlPath";
-    private static final String KEY_TURN_COUNT = "turnCount";
-    private static final String KEY_DIRECTORY = "directory";
-    private static final String KEY_NAME = "name";
-
-    // Duplicate-literal constants (S1192)
     private static final String KEY_DENIAL_REASON = "denialReason";
     private static final String KEY_MODEL = "model";
     private static final String KEY_FILENAME = "filename";
@@ -78,56 +51,21 @@ public final class SessionStoreV2 implements Disposable {
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 
-    private final ConversationStore v1Store = new ConversationStore();
-
-    /**
-     * Tracks the most recent async save so that {@link #awaitPendingSave(long)} can
-     * block until the write completes before reading the v2 JSONL from disk.
-     * Guarded by {@link #saveLock} for atomic read-modify-write in future chaining.
-     */
-    private CompletableFuture<Void> pendingSave = CompletableFuture.completedFuture(null);
-
-    private final Object saveLock = new Object();
-
-    /**
-     * Cached transient session ID used when the session-id file is unreadable (I/O error).
-     * Ensures repeated calls during the same IDE session return a consistent ID rather
-     * than generating a different UUID each time (which would fragment sessions).
-     */
-    private volatile String transientSessionId;
-
-    /**
-     * Display name of the agent currently writing sessions (e.g. "GitHub Copilot").
-     */
-    private volatile String currentAgent = "Unknown";
-
-    /**
-     * Returns the project-level singleton instance.
-     */
-    @NotNull
-    public static SessionStoreV2 getInstance(@NotNull Project project) {
-        return PlatformApiCompat.getService(project, SessionStoreV2.class);
+    private SessionStoreV2() {
+        // Utility class — not instantiable
     }
 
-    /**
-     * Sets the display name of the agent that is currently writing sessions.
-     * Called whenever the active agent profile changes.
-     *
-     * @param agent human-readable agent name (e.g. "GitHub Copilot", "Claude CLI")
-     */
-    public void setCurrentAgent(@NotNull String agent) {
-        this.currentAgent = agent;
-    }
+    // ── Session Record (shared with backfill services) ───────────────────────
 
     /**
-     * Metadata record for an archived or active session, suitable for display in a session picker.
+     * Metadata record for a session from the legacy sessions-index.json.
      *
      * @param id        session UUID
-     * @param agent     display name of the agent (e.g. "GitHub Copilot")
-     * @param name      human-readable session name (e.g. "Fix auth bug"), empty if not set
+     * @param agent     display name of the agent
+     * @param name      human-readable session name
      * @param createdAt epoch millis when the session was created
      * @param updatedAt epoch millis when the session was last updated
-     * @param turnCount number of user turns in the session (0 if unknown / old index entry)
+     * @param turnCount number of user turns in the session
      */
     public record SessionRecord(
         @NotNull String id,
@@ -138,163 +76,44 @@ public final class SessionStoreV2 implements Disposable {
         int turnCount) {
     }
 
+    // ── Legacy JSONL index reading ───────────────────────────────────────────
+
     @NotNull
-    public List<SessionRecord> listSessions(@Nullable String basePath) {
-        File indexFile = new File(sessionsDir(basePath), SESSIONS_INDEX);
-        List<JsonObject> records = readIndexRecords(indexFile);
-        List<SessionRecord> result = new ArrayList<>();
-        for (JsonObject rec : records) {
-            SessionRecord sr = parseSessionRecord(rec);
-            if (sr != null) result.add(sr);
+    public static List<SessionRecord> listSessionsFromJsonlIndex(@Nullable String basePath) {
+        if (basePath == null) return List.of();
+        File indexFile = new File(new File(basePath, ExportUtils.LEGACY_SESSIONS_DIR), "sessions-index.json");
+        if (!indexFile.isFile()) return List.of();
+        try {
+            String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
+            JsonArray arr = com.google.gson.JsonParser.parseString(content).getAsJsonArray();
+            List<SessionRecord> result = new ArrayList<>();
+            for (var element : arr) {
+                SessionRecord parsed = parseSessionIndexEntry(element);
+                if (parsed != null) result.add(parsed);
+            }
+            result.sort(Comparator.comparingLong(SessionRecord::updatedAt).reversed());
+            return result;
+        } catch (Exception e) {
+            LOG.debug("Failed to read JSONL sessions index: " + e.getMessage());
+            return List.of();
         }
-        result.sort(Comparator.comparingLong(SessionRecord::updatedAt).reversed());
-        return result;
     }
 
-    /**
-     * Parses one index record into a {@link SessionRecord}; returns {@code null} if the id is missing.
-     */
     @Nullable
-    private static SessionRecord parseSessionRecord(@NotNull JsonObject rec) {
-        String id = rec.has(KEY_ID) ? rec.get(KEY_ID).getAsString() : null;
-        if (id == null || id.isEmpty()) return null;
-        String agent = rec.has(KEY_AGENT) ? rec.get(KEY_AGENT).getAsString() : "Unknown";
-        String name = rec.has(KEY_NAME) ? rec.get(KEY_NAME).getAsString() : "";
-        long createdAt = rec.has(KEY_CREATED_AT) ? rec.get(KEY_CREATED_AT).getAsLong() : 0;
-        long updatedAt = rec.has(KEY_UPDATED_AT) ? rec.get(KEY_UPDATED_AT).getAsLong() : 0;
-        int turnCount = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
+    private static SessionRecord parseSessionIndexEntry(JsonElement element) {
+        if (!element.isJsonObject()) return null;
+        JsonObject obj = element.getAsJsonObject();
+        String id = obj.has("id") ? obj.get("id").getAsString() : "";
+        if (id.isEmpty()) return null;
+        String agent = obj.has(KEY_AGENT) ? obj.get(KEY_AGENT).getAsString() : "";
+        String name = obj.has("name") ? obj.get("name").getAsString() : "";
+        long createdAt = obj.has(KEY_CREATED_AT) ? obj.get(KEY_CREATED_AT).getAsLong() : 0;
+        long updatedAt = obj.has("updatedAt") ? obj.get("updatedAt").getAsLong() : 0;
+        int turnCount = obj.has("turnCount") ? obj.get("turnCount").getAsInt() : 0;
         return new SessionRecord(id, agent, name, createdAt, updatedAt, turnCount);
     }
-    // ── Main operations ───────────────────────────────────────────────────────
 
-    /**
-     * Archives the current conversation: finalises the v2 session, then delegates to
-     * {@link ConversationStore#archive(String)} for v1. Does <b>not</b> delete the
-     * current session ID — call {@link #resetCurrentSessionId(String)} separately
-     * when a completely fresh session is desired (e.g. "New Conversation").
-     *
-     * <p>Keeping {@code .current-session-id} intact is important during agent switches:
-     * {@code buildAndShowChatPanel()} calls this on first connection, but the session
-     * switch export ({@code SessionSwitchService.doExport}) may still need the same
-     * session ID for subsequent export steps.
-     */
-    public void archive(@Nullable String basePath) {
-        finaliseCurrentSession();
-        v1Store.archive(basePath);
-    }
-
-    /**
-     * Deletes the {@code .current-session-id} file so the next {@link #getCurrentSessionId}
-     * call generates a fresh UUID. Use this when the user explicitly starts a new conversation
-     * (e.g. "New Conversation" button), <b>not</b> during agent switches.
-     */
-    public void resetCurrentSessionId(@Nullable String basePath) {
-        File sessionIdFile = currentSessionIdFile(basePath);
-        try {
-            Files.deleteIfExists(sessionIdFile.toPath());
-        } catch (IOException e) {
-            LOG.warn("Could not delete current-session-id file", e);
-        }
-    }
-
-    public void branchCurrentSession(@Nullable String basePath) {
-        File sessionsDir = sessionsDir(basePath);
-        File idFile = currentSessionIdFile(basePath);
-        if (!idFile.exists()) {
-            LOG.info("branchCurrentSession: no current session to branch");
-            return;
-        }
-
-        String sessionId;
-        try {
-            sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
-        } catch (IOException e) {
-            LOG.warn("branchCurrentSession: could not read current-session-id", e);
-            return;
-        }
-        if (sessionId.isEmpty()) return;
-
-        List<Path> allFiles = SessionFileRotation.listAllFiles(sessionsDir, sessionId);
-        if (allFiles.isEmpty()) {
-            LOG.info("branchCurrentSession: no JSONL data to snapshot (session " + sessionId + ")");
-            return;
-        }
-
-        String branchId = UUID.randomUUID().toString();
-        try {
-            performBranchCopy(sessionsDir, sessionId, branchId, basePath);
-        } catch (IOException e) {
-            LOG.warn("Failed to branch session " + sessionId, e);
-        }
-    }
-
-    /**
-     * Carries out the physical file copies and index update for a branch operation.
-     * Separated from {@link #branchCurrentSession} to reduce cognitive complexity.
-     */
-    private void performBranchCopy(
-        @NotNull File sessionsDir,
-        @NotNull String sessionId,
-        @NotNull String branchId,
-        @Nullable String basePath) throws IOException {
-
-        Files.createDirectories(sessionsDir.toPath());
-
-        // Copy all part files with the new branch ID prefix
-        List<File> partFiles = SessionFileRotation.listPartFiles(sessionsDir, sessionId);
-        for (int i = 0; i < partFiles.size(); i++) {
-            String partName = String.format("%s.part-%03d.jsonl", branchId, i + 1);
-            Files.copy(partFiles.get(i).toPath(), sessionsDir.toPath().resolve(partName));
-        }
-
-        // Copy the active (tail) file
-        File sourceFile = new File(sessionsDir, sessionId + JSONL_EXT);
-        File branchFile = new File(sessionsDir, branchId + JSONL_EXT);
-        if (sourceFile.exists()) {
-            Files.copy(sourceFile.toPath(), branchFile.toPath());
-        }
-
-        File indexFile = new File(sessionsDir, SESSIONS_INDEX);
-        List<JsonObject> records = readIndexRecords(indexFile);
-        int turnCount = findTurnCountInIndex(records, sessionId);
-
-        long now = System.currentTimeMillis();
-        String timestamp = java.time.Instant.ofEpochMilli(now)
-            .atZone(java.time.ZoneId.systemDefault())
-            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
-
-        JsonObject branchRec = new JsonObject();
-        branchRec.addProperty(KEY_ID, branchId);
-        branchRec.addProperty(KEY_AGENT, currentAgent + " (branch " + timestamp + ")");
-        branchRec.addProperty(KEY_DIRECTORY, basePath != null ? basePath : "");
-        branchRec.addProperty(KEY_CREATED_AT, now);
-        branchRec.addProperty(KEY_UPDATED_AT, now);
-        branchRec.addProperty(KEY_JSONL_PATH, branchFile.getName());
-        branchRec.addProperty(KEY_TURN_COUNT, turnCount);
-        branchRec.addProperty("branchedFrom", sessionId);
-        records.add(branchRec);
-
-        JsonArray arr = new JsonArray();
-        records.forEach(arr::add);
-        Files.writeString(indexFile.toPath(), GSON.toJson(arr), StandardCharsets.UTF_8,
-            StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-
-        int totalFiles = partFiles.size() + (sourceFile.exists() ? 1 : 0);
-        LOG.info("Branched session " + sessionId + " → " + branchId
-            + " at " + timestamp + " (" + totalFiles + " file(s))");
-    }
-
-    /**
-     * Looks up the stored {@code turnCount} for a session in an already-loaded index records list.
-     */
-    private static int findTurnCountInIndex(@NotNull List<JsonObject> records, @NotNull String sessionId) {
-        for (JsonObject rec : records) {
-            if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
-                return rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
-            }
-        }
-        return 0;
-    }
+    // ── Session name truncation ──────────────────────────────────────────────
 
     private static final int MAX_SESSION_NAME_LENGTH = 60;
 
@@ -304,425 +123,10 @@ public final class SessionStoreV2 implements Disposable {
         return name.substring(0, MAX_SESSION_NAME_LENGTH - 1) + "…";
     }
 
-    /**
-     * Appends {@code entries} to the current session JSONL without overwriting existing content.
-     * Creates the file if it does not yet exist. Rotates the file first if it exceeds the size
-     * limit or crosses a date boundary. The sessions index is updated incrementally:
-     * {@code turnCount} is incremented by the number of {@link EntryData.Prompt} entries in
-     * the batch, and the session name is set from the first prompt only if not already stored.
-     */
-    public void appendEntries(@Nullable String basePath, @NotNull List<EntryData> entries) {
-        if (entries.isEmpty()) return;
-        try {
-            String agent = currentAgent;
-
-            String sessionId = getCurrentSessionId(basePath);
-            File dir = sessionsDir(basePath);
-            //noinspection ResultOfMethodCallIgnored  — best-effort
-            dir.mkdirs();
-
-            File jsonlFile = new File(dir, sessionId + JSONL_EXT);
-
-            SessionFileRotation.rotateIfNeeded(jsonlFile, dir, sessionId, Clock.systemDefaultZone());
-
-            StringBuilder sb = new StringBuilder();
-            int additionalTurns = 0;
-            String firstPromptText = "";
-            for (EntryData entry : entries) {
-                sb.append(GSON.toJson(EntryDataJsonAdapter.serialize(entry))).append('\n');
-                if (entry instanceof EntryData.Prompt p) {
-                    additionalTurns++;
-                    if (firstPromptText.isEmpty() && !p.getText().isBlank()) {
-                        firstPromptText = truncateSessionName(p.getText());
-                    }
-                }
-            }
-            Files.writeString(jsonlFile.toPath(), sb.toString(), StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-
-            appendSessionsIndex(basePath, sessionId, dir, jsonlFile.getName(), agent,
-                firstPromptText, additionalTurns);
-        } catch (Exception e) {
-            LOG.warn("Failed to append entries to v2 session JSONL", e);
-        }
-    }
-
-    /**
-     * Appends entries on a pooled thread (non-blocking).
-     * Futures are chained (not replaced) so that concurrent appends are serialized
-     * and {@link #awaitPendingSave(long)} waits for <em>all</em> in-flight writes.
-     */
-    public void appendEntriesAsync(@Nullable String basePath, @NotNull List<EntryData> entries) {
-        List<EntryData> snapshot = List.copyOf(entries);
-        synchronized (saveLock) {
-            pendingSave = pendingSave.thenRunAsync(
-                () -> appendEntries(basePath, snapshot),
-                AppExecutorUtil.getAppExecutorService());
-        }
-    }
-
-    /**
-     * Blocks until the most recent async append/save completes, or until
-     * {@code timeoutMs} elapses. Safe to call when no save is pending — returns immediately.
-     *
-     * <p>Call this before reading the v2 JSONL from disk to ensure the latest conversation
-     * state has been flushed.
-     *
-     * @param timeoutMs maximum wait in milliseconds
-     */
-    public void awaitPendingSave(long timeoutMs) {
-        CompletableFuture<Void> future;
-        synchronized (saveLock) {
-            future = pendingSave;
-        }
-        if (future.isDone()) return;
-        try {
-            future.get(timeoutMs, TimeUnit.MILLISECONDS);
-        } catch (TimeoutException e) {
-            LOG.warn("Timed out waiting for pending save (" + timeoutMs + " ms)");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            LOG.warn("Interrupted waiting for pending save", e);
-        } catch (Exception e) {
-            LOG.warn("Error waiting for pending save", e);
-        }
-    }
-
-    /**
-     * Maximum bytes to read from disk when loading recent entries for UI restore or export.
-     * Files are read newest-first and loading stops once this budget is exceeded, keeping
-     * memory use bounded even for very large sessions.
-     */
-    static final long RECENT_ENTRIES_MAX_BYTES = 20L * 1024 * 1024; // 20 MB
-
-    /**
-     * Result of a tail-limited session load via {@link #loadRecentEntries(String)}.
-     *
-     * @param entries       loaded entries in chronological order
-     * @param hasMoreOnDisk {@code true} when older entries exist in part files that were
-     *                      not loaded because the byte budget was reached
-     */
-    public record RecentEntriesResult(
-        @NotNull List<EntryData> entries,
-        boolean hasMoreOnDisk) {}
-
-    /**
-     * Loads conversation directly as EntryData entries from V2 JSONL,
-     * bypassing the V1 JSON intermediary. This is the preferred load path.
-     * Falls back to V1 if V2 is absent.
-     */
-    @Nullable
-    public List<EntryData> loadEntries(@Nullable String basePath) {
-        try {
-            List<EntryData> v2Entries = loadEntriesFromV2(basePath);
-            if (v2Entries != null) return v2Entries;
-        } catch (Exception e) {
-            LOG.warn("Failed to load entries from v2 format, falling back to v1", e);
-        }
-        String v1Json = v1Store.loadJson(basePath);
-        if (v1Json == null) return null;
-        return ConversationSerializer.INSTANCE.deserialize(v1Json);
-    }
-
-    /**
-     * Loads entries for a specific session by ID from V2 JSONL.
-     * Reads all part files and the current active file, merging them in order.
-     * Returns {@code null} if no session files exist.
-     */
-    @Nullable
-    public List<EntryData> loadEntriesBySessionId(@Nullable String basePath, @NotNull String sessionId) {
-        File dir = sessionsDir(basePath);
-        List<Path> files = SessionFileRotation.listAllFiles(dir, sessionId);
-        if (files.isEmpty()) return null;
-        try {
-            return loadEntriesFromFiles(files);
-        } catch (Exception e) {
-            LOG.warn("Failed to parse v2 JSONL for session " + sessionId, e);
-            return null;
-        }
-    }
-
-    /**
-     * Loads entries directly from V2 JSONL file(s) for the current session.
-     * Reads all part files and the current active file, merging them in order.
-     * Auto-detects format per line: {@code "type":} → new EntryData format,
-     * {@code "role":} → old legacy message format (converted via {@link #convertLegacyMessages}).
-     */
-    @Nullable
-    private List<EntryData> loadEntriesFromV2(@Nullable String basePath) {
-        File dir = sessionsDir(basePath);
-        File idFile = currentSessionIdFile(basePath);
-        if (!idFile.exists()) return null;
-
-        String sessionId;
-        try {
-            sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
-        } catch (IOException e) {
-            LOG.warn("Could not read current-session-id", e);
-            return null;
-        }
-        if (sessionId.isEmpty()) return null;
-
-        List<Path> files = SessionFileRotation.listAllFiles(dir, sessionId);
-        if (files.isEmpty()) return null;
-
-        try {
-            return loadEntriesFromFiles(files);
-        } catch (Exception e) {
-            LOG.warn("Failed to parse v2 JSONL for session " + sessionId, e);
-            return null;
-        }
-    }
-
-    /**
-     * Loads the most recent entries from the current session, bounded by
-     * {@link #RECENT_ENTRIES_MAX_BYTES}. Reads part files in reverse order (active file
-     * first, then part files from highest to lowest) and stops once the cumulative
-     * on-disk byte size of loaded files reaches the budget.
-     *
-     * <p>Use this for UI restore and for export, where only recent context is needed.
-     * Use {@link #loadEntries(String)} only when all historical data is required
-     * (e.g., usage statistics).
-     *
-     * @return a {@link RecentEntriesResult} with entries in chronological order, or
-     *         {@code null} if no v2 session files exist
-     */
-    @Nullable
-    public RecentEntriesResult loadRecentEntries(@Nullable String basePath) {
-        File dir = sessionsDir(basePath);
-        File idFile = currentSessionIdFile(basePath);
-        if (!idFile.exists()) return null;
-
-        String sessionId;
-        try {
-            sessionId = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
-        } catch (IOException e) {
-            LOG.warn("Could not read current-session-id", e);
-            return null;
-        }
-        if (sessionId.isEmpty()) return null;
-
-        List<Path> allFiles = SessionFileRotation.listAllFiles(dir, sessionId);
-        if (allFiles.isEmpty()) return null;
-
-        // Collect files newest-first until byte budget is reached.
-        List<Path> filesToLoad = new ArrayList<>();
-        long totalBytesRead = 0;
-        boolean hasMoreOnDisk = false;
-        for (int i = allFiles.size() - 1; i >= 0; i--) {
-            if (totalBytesRead >= RECENT_ENTRIES_MAX_BYTES) {
-                hasMoreOnDisk = true;
-                break;
-            }
-            Path file = allFiles.get(i);
-            filesToLoad.add(file);
-            totalBytesRead += file.toFile().length();
-        }
-
-        // Reverse to chronological order and parse.
-        Collections.reverse(filesToLoad);
-        List<EntryData> allDirectEntries = new ArrayList<>();
-        List<JsonObject> allLegacyMessages = new ArrayList<>();
-        int totalSkipped = 0;
-        for (Path file : filesToLoad) {
-            totalSkipped += parseFileIntoCollections(file, allDirectEntries, allLegacyMessages);
-        }
-        if (totalSkipped > 0) {
-            logSkippedLines(allDirectEntries.size() + allLegacyMessages.size(),
-                filesToLoad.size(), totalSkipped, "recent");
-        }
-
-        List<EntryData> entries;
-        if (!allDirectEntries.isEmpty()) entries = allDirectEntries;
-        else if (!allLegacyMessages.isEmpty()) entries = convertLegacyMessages(allLegacyMessages);
-        else return null;
-
-        return new RecentEntriesResult(entries, hasMoreOnDisk);
-    }
+    // ── JSONL parsing (used by migrator and tests) ───────────────────────────
 
     @Nullable
-    private List<EntryData> loadEntriesFromFiles(@NotNull List<Path> files) {
-        List<EntryData> allDirectEntries = new ArrayList<>();
-        List<JsonObject> allLegacyMessages = new ArrayList<>();
-        int totalSkipped = 0;
-
-        for (Path file : files) {
-            totalSkipped += parseFileIntoCollections(file, allDirectEntries, allLegacyMessages);
-        }
-
-        if (totalSkipped > 0) {
-            logSkippedLines(allDirectEntries.size() + allLegacyMessages.size(),
-                files.size(), totalSkipped, null);
-        }
-
-        if (!allDirectEntries.isEmpty()) return allDirectEntries;
-        if (!allLegacyMessages.isEmpty()) return convertLegacyMessages(allLegacyMessages);
-        return null;
-    }
-
-    /**
-     * Parses a single JSONL file into the given collections.
-     * Extracted to support both full-load and tail-load paths.
-     *
-     * @return number of malformed lines skipped
-     */
-    private int parseFileIntoCollections(
-        @NotNull Path file,
-        @NotNull List<EntryData> directEntries,
-        @NotNull List<JsonObject> legacyMessages) {
-
-        int skipped = 0;
-        try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                line = line.trim();
-                if (line.isEmpty()) continue;
-                if (!parseOneJsonlLine(line, directEntries, legacyMessages)) skipped++;
-            }
-        } catch (IOException e) {
-            LOG.warn("Failed to read session file: " + file, e);
-        }
-        return skipped;
-    }
-
-    /**
-     * Emits a WARN log when malformed JSONL lines were skipped during a load.
-     *
-     * @param totalParsed total entries successfully parsed
-     * @param fileCount   number of files read
-     * @param skipped     number of lines skipped
-     * @param qualifier   optional label inserted before "JSONL parse" (e.g. "recent"); may be null
-     */
-    private static void logSkippedLines(int totalParsed, int fileCount, int skipped, @Nullable String qualifier) {
-        String label = qualifier != null ? "JSONL parse (" + qualifier + ")" : "JSONL parse";
-        LOG.warn(label + ": loaded " + totalParsed + " entries across "
-            + fileCount + " file(s), skipped " + skipped + " malformed lines");
-    }
-
-    /**
-     * Parses a single trimmed, non-empty JSONL line into the appropriate collection.
-     * Extracted from {@link #loadEntriesFromFiles} to fix S1141 (nested try).
-     *
-     * @return {@code true} if parsed successfully, {@code false} if the line was malformed
-     */
-    private static boolean parseOneJsonlLine(
-        @NotNull String line,
-        @NotNull List<EntryData> directEntries,
-        @NotNull List<JsonObject> legacyMessages) {
-        try {
-            JsonObject obj = GSON.fromJson(line, JsonObject.class);
-            if (EntryDataJsonAdapter.isEntryFormat(line)) {
-                EntryData entry = EntryDataJsonAdapter.deserialize(obj);
-                if (entry != null) directEntries.add(entry);
-            } else {
-                if (obj != null) legacyMessages.add(obj);
-            }
-            return true;
-        } catch (Exception e) {
-            LOG.warn("Skipping malformed JSONL line: " + line + " (" + e.getMessage() + ")");
-            return false;
-        }
-    }
-
-    /**
-     * Returns the current active session UUID, creating and persisting one if needed.
-     */
-    @NotNull
-    public String getCurrentSessionId(@Nullable String basePath) {
-        File idFile = currentSessionIdFile(basePath);
-        try {
-            if (idFile.exists()) {
-                String id = Files.readString(idFile.toPath(), StandardCharsets.UTF_8).trim();
-                if (!id.isEmpty()) return id;
-            }
-            String newId = UUID.randomUUID().toString();
-            //noinspection ResultOfMethodCallIgnored  — best-effort mkdirs
-            idFile.getParentFile().mkdirs();
-            Files.writeString(idFile.toPath(), newId, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-            return newId;
-        } catch (IOException e) {
-            LOG.warn("Could not read/write current-session-id, using cached transient UUID", e);
-            if (transientSessionId == null) {
-                transientSessionId = UUID.randomUUID().toString();
-            }
-            return transientSessionId;
-        }
-    }
-
-    // ── v2 write ──────────────────────────────────────────────────────────────
-
-    private void appendSessionsIndex(
-        @Nullable String basePath,
-        @NotNull String sessionId,
-        @NotNull File sessionsDir,
-        @NotNull String jsonlFileName,
-        @NotNull String agentName,
-        @NotNull String firstPromptText,
-        int additionalTurns) throws IOException {
-
-        File indexFile = new File(sessionsDir, SESSIONS_INDEX);
-        List<JsonObject> records = readIndexRecords(indexFile);
-
-        long now = System.currentTimeMillis();
-        String directory = basePath != null ? basePath : "";
-
-        boolean found = false;
-        for (JsonObject rec : records) {
-            if (rec.has(KEY_ID) && sessionId.equals(rec.get(KEY_ID).getAsString())) {
-                updateExistingIndexEntry(rec, now, agentName, additionalTurns, firstPromptText);
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            JsonObject newRec = new JsonObject();
-            newRec.addProperty(KEY_ID, sessionId);
-            newRec.addProperty(KEY_AGENT, agentName);
-            newRec.addProperty(KEY_DIRECTORY, directory);
-            newRec.addProperty(KEY_CREATED_AT, now);
-            newRec.addProperty(KEY_UPDATED_AT, now);
-            newRec.addProperty(KEY_JSONL_PATH, jsonlFileName);
-            newRec.addProperty(KEY_TURN_COUNT, additionalTurns);
-            if (!firstPromptText.isEmpty()) newRec.addProperty(KEY_NAME, firstPromptText);
-            records.add(newRec);
-        }
-
-        JsonArray arr = new JsonArray();
-        records.forEach(arr::add);
-        Files.writeString(indexFile.toPath(), GSON.toJson(arr), StandardCharsets.UTF_8,
-            StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-    }
-
-    /**
-     * Applies an incremental update to an existing index record. Extracted from
-     * {@link #appendSessionsIndex} to reduce cognitive complexity (S3776).
-     */
-    private static void updateExistingIndexEntry(
-        @NotNull JsonObject rec,
-        long now,
-        @NotNull String agentName,
-        int additionalTurns,
-        @NotNull String firstPromptText) {
-        rec.addProperty(KEY_UPDATED_AT, now);
-        // Never overwrite agent — keep the original agent from session creation.
-        if (!rec.has(KEY_AGENT)) {
-            rec.addProperty(KEY_AGENT, agentName);
-        }
-        if (additionalTurns > 0) {
-            int current = rec.has(KEY_TURN_COUNT) ? rec.get(KEY_TURN_COUNT).getAsInt() : 0;
-            rec.addProperty(KEY_TURN_COUNT, current + additionalTurns);
-        }
-        // Only set session name from the first prompt; never overwrite an existing name.
-        if (!firstPromptText.isEmpty() && !rec.has(KEY_NAME)) {
-            rec.addProperty(KEY_NAME, firstPromptText);
-        }
-    }
-
-    // ── v2 read ───────────────────────────────────────────────────────────────
-
-    @Nullable
-    static List<EntryData> parseJsonlAutoDetect(@NotNull String content) {
+    public static List<EntryData> parseJsonlAutoDetect(@NotNull String content) {
         List<EntryData> directEntries = new ArrayList<>();
         List<JsonObject> legacyMessages = new ArrayList<>();
         int skippedLines = 0;
@@ -744,8 +148,27 @@ public final class SessionStoreV2 implements Disposable {
         return null;
     }
 
+    static boolean parseOneJsonlLine(
+        @NotNull String line,
+        @NotNull List<EntryData> directEntries,
+        @NotNull List<JsonObject> legacyMessages) {
+        try {
+            JsonObject obj = GSON.fromJson(line, JsonObject.class);
+            if (EntryDataJsonAdapter.isEntryFormat(line)) {
+                EntryData entry = EntryDataJsonAdapter.deserialize(obj);
+                if (entry != null) directEntries.add(entry);
+            } else {
+                if (obj != null) legacyMessages.add(obj);
+            }
+            return true;
+        } catch (Exception e) {
+            LOG.warn("Skipping malformed JSONL line: " + line + " (" + e.getMessage() + ")");
+            return false;
+        }
+    }
+
     @NotNull
-    static List<EntryData> convertLegacyMessages(@NotNull List<JsonObject> messages) {
+    public static List<EntryData> convertLegacyMessages(@NotNull List<JsonObject> messages) {
         List<EntryData> result = new ArrayList<>();
         for (JsonObject msg : messages) {
             convertLegacyMessage(msg, result);
@@ -753,11 +176,6 @@ public final class SessionStoreV2 implements Disposable {
         return result;
     }
 
-    /**
-     * Parsed header fields from a legacy JSONL message object.
-     * Groups the four fields that are threaded through all part-processing helpers
-     * to keep parameter counts below the S107 threshold of 7.
-     */
     private record LegacyMsgHeader(
         @NotNull String role,
         @NotNull String agent,
@@ -765,9 +183,6 @@ public final class SessionStoreV2 implements Disposable {
         @NotNull String ts) {
     }
 
-    /**
-     * Extracts the {@link LegacyMsgHeader} from a raw legacy message object.
-     */
     private static LegacyMsgHeader parseLegacyMessageHeader(@NotNull JsonObject msg) {
         String role = msg.has("role") ? msg.get("role").getAsString() : "";
         long createdAt = msg.has(KEY_CREATED_AT) ? msg.get(KEY_CREATED_AT).getAsLong() : 0;
@@ -775,7 +190,7 @@ public final class SessionStoreV2 implements Disposable {
             ? msg.get(KEY_AGENT).getAsString() : "";
         String model = msg.has(KEY_MODEL) && !msg.get(KEY_MODEL).isJsonNull()
             ? msg.get(KEY_MODEL).getAsString() : "";
-        String ts = createdAt > 0 ? java.time.Instant.ofEpochMilli(createdAt).toString() : "";
+        String ts = createdAt > 0 ? Instant.ofEpochMilli(createdAt).toString() : "";
         return new LegacyMsgHeader(role, agent, model, ts);
     }
 
@@ -854,7 +269,7 @@ public final class SessionStoreV2 implements Disposable {
         String filePath = inv.has("filePath") ? inv.get("filePath").getAsString() : null;
         String pluginTool = inv.has("pluginTool") ? inv.get("pluginTool").getAsString() : null;
         if (pluginTool == null && inv.has("mcpHandled") && inv.get("mcpHandled").getAsBoolean()) {
-            pluginTool = toolName; // best-effort from legacy
+            pluginTool = toolName;
         }
         String partTs = readLegacyTimestamp(part, h.ts());
         String partEid = readLegacyEntryId(part);
@@ -901,13 +316,10 @@ public final class SessionStoreV2 implements Disposable {
         result.add(new EntryData.ContextFiles(List.of(new FileRef(filename, path))));
     }
 
-    // ── Legacy conversion helpers ─────────────────────────────────────────────
+    // ── Legacy conversion helpers ────────────────────────────────────────────
 
-    /**
-     * Reads a per-entry timestamp from a legacy V2 part, falling back to the message-level timestamp.
-     */
     @NotNull
-    static String readLegacyTimestamp(@NotNull JsonObject part, @NotNull String messageLevelTs) {
+    public static String readLegacyTimestamp(@NotNull JsonObject part, @NotNull String messageLevelTs) {
         if (part.has("ts")) {
             String partTs = part.get("ts").getAsString();
             if (!partTs.isEmpty()) return partTs;
@@ -915,19 +327,14 @@ public final class SessionStoreV2 implements Disposable {
         return messageLevelTs;
     }
 
-    /**
-     * Read entry ID from a part's "eid" field, falling back to a new UUID if absent.
-     */
     private static String readLegacyEntryId(JsonObject part) {
         return part.has("eid") ? part.get("eid").getAsString() : UUID.randomUUID().toString();
     }
 
     /**
-     * Collect consecutive "file" parts starting at {@code startIdx} from a parts list,
-     * returning them as context file triples (name, path, line). Skips non-file parts.
-     * Records consumed indices in {@code consumed} so the caller can skip them.
+     * Collect consecutive "file" parts starting at {@code startIdx} from a parts list.
      */
-    static List<ContextFileRef> collectLegacyFileParts(
+    public static List<ContextFileRef> collectLegacyFileParts(
         List<JsonObject> parts, int startIdx, java.util.Set<Integer> consumed) {
         List<ContextFileRef> files = new ArrayList<>();
         for (int i = startIdx; i < parts.size(); i++) {
@@ -941,54 +348,5 @@ public final class SessionStoreV2 implements Disposable {
             consumed.add(i);
         }
         return files;
-    }
-
-    // ── session finalisation ──────────────────────────────────────────────────
-
-    private void finaliseCurrentSession() {
-        // Nothing special needed — the JSONL is already up-to-date.
-        // This is a hook for future use (e.g. writing a "closed" marker).
-    }
-
-    @Override
-    public void dispose() {
-        // Await any in-flight save so it isn't lost on shutdown
-        awaitPendingSave(3_000);
-    }
-
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    @NotNull
-    private static File sessionsDir(@Nullable String basePath) {
-        return ExportUtils.sessionsDir(basePath);
-    }
-
-    @NotNull
-    private static File currentSessionIdFile(@Nullable String basePath) {
-        return new File(sessionsDir(basePath), CURRENT_SESSION_FILE);
-    }
-
-    @NotNull
-    private static List<JsonObject> readIndexRecords(@NotNull File indexFile) {
-        List<JsonObject> records = new ArrayList<>();
-        if (!indexFile.exists()) return records;
-        try {
-            String content = Files.readString(indexFile.toPath(), StandardCharsets.UTF_8);
-            JsonArray arr = JsonParser.parseString(content).getAsJsonArray();
-            for (var el : arr) {
-                if (el.isJsonObject()) records.add(el.getAsJsonObject());
-            }
-        } catch (Exception e) {
-            LOG.warn("Could not read sessions-index.json, starting fresh", e);
-            try {
-                File backup = new File(indexFile.getParentFile(),
-                    indexFile.getName() + ".corrupt-" + System.currentTimeMillis());
-                Files.copy(indexFile.toPath(), backup.toPath());
-                LOG.info("Backed up corrupt index to: " + backup.getAbsolutePath());
-            } catch (Exception backupErr) {
-                LOG.debug("Could not back up corrupt index file", backupErr);
-            }
-        }
-        return records;
     }
 }

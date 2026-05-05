@@ -14,10 +14,12 @@ gradle/wrapper/gradle-wrapper.jar
 .idea/mcpServer.xml
 .idea/chatWebServer.xml
 .idea/agentbridgeMemory.xml
+.idea/ideAgentScratchTracker.xml
 .idea/modules.xml
 .idea/sonarlint.xml
 .idea/sonarlint/
 .idea/.idea/
+.idea/dataSources.xml
 .idea/runConfigurations/Issue_Fixer__poll_GitHub_.xml
 .idea/runConfigurations/Deploy_to_Main_IDE.xml
 # Auto-generated test runner configs (created when running individual tests from IDE)

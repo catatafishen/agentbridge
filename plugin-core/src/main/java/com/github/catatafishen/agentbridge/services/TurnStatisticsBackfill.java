@@ -64,15 +64,14 @@ public final class TurnStatisticsBackfill {
      */
     public static BackfillResult backfill(@NotNull ToolCallStatisticsService service,
                                           @NotNull String basePath) {
-        SessionStoreV2 store = new SessionStoreV2();
-        List<SessionStoreV2.SessionRecord> sessions = store.listSessions(basePath);
+        List<SessionStoreV2.SessionRecord> sessions = SessionStoreV2.listSessionsFromJsonlIndex(basePath);
         if (sessions.isEmpty()) {
             LOG.info("Turn stats backfill: no sessions found");
             return new BackfillResult(0, 0, 0);
         }
 
         Map<String, String> sessionToAgent = buildSessionAgentMap(sessions);
-        File sessionsDir = ExportUtils.sessionsDir(basePath);
+        File sessionsDir = new File(basePath, ExportUtils.LEGACY_SESSIONS_DIR);
         int inserted = 0;
         int skipped = 0;
         int errors = 0;

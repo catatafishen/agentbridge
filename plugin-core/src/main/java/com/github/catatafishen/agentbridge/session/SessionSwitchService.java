@@ -5,6 +5,7 @@ import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.GenericSettings;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.session.exporters.AnthropicClientExporter;
 import com.github.catatafishen.agentbridge.session.exporters.ClaudeCliExporter;
 import com.github.catatafishen.agentbridge.session.exporters.CodexClientExporter;
@@ -12,7 +13,6 @@ import com.github.catatafishen.agentbridge.session.exporters.CopilotClientExport
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.session.exporters.KiroClientExporter;
 import com.github.catatafishen.agentbridge.session.exporters.OpenCodeClientExporter;
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
 import com.github.catatafishen.agentbridge.settings.JunieClientConfigurable;
 import com.github.catatafishen.agentbridge.settings.KiroClientConfigurable;
 import com.github.catatafishen.agentbridge.settings.OpenCodeClientConfigurable;
@@ -180,7 +180,7 @@ public final class SessionSwitchService implements Disposable {
         // Wait for any in-flight saveAsync to flush the v2 JSONL to disk before we read it.
         // Without this, the export may read stale data if the user switches agents immediately
         // after a conversation turn completes.
-        SessionStoreV2.getInstance(project).awaitPendingSave(5_000);
+        ConversationService.getInstance(project).awaitPendingSave(5_000);
 
         // Load v2 session — this is our source of truth, kept up-to-date by the plugin
         // on every conversation save. No need to re-import from the previous client's
@@ -620,7 +620,9 @@ public final class SessionSwitchService implements Disposable {
 
     @NotNull
     private List<EntryData> loadCurrentV2Session(@Nullable String basePath) {
-        return SessionStoreV2.getInstance(project).loadRecentEntries(basePath).entries();
+        ConversationService.RecentEntriesResult result =
+            ConversationService.getInstance(project).loadRecentEntries(basePath);
+        return result != null ? result.entries() : List.of();
     }
 
     // ── Path helpers ──────────────────────────────────────────────────────────
@@ -637,7 +639,7 @@ public final class SessionSwitchService implements Disposable {
      */
     private static void writeClaudeResumeIdFile(@Nullable String basePath, @NotNull String sessionId) {
         try {
-            File dir = sessionsDir(basePath);
+            File dir = legacySessionsDir(basePath);
             //noinspection ResultOfMethodCallIgnored — best-effort
             dir.mkdirs();
             Path resumeFile = dir.toPath().resolve(CLAUDE_RESUME_ID_FILE);
@@ -662,7 +664,7 @@ public final class SessionSwitchService implements Disposable {
         String basePath = project.getBasePath();
         if (basePath != null) {
             try {
-                Path resumeFile = sessionsDir(basePath).toPath().resolve(CLAUDE_RESUME_ID_FILE);
+                Path resumeFile = legacySessionsDir(basePath).toPath().resolve(CLAUDE_RESUME_ID_FILE);
                 Files.deleteIfExists(resumeFile);
             } catch (IOException e) {
                 LOG.warn("Failed to delete Claude resume ID file", e);
@@ -678,7 +680,7 @@ public final class SessionSwitchService implements Disposable {
     @Nullable
     public static String readAndConsumeClaudeResumeIdFile(@Nullable String basePath) {
         try {
-            File dir = sessionsDir(basePath);
+            File dir = legacySessionsDir(basePath);
             Path resumeFile = dir.toPath().resolve(CLAUDE_RESUME_ID_FILE);
             if (!Files.exists(resumeFile)) return null;
 
@@ -711,8 +713,11 @@ public final class SessionSwitchService implements Disposable {
     }
 
     @NotNull
-    private static File sessionsDir(@Nullable String basePath) {
-        return ExportUtils.sessionsDir(basePath);
+    private static File legacySessionsDir(@Nullable String basePath) {
+        if (basePath == null || basePath.isEmpty()) {
+            return new File(ExportUtils.LEGACY_SESSIONS_DIR);
+        }
+        return new File(basePath, ExportUtils.LEGACY_SESSIONS_DIR);
     }
 
     // ── Disposable ────────────────────────────────────────────────────────────
