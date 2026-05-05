@@ -229,7 +229,7 @@ function highlightCode(code: string, lang: string): string {
 
 // ── JSON highlighter ────────────────────────────────────────────────────
 
-const JSON_STRING_RE = /("(?:[^"\\]|\\.)*")\s*(:)?/g;
+const JSON_STRING_RE = /("(?:[^"\\]+|\\.)*")\s*(:)?/g;
 const JSON_LITERAL_RE = /\b(true|false|null)\b/g;
 const JSON_NUMBER_RE = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
 
