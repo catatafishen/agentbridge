@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.editor;
 
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.ui.EntryData;
 import com.github.catatafishen.agentbridge.ui.renderers.IdeInfoRenderer;
 import com.google.gson.JsonObject;
@@ -21,7 +21,7 @@ import java.util.Map;
 
 /**
  * Lists, reads, and searches past conversation sessions from the chat history.
- * Reads V2 JSONL sessions via {@link SessionStoreV2}.
+ * Reads V2 JSONL sessions via {@link ConversationService}.
  */
 public final class SearchConversationHistoryTool extends EditorTool {
 
@@ -111,7 +111,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
         String basePath = project.getBasePath();
         if (basePath == null) return "Error: project base path unavailable";
 
-        SessionStoreV2 store = SessionStoreV2.getInstance(project);
+        ConversationService store = ConversationService.getInstance(project);
 
         String query = args.has(PARAM_QUERY) ? args.get(PARAM_QUERY).getAsString() : null;
         String file = args.has("file") ? args.get("file").getAsString() : null;
@@ -158,8 +158,8 @@ public final class SearchConversationHistoryTool extends EditorTool {
 
     // ── List ──────────────────────────────────────────────────────────────────
 
-    private static String listConversations(SessionStoreV2 store, String basePath) {
-        List<SessionStoreV2.SessionRecord> sessions = store.listSessions(basePath);
+    private static String listConversations(ConversationService store, String basePath) {
+        List<ConversationService.SessionRecord> sessions = store.listSessions();
         String currentId = store.getCurrentSessionId(basePath);
 
         if (sessions.isEmpty()) {
@@ -173,7 +173,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
         StringBuilder sb = new StringBuilder();
         sb.append("Conversations:\n\n");
 
-        for (SessionStoreV2.SessionRecord rec : sessions) {
+        for (ConversationService.SessionRecord rec : sessions) {
             boolean isCurrent = rec.id().equals(currentId);
             String label = isCurrent ? CONVERSATION_CURRENT : rec.id();
             String nameOrAgent = !rec.name().isEmpty() ? rec.name() : rec.agent();
@@ -195,7 +195,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
 
     // ── Read single session ───────────────────────────────────────────────────
 
-    private static String readConversation(SessionStoreV2 store, String basePath,
+    private static String readConversation(ConversationService store, String basePath,
                                            String fileParam, FilterOptions options) {
         List<EntryData> entries = loadSessionEntries(store, basePath, fileParam);
         if (entries == null || entries.isEmpty()) {
@@ -206,7 +206,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
 
     // ── Search across sessions ────────────────────────────────────────────────
 
-    private static String searchConversations(SessionStoreV2 store, String basePath,
+    private static String searchConversations(ConversationService store, String basePath,
                                               @Nullable String fileParam, FilterOptions options) {
         Map<String, List<EntryData>> sessionMap = collectSessionEntries(store, basePath, fileParam);
 
@@ -227,26 +227,26 @@ public final class SearchConversationHistoryTool extends EditorTool {
     // ── Session resolution ────────────────────────────────────────────────────
 
     @Nullable
-    private static List<EntryData> loadSessionEntries(SessionStoreV2 store, String basePath, String fileParam) {
+    private static List<EntryData> loadSessionEntries(ConversationService store, String basePath, String fileParam) {
         if (CONVERSATION_CURRENT.equalsIgnoreCase(fileParam)) {
             return store.loadEntries(basePath);
         }
         // Try as session UUID
-        List<EntryData> entries = store.loadEntriesBySessionId(basePath, fileParam);
+        List<EntryData> entries = store.loadEntriesBySessionId(fileParam);
         if (entries != null) return entries;
 
         // Try partial match against known session IDs (backward compat with archive timestamps)
-        List<SessionStoreV2.SessionRecord> sessions = store.listSessions(basePath);
-        for (SessionStoreV2.SessionRecord rec : sessions) {
+        List<ConversationService.SessionRecord> sessions = store.listSessions();
+        for (ConversationService.SessionRecord rec : sessions) {
             if (rec.id().contains(fileParam) || rec.name().contains(fileParam)) {
-                return store.loadEntriesBySessionId(basePath, rec.id());
+                return store.loadEntriesBySessionId(rec.id());
             }
         }
         return null;
     }
 
     private static Map<String, List<EntryData>> collectSessionEntries(
-        SessionStoreV2 store, String basePath, @Nullable String fileParam) {
+        ConversationService store, String basePath, @Nullable String fileParam) {
         Map<String, List<EntryData>> result = new LinkedHashMap<>();
 
         if (fileParam != null) {
@@ -263,7 +263,7 @@ public final class SearchConversationHistoryTool extends EditorTool {
         return result;
     }
 
-    private static String addCurrentSession(SessionStoreV2 store, String basePath,
+    private static String addCurrentSession(ConversationService store, String basePath,
                                             Map<String, List<EntryData>> result) {
         String currentId = store.getCurrentSessionId(basePath);
         List<EntryData> current = store.loadEntries(basePath);
@@ -273,18 +273,18 @@ public final class SearchConversationHistoryTool extends EditorTool {
         return currentId;
     }
 
-    private static void addIndexedSessions(SessionStoreV2 store, String basePath, String currentId,
+    private static void addIndexedSessions(ConversationService store, String basePath, String currentId,
                                            Map<String, List<EntryData>> result) {
-        for (SessionStoreV2.SessionRecord rec : store.listSessions(basePath)) {
+        for (ConversationService.SessionRecord rec : store.listSessions()) {
             addIndexedSession(store, basePath, currentId, result, rec);
         }
     }
 
-    private static void addIndexedSession(SessionStoreV2 store, String basePath, String currentId,
+    private static void addIndexedSession(ConversationService store, String basePath, String currentId,
                                           Map<String, List<EntryData>> result,
-                                          SessionStoreV2.SessionRecord rec) {
+                                          ConversationService.SessionRecord rec) {
         if (rec.id().equals(currentId)) return;
-        List<EntryData> entries = store.loadEntriesBySessionId(basePath, rec.id());
+        List<EntryData> entries = store.loadEntriesBySessionId(rec.id());
         if (entries == null || entries.isEmpty()) return;
         String label = !rec.name().isEmpty() ? rec.name() : rec.id();
         result.put(label, entries);

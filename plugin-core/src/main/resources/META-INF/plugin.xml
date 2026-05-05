@@ -119,10 +119,6 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.session.SessionSwitchService"/>
 
-    <!-- Conversation persistence (v2 JSONL + v1 compat) — singleton to prevent race conditions -->
-    <projectService
-      serviceImplementation="com.github.catatafishen.agentbridge.session.v2.SessionStoreV2"/>
-
     <!-- Agent resource cleanup services -->
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.CleanupSettings"/>

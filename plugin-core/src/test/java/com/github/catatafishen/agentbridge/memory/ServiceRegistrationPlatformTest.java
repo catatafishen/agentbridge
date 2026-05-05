@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.memory;
 
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 
 /**
  * Verifies that all memory-related project services resolve correctly from the service container.
@@ -20,9 +20,9 @@ public class ServiceRegistrationPlatformTest extends MemoryPlatformTestCase {
         assertNotNull("MemorySettings should resolve from project service container", settings);
     }
 
-    public void testSessionStoreV2Resolves() {
-        SessionStoreV2 store = SessionStoreV2.getInstance(getProject());
-        assertNotNull("SessionStoreV2 should resolve from project service container", store);
+    public void testConversationServiceResolves() {
+        ConversationService service = ConversationService.getInstance(getProject());
+        assertNotNull("ConversationService should resolve from project service container", service);
     }
 
     public void testMemoryServiceReturnsSameInstance() {

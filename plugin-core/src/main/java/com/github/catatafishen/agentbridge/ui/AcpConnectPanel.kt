@@ -4,7 +4,7 @@ import com.github.catatafishen.agentbridge.BuildInfo
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.*
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.application.ApplicationManager
@@ -46,20 +46,20 @@ class AcpConnectPanel(
     /** Item model for the session resume dropdown. */
     sealed class SessionChoice(val displayText: String) {
         /** Resume the most recent session (default). */
-        class Latest(val record: SessionStoreV2.SessionRecord) :
+        class Latest(val record: ConversationService.SessionRecord) :
             SessionChoice(formatSession(record))
 
         /** Start a fresh session without resuming. */
         data object None : SessionChoice("None (fresh session)")
 
         /** Resume a specific older session. */
-        class Older(val record: SessionStoreV2.SessionRecord) :
+        class Older(val record: ConversationService.SessionRecord) :
             SessionChoice(formatSession(record))
 
         override fun toString(): String = displayText
 
         companion object {
-            private fun formatSession(record: SessionStoreV2.SessionRecord): String {
+            private fun formatSession(record: ConversationService.SessionRecord): String {
                 val date = SESSION_DATE_FORMAT.format(Date(record.updatedAt))
                 val label = record.name.ifEmpty { record.agent }
                 val base = "$date — $label"
@@ -376,8 +376,8 @@ class AcpConnectPanel(
 
     private fun refreshSessionCombo() {
         sessionCombo.removeAllItems()
-        val sessionStore = SessionStoreV2.getInstance(project)
-        val sessions = sessionStore.listSessions(project.basePath).toList()
+        val sessionStore = ConversationService.getInstance(project)
+        val sessions = sessionStore.listSessions().toList()
 
         if (sessions.isNotEmpty()) {
             sessionCombo.addItem(SessionChoice.Latest(sessions.first()))

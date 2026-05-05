@@ -23,7 +23,7 @@ import com.github.catatafishen.agentbridge.bridge.SessionOption;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.McpServerControl;
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2;
+import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
@@ -871,7 +871,7 @@ public abstract class AcpClient extends AbstractAgentClient {
 
     private void branchCurrentSession(String cwd) {
         try {
-            SessionStoreV2.getInstance(project).branchCurrentSession(cwd);
+            ConversationService.getInstance(project).branchCurrentSession();
         } catch (Exception e) {
             LOG.warn("Failed to branch session at startup — continuing without snapshot", e);
         }

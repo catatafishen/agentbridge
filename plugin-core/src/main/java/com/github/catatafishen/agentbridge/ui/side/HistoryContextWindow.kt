@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.side
 
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel
 import com.github.catatafishen.agentbridge.ui.EntryData
 import com.intellij.openapi.application.ApplicationManager
@@ -126,9 +126,9 @@ internal class HistoryContextWindow private constructor(
     }
 
     private fun loadEntriesAsync() {
-        val sessionStore = SessionStoreV2.getInstance(project)
+        val sessionStore = ConversationService.getInstance(project)
         ApplicationManager.getApplication().executeOnPooledThread {
-            val entries = sessionStore.loadEntriesBySessionId(project, sessionId).orEmpty()
+            val entries = sessionStore.loadEntriesBySessionId(sessionId).orEmpty()
             ApplicationManager.getApplication().invokeLater {
                 if (!isDisplayable) return@invokeLater
                 onEntriesLoaded(entries)

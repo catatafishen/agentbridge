@@ -6,8 +6,8 @@ import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.session.migration.V1ToV2Migrator
-import com.github.catatafishen.agentbridge.session.v2.SessionStoreV2
 import com.github.catatafishen.agentbridge.settings.ChatHistorySettings
 import com.github.catatafishen.agentbridge.settings.ChatInputSettings
 import com.intellij.icons.AllIcons
@@ -124,7 +124,7 @@ class ChatToolWindowContent(
     private var statusBanner: StatusBanner? = null
     private var inlineAuthProcess: Process? = null
 
-    private val conversationStore = SessionStoreV2.getInstance(project)
+    private val conversationStore = ConversationService.getInstance(project)
     private val conversationReplayer = ConversationReplayer()
 
     // Throttled incremental save during streaming (avoid data loss on crash)
