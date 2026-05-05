@@ -45,7 +45,9 @@ public final class ConversationDatabase implements Disposable {
     static final int SCHEMA_VERSION = 2;
 
     private final Project project;
-    private volatile Connection connection;
+    // All access is inside synchronized(database) blocks in ConversationReader/Writer.
+    // volatile alone would not be sufficient (S3077) and is redundant here.
+    private Connection connection;
 
     private volatile boolean initAttempted;
 
