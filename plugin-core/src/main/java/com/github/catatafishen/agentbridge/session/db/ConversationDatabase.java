@@ -39,7 +39,9 @@ public final class ConversationDatabase implements Disposable {
 
     private static final String DB_FILENAME = "conversation.db";
 
-    /** Bumped whenever {@link ConversationSchema} changes. Stored in {@code schema_version} table. */
+    /**
+     * Bumped whenever {@link ConversationSchema} changes. Stored in {@code schema_version} table.
+     */
     static final int SCHEMA_VERSION = 1;
 
     private final Project project;
@@ -52,7 +54,9 @@ public final class ConversationDatabase implements Disposable {
         this.project = project;
     }
 
-    /** Test-only — use {@link #initializeWithConnection(Connection)} after construction. */
+    /**
+     * Test-only — use {@link #initializeWithConnection(Connection)} after construction.
+     */
     ConversationDatabase() {
         this.project = null;
     }
@@ -105,22 +109,22 @@ public final class ConversationDatabase implements Disposable {
     }
 
     /**
-     * Returns the live JDBC connection. Callers are expected to use prepared
-     * statements and close them, but must <b>not</b> close this connection —
-     * its lifecycle is managed by the service.
+     * Returns the live JDBC connection, or {@code null} when the database has
+     * not been initialised yet (e.g. during early startup, or when storage is
+     * temporarily unavailable). Callers must check for null and treat the
+     * absence of a connection as "DB unavailable, fall back gracefully".
      *
-     * @throws IllegalStateException if {@link #initialize()} has not been called
+     * <p>Callers must <b>not</b> close the returned connection — its lifecycle
+     * is owned by the service.
      */
-    @NotNull
+    @Nullable
     public Connection getConnection() {
-        if (connection == null) {
-            throw new IllegalStateException(
-                "ConversationDatabase not initialized — call initialize() first");
-        }
         return connection;
     }
 
-    /** Returns {@code true} if the connection is open and ready for use. */
+    /**
+     * Returns {@code true} if the connection is open and ready for use.
+     */
     public boolean isReady() {
         return connection != null;
     }
@@ -137,7 +141,9 @@ public final class ConversationDatabase implements Disposable {
         }
     }
 
-    /** Returns the resolved database path for the current project (for tests / diagnostics). */
+    /**
+     * Returns the resolved database path for the current project (for tests / diagnostics).
+     */
     @Nullable
     public Path getDatabasePath() {
         if (project == null) return null;

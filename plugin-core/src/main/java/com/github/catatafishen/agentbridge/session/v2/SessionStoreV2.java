@@ -105,6 +105,38 @@ public final class SessionStoreV2 implements Disposable {
     private volatile String currentAgent = "Unknown";
 
     /**
+     * Project handle used to look up the {@link com.github.catatafishen.agentbridge.session.db.ConversationDatabase}
+     * for dual-writes during the JSONL→SQLite migration. Auto-injected by the
+     * IntelliJ service container. May be {@code null} when the store is
+     * instantiated directly via {@link #SessionStoreV2()} for read-only use
+     * (backfill jobs / tests) — in that case the SQLite dual-write is skipped.
+     */
+    @Nullable
+    private final Project project;
+
+    /**
+     * Lazy-initialised writer for the new SQLite conversation DB. Phase 1 of the
+     * migration runs this in parallel with JSONL writes; reads still come from
+     * JSONL until Phase 3.
+     */
+    @SuppressWarnings("java:S3077") // intentional: writer is constructed atomically, only the reference is volatile
+    private volatile com.github.catatafishen.agentbridge.session.db.ConversationWriter conversationWriter;
+
+    @SuppressWarnings("unused") // instantiated by IntelliJ service container
+    public SessionStoreV2(@NotNull Project project) {
+        this.project = project;
+    }
+
+    /**
+     * Read-only constructor for backfill jobs and tests that operate on a
+     * {@code basePath} without a {@link Project}. SQLite dual-write is a no-op
+     * with this constructor — JSONL is the only write path.
+     */
+    public SessionStoreV2() {
+        this.project = null;
+    }
+
+    /**
      * Returns the project-level singleton instance.
      */
     @NotNull
@@ -345,8 +377,53 @@ public final class SessionStoreV2 implements Disposable {
 
             appendSessionsIndex(basePath, sessionId, dir, jsonlFile.getName(), agent,
                 firstPromptText, additionalTurns);
+
+            // Dual-write to the new SQLite conversation DB (Phase 1 of migration).
+            // Best-effort: failures are swallowed inside the writer.
+            dualWriteToSqlite(sessionId, agent, entries);
         } catch (Exception e) {
             LOG.warn("Failed to append entries to v2 session JSONL", e);
+        }
+    }
+
+    /**
+     * Writes the same batch into the SQLite conversation DB. No-op when the
+     * database service is not yet initialised (e.g. during early startup or
+     * when running without a real project context).
+     */
+    private void dualWriteToSqlite(@NotNull String sessionId, @NotNull String agent,
+                                   @NotNull List<EntryData> entries) {
+        try {
+            com.github.catatafishen.agentbridge.session.db.ConversationWriter writer =
+                getOrCreateWriter();
+            if (writer == null) return;
+            writer.recordEntries(sessionId, agent, "", entries);
+        } catch (Exception e) {
+            // Swallow — JSONL is still authoritative during Phase 1.
+            LOG.debug("ConversationWriter dual-write skipped: " + e.getMessage());
+        }
+    }
+
+    @Nullable
+    private com.github.catatafishen.agentbridge.session.db.ConversationWriter getOrCreateWriter() {
+        com.github.catatafishen.agentbridge.session.db.ConversationWriter local = conversationWriter;
+        if (local != null) return local;
+        synchronized (this) {
+            if (conversationWriter != null) return conversationWriter;
+            if (project == null || project.isDisposed()) return null;
+            com.github.catatafishen.agentbridge.session.db.ConversationDatabase db =
+                com.github.catatafishen.agentbridge.session.db.ConversationDatabase.getInstance(project);
+            if (!db.isReady()) {
+                try {
+                    db.initialize();
+                } catch (Exception e) {
+                    LOG.debug("ConversationDatabase initialization failed: " + e.getMessage());
+                    return null;
+                }
+            }
+            conversationWriter =
+                new com.github.catatafishen.agentbridge.session.db.ConversationWriter(db);
+            return conversationWriter;
         }
     }
 
@@ -407,7 +484,8 @@ public final class SessionStoreV2 implements Disposable {
      */
     public record RecentEntriesResult(
         @NotNull List<EntryData> entries,
-        boolean hasMoreOnDisk) {}
+        boolean hasMoreOnDisk) {
+    }
 
     /**
      * Loads conversation directly as EntryData entries from V2 JSONL,
@@ -450,9 +528,9 @@ public final class SessionStoreV2 implements Disposable {
      * Used by {@link #loadPromptsFromAllSessions(Project)} to build cross-session prompt lists
      * without loading full session entry graphs into memory.
      *
-     * @param sessionId  the UUID of the session this prompt came from
-     * @param prompt     the prompt entry
-     * @param stats      the TurnStats immediately following the prompt, or {@code null} if not present
+     * @param sessionId the UUID of the session this prompt came from
+     * @param prompt    the prompt entry
+     * @param stats     the TurnStats immediately following the prompt, or {@code null} if not present
      */
     public record PromptWithContext(
         @NotNull String sessionId,
@@ -485,7 +563,9 @@ public final class SessionStoreV2 implements Disposable {
         return result;
     }
 
-    /** Scans JSONL files for prompt + turnStats entries only (skips everything else). */
+    /**
+     * Scans JSONL files for prompt + turnStats entries only (skips everything else).
+     */
     @NotNull
     private List<PromptWithContext> scanPromptsFromFiles(
         @NotNull String sessionId, @NotNull List<Path> files) {
@@ -567,7 +647,6 @@ public final class SessionStoreV2 implements Disposable {
         }
     }
 
-
     /**
      * Loads entries directly from V2 JSONL file(s) for the current session.
      * Reads all part files and the current active file, merging them in order.
@@ -611,7 +690,7 @@ public final class SessionStoreV2 implements Disposable {
      * (e.g., usage statistics).
      *
      * @return a {@link RecentEntriesResult} with entries in chronological order, or
-     *         {@code null} if no v2 session files exist
+     * {@code null} if no v2 session files exist
      */
     @Nullable
     public RecentEntriesResult loadRecentEntries(@Nullable String basePath) {

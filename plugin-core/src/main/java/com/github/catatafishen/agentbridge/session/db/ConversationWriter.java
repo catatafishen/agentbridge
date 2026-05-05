@@ -1,0 +1,519 @@
+package com.github.catatafishen.agentbridge.session.db;
+
+import com.github.catatafishen.agentbridge.ui.ContextFileRef;
+import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.ui.FileRef;
+import com.intellij.openapi.diagnostic.Logger;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Maps {@link EntryData} batches to rows in the {@link ConversationDatabase}.
+ *
+ * <p>This is the single write path into the SQLite conversation history. During
+ * Phase 1 of the JSONL→SQLite migration the writer runs in parallel with the
+ * existing JSONL writes; once Phase 3 disables JSONL the writer becomes the
+ * primary store.
+ *
+ * <p>Mapping rules (one row per {@link EntryData} subtype, joined to a parent
+ * {@code events} row when applicable):
+ * <ul>
+ *   <li>{@link EntryData.Prompt} → opens a new {@code turns} row and becomes
+ *       the "current turn" for the session.</li>
+ *   <li>{@link EntryData.Text}/{@code Thinking}/{@code ToolCall}/{@code SubAgent}
+ *       /{@code Nudge} (sent only) → append an {@code events} row plus the
+ *       matching subtype row, linked to the current turn (or {@code NULL} for
+ *       standalone tool calls).</li>
+ *   <li>{@link EntryData.TurnStats} → finalises the current turn:
+ *       fills in {@code ended_at} + totals, and inserts {@code commits} rows
+ *       for any git hashes recorded.</li>
+ *   <li>{@link EntryData.ContextFiles} → inserts {@code turn_context_files}
+ *       rows for the current turn.</li>
+ *   <li>{@link EntryData.Status}/{@code SessionSeparator} → ignored (UI-only,
+ *       not part of the schema).</li>
+ * </ul>
+ *
+ * <p>All write methods are best-effort: SQL failures are logged at WARN and
+ * never propagate, mirroring the JSONL writer's behaviour. The writer is
+ * thread-safe — every public entry point synchronises on the connection.
+ */
+public final class ConversationWriter {
+
+    private static final Logger LOG = Logger.getInstance(ConversationWriter.class);
+
+    private final ConversationDatabase database;
+
+    /** Per-session cursor: tracks the most recently opened turn for sequencing. */
+    private final Map<String, SessionCursor> cursors = new HashMap<>();
+
+    public ConversationWriter(@NotNull ConversationDatabase database) {
+        this.database = database;
+    }
+
+    /**
+     * Records a batch of entries appended to {@code sessionId} in writer order.
+     *
+     * @param sessionId session UUID (matches JSONL session id)
+     * @param agentName display name of the writing agent (e.g. "GitHub Copilot")
+     * @param clientId  ACP client identifier (e.g. "copilot", "opencode"); may be empty
+     * @param entries   batch of entries in chronological order
+     */
+    public synchronized void recordEntries(
+        @NotNull String sessionId,
+        @NotNull String agentName,
+        @NotNull String clientId,
+        @NotNull List<EntryData> entries
+    ) {
+        if (entries.isEmpty()) return;
+        Connection conn = database.getConnection();
+        if (conn == null) {
+            LOG.debug("ConversationDatabase not initialised — skipping write of "
+                + entries.size() + " entries");
+            return;
+        }
+        try {
+            conn.setAutoCommit(false);
+            try {
+                ensureSession(conn, sessionId, agentName, clientId);
+                for (EntryData entry : entries) {
+                    writeEntry(conn, sessionId, agentName, clientId, entry);
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            LOG.warn("ConversationWriter: failed to record " + entries.size()
+                + " entries for session " + sessionId, e);
+        }
+    }
+
+    // ── Per-entry mapping ─────────────────────────────────────────────────────
+
+    private void writeEntry(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull String agentName,
+        @NotNull String clientId,
+        @NotNull EntryData entry
+    ) throws SQLException {
+        if (entry instanceof EntryData.Prompt p) {
+            openTurn(conn, sessionId, p);
+        } else if (entry instanceof EntryData.Text t) {
+            insertEvent(conn, sessionId, t.getEntryId(), "text", t.getTimestamp(),
+                t.getAgent(), t.getModel());
+            insertSubtype(conn,
+                "INSERT INTO text_events (event_id, content) VALUES (?, ?)",
+                t.getEntryId(), t.getRaw());
+        } else if (entry instanceof EntryData.Thinking th) {
+            insertEvent(conn, sessionId, th.getEntryId(), "thinking", th.getTimestamp(),
+                th.getAgent(), th.getModel());
+            insertSubtype(conn,
+                "INSERT INTO thinking_events (event_id, content) VALUES (?, ?)",
+                th.getEntryId(), th.getRaw());
+        } else if (entry instanceof EntryData.ToolCall tc) {
+            insertEvent(conn, sessionId, tc.getEntryId(), "tool_call", tc.getTimestamp(),
+                tc.getAgent(), tc.getModel());
+            insertToolCall(conn, tc, clientId);
+        } else if (entry instanceof EntryData.SubAgent sa) {
+            insertEvent(conn, sessionId, sa.getEntryId(), "sub_agent", sa.getTimestamp(),
+                sa.getAgent(), sa.getModel());
+            insertSubAgent(conn, sa);
+        } else if (entry instanceof EntryData.Nudge n) {
+            // Only persist sent nudges (pending nudges are transient UI state).
+            if (!n.getSent()) return;
+            insertEvent(conn, sessionId, n.getEntryId(), "nudge", n.getTimestamp(), "", "");
+            insertSubtype(conn,
+                "INSERT INTO nudge_events (event_id, text, nudge_id) VALUES (?, ?, ?)",
+                n.getEntryId(), n.getText(), n.getId());
+        } else if (entry instanceof EntryData.TurnStats ts) {
+            finaliseTurn(conn, sessionId, ts);
+        } else if (entry instanceof EntryData.ContextFiles cf) {
+            insertContextFiles(conn, sessionId, cf.getFiles());
+        }
+        // Status / SessionSeparator are intentionally not persisted (UI markers only).
+    }
+
+    // ── Sessions ──────────────────────────────────────────────────────────────
+
+    private void ensureSession(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull String agentName,
+        @NotNull String clientId
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT OR IGNORE INTO sessions (id, agent_name, client_id, started_at) "
+                + "VALUES (?, ?, ?, ?)")) {
+            ps.setString(1, sessionId);
+            ps.setString(2, agentName);
+            ps.setString(3, clientId);
+            ps.setString(4, Instant.now().toString());
+            ps.executeUpdate();
+        }
+    }
+
+    // ── Turns ─────────────────────────────────────────────────────────────────
+
+    private void openTurn(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull EntryData.Prompt prompt
+    ) throws SQLException {
+        String turnId = prompt.getEntryId();
+        String startedAt = nonEmpty(prompt.getTimestamp(), Instant.now().toString());
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT OR IGNORE INTO turns (id, session_id, prompt_text, started_at) "
+                + "VALUES (?, ?, ?, ?)")) {
+            ps.setString(1, turnId);
+            ps.setString(2, sessionId);
+            ps.setString(3, prompt.getText());
+            ps.setString(4, startedAt);
+            ps.executeUpdate();
+        }
+        SessionCursor cursor = cursors.computeIfAbsent(sessionId, k -> new SessionCursor());
+        cursor.turnId = turnId;
+        cursor.sequenceNum = 0;
+
+        // Persist any context files attached to this prompt.
+        List<ContextFileRef> contextFiles = prompt.getContextFiles();
+        if (contextFiles != null && !contextFiles.isEmpty()) {
+            insertPromptContextFiles(conn, turnId, contextFiles);
+        }
+    }
+
+    private void finaliseTurn(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull EntryData.TurnStats stats
+    ) throws SQLException {
+        String turnId = stats.getTurnId();
+        if (turnId == null || turnId.isEmpty()) {
+            SessionCursor cursor = cursors.get(sessionId);
+            if (cursor == null || cursor.turnId == null) return;
+            turnId = cursor.turnId;
+        }
+        try (PreparedStatement ps = conn.prepareStatement("""
+            UPDATE turns SET
+                ended_at        = COALESCE(?, ended_at),
+                model           = COALESCE(?, model),
+                token_multiplier= COALESCE(?, token_multiplier),
+                input_tokens    = ?,
+                output_tokens   = ?,
+                cost_usd        = ?,
+                duration_ms     = ?,
+                tool_call_count = ?,
+                lines_added     = ?,
+                lines_removed   = ?
+            WHERE id = ?
+            """)) {
+            ps.setString(1, nonEmpty(stats.getTimestamp(), Instant.now().toString()));
+            ps.setString(2, emptyToNull(stats.getModel()));
+            String multiplier = stats.getMultiplier();
+            if (multiplier == null || multiplier.isEmpty()) {
+                ps.setNull(3, java.sql.Types.REAL);
+            } else {
+                try {
+                    ps.setDouble(3, Double.parseDouble(multiplier));
+                } catch (NumberFormatException e) {
+                    ps.setNull(3, java.sql.Types.REAL);
+                }
+            }
+            ps.setLong(4, stats.getInputTokens());
+            ps.setLong(5, stats.getOutputTokens());
+            ps.setDouble(6, stats.getCostUsd());
+            ps.setLong(7, stats.getDurationMs());
+            ps.setInt(8, stats.getToolCallCount());
+            ps.setInt(9, stats.getLinesAdded());
+            ps.setInt(10, stats.getLinesRemoved());
+            ps.setString(11, turnId);
+            ps.executeUpdate();
+        }
+
+        List<String> hashes = stats.getCommitHashes();
+        if (hashes != null && !hashes.isEmpty()) {
+            try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO commits (turn_id, commit_hash) VALUES (?, ?)")) {
+                for (String hash : hashes) {
+                    if (hash == null || hash.isEmpty()) continue;
+                    ps.setString(1, turnId);
+                    ps.setString(2, hash);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+        }
+    }
+
+    // ── Events + subtypes ─────────────────────────────────────────────────────
+
+    private void insertEvent(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull String eventId,
+        @NotNull String eventType,
+        @NotNull String timestamp,
+        @NotNull String agentName,
+        @NotNull String model
+    ) throws SQLException {
+        SessionCursor cursor = cursors.computeIfAbsent(sessionId, k -> new SessionCursor());
+        int seq = cursor.nextSequence();
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT OR IGNORE INTO events "
+                + "(id, turn_id, sequence_num, event_type, agent_name, model, timestamp) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            ps.setString(1, eventId);
+            if (cursor.turnId == null) {
+                ps.setNull(2, java.sql.Types.VARCHAR);
+            } else {
+                ps.setString(2, cursor.turnId);
+            }
+            ps.setInt(3, seq);
+            ps.setString(4, eventType);
+            ps.setString(5, emptyToNull(agentName));
+            ps.setString(6, emptyToNull(model));
+            ps.setString(7, nonEmpty(timestamp, Instant.now().toString()));
+            ps.executeUpdate();
+        }
+    }
+
+    private void insertSubtype(
+        @NotNull Connection conn,
+        @NotNull String sql,
+        @NotNull String... params
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (int i = 0; i < params.length; i++) {
+                ps.setString(i + 1, params[i]);
+            }
+            ps.executeUpdate();
+        }
+    }
+
+    private void insertToolCall(
+        @NotNull Connection conn,
+        @NotNull EntryData.ToolCall tc,
+        @NotNull String clientId
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT OR IGNORE INTO tool_call_events (
+                event_id, tool_name, tool_kind, client_id, display_name,
+                arguments, result, status, file_path, auto_denied, denial_reason, is_mcp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            ps.setString(1, tc.getEntryId());
+            ps.setString(2, tc.getTitle());
+            ps.setString(3, tc.getKind());
+            ps.setString(4, emptyToNull(clientId));
+            ps.setString(5, tc.getPluginTool());
+            ps.setString(6, tc.getArguments());
+            ps.setString(7, tc.getResult());
+            ps.setString(8, tc.getStatus());
+            ps.setString(9, tc.getFilePath());
+            ps.setInt(10, tc.getAutoDenied() ? 1 : 0);
+            ps.setString(11, tc.getDenialReason());
+            // is_mcp is set by the MCP dispatch path via a separate update; default 0 here.
+            ps.setInt(12, 0);
+            ps.executeUpdate();
+        }
+    }
+
+    private void insertSubAgent(
+        @NotNull Connection conn,
+        @NotNull EntryData.SubAgent sa
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT OR IGNORE INTO sub_agent_events (
+                event_id, agent_type, description, prompt_text, result_text,
+                status, call_id, auto_denied, denial_reason
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            ps.setString(1, sa.getEntryId());
+            ps.setString(2, sa.getAgentType());
+            ps.setString(3, sa.getDescription());
+            ps.setString(4, sa.getPrompt());
+            ps.setString(5, sa.getResult());
+            ps.setString(6, sa.getStatus());
+            ps.setString(7, sa.getCallId());
+            ps.setInt(8, sa.getAutoDenied() ? 1 : 0);
+            ps.setString(9, sa.getDenialReason());
+            ps.executeUpdate();
+        }
+    }
+
+    private void insertContextFiles(
+        @NotNull Connection conn,
+        @NotNull String sessionId,
+        @NotNull List<FileRef> files
+    ) throws SQLException {
+        SessionCursor cursor = cursors.get(sessionId);
+        if (cursor == null || cursor.turnId == null) return;
+        if (files.isEmpty()) return;
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT INTO turn_context_files (turn_id, file_name, file_path, file_line) "
+                + "VALUES (?, ?, ?, ?)")) {
+            for (FileRef ref : files) {
+                ps.setString(1, cursor.turnId);
+                ps.setString(2, ref.getName());
+                ps.setString(3, ref.getPath());
+                ps.setInt(4, 0);
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
+    private void insertPromptContextFiles(
+        @NotNull Connection conn,
+        @NotNull String turnId,
+        @NotNull List<ContextFileRef> files
+    ) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            "INSERT INTO turn_context_files (turn_id, file_name, file_path, file_line) "
+                + "VALUES (?, ?, ?, ?)")) {
+            for (ContextFileRef ref : files) {
+                ps.setString(1, turnId);
+                ps.setString(2, ref.getName());
+                ps.setString(3, ref.getPath());
+                ps.setInt(4, ref.getLine());
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
+    // ── MCP flag + hook executions ────────────────────────────────────────────
+
+    /**
+     * Marks an existing tool-call event as handled by our MCP server. Called from
+     * the MCP dispatch boundary after a tool returns (or is denied).
+     */
+    public synchronized void markToolCallMcp(@NotNull String eventId) {
+        Connection conn = database.getConnection();
+        if (conn == null) return;
+        try (PreparedStatement ps = conn.prepareStatement(
+            "UPDATE tool_call_events SET is_mcp = 1 WHERE event_id = ?")) {
+            ps.setString(1, eventId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.warn("ConversationWriter: failed to mark MCP for event " + eventId, e);
+        }
+    }
+
+    /**
+     * Records a single hook execution (permission / pre / success / failure).
+     *
+     * @param toolEventId id of the tool_call event the hook ran for
+     * @param triggerKind one of {@code "permission"|"pre"|"success"|"failure"}
+     * @param entryId     stable hook config entry id
+     * @param command     resolved hook command (after substitutions); may be null
+     * @param exitCode    process exit code; null when n/a (e.g. transport error)
+     * @param durationMs  hook runtime in ms
+     * @param input       input payload sent to the hook (JSON); may be null
+     * @param output      raw stdout/stderr produced by the hook; may be null
+     * @param outcome     one of {@code "allow"|"deny"|"approve"|"ok"|"error"|"timeout"}
+     * @param outcomeReason human-readable reason for the outcome; may be null
+     */
+    public synchronized void recordHookExecution(
+        @NotNull String toolEventId,
+        @NotNull String triggerKind,
+        @NotNull String entryId,
+        @Nullable String command,
+        @Nullable Integer exitCode,
+        long durationMs,
+        @Nullable String input,
+        @Nullable String output,
+        @NotNull String outcome,
+        @Nullable String outcomeReason
+    ) {
+        Connection conn = database.getConnection();
+        if (conn == null) return;
+        try (PreparedStatement ps = conn.prepareStatement("""
+            INSERT INTO hook_executions (
+                tool_event_id, trigger_kind, entry_id, command, exit_code,
+                duration_ms, input_payload, output_payload, outcome, outcome_reason, timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+            ps.setString(1, toolEventId);
+            ps.setString(2, triggerKind);
+            ps.setString(3, entryId);
+            ps.setString(4, command);
+            if (exitCode == null) ps.setNull(5, java.sql.Types.INTEGER);
+            else ps.setInt(5, exitCode);
+            ps.setLong(6, durationMs);
+            ps.setString(7, input);
+            ps.setString(8, output);
+            ps.setString(9, outcome);
+            ps.setString(10, outcomeReason);
+            ps.setString(11, Instant.now().toString());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOG.warn("ConversationWriter: failed to record hook execution for "
+                + toolEventId, e);
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    @NotNull
+    private static String nonEmpty(@Nullable String value, @NotNull String fallback) {
+        return (value == null || value.isEmpty()) ? fallback : value;
+    }
+
+    @Nullable
+    private static String emptyToNull(@Nullable String value) {
+        return (value == null || value.isEmpty()) ? null : value;
+    }
+
+    /** Per-session position cursor: latest turn id and next event sequence number. */
+    private static final class SessionCursor {
+        @Nullable String turnId;
+        int sequenceNum;
+
+        int nextSequence() {
+            return sequenceNum++;
+        }
+    }
+
+    /**
+     * Restores in-memory cursor state for a session — used at startup to resume
+     * sequencing past existing rows. Reads {@code MAX(sequence_num)} for the most
+     * recent turn and seeds the cursor accordingly.
+     */
+    public synchronized void restoreCursor(@NotNull String sessionId) {
+        Connection conn = database.getConnection();
+        if (conn == null) return;
+        try (PreparedStatement ps = conn.prepareStatement(
+            "SELECT id FROM turns WHERE session_id = ? ORDER BY started_at DESC LIMIT 1")) {
+            ps.setString(1, sessionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return;
+                String turnId = rs.getString(1);
+                SessionCursor cursor = cursors.computeIfAbsent(sessionId,
+                    k -> new SessionCursor());
+                cursor.turnId = turnId;
+                try (PreparedStatement ps2 = conn.prepareStatement(
+                    "SELECT COALESCE(MAX(sequence_num), -1) + 1 FROM events WHERE turn_id = ?")) {
+                    ps2.setString(1, turnId);
+                    try (ResultSet rs2 = ps2.executeQuery()) {
+                        if (rs2.next()) cursor.sequenceNum = rs2.getInt(1);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            LOG.warn("ConversationWriter: failed to restore cursor for " + sessionId, e);
+        }
+    }
+}
