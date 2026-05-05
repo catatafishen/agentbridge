@@ -23,10 +23,10 @@
 
 'use strict';
 
-const {execFileSync} = require('node:child_process');
-const path = require('node:path');
-const fs = require('node:fs');
-const os = require('node:os');
+const {execFileSync} = require('child_process');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 
 const command = process.env.HOOK_ARG_command || '';
 const lcmd = command.toLowerCase();
