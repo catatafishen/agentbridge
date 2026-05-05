@@ -1,6 +1,8 @@
 package com.github.catatafishen.agentbridge.session.db;
 
 import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -153,22 +156,26 @@ class JsonlToSqliteMigratorTest {
     }
 
     @Test
-    void skipsLegacyFormatLines() throws Exception {
+    void migratesLegacyFormatLines() throws Exception {
         String index = "[{\"id\": \"sess-1\", \"agent\": \"Copilot\"}]";
         Files.writeString(sessionsDir.resolve("sessions-index.json"), index);
 
-        // Legacy format has "role" key, not "type"
+        // Legacy format has "role" key instead of "type"; entries inside "parts" use "type" for
+        // the part kind — this is the exact pattern that caused isEntryFormat() to return true
+        // incorrectly (false positive from nested "type":) yet produce null from deserialize().
         String jsonl = """
-            {"type":"prompt","text":"New format","timestamp":"2026-01-01T10:00:00Z","entryId":"t1"}
-            {"role":"assistant","parts":[{"type":"text","content":"legacy response"}]}
-            """;
+                {"type":"prompt","text":"New format","timestamp":"2026-01-01T10:00:00Z","entryId":"t1"}
+                {"id":"msg-1","role":"assistant","parts":[{"type":"text","text":"legacy response"}],"createdAt":1735689601000,"agent":"Copilot"}
+                """;
         Files.writeString(sessionsDir.resolve("sess-1.jsonl"), jsonl);
 
         int count = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
         assertEquals(1, count);
 
         List<EntryData> entries = reader.loadEntries("sess-1");
-        assertEquals(1, entries.size()); // Only the new-format prompt
+        assertEquals(2, entries.size()); // new-format prompt + legacy assistant text
+        assertTrue(entries.stream().anyMatch(e -> e instanceof EntryData.Prompt));
+        assertTrue(entries.stream().anyMatch(e -> e instanceof EntryData.Text));
     }
 
     @Test
@@ -493,5 +500,175 @@ class JsonlToSqliteMigratorTest {
         assertNull(
             JsonlToSqliteMigrator.extractSessionIdFromFilename("README.txt"),
             "Non-JSONL file should return null");
+    }
+
+    // ── Legacy role/parts format tests ────────────────────────────────────────
+
+    /**
+     * Regression test for the root bug: a JSONL file whose lines are entirely in the legacy
+     * role/parts format was never migrated because isEntryFormat() had a false positive
+     * (matched the "type" string nested inside "parts") while deserialize() returned null
+     * (no top-level "type" key), leaving entries empty and skipping the session entirely.
+     */
+    @Test
+    void migratesFileWithOnlyLegacyEntries() throws Exception {
+        // No sessions-index.json — session discovered via file scan
+        String jsonl = """
+                {"id":"user-1","role":"user","parts":[{"type":"text","text":"Fix the bug"}],"createdAt":1735689601000}
+                {"id":"asst-1","role":"assistant","parts":[{"type":"reasoning","text":"Let me look..."},{"type":"text","text":"Here is the fix"}],"createdAt":1735689602000,"agent":"Copilot"}
+                """;
+        Files.writeString(sessionsDir.resolve("abc-session.jsonl"), jsonl);
+
+        int count = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
+        assertEquals(1, count); // session must be migrated, not skipped
+
+        assertTrue(reader.sessionExists("abc-session"));
+        List<EntryData> entries = reader.loadEntries("abc-session");
+        // user message → Prompt; assistant reasoning → Thinking; assistant text → Text
+        assertEquals(3, entries.size());
+        assertTrue(entries.stream().anyMatch(e -> e instanceof EntryData.Prompt));
+        assertTrue(entries.stream().anyMatch(e -> e instanceof EntryData.Thinking));
+        assertTrue(entries.stream().anyMatch(e -> e instanceof EntryData.Text));
+    }
+
+    @Test
+    void parsesLegacyUserMessageAsPrompt() {
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-1\",\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"text\":\"Hello\"}],\"createdAt\":1735689601000}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(1, entries.size());
+        assertInstanceOf(EntryData.Prompt.class, entries.getFirst());
+        assertEquals("Hello", ((EntryData.Prompt) entries.getFirst()).getText());
+        assertEquals("2025-01-01T00:00:01Z", entries.getFirst().getTimestamp());
+    }
+
+    @Test
+    void parsesLegacyAssistantTextAsText() {
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-1\",\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"text\":\"response\"}],\"createdAt\":1735689601000,\"agent\":\"Copilot\"}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(1, entries.size());
+        assertInstanceOf(EntryData.Text.class, entries.getFirst());
+        EntryData.Text text = (EntryData.Text) entries.getFirst();
+        assertEquals("response", text.getRaw());
+        assertEquals("Copilot", text.getAgent());
+    }
+
+    @Test
+    void parsesLegacyReasoningAsThinking() {
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-1\",\"role\":\"assistant\",\"parts\":[{\"type\":\"reasoning\",\"text\":\"hmm...\"}],\"createdAt\":1735689601000,\"agent\":\"Copilot\"}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(1, entries.size());
+        assertInstanceOf(EntryData.Thinking.class, entries.getFirst());
+        assertEquals("hmm...", ((EntryData.Thinking) entries.getFirst()).getRaw());
+    }
+
+    @Test
+    void parsesLegacyToolInvocationAsToolCall() {
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-1\",\"role\":\"assistant\",\"parts\":[{\"type\":\"tool-invocation\",\"toolInvocation\":{\"toolName\":\"read_file\",\"args\":\"{}\",\"result\":\"contents\",\"state\":\"result\"}}],\"createdAt\":1735689601000,\"agent\":\"Copilot\"}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(1, entries.size());
+        assertInstanceOf(EntryData.ToolCall.class, entries.getFirst());
+        EntryData.ToolCall tc = (EntryData.ToolCall) entries.getFirst();
+        assertEquals("read_file", tc.getTitle());
+        assertEquals("{}", tc.getArguments());
+        assertEquals("contents", tc.getResult());
+        assertEquals("result", tc.getStatus());
+    }
+
+    @Test
+    void parsesLegacySubagentAsSubAgent() {
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-1\",\"role\":\"assistant\",\"parts\":[{\"type\":\"subagent\",\"agentType\":\"intellij-explore\",\"description\":\"Find auth\",\"prompt\":\"Find the auth module\",\"result\":\"Found it\",\"status\":\"completed\",\"colorIndex\":2}],\"createdAt\":1735689601000,\"agent\":\"Copilot\"}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(1, entries.size());
+        assertInstanceOf(EntryData.SubAgent.class, entries.getFirst());
+        EntryData.SubAgent sa = (EntryData.SubAgent) entries.getFirst();
+        assertEquals("intellij-explore", sa.getAgentType());
+        assertEquals("Find auth", sa.getDescription());
+        assertEquals("Find the auth module", sa.getPrompt());
+        assertEquals("Found it", sa.getResult());
+        assertEquals("completed", sa.getStatus());
+        assertEquals(2, sa.getColorIndex());
+    }
+
+    @Test
+    void parsesLegacyMultiPartMessageGeneratesMultipleEntries() {
+        // A single assistant message with reasoning + text produces two separate entries,
+        // each with a unique entryId derived from the message id.
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-abc\",\"role\":\"assistant\",\"parts\":[{\"type\":\"reasoning\",\"text\":\"thinking\"},{\"type\":\"text\",\"text\":\"answer\"}],\"createdAt\":1735689601000,\"agent\":\"Copilot\"}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(2, entries.size());
+        assertInstanceOf(EntryData.Thinking.class, entries.get(0));
+        assertInstanceOf(EntryData.Text.class, entries.get(1));
+        // Each part gets a distinct entryId
+        assertNotEquals(entries.get(0).getEntryId(), entries.get(1).getEntryId());
+    }
+
+    @Test
+    void parsesLegacyTimestampFromCreatedAt() {
+        // createdAt in milliseconds should be converted to ISO-8601 timestamp
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-1\",\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"text\":\"hi\"}],\"createdAt\":1735689601000}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(1, entries.size());
+        assertEquals("2025-01-01T00:00:01Z", entries.getFirst().getTimestamp());
+    }
+
+    @Test
+    void parsesLegacyMissingCreatedAtUsesEmptyTimestamp() {
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-1\",\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"text\":\"hi\"}]}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(1, entries.size());
+        assertEquals("", entries.getFirst().getTimestamp());
+    }
+
+    @Test
+    void parsesLegacyUnknownPartTypeSkipped() {
+        // Parts with types we don't know about should not cause failures or produce entries.
+        JsonObject obj = JsonParser.parseString(
+            "{\"id\":\"msg-1\",\"role\":\"assistant\",\"parts\":[{\"type\":\"unknown-future-type\",\"data\":\"x\"}],\"createdAt\":1735689601000}"
+        ).getAsJsonObject();
+
+        List<EntryData> entries = new ArrayList<>();
+        JsonlToSqliteMigrator.parseLegacyMessage(obj, entries);
+
+        assertEquals(0, entries.size());
     }
 }
