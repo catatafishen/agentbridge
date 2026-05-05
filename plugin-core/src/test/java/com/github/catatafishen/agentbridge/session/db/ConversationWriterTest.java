@@ -258,15 +258,15 @@ class ConversationWriterTest {
     void restoresCursorFromExistingRows() throws Exception {
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
             new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
-            new EntryData.Text("a", "", "", "", "ev-1"),
-            new EntryData.Text("b", "", "", "", "ev-2")
+            new EntryData.Text("a", "2026-01-01T10:00:01Z", "", "", "ev-1"),
+            new EntryData.Text("b", "2026-01-01T10:00:02Z", "", "", "ev-2")
         ));
 
         // Fresh writer (simulates restart): cursor empty.
         ConversationWriter fresh = new ConversationWriter(database);
         fresh.restoreCursor("sess-1");
         fresh.recordEntries("sess-1", "Copilot", "copilot", List.of(
-            new EntryData.Text("c", "", "", "", "ev-3")
+            new EntryData.Text("c", "2026-01-01T10:00:03Z", "", "", "ev-3")
         ));
 
         try (Statement s = conn.createStatement();
@@ -297,7 +297,7 @@ class ConversationWriterTest {
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
             new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
             new EntryData.ToolCall("write_file", null, "fs", null, null, null, null,
-                false, null, null, "", "", "", "ev-tc-mcp")
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-tc-mcp")
         ));
         writer.markToolCallMcp("ev-tc-mcp");
 
@@ -309,8 +309,7 @@ class ConversationWriterTest {
         }
         // Sanity: marking unknown id is a no-op, not an error.
         writer.markToolCallMcp("does-not-exist");
-        assertNotNull(database.getConnection());
-        assertNull(null);
+        assertNotNull(database.getConnection(), "Connection must survive a no-op markToolCallMcp call");
     }
 
     @Test
@@ -319,13 +318,13 @@ class ConversationWriterTest {
             new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
             // MCP tool (agentbridge- prefix)
             new EntryData.ToolCall("agentbridge-read_file", null, "fs", null, null, null, null,
-                false, null, null, "", "", "", "ev-mcp"),
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-mcp"),
             // MCP tool (agentbridge_ prefix — OpenCode style)
             new EntryData.ToolCall("agentbridge_search_text", null, "search", null, null, null, null,
-                false, null, null, "", "", "", "ev-mcp2"),
+                false, null, null, "2026-01-01T10:00:02Z", "", "", "ev-mcp2"),
             // Non-MCP tool (agent built-in)
             new EntryData.ToolCall("bash", null, "shell", null, null, null, null,
-                false, null, null, "", "", "", "ev-builtin")
+                false, null, null, "2026-01-01T10:00:03Z", "", "", "ev-builtin")
         ));
 
         try (Statement s = conn.createStatement();
@@ -348,7 +347,7 @@ class ConversationWriterTest {
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
             new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
             new EntryData.ToolCall("agentbridge-read_file", null, "fs", null, null, null, null,
-                false, null, null, "", "", "", "ev-enrich")
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-enrich")
         ));
 
         writer.enrichToolCallStats("ev-enrich", 256, 1024, 150, true, null, "file");
@@ -371,7 +370,7 @@ class ConversationWriterTest {
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
             new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
             new EntryData.ToolCall("agentbridge-run_command", null, "shell", null, null, null, null,
-                false, null, null, "", "", "", "ev-fail")
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-fail")
         ));
 
         writer.enrichToolCallStats("ev-fail", 100, 500, 3000, false, "timeout expired", "shell");
@@ -390,7 +389,7 @@ class ConversationWriterTest {
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
             new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
             new EntryData.ToolCall("agentbridge-run_command", null, "shell", null, null, null, null,
-                false, null, null, "", "", "", "ev-hooks")
+                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-hooks")
         ));
 
         List<HookStageResult> stages = List.of(
