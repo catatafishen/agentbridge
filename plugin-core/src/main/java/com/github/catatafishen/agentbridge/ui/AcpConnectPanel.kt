@@ -626,6 +626,9 @@ class AcpConnectPanel(
                 settings.resumeSessionId = null
                 // Clear Claude CLI resume state so it starts fresh (no --resume).
                 if (sameAgent) sessionSwitch.clearClaudeResumeState()
+                // Delete the session ID file so restoreConversation() finds nothing and
+                // the chat pane opens empty rather than restoring the previous session.
+                ConversationService.getInstance(project).resetCurrentSessionId(project.basePath)
             }
 
             is SessionChoice.Latest -> {
