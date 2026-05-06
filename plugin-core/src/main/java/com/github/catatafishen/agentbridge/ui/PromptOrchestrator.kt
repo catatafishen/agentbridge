@@ -10,7 +10,6 @@ import com.github.catatafishen.agentbridge.psi.PsiBridgeService
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentScratchTracker
 import com.github.catatafishen.agentbridge.services.AgentTabTracker
-import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -490,20 +489,11 @@ class PromptOrchestrator(
         val turnDuration = System.currentTimeMillis() - turnStartedAt
         val turnMultiplier = if (client.supportsMultiplier()) getModelMultiplier(turnModelId) ?: "" else ""
         val commitHashes = collectTurnCommits()
-        val turnEndGitBranch = captureGitBranch()
         consolePanel().emitTurnStats(
             TurnStatsData(
                 turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
                 turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
                 commitHashes
-            )
-        )
-
-        recordTurnStatsToSqlite(
-            TurnStatsParams(
-                turnDuration, turnInputTokens, turnOutputTokens,
-                turnToolCallCount, codeChanges[0], codeChanges[1], turnMultiplier, commitHashes,
-                turnStartGitBranch, turnEndGitBranch
             )
         )
 
@@ -862,39 +852,6 @@ class PromptOrchestrator(
         }
     }
 
-    private data class TurnStatsParams(
-        val durationMs: Long, val inputTokens: Int, val outputTokens: Int,
-        val toolCallCount: Int, val linesAdded: Int, val linesRemoved: Int,
-        val multiplier: String, val commitHashes: List<String>,
-        val gitBranchStart: String?, val gitBranchEnd: String?
-    )
-
-    private fun recordTurnStatsToSqlite(params: TurnStatsParams) {
-        val sessionId = currentSessionId ?: return
-        val agentId = agentManager.activeProfileId
-        val premiumRequests = parsePremiumMultiplier(params.multiplier)
-        val now = java.time.Instant.now()
-        val date = java.time.LocalDate.now().toString()
-        val timestamp = now.toString()
-        val commitHashesStr = params.commitHashes.joinToString(",").ifEmpty { null }
-
-        ApplicationManager.getApplication().executeOnPooledThread {
-            try {
-                val service = ToolCallStatisticsService.getInstance(project)
-                service.recordTurnStats(
-                    ToolCallStatisticsService.TurnStatsRecord(
-                        sessionId, agentId, date,
-                        params.inputTokens.toLong(), params.outputTokens.toLong(), params.toolCallCount,
-                        params.durationMs, params.linesAdded, params.linesRemoved, premiumRequests, timestamp,
-                        commitHashesStr, null, params.gitBranchStart, params.gitBranchEnd
-                    )
-                )
-            } catch (e: Exception) {
-                log.warn("Failed to record turn stats to SQLite", e)
-            }
-        }
-    }
-
     /**
      * Captures the current HEAD commit hash. Returns null if git is unavailable or the
      * working directory is not a git repository.
@@ -955,12 +912,6 @@ class PromptOrchestrator(
         } catch (_: Exception) {
             emptyList()
         }
-    }
-
-    private fun parsePremiumMultiplier(multiplier: String): Double {
-        if (multiplier.isEmpty()) return 1.0
-        val cleaned = if (multiplier.endsWith("x")) multiplier.dropLast(1) else multiplier
-        return cleaned.toDoubleOrNull() ?: 1.0
     }
 
     private fun getModelMultiplier(modelId: String): String? =

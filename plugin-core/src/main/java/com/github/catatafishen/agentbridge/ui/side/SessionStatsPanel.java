@@ -1,7 +1,8 @@
 package com.github.catatafishen.agentbridge.ui.side;
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
-import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService;
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
+import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
 import com.github.catatafishen.agentbridge.ui.AgentIconProvider;
 import com.github.catatafishen.agentbridge.ui.BillingCalculator;
 import com.github.catatafishen.agentbridge.ui.BillingDisplayData;
@@ -638,8 +639,8 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                 try {
                     LocalDate today = LocalDate.now();
                     String iso = today.format(DateTimeFormatter.ISO_LOCAL_DATE);
-                    List<ToolCallStatisticsService.DailyTurnAggregate> rows =
-                        ToolCallStatisticsService.getInstance(project).queryDailyTurnStats(iso, iso);
+                    List<ConversationStatistics.DailyTurnAggregate> rows =
+                        ConversationStatistics.queryDailyTurnStats(ConversationDatabase.getInstance(project), iso, iso);
                     int turns = 0;
                     int tools = 0;
                     long inTok = 0;
@@ -648,7 +649,7 @@ public final class SessionStatsPanel extends JPanel implements Disposable {
                     long linesRemoved = 0;
                     long durMs = 0;
                     double premium = 0.0;
-                    for (ToolCallStatisticsService.DailyTurnAggregate r : rows) {
+                    for (ConversationStatistics.DailyTurnAggregate r : rows) {
                         turns += r.turns();
                         tools += r.toolCalls();
                         inTok += r.inputTokens();

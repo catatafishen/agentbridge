@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.statistics;
 
-import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService.ToolAggregate;
+import com.github.catatafishen.agentbridge.session.db.ConversationStatistics.ToolAggregate;
 import org.jetbrains.annotations.NotNull;
 
 import javax.swing.table.AbstractTableModel;

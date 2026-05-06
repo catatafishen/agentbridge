@@ -19,8 +19,8 @@ import java.sql.Statement;
 
 /**
  * Project-level service that owns the unified conversation history SQLite
- * database. Replaces JSONL session files plus the separate {@code tool-stats.db}
- * (see {@link com.github.catatafishen.agentbridge.services.ToolCallStatisticsService}).
+ * database, replacing both JSONL session files and the now-deleted
+ * {@code tool-stats.db}. Aggregation queries are in {@link com.github.catatafishen.agentbridge.session.db.ConversationStatistics}.
  *
  * <p>Schema follows the ER diagram in {@code scratches/conversation-db-er.md}:
  * sessions → turns (1 turn = 1 prompt) → events → typed event subtables, with

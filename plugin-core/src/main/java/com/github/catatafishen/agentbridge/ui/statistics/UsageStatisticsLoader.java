@@ -1,8 +1,9 @@
 package com.github.catatafishen.agentbridge.ui.statistics;
 
 import com.github.catatafishen.agentbridge.services.AgentIdMapper;
-import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService;
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
+import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
 import com.github.catatafishen.agentbridge.session.exporters.ExportUtils;
 import com.github.catatafishen.agentbridge.session.v2.EntryDataJsonAdapter;
 import com.github.catatafishen.agentbridge.session.v2.SessionFileRotation;
@@ -56,31 +57,22 @@ final class UsageStatisticsLoader {
         return loadFromJsonl(project, range, startDate, endDate);
     }
 
-    /**
-     * Loads per-branch totals for the branch-comparison view. Always reads from
-     * SQLite — JSONL has no branch info, so a JSONL fallback would always be
-     * empty and would just confuse the user.
-     *
-     * @return branch snapshot. {@link UsageStatisticsData.BranchSnapshot#branches()}
-     * is empty when no rows in the range have a git branch attached.
-     */
     static UsageStatisticsData.BranchSnapshot loadBranches(@NotNull Project project,
                                                            @NotNull UsageStatisticsData.TimeRange range) {
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
         LocalDate startDate = range.startDate();
         LocalDate endDate = LocalDate.now();
-
-        ToolCallStatisticsService service = ToolCallStatisticsService.getInstance(project);
         String startStr = startDate.toString();
         String endStr = endDate.toString();
 
-        List<ToolCallStatisticsService.BranchAggregate> aggregates =
-            service.queryBranchTotals(startStr, endStr);
-        int unattributed = service.countUnattributedTurns(startStr, endStr);
+        List<ConversationStatistics.BranchAggregate> aggregates =
+            ConversationStatistics.queryBranchTotals(db, startStr, endStr);
+        int unattributed = ConversationStatistics.countUnattributedTurns(db, startStr, endStr);
 
         List<UsageStatisticsData.BranchStats> branches = new ArrayList<>();
-        for (ToolCallStatisticsService.BranchAggregate agg : aggregates) {
+        for (ConversationStatistics.BranchAggregate agg : aggregates) {
             branches.add(new UsageStatisticsData.BranchStats(
-                agg.branch(), agg.firstDetectedDate(),
+                agg.branch(), LocalDate.parse(agg.firstDetectedDate()),
                 agg.turns(), agg.inputTokens(), agg.outputTokens(),
                 agg.toolCalls(), agg.durationMs(),
                 agg.linesAdded(), agg.linesRemoved(), agg.premiumRequests()
@@ -89,7 +81,7 @@ final class UsageStatisticsLoader {
 
         // For "all time", narrow start to earliest data date if available
         if (range == UsageStatisticsData.TimeRange.ALL) {
-            LocalDate earliest = service.getEarliestTurnDate();
+            LocalDate earliest = ConversationStatistics.getEarliestTurnDate(db);
             if (earliest != null) {
                 startDate = earliest;
             }
@@ -101,10 +93,6 @@ final class UsageStatisticsLoader {
         return new UsageStatisticsData.BranchSnapshot(branches, startDate, endDate, unattributed);
     }
 
-    /**
-     * Loads statistics from the SQLite turn_stats table. Returns null if the
-     * table is empty (triggers JSONL fallback with backfill).
-     */
     @Nullable
     private static UsageStatisticsData.StatisticsSnapshot loadFromSqlite(
         @NotNull Project project,
@@ -112,13 +100,13 @@ final class UsageStatisticsLoader {
         @NotNull LocalDate startDate,
         @NotNull LocalDate endDate) {
 
-        ToolCallStatisticsService service = ToolCallStatisticsService.getInstance(project);
-        if (service.getTurnStatsCount() == 0) return null;
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
+        if (ConversationStatistics.getTurnCount(db) == 0) return null;
 
         String startStr = startDate.toString();
         String endStr = endDate.toString();
-        List<ToolCallStatisticsService.DailyTurnAggregate> aggregates =
-            service.queryDailyTurnStats(startStr, endStr);
+        List<ConversationStatistics.DailyTurnAggregate> aggregates =
+            ConversationStatistics.queryDailyTurnStats(db, startStr, endStr);
         if (aggregates.isEmpty()) return null;
 
         // Build agent display names from the sessions index
@@ -133,16 +121,16 @@ final class UsageStatisticsLoader {
             agentDisplayNames.putIfAbsent(agentId, session.agent());
         }
 
-        // Also include agents from the query results
-        for (ToolCallStatisticsService.DailyTurnAggregate agg : aggregates) {
-            agentIds.add(agg.agentId());
+        // Also include agents from the query results (agent_name is display name — convert to ID)
+        for (ConversationStatistics.DailyTurnAggregate agg : aggregates) {
+            agentIds.add(toAgentId(agg.agentId()));
         }
 
         // Convert to DailyAgentStats
         List<UsageStatisticsData.DailyAgentStats> dailyStats = new ArrayList<>();
-        for (ToolCallStatisticsService.DailyTurnAggregate agg : aggregates) {
+        for (ConversationStatistics.DailyTurnAggregate agg : aggregates) {
             dailyStats.add(new UsageStatisticsData.DailyAgentStats(
-                agg.date(), agg.agentId(),
+                LocalDate.parse(agg.date()), toAgentId(agg.agentId()),
                 agg.turns(), agg.inputTokens(), agg.outputTokens(),
                 agg.toolCalls(), agg.durationMs(),
                 agg.linesAdded(), agg.linesRemoved(), agg.premiumRequests()
@@ -151,7 +139,7 @@ final class UsageStatisticsLoader {
 
         // For "all time", narrow start to earliest data date
         if (range == UsageStatisticsData.TimeRange.ALL) {
-            LocalDate earliest = service.getEarliestTurnDate();
+            LocalDate earliest = ConversationStatistics.getEarliestTurnDate(db);
             if (earliest != null) {
                 startDate = earliest;
             }

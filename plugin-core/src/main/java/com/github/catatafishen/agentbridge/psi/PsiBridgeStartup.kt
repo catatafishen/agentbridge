@@ -21,8 +21,8 @@ class PsiBridgeStartup : ProjectActivity {
         // Force-initialize PsiBridgeService so tools are registered before any agent connects
         PsiBridgeService.getInstance(project)
 
-        // Eagerly initialize statistics service so tool calls are recorded even before the UI panel is opened
-        com.github.catatafishen.agentbridge.services.ToolCallStatisticsService.getInstance(project)
+        // Force-initialize ConversationDatabase at startup so statistics are available from the start
+        com.github.catatafishen.agentbridge.session.db.ConversationDatabase.getInstance(project)
 
         // Auto-start MCP HTTP server (required for agent CLI to access tools)
         val mcpSettings = com.github.catatafishen.agentbridge.settings.McpServerSettings.getInstance(project)

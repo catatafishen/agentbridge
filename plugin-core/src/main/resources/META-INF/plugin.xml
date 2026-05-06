@@ -146,10 +146,6 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.custommcp.CustomMcpRegistrar"/>
 
-    <!-- MCP tool call statistics -->
-    <projectService
-      serviceImplementation="com.github.catatafishen.agentbridge.services.ToolCallStatisticsService"/>
-
     <!-- Live tool call tracking for the Tools tab in the side panel -->
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.LiveToolCallService"/>

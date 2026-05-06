@@ -1,6 +1,6 @@
 package com.github.catatafishen.agentbridge.ui.statistics;
 
-import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService.ToolAggregate;
+import com.github.catatafishen.agentbridge.session.db.ConversationStatistics.ToolAggregate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

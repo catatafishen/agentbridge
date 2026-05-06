@@ -1,7 +1,8 @@
 package com.github.catatafishen.agentbridge.ui.statistics;
 
-import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService;
-import com.github.catatafishen.agentbridge.services.ToolCallStatisticsService.ToolAggregate;
+import com.github.catatafishen.agentbridge.session.db.ConversationDatabase;
+import com.github.catatafishen.agentbridge.session.db.ConversationStatistics;
+import com.github.catatafishen.agentbridge.session.db.ConversationStatistics.ToolAggregate;
 import com.intellij.openapi.project.Project;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBScrollPane;
@@ -90,27 +91,25 @@ public class ToolStatisticsPanel extends JPanel {
     }
 
     private void loadData() {
-        ToolCallStatisticsService service = ToolCallStatisticsService.getInstance(project);
-        if (service == null) return;
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
 
         String since = computeSince(rangeCombo.getSelectedIndex(), Instant.now());
         String clientId = ALL_CLIENTS.equals(clientCombo.getSelectedItem())
             ? null : (String) clientCombo.getSelectedItem();
 
-        List<ToolAggregate> aggregates = service.queryAggregates(since, clientId);
+        List<ToolAggregate> aggregates = ConversationStatistics.queryToolAggregates(db, since, clientId);
         tableModel.setData(aggregates);
 
-        Map<String, Long> summary = service.querySummary(since, clientId);
+        Map<String, Long> summary = ConversationStatistics.querySummary(db, since, clientId);
         updateSummary(summary);
     }
 
     private void refreshClients() {
-        ToolCallStatisticsService service = ToolCallStatisticsService.getInstance(project);
-        if (service == null) return;
+        ConversationDatabase db = ConversationDatabase.getInstance(project);
         Object selected = clientCombo.getSelectedItem();
         clientCombo.removeAllItems();
         clientCombo.addItem(ALL_CLIENTS);
-        for (String client : service.getDistinctClients()) {
+        for (String client : ConversationStatistics.getDistinctClients(db)) {
             clientCombo.addItem(client);
         }
         clientCombo.setSelectedItem(selected);
