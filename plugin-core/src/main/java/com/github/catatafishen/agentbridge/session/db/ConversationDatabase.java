@@ -137,6 +137,24 @@ public final class ConversationDatabase implements Disposable {
     }
 
     /**
+     * Executes {@code callback} under the database lock with the live connection.
+     * Returns {@code null} when the database is not yet initialised — callers must
+     * handle {@code null} as "DB unavailable, return a safe fallback".
+     *
+     * @throws SQLException if the callback throws
+     */
+    public synchronized <T> @Nullable T withConnection(@NotNull ConnectionCallback<T> callback) throws SQLException {
+        if (connection == null) return null;
+        return callback.call(connection);
+    }
+
+    /** Callback for {@link #withConnection(ConnectionCallback)}. */
+    @FunctionalInterface
+    public interface ConnectionCallback<T> {
+        T call(@NotNull Connection conn) throws SQLException;
+    }
+
+    /**
      * Returns the resolved database path for the current project (for tests / diagnostics).
      */
     @Nullable
