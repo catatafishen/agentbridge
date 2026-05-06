@@ -1025,6 +1025,41 @@ const ChatController = {
         document.getElementById('nudge-' + id)?.remove();
     },
 
+    showSystemNoticeBubble(id: string, text: string): void {
+        const existing = document.getElementById('sysnotice-' + id);
+        if (existing) {
+            const bubble = existing.querySelector('message-bubble');
+            if (bubble) {
+                bubble.textContent = text;
+                this._container()?.scheduleScrollIfNeeded();
+            }
+            return;
+        }
+        const msg = document.createElement('chat-message');
+        msg.id = 'sysnotice-' + id;
+        msg.setAttribute('type', 'system');
+        msg.classList.add('system-notice-pending');
+        const meta = document.createElement('message-meta');
+        meta.innerHTML = '<span class="ts system-notice-label">⚙ System notice</span>';
+        msg.appendChild(meta);
+        const bubble = document.createElement('message-bubble');
+        bubble.setAttribute('type', 'system');
+        bubble.textContent = text;
+        msg.appendChild(bubble);
+        // Insert before queued messages
+        const firstQueued = this._msgs().querySelector('.message-queued');
+        if (firstQueued) {
+            this._msgs().insertBefore(msg, firstQueued);
+        } else {
+            this._msgs().appendChild(msg);
+        }
+        this._container()?.scheduleScrollIfNeeded();
+    },
+
+    removeSystemNoticeBubble(id: string): void {
+        document.getElementById('sysnotice-' + id)?.remove();
+    },
+
     showQueuedMessage(id: string, text: string): void {
         const msg = document.createElement('chat-message');
         msg.id = 'queued-' + id;

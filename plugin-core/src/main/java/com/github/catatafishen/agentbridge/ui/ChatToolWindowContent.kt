@@ -103,6 +103,12 @@ class ChatToolWindowContent(
 
     @Volatile
     private var pendingNudgeText: String? = null
+
+    @Volatile
+    private var pendingSystemNoticeId: String? = null
+
+    @Volatile
+    private var pendingSystemNoticeText: String? = null
     private lateinit var processingTimerPanel: ProcessingTimerPanel
     private lateinit var promptOrchestrator: PromptOrchestrator
     private lateinit var pasteToScratchHandler: PasteToScratchHandler
@@ -1206,7 +1212,10 @@ class ChatToolWindowContent(
     private fun setSendingState(sending: Boolean) {
         isSending = sending
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
-        if (!sending) restoreUnhandledNudgeIfNeeded()
+        if (!sending) {
+            restoreUnhandledNudgeIfNeeded()
+            restoreSystemNoticeIfNeeded()
+        }
         ApplicationManager.getApplication().invokeLater {
             updatePromptPlaceholder()
             controlsToolbar.updateActionsAsync()
@@ -1248,6 +1257,36 @@ class ChatToolWindowContent(
     private fun sendUnhandledNudge(nudgeText: String) {
         promptTextArea.text = nudgeText
         onSendStopClicked()
+    }
+
+    private fun showSystemNotice(text: String) {
+        val existingId = pendingSystemNoticeId
+        if (existingId != null) {
+            pendingSystemNoticeText = (pendingSystemNoticeText ?: "") + "\n\n" + text
+            consolePanel.showSystemNoticeBubble(existingId, pendingSystemNoticeText!!)
+        } else {
+            val id = "sysnotice-" + System.currentTimeMillis()
+            pendingSystemNoticeId = id
+            pendingSystemNoticeText = text
+            consolePanel.showSystemNoticeBubble(id, text)
+        }
+    }
+
+    private fun restoreSystemNoticeIfNeeded() {
+        val noticeId = pendingSystemNoticeId ?: return
+        val noticeText = pendingSystemNoticeText ?: return
+        pendingSystemNoticeId = null
+        pendingSystemNoticeText = null
+        ApplicationManager.getApplication().invokeLater {
+            consolePanel.removeSystemNoticeBubble(noticeId)
+            prependSystemNoticeToInput(noticeText)
+        }
+    }
+
+    private fun prependSystemNoticeToInput(noticeText: String) {
+        val current = promptTextArea.text
+        promptTextArea.text = if (current.isEmpty()) noticeText else "$noticeText\n\n$current"
+        promptTextArea.requestFocusInWindow()
     }
 
     private fun updateProcessingTimer(sending: Boolean) {
@@ -1862,6 +1901,14 @@ class ChatToolWindowContent(
             }
         }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
+
+        // Register the system notice callback so built-in tool reprimands are shown in the chat UI.
+        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
+        psiBridge.setOnSystemNotice { notice ->
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+                showSystemNotice(notice)
+            }
+        }
 
         ChatWebServer.getInstance(project)?.also { ws ->
             setupWebServerCallbacks(ws)

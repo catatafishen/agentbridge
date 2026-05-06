@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
-import com.github.catatafishen.agentbridge.acp.model.ContentBlock;
 import com.github.catatafishen.agentbridge.acp.model.Model;
 import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
@@ -48,6 +47,7 @@ public final class CopilotClient extends AcpClient {
     private static final String AGENT_ID = "copilot";
     private static final String DEFAULT_AGENT_SLUG = "intellij-default";
     private static final String MCP_SERVER_NAME = "agentbridge";
+    private static final String MCP_TOOL_PREFIX = "agentbridge-";
     private static final String MCP_TYPE_HTTP = "http";
     private static final String KEY_RAW_INPUT = "rawInput";
     private static final String SESSION_STATE_DIR = "session-state";
@@ -105,6 +105,15 @@ public final class CopilotClient extends AcpClient {
      */
     private static final String EXCLUDED_BUILTIN_TOOLS =
         "view,edit,create,bash,glob,grep,task,report_intent";
+    /**
+     * Known Copilot CLI built-in tool names. Used by {@link #resolveToolId} to distinguish
+     * actual tool names from human-readable task descriptions that the CLI sends as titles
+     * for sub-agent invocations.
+     */
+    private static final Set<String> KNOWN_BUILTIN_TOOL_NAMES = Set.of(
+        "view", "edit", "create", "bash", "glob", "grep", "task", "report_intent",
+        "web_fetch", "web_search", "task_complete", "sql", "skill"
+    );
 
     /**
      * Tracks built-in tools that were auto-approved but should have used MCP alternatives.
@@ -295,12 +304,24 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected String resolveToolId(String protocolTitle) {
-        return protocolTitle.replaceFirst("^agentbridge-", "");
+        if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
+            return protocolTitle.substring(MCP_TOOL_PREFIX.length());
+        }
+        // Copilot CLI sends known tool names (bash, grep, task, etc.) directly, but
+        // for sub-agent "task" invocations it sends human-readable descriptions like
+        // "Post review comment on PR 500". Normalize to the actual tool name to prevent
+        // these descriptions from leaking into system notices and confusing the model.
+        String lower = protocolTitle.toLowerCase();
+        if (KNOWN_BUILTIN_TOOL_NAMES.contains(lower)) {
+            return lower;
+        }
+        // Unrecognized title — most likely a task sub-agent description
+        return "task";
     }
 
     @Override
     protected boolean isMcpToolTitle(@org.jetbrains.annotations.NotNull String protocolTitle) {
-        if (protocolTitle.startsWith("agentbridge-")) {
+        if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
             return true;
         }
         // Copilot CLI sends human-readable display names (e.g. "Git Stage") in
@@ -540,6 +561,8 @@ public final class CopilotClient extends AcpClient {
             String notice = buildSingleToolReprimand(toolId);
             PsiBridgeService psi = PsiBridgeService.getInstance(project);
             psi.setPendingNudge(notice);
+            // Fire system notice to the UI so the user can see it in the chat bubble.
+            psi.fireSystemNotice(notice);
             // Once the nudge is consumed (agent saw it), clear the tracking set so
             // beforeSendPrompt() doesn't repeat the same reprimand on the next prompt.
             // Use addOnNudgeConsumed (not set) to chain with any existing callback,
@@ -550,36 +573,12 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
-        if (misusedBuiltInTools.isEmpty()) {
-            return request;
-        }
-        java.util.Set<String> tools = new java.util.LinkedHashSet<>(misusedBuiltInTools);
+        // System notices are now shown in the chat input area at end-of-turn
+        // (visible to the user) rather than silently prepended to the prompt.
+        // Mid-turn correction still happens via pendingNudge on tool results.
         misusedBuiltInTools.clear();
-
-        // The same reprimand is also queued in pendingNudge for mid-turn delivery via tool
-        // results. If the previous turn ended without any MCP tool call, that nudge is still
-        // pending — clear it so the agent doesn't see the same notice TWICE in this turn
-        // (once prepended to the prompt, once appended to the next tool result).
         PsiBridgeService.getInstance(project).setPendingNudge(null);
-
-        String reprimand = buildToolReprimand(tools);
-        LOG.info(displayName() + ": prepending tool reprimand for: " + tools);
-
-        java.util.List<ContentBlock> augmented = new java.util.ArrayList<>();
-        augmented.add(new ContentBlock.Text(reprimand));
-        augmented.addAll(request.prompt());
-        return new PromptRequest(request.sessionId(), augmented, request.modelId(), request.modeSlug());
-    }
-
-    private static String buildToolReprimand(java.util.Set<String> tools) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("[System notice] You used the following built-in tools which duplicate our MCP tools. ");
-        sb.append("Do NOT use these again — use the MCP alternatives instead:\n");
-        for (String tool : tools) {
-            sb.append("  • ").append(tool).append(" → use ").append(mcpAlternative(tool)).append('\n');
-        }
-        sb.append("All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.");
-        return sb.toString();
+        return request;
     }
 
     private static String buildSingleToolReprimand(String toolId) {

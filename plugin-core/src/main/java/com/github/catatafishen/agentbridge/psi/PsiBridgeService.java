@@ -181,6 +181,7 @@ public final class PsiBridgeService implements Disposable {
     private final java.util.Queue<String> messageQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final java.util.concurrent.atomic.AtomicReference<Runnable> onNudgeConsumed =
         new java.util.concurrent.atomic.AtomicReference<>();
+    private volatile java.util.function.Consumer<String> onSystemNotice;
 
     public PsiBridgeService(@NotNull Project project) {
         this.project = project;
@@ -272,6 +273,15 @@ public final class PsiBridgeService implements Disposable {
                 newCb.run();
             }
         );
+    }
+
+    public void setOnSystemNotice(@Nullable java.util.function.Consumer<String> callback) {
+        this.onSystemNotice = callback;
+    }
+
+    public void fireSystemNotice(@NotNull String text) {
+        java.util.function.Consumer<String> cb = onSystemNotice;
+        if (cb != null) cb.accept(text);
     }
 
     public void enqueueMessage(@NotNull String message) {

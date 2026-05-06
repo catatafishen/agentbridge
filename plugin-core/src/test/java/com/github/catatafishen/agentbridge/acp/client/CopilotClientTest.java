@@ -9,9 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -127,31 +125,7 @@ class CopilotClientTest {
         assertEquals("the corresponding agentbridge-* tool", invokeMcpAlternative("some_unknown"));
     }
 
-    // ── buildToolReprimand (private static) ─────────────────────────────
-
-    @Test
-    void buildToolReprimand_singleTool() throws Exception {
-        Set<String> tools = new LinkedHashSet<>();
-        tools.add("bash");
-        String result = invokeBuildToolReprimand(tools);
-        assertTrue(result.contains("[System notice]"));
-        assertTrue(result.contains("bash"));
-        assertTrue(result.contains("agentbridge-run_command"));
-        assertTrue(result.contains("Do NOT use these again"));
-    }
-
-    @Test
-    void buildToolReprimand_multipleTools() throws Exception {
-        Set<String> tools = new LinkedHashSet<>();
-        tools.add("bash");
-        tools.add("view");
-        String result = invokeBuildToolReprimand(tools);
-        assertTrue(result.contains("bash"));
-        assertTrue(result.contains("view"));
-        assertTrue(result.contains("agentbridge-read_file"));
-    }
-
-    // ── Reflection helpers ──────────────────────────────────────────────
+    // ── Reflection helpers (private static methods) ───────────────────
 
     @SuppressWarnings("unchecked")
     private static String invokeBuildAgentDefinition(String name, String description,
@@ -175,13 +149,7 @@ class CopilotClientTest {
         return (String) m.invoke(null, builtInTool);
     }
 
-    private static String invokeBuildToolReprimand(Set<String> tools) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("buildToolReprimand", Set.class);
-        m.setAccessible(true);
-        return (String) m.invoke(null, tools);
-    }
-
-    // ── resolveToolId (instance override — strips agentbridge- prefix) ──
+    // ── resolveToolId (instance override — normalizes tool names) ──
 
     @Test
     void resolveToolId_stripsAgentbridgePrefix() throws Exception {
@@ -189,8 +157,18 @@ class CopilotClientTest {
     }
 
     @Test
-    void resolveToolId_noPrefixUnchanged() throws Exception {
+    void resolveToolId_knownBuiltinTool() throws Exception {
         assertEquals("bash", invokeResolveToolId("bash"));
+    }
+
+    @Test
+    void resolveToolId_humanReadableDescriptionNormalizesToTask() throws Exception {
+        assertEquals("task", invokeResolveToolId("Post review comment on PR 500"));
+    }
+
+    @Test
+    void resolveToolId_knownBuiltinToolCaseInsensitive() throws Exception {
+        assertEquals("grep", invokeResolveToolId("Grep"));
     }
 
     // ── tryRecoverPromptException (instance override — timeout recovery) ─
