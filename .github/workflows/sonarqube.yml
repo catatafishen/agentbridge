@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master ]
     tags: [ 'v*' ]
-  pull_request:
+  pull_request_target:
     branches: [ master ]
     types: [ opened, synchronize, reopened ]
 
@@ -37,6 +37,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
+          repository: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name || github.repository }}
 
       - name: Set up JDK 21
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
@@ -78,11 +80,13 @@ jobs:
 
       - name: Determine Sonar project version
         id: sonar-version
+        env:
+          HEAD_SHA: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || github.sha }}
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ] && [[ "${GITHUB_REF_NAME}" == v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
           else
-            SHORT_SHA="${GITHUB_SHA:0:8}"
+            SHORT_SHA="${HEAD_SHA:0:8}"
             LATEST_TAG="$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)"
             if [ -n "$LATEST_TAG" ]; then
               VERSION="${LATEST_TAG#v}-dev-${SHORT_SHA}"
@@ -125,15 +129,26 @@ jobs:
         if: steps.sonar-auto-analysis.outputs.enabled != 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_PROJECT_VERSION: ${{ steps.sonar-version.outputs.version }}
         run: |
-          gradle sonar --no-daemon --quiet \
-            -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
-            -Dsonar.organization="$SONAR_ORGANIZATION" \
-            -Dsonar.host.url="$SONAR_HOST_URL" \
-            -Dsonar.projectVersion="$SONAR_PROJECT_VERSION" \
-            -Dsonar.qualitygate.wait=true \
-            -Dsonar.qualitygate.timeout=300
+          SONAR_BASE_ARGS=(
+            --no-daemon --quiet
+            "-Dsonar.projectKey=$SONAR_PROJECT_KEY"
+            "-Dsonar.organization=$SONAR_ORGANIZATION"
+            "-Dsonar.host.url=$SONAR_HOST_URL"
+            "-Dsonar.projectVersion=$SONAR_PROJECT_VERSION"
+            "-Dsonar.qualitygate.wait=true"
+            "-Dsonar.qualitygate.timeout=300"
+          )
+          if [ "${{ github.event_name }}" = "pull_request_target" ]; then
+            gradle sonar "${SONAR_BASE_ARGS[@]}" \
+              "-Dsonar.pullrequest.key=${{ github.event.pull_request.number }}" \
+              "-Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}" \
+              "-Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}"
+          else
+            gradle sonar "${SONAR_BASE_ARGS[@]}"
+          fi
 
       - name: Warn when SonarCloud Automatic Analysis is enabled
         if: steps.sonar-auto-analysis.outputs.enabled == 'true'
