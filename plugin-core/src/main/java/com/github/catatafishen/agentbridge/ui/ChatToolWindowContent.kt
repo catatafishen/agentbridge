@@ -2316,20 +2316,33 @@ class ChatToolWindowContent(
         )
     }
 
+
     private fun setupPromptDragDrop(textArea: EditorTextField) {
         textArea.dropTarget = java.awt.dnd.DropTarget(
             textArea, java.awt.dnd.DnDConstants.ACTION_COPY,
             object : java.awt.dnd.DropTargetAdapter() {
+                override fun dragEnter(dtde: java.awt.dnd.DropTargetDragEvent) {
+                    // Always advertise COPY so the source editor does not remove the dragged text.
+                    dtde.acceptDrag(java.awt.dnd.DnDConstants.ACTION_COPY)
+                }
+
+                override fun dragOver(dtde: java.awt.dnd.DropTargetDragEvent) {
+                    dtde.acceptDrag(java.awt.dnd.DnDConstants.ACTION_COPY)
+                }
+
                 override fun drop(dtde: java.awt.dnd.DropTargetDropEvent) {
-                    handleFileDrop(dtde, textArea)
+                    handleDrop(dtde, textArea)
                 }
             })
     }
 
-    private fun handleFileDrop(dtde: java.awt.dnd.DropTargetDropEvent, textArea: EditorTextField) {
+
+    private fun handleDrop(dtde: java.awt.dnd.DropTargetDropEvent, textArea: EditorTextField) {
         try {
             dtde.acceptDrop(java.awt.dnd.DnDConstants.ACTION_COPY)
             val transferable = dtde.transferable
+
+            // File drops: insert a whole-file chip per dropped file.
             if (transferable.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.javaFileListFlavor)) {
                 @Suppress("UNCHECKED_CAST") // DataFlavor API returns Object
                 val files = transferable.getTransferData(
@@ -2354,11 +2367,56 @@ class ChatToolWindowContent(
                     }
                 }
                 dtde.dropComplete(true)
-            } else {
-                dtde.dropComplete(false)
+                return
             }
+
+            // Text drops: treat like smart paste — create a file-reference chip if the
+            // dragged text matches a selection in an open project editor, otherwise create
+            // a scratch file.
+            if (transferable.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor)) {
+                val text = transferable.getTransferData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
+                if (!text.isNullOrBlank()) {
+                    handleTextDrop(text, textArea)
+                    dtde.dropComplete(true)
+                    return
+                }
+            }
+
+            dtde.dropComplete(false)
         } catch (_: Exception) {
             dtde.dropComplete(false)
+        }
+    }
+
+    /**
+     * Handle text dropped from another editor. Applies the same logic as the smart-paste
+     * intercept: if the text matches a selection in an open project editor, insert a
+     * file-reference chip; otherwise create a scratch file via [pasteToScratchHandler].
+     */
+    private fun handleTextDrop(text: String, textArea: EditorTextField) {
+        val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
+        val minLines = chatInputSettings.smartPasteMinLines
+        val minChars = chatInputSettings.smartPasteMinChars
+
+        val editor = textArea.editor as? EditorEx ?: return
+        if (text.lines().size <= minLines && text.length <= minChars) {
+            // Below threshold: insert as plain text.
+            com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
+                val offset = editor.caretModel.offset
+                editor.document.insertString(offset, text)
+                editor.caretModel.moveToOffset(offset + text.length)
+            }
+            return
+        }
+
+        val projectSource = contextManager.findTextSourceInOpenEditors(text)
+        ApplicationManager.getApplication().invokeLater {
+            if (editor.isDisposed) return@invokeLater
+            if (projectSource != null) {
+                contextManager.insertInlineChip(editor, projectSource)
+            } else {
+                pasteToScratchHandler.handlePasteToScratch(text)
+            }
         }
     }
 
