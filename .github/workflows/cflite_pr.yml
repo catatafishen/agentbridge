@@ -1,7 +1,7 @@
 name: ClusterFuzzLite PR fuzzing
 
 on:
-  pull_request:
+  pull_request_target:
     paths:
       - '**/*.java'
       - '**/*.kt'
@@ -17,11 +17,42 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  warn-fork-fuzz:
+    name: Security review reminder (fork PR)
+    # Only runs for fork PRs to warn approvers before they approve the fuzzing job.
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@6c3c2f2c1c457b00c10c4848d6f5491db3b629df  # v2.18.0
+        with:
+          egress-policy: audit
+
+      - name: Post security review reminder
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          FORK_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          FORK_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --body "## ⚠️ ClusterFuzzLite — Maintainer Security Review Required
+
+          A maintainer needs to approve the **ClusterFuzzLite PR fuzzing** workflow run for this fork PR.
+
+          **Before approving, please review the code changes from \`${FORK_REPO}@${FORK_SHA:0:8}\`** to confirm there is no code that could:
+          - Exfiltrate the \`CFLITE_STORAGE_REPO_TOKEN\` CI secret
+          - Abuse CI infrastructure or the fuzz corpus storage repository
+
+          The fuzz targets from the fork branch will be **compiled and executed** with access to repository secrets. Rubber-stamping this approval without reviewing the code is a security risk.
+
+          > This comment is posted automatically whenever ClusterFuzzLite is triggered on a fork PR."
+
   PR:
     name: ClusterFuzzLite PR
-    # Skip on fork PRs: secrets are unavailable for forks, so storage-repo would fail.
-    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    environment: ci
     concurrency:
       group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
       cancel-in-progress: true
@@ -38,8 +69,14 @@ jobs:
         with:
           egress-policy: audit
 
+      # Intentionally checks out fork code to fuzz it. The `environment: ci` gate above
+      # requires maintainer approval before this runs. The warn-fork-fuzz job posts a
+      # security review reminder on the PR so approvers know to review the code first.
+      # NOSONAR: S7631 — mitigated by environment gate + explicit reviewer warning
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
           persist-credentials: false
 
       - name: Build Fuzzers (${{ matrix.sanitizer }})
