@@ -267,7 +267,7 @@ session format that works across all supported clients — so your context trave
 
 Connect any ACP-compatible agent and switch between profiles instantly.
 
-- **Agent profiles** — Built-in profiles for GitHub Copilot, opencode, Claude Code, and Hermes Agent, plus fully custom profiles
+- **Agent profiles** — Built-in profiles for every supported agent (Copilot, Claude Code, Codex, Junie, Kiro, OpenCode, Hermes Agent), plus fully custom profiles
 - **Per-profile settings** — Connection command, tool permissions, built-in tool blocking, custom instructions
 - **Agent selector** — Switch agents with one click from the connection panel
 - **Extensible** — Add new agent backends by implementing `AgentConfig` + `AgentSettings` interfaces

@@ -32,10 +32,10 @@ class AgentProfileManagerTest {
     // ── Default profiles ─────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getAllProfiles returns 6 built-in profiles")
+    @DisplayName("getAllProfiles returns 7 built-in profiles")
     void getAllProfilesReturnsDefaults() {
         List<AgentProfile> profiles = manager.getAllProfiles();
-        assertEquals(6, profiles.size());
+        assertEquals(7, profiles.size());
     }
 
     @Test
@@ -56,7 +56,8 @@ class AgentProfileManagerTest {
             AgentProfileManager.CLAUDE_CLI_PROFILE_ID,
             AgentProfileManager.JUNIE_PROFILE_ID,
             AgentProfileManager.KIRO_PROFILE_ID,
-            AgentProfileManager.CODEX_PROFILE_ID)) {
+            AgentProfileManager.CODEX_PROFILE_ID,
+            AgentProfileManager.HERMES_PROFILE_ID)) {
             assertNotNull(manager.getProfile(id), "Profile not found: " + id);
         }
     }

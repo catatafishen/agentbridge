@@ -304,7 +304,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBuiltIn(true);
         p.setTransportType(TransportType.ACP);
         p.setBinaryName("hermes");
-        p.setInstallHint("Install with: curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash");
+        p.setInstallHint("See install instructions at https://github.com/NousResearch/hermes-agent#installation");
         p.setInstallUrl("https://github.com/NousResearch/hermes-agent");
         return p;
     }
