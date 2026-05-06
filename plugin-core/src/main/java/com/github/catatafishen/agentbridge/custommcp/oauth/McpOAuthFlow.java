@@ -71,7 +71,7 @@ public final class McpOAuthFlow {
             callbackServer.start();
             String redirectUri = callbackServer.getCallbackUri();
 
-            String authUrl = buildAuthUrl(meta.authorizationEndpoint(), redirectUri, pkce.challenge(), state);
+            String authUrl = buildAuthUrl(meta.authorizationEndpoint(), redirectUri, pkce.challenge(), state, meta.scope());
             LOG.info("Opening browser for OAuth authorization: " + authUrl);
             BrowserUtil.browse(authUrl);
 
@@ -176,16 +176,21 @@ public final class McpOAuthFlow {
         @NotNull String authEndpoint,
         @NotNull String redirectUri,
         @NotNull String codeChallenge,
-        @NotNull String state
+        @NotNull String state,
+        @Nullable String scope
     ) throws IOException {
         try {
-            return authEndpoint
+            String url = authEndpoint
                 + "?response_type=code"
                 + "&client_id=" + encode(CLIENT_ID)
                 + "&redirect_uri=" + encode(redirectUri)
                 + "&code_challenge=" + encode(codeChallenge)
                 + "&code_challenge_method=S256"
                 + "&state=" + encode(state);
+            if (scope != null && !scope.isBlank()) {
+                url += "&scope=" + encode(scope);
+            }
+            return url;
         } catch (Exception e) {
             throw new IOException("Failed to build authorization URL", e);
         }
@@ -248,7 +253,7 @@ public final class McpOAuthFlow {
     }
 
     @NotNull
-    private static McpOAuthTokens parseTokenResponse(@NotNull String json) throws IOException {
+    static McpOAuthTokens parseTokenResponse(@NotNull String json) throws IOException {
         try {
             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
             String accessToken = required(obj, "access_token", json);

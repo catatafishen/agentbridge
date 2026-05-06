@@ -68,7 +68,7 @@ public final class McpOAuthCallbackServer implements AutoCloseable {
      * @throws IOException if the server cannot bind
      */
     public void start() throws IOException {
-        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server = HttpServer.create(new InetSocketAddress("localhost", 0), 0);
         server.createContext(CALLBACK_PATH, this::handleCallback);
         server.setExecutor(null);
         server.start();
@@ -114,6 +114,7 @@ public final class McpOAuthCallbackServer implements AutoCloseable {
 
     @Override
     public void close() {
+        latch.countDown();
         if (server != null) {
             server.stop(0);
         }
