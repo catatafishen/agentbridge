@@ -2858,3 +2858,21 @@ pre.word-wrap code {
     font-size: 0.82em;
     opacity: 0.8;
 }
+
+/* ── System notice bubble ──────────────────────────────── */
+.system-notice-pending message-bubble {
+    opacity: 0.85;
+    font-style: italic;
+}
+
+.system-notice-pending message-bubble[type="system"] {
+    background: var(--bg-muted);
+    border: 1px solid var(--info);
+    border-radius: var(--radius);
+    padding: var(--sp-2) var(--sp-3);
+}
+
+.system-notice-label {
+    color: var(--info);
+    font-size: 0.82em;
+}
