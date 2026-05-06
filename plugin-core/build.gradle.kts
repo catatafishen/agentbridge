@@ -4,7 +4,7 @@ import java.util.zip.ZipInputStream
 
 plugins {
     id("java")
-    kotlin("jvm") version "2.3.20"
+    kotlin("jvm") version "2.3.21"
     id("org.jetbrains.intellij.platform") version "2.14.0"
     jacoco
     `maven-publish`
