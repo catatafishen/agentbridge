@@ -83,6 +83,82 @@ public final class ConversationStatistics {
     ) {
     }
 
+    // ── SQL constants ────────────────────────────────────────────────────────
+
+    private static final String SQL_DAILY_TURN_STATS = """
+        SELECT date(t.started_at)                         AS date,
+               s.agent_name                               AS agent_id,
+               COUNT(*)                                   AS turns,
+               COALESCE(SUM(t.input_tokens),    0)        AS input_tokens,
+               COALESCE(SUM(t.output_tokens),   0)        AS output_tokens,
+               COALESCE(SUM(t.tool_call_count), 0)        AS tool_calls,
+               COALESCE(SUM(t.duration_ms),     0)        AS duration_ms,
+               COALESCE(SUM(t.lines_added),     0)        AS lines_added,
+               COALESCE(SUM(t.lines_removed),   0)        AS lines_removed,
+               COALESCE(SUM(COALESCE(t.token_multiplier, 1.0)), 0) AS premium_requests
+        FROM turns t
+        JOIN sessions s ON t.session_id = s.id
+        WHERE (? IS NULL OR date(t.started_at) >= ?)
+          AND (? IS NULL OR date(t.started_at) <= ?)
+        GROUP BY date(t.started_at), s.agent_name
+        ORDER BY date(t.started_at), s.agent_name
+        """;
+
+    private static final String SQL_BRANCH_TOTALS = """
+        SELECT t.git_branch_at_start                          AS branch,
+               MIN(date(t.started_at))                        AS first_detected,
+               COUNT(*)                                        AS turns,
+               COALESCE(SUM(t.input_tokens),    0)            AS input_tokens,
+               COALESCE(SUM(t.output_tokens),   0)            AS output_tokens,
+               COALESCE(SUM(t.tool_call_count), 0)            AS tool_calls,
+               COALESCE(SUM(t.duration_ms),     0)            AS duration_ms,
+               COALESCE(SUM(t.lines_added),     0)            AS lines_added,
+               COALESCE(SUM(t.lines_removed),   0)            AS lines_removed,
+               COALESCE(SUM(COALESCE(t.token_multiplier, 1.0)), 0) AS premium_requests
+        FROM turns t
+        WHERE t.git_branch_at_start IS NOT NULL
+          AND (? IS NULL OR date(t.started_at) >= ?)
+          AND (? IS NULL OR date(t.started_at) <= ?)
+        GROUP BY t.git_branch_at_start
+        ORDER BY turns DESC
+        """;
+
+    private static final String SQL_COUNT_UNATTRIBUTED = """
+        SELECT COUNT(*) FROM turns
+        WHERE git_branch_at_start IS NULL
+          AND (? IS NULL OR date(started_at) >= ?)
+          AND (? IS NULL OR date(started_at) <= ?)
+        """;
+
+    private static final String SQL_TOOL_AGGREGATES = """
+        SELECT tce.tool_name,
+               tce.category,
+               COUNT(*)                                               AS call_count,
+               ROUND(AVG(tce.duration_ms))                           AS avg_duration_ms,
+               COALESCE(SUM(tce.input_size_bytes),  0)               AS total_input_bytes,
+               COALESCE(SUM(tce.output_size_bytes), 0)               AS total_output_bytes,
+               ROUND(AVG(tce.input_size_bytes + tce.output_size_bytes)) AS avg_total_bytes,
+               SUM(CASE WHEN tce.success = 0 THEN 1 ELSE 0 END)     AS error_count
+        FROM tool_call_events tce
+        JOIN events e ON tce.event_id = e.id
+        WHERE (? IS NULL OR e.timestamp >= ?)
+          AND (? IS NULL OR tce.client_id = ?)
+        GROUP BY tce.tool_name, tce.category
+        ORDER BY call_count DESC
+        """;
+
+    private static final String SQL_SUMMARY = """
+        SELECT COUNT(*)                                          AS total_calls,
+               COALESCE(SUM(tce.duration_ms),       0)          AS total_duration,
+               COALESCE(SUM(tce.input_size_bytes),  0)          AS total_input,
+               COALESCE(SUM(tce.output_size_bytes), 0)          AS total_output,
+               SUM(CASE WHEN tce.success = 0 THEN 1 ELSE 0 END) AS total_errors
+        FROM tool_call_events tce
+        JOIN events e ON tce.event_id = e.id
+        WHERE (? IS NULL OR e.timestamp >= ?)
+          AND (? IS NULL OR tce.client_id = ?)
+        """;
+
     // ── Turn-level queries ───────────────────────────────────────────────────
 
     /**
@@ -97,24 +173,7 @@ public final class ConversationStatistics {
 
         try {
             List<DailyTurnAggregate> result = db.withConnection(conn -> {
-                try (PreparedStatement ps = conn.prepareStatement("""
-                    SELECT date(t.started_at)                         AS date,
-                           s.agent_name                               AS agent_id,
-                           COUNT(*)                                   AS turns,
-                           COALESCE(SUM(t.input_tokens),    0)        AS input_tokens,
-                           COALESCE(SUM(t.output_tokens),   0)        AS output_tokens,
-                           COALESCE(SUM(t.tool_call_count), 0)        AS tool_calls,
-                           COALESCE(SUM(t.duration_ms),     0)        AS duration_ms,
-                           COALESCE(SUM(t.lines_added),     0)        AS lines_added,
-                           COALESCE(SUM(t.lines_removed),   0)        AS lines_removed,
-                           COALESCE(SUM(COALESCE(t.token_multiplier, 1.0)), 0) AS premium_requests
-                    FROM turns t
-                    JOIN sessions s ON t.session_id = s.id
-                    WHERE (? IS NULL OR date(t.started_at) >= ?)
-                      AND (? IS NULL OR date(t.started_at) <= ?)
-                    GROUP BY date(t.started_at), s.agent_name
-                    ORDER BY date(t.started_at), s.agent_name
-                    """)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_DAILY_TURN_STATS)) {
                     ps.setString(1, start);
                     ps.setString(2, start);
                     ps.setString(3, end);
@@ -158,24 +217,7 @@ public final class ConversationStatistics {
 
         try {
             List<BranchAggregate> result = db.withConnection(conn -> {
-                try (PreparedStatement ps = conn.prepareStatement("""
-                    SELECT t.git_branch_at_start                          AS branch,
-                           MIN(date(t.started_at))                        AS first_detected,
-                           COUNT(*)                                        AS turns,
-                           COALESCE(SUM(t.input_tokens),    0)            AS input_tokens,
-                           COALESCE(SUM(t.output_tokens),   0)            AS output_tokens,
-                           COALESCE(SUM(t.tool_call_count), 0)            AS tool_calls,
-                           COALESCE(SUM(t.duration_ms),     0)            AS duration_ms,
-                           COALESCE(SUM(t.lines_added),     0)            AS lines_added,
-                           COALESCE(SUM(t.lines_removed),   0)            AS lines_removed,
-                           COALESCE(SUM(COALESCE(t.token_multiplier, 1.0)), 0) AS premium_requests
-                    FROM turns t
-                    WHERE t.git_branch_at_start IS NOT NULL
-                      AND (? IS NULL OR date(t.started_at) >= ?)
-                      AND (? IS NULL OR date(t.started_at) <= ?)
-                    GROUP BY t.git_branch_at_start
-                    ORDER BY turns DESC
-                    """)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_BRANCH_TOTALS)) {
                     ps.setString(1, start);
                     ps.setString(2, start);
                     ps.setString(3, end);
@@ -217,12 +259,7 @@ public final class ConversationStatistics {
 
         try {
             Integer result = db.withConnection(conn -> {
-                try (PreparedStatement ps = conn.prepareStatement("""
-                    SELECT COUNT(*) FROM turns
-                    WHERE git_branch_at_start IS NULL
-                      AND (? IS NULL OR date(started_at) >= ?)
-                      AND (? IS NULL OR date(started_at) <= ?)
-                    """)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_COUNT_UNATTRIBUTED)) {
                     ps.setString(1, start);
                     ps.setString(2, start);
                     ps.setString(3, end);
@@ -312,22 +349,7 @@ public final class ConversationStatistics {
 
         try {
             List<ToolAggregate> result = db.withConnection(conn -> {
-                try (PreparedStatement ps = conn.prepareStatement("""
-                    SELECT tce.tool_name,
-                           tce.category,
-                           COUNT(*)                                               AS call_count,
-                           ROUND(AVG(tce.duration_ms))                           AS avg_duration_ms,
-                           COALESCE(SUM(tce.input_size_bytes),  0)               AS total_input_bytes,
-                           COALESCE(SUM(tce.output_size_bytes), 0)               AS total_output_bytes,
-                           ROUND(AVG(tce.input_size_bytes + tce.output_size_bytes)) AS avg_total_bytes,
-                           SUM(CASE WHEN tce.success = 0 THEN 1 ELSE 0 END)     AS error_count
-                    FROM tool_call_events tce
-                    JOIN events e ON tce.event_id = e.id
-                    WHERE (? IS NULL OR e.timestamp >= ?)
-                      AND (? IS NULL OR tce.client_id = ?)
-                    GROUP BY tce.tool_name, tce.category
-                    ORDER BY call_count DESC
-                    """)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_TOOL_AGGREGATES)) {
                     ps.setString(1, since);
                     ps.setString(2, since);
                     ps.setString(3, clientId);
@@ -369,17 +391,7 @@ public final class ConversationStatistics {
 
         try {
             Map<String, Long> result = db.withConnection(conn -> {
-                try (PreparedStatement ps = conn.prepareStatement("""
-                    SELECT COUNT(*)                                          AS total_calls,
-                           COALESCE(SUM(tce.duration_ms),       0)          AS total_duration,
-                           COALESCE(SUM(tce.input_size_bytes),  0)          AS total_input,
-                           COALESCE(SUM(tce.output_size_bytes), 0)          AS total_output,
-                           SUM(CASE WHEN tce.success = 0 THEN 1 ELSE 0 END) AS total_errors
-                    FROM tool_call_events tce
-                    JOIN events e ON tce.event_id = e.id
-                    WHERE (? IS NULL OR e.timestamp >= ?)
-                      AND (? IS NULL OR tce.client_id = ?)
-                    """)) {
+                try (PreparedStatement ps = conn.prepareStatement(SQL_SUMMARY)) {
                     ps.setString(1, since);
                     ps.setString(2, since);
                     ps.setString(3, clientId);
