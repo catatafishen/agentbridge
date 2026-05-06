@@ -150,7 +150,6 @@ public final class ToolCallStatisticsBackfill {
         return EntryResult.INSERTED;
     }
 
-    @Nullable
     private static ToolCallRecord parseToolEntry(@NotNull String line,
                                                  @NotNull String clientId) {
         JsonObject obj = JsonParser.parseString(line).getAsJsonObject();
@@ -162,18 +161,10 @@ public final class ToolCallStatisticsBackfill {
         // (e.g. "Tail full log", "Run summary"). Each call gets a unique non-deterministic
         // string, which makes aggregation worthless. Use the canonical MCP tool id from
         // the "pluginTool" field instead. Skip entries that aren't MCP tool calls.
-        String pluginTool = getStr(obj, "pluginTool");
         String displayName = getStr(obj, "title");
-        if (pluginTool.isEmpty()) {
-            // Legacy entries with mcpHandled=true but no explicit pluginTool: title was the bare id.
-            boolean mcpHandled = obj.has(MCP_HANDLED) && !obj.get(MCP_HANDLED).isJsonNull()
-                && obj.get(MCP_HANDLED).getAsBoolean();
-            if (mcpHandled && !displayName.isEmpty()) {
-                pluginTool = displayName;
-            } else {
-                return null;
-            }
-        }
+        String pluginTool = resolvePluginTool(obj, displayName);
+        if (pluginTool.isEmpty()) return null;
+
         String toolName = stripMcpPrefix(pluginTool);
         if (toolName.isEmpty()) return null;
 
@@ -183,7 +174,9 @@ public final class ToolCallStatisticsBackfill {
         Instant timestamp = Instant.parse(timestampStr);
 
         String status = getStr(obj, "status");
-        boolean success = "completed".equals(status);
+        // "complete" is the canonical value written by ChipStatus.COMPLETE since the refactor
+        // to MessageFormatter constants. "completed" is the legacy value from earlier sessions.
+        boolean success = "complete".equals(status) || "completed".equals(status);
 
         String arguments = getStr(obj, "arguments");
         String result = getStr(obj, "result");
@@ -206,6 +199,27 @@ public final class ToolCallStatisticsBackfill {
             toolName, category, inputSize, outputSize,
             0, // durationMs not available in JSONL entries
             success, errorMessage, clientId, timestamp, displayForDb);
+    }
+
+    /**
+     * Returns the canonical plugin tool id from the entry, or an empty string if the entry
+     * should be skipped (not an MCP tool call).
+     *
+     * <p>Two formats are handled:
+     * <ul>
+     *   <li>Current: {@code pluginTool} field contains the bare or prefixed tool id.</li>
+     *   <li>Legacy: {@code pluginTool} is absent but {@code mcpHandled=true}; the display
+     *       {@code title} was used as the bare id.</li>
+     * </ul>
+     */
+    @NotNull
+    private static String resolvePluginTool(@NotNull JsonObject obj, @NotNull String displayName) {
+        String pluginTool = getStr(obj, "pluginTool");
+        if (!pluginTool.isEmpty()) return pluginTool;
+        // Legacy entries: mcpHandled=true but no explicit pluginTool; title was the bare id.
+        boolean mcpHandled = obj.has(MCP_HANDLED) && !obj.get(MCP_HANDLED).isJsonNull()
+            && obj.get(MCP_HANDLED).getAsBoolean();
+        return (mcpHandled && !displayName.isEmpty()) ? displayName : "";
     }
 
     /**

@@ -185,6 +185,8 @@ public final class ToolCallStatisticsService implements Disposable {
             migrateAddErrorMessageColumn(stmt);
             // Migration: add display_name column to preserve agent-supplied chip titles for debugging
             migrateAddDisplayNameColumn(stmt);
+            // Data repair: records backfilled when ChipStatus "complete" was wrongly treated as failure
+            migrateRepairWronglyFailedRecords(stmt);
 
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS turn_stats (
@@ -234,6 +236,34 @@ public final class ToolCallStatisticsService implements Disposable {
                 LOG.warn("Unexpected error migrating tool_calls schema (display_name column)", e);
             }
             // else: duplicate column — expected for databases that have already been migrated
+        }
+    }
+
+    /**
+     * Repairs records that were backfilled with {@code success = 0} incorrectly.
+     *
+     * <p>Root cause: before {@code ToolCallStatisticsBackfill} was updated to recognise
+     * {@code ChipStatus.COMPLETE = "complete"}, only {@code "completed"} was treated as success.
+     * Sessions saved after the rename stored {@code status = "complete"}, so the backfill
+     * inserted all those tool calls as errors, inflating the error rate to ~100% for many tools.
+     *
+     * <p>Heuristic: every genuine error recorded by the live path sets {@code error_message}
+     * to a string starting with {@code "Error"} (plugin convention). Backfill-wrongly-failed
+     * successes have an {@code error_message} that contains the tool's normal output, which
+     * never starts with {@code "Error"}. So any record where {@code success = 0} and
+     * {@code error_message IS NOT NULL AND NOT LIKE 'Error%'} is a false positive — repair it.
+     * This update is idempotent and runs on every startup at near-zero cost.</p>
+     */
+    private void migrateRepairWronglyFailedRecords(java.sql.Statement stmt) {
+        try {
+            int repaired = stmt.executeUpdate(
+                "UPDATE tool_calls SET success = 1, error_message = NULL "
+                    + "WHERE success = 0 AND error_message IS NOT NULL AND error_message NOT LIKE 'Error%'");
+            if (repaired > 0) {
+                LOG.info("Repaired " + repaired + " tool_calls records wrongly marked as errors by backfill");
+            }
+        } catch (SQLException e) {
+            LOG.warn("Failed to run tool_calls error-rate repair migration", e);
         }
     }
 

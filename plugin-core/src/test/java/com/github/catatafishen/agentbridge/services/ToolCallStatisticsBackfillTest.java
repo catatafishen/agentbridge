@@ -51,9 +51,9 @@ class ToolCallStatisticsBackfillTest {
         String basePath = tempDir.toString();
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
         createSessionJsonl(basePath, "session-1",
-            toolEntry("read_file", "completed", "2025-01-15T10:00:00Z",
+            toolEntry("read_file", "complete", "2025-01-15T10:00:00Z",
                 "{\"path\":\"test.java\"}", "file contents here"),
-            toolEntry("search_text", "completed", "2025-01-15T10:01:00Z",
+            toolEntry("search_text", "complete", "2025-01-15T10:01:00Z",
                 "{\"query\":\"foo\"}", "3 matches found"));
 
         ToolCallStatisticsBackfill.BackfillResult result =
@@ -71,7 +71,7 @@ class ToolCallStatisticsBackfillTest {
         String basePath = tempDir.toString();
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
         createSessionJsonl(basePath, "session-1",
-            toolEntry("read_file", "completed", "2025-01-15T10:00:00Z",
+            toolEntry("read_file", "complete", "2025-01-15T10:00:00Z",
                 "{}", "ok"));
 
         ToolCallStatisticsBackfill.backfill(service, basePath);
@@ -89,7 +89,7 @@ class ToolCallStatisticsBackfillTest {
         String basePath = tempDir.toString();
         createSessionIndex(basePath, "session-1", "Claude Code");
         createSessionJsonl(basePath, "session-1",
-            toolEntry("edit_file", "completed", "2025-01-15T10:00:00Z",
+            toolEntry("edit_file", "complete", "2025-01-15T10:00:00Z",
                 "{}", "done"));
 
         ToolCallStatisticsBackfill.backfill(service, basePath);
@@ -127,7 +127,7 @@ class ToolCallStatisticsBackfillTest {
             {"type":"thinking","content":"hmm","timestamp":"2025-01-15T10:00:01Z"}""";
         createSessionJsonl(basePath, "session-1",
             textEntry, thinkingEntry,
-            toolEntry("read_file", "completed", "2025-01-15T10:00:02Z", "{}", "ok"));
+            toolEntry("read_file", "complete", "2025-01-15T10:00:02Z", "{}", "ok"));
 
         ToolCallStatisticsBackfill.BackfillResult result =
             ToolCallStatisticsBackfill.backfill(service, basePath);
@@ -178,9 +178,9 @@ class ToolCallStatisticsBackfillTest {
             new String[]{"session-1", "GitHub Copilot"},
             new String[]{"session-2", "Claude Code"});
         createSessionJsonl(basePath, "session-1",
-            toolEntry("read_file", "completed", "2025-01-15T10:00:00Z", "{}", "ok"));
+            toolEntry("read_file", "complete", "2025-01-15T10:00:00Z", "{}", "ok"));
         createSessionJsonl(basePath, "session-2",
-            toolEntry("edit_file", "completed", "2025-01-15T11:00:00Z", "{}", "done"));
+            toolEntry("edit_file", "complete", "2025-01-15T11:00:00Z", "{}", "done"));
 
         ToolCallStatisticsBackfill.BackfillResult result =
             ToolCallStatisticsBackfill.backfill(service, basePath);
@@ -198,7 +198,7 @@ class ToolCallStatisticsBackfillTest {
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
         // Entry has a non-empty but unparseable timestamp → Instant.parse() throws
         createSessionJsonl(basePath, "session-1",
-            toolEntry("read_file", "completed", "NOT-AN-ISO-DATE", "{}", "ok"));
+            toolEntry("read_file", "complete", "NOT-AN-ISO-DATE", "{}", "ok"));
 
         ToolCallStatisticsBackfill.BackfillResult result =
             ToolCallStatisticsBackfill.backfill(service, basePath);
@@ -213,7 +213,7 @@ class ToolCallStatisticsBackfillTest {
         String basePath = tempDir.toString();
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
         createSessionJsonl(basePath, "session-1",
-            toolEntry("", "completed", "2025-01-15T10:00:00Z", "{}", "ok"));
+            toolEntry("", "complete", "2025-01-15T10:00:00Z", "{}", "ok"));
 
         ToolCallStatisticsBackfill.BackfillResult result =
             ToolCallStatisticsBackfill.backfill(service, basePath);
@@ -229,7 +229,7 @@ class ToolCallStatisticsBackfillTest {
         String basePath = tempDir.toString();
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
         createSessionJsonl(basePath, "session-1",
-            toolEntry("read_file", "completed", "", "{}", "ok"));
+            toolEntry("read_file", "complete", "", "{}", "ok"));
 
         ToolCallStatisticsBackfill.BackfillResult result =
             ToolCallStatisticsBackfill.backfill(service, basePath);
@@ -247,7 +247,7 @@ class ToolCallStatisticsBackfillTest {
         String entryWithKind = "{\"type\":\"tool\",\"pluginTool\":\"read_file\","
             + "\"title\":\"read_file\","
             + "\"kind\":\"FILE\","
-            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"completed\","
+            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"complete\","
             + "\"arguments\":\"{}\",\"result\":\"file contents\"}";
         createSessionJsonl(basePath, "session-1", entryWithKind);
 
@@ -265,7 +265,7 @@ class ToolCallStatisticsBackfillTest {
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
         // No pluginTool, no mcpHandled — this is a non-MCP tool call (e.g. agent's built-in)
         String nonMcpEntry = "{\"type\":\"tool\",\"title\":\"Some agent tool\","
-            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"completed\","
+            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"complete\","
             + "\"arguments\":\"{}\",\"result\":\"ok\"}";
         createSessionJsonl(basePath, "session-1", nonMcpEntry);
 
@@ -284,7 +284,7 @@ class ToolCallStatisticsBackfillTest {
         createSessionIndex(basePath, "session-1", "GitHub Copilot");
         String legacyEntry = "{\"type\":\"tool\",\"title\":\"read_file\","
             + "\"mcpHandled\":true,"
-            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"completed\","
+            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"complete\","
             + "\"arguments\":\"{}\",\"result\":\"ok\"}";
         createSessionJsonl(basePath, "session-1", legacyEntry);
 
@@ -302,15 +302,15 @@ class ToolCallStatisticsBackfillTest {
         // Different agents prefix the MCP id differently
         String copilotEntry = "{\"type\":\"tool\",\"pluginTool\":\"agentbridge-read_file\","
             + "\"title\":\"Read source\","
-            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"completed\","
+            + "\"timestamp\":\"2025-01-15T10:00:00Z\",\"status\":\"complete\","
             + "\"arguments\":\"{}\",\"result\":\"ok\"}";
         String opencodeEntry = "{\"type\":\"tool\",\"pluginTool\":\"agentbridge_search_text\","
             + "\"title\":\"grep\","
-            + "\"timestamp\":\"2025-01-15T10:01:00Z\",\"status\":\"completed\","
+            + "\"timestamp\":\"2025-01-15T10:01:00Z\",\"status\":\"complete\","
             + "\"arguments\":\"{}\",\"result\":\"ok\"}";
         String kiroEntry = "{\"type\":\"tool\",\"pluginTool\":\"@agentbridge/git_status\","
             + "\"title\":\"git status\","
-            + "\"timestamp\":\"2025-01-15T10:02:00Z\",\"status\":\"completed\","
+            + "\"timestamp\":\"2025-01-15T10:02:00Z\",\"status\":\"complete\","
             + "\"arguments\":\"{}\",\"result\":\"clean\"}";
         createSessionJsonl(basePath, "session-1", copilotEntry, opencodeEntry, kiroEntry);
 
@@ -416,6 +416,23 @@ class ToolCallStatisticsBackfillTest {
         ToolCallStatisticsBackfill.BackfillResult result =
             new ToolCallStatisticsBackfill.BackfillResult(5, 3, 1);
         assertEquals("BackfillResult{inserted=5, skipped=3, errors=1}", result.toString());
+    }
+
+    @Test
+    @DisplayName("legacy 'completed' status (pre-refactor) is still recognised as success")
+    void legacyCompletedStatusIsRecognisedAsSuccess() throws IOException {
+        String basePath = tempDir.toString();
+        createSessionIndex(basePath, "session-1", "GitHub Copilot");
+        // Old sessions written before ChipStatus.COMPLETE was renamed from "completed" to "complete"
+        createSessionJsonl(basePath, "session-1",
+            toolEntry("read_file", "completed", "2025-01-15T10:00:00Z", "{}", "ok"));
+
+        ToolCallStatisticsBackfill.backfill(service, basePath);
+
+        var stats = service.queryAggregates(null, null);
+        assertEquals(1, stats.size());
+        assertEquals(0, stats.getFirst().errorCount(),
+            "Legacy 'completed' status must be treated as success, got: " + stats.getFirst());
     }
 
     @Test
