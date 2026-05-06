@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.services;
 
+import com.github.catatafishen.agentbridge.acp.client.HermesClient;
 import com.github.catatafishen.agentbridge.agent.claude.ClaudeCliClient;
 import com.github.catatafishen.agentbridge.agent.codex.CodexAppServerClient;
 import com.github.catatafishen.agentbridge.bridge.TransportType;
@@ -36,6 +37,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
     public static final String JUNIE_PROFILE_ID = "junie";
     public static final String KIRO_PROFILE_ID = "kiro";
     public static final String CODEX_PROFILE_ID = CodexAppServerClient.PROFILE_ID;
+    public static final String HERMES_PROFILE_ID = HermesClient.AGENT_ID;
 
     private final Map<String, AgentProfile> profiles = new LinkedHashMap<>();
     private PersistedState persistedState = new PersistedState();
@@ -210,7 +212,8 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
 
     private void ensureDefaults() {
         for (String id : List.of(COPILOT_PROFILE_ID, OPENCODE_PROFILE_ID,
-            CLAUDE_CLI_PROFILE_ID, JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID)) {
+            CLAUDE_CLI_PROFILE_ID, JUNIE_PROFILE_ID, KIRO_PROFILE_ID, CODEX_PROFILE_ID,
+            HERMES_PROFILE_ID)) {
             if (!profiles.containsKey(id)) {
                 AgentProfile profile = createDefaultProfile(id);
                 if (profile != null) profiles.put(id, profile);
@@ -227,6 +230,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             case JUNIE_PROFILE_ID -> buildJunieProfile();
             case KIRO_PROFILE_ID -> buildKiroProfile();
             case CODEX_PROFILE_ID -> CodexAppServerClient.createDefaultProfile();
+            case HERMES_PROFILE_ID -> buildHermesProfile();
             default -> null;
         };
     }
@@ -290,6 +294,18 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setBinaryName(OPENCODE_PROFILE_ID);
         p.setInstallHint("Install with: npm i -g opencode-ai");
         p.setInstallUrl("https://opencode.ai/docs");
+        return p;
+    }
+
+    private static AgentProfile buildHermesProfile() {
+        AgentProfile p = new AgentProfile();
+        p.setId(HERMES_PROFILE_ID);
+        p.setDisplayName("Hermes Agent");
+        p.setBuiltIn(true);
+        p.setTransportType(TransportType.ACP);
+        p.setBinaryName("hermes");
+        p.setInstallHint("Install with: curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash");
+        p.setInstallUrl("https://github.com/NousResearch/hermes-agent");
         return p;
     }
 }
