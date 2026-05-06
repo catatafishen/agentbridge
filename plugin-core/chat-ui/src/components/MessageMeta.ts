@@ -96,12 +96,24 @@ export default class MessageMeta extends HTMLElement {
         return super.appendChild(node);
     }
 
-    /** Schedule a nav update coalesced via requestAnimationFrame. */
+    /**
+     * Schedule a nav update deferred by two rAFs.
+     *
+     * Why two rAFs (Fix 11 — see SCREEN-TEARING-BUG.md): nav buttons showing/hiding is a
+     * layout change that happens inside the scrolled content. If it fires in the same paint
+     * frame as a chat-container scrollTop write, Chromium's compositor may apply tile-
+     * translation cache reuse for both, collapsing the dirty rect and leaving the JBR
+     * BufferedImage stale — the same mechanism as Fix 8. The chip-strip container scroll
+     * (_scrollToEnd) and the chat-container deferred scroll both fire one frame earlier, so
+     * placing the nav update one frame later ensures clean separation.
+     */
     scheduleNavUpdate(): void {
         if (this._navRAF) return;
         this._navRAF = requestAnimationFrame(() => {
-            this._navRAF = null;
-            this._updateNav();
+            this._navRAF = requestAnimationFrame(() => {
+                this._navRAF = null;
+                this._updateNav();
+            });
         });
     }
 
