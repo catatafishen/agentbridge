@@ -3,7 +3,7 @@
 ## Prerequisites
 
 1. **JDK 21** — Install via your package manager or SDKMAN
-2. **An ACP-compatible agent CLI** — e.g., GitHub Copilot CLI (`copilot auth`), OpenCode, Junie, or Kiro
+2. **An ACP-compatible agent CLI** — e.g., GitHub Copilot CLI (`copilot auth`), OpenCode, Junie, Kiro, or Hermes Agent
 3. **IntelliJ IDEA 2025.1+** — Any JetBrains IDE (Ultimate, Community, WebStorm, PyCharm, etc.)
 
 ## Setup

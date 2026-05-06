@@ -76,8 +76,8 @@ public final class HermesClient extends AcpClient {
     /**
      * Adds the {@code mcpServers} array to session/new params.
      * <p>
-     * Uses the ACP-standard {@link com.github.catatafishen.agentbridge.acp.schema.McpServerHttp}
-     * shape: {@code {"name": "agentbridge", "url": "...", "headers": []}}.
+     * Uses the ACP-standard HTTP MCP server shape:
+     * {@code {"type": "http", "name": "agentbridge", "url": "...", "headers": []}}.
      * Hermes reads this list and registers the HTTP MCP server for the session.
      */
     static void addMcpServerConfig(int mcpPort, JsonObject params) {

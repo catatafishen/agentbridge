@@ -62,6 +62,7 @@ a plugin with no reviews.
 | **Kiro**                       | ACP (stdin/stdout)         | Amazon auth                   |
 | **Junie**                      | ACP (stdin/stdout)         | JetBrains auth                |
 | **OpenCode**                   | ACP (stdin/stdout)         | Configurable (multi-provider) |
+| **Hermes Agent**               | ACP (stdin/stdout)         | Configurable (multi-provider) |
 
 Switch between agents with one click. Each agent has its own connection settings,
 tool permissions, and custom instructions.
