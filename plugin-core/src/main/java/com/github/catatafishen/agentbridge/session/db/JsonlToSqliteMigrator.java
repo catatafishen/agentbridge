@@ -227,8 +227,7 @@ public final class JsonlToSqliteMigrator {
             if (!parts.get(i).isJsonObject()) continue;
             JsonObject part = parts.get(i).getAsJsonObject();
             // Use stable per-part eid when present; fall back to synthetic msgId-pN.
-            String entryId = part.has("eid") ? part.get("eid").getAsString()
-                : (parts.size() == 1 ? msgId : msgId + "-p" + i);
+            String entryId = resolveEntryId(part, msgId, i, parts.size());
             // Use per-part ts when present; fall back to message-level createdAt.
             String partTimestamp = part.has("ts")
                 ? Instant.ofEpochMilli(part.get("ts").getAsLong()).toString()
@@ -236,6 +235,14 @@ public final class JsonlToSqliteMigrator {
             EntryData entry = convertLegacyPart(role, part, entryId, partTimestamp, agent);
             if (entry != null) entries.add(entry);
         }
+    }
+
+    private static String resolveEntryId(
+        @NotNull JsonObject part, @NotNull String msgId, int index, int totalParts) {
+        if (part.has("eid")) {
+            return part.get("eid").getAsString();
+        }
+        return totalParts == 1 ? msgId : msgId + "-p" + index;
     }
 
     @Nullable
