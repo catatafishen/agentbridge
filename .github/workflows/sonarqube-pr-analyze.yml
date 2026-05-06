@@ -18,6 +18,9 @@ name: SonarQube PR Analyze
 #
 # See docs/CI-SECURITY.md for the full rationale.
 
+# zizmor: ignore[dangerous-triggers] — workflow_run is the GitHub-recommended pattern
+# for running privileged analysis on fork PR code without giving the fork secrets access.
+# See docs/CI-SECURITY.md for the full rationale.
 on:
   workflow_run:
     workflows: ["SonarQube PR Build"]
@@ -52,6 +55,26 @@ jobs:
         with:
           egress-policy: audit
 
+      # Look up the PR associated with this workflow run via the GitHub API.
+      # This is safer than passing metadata through the artifact (which comes from the
+      # untrusted build job) — the API returns data from GitHub itself.
+      - name: Find associated PR
+        id: pr-meta
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          PR_JSON=$(gh api "repos/$GITHUB_REPOSITORY/commits/$HEAD_SHA/pulls" \
+            --jq 'first // empty')
+          if [ -z "$PR_JSON" ]; then
+            echo "::error::No PR found for SHA $HEAD_SHA"
+            exit 1
+          fi
+          echo "number=$(echo "$PR_JSON" | jq -r '.number')" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$(echo "$PR_JSON" | jq -r '.head.ref')" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$(echo "$PR_JSON" | jq -r '.base.ref')" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
       # Download the artifact bundle produced by the unprivileged build job.
       # Contains the fork's source files and pre-compiled outputs — uploaded from a
       # context with no secrets access — so this workflow never runs fork build scripts.
@@ -62,15 +85,6 @@ jobs:
           path: ${{ runner.temp }}/sonar-artifacts
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
-
-      - name: Read PR metadata
-        id: pr-meta
-        run: |
-          tar -xzf "${{ runner.temp }}/sonar-artifacts/sonar-artifacts.tar.gz" pr-metadata.json
-          echo "number=$(jq -r .number pr-metadata.json)" >> "$GITHUB_OUTPUT"
-          echo "head_ref=$(jq -r .head_ref pr-metadata.json)" >> "$GITHUB_OUTPUT"
-          echo "base_ref=$(jq -r .base_ref pr-metadata.json)" >> "$GITHUB_OUTPUT"
-          echo "head_sha=$(jq -r .head_sha pr-metadata.json)" >> "$GITHUB_OUTPUT"
 
       # Check out the BASE repository (our trusted code) to get the Gradle wrapper
       # and build configuration. The fork's source files and compiled outputs are
@@ -87,8 +101,7 @@ jobs:
       # The fork's code is read-only from this point — no build scripts are executed.
       - name: Restore analysis artifacts
         run: |
-          tar -xzf "${{ runner.temp }}/sonar-artifacts/sonar-artifacts.tar.gz" \
-            --exclude=pr-metadata.json
+          tar -xzf "${{ runner.temp }}/sonar-artifacts/sonar-artifacts.tar.gz"
 
       - name: Set up JDK 21
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
@@ -148,12 +161,19 @@ jobs:
       # Run SonarQube using our trusted Gradle scripts (from the base checkout).
       # Tests and JaCoCo reports are skipped because they are already in the artifact.
       # The chat-ui build is skipped because the JS coverage (lcov.info) is in the artifact.
+      #
+      # PR metadata is passed via env vars (not ${{ }} template expansion in the run
+      # block) to prevent code injection — even though the values come from the GitHub
+      # API, this follows the principle of least surprise for security scanners.
       - name: Run SonarQube analysis
         if: steps.sonar-auto-analysis.outputs.enabled != 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_PROJECT_VERSION: ${{ steps.sonar-version.outputs.version }}
+          PR_NUMBER: ${{ steps.pr-meta.outputs.number }}
+          PR_HEAD_REF: ${{ steps.pr-meta.outputs.head_ref }}
+          PR_BASE_REF: ${{ steps.pr-meta.outputs.base_ref }}
         run: |
           gradle sonar \
             --no-daemon --quiet \
@@ -166,9 +186,9 @@ jobs:
             "-Dsonar.projectVersion=$SONAR_PROJECT_VERSION" \
             "-Dsonar.qualitygate.wait=true" \
             "-Dsonar.qualitygate.timeout=300" \
-            "-Dsonar.pullrequest.key=${{ steps.pr-meta.outputs.number }}" \
-            "-Dsonar.pullrequest.branch=${{ steps.pr-meta.outputs.head_ref }}" \
-            "-Dsonar.pullrequest.base=${{ steps.pr-meta.outputs.base_ref }}"
+            "-Dsonar.pullrequest.key=$PR_NUMBER" \
+            "-Dsonar.pullrequest.branch=$PR_HEAD_REF" \
+            "-Dsonar.pullrequest.base=$PR_BASE_REF"
 
       - name: Warn when SonarCloud Automatic Analysis is enabled
         if: steps.sonar-auto-analysis.outputs.enabled == 'true'

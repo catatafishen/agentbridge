@@ -43,6 +43,8 @@ malicious build script runs first.
 
 - Triggered when the build workflow completes successfully.
 - Has access to `SONAR_TOKEN`.
+- Looks up the associated PR via the GitHub API (`commits/{sha}/pulls`) — PR metadata
+  is never read from the untrusted artifact to prevent code injection.
 - Downloads the artifact produced by the build job.
 - Checks out the **base repository** (our trusted code) to get the Gradle wrapper and
   `build.gradle.kts`.
@@ -51,6 +53,9 @@ malicious build script runs first.
   against, while the Gradle scripts being executed are entirely ours.
 - Runs `gradle sonar` skipping test/coverage tasks (already in artifact). Fork code is
   **read** by the sonar scanner; it is never **executed**.
+- PR metadata values are passed to the `run:` block via `env:` variables (shell
+  expansion), not `${{ }}` template expansion, to prevent code injection even if the
+  API returned attacker-controlled data.
 
 ### Why This Is Safe
 
