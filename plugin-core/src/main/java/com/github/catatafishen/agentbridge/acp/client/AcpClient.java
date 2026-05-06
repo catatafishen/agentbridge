@@ -134,6 +134,12 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     private volatile @Nullable List<SessionUpdate> loadedSessionHistory;
     /**
+     * True while {@link #sendLoadSessionRequest} is replaying historical permission requests.
+     * Prevents {@link #onBuiltInToolApproved} from firing reprimands for historical tool calls
+     * that are outside the agent's current context window.
+     */
+    private volatile boolean restoringHistory = false;
+    /**
      * Tracks pending {@code session/request_permission} request IDs so we can respond with
      * {@code {outcome: "cancelled"}} when {@link #cancelSession} is called.
      * Per ACP spec, the Client MUST respond to all pending permission requests with the
@@ -576,7 +582,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         // Per ACP spec, the agent replays conversation history via these notifications.
         List<SessionUpdate> loadBuffer = new ArrayList<>();
         updateConsumer = loadBuffer::add;
-
+        restoringHistory = true;
         LOG.info(displayName() + ": attempting " + method + " for " + sessionId);
         try {
             CompletableFuture<JsonElement> future = transport.sendRequest(method, params);
@@ -592,6 +598,7 @@ public abstract class AcpClient extends AbstractAgentClient {
             }
         } finally {
             updateConsumer = null;
+            restoringHistory = false;
         }
 
         loadedSessionHistory = loadBuffer.isEmpty() ? null : List.copyOf(loadBuffer);
@@ -1641,7 +1648,11 @@ public abstract class AcpClient extends AbstractAgentClient {
             } else {
                 LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
                     + "' — should use MCP tools instead");
-                onBuiltInToolApproved(toolId, false);
+                // Skip reprimand during history replay — historical tool calls are outside the
+                // agent's current context, so notifying it would only cause confusion.
+                if (!restoringHistory) {
+                    onBuiltInToolApproved(toolId, false);
+                }
             }
             chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
             if (chosenOption == null) {

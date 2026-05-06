@@ -581,8 +581,9 @@ const ChatController = {
         }
         // Mark any still-running sub-agent chips as complete (not failed)
         document.querySelectorAll('subagent-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
-        // Mark any still-running tool chips as complete (not failed)
-        document.querySelectorAll('tool-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
+        // Mark any still-running or pending tool chips as complete (not failed)
+        document.querySelectorAll('tool-chip:not([status="complete"]):not([status="failed"]):not([status="denied"])')
+            .forEach(c => c.setAttribute('status', 'complete'));
         this._container()?.scheduleScrollIfNeeded();
         this._trimMessages();
         _showNotification('Agent turn complete', 'The agent has finished responding.');
@@ -1037,16 +1038,16 @@ const ChatController = {
         }
         const msg = document.createElement('chat-message');
         msg.id = 'sysnotice-' + id;
-        msg.setAttribute('type', 'system');
-        msg.classList.add('system-notice-pending');
+        msg.setAttribute('type', 'user');
         const meta = document.createElement('message-meta');
         meta.innerHTML = '<span class="ts system-notice-label">⚙ System notice</span>';
         msg.appendChild(meta);
         const bubble = document.createElement('message-bubble');
-        bubble.setAttribute('type', 'system');
+        // No type attribute — MessageBubble.connectedCallback will add prompt-bubble class
+        // (because parent chat-message has type="user"). system-notice-bubble overrides the color.
+        bubble.classList.add('system-notice-bubble');
         bubble.textContent = text;
         msg.appendChild(bubble);
-        // Insert before queued messages
         const firstQueued = this._msgs().querySelector('.message-queued');
         if (firstQueued) {
             this._msgs().insertBefore(msg, firstQueued);
