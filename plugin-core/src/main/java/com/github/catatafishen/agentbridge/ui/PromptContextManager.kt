@@ -120,6 +120,32 @@ class PromptContextManager(
     }
 
     /**
+     * Search all open editors for a selection matching [text]. Unlike
+     * [findClipboardSourceInProject] which only checks the currently selected editor,
+     * this iterates every open text editor — necessary for drag-and-drop where the source
+     * editor may not be the focused one at drop time.
+     */
+    fun findTextSourceInOpenEditors(text: String): ContextItemData? {
+        val fileEditorManager = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+        val projectFileIndex = com.intellij.openapi.roots.ProjectFileIndex.getInstance(project)
+
+        for (openFile in fileEditorManager.openFiles) {
+            val isInContent = ApplicationManager.getApplication().runReadAction<Boolean> {
+                projectFileIndex.isInContent(openFile)
+            }
+            if (!isInContent) continue
+
+            val editors = fileEditorManager.getEditors(openFile)
+            for (fileEditor in editors) {
+                val textEditor = (fileEditor as? com.intellij.openapi.fileEditor.TextEditor)?.editor ?: continue
+                val match = matchEditorSelection(textEditor, openFile, text)
+                if (match != null) return match
+            }
+        }
+        return null
+    }
+
+    /**
      * Matches clipboard text against the editor's current selection using
      * whitespace-normalized comparison. Tabs and spaces are normalized so
      * that partial-indentation mismatches on the first line don't prevent detection.
