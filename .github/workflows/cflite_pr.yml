@@ -72,8 +72,32 @@ jobs:
       # Intentionally checks out fork code to fuzz it. The `environment: ci` gate above
       # requires maintainer approval before this runs. The warn-fork-fuzz job posts a
       # security review reminder on the PR so approvers know to review the code first.
+      #
+      # Why this is an accepted risk rather than a fixable issue:
+      #   Fuzzing by definition requires executing the code under test. Unlike SonarQube
+      #   analysis (which only reads source and bytecode), ClusterFuzzLite must compile and
+      #   run the fuzz targets. There is no artifact-passing pattern that eliminates this
+      #   requirement. The environment gate + explicit reviewer warning is therefore the
+      #   strongest practical mitigation available.
+      #
+      #   The environment gate is a stronger safeguard than a regular PR approval because:
+      #   (a) it is a distinct, less common action that specifically prompts the reviewer
+      #   to ask "why is this requiring separate approval?", and (b) the warn-fork-fuzz
+      #   job posts an explicit security checklist before the gate can be triggered.
+      #   A maintainer who rubber-stamps the environment gate without reading that warning
+      #   is no less careful than one who merges a PR without review — and such a reviewer
+      #   would represent a process failure, not a workflow design failure.
+      #
+      #   CFLITE_STORAGE_REPO_TOKEN scope (fine-grained PAT):
+      #     Repository:   catatafishen/agentbridge-cflite-storage (only)
+      #     Permissions:  Read access to metadata
+      #                   Read and Write access to code
+      #   Even if a malicious fork PR exfiltrates this token, the blast radius is limited
+      #   to the fuzz corpus storage repository — not the main codebase.
+      #
       # NOSONAR: S7631 — mitigated by environment gate + explicit reviewer warning
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      # zizmor: ignore[pull-request-target]
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2 NOSONAR
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           repository: ${{ github.event.pull_request.head.repo.full_name }}
@@ -86,7 +110,9 @@ jobs:
           language: jvm
           github-token: ${{ secrets.GITHUB_TOKEN }}
           sanitizer: ${{ matrix.sanitizer }}
-          # Enable storage repo for affected-fuzzer detection + corpus reuse:
+          # CFLITE_STORAGE_REPO_TOKEN: fine-grained PAT scoped to catatafishen/agentbridge-cflite-storage only.
+          # Permissions: Read access to metadata; Read and Write access to code.
+          # Blast radius if exfiltrated: write access to the fuzz corpus repo only — not the main codebase.
           storage-repo: https://${{ secrets.CFLITE_STORAGE_REPO_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
           storage-repo-branch: main
           storage-repo-branch-coverage: gh-pages
@@ -100,6 +126,7 @@ jobs:
           mode: 'code-change'
           sanitizer: ${{ matrix.sanitizer }}
           output-sarif: true
+          # CFLITE_STORAGE_REPO_TOKEN: see comment above in Build Fuzzers step.
           storage-repo: https://${{ secrets.CFLITE_STORAGE_REPO_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
           storage-repo-branch: main
           storage-repo-branch-coverage: gh-pages

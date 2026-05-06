@@ -1,0 +1,121 @@
+name: SonarQube PR Build
+
+# Unprivileged half of the fork-PR SonarQube pipeline.
+#
+# Security model:
+#   pull_request events for fork PRs have NO access to repository secrets.
+#   It is therefore safe to check out and build untrusted fork code here.
+#   The compiled classes, coverage reports, and source files are bundled
+#   into an artifact and consumed by the companion sonarqube-pr-analyze.yml
+#   workflow, which runs in a privileged context but never executes fork code.
+#
+# See docs/CI-SECURITY.md for the full rationale.
+
+on:
+  pull_request:
+    branches: [ master ]
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonarqube-build-${{ github.head_ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40  # v2.19.0
+        with:
+          egress-policy: audit
+
+      # Checks out the fork's actual head commit (not the merge commit) so the
+      # SonarQube analysis covers exactly the code in the PR. Safe here because
+      # pull_request events have no access to repository secrets.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: |
+            plugin-core/chat-ui/package-lock.json
+            plugin-core/js-tests/package-lock.json
+
+      - name: Install chat-ui dependencies
+        run: npm ci --silent --ignore-scripts
+        working-directory: plugin-core/chat-ui
+
+      - name: Install JS test dependencies
+        run: npm ci --silent --ignore-scripts
+        working-directory: plugin-core/js-tests
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        with:
+          gradle-version: 'wrapper'
+          cache-disabled: true
+
+      - name: Run tests with coverage
+        run: |
+          npm run test:coverage --prefix plugin-core/js-tests
+          npm run build --prefix plugin-core/chat-ui
+          gradle :mcp-server:test :mcp-server:jacocoTestReport \
+            :plugin-experimental:test :plugin-experimental:jacocoTestReport \
+            :plugin-core:test :plugin-core:jacocoTestReport \
+            --no-daemon --quiet --build-cache
+
+      - name: Save PR metadata
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          printf '{"number":%s,"head_ref":"%s","base_ref":"%s","head_sha":"%s"}\n' \
+            "$PR_NUMBER" "$HEAD_REF" "$BASE_REF" "$HEAD_SHA" > pr-metadata.json
+
+      - name: Package analysis artifacts
+        run: |
+          tar -czf sonar-artifacts.tar.gz \
+            --exclude='*/node_modules' \
+            --exclude='*/lcov-report' \
+            pr-metadata.json \
+            plugin-core/src \
+            plugin-core/build/reports/jacoco \
+            plugin-core/build/classes \
+            plugin-core/chat-ui/src \
+            plugin-core/js-tests \
+            mcp-server/src \
+            mcp-server/build/reports/jacoco \
+            mcp-server/build/classes \
+            plugin-experimental/src \
+            plugin-experimental/build/reports/jacoco \
+            plugin-experimental/build/classes
+
+      - name: Upload analysis artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sonar-analysis-artifacts
+          path: sonar-artifacts.tar.gz
+          retention-days: 1
+          if-no-files-found: error

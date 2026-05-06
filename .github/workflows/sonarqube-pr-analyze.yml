@@ -1,0 +1,178 @@
+name: SonarQube PR Analyze
+
+# Privileged half of the fork-PR SonarQube pipeline.
+#
+# Security model:
+#   This workflow is triggered by the completion of sonarqube-pr-build.yml and runs
+#   with full access to repository secrets (SONAR_TOKEN). It NEVER executes code from
+#   the fork. Instead it:
+#     1. Downloads pre-built artifacts produced in the unprivileged build job.
+#     2. Checks out the BASE repository (our trusted code) for build scripts.
+#     3. Overlays the fork's source files and compiled outputs from the artifact.
+#     4. Runs sonar analysis using OUR Gradle scripts — fork code is only READ,
+#        never executed.
+#
+# No environment gate is required here because no untrusted code runs in this
+# workflow. Contrast with cflite_pr.yml, which must execute the fork code to fuzz
+# it and therefore requires maintainer approval via the `environment: ci` gate.
+#
+# See docs/CI-SECURITY.md for the full rationale.
+
+on:
+  workflow_run:
+    workflows: ["SonarQube PR Build"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read  # required to download artifacts from the triggering workflow run
+
+concurrency:
+  group: sonarqube-analyze-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || 'catatafishen_agentbridge' }}
+  SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION || 'catatafishen' }}
+  SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+
+jobs:
+  analyze:
+    name: SonarQube analysis
+    runs-on: ubuntu-latest
+    # Only analyze successful PR builds (not branch pushes or failed runs).
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request'
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40  # v2.19.0
+        with:
+          egress-policy: audit
+
+      # Download the artifact bundle produced by the unprivileged build job.
+      # Contains the fork's source files and pre-compiled outputs — uploaded from a
+      # context with no secrets access — so this workflow never runs fork build scripts.
+      - name: Download analysis artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
+        with:
+          name: sonar-analysis-artifacts
+          path: ${{ runner.temp }}/sonar-artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Read PR metadata
+        id: pr-meta
+        run: |
+          tar -xzf "${{ runner.temp }}/sonar-artifacts/sonar-artifacts.tar.gz" pr-metadata.json
+          echo "number=$(jq -r .number pr-metadata.json)" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$(jq -r .head_ref pr-metadata.json)" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$(jq -r .base_ref pr-metadata.json)" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$(jq -r .head_sha pr-metadata.json)" >> "$GITHUB_OUTPUT"
+
+      # Check out the BASE repository (our trusted code) to get the Gradle wrapper
+      # and build configuration. The fork's source files and compiled outputs are
+      # restored from the artifact in the next step.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Overlay the fork's source files and pre-built outputs onto the base checkout.
+      # tar -x merges files: build.gradle.kts, gradlew, and all other base-repo files
+      # not in the archive are preserved. Only the paths included in the artifact
+      # (src/, build/reports/, build/classes/, js-tests/, chat-ui/src/) are replaced.
+      # The fork's code is read-only from this point — no build scripts are executed.
+      - name: Restore analysis artifacts
+        run: |
+          tar -xzf "${{ runner.temp }}/sonar-artifacts/sonar-artifacts.tar.gz" \
+            --exclude=pr-metadata.json
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654  # v5.2.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@50e97c2cd7a37755bbfafc9c5b7cafaece252f6e  # v6.1.0
+        with:
+          gradle-version: 'wrapper'
+          cache-disabled: true
+
+      - name: Determine Sonar project version
+        id: sonar-version
+        env:
+          HEAD_SHA: ${{ steps.pr-meta.outputs.head_sha }}
+        run: |
+          SHORT_SHA="${HEAD_SHA:0:8}"
+          LATEST_TAG="$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || true)"
+          if [ -n "$LATEST_TAG" ]; then
+            VERSION="${LATEST_TAG#v}-dev-${SHORT_SHA}"
+          else
+            VERSION="0.0.0-dev-${SHORT_SHA}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check SonarCloud Automatic Analysis
+        id: sonar-auto-analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import base64
+          import json
+          import os
+          import urllib.request
+
+          host = os.environ["SONAR_HOST_URL"].rstrip("/")
+          project = os.environ["SONAR_PROJECT_KEY"]
+          url = f"{host}/api/settings/values?component={project}&keys=sonar.autoscan.enabled"
+          request = urllib.request.Request(url)
+          token = os.environ.get("SONAR_TOKEN")
+          if token:
+              auth = base64.b64encode(f"{token}:".encode()).decode()
+              request.add_header("Authorization", f"Basic {auth}")
+          with urllib.request.urlopen(request) as response:
+              settings = json.load(response).get("settings", [])
+          enabled = any(
+              setting.get("key") == "sonar.autoscan.enabled"
+              and setting.get("value", "").lower() == "true"
+              for setting in settings
+          )
+          print(f"enabled={'true' if enabled else 'false'}")
+          PY
+
+      # Run SonarQube using our trusted Gradle scripts (from the base checkout).
+      # Tests and JaCoCo reports are skipped because they are already in the artifact.
+      # The chat-ui build is skipped because the JS coverage (lcov.info) is in the artifact.
+      - name: Run SonarQube analysis
+        if: steps.sonar-auto-analysis.outputs.enabled != 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_PROJECT_VERSION: ${{ steps.sonar-version.outputs.version }}
+        run: |
+          gradle sonar \
+            --no-daemon --quiet \
+            -x test \
+            -x jacocoTestReport \
+            -x buildChatUi \
+            "-Dsonar.projectKey=$SONAR_PROJECT_KEY" \
+            "-Dsonar.organization=$SONAR_ORGANIZATION" \
+            "-Dsonar.host.url=$SONAR_HOST_URL" \
+            "-Dsonar.projectVersion=$SONAR_PROJECT_VERSION" \
+            "-Dsonar.qualitygate.wait=true" \
+            "-Dsonar.qualitygate.timeout=300" \
+            "-Dsonar.pullrequest.key=${{ steps.pr-meta.outputs.number }}" \
+            "-Dsonar.pullrequest.branch=${{ steps.pr-meta.outputs.head_ref }}" \
+            "-Dsonar.pullrequest.base=${{ steps.pr-meta.outputs.base_ref }}"
+
+      - name: Warn when SonarCloud Automatic Analysis is enabled
+        if: steps.sonar-auto-analysis.outputs.enabled == 'true'
+        run: |
+          echo "::warning::SonarCloud Automatic Analysis is enabled for $SONAR_PROJECT_KEY."
+          echo "::warning::Disable it in SonarCloud: Project Settings > Analysis Method > Automatic Analysis to use CI coverage and projectVersion."
+          echo "::warning::Skipping CI-based SonarQube analysis because SonarCloud would reject it while Automatic Analysis is enabled."
