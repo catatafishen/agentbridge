@@ -251,7 +251,7 @@ screen.
 Switch between AI agents without losing your conversation. AgentBridge maintains a universal
 session format that works across all supported clients — so your context travels with you.
 
-- **Seamless agent switching** — switch from GitHub Copilot to Claude, OpenCode, Junie, or Kiro
+- **Seamless agent switching** — switch from GitHub Copilot to Claude, OpenCode, Junie, Kiro, or Hermes Agent
   mid-project and pick up exactly where you left off
 - **Full context preserved** — the restored agent sees your entire conversation history: messages,
   tool calls, code edits, and reasoning
@@ -267,7 +267,7 @@ session format that works across all supported clients — so your context trave
 
 Connect any ACP-compatible agent and switch between profiles instantly.
 
-- **Agent profiles** — Built-in profiles for GitHub Copilot, opencode, and Claude Code, plus fully custom profiles
+- **Agent profiles** — Built-in profiles for GitHub Copilot, opencode, Claude Code, and Hermes Agent, plus fully custom profiles
 - **Per-profile settings** — Connection command, tool permissions, built-in tool blocking, custom instructions
 - **Agent selector** — Switch agents with one click from the connection panel
 - **Extensible** — Add new agent backends by implementing `AgentConfig` + `AgentSettings` interfaces
@@ -378,7 +378,7 @@ Choose the right model for the task and track usage in real time.
 
 ## Requirements
 
-- **An ACP-compatible agent CLI** (e.g., GitHub Copilot CLI, opencode, Claude Code
+- **An ACP-compatible agent CLI** (e.g., GitHub Copilot CLI, opencode, Hermes Agent, Claude Code
   via [claude-code-acp](https://www.npmjs.com/package/@zed-industries/claude-code-acp))
 - **IntelliJ IDEA 2025.3** or later (compatible with any JetBrains IDE)
 - **Java 21+** runtime

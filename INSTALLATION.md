@@ -4,7 +4,7 @@
 
 - IntelliJ IDEA 2025.1 or later (any JetBrains IDE)
 - Java 21 installed
-- An ACP-compatible agent CLI (e.g., GitHub Copilot CLI, OpenCode, Junie, Kiro)
+- An ACP-compatible agent CLI (e.g., GitHub Copilot CLI, OpenCode, Junie, Kiro, Hermes Agent)
 
 ## Installation Steps
 

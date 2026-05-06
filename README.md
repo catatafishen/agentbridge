@@ -16,7 +16,7 @@ or generating diffs in isolation.
 
 **Key highlights:**
 
-- **6 agents** — Copilot, Claude Code, Codex, Kiro, Junie, OpenCode. Switch with one click.
+- **7 agents** — Copilot, Claude Code, Codex, Kiro, Junie, OpenCode, Hermes Agent. Switch with one click.
 - **120+ MCP tools** — code navigation, refactoring, testing, debugging, git, project management,
   and more — all through native IntelliJ APIs.
 - **Cross-client session resume** — switch agents without losing conversation history.
@@ -197,7 +197,7 @@ graph TD
             APM["AgentProfileManager"]
         end
         subgraph clients["Agent Clients"]
-            AC["AcpClient — Copilot, Junie, Kiro, OpenCode"]
+            AC["AcpClient — Copilot, Junie, Kiro, OpenCode, Hermes Agent"]
             CC["ClaudeCliClient — Claude Code"]
             XC["CodexAppServerClient — Codex"]
         end
@@ -218,7 +218,7 @@ graph TD
 **Three layers:**
 
 - **UI** — JCEF-based chat panel, model selector, context management. Agent-agnostic.
-- **Clients** — `AcpClient` (shared by Copilot, Junie, Kiro, OpenCode), `ClaudeCliClient`,
+- **Clients** — `AcpClient` (shared by Copilot, Junie, Kiro, OpenCode, Hermes Agent), `ClaudeCliClient`,
   `CodexAppServerClient`. Each wraps its agent CLI's stdin/stdout protocol.
 - **MCP** — 120+ tools implemented against IntelliJ's PSI, VFS, and platform APIs. Exposed
   via an HTTP bridge to a bundled MCP stdio server (JAR).
