@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.function.Consumer;
 
 /**
- * Unified abstract base class for all agent types: ACP-based (Copilot, Junie, Kiro, OpenCode)
+ * Unified abstract base class for all agent types: ACP-based (Copilot, Junie, Kiro, OpenCode, Hermes Agent)
  * and non-ACP (Claude CLI, Anthropic Direct).
  * <p>
  * Replaces the {@link AgentConnector} interface and {@code bridge.AgentClient} interface.

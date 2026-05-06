@@ -85,7 +85,7 @@ restarting.
 
 - **92 MCP tools** — File I/O, PSI analysis, refactoring, git, testing, terminal, documentation
 - **ACP protocol** — Direct integration with ACP-compatible agent CLIs
-- **Multi-agent support** — Switch between Copilot, OpenCode, Junie, Kiro, or custom profiles
+- **Multi-agent support** — Switch between Copilot, OpenCode, Junie, Kiro, Hermes Agent, or custom profiles
 - **Permission routing** — File edits routed through IntelliJ Document API with auto-format
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for full architecture and debugging guide.

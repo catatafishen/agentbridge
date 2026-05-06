@@ -309,6 +309,17 @@ See [JUNIE-TOOL-WORKAROUND.md](docs/JUNIE-TOOL-WORKAROUND.md).
 
 **Status**: ⚠️ **Experimental** (agent definitions supported via `allowedTools`, but hangs on non-allowed tool prompts)
 
+## Hermes Agent
+
+**Location**: `~/.hermes/skills/*` (skills, not agent definitions)
+**Format**: N/A — Hermes does not use ACP-side agent-definition files for tool filtering. Tool gating happens through Hermes's own toolset/skill system in `~/.hermes/config.yaml`.
+
+**Bundled Agents**: 0 (Hermes integrates as a single agent; sub-agents are spawned via its own `delegate_task` tool, not ACP-level agent definitions)
+
+**MCP Tool Prefix**: `mcp_agentbridge_` (Hermes names MCP tools as `mcp_<server>_<tool>`)
+
+**Status**: ✅ Working (HTTP MCP server injected via `session/new`; requires `hermes acp --accept-hooks` because the plugin launches Hermes without a TTY for hook prompts)
+
 ## Summary Table
 
 | Agent    | MCP Tool Prefix | Agent Definition Support         | Tool Filtering Format                                      | Permission Requests  | Bundled Agents                      | Status                     |
@@ -317,6 +328,7 @@ See [JUNIE-TOOL-WORKAROUND.md](docs/JUNIE-TOOL-WORKAROUND.md).
 | OpenCode | `agentbridge_`  | ✅ `.opencode/agent/*.md` or JSON | YAML object: `permission: {"*": "deny", "tool1": "allow"}` | ✅ Yes                | 2 (ide-general, intellij-explore)   | ✅ Working                  |
 | Junie    | `agentbridge-`  | ❌ No support                     | N/A                                                        | ❌ No (auto-executes) | 0                                   | Prompt workaround only     |
 | Kiro     | `@agentbridge/` | ✅ `.agent-work/.kiro/agents/`    | JSON: `allowedTools: ["tool1"]`                            | ⚠️ Hangs on prompts  | 1 (intellij-agent)                  | ⚠️ Experimental (hangs)    |
+| Hermes   | `mcp_agentbridge_` | ❌ No ACP-side definitions       | N/A (gating via `~/.hermes/config.yaml` toolsets/skills)   | ✅ Via `--accept-hooks` | 0 (sub-agents via `delegate_task`)  | ✅ Working                  |
 
 See [.agent-work/OPENCODE-AGENT-FINDINGS.md](.agent-work/OPENCODE-AGENT-FINDINGS.md) for detailed OpenCode
 investigation and [.agent-work/KIRO-AGENT-FINDINGS.md](.agent-work/KIRO-AGENT-FINDINGS.md) for Kiro findings.

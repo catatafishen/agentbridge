@@ -15,7 +15,7 @@ import java.util.Map;
 /**
  * Normalises the various {@code session/new} response wire formats from different ACP agents.
  * <p>
- * All agents (Copilot, Junie, Kiro, OpenCode) wrap models and modes in a container object:
+ * All agents (Copilot, Junie, Kiro, OpenCode, Hermes Agent) wrap models and modes in a container object:
  * <pre>
  *   "models": { "availableModels": [{modelId, name, description, _meta}, ...], "currentModelId": "..." }
  *   "modes":  { "availableModes": [{id, name, description}, ...], "currentModeId": "..." }
