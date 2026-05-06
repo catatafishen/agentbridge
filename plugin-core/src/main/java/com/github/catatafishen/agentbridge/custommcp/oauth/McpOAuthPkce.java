@@ -25,6 +25,8 @@ public final class McpOAuthPkce {
     ) {
     }
 
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
     private McpOAuthPkce() {
     }
 
@@ -36,7 +38,7 @@ public final class McpOAuthPkce {
     @NotNull
     public static Params generate() {
         byte[] bytes = new byte[64];
-        new SecureRandom().nextBytes(bytes);
+        SECURE_RANDOM.nextBytes(bytes);
         String verifier = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         String challenge = computeChallenge(verifier);
         return new Params(verifier, challenge);
@@ -48,7 +50,7 @@ public final class McpOAuthPkce {
     @NotNull
     public static String generateState() {
         byte[] bytes = new byte[16];
-        new SecureRandom().nextBytes(bytes);
+        SECURE_RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 

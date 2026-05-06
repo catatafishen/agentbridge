@@ -1,6 +1,5 @@
 package com.github.catatafishen.agentbridge.custommcp.oauth;
 
-import com.github.catatafishen.agentbridge.custommcp.oauth.McpOAuthCallbackServer.Result;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import com.intellij.openapi.diagnostic.Logger;

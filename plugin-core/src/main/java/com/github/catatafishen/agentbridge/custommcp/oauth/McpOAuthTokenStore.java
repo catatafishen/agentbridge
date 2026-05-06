@@ -25,6 +25,9 @@ public final class McpOAuthTokenStore {
     private static final Logger LOG = Logger.getInstance(McpOAuthTokenStore.class);
     private static final String SERVICE_NAME = "AgentBridge MCP OAuth";
     private static final Gson GSON = new Gson();
+    private static final String KEY_ACCESS_TOKEN = "access_token";
+    private static final String KEY_REFRESH_TOKEN = "refresh_token";
+    private static final String KEY_EXPIRES_AT_MS = "expires_at_ms";
 
     private McpOAuthTokenStore() {
     }
@@ -35,11 +38,11 @@ public final class McpOAuthTokenStore {
     public static void store(@NotNull String serverUrl, @NotNull McpOAuthTokens tokens) {
         CredentialAttributes attrs = attrs(serverUrl);
         JsonObject json = new JsonObject();
-        json.addProperty("access_token", tokens.accessToken());
+        json.addProperty(KEY_ACCESS_TOKEN, tokens.accessToken());
         if (tokens.refreshToken() != null) {
-            json.addProperty("refresh_token", tokens.refreshToken());
+            json.addProperty(KEY_REFRESH_TOKEN, tokens.refreshToken());
         }
-        json.addProperty("expires_at_ms", tokens.expiresAtEpochMs());
+        json.addProperty(KEY_EXPIRES_AT_MS, tokens.expiresAtEpochMs());
         Credentials creds = new Credentials(normalizeUrl(serverUrl), GSON.toJson(json));
         PasswordSafe.getInstance().set(attrs, creds);
         LOG.info("Stored OAuth tokens for " + serverUrl);
@@ -57,10 +60,10 @@ public final class McpOAuthTokenStore {
         if (password == null || password.isBlank()) return null;
         try {
             JsonObject json = JsonParser.parseString(password).getAsJsonObject();
-            String accessToken = json.has("access_token") ? json.get("access_token").getAsString() : null;
+            String accessToken = json.has(KEY_ACCESS_TOKEN) ? json.get(KEY_ACCESS_TOKEN).getAsString() : null;
             if (accessToken == null || accessToken.isBlank()) return null;
-            String refreshToken = json.has("refresh_token") ? json.get("refresh_token").getAsString() : null;
-            long expiresAtMs = json.has("expires_at_ms") ? json.get("expires_at_ms").getAsLong() : 0;
+            String refreshToken = json.has(KEY_REFRESH_TOKEN) ? json.get(KEY_REFRESH_TOKEN).getAsString() : null;
+            long expiresAtMs = json.has(KEY_EXPIRES_AT_MS) ? json.get(KEY_EXPIRES_AT_MS).getAsLong() : 0;
             return new McpOAuthTokens(accessToken, refreshToken, expiresAtMs);
         } catch (Exception e) {
             LOG.warn("Failed to parse stored OAuth tokens for " + serverUrl + ": " + e.getMessage());

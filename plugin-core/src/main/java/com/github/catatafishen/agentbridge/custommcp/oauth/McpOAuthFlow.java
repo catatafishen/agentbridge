@@ -12,7 +12,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
@@ -164,7 +163,7 @@ public final class McpOAuthFlow {
                 ? obj.get("registration_endpoint").getAsString() : null;
             String scope = obj.has("scopes_supported")
                 ? obj.getAsJsonArray("scopes_supported").asList().stream()
-                .map(e -> e.getAsString()).reduce((a, b) -> a + " " + b).orElse(null)
+                .map(com.google.gson.JsonElement::getAsString).reduce((a, b) -> a + " " + b).orElse(null)
                 : null;
             return new McpOAuthMetadata(issuer, authorizationEndpoint, tokenEndpoint, registrationEndpoint, scope);
         } catch (Exception e) {
