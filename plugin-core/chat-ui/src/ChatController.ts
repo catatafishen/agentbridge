@@ -581,9 +581,6 @@ const ChatController = {
         }
         // Mark any still-running sub-agent chips as complete (not failed)
         document.querySelectorAll('subagent-chip[status="running"]').forEach(c => c.setAttribute('status', 'complete'));
-        // Mark any still-running or pending tool chips as complete (not failed)
-        document.querySelectorAll('tool-chip:not([status="complete"]):not([status="failed"]):not([status="denied"])')
-            .forEach(c => c.setAttribute('status', 'complete'));
         this._container()?.scheduleScrollIfNeeded();
         this._trimMessages();
         _showNotification('Agent turn complete', 'The agent has finished responding.');

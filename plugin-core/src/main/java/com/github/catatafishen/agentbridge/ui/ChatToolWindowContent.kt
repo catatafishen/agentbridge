@@ -1263,19 +1263,36 @@ class ChatToolWindowContent(
         val existingId = pendingSystemNoticeId
         if (existingId != null) {
             pendingSystemNoticeText = (pendingSystemNoticeText ?: "") + "\n\n" + text
-            consolePanel.showSystemNoticeBubble(existingId, pendingSystemNoticeText!!)
         } else {
-            val id = "sysnotice-" + System.currentTimeMillis()
-            pendingSystemNoticeId = id
+            pendingSystemNoticeId = "sysnotice-" + System.currentTimeMillis()
             pendingSystemNoticeText = text
-            consolePanel.showSystemNoticeBubble(id, text)
         }
+        // If the agent uses an MCP tool next, the notice is injected into the tool result
+        // (via consumePendingNudge). Clear pending state so we don't restore it to input at turn end.
+        com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
+            .addOnNudgeConsumed {
+                pendingSystemNoticeId = null
+                pendingSystemNoticeText = null
+            }
     }
 
     private fun restoreSystemNoticeIfNeeded() {
-        // Notices now persist permanently in the chat as grey user bubbles — just clear tracking state.
+        val noticeText = pendingSystemNoticeText ?: return
         pendingSystemNoticeId = null
         pendingSystemNoticeText = null
+        // Show the notice as a grey bubble and prepend it to the input so the user knows
+        // what will be sent along with their next prompt.
+        val id = "sysnotice-sent-" + System.currentTimeMillis()
+        consolePanel.showSystemNoticeBubble(id, noticeText)
+        prependSystemNoticeToInput(noticeText)
+    }
+
+    private fun prependSystemNoticeToInput(noticeText: String) {
+        ApplicationManager.getApplication().invokeLater {
+            val current = promptTextArea.text
+            promptTextArea.text = if (current.isEmpty()) noticeText else "$noticeText\n\n$current"
+            promptTextArea.requestFocusInWindow()
+        }
     }
 
     private fun updateProcessingTimer(sending: Boolean) {

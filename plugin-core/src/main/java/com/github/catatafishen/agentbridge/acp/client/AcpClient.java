@@ -1658,6 +1658,13 @@ public abstract class AcpClient extends AbstractAgentClient {
             if (chosenOption == null) {
                 chosenOption = findFirstOption(params);
             }
+            // Copilot CLI does not send tool_call_update completion events for approved built-in
+            // tools. Synthesize one so the tool chip clears its spinner immediately.
+            Consumer<SessionUpdate> builtInConsumer = updateConsumer;
+            if (builtInConsumer != null && !toolCallId.isEmpty()) {
+                builtInConsumer.accept(new SessionUpdate.ToolCallUpdate(
+                    toolCallId, SessionUpdate.ToolCallStatus.COMPLETED, null, null, null));
+            }
         } else {
             LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
             chosenOption = findOptionByKind(params, VALUE_ALLOW_ONCE);
