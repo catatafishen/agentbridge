@@ -966,8 +966,8 @@ class ChatToolWindowContent(
         shortcutHintPanel.isVisible =
             com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().isShowShortcutHints
 
-        setupPromptDragDrop(promptTextArea)
         promptTextArea.addSettingsProvider { editor ->
+            setupPromptDragDrop(editor)
             setupPromptKeyBindings(editor)
             setupPromptContextMenu(editor)
             editor.setPlaceholder(promptPlaceholder())
@@ -2317,9 +2317,9 @@ class ChatToolWindowContent(
     }
 
 
-    private fun setupPromptDragDrop(textArea: EditorTextField) {
-        textArea.dropTarget = java.awt.dnd.DropTarget(
-            textArea, java.awt.dnd.DnDConstants.ACTION_COPY,
+private fun setupPromptDragDrop(editor: EditorEx) {
+        editor.contentComponent.dropTarget = java.awt.dnd.DropTarget(
+            editor.contentComponent, java.awt.dnd.DnDConstants.ACTION_COPY,
             object : java.awt.dnd.DropTargetAdapter() {
                 override fun dragEnter(dtde: java.awt.dnd.DropTargetDragEvent) {
                     // Always advertise COPY so the source editor does not remove the dragged text.
@@ -2331,13 +2331,13 @@ class ChatToolWindowContent(
                 }
 
                 override fun drop(dtde: java.awt.dnd.DropTargetDropEvent) {
-                    handleDrop(dtde, textArea)
+                    handleDrop(dtde, editor)
                 }
             })
     }
 
 
-    private fun handleDrop(dtde: java.awt.dnd.DropTargetDropEvent, textArea: EditorTextField) {
+private fun handleDrop(dtde: java.awt.dnd.DropTargetDropEvent, editor: EditorEx) {
         try {
             dtde.acceptDrop(java.awt.dnd.DnDConstants.ACTION_COPY)
             val transferable = dtde.transferable
@@ -2348,22 +2348,19 @@ class ChatToolWindowContent(
                 val files = transferable.getTransferData(
                     java.awt.datatransfer.DataFlavor.javaFileListFlavor
                 ) as List<java.io.File>
-                val editor = textArea.editor as? EditorEx
                 for (file in files) {
                     val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
                         .findFileByIoFile(file) ?: continue
                     val doc = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
                         .getDocument(vf) ?: continue
-                    if (editor != null) {
-                        val existing = contextManager.collectInlineContextItems().any { it.path == vf.path }
-                        if (!existing) {
-                            val data = ContextItemData(
-                                path = vf.path, name = vf.name,
-                                startLine = 1, endLine = doc.lineCount,
-                                fileTypeName = vf.fileType.name, isSelection = false
-                            )
-                            contextManager.insertInlineChip(editor, data)
-                        }
+                    val existing = contextManager.collectInlineContextItems().any { it.path == vf.path }
+                    if (!existing) {
+                        val data = ContextItemData(
+                            path = vf.path, name = vf.name,
+                            startLine = 1, endLine = doc.lineCount,
+                            fileTypeName = vf.fileType.name, isSelection = false
+                        )
+                        contextManager.insertInlineChip(editor, data)
                     }
                 }
                 dtde.dropComplete(true)
@@ -2376,7 +2373,7 @@ class ChatToolWindowContent(
             if (transferable.isDataFlavorSupported(java.awt.datatransfer.DataFlavor.stringFlavor)) {
                 val text = transferable.getTransferData(java.awt.datatransfer.DataFlavor.stringFlavor) as? String
                 if (!text.isNullOrBlank()) {
-                    handleTextDrop(text, textArea)
+                    handleTextDrop(text, editor)
                     dtde.dropComplete(true)
                     return
                 }
@@ -2388,17 +2385,11 @@ class ChatToolWindowContent(
         }
     }
 
-    /**
-     * Handle text dropped from another editor. Applies the same logic as the smart-paste
-     * intercept: if the text matches a selection in an open project editor, insert a
-     * file-reference chip; otherwise create a scratch file via [pasteToScratchHandler].
-     */
-    private fun handleTextDrop(text: String, textArea: EditorTextField) {
+private fun handleTextDrop(text: String, editor: EditorEx) {
         val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
         val minLines = chatInputSettings.smartPasteMinLines
         val minChars = chatInputSettings.smartPasteMinChars
 
-        val editor = textArea.editor as? EditorEx ?: return
         if (text.lines().size <= minLines && text.length <= minChars) {
             // Below threshold: insert as plain text.
             com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
