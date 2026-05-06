@@ -142,8 +142,9 @@ class AcpMessageParser {
             }
         }
 
-        // Sub-agent detection: check explicit agentType fields, then fall back to client-specific logic
-        String agentType = delegate.extractSubAgentType(params, resolvedTitle, argumentsObj);
+        // Sub-agent detection uses the ORIGINAL title (e.g. "Intellij-Explore") because
+        // resolveToolId normalises unknown names to "task" which breaks agent-name matching.
+        String agentType = delegate.extractSubAgentType(params, title, argumentsObj);
         String subAgentDesc = null;
         String subAgentPrompt = null;
         if (agentType != null && argumentsObj != null) {
