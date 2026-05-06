@@ -107,8 +107,8 @@ class McpOAuthFlowTest {
             }
             """;
         McpOAuthTokens tokens = McpOAuthFlow.parseTokenResponse(json);
-        assertTrue("eyJhbGciOi...".equals(tokens.accessToken()));
-        assertTrue("rt-abc123".equals(tokens.refreshToken()));
+        assertEquals("eyJhbGciOi...", tokens.accessToken());
+        assertEquals("rt-abc123", tokens.refreshToken());
         // expiresAtEpochMs should be roughly now + 3600s; allow 5s clock drift.
         long expected = System.currentTimeMillis() + 3_600_000;
         assertTrue(Math.abs(tokens.expiresAtEpochMs() - expected) < 5_000,
@@ -126,8 +126,8 @@ class McpOAuthFlowTest {
             }
             """;
         McpOAuthTokens tokens = McpOAuthFlow.parseTokenResponse(json);
-        assertTrue("at-only".equals(tokens.accessToken()));
-        assertTrue(tokens.refreshToken() == null);
+        assertEquals("at-only", tokens.accessToken());
+        assertNull(tokens.refreshToken());
     }
 
     @Test
@@ -139,8 +139,8 @@ class McpOAuthFlowTest {
             }
             """;
         McpOAuthTokens tokens = McpOAuthFlow.parseTokenResponse(json);
-        assertTrue("at-no-expiry".equals(tokens.accessToken()));
-        assertTrue(0 == tokens.expiresAtEpochMs());
+        assertEquals("at-no-expiry", tokens.accessToken());
+        assertEquals(0, tokens.expiresAtEpochMs());
         assertFalse(tokens.isExpired());
     }
 
