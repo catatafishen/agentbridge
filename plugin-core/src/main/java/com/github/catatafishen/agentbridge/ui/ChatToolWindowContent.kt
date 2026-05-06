@@ -1280,10 +1280,8 @@ class ChatToolWindowContent(
         val noticeText = pendingSystemNoticeText ?: return
         pendingSystemNoticeId = null
         pendingSystemNoticeText = null
-        // Show the notice as a grey bubble and prepend it to the input so the user knows
-        // what will be sent along with their next prompt.
-        val id = "sysnotice-sent-" + System.currentTimeMillis()
-        consolePanel.showSystemNoticeBubble(id, noticeText)
+        // Prepend notice to input so the user can review/edit before sending.
+        // No grey bubble — that's reserved for notices actually sent to the agent.
         prependSystemNoticeToInput(noticeText)
     }
 
