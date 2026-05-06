@@ -84,22 +84,11 @@ jobs:
             :plugin-core:test :plugin-core:jacocoTestReport \
             --no-daemon --quiet --build-cache
 
-      - name: Save PR metadata
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          printf '{"number":%s,"head_ref":"%s","base_ref":"%s","head_sha":"%s"}\n' \
-            "$PR_NUMBER" "$HEAD_REF" "$BASE_REF" "$HEAD_SHA" > pr-metadata.json
-
       - name: Package analysis artifacts
         run: |
           tar -czf sonar-artifacts.tar.gz \
             --exclude='*/node_modules' \
             --exclude='*/lcov-report' \
-            pr-metadata.json \
             plugin-core/src \
             plugin-core/build/reports/jacoco \
             plugin-core/build/classes \
