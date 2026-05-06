@@ -1,12 +1,18 @@
 package com.github.catatafishen.agentbridge.custommcp;
 
+import com.github.catatafishen.agentbridge.custommcp.oauth.McpOAuthFlow;
+import com.github.catatafishen.agentbridge.custommcp.oauth.McpOAuthRequiredException;
+import com.github.catatafishen.agentbridge.custommcp.oauth.McpOAuthTokenStore;
+import com.github.catatafishen.agentbridge.custommcp.oauth.McpOAuthTokens;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -130,46 +136,114 @@ public final class CustomMcpRegistrar implements Disposable {
     /**
      * Connects to one server, discovers its tools, and registers proxy instances.
      * Replaces any previously registered tools for the same server ID.
-     * Creates and validates the replacement client first, then closes the old client's
-     * session and replaces stale registrations for that server ID.
-     * Logs a warning and skips silently on connection failure.
+     * <p>
+     * If the server returns HTTP 401, the OAuth PKCE flow is triggered automatically:
+     * the user's browser opens for authentication, and on success the new tokens are stored
+     * and the connection is retried. Subsequent connections reuse the stored token; expired
+     * tokens are silently refreshed before connecting.
      */
     private void connectAndRegister(@NotNull PsiBridgeService bridge, @NotNull CustomMcpServerConfig server) {
-        CustomMcpClient client = new CustomMcpClient(server.getUrl());
+        String token = resolveToken(server.getUrl());
+        CustomMcpClient client = new CustomMcpClient(server.getUrl(), token);
         try {
-            client.initialize();
-            List<CustomMcpClient.ToolInfo> tools = client.listTools();
-
-            if (tools.isEmpty()) {
-                LOG.info("Custom MCP server '" + server.getName() + "' reported no tools");
-                client.close();
-                // Clean up any stale registration/client from a prior successful connection
-                if (registeredByServer.containsKey(server.getId()) || clientByServer.containsKey(server.getId())) {
-                    unregisterServerTools(bridge, server.getId());
-                    registeredByServer.remove(server.getId());
-                }
-                return;
+            doConnectAndRegister(bridge, server, client);
+        } catch (McpOAuthRequiredException e) {
+            client.close();
+            LOG.info("OAuth required for '" + server.getName() + "' — starting authentication flow");
+            McpOAuthTokens tokens = runOAuthFlow(server);
+            if (tokens == null) return;
+            CustomMcpClient authedClient = new CustomMcpClient(server.getUrl(), tokens.accessToken());
+            try {
+                doConnectAndRegister(bridge, server, authedClient);
+            } catch (Exception retryEx) {
+                authedClient.close();
+                LOG.warn(formatConnectionError(server.getName(), server.getUrl(), retryEx.getMessage()));
             }
-
-            // Close old client session and replace stale registrations for this server
-            unregisterServerTools(bridge, server.getId());
-
-            Set<String> registered = new HashSet<>();
-            String prefix = server.toolPrefix();
-            for (CustomMcpClient.ToolInfo toolInfo : tools) {
-                CustomMcpToolProxy proxy = new CustomMcpToolProxy(
-                    prefix, client, toolInfo, server.getInstructions()
-                );
-                bridge.registerTool(proxy);
-                registered.add(proxy.id());
-                LOG.info("Registered custom MCP proxy: " + proxy.id() + " → " + server.getUrl());
-            }
-            registeredByServer.put(server.getId(), registered);
-            clientByServer.put(server.getId(), client);
-
         } catch (Exception e) {
             client.close();
             LOG.warn(formatConnectionError(server.getName(), server.getUrl(), e.getMessage()));
+        }
+    }
+
+    /**
+     * Core connection logic: initializes the MCP session, lists tools, and registers proxy instances.
+     * Separated from {@link #connectAndRegister} so it can be called for both the initial attempt
+     * and the OAuth-retry without duplicating registration logic.
+     */
+    private void doConnectAndRegister(
+        @NotNull PsiBridgeService bridge,
+        @NotNull CustomMcpServerConfig server,
+        @NotNull CustomMcpClient client
+    ) throws IOException {
+        client.initialize();
+        List<CustomMcpClient.ToolInfo> tools = client.listTools();
+
+        if (tools.isEmpty()) {
+            LOG.info("Custom MCP server '" + server.getName() + "' reported no tools");
+            client.close();
+            if (registeredByServer.containsKey(server.getId()) || clientByServer.containsKey(server.getId())) {
+                unregisterServerTools(bridge, server.getId());
+                registeredByServer.remove(server.getId());
+            }
+            return;
+        }
+
+        unregisterServerTools(bridge, server.getId());
+
+        Set<String> registered = new HashSet<>();
+        String prefix = server.toolPrefix();
+        for (CustomMcpClient.ToolInfo toolInfo : tools) {
+            CustomMcpToolProxy proxy = new CustomMcpToolProxy(
+                prefix, client, toolInfo, server.getInstructions()
+            );
+            bridge.registerTool(proxy);
+            registered.add(proxy.id());
+            LOG.info("Registered custom MCP proxy: " + proxy.id() + " → " + server.getUrl());
+        }
+        registeredByServer.put(server.getId(), registered);
+        clientByServer.put(server.getId(), client);
+    }
+
+    /**
+     * Loads a stored bearer token for {@code serverUrl}, refreshing it first if it has expired.
+     *
+     * @return the access token string, or {@code null} if no token is stored
+     */
+    @Nullable
+    private static String resolveToken(@NotNull String serverUrl) {
+        McpOAuthTokens stored = McpOAuthTokenStore.load(serverUrl);
+        if (stored == null) return null;
+        if (stored.isExpired() && stored.refreshToken() != null) {
+            McpOAuthTokens refreshed = McpOAuthFlow.refreshAccessToken(serverUrl, stored.refreshToken());
+            if (refreshed != null) {
+                McpOAuthTokenStore.store(serverUrl, refreshed);
+                return refreshed.accessToken();
+            }
+            // Refresh failed — clear stale tokens so the full flow is triggered on 401
+            McpOAuthTokenStore.clear(serverUrl);
+            return null;
+        }
+        return stored.isExpired() ? null : stored.accessToken();
+    }
+
+    /**
+     * Runs the OAuth PKCE flow for the given server, stores the obtained tokens, and
+     * returns them. Returns {@code null} and logs a warning if authentication fails.
+     */
+    @Nullable
+    private static McpOAuthTokens runOAuthFlow(@NotNull CustomMcpServerConfig server) {
+        try {
+            McpOAuthTokens tokens = McpOAuthFlow.authenticate(server.getUrl());
+            McpOAuthTokenStore.store(server.getUrl(), tokens);
+            LOG.info("OAuth authentication succeeded for '" + server.getName() + "'");
+            return tokens;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            LOG.warn("OAuth authentication interrupted for '" + server.getName() + "'");
+            return null;
+        } catch (Exception e) {
+            LOG.warn("OAuth authentication failed for '" + server.getName() + "': " + e.getMessage());
+            return null;
         }
     }
 

@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.custommcp;
 
+import com.github.catatafishen.agentbridge.custommcp.oauth.McpOAuthRequiredException;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -54,6 +55,12 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     private final AtomicInteger requestId = new AtomicInteger(1);
 
     /**
+     * Bearer token attached as {@code Authorization: Bearer …} on every request.
+     * Updated atomically via {@link #updateToken(String)}.
+     */
+    private volatile String bearerToken;
+
+    /**
      * Session ID received from the server during initialization.
      * Volatile because it is read by concurrent {@link #callTool} threads
      * and written under {@link #reinitLock} during session recovery.
@@ -63,7 +70,18 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
     private final ReentrantLock reinitLock = new ReentrantLock();
 
     public CustomMcpClient(@NotNull String url) {
+        this(url, null);
+    }
+
+    /**
+     * Creates a client that attaches the given bearer token to every HTTP request.
+     *
+     * @param url         the MCP server endpoint
+     * @param bearerToken initial OAuth bearer token, or {@code null} for unauthenticated servers
+     */
+    public CustomMcpClient(@NotNull String url, @Nullable String bearerToken) {
         this.url = url;
+        this.bearerToken = bearerToken;
     }
 
     /**
@@ -252,6 +270,11 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Accept", "application/json, text/event-stream");
 
+            String token = bearerToken;
+            if (token != null) {
+                conn.setRequestProperty("Authorization", "Bearer " + token);
+            }
+
             if (includeSessionHeader && sentSessionId != null) {
                 conn.setRequestProperty(SESSION_HEADER, sentSessionId);
             }
@@ -273,6 +296,11 @@ public final class CustomMcpClient implements AutoCloseable, McpToolCaller {
             // and trigger a spurious re-initialize + retry.
             if (status == 404 && !isRetry && sentSessionId != null) {
                 return handleSessionExpiry(method, params, sentSessionId);
+            }
+
+            // OAuth authentication required — surface immediately so the caller can trigger the flow.
+            if (status == 401) {
+                throw new McpOAuthRequiredException(url);
             }
 
             if (status == 202) {
