@@ -27,7 +27,7 @@
 <p>This leads to more stable and maintainable code over longer sessions.</p>
 
 <p><b>Supported agents</b><br>
-GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and OpenCode</p>
+GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, OpenCode, and Hermes Agent</p>
 
 <p><b>Modes</b></p>
 <ul>
@@ -242,6 +242,12 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
       instance="com.github.catatafishen.agentbridge.settings.KiroClientConfigurable"
       id="com.github.catatafishen.agentbridge.clientAgents.kiro"
       displayName="Kiro"/>
+
+    <projectConfigurable
+      parentId="com.github.catatafishen.agentbridge.clientAgents"
+      instance="com.github.catatafishen.agentbridge.settings.HermesClientConfigurable"
+      id="com.github.catatafishen.agentbridge.clientAgents.hermes"
+      displayName="Hermes Agent"/>
 
     <projectConfigurable
       parentId="com.github.catatafishen.agentbridge.clientAgents"
