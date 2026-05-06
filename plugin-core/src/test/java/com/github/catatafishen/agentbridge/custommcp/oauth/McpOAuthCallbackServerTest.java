@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.custommcp.oauth;
 
+import com.intellij.openapi.diagnostic.Logger;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -13,6 +14,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McpOAuthCallbackServerTest {
+
+    private static final Logger LOG = Logger.getInstance(McpOAuthCallbackServerTest.class);
 
     @Test
     void waitForCallback_codeAndStateAreReturnedFromRedirect() throws IOException, InterruptedException {
@@ -30,7 +33,9 @@ class McpOAuthCallbackServerTest {
                     conn.getInputStream().readAllBytes();
                     conn.disconnect();
                 } catch (IOException ignored) {
-                    // Connection reset after server closes is expected.
+                    // Expected: the server closes the connection after processing
+                    // the redirect, which may cause a connection reset on the client side.
+                    LOG.debug("Callback server closed connection (expected)", ignored);
                 }
             });
             browser.setDaemon(true);
@@ -68,6 +73,9 @@ class McpOAuthCallbackServerTest {
                     conn.getInputStream().readAllBytes();
                     conn.disconnect();
                 } catch (IOException ignored) {
+                    // Expected: the server closes the connection after processing
+                    // the redirect, which may cause a connection reset on the client side.
+                    LOG.debug("Callback server closed connection (expected)", ignored);
                 }
             });
             browser.setDaemon(true);
@@ -92,6 +100,9 @@ class McpOAuthCallbackServerTest {
                     conn.getInputStream().readAllBytes();
                     conn.disconnect();
                 } catch (IOException ignored) {
+                    // Expected: the server closes the connection after processing
+                    // the redirect, which may cause a connection reset on the client side.
+                    LOG.debug("Callback server closed connection (expected)", ignored);
                 }
             });
             browser.setDaemon(true);
@@ -117,6 +128,9 @@ class McpOAuthCallbackServerTest {
                     conn.getInputStream().readAllBytes();
                     conn.disconnect();
                 } catch (IOException ignored) {
+                    // Expected: the server closes the connection after processing
+                    // the redirect, which may cause a connection reset on the client side.
+                    LOG.debug("Callback server closed connection (expected)", ignored);
                 }
             });
             browser.setDaemon(true);

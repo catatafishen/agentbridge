@@ -2,7 +2,9 @@ package com.github.catatafishen.agentbridge.custommcp.oauth;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McpOAuthTokensTest {
@@ -75,16 +77,16 @@ class McpOAuthTokensTest {
     void constructor_allFieldsPersisted() {
         long expiry = System.currentTimeMillis() + 3600_000;
         McpOAuthTokens tokens = new McpOAuthTokens("access", "refresh", expiry);
-        assertTrue("access".equals(tokens.accessToken()));
-        assertTrue("refresh".equals(tokens.refreshToken()));
-        assertTrue(expiry == tokens.expiresAtEpochMs());
+        assertEquals("access", tokens.accessToken());
+        assertEquals("refresh", tokens.refreshToken());
+        assertEquals(expiry, tokens.expiresAtEpochMs());
     }
 
     @Test
     void constructor_nullRefreshToken_persisted() {
         McpOAuthTokens tokens = new McpOAuthTokens("access", null, 12345);
-        assertTrue("access".equals(tokens.accessToken()));
-        assertTrue(tokens.refreshToken() == null);
-        assertTrue(12345 == tokens.expiresAtEpochMs());
+        assertEquals("access", tokens.accessToken());
+        assertNull(tokens.refreshToken());
+        assertEquals(12345, tokens.expiresAtEpochMs());
     }
 }
