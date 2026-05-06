@@ -470,17 +470,80 @@ bridge-initiated toggle, go through the two-rAF deferral pattern.
 
 **All scroll-to-bottom paths now deferred**:
 
-| Trigger                   | Method                        | Deferral                    |
-|---------------------------|-------------------------------|-----------------------------|
-| DOM mutation              | MutationObserver              | `_scheduleDeferredScroll()` |
-| Resize                    | ResizeObserver                | `_scheduleDeferredScroll()` |
-| User message append       | `scheduleForceScroll()`       | `_scheduleDeferredScroll()` |
-| Nudge/queued message      | `scheduleScrollIfNeeded()`    | `_scheduleDeferredScroll()` |
-| Markdown finalize         | `scheduleScrollIfNeeded()`    | `_scheduleDeferredScroll()` |
-| Bridge `setAutoScroll()`  | `set autoScroll`              | `_scheduleDeferredScroll()` |
-| First tool chip insertion | MutationObserver (implicit)   | `_scheduleDeferredScroll()` |
-| Chip-strip horizontal     | `MessageMeta._scrollToEnd()`  | Two-rAF inline              |
-| History restore final     | `restoreBatchFinal()` → rAF×2 | Two-rAF wrapper             |
+| Trigger                   | Method                            | Deferral                    |
+|---------------------------|-----------------------------------|-----------------------------|
+| DOM mutation              | MutationObserver                  | `_scheduleDeferredScroll()` |
+| Resize                    | ResizeObserver                    | `_scheduleDeferredScroll()` |
+| User message append       | `scheduleForceScroll()`           | `_scheduleDeferredScroll()` |
+| Nudge/queued message      | `scheduleScrollIfNeeded()`        | `_scheduleDeferredScroll()` |
+| Markdown finalize         | `scheduleScrollIfNeeded()`        | `_scheduleDeferredScroll()` |
+| Bridge `setAutoScroll()`  | `set autoScroll`                  | `_scheduleDeferredScroll()` |
+| First tool chip insertion | MutationObserver (implicit)       | `_scheduleDeferredScroll()` |
+| Chip-strip horizontal     | `MessageMeta._scrollToEnd()`      | Two-rAF inline              |
+| History restore final     | `restoreBatchFinal()` → rAF×2     | Two-rAF wrapper             |
+| Nav indicator update      | `MessageMeta.scheduleNavUpdate()` | Two-rAF inline (Fix 11b)    |
+
+### Fix 11 — Render-pending retry and nav-indicator two-rAF deferral (2025)
+
+**Status**: In testing.
+
+**Problem**: Four residual tearing scenarios persisted after Fix 10:
+
+1. **Thought chip added/collapsed during streaming**: The 2-rAF scroll from the chip's
+   MutationObserver trigger fires in frame N+1. `MessageBubble.appendStreamingText()` also fires
+   its rAF-render in frame N+1 (for tokens that arrived between frames N and N+1). Both land in
+   the same paint frame → dirty-rect collapse → tearing. The timing collision is a consequence of
+   rAF queue ordering: scrollRAF-outer was queued at frame N's MutationObserver microtask;
+   rAF-render was queued in a task between N and N+1, so after scrollRAF-outer. Therefore in
+   frame N+1, scrollRAF-outer fires first (good), but rAF-render fires AFTER — meaning the inner
+   scrollRAF (N+2) and the next frame's rAF-render (also N+2 if tokens arrive between N+1 and
+   N+2) still collide.
+
+2. **Tool chip loading indicator removed during streaming**: `setToolChipState()` →
+   `ToolChip._render()` → synchronous innerHTML change → MutationObserver → 2-rAF scroll. Same
+   N+2 collision with rAF-renders from concurrent streaming.
+
+3. **Nav indicator (‹ ›) appearance when chip strip overflows**: `scheduleNavUpdate()` used a
+   single rAF. The `sharedResizeObserver` fires in frame N's layout phase and queues
+   `scheduleNavUpdate()` for frame N+1. The container scroll (from the same chip-addition
+   trigger) fires in frame N+1 via its own 2-rAF chain. Nav button class toggle + container
+   `scrollTop` write in the same frame → dirty-rect collapse → tearing.
+
+4. **Multiple events on consecutive frames**: Prompt, chip, and thinking arrivals in a tight
+   burst use the coalesced gate, but discrete events interleaved with streaming tokens could
+   land the scroll in a frame that also has an rAF-render from newer tokens.
+
+**Root cause — rAF queue ordering**: `MessageBubble.appendStreamingText()` queues its rAF-render
+during a task (tokens arriving between frames). `_scheduleDeferredScroll()` queues scrollRAF-outer
+during the MutationObserver microtask that follows. The task runs *before* the microtask, so
+rAF-render is queued *before* scrollRAF-outer. In the next frame, rAF callbacks run in queue
+order, so rAF-render fires *before* scrollRAF-outer. This means `renderPending = true` at the
+time the *inner* scrollRAF fires — the render for the *next* batch of tokens (queued in a new
+task between frames) is still in the queue when the scroll fires, putting mutation and scroll
+in the same paint frame.
+
+**Fix**:
+
+- **`ChatContainer.ts` `_flushScrollOrRetry()`** (Fix 11a): When the inner rAF fires, check
+  whether any `message-bubble[streaming]` element has `renderPending === true`. If yes, a
+  rAF-render for tokens that arrived this inter-frame window is queued *after* the inner rAF
+  (per queue order) and will fire in the same paint frame. Defer by one more rAF. Retry up to
+  `MAX_SCROLL_RETRIES = 3` times to guarantee progress during sustained heavy streaming.
+  After `MAX_SCROLL_RETRIES`, scroll is forced regardless (accepting occasional rare tearing
+  during extremely fast streams).
+
+  The `renderPending` check is accurate: it is set `true` when a token arrives (in the task)
+  and cleared `false` at the start of the rAF-render callback. At the time the inner scrollRAF
+  fires, `renderPending = true` means there is a rAF-render queued in the current frame (already
+  in the queue, fires after us). This is precisely the collision we need to avoid.
+
+- **`MessageBubble.ts` `renderPending` getter** (Fix 11a): Exposes `_renderPending` as a read-
+  only public property for `ChatContainer` to inspect.
+
+- **`MessageMeta.ts` `scheduleNavUpdate()`** (Fix 11b): Changed from one rAF to two rAFs.
+  The `sharedResizeObserver` fires in frame N's layout phase; with one rAF the nav update fired
+  in frame N+1 — the same frame as the container scroll. With two rAFs it fires in frame N+2,
+  one frame after the scroll, eliminating the nav-button layout-change + scrollTop collision.
 
 ---
 
@@ -511,7 +574,9 @@ bridge-initiated toggle, go through the two-rAF deferral pattern.
 | `ChatController.ts`        | `addUserMessage()`               | Uses `scheduleForceScroll()` — two-rAF deferred, not synchronous `forceScroll()` (Fix 9)             |
 | `MessageMeta.ts`           | `_scrollToEnd()`                 | Two-rAF deferred, `behavior: 'instant'` — chip-strip horizontal scroll (Fix 9)                       |
 | `chat.css`                 | `chat-container`, `chat-message` | No paint containment, content-visibility virtualization, or hover tooltip overlays in OSR            |
-| `MessageBubble.ts`         | `appendStreamingText()`          | rAF-debounced markdown re-render                                                                     |
+| `MessageBubble.ts`         | `renderPending` getter           | Exposes `_renderPending` for `ChatContainer` to detect pending rAF-render collision (Fix 11a)        |
+| `MessageMeta.ts`           | `scheduleNavUpdate()`            | Two-rAF deferred nav update — separates nav button layout change from container scroll (Fix 11b)     |
+| `ChatContainer.ts`         | `_flushScrollOrRetry()`          | Retries the scroll when `renderPending` is true; caps at `MAX_SCROLL_RETRIES` (Fix 11a)              |
 | `MonitorSwitchRecovery.kt` | `triggerRecovery()`              | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes                      |
 
 ---
@@ -568,3 +633,22 @@ When modifying the streaming pipeline, watch for:
     *next* paint frame. Same-frame batching enables Chromium compositor tile-translation cache
     reuse, which collapses the dirty rect and leaves shifted siblings stale in JBR's
     `BufferedImage` cache. See Fix 8 for the full mechanism.
+
+12. **rAF-render + scrollRAF-inner in the same frame** (Fix 11a) — the 2-rAF scroll pattern
+    guarantees the scroll fires one frame after the triggering mutation. But `MessageBubble`
+    queues its rAF-render *before* the MutationObserver microtask (task vs microtask ordering),
+    so scrollRAF-inner and rAF-render can still land in the same frame for tokens that arrive
+    in the inter-frame window. The `_flushScrollOrRetry()` check ensures the scroll defers if
+    `renderPending` is true at the time the inner rAF fires. **Do NOT remove the `renderPending`
+    check or change the ordering of `_renderPending = false` relative to `innerHTML =` in
+    `MessageBubble._doRender()`** — the correctness of the retry depends on this flag being
+    cleared *before* the innerHTML assignment so that a retry in the same frame has a clean
+    DOM to measure.
+
+13. **Nav update in same frame as scroll** (Fix 11b) — `scheduleNavUpdate()` MUST use 2 rAFs
+    (not 1). A single rAF from a `ResizeObserver` callback lands in the same frame as
+    `_scheduleDeferredScroll()`'s inner rAF. The nav button class change (layout shift inside
+    the scrolled content) and the `scrollTop` write in the same frame cause dirty-rect collapse.
+    **Do not reduce `scheduleNavUpdate()` back to a single rAF** without re-testing chip strip
+    overflow during streaming on both Linux and Windows.
+

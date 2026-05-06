@@ -5,6 +5,8 @@ export default class ChatContainer extends HTMLElement {
     private _messages!: HTMLDivElement;
     private _workingIndicator!: HTMLElement;
     private _scrollRAF: number | null = null;
+    private _scrollRAFRetries = 0;
+    private static readonly MAX_SCROLL_RETRIES = 3;
     private _copyRAF: number | null = null;
     private _observer!: MutationObserver;
     private _copyObs!: MutationObserver;
@@ -387,17 +389,48 @@ export default class ChatContainer extends HTMLElement {
      *   - Frame N+1: scroll happens. Tiny scroll-revealed strip dirty rect, but `myImage` is
      *                already correct from frame N.
      *
-     * Cost: ~16ms additional autoscroll latency during streaming. Imperceptible vs. the
-     * stream cadence; users don't notice the bottom-snap arriving one frame later.
+     * During continuous streaming, MessageBubble queues a rAF-render per burst that fires
+     * in the frame after tokens arrive. If that rAF-render lands in the same frame as the
+     * inner scroll rAF (Fix 8's N+1), the mutation+scroll collision re-appears. Fix 11
+     * adds a render-pending retry: if any streaming bubble's rAF-render is still queued at
+     * the time the inner rAF fires, the scroll is deferred by one more rAF (up to
+     * MAX_SCROLL_RETRIES). Since rAF callbacks run in queue order, MessageBubble's render
+     * fires AFTER the inner scroll rAF (it was queued later), so renderPending is still
+     * true when we check — letting us detect and defer the collision.
+     *
+     * Cost: ~16ms additional autoscroll latency per retry (up to ~64ms total). Imperceptible
+     * vs. the stream cadence; users don't notice the bottom-snap arriving a few frames later.
      */
     private _scheduleDeferredScroll(): void {
         if (this._scrollRAF) return;
+        this._scrollRAFRetries = 0;
         this._scrollRAF = requestAnimationFrame(() => {
             this._scrollRAF = requestAnimationFrame(() => {
                 this._scrollRAF = null;
-                this.scrollIfNeeded();
+                this._flushScrollOrRetry();
             });
         });
+    }
+
+    /**
+     * Called by the inner rAF of _scheduleDeferredScroll. Fires the scroll unless a
+     * streaming MessageBubble has a rAF-render pending in this same frame (Fix 11).
+     * In that case, defers by one more rAF to keep mutation and scroll in separate frames.
+     */
+    private _flushScrollOrRetry(): void {
+        const hasPendingRender = this._scrollRAFRetries < ChatContainer.MAX_SCROLL_RETRIES
+            && Array.from(this._messages.querySelectorAll<HTMLElement>('message-bubble[streaming]'))
+                .some(b => (b as any).renderPending === true);
+        if (hasPendingRender) {
+            this._scrollRAFRetries++;
+            this._scrollRAF = requestAnimationFrame(() => {
+                this._scrollRAF = null;
+                this._flushScrollOrRetry();
+            });
+        } else {
+            this._scrollRAFRetries = 0;
+            this.scrollIfNeeded();
+        }
     }
 
     private _isAtBottom(): boolean {

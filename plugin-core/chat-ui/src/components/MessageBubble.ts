@@ -67,6 +67,15 @@ export default class MessageBubble extends HTMLElement {
         this.innerHTML = html;
     }
 
+    /**
+     * True while a rAF re-render is queued but hasn't fired yet.
+     * ChatContainer reads this to avoid writing scrollTop in the same paint frame as
+     * the rAF-render — see Fix 11 in SCREEN-TEARING-BUG.md.
+     */
+    get renderPending(): boolean {
+        return this._renderPending;
+    }
+
     get content(): string {
         return this.innerHTML;
     }
