@@ -182,4 +182,7 @@ interface ChatPanelApi : Disposable {
     fun showQueuedMessage(id: String, text: String)
     fun removeQueuedMessage(id: String)
     fun removeQueuedMessageByText(text: String)
+
+    fun showSystemNoticeBubble(id: String, text: String)
+    fun removeSystemNoticeBubble(id: String)
 }
