@@ -2860,19 +2860,15 @@ pre.word-wrap code {
 }
 
 /* ── System notice bubble ──────────────────────────────── */
-.system-notice-pending message-bubble {
-    opacity: 0.85;
-    font-style: italic;
+.system-notice-bubble {
+    background: var(--fg-a08) !important;
 }
 
-.system-notice-pending message-bubble[type="system"] {
-    background: var(--bg-muted);
-    border: 1px solid var(--info);
-    border-radius: var(--radius);
-    padding: var(--sp-2) var(--sp-3);
+.system-notice-bubble:hover {
+    background: var(--fg-a16) !important;
 }
 
 .system-notice-label {
-    color: var(--info);
+    color: var(--fg-muted);
     font-size: 0.82em;
 }

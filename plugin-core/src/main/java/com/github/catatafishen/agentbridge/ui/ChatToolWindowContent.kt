@@ -1273,20 +1273,9 @@ class ChatToolWindowContent(
     }
 
     private fun restoreSystemNoticeIfNeeded() {
-        val noticeId = pendingSystemNoticeId ?: return
-        val noticeText = pendingSystemNoticeText ?: return
+        // Notices now persist permanently in the chat as grey user bubbles — just clear tracking state.
         pendingSystemNoticeId = null
         pendingSystemNoticeText = null
-        ApplicationManager.getApplication().invokeLater {
-            consolePanel.removeSystemNoticeBubble(noticeId)
-            prependSystemNoticeToInput(noticeText)
-        }
-    }
-
-    private fun prependSystemNoticeToInput(noticeText: String) {
-        val current = promptTextArea.text
-        promptTextArea.text = if (current.isEmpty()) noticeText else "$noticeText\n\n$current"
-        promptTextArea.requestFocusInWindow()
     }
 
     private fun updateProcessingTimer(sending: Boolean) {
