@@ -55,6 +55,79 @@ class McpOAuthCallbackServerTest {
     }
 
     @Test
+    void waitForCallback_errorParameter_returnsNull() throws IOException, InterruptedException {
+        try (McpOAuthCallbackServer srv = new McpOAuthCallbackServer()) {
+            srv.start();
+            String callbackUri = srv.getCallbackUri() + "?error=access_denied";
+
+            Thread browser = new Thread(() -> {
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) URI.create(callbackUri).toURL().openConnection();
+                    conn.setConnectTimeout(5_000);
+                    conn.setReadTimeout(5_000);
+                    conn.getInputStream().readAllBytes();
+                    conn.disconnect();
+                } catch (IOException ignored) {
+                }
+            });
+            browser.setDaemon(true);
+            browser.start();
+
+            McpOAuthCallbackServer.Result result = srv.waitForCallback(10, TimeUnit.SECONDS);
+            assertNull(result, "error redirect should return null");
+        }
+    }
+
+    @Test
+    void waitForCallback_errorWithDescription_returnsNull() throws IOException, InterruptedException {
+        try (McpOAuthCallbackServer srv = new McpOAuthCallbackServer()) {
+            srv.start();
+            String callbackUri = srv.getCallbackUri() + "?error=access_denied&error_description=User+denied+the+request";
+
+            Thread browser = new Thread(() -> {
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) URI.create(callbackUri).toURL().openConnection();
+                    conn.setConnectTimeout(5_000);
+                    conn.setReadTimeout(5_000);
+                    conn.getInputStream().readAllBytes();
+                    conn.disconnect();
+                } catch (IOException ignored) {
+                }
+            });
+            browser.setDaemon(true);
+            browser.start();
+
+            McpOAuthCallbackServer.Result result = srv.waitForCallback(10, TimeUnit.SECONDS);
+            assertNull(result, "error with description should return null");
+        }
+    }
+
+    @Test
+    void waitForCallback_missingCode_returnsNull() throws IOException, InterruptedException {
+        try (McpOAuthCallbackServer srv = new McpOAuthCallbackServer()) {
+            srv.start();
+            // Redirect has state but no code parameter.
+            String callbackUri = srv.getCallbackUri() + "?state=mystate";
+
+            Thread browser = new Thread(() -> {
+                try {
+                    HttpURLConnection conn = (HttpURLConnection) URI.create(callbackUri).toURL().openConnection();
+                    conn.setConnectTimeout(5_000);
+                    conn.setReadTimeout(5_000);
+                    conn.getInputStream().readAllBytes();
+                    conn.disconnect();
+                } catch (IOException ignored) {
+                }
+            });
+            browser.setDaemon(true);
+            browser.start();
+
+            McpOAuthCallbackServer.Result result = srv.waitForCallback(10, TimeUnit.SECONDS);
+            assertNull(result, "missing code should return null");
+        }
+    }
+
+    @Test
     void getCallbackUri_usesLocalhostAndBoundPort() throws IOException {
         try (McpOAuthCallbackServer srv = new McpOAuthCallbackServer()) {
             srv.start();
