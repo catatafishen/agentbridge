@@ -180,7 +180,7 @@ final class ConversationSchema {
                 file_path         TEXT,
                 auto_denied       INTEGER NOT NULL DEFAULT 0,
                 denial_reason     TEXT,
-                is_mcp            INTEGER NOT NULL DEFAULT 0
+                is_mcp            INTEGER
             )
             """);
         stmt.execute("CREATE INDEX idx_tc_tool_name ON tool_call_events(tool_name)");

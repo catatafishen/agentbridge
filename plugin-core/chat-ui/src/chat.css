@@ -668,11 +668,11 @@ working-indicator .working-text {
     inset: 0;
     border-radius: inherit;
     background-image: repeating-linear-gradient(
-        45deg,
-        transparent 0,
-        transparent 3px,
-        rgba(255, 255, 255, 0.12) 3px,
-        rgba(255, 255, 255, 0.12) 4px
+            45deg,
+            transparent 0,
+            transparent 4px,
+            rgba(255, 255, 255, 0.28) 4px,
+            rgba(255, 255, 255, 0.28) 6px
     );
     pointer-events: none;
 }
@@ -700,9 +700,8 @@ working-indicator .working-text {
     display: block;
     width: 6px;
     height: 6px;
-    background:
-        linear-gradient(currentColor, currentColor) center / 2px 100% no-repeat,
-        linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
+    background: linear-gradient(currentColor, currentColor) center / 2px 100% no-repeat,
+    linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
     transform: rotate(45deg);
 }
 
