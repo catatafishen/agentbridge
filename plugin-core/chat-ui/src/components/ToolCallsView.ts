@@ -96,8 +96,16 @@ export class ToolCallsView extends PollableView {
         const row = target.closest<HTMLElement>('.tcv-item');
         if (!row?.dataset.id) return;
         const id = Number(row.dataset.id);
-        this._expandedId = this._expandedId === id ? null : id;
-        this._selectedStage = null;
+        if (this._expandedId === id) {
+            this._expandedId = null;
+            this._selectedStage = null;
+        } else {
+            this._expandedId = id;
+            // Auto-select the last (output) pipeline stage so the result is immediately visible.
+            const item = ToolCallsController.get(id);
+            const activeHooks = this._activeHooks(item?.hookStages ?? []);
+            this._selectedStage = activeHooks.length > 0 ? 'output' : null;
+        }
         this._render();
     }
 
@@ -132,11 +140,16 @@ export class ToolCallsView extends PollableView {
         return this._container.scrollHeight - this._container.scrollTop - this._container.clientHeight < 50;
     }
 
+    /**
+     * Returns hook stages that actually did something (excludes pass-through / unchanged outcomes).
+     */
+    private _activeHooks(stages: HookStage[]): HookStage[] {
+        return stages.filter(s => s.outcome !== 'pass-through' && s.outcome !== 'unchanged');
+    }
+
     private _renderItem(item: ToolCallData): string {
         const expanded = item.id === this._expandedId;
-        const kind = this._kindClass(item.kind);
-        const status = item.status || 'running';
-        const statusClass = status.toLowerCase().replaceAll(/[^a-z0-9_-]/g, '-');
+        const kindClass = this._kindCssClass(item.kind);
         const duration = item.durationMs > 0 ? this._formatDuration(item.durationMs) : '';
 
         let detail = '';
@@ -144,34 +157,32 @@ export class ToolCallsView extends PollableView {
             detail = this._renderDetail(item);
         }
 
-        return `<div class="tcv-item${expanded ? ' tcv-expanded' : ''}" data-id="${item.id}">
-            <div class="tcv-summary">
-                <span class="tcv-kind ${kind}">${this.esc(item.kind || 'other')}</span>
-                <span class="tcv-title">${this.esc(item.title)}</span>
-                ${duration ? `<span class="tcv-duration">${duration}</span>` : ''}
-                <span class="tcv-status ${statusClass}">${this.esc(status)}</span>
-            </div>
+        // Use turn-chip/tool/kind-* classes for consistent color scheme with chat panel chips.
+        return `<div class="tcv-item turn-chip tool ${kindClass}${expanded ? ' tcv-expanded' : ''}" data-id="${item.id}">
+            <span class="tcv-title">${this.esc(item.title)}</span>
+            ${duration ? `<span class="tcv-duration">${duration}</span>` : ''}
             ${detail}
         </div>`;
     }
 
     private _renderDetail(item: ToolCallData): string {
-        const stages = item.hookStages || [];
-        const hasHookData = stages.length > 0;
+        const activeHooks = this._activeHooks(item.hookStages ?? []);
         const resultText = item.result || (item.status === 'running' ? '(still running)' : '');
 
-        // Build pipeline visualization
-        const pipeline = hasHookData
-            ? this._renderPipeline(item, stages)
+        const pipeline = activeHooks.length > 0 ? this._renderPipeline(item, activeHooks) : '';
+
+        const stageDetail = this._selectedStage
+            ? this._renderStageDetail(item, activeHooks, this._selectedStage)
             : '';
 
-        // Build stage detail panel (shown when a pipeline node is clicked)
-        const stageDetail = this._selectedStage
-            ? this._renderStageDetail(item, stages, this._selectedStage)
-            : '';
+        // Show ACP display name if it differs from the MCP tool name.
+        const acpRow = item.title === item.toolName
+            ? ''
+            : `<div class="tcv-acp-name">${this.esc(item.title)}</div>`;
 
         // Default I/O view (shown when no pipeline stage is selected)
         const ioView = this._selectedStage ? '' : `
+            ${acpRow}
             <div class="tcv-io">
                 <div class="tcv-io-section">
                     <div class="tcv-label">Input</div>
@@ -190,14 +201,14 @@ export class ToolCallsView extends PollableView {
         </div>`;
     }
 
-    private _renderPipeline(item: ToolCallData, stages: HookStage[]): string {
+    private _renderPipeline(item: ToolCallData, activeHooks: HookStage[]): string {
         const nodes: string[] = [];
 
         // Input node
         nodes.push(this._pipeNode('input', 'Input', 'neutral', this._selectedStage === 'input'));
 
-        // Permission hook
-        const permStage = stages.find(s => s.trigger === 'permission');
+        // Permission hook (only if it did something)
+        const permStage = activeHooks.find(s => s.trigger === 'permission');
         if (permStage) {
             nodes.push(
                 this._pipeConnector(),
@@ -205,8 +216,8 @@ export class ToolCallsView extends PollableView {
                     this._outcomeClass(permStage.outcome), this._selectedStage === 'permission'));
         }
 
-        // Pre-hook
-        const preStage = stages.find(s => s.trigger === 'pre');
+        // Pre-hook (only if it did something)
+        const preStage = activeHooks.find(s => s.trigger === 'pre');
         if (preStage) {
             nodes.push(
                 this._pipeConnector(),
@@ -223,8 +234,8 @@ export class ToolCallsView extends PollableView {
             this._pipeConnector(),
             this._pipeNode('execution', item.toolName, execClass, this._selectedStage === 'execution'));
 
-        // Success/failure hook
-        const postStage = stages.find(s => s.trigger === 'success' || s.trigger === 'failure');
+        // Success/failure hook (only if it did something)
+        const postStage = activeHooks.find(s => s.trigger === 'success' || s.trigger === 'failure');
         if (postStage) {
             nodes.push(
                 this._pipeConnector(),
@@ -254,8 +265,6 @@ export class ToolCallsView extends PollableView {
     private _outcomeClass(outcome: string): string {
         switch (outcome) {
             case 'allowed':
-            case 'unchanged':
-            case 'pass-through':
                 return 'success';
             case 'modified':
             case 'appended':
@@ -269,7 +278,7 @@ export class ToolCallsView extends PollableView {
         }
     }
 
-    private _renderStageDetail(item: ToolCallData, stages: HookStage[], stage: string): string {
+    private _renderStageDetail(item: ToolCallData, activeHooks: HookStage[], stage: string): string {
         if (stage === 'input') {
             return `<div class="tcv-stage-detail">
                 <div class="tcv-label">Input Arguments</div>
@@ -284,8 +293,12 @@ export class ToolCallsView extends PollableView {
             </div>`;
         }
         if (stage === 'execution') {
+            const acpRow = item.title === item.toolName
+                ? ''
+                : `<div class="tcv-stage-meta"><span>ACP Display: <strong>${this.esc(item.title)}</strong></span></div>`;
             return `<div class="tcv-stage-detail">
                 <div class="tcv-label">Tool Execution: ${this.esc(item.toolName)}</div>
+                ${acpRow}
                 ${item.durationMs > 0 ? `<div class="tcv-stage-meta">Duration: ${this._formatDuration(item.durationMs)}</div>` : ''}
                 <div class="tcv-label">Raw Output</div>
                 ${this._renderContent(item.result || '(still running)')}
@@ -300,7 +313,7 @@ export class ToolCallsView extends PollableView {
         };
         const trigger = triggerMap[stage];
         if (!trigger) return '';
-        const hookStage = stages.find(s => s.trigger === trigger || (stage === 'post' && s.trigger === 'failure'));
+        const hookStage = activeHooks.find(s => s.trigger === trigger || (stage === 'post' && s.trigger === 'failure'));
         if (!hookStage) return '';
 
         return `<div class="tcv-stage-detail">
@@ -330,12 +343,12 @@ export class ToolCallsView extends PollableView {
         return `<pre><code>${inner}</code></pre>`;
     }
 
-    private _kindClass(kind?: string): string {
+    private _kindCssClass(kind?: string): string {
         const normalized = (kind || '').toLowerCase();
-        if (normalized.includes('read')) return 'tcv-read';
-        if (normalized.includes('edit') || normalized.includes('write')) return 'tcv-edit';
-        if (normalized.includes('execute')) return 'tcv-execute';
-        return 'tcv-other';
+        if (normalized.includes('read')) return 'kind-read';
+        if (normalized.includes('edit') || normalized.includes('write')) return 'kind-edit';
+        if (normalized.includes('execute')) return 'kind-execute';
+        return 'kind-other';
     }
 
     /**

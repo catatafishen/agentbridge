@@ -354,6 +354,7 @@ working-indicator .working-text {
 /* ── Turn chips (meta pills) ─────────────────────────── */
 .meta {
     display: none;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--sp-2);
     padding: var(--sp-1) 0;
@@ -396,6 +397,10 @@ working-indicator .working-text {
     font-size: 0.92em;
     white-space: nowrap;
     flex-shrink: 0;
+    /* Timestamps always appear on their own line below chips */
+    flex-basis: 100%;
+    order: 99;
+    margin-top: 1px;
 }
 
 /* Hide redundant timestamps when the previous message shares the same minute */
@@ -403,9 +408,9 @@ working-indicator .working-text {
     display: none;
 }
 
-/* User message timestamp: push to the right edge of the meta strip */
+/* User message timestamp: align right on its own line */
 .prompt-row .meta .ts {
-    order: 10;
+    text-align: right;
 }
 
 /* Thinking chip sits outside the strip, always visible */
@@ -526,8 +531,6 @@ working-indicator .working-text {
     background: var(--tool-a08);
     border-color: var(--tool-a16);
     color: var(--tool);
-    /* Default border is dashed — becomes solid once AgentBridge MCP handles the call. */
-    border-style: dashed;
 }
 
 .turn-chip.tool:hover {
@@ -603,10 +606,6 @@ working-indicator .working-text {
     border-color: var(--error);
 }
 
-.turn-chip.is-agentbridge-tool {
-    border-style: solid;
-}
-
 /* Pending: waiting for MCP to handle */
 .turn-chip.status-pending {
     opacity: 0.8;
@@ -668,6 +667,25 @@ working-indicator .working-text {
     border-top-color: var(--tool);
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
+}
+
+.chip-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    font-size: 9px;
+    line-height: 1;
+}
+
+.chip-icon-ok {
+    color: var(--green, #2ea043);
+}
+
+.chip-icon-fail {
+    color: var(--error, #f85149);
 }
 
 
@@ -797,10 +815,6 @@ thinking-chip.thinking-active .thought-bubble {
 .turn-chip.subagent.status-complete {
     border-style: solid;
     opacity: 0.85;
-}
-
-.turn-chip.subagent.status-running {
-    border-style: dashed;
 }
 
 /* ── Session separator ───────────────────────────────── */
@@ -2857,9 +2871,9 @@ pre.word-wrap code {
 
 .nudge-cancel-x {
     position: absolute;
-    top: 50%;
+    top: var(--sp-2);
     right: var(--sp-2);
-    transform: translateY(-50%);
+    transform: none;
     display: flex;
     align-items: center;
     justify-content: center;
