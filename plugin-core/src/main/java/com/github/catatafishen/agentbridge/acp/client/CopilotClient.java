@@ -5,8 +5,8 @@ import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
-import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonArray;
@@ -559,9 +559,9 @@ public final class CopilotClient extends AcpClient {
             // injection into the next MCP tool result.  Chain the cleanup callback first
             // so it fires before the UI's resolve callback when the nudge is consumed.
             String notice = buildSingleToolReprimand(toolId);
-            PsiBridgeService psi = PsiBridgeService.getInstance(project);
-            psi.addOnNudgeConsumed(misusedBuiltInTools::clear);
-            psi.fireNudge(notice);
+            AgentNudgeService nudgeService = AgentNudgeService.getInstance(project);
+            nudgeService.addOnNudgeConsumed(misusedBuiltInTools::clear);
+            nudgeService.fireNudge(notice);
         }
     }
 
@@ -570,7 +570,7 @@ public final class CopilotClient extends AcpClient {
         // Clear nudge state at turn start so mid-turn reprimands from the previous
         // turn don't leak into the new prompt if they were never consumed.
         misusedBuiltInTools.clear();
-        PsiBridgeService.getInstance(project).setPendingNudge(null);
+        AgentNudgeService.getInstance(project).setPendingNudge(null);
         return request;
     }
 

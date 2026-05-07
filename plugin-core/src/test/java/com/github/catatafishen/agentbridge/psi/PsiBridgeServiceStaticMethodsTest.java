@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi;
 
+import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Nested;
@@ -16,8 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Unit tests for the static utility methods in {@link PsiBridgeService}.
- * These methods are package-private, so this test lives in the same package.
+ * Unit tests for the static utility methods in {@link PsiBridgeService} and {@link AgentNudgeService}.
+ * Package-private methods from {@link PsiBridgeService} are tested here because the test lives in the same package.
+ * {@link AgentNudgeService} static methods ({@code mergeNudges}, {@code appendNudgeToResult}) are public.
  */
 class PsiBridgeServiceStaticMethodsTest {
 
@@ -527,30 +529,30 @@ class PsiBridgeServiceStaticMethodsTest {
 
         @Test
         void nullExistingReturnNewNudge() {
-            assertEquals("hello", PsiBridgeService.mergeNudges(null, "hello"));
+            assertEquals("hello", AgentNudgeService.mergeNudges(null, "hello"));
         }
 
         @Test
         void emptyExistingReturnNewNudge() {
-            assertEquals("hello", PsiBridgeService.mergeNudges("", "hello"));
+            assertEquals("hello", AgentNudgeService.mergeNudges("", "hello"));
         }
 
         @Test
         void existingAndNewAreConcatenatedWithDoubleNewline() {
-            assertEquals("first\n\nsecond", PsiBridgeService.mergeNudges("first", "second"));
+            assertEquals("first\n\nsecond", AgentNudgeService.mergeNudges("first", "second"));
         }
 
         @Test
         void multipleAccumulatedNudges() {
-            String merged = PsiBridgeService.mergeNudges("a", "b");
-            merged = PsiBridgeService.mergeNudges(merged, "c");
+            String merged = AgentNudgeService.mergeNudges("a", "b");
+            merged = AgentNudgeService.mergeNudges(merged, "c");
             assertEquals("a\n\nb\n\nc", merged);
         }
 
         @Test
         void existingWithWhitespaceOnlyIsNotConsideredEmpty() {
             // " " is not null and not isEmpty(), so it merges
-            assertEquals(" \n\nnew", PsiBridgeService.mergeNudges(" ", "new"));
+            assertEquals(" \n\nnew", AgentNudgeService.mergeNudges(" ", "new"));
         }
     }
 
@@ -562,25 +564,25 @@ class PsiBridgeServiceStaticMethodsTest {
 
         @Test
         void nullNudgeReturnsResultUnchanged() {
-            assertEquals("OK: done", PsiBridgeService.appendNudgeToResult("OK: done", null));
+            assertEquals("OK: done", AgentNudgeService.appendNudgeToResult("OK: done", null));
         }
 
         @Test
         void nonNullNudgeAppendsWithPrefix() {
-            String result = PsiBridgeService.appendNudgeToResult("OK: done", "please use foo");
+            String result = AgentNudgeService.appendNudgeToResult("OK: done", "please use foo");
             assertEquals("OK: done\n\n[User nudge]: please use foo", result);
         }
 
         @Test
         void emptyNudgeStillAppends() {
             // Empty string is non-null, so it appends (the nudge prefix is still visible)
-            String result = PsiBridgeService.appendNudgeToResult("result", "");
+            String result = AgentNudgeService.appendNudgeToResult("result", "");
             assertEquals("result\n\n[User nudge]: ", result);
         }
 
         @Test
         void emptyResultWithNudge() {
-            String result = PsiBridgeService.appendNudgeToResult("", "nudge");
+            String result = AgentNudgeService.appendNudgeToResult("", "nudge");
             assertEquals("\n\n[User nudge]: nudge", result);
         }
     }

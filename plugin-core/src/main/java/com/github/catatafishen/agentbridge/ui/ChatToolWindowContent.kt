@@ -1090,13 +1090,13 @@ class ChatToolWindowContent(
             pendingNudgeText = text
             consolePanel.showNudgeBubble(id, text)
         }
-        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
+        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
         // Register callback BEFORE arming the nudge to avoid race condition where
         // a tool call consumes the nudge between setPendingNudge and setOnNudgeConsumed
         val resolveId = pendingNudgeId!!
         // Chain with (not replace) any existing callback — e.g., tool reprimand cleanup
         // from CopilotClient.onBuiltInToolApproved() may already be registered
-        psiBridge.addOnNudgeConsumed {
+        nudgeService.addOnNudgeConsumed {
             val capturedText = pendingNudgeText
             pendingNudgeId = null
             pendingNudgeText = null
@@ -1109,7 +1109,7 @@ class ChatToolWindowContent(
                 refreshShortcutHints()
             }
         }
-        psiBridge.setPendingNudge(text)
+        nudgeService.setPendingNudge(text)
         refreshShortcutHints()
     }
 
@@ -1117,9 +1117,9 @@ class ChatToolWindowContent(
     private fun clearAndRemoveNudge(nudgeId: String) {
         pendingNudgeId = null
         pendingNudgeText = null
-        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setPendingNudge(null)
-        psiBridge.setOnNudgeConsumed(null)
+        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+        nudgeService.setPendingNudge(null)
+        nudgeService.setOnNudgeConsumed(null)
         ApplicationManager.getApplication().invokeLater {
             consolePanel.removeNudgeBubble(nudgeId)
             refreshShortcutHints()
@@ -1223,9 +1223,9 @@ class ChatToolWindowContent(
         val nudgeText = pendingNudgeText
         pendingNudgeId = null
         pendingNudgeText = null
-        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setPendingNudge(null)
-        psiBridge.setOnNudgeConsumed(null)
+        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+        nudgeService.setPendingNudge(null)
+        nudgeService.setOnNudgeConsumed(null)
         ApplicationManager.getApplication().invokeLater {
             consolePanel.removeNudgeBubble(nudgeId)
             nudgeText?.let { restoreUnhandledNudgeText(it) }
@@ -1838,8 +1838,8 @@ class ChatToolWindowContent(
             if (pendingNudgeId == id) clearAndRemoveNudge(id)
         }
         chatConsolePanel.onCancelQueuedMessage = { id, text ->
-            val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-            psiBridge.removeQueuedMessage(text)
+            val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+            nudgeService.removeQueuedMessage(text)
             // Drop the most-recent matching entry so Up-arrow recall reflects what's still queued.
             val lastIdx = queuedTexts.indexOfLast { it == text }
             if (lastIdx >= 0) queuedTexts.removeAt(lastIdx)
@@ -1868,8 +1868,8 @@ class ChatToolWindowContent(
         // Route plugin-initiated nudges (e.g. built-in tool reprimands) through the
         // nudge flow so they appear as a regular nudge bubble and are injected into the
         // next MCP tool result.
-        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setOnNudgeRequested { notice ->
+        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+        nudgeService.setOnNudgeRequested { notice ->
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
                 submitNudge(notice)
             }
@@ -2056,8 +2056,8 @@ class ChatToolWindowContent(
                 }
                 val lastQueued = queuedTexts.removeLastOrNull() ?: return
                 promptTextArea.text = lastQueued
-                val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-                psiBridge.removeQueuedMessage(lastQueued)
+                val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+                nudgeService.removeQueuedMessage(lastQueued)
                 ApplicationManager.getApplication().invokeLater {
                     consolePanel.removeQueuedMessageByText(lastQueued)
                     refreshShortcutHints()
@@ -2078,7 +2078,7 @@ class ChatToolWindowContent(
         val id = System.currentTimeMillis().toString()
         promptTextArea.text = ""
         consolePanel.showQueuedMessage(id, rawText)
-        com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
+        com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
             .enqueueMessage(rawText)
         queuedTexts.addLast(rawText)
         refreshShortcutHints()

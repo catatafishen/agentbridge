@@ -100,6 +100,8 @@ GitHub Copilot, Claude Code, OpenAI Codex, JetBrains Junie, Amazon Kiro, and Ope
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.services.ToolChipRegistry"/>
     <projectService
+      serviceImplementation="com.github.catatafishen.agentbridge.services.AgentNudgeService"/>
+    <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.psi.PsiBridgeService"/>
     <projectService
       serviceImplementation="com.github.catatafishen.agentbridge.settings.McpServerSettings"/>

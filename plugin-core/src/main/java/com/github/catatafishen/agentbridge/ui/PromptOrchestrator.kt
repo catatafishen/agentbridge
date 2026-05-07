@@ -7,6 +7,7 @@ import com.github.catatafishen.agentbridge.agent.AbstractAgentClient
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
+import com.github.catatafishen.agentbridge.services.AgentNudgeService
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
 import com.github.catatafishen.agentbridge.services.AgentScratchTracker
 import com.github.catatafishen.agentbridge.services.AgentTabTracker
@@ -497,7 +498,7 @@ class PromptOrchestrator(
             )
         )
 
-        val nextMsg = PsiBridgeService.getInstance(project).nextQueuedMessage
+        val nextMsg = AgentNudgeService.getInstance(project).nextQueuedMessage
         if (nextMsg != null) {
             callbacks.onQueuedMessageConsumed(nextMsg)
             ApplicationManager.getApplication().invokeLater {
@@ -640,7 +641,7 @@ class PromptOrchestrator(
             toolCallTitles[toolCallId] = "task"
             activeSubAgentStack.addLast(toolCallId)
             agentManager.client.setSubAgentActive(true)
-            PsiBridgeService.getInstance(project).setNudgesHeld(true)
+            AgentNudgeService.getInstance(project).setNudgesHeld(true)
             agentManager.settings.setActiveAgentLabel(agentType)
             consolePanel().setCurrentAgent(
                 agentType,
@@ -743,7 +744,7 @@ class PromptOrchestrator(
             activeSubAgentStack.remove(toolCallId)
             if (activeSubAgentStack.isEmpty()) {
                 agentManager.client.setSubAgentActive(false)
-                PsiBridgeService.getInstance(project).setNudgesHeld(false)
+                AgentNudgeService.getInstance(project).setNudgesHeld(false)
                 agentManager.settings.setActiveAgentLabel(null)
                 consolePanel().setCurrentAgent(
                     agentManager.activeProfile.displayName,
