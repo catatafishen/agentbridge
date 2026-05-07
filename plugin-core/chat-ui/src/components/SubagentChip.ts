@@ -37,10 +37,8 @@ export default class SubagentChip extends HTMLElement {
         this.className = this.className.replaceAll(/\bstatus-\S+/g, '').trim();
         this.classList.add(`status-${status}`);
         this.classList.toggle('failed', status === 'failed');
-        let html = '';
-        if (status === 'running') html = '<span class="chip-spinner"></span> ';
-        html += (label.length > 50 ? '<span>' + display + '</span>' : display);
-        this.innerHTML = html;
+        const text = label.length > 50 ? '<span>' + display + '</span>' : display;
+        this.innerHTML = '<span class="chip-ring" aria-hidden="true"></span> ' + text;
     }
 
     private _resolveLink(): void {

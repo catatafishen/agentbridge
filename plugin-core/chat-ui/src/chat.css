@@ -641,48 +641,49 @@ working-indicator .working-text {
     border-color: color-mix(in srgb, var(--kind-other) 28%, transparent);
 }
 
-/* Kind-colored spinners — inherit from chip text color */
-.turn-chip[class*="kind-"] .chip-spinner {
-    border-top-color: currentColor;
-}
-
-
-.chip-spinner {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border: 1.5px solid var(--spin-bg);
-    border-top-color: var(--tool);
-    border-radius: 50%;
-    animation: spin 0.6s linear infinite;
-}
-
-.chip-dot {
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    border: 1.5px solid currentColor;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.chip-dot-other {
-    color: var(--think);
-}
-
-.chip-xmark {
+/* ── Unified chip indicator ring ─────────────────────────────────────
+   Single <span class="chip-ring"> is always in the DOM; the parent chip's
+   status and kind classes drive its appearance with no DOM replacement. */
+.chip-ring {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 8px;
     height: 8px;
-    font-size: 9px;
-    line-height: 1;
+    border: 2px solid var(--spin-bg);
+    border-top-color: currentColor;
+    border-radius: 50%;
     flex-shrink: 0;
+    animation: spin 0.6s linear infinite;
 }
 
-.chip-xmark-other {
-    color: var(--think);
+/* Success: solid ring, animation stopped */
+.status-complete .chip-ring,
+.status-success .chip-ring,
+.status-done .chip-ring {
+    border-color: currentColor;
+    animation: none;
+}
+
+/* Failure: ✕ glyph via ::before, ring border invisible */
+.status-failed .chip-ring,
+.status-error .chip-ring,
+.status-denied .chip-ring {
+    border-color: transparent;
+    animation: none;
+}
+
+.status-failed .chip-ring::before,
+.status-error .chip-ring::before,
+.status-denied .chip-ring::before {
+    content: '\2715';
+    font-size: 9px;
+    line-height: 1;
+}
+
+/* Subagent chips show no indicator on success */
+.turn-chip.subagent.status-complete .chip-ring {
+    display: none;
 }
 
 
@@ -803,10 +804,6 @@ thinking-chip.thinking-active .thought-bubble {
 .turn-chip.subagent:hover {
     background: var(--sa-a10);
     border-color: var(--sa-color);
-}
-
-.turn-chip.subagent .chip-spinner {
-    border-top-color: var(--sa-color);
 }
 
 .turn-chip.subagent.status-complete {
