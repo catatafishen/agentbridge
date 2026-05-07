@@ -657,9 +657,24 @@ working-indicator .working-text {
     animation: spin 0.6s linear infinite;
 }
 
-/* Non-MCP (native bash) chips: ring and glyph stay grey regardless of kind color */
-.turn-chip:not(.is-agentbridge-tool) .chip-ring {
-    color: var(--think);
+/* Non-MCP (native bash) chips: subtle diagonal stripes to distinguish from MCP chips */
+.turn-chip:not(.is-agentbridge-tool) {
+    position: relative;
+}
+
+.turn-chip:not(.is-agentbridge-tool)::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-image: repeating-linear-gradient(
+        45deg,
+        transparent 0,
+        transparent 3px,
+        rgba(255, 255, 255, 0.12) 3px,
+        rgba(255, 255, 255, 0.12) 4px
+    );
+    pointer-events: none;
 }
 
 /* Success: solid ring, animation stopped */
@@ -681,9 +696,14 @@ working-indicator .working-text {
 .status-failed .chip-ring::before,
 .status-error .chip-ring::before,
 .status-denied .chip-ring::before {
-    content: '\2715';
-    font-size: 9px;
-    line-height: 1;
+    content: '';
+    display: block;
+    width: 6px;
+    height: 6px;
+    background:
+        linear-gradient(currentColor, currentColor) center / 2px 100% no-repeat,
+        linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
+    transform: rotate(45deg);
 }
 
 /* Subagent chips show no indicator on success */
