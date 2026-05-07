@@ -142,8 +142,8 @@ class AcpMessageParser {
             }
         }
 
-        // Sub-agent detection uses the ORIGINAL title (e.g. "Intellij-Explore") because
-        // resolveToolId normalises unknown names to "task" which breaks agent-name matching.
+        // Sub-agent detection uses the ORIGINAL title (e.g. "Intellij-Explore") so that
+        // client-specific name normalization in resolveToolId does not interfere.
         String agentType = delegate.extractSubAgentType(params, title, argumentsObj);
         String subAgentDesc = null;
         String subAgentPrompt = null;

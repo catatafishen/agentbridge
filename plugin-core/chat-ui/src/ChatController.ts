@@ -1030,41 +1030,6 @@ const ChatController = {
         document.getElementById('nudge-' + id)?.remove();
     },
 
-    showSystemNoticeBubble(id: string, text: string): void {
-        const existing = document.getElementById('sysnotice-' + id);
-        if (existing) {
-            const bubble = existing.querySelector('message-bubble');
-            if (bubble) {
-                bubble.textContent = text;
-                this._container()?.scheduleScrollIfNeeded();
-            }
-            return;
-        }
-        const msg = document.createElement('chat-message');
-        msg.id = 'sysnotice-' + id;
-        msg.setAttribute('type', 'user');
-        const meta = document.createElement('message-meta');
-        meta.innerHTML = '<span class="ts system-notice-label">⚙ System notice</span>';
-        msg.appendChild(meta);
-        const bubble = document.createElement('message-bubble');
-        // No type attribute — MessageBubble.connectedCallback will add prompt-bubble class
-        // (because parent chat-message has type="user"). system-notice-bubble overrides the color.
-        bubble.classList.add('system-notice-bubble');
-        bubble.textContent = text;
-        msg.appendChild(bubble);
-        const firstQueued = this._msgs().querySelector('.message-queued');
-        if (firstQueued) {
-            this._msgs().insertBefore(msg, firstQueued);
-        } else {
-            this._msgs().appendChild(msg);
-        }
-        this._container()?.scheduleScrollIfNeeded();
-    },
-
-    removeSystemNoticeBubble(id: string): void {
-        document.getElementById('sysnotice-' + id)?.remove();
-    },
-
     showQueuedMessage(id: string, text: string): void {
         const msg = document.createElement('chat-message');
         msg.id = 'queued-' + id;

@@ -2882,16 +2882,3 @@ pre.word-wrap code {
     background: rgba(128, 128, 128, 0.25);
 }
 
-/* ── System notice bubble ──────────────────────────────── */
-.system-notice-bubble {
-    background: var(--fg-a08) !important;
-}
-
-.system-notice-bubble:hover {
-    background: var(--fg-a16) !important;
-}
-
-.system-notice-label {
-    color: var(--fg-muted);
-    font-size: 0.82em;
-}

@@ -103,12 +103,6 @@ class ChatToolWindowContent(
 
     @Volatile
     private var pendingNudgeText: String? = null
-
-    @Volatile
-    private var pendingSystemNoticeId: String? = null
-
-    @Volatile
-    private var pendingSystemNoticeText: String? = null
     private lateinit var processingTimerPanel: ProcessingTimerPanel
     private lateinit var promptOrchestrator: PromptOrchestrator
     private lateinit var pasteToScratchHandler: PasteToScratchHandler
@@ -1096,13 +1090,13 @@ class ChatToolWindowContent(
             pendingNudgeText = text
             consolePanel.showNudgeBubble(id, text)
         }
-        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
+        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
         // Register callback BEFORE arming the nudge to avoid race condition where
         // a tool call consumes the nudge between setPendingNudge and setOnNudgeConsumed
         val resolveId = pendingNudgeId!!
         // Chain with (not replace) any existing callback — e.g., tool reprimand cleanup
         // from CopilotClient.onBuiltInToolApproved() may already be registered
-        psiBridge.addOnNudgeConsumed {
+        nudgeService.addOnNudgeConsumed {
             val capturedText = pendingNudgeText
             pendingNudgeId = null
             pendingNudgeText = null
@@ -1115,7 +1109,7 @@ class ChatToolWindowContent(
                 refreshShortcutHints()
             }
         }
-        psiBridge.setPendingNudge(text)
+        nudgeService.setPendingNudge(text)
         refreshShortcutHints()
     }
 
@@ -1123,9 +1117,9 @@ class ChatToolWindowContent(
     private fun clearAndRemoveNudge(nudgeId: String) {
         pendingNudgeId = null
         pendingNudgeText = null
-        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setPendingNudge(null)
-        psiBridge.setOnNudgeConsumed(null)
+        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+        nudgeService.setPendingNudge(null)
+        nudgeService.setOnNudgeConsumed(null)
         ApplicationManager.getApplication().invokeLater {
             consolePanel.removeNudgeBubble(nudgeId)
             refreshShortcutHints()
@@ -1214,7 +1208,6 @@ class ChatToolWindowContent(
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
         if (!sending) {
             restoreUnhandledNudgeIfNeeded()
-            restoreSystemNoticeIfNeeded()
         }
         ApplicationManager.getApplication().invokeLater {
             updatePromptPlaceholder()
@@ -1230,9 +1223,9 @@ class ChatToolWindowContent(
         val nudgeText = pendingNudgeText
         pendingNudgeId = null
         pendingNudgeText = null
-        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setPendingNudge(null)
-        psiBridge.setOnNudgeConsumed(null)
+        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+        nudgeService.setPendingNudge(null)
+        nudgeService.setOnNudgeConsumed(null)
         ApplicationManager.getApplication().invokeLater {
             consolePanel.removeNudgeBubble(nudgeId)
             nudgeText?.let { restoreUnhandledNudgeText(it) }
@@ -1257,40 +1250,6 @@ class ChatToolWindowContent(
     private fun sendUnhandledNudge(nudgeText: String) {
         promptTextArea.text = nudgeText
         onSendStopClicked()
-    }
-
-    private fun showSystemNotice(text: String) {
-        val existingId = pendingSystemNoticeId
-        if (existingId != null) {
-            pendingSystemNoticeText = (pendingSystemNoticeText ?: "") + "\n\n" + text
-        } else {
-            pendingSystemNoticeId = "sysnotice-" + System.currentTimeMillis()
-            pendingSystemNoticeText = text
-        }
-        // If the agent uses an MCP tool next, the notice is injected into the tool result
-        // (via consumePendingNudge). Clear pending state so we don't restore it to input at turn end.
-        com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-            .addOnNudgeConsumed {
-                pendingSystemNoticeId = null
-                pendingSystemNoticeText = null
-            }
-    }
-
-    private fun restoreSystemNoticeIfNeeded() {
-        val noticeText = pendingSystemNoticeText ?: return
-        pendingSystemNoticeId = null
-        pendingSystemNoticeText = null
-        // Prepend notice to input so the user can review/edit before sending.
-        // No grey bubble — that's reserved for notices actually sent to the agent.
-        prependSystemNoticeToInput(noticeText)
-    }
-
-    private fun prependSystemNoticeToInput(noticeText: String) {
-        ApplicationManager.getApplication().invokeLater {
-            val current = promptTextArea.text
-            promptTextArea.text = if (current.isEmpty()) noticeText else "$noticeText\n\n$current"
-            promptTextArea.requestFocusInWindow()
-        }
     }
 
     private fun updateProcessingTimer(sending: Boolean) {
@@ -1879,8 +1838,8 @@ class ChatToolWindowContent(
             if (pendingNudgeId == id) clearAndRemoveNudge(id)
         }
         chatConsolePanel.onCancelQueuedMessage = { id, text ->
-            val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-            psiBridge.removeQueuedMessage(text)
+            val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+            nudgeService.removeQueuedMessage(text)
             // Drop the most-recent matching entry so Up-arrow recall reflects what's still queued.
             val lastIdx = queuedTexts.indexOfLast { it == text }
             if (lastIdx >= 0) queuedTexts.removeAt(lastIdx)
@@ -1906,11 +1865,13 @@ class ChatToolWindowContent(
         }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
 
-        // Register the system notice callback so built-in tool reprimands are shown in the chat UI.
-        val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setOnSystemNotice { notice ->
+        // Route plugin-initiated nudges (e.g. built-in tool reprimands) through the
+        // nudge flow so they appear as a regular nudge bubble and are injected into the
+        // next MCP tool result.
+        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+        nudgeService.setOnNudgeRequested { notice ->
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-                showSystemNotice(notice)
+                submitNudge(notice)
             }
         }
 
@@ -2095,8 +2056,8 @@ class ChatToolWindowContent(
                 }
                 val lastQueued = queuedTexts.removeLastOrNull() ?: return
                 promptTextArea.text = lastQueued
-                val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-                psiBridge.removeQueuedMessage(lastQueued)
+                val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+                nudgeService.removeQueuedMessage(lastQueued)
                 ApplicationManager.getApplication().invokeLater {
                     consolePanel.removeQueuedMessageByText(lastQueued)
                     refreshShortcutHints()
@@ -2117,7 +2078,7 @@ class ChatToolWindowContent(
         val id = System.currentTimeMillis().toString()
         promptTextArea.text = ""
         consolePanel.showQueuedMessage(id, rawText)
-        com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
+        com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
             .enqueueMessage(rawText)
         queuedTexts.addLast(rawText)
         refreshShortcutHints()
