@@ -625,7 +625,7 @@ class PromptOrchestrator(
         // emit the summary text and suppress the chip update.
         if (title == taskCompleteTool) {
             log.info("task_complete detected (id=$toolCallId) — suppressing chip creation")
-            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.TASK_COMPLETE, toolCall)
+            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.TASK_COMPLETE)
             return
         }
 
@@ -645,7 +645,7 @@ class PromptOrchestrator(
             val description =
                 toolCall.subAgentDescription()?.takeIf { it.isNotBlank() } ?: title.ifBlank { "Sub-agent task" }
             val record =
-                acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT, toolCall)
+                acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT)
             consolePanel().addSubAgentEntry(record.recordId, agentType, description, toolCall.subAgentPrompt())
         } else if (activeSubAgentId != null) {
             turnToolCallCount++
@@ -656,8 +656,7 @@ class PromptOrchestrator(
                 title,
                 arguments,
                 kind,
-                ToolCallRecord.RoutingType.SUB_AGENT_INTERNAL,
-                toolCall
+                ToolCallRecord.RoutingType.SUB_AGENT_INTERNAL
             )
             consolePanel().addSubAgentToolCall(
                 parentRecord?.recordId ?: activeSubAgentId!!,
@@ -670,7 +669,7 @@ class PromptOrchestrator(
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
             val record =
-                acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.REGULAR, toolCall)
+                acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.REGULAR)
             consolePanel().addToolCallEntry(record.recordId, title, arguments, kind, record.isCorrelated)
         }
 
@@ -685,8 +684,7 @@ class PromptOrchestrator(
 
     private fun acpRegisterToolCall(
         toolCallId: String, title: String, arguments: String?,
-        kind: String, routingType: ToolCallRecord.RoutingType,
-        @Suppress("UNUSED_PARAMETER") toolCall: SessionUpdate.ToolCall
+        kind: String, routingType: ToolCallRecord.RoutingType
     ): ToolCallRecord {
         val argsObj = arguments?.let {
             try {

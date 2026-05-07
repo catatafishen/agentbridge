@@ -396,7 +396,7 @@ public final class PsiBridgeService implements Disposable {
         long preWriteStamp = getDocumentStamp(vfForHighlights);
 
         ToolCallTracker tracker = ToolCallTracker.getInstance(project);
-        ToolCallRecord record = null;
+        ToolCallRecord record = tracker.mcpRegister(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
 
         try (DaemonWaiter daemonWaiter = filePathForHighlights != null
             ? new DaemonWaiter(project, vfForHighlights, preWriteStamp) : null) {
@@ -407,14 +407,9 @@ public final class PsiBridgeService implements Disposable {
                 success = false;
                 errorMessage = readinessError;
                 outputSize = readinessError.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-                // Register the chip first so the result is correlated with a real chip,
-                // matching the normal execution path.
-                record = tracker.mcpRegister(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
                 tracker.mcpComplete(record.getRecordId(), readinessError, false);
                 return readinessError;
             }
-
-            record = tracker.mcpRegister(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
 
             String result = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), requiresSync);
             if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
