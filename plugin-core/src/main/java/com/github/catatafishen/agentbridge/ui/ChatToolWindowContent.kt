@@ -103,12 +103,6 @@ class ChatToolWindowContent(
 
     @Volatile
     private var pendingNudgeText: String? = null
-
-    @Volatile
-    private var pendingSystemNoticeId: String? = null
-
-    @Volatile
-    private var pendingSystemNoticeText: String? = null
     private lateinit var processingTimerPanel: ProcessingTimerPanel
     private lateinit var promptOrchestrator: PromptOrchestrator
     private lateinit var pasteToScratchHandler: PasteToScratchHandler
@@ -1214,7 +1208,6 @@ class ChatToolWindowContent(
         ChatWebServer.getInstance(project)?.setAgentRunning(sending)
         if (!sending) {
             restoreUnhandledNudgeIfNeeded()
-            restoreSystemNoticeIfNeeded()
         }
         ApplicationManager.getApplication().invokeLater {
             updatePromptPlaceholder()
@@ -1257,40 +1250,6 @@ class ChatToolWindowContent(
     private fun sendUnhandledNudge(nudgeText: String) {
         promptTextArea.text = nudgeText
         onSendStopClicked()
-    }
-
-    private fun showSystemNotice(text: String) {
-        val existingId = pendingSystemNoticeId
-        if (existingId != null) {
-            pendingSystemNoticeText = (pendingSystemNoticeText ?: "") + "\n\n" + text
-        } else {
-            pendingSystemNoticeId = "sysnotice-" + System.currentTimeMillis()
-            pendingSystemNoticeText = text
-        }
-        // If the agent uses an MCP tool next, the notice is injected into the tool result
-        // (via consumePendingNudge). Clear pending state so we don't restore it to input at turn end.
-        com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-            .addOnNudgeConsumed {
-                pendingSystemNoticeId = null
-                pendingSystemNoticeText = null
-            }
-    }
-
-    private fun restoreSystemNoticeIfNeeded() {
-        val noticeText = pendingSystemNoticeText ?: return
-        pendingSystemNoticeId = null
-        pendingSystemNoticeText = null
-        // Prepend notice to input so the user can review/edit before sending.
-        // No grey bubble — that's reserved for notices actually sent to the agent.
-        prependSystemNoticeToInput(noticeText)
-    }
-
-    private fun prependSystemNoticeToInput(noticeText: String) {
-        ApplicationManager.getApplication().invokeLater {
-            val current = promptTextArea.text
-            promptTextArea.text = if (current.isEmpty()) noticeText else "$noticeText\n\n$current"
-            promptTextArea.requestFocusInWindow()
-        }
     }
 
     private fun updateProcessingTimer(sending: Boolean) {
@@ -1906,11 +1865,12 @@ class ChatToolWindowContent(
         }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
 
-        // Register the system notice callback so built-in tool reprimands are shown in the chat UI.
+        // Route system notices (built-in tool reprimands) through the nudge flow so they
+        // appear as a regular nudge bubble and are injected into the next MCP tool result.
         val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
         psiBridge.setOnSystemNotice { notice ->
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-                showSystemNotice(notice)
+                submitNudge(notice)
             }
         }
 

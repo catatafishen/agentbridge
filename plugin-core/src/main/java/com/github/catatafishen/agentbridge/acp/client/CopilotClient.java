@@ -555,27 +555,20 @@ public final class CopilotClient extends AcpClient {
     protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
         if (!userApproved) {
             misusedBuiltInTools.add(toolId);
-            // Inject reprimand into the next MCP tool result for immediate mid-turn
-            // feedback — the agent corrects behaviour within the same turn instead of
-            // waiting until the user sends another prompt.
+            // Notify the UI so it can show a nudge bubble and arm the pending nudge for
+            // injection into the next MCP tool result.  Chain the cleanup callback first
+            // so it fires before the UI's resolve callback when the nudge is consumed.
             String notice = buildSingleToolReprimand(toolId);
             PsiBridgeService psi = PsiBridgeService.getInstance(project);
-            psi.setPendingNudge(notice);
-            // Fire system notice to the UI so the user can see it in the chat bubble.
-            psi.fireSystemNotice(notice);
-            // Once the nudge is consumed (agent saw it), clear the tracking set so
-            // beforeSendPrompt() doesn't repeat the same reprimand on the next prompt.
-            // Use addOnNudgeConsumed (not set) to chain with any existing callback,
-            // e.g. the UI callback from onNudgeClicked that clears pendingNudgeId.
             psi.addOnNudgeConsumed(misusedBuiltInTools::clear);
+            psi.fireSystemNotice(notice);
         }
     }
 
     @Override
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
-        // System notices are now shown in the chat input area at end-of-turn
-        // (visible to the user) rather than silently prepended to the prompt.
-        // Mid-turn correction still happens via pendingNudge on tool results.
+        // Clear nudge state at turn start so mid-turn reprimands from the previous
+        // turn don't leak into the new prompt if they were never consumed.
         misusedBuiltInTools.clear();
         PsiBridgeService.getInstance(project).setPendingNudge(null);
         return request;

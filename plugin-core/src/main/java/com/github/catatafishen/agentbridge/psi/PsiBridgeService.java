@@ -280,6 +280,9 @@ public final class PsiBridgeService implements Disposable {
         this.onSystemNotice.set(callback);
     }
 
+    /**
+     * Delivers a system notice (e.g. built-in tool reprimand) to the registered UI callback.
+     */
     public void fireSystemNotice(@NotNull String text) {
         java.util.function.Consumer<String> cb = onSystemNotice.get();
         if (cb != null) cb.accept(text);
