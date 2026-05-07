@@ -9,7 +9,11 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -28,29 +32,48 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class ToolCallTracker {
 
     private static final Logger LOG = Logger.getInstance(ToolCallTracker.class);
+    private final Project project;
 
     /**
      * Listeners receive typed events about tool call lifecycle changes.
      * All callbacks fire on the EDT.
      */
     public interface Listener {
-        /** ACP reported a new tool call — chip can be created in DOM. */
-        default void onAcpRegistered(@NotNull ToolCallRecord record) {}
+        /**
+         * ACP reported a new tool call — chip can be created in DOM.
+         */
+        default void onAcpRegistered(@NotNull ToolCallRecord record) {
+        }
 
-        /** MCP execution started for an uncorrelated call (no ACP counterpart yet). */
-        default void onMcpRegistered(@NotNull ToolCallRecord record) {}
+        /**
+         * MCP execution started for an uncorrelated call (no ACP counterpart yet).
+         */
+        default void onMcpRegistered(@NotNull ToolCallRecord record) {
+        }
 
-        /** ACP and MCP matched — the record now has both sides. */
-        default void onCorrelated(@NotNull ToolCallRecord record) {}
+        /**
+         * ACP and MCP matched — the record now has both sides.
+         */
+        default void onCorrelated(@NotNull ToolCallRecord record) {
+        }
 
-        /** MCP execution finished, result stored in record. */
-        default void onMcpCompleted(@NotNull ToolCallRecord record) {}
+        /**
+         * MCP execution finished, result stored in record.
+         */
+        default void onMcpCompleted(@NotNull ToolCallRecord record) {
+        }
 
-        /** ACP reported COMPLETED or FAILED — terminal state. */
-        default void onAcpCompleted(@NotNull ToolCallRecord record) {}
+        /**
+         * ACP reported COMPLETED or FAILED — terminal state.
+         */
+        default void onAcpCompleted(@NotNull ToolCallRecord record) {
+        }
 
-        /** Record removed from live set (for cleanup). */
-        default void onFlushed(@NotNull ToolCallRecord record) {}
+        /**
+         * Record removed from live set (for cleanup).
+         */
+        default void onFlushed(@NotNull ToolCallRecord record) {
+        }
     }
 
     // ── Live set ─────────────────────────────────────────────────────────────
@@ -79,10 +102,22 @@ public final class ToolCallTracker {
 
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
+    public ToolCallTracker(@NotNull Project project) {
+        this.project = project;
+    }
+
     // ── Static accessor ──────────────────────────────────────────────────────
 
     public static ToolCallTracker getInstance(@NotNull Project project) {
         return PlatformApiCompat.getService(project, ToolCallTracker.class);
+    }
+
+    /**
+     * Public delegation to {@link ToolCallHasher#computeBaseHash(JsonObject)} for callers
+     * outside the {@code services} package (e.g. PsiBridgeService).
+     */
+    public static @NotNull String computeHash(@NotNull JsonObject args) {
+        return ToolCallHasher.computeBaseHash(args);
     }
 
     // ── Listener management ──────────────────────────────────────────────────
@@ -100,12 +135,12 @@ public final class ToolCallTracker {
     /**
      * Called when ACP reports a new tool call ({@code tool_call} notification).
      *
-     * @param acpClientId  the ACP-assigned tool call ID
-     * @param acpTitle     the display title reported by the protocol (may be imprecise)
-     * @param args         tool arguments (may be null for some agents like Junie)
-     * @param kind         tool category (e.g. "file", "git") or null
-     * @param routingType  the call's role: REGULAR, SUB_AGENT, SUB_AGENT_INTERNAL, TASK_COMPLETE
-     * @param toolUseId    Claude CLI's toolUseId from _meta (for Priority 0 correlation), or null
+     * @param acpClientId the ACP-assigned tool call ID
+     * @param acpTitle    the display title reported by the protocol (may be imprecise)
+     * @param args        tool arguments (may be null for some agents like Junie)
+     * @param kind        tool category (e.g. "file", "git") or null
+     * @param routingType the call's role: REGULAR, SUB_AGENT, SUB_AGENT_INTERNAL, TASK_COMPLETE
+     * @param toolUseId   Claude CLI's toolUseId from _meta (for Priority 0 correlation), or null
      * @return the record (may be newly created or previously registered by MCP)
      */
     public synchronized @NotNull ToolCallRecord acpRegister(
@@ -170,10 +205,10 @@ public final class ToolCallTracker {
     /**
      * Called by PsiBridgeService immediately before executing a tool.
      *
-     * @param toolName   the canonical MCP tool name
-     * @param args       tool arguments
-     * @param kind       tool category
-     * @param toolUseId  Claude CLI's toolUseId from _meta, or null
+     * @param toolName  the canonical MCP tool name
+     * @param args      tool arguments
+     * @param kind      tool category
+     * @param toolUseId Claude CLI's toolUseId from _meta, or null
      */
     public synchronized @NotNull ToolCallRecord mcpRegister(
         @NotNull String toolName,
@@ -196,6 +231,7 @@ public final class ToolCallTracker {
                         toolUseIdToRecordId.put(toolUseId, r.getRecordId());
                         LOG.info("ToolCallTracker [MCP]: correlated via acpClientId=" + toolUseId + " → " + r.getRecordId());
                         fireOnCorrelated(r);
+                        bridgeRegisterMcp(r);
                         return r;
                     }
                 }
@@ -205,6 +241,7 @@ public final class ToolCallTracker {
                     record.setMcpFields(toolName, args, kind, startTime);
                     LOG.info("ToolCallTracker [MCP]: correlated via toolUseId=" + toolUseId + " → " + existingRecordId);
                     fireOnCorrelated(record);
+                    bridgeRegisterMcp(record);
                     return record;
                 }
             }
@@ -218,6 +255,7 @@ public final class ToolCallTracker {
             if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, acpFirst.getRecordId());
             LOG.info("ToolCallTracker [MCP]: correlated via hash=" + argsHash + " → " + acpFirst.getRecordId());
             fireOnCorrelated(acpFirst);
+            bridgeRegisterMcp(acpFirst);
             return acpFirst;
         }
 
@@ -231,6 +269,7 @@ public final class ToolCallTracker {
 
         LOG.info("ToolCallTracker [MCP]: new record " + recordId + " tool=" + toolName);
         fireOnMcpRegistered(record);
+        bridgeRegisterMcp(record);
         return record;
     }
 
@@ -248,6 +287,7 @@ public final class ToolCallTracker {
         record.setMcpResult(result, success);
         LOG.debug("ToolCallTracker: mcpComplete " + recordId + " success=" + success + " resultLen=" + result.length());
         fireOnMcpCompleted(record);
+        bridgeStoreMcpResult(record);
     }
 
     /**
@@ -318,6 +358,26 @@ public final class ToolCallTracker {
     }
 
     // ── Reset ────────────────────────────────────────────────────────────────
+
+    /**
+     * Bridge: delegates chip state transitions to the existing ToolChipRegistry during migration.
+     * This ensures the DOM chip state listener continues to fire. Will be removed once
+     * ChatConsolePanel switches to ToolCallTracker.Listener directly.
+     */
+    private void bridgeRegisterMcp(@NotNull ToolCallRecord record) {
+        ToolChipRegistry chipRegistry = ToolChipRegistry.getInstance(project);
+        chipRegistry.registerMcp(record.getMcpToolName(), record.getMcpArgs(),
+            record.getKind() != null ? record.getKind() : "other",
+            record.getAcpClientId());
+    }
+
+    /**
+     * Bridge: delegates result storage to ToolChipRegistry during migration.
+     */
+    private void bridgeStoreMcpResult(@NotNull ToolCallRecord record) {
+        ToolChipRegistry chipRegistry = ToolChipRegistry.getInstance(project);
+        chipRegistry.storeMcpResult(record.getMcpToolName(), record.getMcpArgs(), record.getMcpResult());
+    }
 
     /**
      * Full reset (session end). Flushes all records.
@@ -413,7 +473,11 @@ public final class ToolCallTracker {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
-                try { l.onAcpRegistered(record); } catch (Exception e) { LOG.warn("Listener error", e); }
+                try {
+                    l.onAcpRegistered(record);
+                } catch (Exception e) {
+                    LOG.warn("Listener error", e);
+                }
             }
         });
     }
@@ -422,7 +486,11 @@ public final class ToolCallTracker {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
-                try { l.onMcpRegistered(record); } catch (Exception e) { LOG.warn("Listener error", e); }
+                try {
+                    l.onMcpRegistered(record);
+                } catch (Exception e) {
+                    LOG.warn("Listener error", e);
+                }
             }
         });
     }
@@ -431,7 +499,11 @@ public final class ToolCallTracker {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
-                try { l.onCorrelated(record); } catch (Exception e) { LOG.warn("Listener error", e); }
+                try {
+                    l.onCorrelated(record);
+                } catch (Exception e) {
+                    LOG.warn("Listener error", e);
+                }
             }
         });
     }
@@ -440,7 +512,11 @@ public final class ToolCallTracker {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
-                try { l.onMcpCompleted(record); } catch (Exception e) { LOG.warn("Listener error", e); }
+                try {
+                    l.onMcpCompleted(record);
+                } catch (Exception e) {
+                    LOG.warn("Listener error", e);
+                }
             }
         });
     }
@@ -449,7 +525,11 @@ public final class ToolCallTracker {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
-                try { l.onAcpCompleted(record); } catch (Exception e) { LOG.warn("Listener error", e); }
+                try {
+                    l.onAcpCompleted(record);
+                } catch (Exception e) {
+                    LOG.warn("Listener error", e);
+                }
             }
         });
     }
@@ -458,7 +538,11 @@ public final class ToolCallTracker {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
-                try { l.onFlushed(record); } catch (Exception e) { LOG.warn("Listener error", e); }
+                try {
+                    l.onFlushed(record);
+                } catch (Exception e) {
+                    LOG.warn("Listener error", e);
+                }
             }
         });
     }

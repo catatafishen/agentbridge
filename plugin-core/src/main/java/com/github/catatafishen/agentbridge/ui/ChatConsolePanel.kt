@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ChatWebServer
+import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolChipRegistry
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
@@ -629,7 +630,7 @@ class ChatConsolePanel(
 
     /** Updates the in-memory entry data for a tool-call chip from the latest status report. */
     private fun applyEntryDataUpdate(did: String, update: ToolCallStatusData) {
-        val storedResult = update.chipId?.let { cid -> registry.getStoredPluginResult(cid) }
+        val storedResult = update.chipId?.let { cid -> ToolCallTracker.getInstance(project).getStoredResult(cid) }
         toolCallEntries[did]?.let {
             // Prefer the actual MCP execution result over what the ACP reported.
             // Copilot CLI may send tool_call_update:failed with no error text even when our MCP

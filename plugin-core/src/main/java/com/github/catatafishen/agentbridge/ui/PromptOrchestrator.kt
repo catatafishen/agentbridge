@@ -7,9 +7,7 @@ import com.github.catatafishen.agentbridge.agent.AbstractAgentClient
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.CodeChangeTracker
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService
-import com.github.catatafishen.agentbridge.services.ActiveAgentManager
-import com.github.catatafishen.agentbridge.services.AgentScratchTracker
-import com.github.catatafishen.agentbridge.services.AgentTabTracker
+import com.github.catatafishen.agentbridge.services.*
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -108,7 +106,6 @@ class PromptOrchestrator(
     /** The most recently started sub-agent call ID still in-flight, or null if none. */
     private val activeSubAgentId: String? get() = activeSubAgentStack.lastOrNull()
     private val toolCallTitles = mutableMapOf<String, String>()
-    private val toolCallArgs = mutableMapOf<String, String>() // arguments from tool_call_update
     private var pendingBanner: PendingBanner? = null
     private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
@@ -630,6 +627,7 @@ class PromptOrchestrator(
         if (title == taskCompleteTool) {
             log.info("task_complete detected (id=$toolCallId) — suppressing chip creation")
             toolCallTitles[toolCallId] = taskCompleteTool
+            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.TASK_COMPLETE, toolCall)
             return
         }
 
@@ -650,16 +648,19 @@ class PromptOrchestrator(
             val description =
                 toolCall.subAgentDescription()?.takeIf { it.isNotBlank() } ?: title.ifBlank { "Sub-agent task" }
             consolePanel().addSubAgentEntry(toolCallId, agentType, description, toolCall.subAgentPrompt())
+            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT, toolCall)
         } else if (activeSubAgentId != null) {
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
             toolCallTitles[toolCallId] = "subagent_internal"
             consolePanel().addSubAgentToolCall(activeSubAgentId!!, toolCallId, title, arguments, kind)
+            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT_INTERNAL, toolCall)
         } else {
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
             toolCallTitles[toolCallId] = title
             consolePanel().addToolCallEntry(toolCallId, title, arguments, kind)
+            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.REGULAR, toolCall)
         }
 
         // Automatic file navigation for "follow agent" feature.
@@ -671,6 +672,23 @@ class PromptOrchestrator(
         }
     }
 
+    private fun acpRegisterToolCall(
+        toolCallId: String, title: String, arguments: String?,
+        kind: String, routingType: ToolCallRecord.RoutingType,
+        @Suppress("UNUSED_PARAMETER") toolCall: SessionUpdate.ToolCall
+    ) {
+        val argsObj = arguments?.let {
+            try {
+                com.google.gson.JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
+            } catch (_: Exception) { null }
+        }
+        // For Claude CLI, the ACP toolCallId IS the toolUseId that MCP sees in _meta.
+        // Passing it enables Priority 0 correlation (exact ID match) in the tracker.
+        ToolCallTracker.getInstance(project).acpRegister(
+            toolCallId, title, argsObj, kind, routingType, toolCallId
+        )
+    }
+
     private fun handleStreamingToolCallUpdate(update: SessionUpdate.ToolCallUpdate) {
         val status = update.status()
         val toolCallId = update.toolCallId()
@@ -680,11 +698,6 @@ class PromptOrchestrator(
         val denialReason = update.denialReason()
         val arguments = update.arguments() // raw arguments from tool_call_update
         val kind = update.kind()?.value() // tool kind from tool_call_update (may be null)
-
-        // Store arguments for potential re-correlation
-        if (arguments != null) {
-            toolCallArgs[toolCallId] = arguments
-        }
 
         val callType = toolCallTitles[toolCallId]
 
@@ -722,6 +735,9 @@ class PromptOrchestrator(
         )
 
         if (status == SessionUpdate.ToolCallStatus.COMPLETED || status == SessionUpdate.ToolCallStatus.FAILED) {
+            ToolCallTracker.getInstance(project).acpComplete(
+                toolCallId, status == SessionUpdate.ToolCallStatus.COMPLETED
+            )
             callbacks.appendNewEntriesThrottled()
         }
     }
