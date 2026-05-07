@@ -120,7 +120,8 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             <style>$css</style>
             <style>$webAppCss</style>
             <style>:root { $cssVars }</style>
-            <style>body { margin: 0; background: var(--bg); }</style>
+            <style>body { margin: 0; height: 100vh; overflow: hidden; background: var(--bg); }
+            tool-calls-view { display: block; height: 100%; }</style>
             <script>window.addEventListener('wheel',function(e){if(e.ctrlKey)e.preventDefault();},{passive:false});</script>
             </head><body>
             <tool-calls-view></tool-calls-view>

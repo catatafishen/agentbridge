@@ -61,7 +61,7 @@ object ChatTheme {
             UIManager.getColor("ToolTip.background") ?: JBColor(Gray._247, Color(0x3C, 0x3F, 0x41))
         val sb = StringBuilder()
         val proseFontSize = maxOf(editorFontSize - 2, 6)
-        sb.append("--font-family:'${labelFont.family}',sans-serif;--font-size:${proseFontSize}pt;--code-font-size:${editorFontSize}pt;--code-font:'JetBrains Mono','${labelFont.family}',monospace;")
+        sb.append("--font-family:'${labelFont.family}',sans-serif;--font-size:${proseFontSize}pt;--code-font-size:${proseFontSize}pt;--code-font:'JetBrains Mono','${labelFont.family}',monospace;")
         sb.append(
             "--fg:${rgb(fg)};--fg-a05:${rgba(fg, 0.05)};--fg-a08:${rgba(fg, 0.08)};--fg-a16:${
                 rgba(
