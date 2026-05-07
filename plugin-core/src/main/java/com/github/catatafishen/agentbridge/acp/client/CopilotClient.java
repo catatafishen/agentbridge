@@ -578,21 +578,7 @@ public final class CopilotClient extends AcpClient {
     private static String buildSingleToolReprimand(String toolId) {
         return "[System notice] You used the following built-in tools which duplicate our MCP tools. "
             + "Do NOT use these again — use the MCP alternatives instead:\n"
-            + "  • " + toolId + " → use " + mcpAlternative(toolId) + "\n"
+            + "  • " + toolId + " → use " + AcpClient.mcpAlternative(toolId) + "\n"
             + "All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.";
-    }
-
-    private static String mcpAlternative(String builtInTool) {
-        return switch (builtInTool) {
-            case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
-            case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
-            case "create" -> "agentbridge-create_file";
-            case "view" -> "agentbridge-read_file";
-            case "glob" -> "agentbridge-list_project_files";
-            case "grep" -> "agentbridge-search_text";
-            case "task" -> "agentbridge-run_command (for shell tasks)";
-            case "report_intent" -> "(not needed — IDE tracks intent automatically)";
-            default -> "the corresponding agentbridge-* tool";
-        };
     }
 }

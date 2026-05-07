@@ -1703,6 +1703,18 @@ public abstract class AcpClient extends AbstractAgentClient {
         return findDenyOption(params);
     }
 
+    /**
+     * Called when a built-in tool request is processed (approved or auto-denied).
+     * Subclasses may override to react — e.g. injecting a reprimand notice.
+     *
+     * @param toolId       the built-in tool name
+     * @param userApproved {@code true} if the user explicitly approved, {@code false} if
+     *                     the tool was auto-approved without user interaction
+     */
+    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
+        // no-op by default
+    }
+
     static String mcpAlternative(String builtInTool) {
         return switch (builtInTool) {
             case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
