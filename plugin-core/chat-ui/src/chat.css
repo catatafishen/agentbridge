@@ -657,12 +657,13 @@ working-indicator .working-text {
     animation: spin 0.6s linear infinite;
 }
 
-/* Non-MCP (native bash) chips: subtle diagonal stripes to distinguish from MCP chips */
-.turn-chip:not(.is-agentbridge-tool) {
+/* Non-MCP tool chips (native bash): subtle diagonal stripes to distinguish from MCP chips.
+   .tool is required to exclude ThinkingChip and SubagentChip which also use turn-chip. */
+.turn-chip.tool:not(.is-agentbridge-tool) {
     position: relative;
 }
 
-.turn-chip:not(.is-agentbridge-tool)::before {
+.turn-chip.tool:not(.is-agentbridge-tool)::before {
     content: '';
     position: absolute;
     inset: 0;

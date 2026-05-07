@@ -1082,7 +1082,10 @@ class ChatToolWindowContent(
     private fun submitNudge(text: String, source: NudgeSource = NudgeSource.HUMAN) {
         val existingId = pendingNudgeId
         if (existingId != null) {
-            pendingNudgeText = (pendingNudgeText ?: "") + "\n\n" + text
+            // Reprimands replace the nudge text so only the latest issue is shown.
+            // Human nudges accumulate so the agent sees the full context.
+            pendingNudgeText = if (source == NudgeSource.REPRIMAND) text
+                               else (pendingNudgeText ?: "") + "\n\n" + text
             consolePanel.showNudgeBubble(existingId, pendingNudgeText!!, source)
         } else {
             val id = System.currentTimeMillis().toString()
@@ -1109,7 +1112,10 @@ class ChatToolWindowContent(
                 refreshShortcutHints()
             }
         }
-        nudgeService.setPendingNudge(text)
+        // Reprimands replace pending text so only the last issue is injected.
+        // Human nudges merge so the agent sees the full context.
+        if (source == NudgeSource.REPRIMAND) nudgeService.setReprimandNudge(text)
+        else nudgeService.setPendingNudge(text)
         refreshShortcutHints()
     }
 

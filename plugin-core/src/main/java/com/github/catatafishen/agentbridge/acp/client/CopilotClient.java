@@ -553,14 +553,13 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
-        if (!userApproved) {
+        if (!userApproved && shouldReprimand(toolId)) {
+            boolean isFirst = misusedBuiltInTools.isEmpty();
             misusedBuiltInTools.add(toolId);
-            // Notify the UI so it can show a nudge bubble and arm the pending nudge for
-            // injection into the next MCP tool result.  Chain the cleanup callback first
-            // so it fires before the UI's resolve callback when the nudge is consumed.
             String notice = buildSingleToolReprimand(toolId);
             AgentNudgeService nudgeService = AgentNudgeService.getInstance(project);
-            nudgeService.addOnNudgeConsumed(misusedBuiltInTools::clear);
+            // Register the clear callback only once per batch so it doesn't fire multiple times.
+            if (isFirst) nudgeService.addOnNudgeConsumed(misusedBuiltInTools::clear);
             nudgeService.fireNudge(notice);
         }
     }
@@ -575,16 +574,22 @@ public final class CopilotClient extends AcpClient {
     }
 
     private static String buildSingleToolReprimand(String toolId) {
-        // Copilot CLI sends the bash `description` parameter as the ACP title rather than
-        // the literal name "bash". Descriptions always contain spaces; known tool names never do.
         boolean isBashWithDescription = toolId.contains(" ");
-        String label = isBashWithDescription
-            ? "bash (description: \"" + toolId + "\")"
-            : "'" + toolId + "'";
+        String label = isBashWithDescription ? "\"" + toolId + "\"" : toolId;
         String alternative = mcpAlternative(toolId);
-        return "[System notice] You bypassed MCP by using the built-in " + label + " tool.\n"
-            + "Use " + alternative + " instead.\n"
-            + "All agentbridge-* MCP tools are available. Never use built-in tools when MCP equivalents exist.";
+        return "[System notice] Use " + alternative + " — not the built-in " + label
+            + ". All agentbridge-* MCP tools are available.";
+    }
+
+    /**
+     * Returns false for built-in tools that don't have a meaningful MCP alternative
+     * (e.g. {@code report_intent}, {@code skill}, {@code sql}) to avoid misleading reprimands.
+     */
+    private static boolean shouldReprimand(String toolId) {
+        return switch (toolId) {
+            case "report_intent", "skill", "sql", "web_fetch", "web_search" -> false;
+            default -> true;
+        };
     }
 
     private static String mcpAlternative(String toolId) {
