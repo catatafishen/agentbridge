@@ -26,6 +26,8 @@ export interface Bridge {
     scrollStarted?(): void;
 
     scrollEnded?(): void;
+
+    openSettings?(): void;
 }
 
 export interface TurnContext {

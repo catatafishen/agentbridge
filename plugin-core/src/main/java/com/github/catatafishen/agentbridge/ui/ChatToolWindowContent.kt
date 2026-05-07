@@ -1079,16 +1079,16 @@ class ChatToolWindowContent(
     }
 
     /** Shows or appends a nudge bubble and arms the PsiBridge consume handler. */
-    private fun submitNudge(text: String) {
+    private fun submitNudge(text: String, source: NudgeSource = NudgeSource.HUMAN) {
         val existingId = pendingNudgeId
         if (existingId != null) {
             pendingNudgeText = (pendingNudgeText ?: "") + "\n\n" + text
-            consolePanel.showNudgeBubble(existingId, pendingNudgeText!!)
+            consolePanel.showNudgeBubble(existingId, pendingNudgeText!!, source)
         } else {
             val id = System.currentTimeMillis().toString()
             pendingNudgeId = id
             pendingNudgeText = text
-            consolePanel.showNudgeBubble(id, text)
+            consolePanel.showNudgeBubble(id, text, source)
         }
         val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
         // Register callback BEFORE arming the nudge to avoid race condition where
@@ -1103,7 +1103,7 @@ class ChatToolWindowContent(
             ApplicationManager.getApplication().invokeLater {
                 consolePanel.resolveNudgeBubble(resolveId)
                 if (capturedText != null) {
-                    consolePanel.addNudgeEntry(resolveId, capturedText)
+                    consolePanel.addNudgeEntry(resolveId, capturedText, source)
                     appendNewEntries()
                 }
                 refreshShortcutHints()
@@ -1867,11 +1867,23 @@ class ChatToolWindowContent(
 
         // Route plugin-initiated nudges (e.g. built-in tool reprimands) through the
         // nudge flow so they appear as a regular nudge bubble and are injected into the
-        // next MCP tool result.
+        // next MCP tool result. Respects the ReprimandNudgeMode setting.
         val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
-        nudgeService.setOnNudgeRequested { notice ->
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-                submitNudge(notice)
+        nudgeService.setOnNudgeRequested { notice, source ->
+            val mode = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().reprimandNudgeMode
+            when (mode) {
+                com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED -> {
+                    // Reprimand is fully disabled: no bubble, no injection.
+                }
+                com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.SEND_SILENTLY -> {
+                    // Inject into the next MCP tool result but show no bubble.
+                    nudgeService.setPendingNudge(notice)
+                }
+                com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED -> {
+                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+                        submitNudge(notice, source)
+                    }
+                }
             }
         }
 

@@ -49,6 +49,8 @@ globalThis._bridge = {
     showToolPopup: () => {
     },
     cancelNudge: (id) => webPost('/cancel-nudge', {id}),
+    openSettings: () => {
+    },
     autoScrollDisabled: () => {
         atBottom = false;
         updateScrollFab();

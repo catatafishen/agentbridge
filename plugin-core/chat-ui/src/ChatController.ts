@@ -973,7 +973,7 @@ const ChatController = {
         this._domMessageLimit = limit;
     },
 
-    showNudgeBubble(id: string, text: string): void {
+    showNudgeBubble(id: string, text: string, source: string = 'human'): void {
         const existing = document.getElementById('nudge-' + id);
         if (existing) {
             const textSpan = existing.querySelector('.nudge-text');
@@ -996,6 +996,24 @@ const ChatController = {
         textSpan.className = 'nudge-text';
         textSpan.textContent = text;
         bubble.appendChild(textSpan);
+        if (source === 'reprimand') {
+            const infoBtn = document.createElement('button');
+            infoBtn.type = 'button';
+            infoBtn.className = 'nudge-info-btn';
+            infoBtn.setAttribute('aria-label', 'About this nudge');
+            infoBtn.textContent = '?';
+            const tooltip = document.createElement('div');
+            tooltip.className = 'nudge-info-tooltip';
+            tooltip.innerHTML =
+                'AgentBridge automatically sent this nudge to correct the agent\u2019s tool usage. ' +
+                '<a class="nudge-settings-link" href="#">Open UI/UX settings</a>';
+            tooltip.querySelector('.nudge-settings-link')!.addEventListener('click', (e: Event) => {
+                e.preventDefault();
+                (globalThis as any)._bridge?.openSettings?.();
+            });
+            infoBtn.appendChild(tooltip);
+            bubble.appendChild(infoBtn);
+        }
         const cancelX = document.createElement('button');
         cancelX.type = 'button';
         cancelX.className = 'nudge-cancel-x';

@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.services;
 
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
+import com.github.catatafishen.agentbridge.ui.NudgeSource;
 import com.intellij.openapi.components.Service;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
@@ -12,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
  * <p>A <em>nudge</em> is a short plain-text hint injected into the next MCP tool result so the
  * agent sees it immediately without a round-trip message. Nudges are produced by user interactions
  * (e.g. the nudge bubble in the chat panel) or by plugin logic (e.g. built-in tool reprimands
- * from {@link com.github.catatafishen.agentbridge.acp.client.CopilotClient#onBuiltInToolApproved})
+ * from {@code CopilotClient.onBuiltInToolApproved})
  * and consumed once by {@link #consumePendingNudge()} inside
  * {@link com.github.catatafishen.agentbridge.psi.PsiBridgeService}.</p>
  *
@@ -32,7 +33,7 @@ public final class AgentNudgeService {
     private final java.util.Queue<String> messageQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final java.util.concurrent.atomic.AtomicReference<Runnable> onNudgeConsumed =
         new java.util.concurrent.atomic.AtomicReference<>();
-    private final java.util.concurrent.atomic.AtomicReference<java.util.function.Consumer<String>> onNudgeRequested =
+    private final java.util.concurrent.atomic.AtomicReference<java.util.function.BiConsumer<String, NudgeSource>> onNudgeRequested =
         new java.util.concurrent.atomic.AtomicReference<>();
 
     public static AgentNudgeService getInstance(@NotNull Project project) {
@@ -69,14 +70,19 @@ public final class AgentNudgeService {
         );
     }
 
-    public void setOnNudgeRequested(@Nullable java.util.function.Consumer<String> callback) {
+    public void setOnNudgeRequested(@Nullable java.util.function.BiConsumer<String, NudgeSource> callback) {
         this.onNudgeRequested.set(callback);
     }
 
-    /** Delivers a plugin-initiated nudge (e.g. built-in tool reprimand) to the UI. */
+    /** Delivers a plugin-initiated reprimand nudge to the UI. */
     public void fireNudge(@NotNull String text) {
-        java.util.function.Consumer<String> cb = onNudgeRequested.get();
-        if (cb != null) cb.accept(text);
+        fireNudge(text, NudgeSource.REPRIMAND);
+    }
+
+    /** Delivers a plugin-initiated nudge to the UI with an explicit source. */
+    public void fireNudge(@NotNull String text, @NotNull NudgeSource source) {
+        java.util.function.BiConsumer<String, NudgeSource> cb = onNudgeRequested.get();
+        if (cb != null) cb.accept(text, source);
     }
 
     public void enqueueMessage(@NotNull String message) {

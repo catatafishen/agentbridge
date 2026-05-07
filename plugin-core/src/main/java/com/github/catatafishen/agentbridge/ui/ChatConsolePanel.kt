@@ -115,6 +115,7 @@ class ChatConsolePanel(
     private var autoScrollEnabledBridgeJs = ""
     private var scrollStartedBridgeJs = ""
     private var scrollEndedBridgeJs = ""
+    private var openSettingsBridgeJs = ""
 
     @Volatile
     private var htmlPageFuture: java.util.concurrent.CompletableFuture<String>? = null
@@ -285,6 +286,16 @@ class ChatConsolePanel(
             scrollEndedQuery.addHandler { endScrollFrameRateBoost(); null }
             Disposer.register(this, scrollEndedQuery)
             scrollEndedBridgeJs = scrollEndedQuery.inject("''")
+
+            val openSettingsQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
+            openSettingsQuery.addHandler {
+                ApplicationManager.getApplication().invokeLater {
+                    com.github.catatafishen.agentbridge.settings.openAgentBridgeSettings(project)
+                }
+                null
+            }
+            Disposer.register(this, openSettingsQuery)
+            openSettingsBridgeJs = openSettingsQuery.inject("''")
 
             val extendAskUserQuery = JBCefJSQuery.create(browser as com.intellij.ui.jcef.JBCefBrowserBase)
             extendAskUserQuery.addHandler { reqId -> handleExtendAskUser(reqId); null }
@@ -1058,6 +1069,7 @@ class ChatConsolePanel(
         mapOf(
             "type" to "nudge_sent",
             "html" to esc(e.text),
+            "source" to e.source.serialized,
             "timestamp" to displayTs(e.timestamp)
         )
 
@@ -1077,9 +1089,9 @@ class ChatConsolePanel(
     }
 
     /** Adds a sent nudge entry to the in-memory entries list for persistence. */
-    override fun addNudgeEntry(id: String, text: String) {
+    override fun addNudgeEntry(id: String, text: String, source: NudgeSource) {
         val ts = java.time.Instant.now().toString()
-        entries.add(EntryData.Nudge(text = text, id = id, sent = true, timestamp = ts))
+        entries.add(EntryData.Nudge(text = text, id = id, sent = true, source = source, timestamp = ts))
     }
 
     private fun serializeAgentTurn(
@@ -1639,8 +1651,8 @@ class ChatConsolePanel(
         )
     }
 
-    override fun showNudgeBubble(id: String, text: String) {
-        executeJs("ChatController.showNudgeBubble('${escJs(id)}','${escJs(text)}');")
+    override fun showNudgeBubble(id: String, text: String, source: NudgeSource) {
+        executeJs("ChatController.showNudgeBubble('${escJs(id)}','${escJs(text)}','${escJs(source.serialized)}');")
     }
 
     override fun resolveNudgeBubble(id: String) {
@@ -1912,7 +1924,8 @@ class ChatConsolePanel(
                 autoScrollEnabled: function() { $autoScrollEnabledBridgeJs },
                 scrollStarted: function() { $scrollStartedBridgeJs },
                 scrollEnded: function() { $scrollEndedBridgeJs },
-                extendAskUser: function(reqId) { $extendAskUserBridgeJs }
+                extendAskUser: function(reqId) { $extendAskUserBridgeJs },
+                openSettings: function() { $openSettingsBridgeJs }
             };
         """.trimIndent()
         val css = loadResource("/chat/chat.css")
