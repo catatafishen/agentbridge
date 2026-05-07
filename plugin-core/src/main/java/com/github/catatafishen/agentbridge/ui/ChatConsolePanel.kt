@@ -84,6 +84,15 @@ class ChatConsolePanel(
             executeJs("ChatController.markMcpHandled('$did')")
             // Mark the entry as MCP handled for persistence
             toolCallEntries[did]?.pluginTool = mcpToolName ?: toolCallNames[did]
+            // Correct the chip label when ACP used a wrong display name (e.g. Copilot CLI sends
+            // a human-readable description as the ACP title for sub-agent internal tool calls,
+            // causing resolveToolId to fall back to "task" → "Sub-Agent Task" display).
+            // Once MCP resolves the real tool name, we can recompute the accurate label.
+            if (mcpToolName != null && toolCallNames[did] != mcpToolName) {
+                val newLabel = toolChipTitle(mcpToolName, toolCallEntries[did]?.arguments)
+                toolCallNames[did] = mcpToolName
+                executeJs("ChatController.updateChipLabel('$did','${escJs(newLabel)}')")
+            }
         } else {
             // COMPLETE, EXTERNAL, FAILED — just remove the spinner; border already shows origin
             val jsState = if (state == ToolChipRegistry.ChipState.FAILED) "failed" else "complete"

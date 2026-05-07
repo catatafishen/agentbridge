@@ -74,6 +74,15 @@ class PromptOrchestrator(
     /** Copilot built-in tool whose summary should render as agent text, not a tool chip. */
     private val taskCompleteTool = "task_complete"
 
+    /**
+     * Sentinel stored in [toolCallTitles] for real sub-agent (Task-tool) launches.
+     * Uses a leading '$' so it can never collide with a real tool name or with the
+     * resolved title "task" that [CopilotClient.resolveToolId] returns for unrecognized
+     * protocol titles (e.g. when Copilot CLI uses a human-readable description as the
+     * ACP notification title for a sub-agent's internal tool call).
+     */
+    private val subAgentCallType = "\$subagent"
+
     internal var currentSessionId: String? = null
     internal var conversationSummaryInjected: Boolean = false
     private var currentPromptThread: Thread? = null
@@ -638,7 +647,7 @@ class PromptOrchestrator(
             val agentType = toolCall.agentType() ?: return
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
-            toolCallTitles[toolCallId] = "task"
+            toolCallTitles[toolCallId] = subAgentCallType
             activeSubAgentStack.addLast(toolCallId)
             agentManager.client.setSubAgentActive(true)
             AgentNudgeService.getInstance(project).setNudgesHeld(true)
@@ -703,7 +712,7 @@ class PromptOrchestrator(
             return
         }
 
-        val isSubAgent = callType == "task"
+        val isSubAgent = callType == subAgentCallType
         val isInternal = callType == "subagent_internal"
 
         val uiStatus = when (status) {

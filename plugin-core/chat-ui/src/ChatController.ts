@@ -414,6 +414,11 @@ const ChatController = {
         }
     },
 
+    updateChipLabel(id: string, label: string): void {
+        const chip = document.querySelector('[data-chip-for="' + id + '"]') as HTMLElement | null;
+        if (chip) chip.setAttribute('label', label);
+    },
+
     setToolChipState(id: string, state: string): void {
         const chip = document.querySelector('[data-chip-for="' + id + '"]');
         if (!chip) return;
