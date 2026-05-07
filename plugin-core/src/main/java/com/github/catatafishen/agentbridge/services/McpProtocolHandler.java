@@ -527,7 +527,7 @@ public final class McpProtocolHandler {
         if (permissionDenial != null) return buildToolResult(msg, permissionDenial, true);
 
         // Snapshot the original arguments before hooks can mutate them.
-        // ToolChipRegistry needs the pre-hook args for hash-based correlation with ACP,
+        // ToolCallTracker needs the pre-hook args for hash-based correlation with ACP,
         // which only sees the original arguments (before our MCP-side hooks modify them).
         JsonObject originalArguments = arguments.deepCopy();
 

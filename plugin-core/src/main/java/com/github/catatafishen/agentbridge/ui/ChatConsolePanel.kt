@@ -3,8 +3,8 @@ package com.github.catatafishen.agentbridge.ui
 import com.github.catatafishen.agentbridge.bridge.PermissionResponse
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.ChatWebServer
+import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
-import com.github.catatafishen.agentbridge.services.ToolChipRegistry
 import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.settings.ScratchTypeSettings
@@ -73,28 +73,26 @@ class ChatConsolePanel(
     private val toolCallNames = mutableMapOf<String, String>() // domId → tool baseName
     private val toolCallEntries = mutableMapOf<String, EntryData.ToolCall>() // domId → entry
     private val toolRegistry = ToolRegistry.getInstance(project)
-    private val registry: ToolChipRegistry by lazy { ToolChipRegistry.getInstance(project) }
 
     private val fileNavigator = FileNavigator(project)
 
-    private val kindStateListener = ToolChipRegistry.ChipStateWithKindListener { chipId, state, kind, mcpToolName ->
-        // Use "t-$chipId" — chips are registered in the DOM as data-chip-for="t-<chipId>"
-        val did = "t-$chipId"
-        if (state == ToolChipRegistry.ChipState.RUNNING) {
-            // MCP is handling this tool — mark as agentbridge tool (solid border) and set running
+    private val trackerListener = object : ToolCallTracker.Listener {
+        override fun onCorrelated(record: ToolCallRecord) {
+            val did = domId(record.recordId)
             executeJs("ChatController.markMcpHandled('$did')")
-            // Mark the entry as MCP handled for persistence
-            toolCallEntries[did]?.pluginTool = mcpToolName ?: toolCallNames[did]
-        } else {
-            // COMPLETE, EXTERNAL, FAILED — just remove the spinner; border already shows origin
-            val jsState = if (state == ToolChipRegistry.ChipState.FAILED) "failed" else "complete"
+            toolCallEntries[did]?.pluginTool = record.mcpToolName ?: toolCallNames[did]
+        }
+
+        override fun onMcpCompleted(record: ToolCallRecord) {
+            val did = domId(record.recordId)
+            val jsState = if (record.isMcpSuccess) "complete" else "failed"
             executeJs("ChatController.setToolChipState('$did','$jsState')")
             toolJustCompleted = true
-        }
-        if (kind != null) {
-            val jsKind = kind.replace("'", "\\'")
-            executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
-            toolCallEntries[did]?.kind = kind
+            record.kind?.let { kind ->
+                val jsKind = kind.replace("'", "\\'")
+                executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
+                toolCallEntries[did]?.kind = kind
+            }
         }
     }
 
@@ -349,7 +347,7 @@ class ChatConsolePanel(
     }
 
     private fun registerChipStateListener() {
-        registry.addKindStateListener(kindStateListener)
+        ToolCallTracker.getInstance(project).addListener(trackerListener)
     }
 
     // ── Public API ─────────────────────────────────────────────────
@@ -482,7 +480,8 @@ class ChatConsolePanel(
         id: String,
         title: String,
         arguments: String?,
-        kind: String?
+        kind: String?,
+        isMcpHandled: Boolean
     ) {
         val cleanTitle = title.trim('\'', '"')
 
@@ -500,7 +499,6 @@ class ChatConsolePanel(
             ?: toolRegistry?.findById(cleanTitle)?.kind()?.value()
             ?: "other"
 
-        // Extract file path from arguments for edit tools
         val filePath = extractFilePathFromArgs(arguments)
 
         val entry =
@@ -511,33 +509,54 @@ class ChatConsolePanel(
             )
         entries.add(entry)
 
-        val reg = registerToolChip(cleanTitle, arguments, resolvedKind, id)
-        toolCallNames[reg.domId] = cleanTitle
-        toolCallEntries[reg.domId] = entry
-        if (reg.isMcpHandled) entry.pluginTool = cleanTitle
+        val did = domId(id)
+        toolCallNames[did] = cleanTitle
+        toolCallEntries[did] = entry
+        if (isMcpHandled) entry.pluginTool = cleanTitle
 
-        val initialStatus = if (reg.isMcpHandled) ChipStatus.RUNNING else ChipStatus.PENDING
+        val label = toolChipTitle(cleanTitle, arguments)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
+        val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
+        val safeKind = escJs(resolvedKind)
+        val initialStatus = if (isMcpHandled) ChipStatus.RUNNING else ChipStatus.PENDING
         val entryTs = displayTs(entry.timestamp)
-        executeJs("ChatController.upsertToolChip('$currentTurnId','main','${reg.domId}','${escJs(reg.label)}','${reg.paramsJson}',{kind:'${reg.safeKind}',status:'$initialStatus',timestamp:'$entryTs'})")
-        if (reg.isMcpHandled) {
-            executeJs("ChatController.markMcpHandled('${reg.domId}')")
+
+        executeJs("ChatController.upsertToolChip('$currentTurnId','main','$did','${escJs(label)}','$paramsJson',{kind:'$safeKind',status:'$initialStatus',timestamp:'$entryTs'})")
+        if (isMcpHandled) {
+            executeJs("ChatController.markMcpHandled('$did')")
         }
     }
 
     override fun updateToolCall(id: String, status: String, update: ChatPanelApi.ToolCallUpdate) {
-        val chipId = registry.findChipIdByClientId(id)
-        var did = if (chipId != null) "t-$chipId" else domId(id)
+        val did = domId(id)
 
         if (update.arguments != null && status == "running") {
-            did = reCorrelateChipIfNeeded(id, update.arguments, did, update.title, update.kind)
+            // Late-arriving args: provide to tracker for possible re-correlation
+            try {
+                val argsObj = JsonParser.parseString(update.arguments).asJsonObject
+                val record = ToolCallTracker.getInstance(project).findByRecordId(id)
+                if (record?.acpClientId != null) {
+                    ToolCallTracker.getInstance(project).acpProvideArgs(record.acpClientId!!, argsObj)
+                }
+            } catch (e: Exception) {
+                LOG.warn("updateToolCall: failed to provide args to tracker", e)
+            }
+            // Update label with new arguments
+            val title = toolTitleOrDefault(update.title, toolCallNames[did])
+            val label = toolChipTitle(title, update.arguments)
+            val hasCustomRenderer = ToolRenderers.hasRenderer(title, toolRegistry)
+            val paramsJson = if (!hasCustomRenderer) escJs(update.arguments) else ""
+            val safeKind = update.kind?.let { escJs(it) } ?: toolCallEntries[did]?.kind?.let { escJs(it) } ?: "other"
+            val entryTs = toolCallEntries[did]?.timestamp?.let { displayTs(it) } ?: ""
+            executeJs("ChatController.upsertToolChip('$currentTurnId','main','$did','${escJs(label)}','$paramsJson',{kind:'$safeKind',status:'running',timestamp:'$entryTs'})")
         }
 
         val resultLen = update.details?.length ?: 0
-        LOG.debug("updateToolCall: id=$id, chipId=$chipId, status=$status, resultLen=$resultLen, hasDesc=${update.description != null}, denied=${update.autoDenied}")
+        LOG.debug("updateToolCall: id=$id, status=$status, resultLen=$resultLen, hasDesc=${update.description != null}, denied=${update.autoDenied}")
         applyEntryDataUpdate(
             did,
             ToolCallStatusData(
-                chipId,
+                id,
                 update.details,
                 status,
                 update.autoDenied,
@@ -559,64 +578,14 @@ class ChatConsolePanel(
             return
         }
 
-        // For terminal states, notify the registry — it determines COMPLETE vs EXTERNAL vs FAILED,
-        // and the chip state listener updates the DOM with the authoritative final state.
-        when (status) {
-            "failed" -> registry.completeClientSide(id, false)
-            else -> registry.completeClientSide(id, true) // "complete", "completed", etc.
-        }
+        // Terminal state: set DOM directly from ACP status.
+        // MCP-side state changes (correlation, MCP completion) are handled by the tracker listener.
+        val jsState = if (status == "failed") "failed" else "complete"
+        executeJs("ChatController.setToolChipState('$did','$jsState')")
+        toolJustCompleted = true
 
         if (update.autoDenied) {
             executeJs("ChatController.setToolChipState('$did','denied')")
-        }
-    }
-
-    /** Re-correlates a tool-chip's DOM id and entry maps when arguments become available at runtime. Returns the updated did. */
-    private fun reCorrelateChipIfNeeded(
-        id: String, arguments: String, currentDid: String, title: String?, kind: String?
-    ): String {
-        return try {
-            val argsObj = JsonParser.parseString(arguments).asJsonObject
-            val registration = registry.reregisterWithArgs(id, argsObj)
-            val newDid = "t-${registration.chipId()}"
-            if (newDid == currentDid) return currentDid
-
-            val entry = toolCallEntries.remove(currentDid)
-            if (entry != null) toolCallEntries[newDid] = entry
-            val name = toolCallNames.remove(currentDid)
-            if (name != null) toolCallNames[newDid] = name
-
-            // Remove old chip DOM element
-            executeJs("ChatController.removeToolChip('$currentDid')")
-
-            // Create new chip with correct hash-based ID
-            val cleanTitle = toolTitleOrDefault(title, name)
-            val resolvedKind = when {
-                kind != null -> kind
-                entry != null -> entry.kind
-                else -> "other"
-            }
-            val label = toolChipTitle(cleanTitle, arguments)
-            val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
-            val paramsJson = if (!hasCustomRenderer) escJs(arguments) else ""
-
-            executeJs(
-                "ChatController.upsertToolChip('$currentTurnId','main','$newDid','${escJs(label)}','$paramsJson',{kind:'${
-                    escJs(
-                        resolvedKind
-                    )
-                }',status:'running'})"
-            )
-
-            if (registration.initialState() == ToolChipRegistry.ChipState.RUNNING) {
-                executeJs("ChatController.markMcpHandled('$newDid')")
-                toolCallEntries[newDid]?.pluginTool = toolCallNames[newDid]
-            }
-            LOG.debug("updateToolCall: re-correlated chip $id: $currentDid -> $newDid")
-            newDid
-        } catch (e: Exception) {
-            LOG.warn("updateToolCall: failed to re-correlate chip $id", e)
-            currentDid
         }
     }
 
@@ -624,13 +593,13 @@ class ChatConsolePanel(
         (title?.takeIf { it.isNotBlank() } ?: name?.takeIf { it.isNotBlank() } ?: "Tool").trim('\'', '"')
 
     private data class ToolCallStatusData(
-        val chipId: String?, val details: String?, val status: String,
+        val recordId: String?, val details: String?, val status: String,
         val autoDenied: Boolean, val denialReason: String?, val description: String?, val kind: String?
     )
 
     /** Updates the in-memory entry data for a tool-call chip from the latest status report. */
     private fun applyEntryDataUpdate(did: String, update: ToolCallStatusData) {
-        val storedResult = update.chipId?.let { cid -> ToolCallTracker.getInstance(project).getStoredResult(cid) }
+        val storedResult = update.recordId?.let { ToolCallTracker.getInstance(project).getStoredResult(it) }
         toolCallEntries[did]?.let {
             // Prefer the actual MCP execution result over what the ACP reported.
             // Copilot CLI may send tool_call_update:failed with no error text even when our MCP
@@ -644,7 +613,6 @@ class ChatConsolePanel(
         }
     }
 
-    /** Add a tool call chip+section to a sub-agent's result message. */
     override fun addSubAgentToolCall(
         subAgentId: String,
         toolId: String,
@@ -658,25 +626,31 @@ class ChatConsolePanel(
             ?: toolRegistry?.findById(cleanTitle)?.kind()?.value()
             ?: "other"
 
-        val reg = registerToolChip(cleanTitle, arguments, resolvedKind, toolId)
-        val isExternal = !reg.isMcpHandled
+        val did = domId(toolId)
+        val record = ToolCallTracker.getInstance(project).findByRecordId(toolId)
+        val isMcpHandled = record?.isCorrelated == true
+        val isExternal = !isMcpHandled
+
+        val label = toolChipTitle(cleanTitle, arguments)
+        val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
+        val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
+        val safeKind = escJs(resolvedKind)
 
         val entry = EntryData.ToolCall(
             cleanTitle, arguments, resolvedKind,
             timestamp = timestamp(), agent = currentAgent
         )
-        if (reg.isMcpHandled) entry.pluginTool = cleanTitle
-        toolCallNames[reg.domId] = cleanTitle
-        toolCallEntries[reg.domId] = entry
+        if (isMcpHandled) entry.pluginTool = cleanTitle
+        toolCallNames[did] = cleanTitle
+        toolCallEntries[did] = entry
         entries.add(entry)
 
-        executeJs("ChatController.addSubAgentToolCall('$saDid','${reg.domId}','${escJs(reg.label)}','${reg.paramsJson}','${reg.safeKind}',$isExternal)")
-        if (reg.isMcpHandled) {
-            executeJs("ChatController.markMcpHandled('${reg.domId}')")
+        executeJs("ChatController.addSubAgentToolCall('$saDid','$did','${escJs(label)}','$paramsJson','$safeKind',$isExternal)")
+        if (isMcpHandled) {
+            executeJs("ChatController.markMcpHandled('$did')")
         }
     }
 
-    /** Update a sub-agent internal tool call (no segment break). */
     override fun updateSubAgentToolCall(
         toolId: String,
         status: String,
@@ -685,8 +659,7 @@ class ChatConsolePanel(
         autoDenied: Boolean,
         denialReason: String?
     ) {
-        val chipId = registry.findChipIdByClientId(toolId)
-        val did = if (chipId != null) "t-$chipId" else domId(toolId)
+        val did = domId(toolId)
         toolCallEntries[did]?.let {
             it.result = details
             it.status = status
@@ -803,7 +776,7 @@ class ChatConsolePanel(
         // Reset streaming flag — same reason as showPlaceholder() above.
         streaming = false
         toolCallNames.clear(); toolCallEntries.clear()
-        registry.clear()
+        ToolCallTracker.getInstance(project).clear()
         clearPendingAskUserRequest(null)
         executeJs("ChatController.clear()")
         fallbackArea?.let { ApplicationManager.getApplication().invokeLater { it.text = "" } }
@@ -819,9 +792,6 @@ class ChatConsolePanel(
         finalizeCurrentText()
         collapseThinking()
         val statsJson = """{"tools":$toolCallCount,"model":"${escJs(modelId)}","mult":"${escJs(multiplier)}"}"""
-
-        // Clear the chip registry for this turn
-        registry.clearTurn()
 
         executeJs("ChatController.finalizeTurn('$currentTurnId',$statsJson)")
         flushPendingMonitorReplay()
@@ -1270,7 +1240,7 @@ class ChatConsolePanel(
     }
 
     override fun dispose() {
-        registry.removeKindStateListener(kindStateListener)
+        ToolCallTracker.getInstance(project).removeListener(trackerListener)
         streaming = false
         if (registerAsMain) instances.remove(project)
     }
@@ -1909,44 +1879,6 @@ class ChatConsolePanel(
         val display = toolDef?.displayName() ?: displayFallback
         val subtitle = formatToolSubtitle(clean, arguments)
         return if (subtitle != null) "$display — $subtitle" else display
-    }
-
-    private data class ChipRegistration(
-        val label: String,
-        val paramsJson: String,
-        val safeKind: String,
-        val chipId: String,
-        val domId: String,
-        val isMcpHandled: Boolean
-    )
-
-    private fun registerToolChip(
-        cleanTitle: String,
-        arguments: String?,
-        resolvedKind: String,
-        correlationId: String
-    ): ChipRegistration {
-        val label = toolChipTitle(cleanTitle, arguments)
-        val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
-        val paramsJson = if (!arguments.isNullOrBlank() && !hasCustomRenderer) escJs(arguments) else ""
-        val safeKind = escJs(resolvedKind)
-        val argsObj = arguments?.let {
-            try {
-                JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
-            } catch (_: Exception) {
-                null
-            }
-        }
-        val registration = registry.registerClientSide(cleanTitle, argsObj, correlationId)
-        val chipId = registration.chipId()
-        return ChipRegistration(
-            label = label,
-            paramsJson = paramsJson,
-            safeKind = safeKind,
-            chipId = chipId,
-            domId = "t-$chipId",
-            isMcpHandled = registration.initialState() == ToolChipRegistry.ChipState.RUNNING
-        )
     }
 
     private fun renderSubAgentResult(did: String, status: String, autoDenied: Boolean, result: String?) {

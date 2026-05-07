@@ -85,7 +85,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
             Read recent IntelliJ IDE log entries with compact output.
 
             FILTER is always a case-insensitive regex - use | for OR:
-              filter="ToolChipRegistry|git_diff"
+              filter="ToolCallTracker|git_diff"
 
             SINCE / UNTIL narrow to a time window. All formats accepted:
               Relative: "5m", "30s", "2h"
@@ -113,7 +113,7 @@ public final class ReadIdeLogTool extends InfrastructureTool {
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.optional(PARAM_FILTER, TYPE_STRING,
-                "Case-insensitive regex. Use | for OR: \"ToolChipRegistry|git_diff\""),
+                "Case-insensitive regex. Use | for OR: \"ToolCallTracker|git_diff\""),
             Param.optional(PARAM_SINCE, TYPE_STRING,
                 "Show entries at or after. Accepted: \"5m\", \"2h\", \"16:57:30\", \"2026-03-22 16:57:30\", \"2026-03-22T16:57:30Z\""),
             Param.optional(PARAM_UNTIL, TYPE_STRING,

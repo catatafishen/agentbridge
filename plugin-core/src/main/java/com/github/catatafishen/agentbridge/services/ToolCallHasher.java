@@ -13,7 +13,7 @@ import java.util.TreeMap;
 /**
  * Pure JSON normalization and deterministic hashing utilities for tool call arguments.
  *
- * <p>Extracted from {@link ToolChipRegistry} so the logic can be reused
+ * <p>Extracted from {@link ToolCallTracker} so the logic can be reused
  * without pulling in registry state.
  */
 final class ToolCallHasher {

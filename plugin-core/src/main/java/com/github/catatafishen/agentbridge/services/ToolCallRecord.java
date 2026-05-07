@@ -17,13 +17,21 @@ public final class ToolCallRecord {
      * How this tool call is routed in the UI.
      */
     public enum RoutingType {
-        /** Normal tool call — renders as a chip in the main message. */
+        /**
+         * Normal tool call — renders as a chip in the main message.
+         */
         REGULAR,
-        /** Sub-agent launch (Task tool) — renders as a sub-agent entry. */
+        /**
+         * Sub-agent launch (Task tool) — renders as a sub-agent entry.
+         */
         SUB_AGENT,
-        /** Tool call made internally by a running sub-agent. */
+        /**
+         * Tool call made internally by a running sub-agent.
+         */
         SUB_AGENT_INTERNAL,
-        /** Copilot's task_complete built-in — summary rendered as text, not a chip. */
+        /**
+         * Copilot's task_complete built-in — summary rendered as text, not a chip.
+         */
         TASK_COMPLETE
     }
 
@@ -31,22 +39,32 @@ public final class ToolCallRecord {
      * Lifecycle state of the tool call.
      */
     public enum State {
-        /** ACP reported but MCP hasn't started yet. */
+        /**
+         * ACP reported but MCP hasn't started yet.
+         */
         PENDING,
-        /** MCP is executing. */
+        /**
+         * MCP is executing.
+         */
         RUNNING,
-        /** Both ACP and MCP confirm successful completion. */
+        /**
+         * Both ACP and MCP confirm successful completion.
+         */
         COMPLETED,
-        /** Either ACP or MCP reported failure. */
+        /**
+         * Either ACP or MCP reported failure.
+         */
         FAILED,
-        /** MCP-only call that was never correlated with ACP. */
+        /**
+         * MCP-only call that was never correlated with ACP.
+         */
         EXTERNAL
     }
 
     // ── Identity ─────────────────────────────────────────────────────────────
 
     private final String recordId;
-    private final @Nullable String argsHash;
+    private @Nullable String argsHash;
 
     // ── ACP-side (set when ACP reports) ──────────────────────────────────────
 
@@ -70,7 +88,9 @@ public final class ToolCallRecord {
 
     // ── Display ──────────────────────────────────────────────────────────────
 
-    /** The display name shown in the UI chip. Updated when MCP provides a more accurate name. */
+    /**
+     * The display name shown in the UI chip. Updated when MCP provides a more accurate name.
+     */
     private @Nullable String displayName;
 
     // ── Timing ───────────────────────────────────────────────────────────────
@@ -140,6 +160,22 @@ public final class ToolCallRecord {
         this.resultBytes = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 
+    /**
+     * Updates the args hash when arguments arrive late (e.g. ACP sends tool_call with no args,
+     * then tool_call_update with actual args). Called by {@link ToolCallTracker#acpProvideArgs}.
+     */
+    void updateArgsHash(@Nullable String newHash) {
+        this.argsHash = newHash;
+    }
+
+    /**
+     * Updates ACP arguments without resetting other ACP fields.
+     * Used when args arrive late via tool_call_update.
+     */
+    void setAcpArgs(@Nullable JsonObject args) {
+        this.acpArgs = args;
+    }
+
     // ── State ────────────────────────────────────────────────────────────────
 
     void setState(@NotNull State state) {
@@ -164,50 +200,116 @@ public final class ToolCallRecord {
 
     // ── Getters ──────────────────────────────────────────────────────────────
 
-    public @NotNull String getRecordId() { return recordId; }
-    public @Nullable String getArgsHash() { return argsHash; }
+    public @NotNull String getRecordId() {
+        return recordId;
+    }
+
+    public @Nullable String getArgsHash() {
+        return argsHash;
+    }
 
     // ACP-side
-    public @Nullable String getAcpClientId() { return acpClientId; }
-    public @Nullable String getAcpTitle() { return acpTitle; }
-    public @Nullable JsonObject getAcpArgs() { return acpArgs; }
-    public @NotNull RoutingType getRoutingType() { return routingType; }
-    public int getAcpSequence() { return acpSequence; }
+    public @Nullable String getAcpClientId() {
+        return acpClientId;
+    }
+
+    public @Nullable String getAcpTitle() {
+        return acpTitle;
+    }
+
+    public @Nullable JsonObject getAcpArgs() {
+        return acpArgs;
+    }
+
+    public @NotNull RoutingType getRoutingType() {
+        return routingType;
+    }
+
+    public int getAcpSequence() {
+        return acpSequence;
+    }
 
     // MCP-side
-    public @Nullable String getMcpToolName() { return mcpToolName; }
-    public @Nullable JsonObject getMcpArgs() { return mcpArgs; }
-    public @Nullable String getMcpResult() { return mcpResult; }
-    public boolean isMcpSuccess() { return mcpSuccess; }
+    public @Nullable String getMcpToolName() {
+        return mcpToolName;
+    }
+
+    public @Nullable JsonObject getMcpArgs() {
+        return mcpArgs;
+    }
+
+    public @Nullable String getMcpResult() {
+        return mcpResult;
+    }
+
+    public boolean isMcpSuccess() {
+        return mcpSuccess;
+    }
 
     // Shared
-    public @Nullable String getKind() { return kind; }
-    public @NotNull State getState() { return state; }
-    public @Nullable String getDisplayName() { return displayName; }
+    public @Nullable String getKind() {
+        return kind;
+    }
+
+    public @NotNull State getState() {
+        return state;
+    }
+
+    public @Nullable String getDisplayName() {
+        return displayName;
+    }
 
     // Timing
-    public long getCreatedAt() { return createdAt; }
-    public long getMcpStartedAt() { return mcpStartedAt; }
-    public long getMcpCompletedAt() { return mcpCompletedAt; }
+    public long getCreatedAt() {
+        return createdAt;
+    }
 
-    /** MCP execution duration in milliseconds, or 0 if not yet completed. */
+    public long getMcpStartedAt() {
+        return mcpStartedAt;
+    }
+
+    public long getMcpCompletedAt() {
+        return mcpCompletedAt;
+    }
+
+    /**
+     * MCP execution duration in milliseconds, or 0 if not yet completed.
+     */
     public long getMcpDurationMs() {
         if (mcpStartedAt == 0 || mcpCompletedAt == 0) return 0;
         return mcpCompletedAt - mcpStartedAt;
     }
 
     // Data throughput
-    public int getResultBytes() { return resultBytes; }
+    public int getResultBytes() {
+        return resultBytes;
+    }
 
     // Sub-agent
-    public @Nullable String getSubAgentType() { return subAgentType; }
-    public @Nullable String getSubAgentDescription() { return subAgentDescription; }
-    public @Nullable String getSubAgentPrompt() { return subAgentPrompt; }
+    public @Nullable String getSubAgentType() {
+        return subAgentType;
+    }
+
+    public @Nullable String getSubAgentDescription() {
+        return subAgentDescription;
+    }
+
+    public @Nullable String getSubAgentPrompt() {
+        return subAgentPrompt;
+    }
 
     // Derived
-    public boolean isCorrelated() { return acpClientId != null && mcpToolName != null; }
-    public boolean isAcpOnly() { return acpClientId != null && mcpToolName == null; }
-    public boolean isMcpOnly() { return acpClientId == null && mcpToolName != null; }
+    public boolean isCorrelated() {
+        return acpClientId != null && mcpToolName != null;
+    }
+
+    public boolean isAcpOnly() {
+        return acpClientId != null && mcpToolName == null;
+    }
+
+    public boolean isMcpOnly() {
+        return acpClientId == null && mcpToolName != null;
+    }
 
     /**
      * The best available tool name — MCP is authoritative, falls back to ACP title.

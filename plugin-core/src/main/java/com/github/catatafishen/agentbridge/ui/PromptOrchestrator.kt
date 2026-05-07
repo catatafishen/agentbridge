@@ -105,7 +105,6 @@ class PromptOrchestrator(
 
     /** The most recently started sub-agent call ID still in-flight, or null if none. */
     private val activeSubAgentId: String? get() = activeSubAgentStack.lastOrNull()
-    private val toolCallTitles = mutableMapOf<String, String>()
     private var pendingBanner: PendingBanner? = null
     private var turnHadContent = false
     private var codeChangeListener: Runnable? = null
@@ -622,11 +621,10 @@ class PromptOrchestrator(
         if (toolCallId.isEmpty()) return
 
         // task_complete is a Copilot built-in tool whose summary should render as agent
-        // text, not as a tool chip. Record the ID so handleStreamingToolCallUpdate can
+        // text, not a tool chip. Record the ID so handleStreamingToolCallUpdate can
         // emit the summary text and suppress the chip update.
         if (title == taskCompleteTool) {
             log.info("task_complete detected (id=$toolCallId) — suppressing chip creation")
-            toolCallTitles[toolCallId] = taskCompleteTool
             acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.TASK_COMPLETE, toolCall)
             return
         }
@@ -635,7 +633,6 @@ class PromptOrchestrator(
             val agentType = toolCall.agentType() ?: return
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
-            toolCallTitles[toolCallId] = "task"
             activeSubAgentStack.addLast(toolCallId)
             agentManager.client.setSubAgentActive(true)
             PsiBridgeService.getInstance(project).setNudgesHeld(true)
@@ -647,20 +644,34 @@ class PromptOrchestrator(
             )
             val description =
                 toolCall.subAgentDescription()?.takeIf { it.isNotBlank() } ?: title.ifBlank { "Sub-agent task" }
-            consolePanel().addSubAgentEntry(toolCallId, agentType, description, toolCall.subAgentPrompt())
-            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT, toolCall)
+            val record =
+                acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT, toolCall)
+            consolePanel().addSubAgentEntry(record.recordId, agentType, description, toolCall.subAgentPrompt())
         } else if (activeSubAgentId != null) {
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
-            toolCallTitles[toolCallId] = "subagent_internal"
-            consolePanel().addSubAgentToolCall(activeSubAgentId!!, toolCallId, title, arguments, kind)
-            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT_INTERNAL, toolCall)
+            val parentRecord = ToolCallTracker.getInstance(project).findByAcpId(activeSubAgentId!!)
+            val record = acpRegisterToolCall(
+                toolCallId,
+                title,
+                arguments,
+                kind,
+                ToolCallRecord.RoutingType.SUB_AGENT_INTERNAL,
+                toolCall
+            )
+            consolePanel().addSubAgentToolCall(
+                parentRecord?.recordId ?: activeSubAgentId!!,
+                record.recordId,
+                title,
+                arguments,
+                kind
+            )
         } else {
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
-            toolCallTitles[toolCallId] = title
-            consolePanel().addToolCallEntry(toolCallId, title, arguments, kind)
-            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.REGULAR, toolCall)
+            val record =
+                acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.REGULAR, toolCall)
+            consolePanel().addToolCallEntry(record.recordId, title, arguments, kind, record.isCorrelated)
         }
 
         // Automatic file navigation for "follow agent" feature.
@@ -676,15 +687,17 @@ class PromptOrchestrator(
         toolCallId: String, title: String, arguments: String?,
         kind: String, routingType: ToolCallRecord.RoutingType,
         @Suppress("UNUSED_PARAMETER") toolCall: SessionUpdate.ToolCall
-    ) {
+    ): ToolCallRecord {
         val argsObj = arguments?.let {
             try {
                 com.google.gson.JsonParser.parseString(it).takeIf { e -> e.isJsonObject }?.asJsonObject
-            } catch (_: Exception) { null }
+            } catch (_: Exception) {
+                null
+            }
         }
         // For Claude CLI, the ACP toolCallId IS the toolUseId that MCP sees in _meta.
         // Passing it enables Priority 0 correlation (exact ID match) in the tracker.
-        ToolCallTracker.getInstance(project).acpRegister(
+        return ToolCallTracker.getInstance(project).acpRegister(
             toolCallId, title, argsObj, kind, routingType, toolCallId
         )
     }
@@ -696,27 +709,25 @@ class PromptOrchestrator(
         val description = update.description()
         val autoDenied = update.autoDenied()
         val denialReason = update.denialReason()
-        val arguments = update.arguments() // raw arguments from tool_call_update
-        val kind = update.kind()?.value() // tool kind from tool_call_update (may be null)
+        val arguments = update.arguments()
+        val kind = update.kind()?.value()
 
-        val callType = toolCallTitles[toolCallId]
+        val record = ToolCallTracker.getInstance(project).findByAcpId(toolCallId)
 
         // task_complete: render the summary as agent text instead of updating a chip.
-        // The summary is the agent's concluding message — displaying it inline provides
-        // a natural reading experience instead of hiding it behind a tool chip.
-        if (callType == taskCompleteTool) {
+        if (record != null && record.routingType == ToolCallRecord.RoutingType.TASK_COMPLETE) {
             val summary = result ?: description ?: ""
             if (summary.isNotBlank()) {
                 ApplicationManager.getApplication().invokeLater {
                     if (!stopped) consolePanel().appendText(summary)
                 }
             }
-            toolCallTitles.remove(toolCallId)
             return
         }
 
-        val isSubAgent = callType == "task"
-        val isInternal = callType == "subagent_internal"
+        val isSubAgent = record?.routingType == ToolCallRecord.RoutingType.SUB_AGENT
+        val isInternal = record?.routingType == ToolCallRecord.RoutingType.SUB_AGENT_INTERNAL
+        val recordId = record?.recordId ?: toolCallId
 
         val uiStatus = when (status) {
             SessionUpdate.ToolCallStatus.COMPLETED -> MessageFormatter.ChipStatus.COMPLETE
@@ -725,12 +736,12 @@ class PromptOrchestrator(
         }
 
         updateToolCallUi(
-            toolCallId, uiStatus,
+            toolCallId, recordId, uiStatus,
             ToolCallUiUpdate(
                 result = result, description = description,
                 isSubAgent = isSubAgent, isInternal = isInternal,
                 autoDenied = autoDenied, denialReason = denialReason,
-                arguments = arguments, title = callType, kind = kind
+                arguments = arguments, title = record?.acpTitle, kind = kind
             )
         )
 
@@ -749,7 +760,7 @@ class PromptOrchestrator(
         val arguments: String? = null, val title: String? = null, val kind: String? = null
     )
 
-    private fun updateToolCallUi(toolCallId: String, uiStatus: String, update: ToolCallUiUpdate) {
+    private fun updateToolCallUi(toolCallId: String, recordId: String, uiStatus: String, update: ToolCallUiUpdate) {
         if (update.isSubAgent) {
             if (uiStatus == "running") {
                 // Sub-agent is still in progress — chip is already in running state from addSubAgentEntry;
@@ -768,7 +779,7 @@ class PromptOrchestrator(
                 )
             }
             consolePanel().updateSubAgentResult(
-                toolCallId,
+                recordId,
                 uiStatus,
                 update.result,
                 update.description,
@@ -777,7 +788,7 @@ class PromptOrchestrator(
             )
         } else if (update.isInternal) {
             consolePanel().updateSubAgentToolCall(
-                toolCallId,
+                recordId,
                 uiStatus,
                 update.result,
                 update.description,
@@ -786,7 +797,7 @@ class PromptOrchestrator(
             )
         } else {
             consolePanel().updateToolCall(
-                toolCallId, uiStatus,
+                recordId, uiStatus,
                 ChatPanelApi.ToolCallUpdate(
                     details = update.result,
                     description = update.description,
