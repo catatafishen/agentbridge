@@ -2836,7 +2836,9 @@ pre.word-wrap code {
 
 /* ── Nudge bubble ────────────────────────────────────── */
 .nudge-pending message-bubble {
+    position: relative;
     opacity: 0.7;
+    padding-right: 1.8em;
 }
 
 .nudge-pending .nudge-label {
@@ -2853,10 +2855,31 @@ pre.word-wrap code {
     opacity: 0.7;
 }
 
-.nudge-cancel-btn {
-    margin-top: var(--sp-2);
-    font-size: 0.82em;
-    opacity: 0.8;
+.nudge-cancel-x {
+    position: absolute;
+    top: 50%;
+    right: var(--sp-2);
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.3em;
+    height: 1.3em;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    font-size: 0.8em;
+    line-height: 1;
+    opacity: 0.5;
+    cursor: pointer;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.nudge-cancel-x:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.25);
 }
 
 /* ── System notice bubble ──────────────────────────────── */
