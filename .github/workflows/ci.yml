@@ -193,7 +193,21 @@ jobs:
         run: df -h /
 
       - name: Verify plugins (marketplace compatibility)
-        run: gradle :plugin-core:verifyPlugin --no-daemon --quiet
+        # The JetBrains plugin verifier runs 5 IDE targets concurrently via ExecutorWithProgress.
+        # A race condition in PluginJar.resolveDescriptors() can cause ClosedFileSystemException
+        # when concurrent workers share a ZipFileSystem handle for the plugin JAR — a known bug
+        # in the verifier library. The race is non-deterministic, so we retry up to 3 times.
+        run: |
+          for attempt in 1 2 3; do
+            gradle :plugin-core:verifyPlugin --no-daemon --quiet && break
+            if [ "$attempt" -lt 3 ]; then
+              echo "Attempt $attempt failed, retrying in 15 seconds..."
+              sleep 15
+            else
+              echo "All 3 attempts failed"
+              exit 1
+            fi
+          done
 
       - name: Show disk space after plugin verification
         if: always()
