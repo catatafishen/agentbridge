@@ -460,20 +460,17 @@ public final class ConversationWriter {
             ps.setString(9, tc.getFilePath());
             ps.setInt(10, tc.getAutoDenied() ? 1 : 0);
             ps.setString(11, tc.getDenialReason());
-            ps.setInt(12, isMcpToolName(tc.getTitle()) ? 1 : 0);
+            // pluginTool is the confirmed MCP tool name set by ToolCallTracker when ACP↔MCP
+            // correlation succeeds. It is the single source of truth for is_mcp=1.
+            // NULL = unknown at flush time; enrichToolCallStats will confirm 1 for any MCP
+            // tool whose flush races ahead of correlation.
+            if (tc.getPluginTool() != null) {
+                ps.setInt(12, 1);
+            } else {
+                ps.setNull(12, Types.INTEGER);
+            }
             ps.executeUpdate();
         }
-    }
-
-    /**
-     * Detects whether a tool name belongs to our MCP server based on known prefixes.
-     * Different ACP clients use different naming conventions for our tools.
-     */
-    private static boolean isMcpToolName(@Nullable String toolName) {
-        if (toolName == null) return false;
-        return toolName.startsWith("agentbridge-")
-            || toolName.startsWith("agentbridge_")
-            || toolName.startsWith("@agentbridge/");
     }
 
     private void insertSubAgent(

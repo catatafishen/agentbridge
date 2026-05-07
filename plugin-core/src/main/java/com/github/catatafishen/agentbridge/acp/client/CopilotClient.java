@@ -575,14 +575,24 @@ public final class CopilotClient extends AcpClient {
     }
 
     private static String buildSingleToolReprimand(String toolId) {
-        return "[System notice] You used the following built-in tools which duplicate our MCP tools. "
-            + "Do NOT use these again — use the MCP alternatives instead:\n"
-            + "  • " + toolId + " → use " + mcpAlternative(toolId) + "\n"
-            + "All agentbridge-* MCP tools are available. Never use built-in tools when an MCP equivalent exists.";
+        // Copilot CLI sends the bash `description` parameter as the ACP title rather than
+        // the literal name "bash". Descriptions always contain spaces; known tool names never do.
+        boolean isBashWithDescription = toolId.contains(" ");
+        String label = isBashWithDescription
+            ? "bash (description: \"" + toolId + "\")"
+            : "'" + toolId + "'";
+        String alternative = mcpAlternative(toolId);
+        return "[System notice] You bypassed MCP by using the built-in " + label + " tool.\n"
+            + "Use " + alternative + " instead.\n"
+            + "All agentbridge-* MCP tools are available. Never use built-in tools when MCP equivalents exist.";
     }
 
-    private static String mcpAlternative(String builtInTool) {
-        return switch (builtInTool) {
+    private static String mcpAlternative(String toolId) {
+        // Copilot CLI sends the bash `description` as the protocol title; descriptions contain spaces.
+        if (toolId.contains(" ")) {
+            return bashDescriptionAlternative(toolId.toLowerCase());
+        }
+        return switch (toolId) {
             case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
             case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
             case "create" -> "agentbridge-create_file";
@@ -593,5 +603,26 @@ public final class CopilotClient extends AcpClient {
             case "report_intent" -> "(not needed — IDE tracks intent automatically)";
             default -> "the corresponding agentbridge-* tool";
         };
+    }
+
+    /**
+     * Infers the best MCP alternative from the human-readable bash description.
+     * Copilot CLI sends the {@code description} parameter as the ACP title for bash calls,
+     * so we never know the literal tool name — only what the agent said it was doing.
+     */
+    private static String bashDescriptionAlternative(String lowerDesc) {
+        if (lowerDesc.startsWith("write ") || lowerDesc.startsWith("create ") || lowerDesc.startsWith("save ")) {
+            return "agentbridge-write_file (for existing files) or agentbridge-create_file (for new files)"
+                + " — these write through the IDE editor buffer and stay in sync with IntelliJ."
+                + " Never use shell redirection (cat >, tee, heredocs) to write project files.";
+        }
+        if (lowerDesc.startsWith("find ") || lowerDesc.startsWith("search ") || lowerDesc.startsWith("grep ")) {
+            return "agentbridge-search_text or agentbridge-search_symbols — these are IDE-integrated and semantic-aware.";
+        }
+        if (lowerDesc.startsWith("read ") || lowerDesc.startsWith("get ") || lowerDesc.startsWith("check ")) {
+            return "agentbridge-read_file (for files) or agentbridge-search_text (for content search).";
+        }
+        return "agentbridge-run_command for shell commands, agentbridge-write_file for file writes,"
+            + " or agentbridge-search_text for searches.";
     }
 }
