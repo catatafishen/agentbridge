@@ -38,29 +38,11 @@ export default class ToolChip extends HTMLElement {
         const truncated = label.length > 50 ? label.substring(0, 47) + '\u2026' : label;
         this.className = this.className.replaceAll(/\bkind-\S+/g, '').replaceAll(/\bstatus-\S+/g, '').trim();
         this.classList.add('turn-chip', 'tool', `kind-${kind}`, `status-${status}`);
-        this.innerHTML = this._statusIcon(status) + escHtml(truncated);
+        this.innerHTML = '<span class="chip-ring" aria-hidden="true"></span> ' + escHtml(truncated);
         if (label.length > 50) {
             this.dataset.tip = label;
             this.setAttribute('title', label);
         }
-    }
-
-    /**
-     * Returns the fixed-size indicator HTML for the given status.
-     *
-     * Slot is always 8×8 px so chip width never changes on state transitions.
-     * AB tools use currentColor (= kind-color); Other tools use a muted grey.
-     */
-    private _statusIcon(status: string): string {
-        if (status === 'running' || status === 'pending') {
-            return '<span class="chip-spinner"></span> ';
-        }
-        const isAb = this.classList.contains('is-agentbridge-tool');
-        const isFailure = status === 'failed' || status === 'denied' || status === 'error';
-        if (isFailure) {
-            return `<span class="chip-xmark${isAb ? '' : ' chip-xmark-other'}">\u2715</span> `;
-        }
-        return `<span class="chip-dot${isAb ? '' : ' chip-dot-other'}"></span> `;
     }
 
     private _showPopup(): void {
