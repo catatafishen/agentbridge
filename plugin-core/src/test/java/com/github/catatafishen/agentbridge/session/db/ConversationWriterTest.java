@@ -96,10 +96,10 @@ class ConversationWriterTest {
     }
 
     @Test
-    void writesToolCallWithIsMcpDefaultZero() throws Exception {
+    void writesToolCallWithIsMcpNullWhenNotYetCorrelated() throws Exception {
         EntryData.ToolCall tc = new EntryData.ToolCall(
             "read_file", "{\"path\":\"a.txt\"}", "read", "ok", "completed",
-            null, "a.txt", false, null, "agentbridge",
+            null, "a.txt", false, null, null,
             "2026-01-01T10:00:01Z", "Copilot", "gpt-5", "ev-tc");
 
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
@@ -109,16 +109,16 @@ class ConversationWriterTest {
 
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
-                 "SELECT tool_name, arguments, status, file_path, is_mcp, client_id, display_name "
+                 "SELECT tool_name, arguments, status, file_path, is_mcp, client_id "
                      + "FROM tool_call_events WHERE event_id = 'ev-tc'")) {
             assertTrue(rs.next());
             assertEquals("read_file", rs.getString(1));
             assertEquals("{\"path\":\"a.txt\"}", rs.getString(2));
             assertEquals("completed", rs.getString(3));
             assertEquals("a.txt", rs.getString(4));
-            assertEquals(0, rs.getInt(5));
+            // pluginTool = null → not yet correlated with MCP, is_mcp unknown
+            assertNull(rs.getObject(5));
             assertEquals("copilot", rs.getString(6));
-            assertEquals("agentbridge", rs.getString(7));
         }
 
         writer.markToolCallMcp("ev-tc");
@@ -313,16 +313,16 @@ class ConversationWriterTest {
     }
 
     @Test
-    void autoDetectsIsMcpFromToolNamePrefix() throws Exception {
+    void isMcpSetWhenPluginToolSet_nullOtherwise() throws Exception {
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
             new EntryData.Prompt("Hi", "2026-01-01T10:00:00Z", null, "turn-1", "turn-1"),
-            // MCP tool (agentbridge- prefix)
+            // Correlated MCP tool — pluginTool holds the confirmed tool name
             new EntryData.ToolCall("agentbridge-read_file", null, "fs", null, null, null, null,
-                false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-mcp"),
-            // MCP tool (agentbridge_ prefix — OpenCode style)
+                false, null, "read_file", "2026-01-01T10:00:01Z", "", "", "ev-mcp"),
+            // Also correlated (OpenCode style client prefix, different pluginTool)
             new EntryData.ToolCall("agentbridge_search_text", null, "search", null, null, null, null,
-                false, null, null, "2026-01-01T10:00:02Z", "", "", "ev-mcp2"),
-            // Non-MCP tool (agent built-in)
+                false, null, "search_text", "2026-01-01T10:00:02Z", "", "", "ev-mcp2"),
+            // Built-in / not yet correlated — pluginTool is null
             new EntryData.ToolCall("bash", null, "shell", null, null, null, null,
                 false, null, null, "2026-01-01T10:00:03Z", "", "", "ev-builtin")
         ));
@@ -332,13 +332,13 @@ class ConversationWriterTest {
                  "SELECT event_id, is_mcp FROM tool_call_events ORDER BY event_id")) {
             assertTrue(rs.next());
             assertEquals("ev-builtin", rs.getString(1));
-            assertEquals(0, rs.getInt(2), "bash should not be flagged as MCP");
+            assertNull(rs.getObject(2), "bash with null pluginTool → is_mcp unknown (NULL)");
             assertTrue(rs.next());
             assertEquals("ev-mcp", rs.getString(1));
-            assertEquals(1, rs.getInt(2), "agentbridge- prefix should be MCP");
+            assertEquals(1, rs.getInt(2), "correlated MCP tool should be flagged as is_mcp=1");
             assertTrue(rs.next());
             assertEquals("ev-mcp2", rs.getString(1));
-            assertEquals(1, rs.getInt(2), "agentbridge_ prefix should be MCP");
+            assertEquals(1, rs.getInt(2), "correlated MCP tool should be flagged as is_mcp=1");
         }
     }
 
