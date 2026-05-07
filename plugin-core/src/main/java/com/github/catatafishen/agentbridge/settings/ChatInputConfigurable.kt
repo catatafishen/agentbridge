@@ -164,6 +164,30 @@ class ChatInputConfigurable(private val project: Project) :
                     { s.unhandledNudgeMode = it ?: ChatInputSettings.UnhandledNudgeMode.AUTO_SEND }
                 )
         }
+        separator()
+        row("Reprimand nudges:") {
+            comboBox(ChatInputSettings.ReprimandNudgeMode.entries.toList())
+                .comment(
+                    "Controls auto-sent nudges that correct the agent when it calls a built-in tool " +
+                        "instead of the MCP equivalent. " +
+                        "\"Send silently\" injects the correction without showing a bubble in the chat."
+                )
+                .applyToComponent {
+                    renderer =
+                        com.intellij.ui.SimpleListCellRenderer.create<ChatInputSettings.ReprimandNudgeMode>("") { value ->
+                            when (value) {
+                                ChatInputSettings.ReprimandNudgeMode.ENABLED -> "Enabled"
+                                ChatInputSettings.ReprimandNudgeMode.SEND_SILENTLY -> "Send silently"
+                                ChatInputSettings.ReprimandNudgeMode.DISABLED -> "Disabled"
+                                null -> "Enabled"
+                            }
+                        }
+                }
+                .bindItem(
+                    { s.reprimandNudgeMode },
+                    { s.reprimandNudgeMode = it ?: ChatInputSettings.ReprimandNudgeMode.ENABLED }
+                )
+        }
         onApply {
             val chatContent = ChatToolWindowContent.getInstance(project)
             chatContent?.setSoftWrapsEnabled(s.isSoftWrapsEnabled)

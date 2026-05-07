@@ -107,6 +107,33 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         myState.unhandledNudgeMode = mode;
     }
 
+    // ── Reprimand nudge mode ────────────────────────────────────────────────
+
+    /**
+     * Controls how the plugin handles auto-generated reprimand nudges (sent when the agent
+     * calls a built-in tool instead of the MCP equivalent).
+     *
+     * <p>{@link #ENABLED} (default) — reprimand is shown as a pending nudge bubble and
+     * injected into the next MCP tool result. <br>
+     * {@link #SEND_SILENTLY} — reprimand is injected into the next MCP tool result but no
+     * bubble is displayed in the chat UI. <br>
+     * {@link #DISABLED} — the reprimand system is fully disabled; no nudge is shown or sent.
+     */
+    public enum ReprimandNudgeMode {
+        ENABLED,
+        SEND_SILENTLY,
+        DISABLED
+    }
+
+    @NotNull
+    public ReprimandNudgeMode getReprimandNudgeMode() {
+        return myState.reprimandNudgeMode == null ? ReprimandNudgeMode.ENABLED : myState.reprimandNudgeMode;
+    }
+
+    public void setReprimandNudgeMode(@NotNull ReprimandNudgeMode mode) {
+        myState.reprimandNudgeMode = mode;
+    }
+
     // ── PersistentStateComponent ────────────────────────────────────────────
 
     @Override
@@ -129,5 +156,7 @@ public final class ChatInputSettings implements PersistentStateComponent<ChatInp
         public String fileSearchTrigger = "#";
         @NotNull
         public UnhandledNudgeMode unhandledNudgeMode = UnhandledNudgeMode.AUTO_SEND;
+        @NotNull
+        public ReprimandNudgeMode reprimandNudgeMode = ReprimandNudgeMode.ENABLED; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 }

@@ -150,7 +150,7 @@ export class ToolCallsView extends PollableView {
     private _renderItem(item: ToolCallData): string {
         const expanded = item.id === this._expandedId;
         const kindClass = this._kindCssClass(item.kind);
-        const duration = item.durationMs > 0 ? this._formatDuration(item.durationMs) : '';
+        const duration = item.durationMs >= 0 ? this._formatDuration(item.durationMs) : '';
 
         let detail = '';
         if (expanded) {
@@ -344,11 +344,8 @@ export class ToolCallsView extends PollableView {
     }
 
     private _kindCssClass(kind?: string): string {
-        const normalized = (kind || '').toLowerCase();
-        if (normalized.includes('read')) return 'kind-read';
-        if (normalized.includes('edit') || normalized.includes('write')) return 'kind-edit';
-        if (normalized.includes('execute')) return 'kind-execute';
-        return 'kind-other';
+        const k = (kind || '').toLowerCase().trim();
+        return k ? `kind-${k}` : 'kind-other';
     }
 
     /**
@@ -357,7 +354,8 @@ export class ToolCallsView extends PollableView {
      * precision when quick tool calls are being compared.
      */
     private _formatDuration(ms: number): string {
-        if (ms <= 0) return '';
+        if (ms < 0) return '';
+        if (ms === 0) return '0s';
         if (ms < 10_000) return (ms / 1000).toFixed(1) + 's';
         const totalSec = Math.round(ms / 1000);
         if (totalSec < 60) return totalSec + 's';

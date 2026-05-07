@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.session.v2;
 
 import com.github.catatafishen.agentbridge.ui.ContextFileRef;
 import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.ui.NudgeSource;
 import com.github.catatafishen.agentbridge.ui.FileRef;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -57,6 +58,7 @@ public final class EntryDataJsonAdapter {
     private static final String KEY_COMMIT_HASHES = "commitHashes";
     private static final String KEY_CONTEXT_FILES = "contextFiles";
     private static final String KEY_PROMPT = "prompt";
+    private static final String KEY_SOURCE = "source";
 
     private EntryDataJsonAdapter() {
         throw new IllegalStateException("Utility class");
@@ -106,6 +108,7 @@ public final class EntryDataJsonAdapter {
                 json.addProperty(KEY_TEXT, n.getText());
                 json.addProperty("id", n.getId());
                 if (n.getSent()) json.addProperty("sent", true);
+                addNonEmpty(json, KEY_SOURCE, n.getSource().getSerialized());
                 addNonEmpty(json, KEY_TIMESTAMP, n.getTimestamp());
                 json.addProperty(KEY_ENTRY_ID, n.getEntryId());
             }
@@ -276,7 +279,8 @@ public final class EntryDataJsonAdapter {
                 str(json, "id"),
                 bool(json, "sent"),
                 str(json, KEY_TIMESTAMP),
-                entryId);
+                entryId,
+                NudgeSource.fromSerialized(str(json, KEY_SOURCE)));
             default -> {
                 LOG.debug("Skipping unknown entry type during deserialization: " + type);
                 yield null;

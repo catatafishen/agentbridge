@@ -69,6 +69,7 @@ interface NudgeSentTurn {
     type: 'nudge_sent';
     html: string;
     timestamp: string;
+    source?: string;
 }
 
 interface StatsTurn {
@@ -199,7 +200,7 @@ function _renderSeparator(turn: SeparatorTurn): HTMLElement {
     return el;
 }
 
-/** Renders a sent nudge as a user message with a "Nudge" meta label. */
+/** Renders a sent nudge as a user message with a "Nudge" or "Reprimand" meta label. */
 function _renderNudgeSentTurn(turn: NudgeSentTurn): HTMLElement {
     const msg = document.createElement('chat-message');
     msg.setAttribute('type', 'user');
@@ -208,7 +209,8 @@ function _renderNudgeSentTurn(turn: NudgeSentTurn): HTMLElement {
     const meta = document.createElement('message-meta');
     const label = document.createElement('span');
     label.className = 'ts nudge-sent-label';
-    label.textContent = turn.timestamp ? `Nudge · ${turn.timestamp}` : 'Nudge';
+    const labelText = turn.source === 'reprimand' ? 'Reprimand' : 'Nudge';
+    label.textContent = turn.timestamp ? `${labelText} · ${turn.timestamp}` : labelText;
     meta.appendChild(label);
     msg.appendChild(meta);
 

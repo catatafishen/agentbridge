@@ -175,10 +175,10 @@ interface ChatPanelApi : Disposable {
     fun consumePendingAskUserResponse(response: String): Boolean
     fun clearPendingAskUserRequest(reqId: String? = null)
 
-    fun showNudgeBubble(id: String, text: String)
+    fun showNudgeBubble(id: String, text: String, source: NudgeSource = NudgeSource.HUMAN)
     fun resolveNudgeBubble(id: String)
     fun removeNudgeBubble(id: String)
-    fun addNudgeEntry(id: String, text: String)
+    fun addNudgeEntry(id: String, text: String, source: NudgeSource = NudgeSource.HUMAN)
 
     fun showQueuedMessage(id: String, text: String)
     fun removeQueuedMessage(id: String)

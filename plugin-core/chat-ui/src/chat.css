@@ -2890,3 +2890,67 @@ pre.word-wrap code {
     background: rgba(128, 128, 128, 0.25);
 }
 
+/* Info button for reprimand nudges — positioned to the left of the cancel button */
+.nudge-info-btn {
+    position: absolute;
+    top: var(--sp-2);
+    right: calc(var(--sp-2) + 1.5em);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.3em;
+    height: 1.3em;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    font-size: 0.8em;
+    font-weight: 600;
+    line-height: 1;
+    opacity: 0.5;
+    cursor: pointer;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.nudge-info-btn:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.25);
+}
+
+.nudge-info-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    right: 0;
+    width: 230px;
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius);
+    background: var(--chip-bg);
+    color: var(--fg);
+    font-size: 0.8em;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: left;
+    white-space: normal;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    z-index: 100;
+    pointer-events: auto;
+}
+
+.nudge-info-btn:hover .nudge-info-tooltip,
+.nudge-info-tooltip:hover {
+    display: block;
+}
+
+.nudge-settings-link {
+    display: block;
+    margin-top: var(--sp-1);
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.nudge-settings-link:hover {
+    text-decoration: underline;
+}
+
