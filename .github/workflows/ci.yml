@@ -17,8 +17,57 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Detect which parts of the codebase changed. Downstream jobs use this to
+  # skip themselves on PRs when their inputs haven't changed.
+  # All jobs always run on push to master regardless of what changed.
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      java: ${{ steps.filter.outputs.java }}
+      chat_ui: ${{ steps.filter.outputs.chat_ui }}
+      mcp_server: ${{ steps.filter.outputs.mcp_server }}
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@8d3c67de8e2fe68ef647c8db1e6a09f647780f40  # v2.19.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
+        id: filter
+        with:
+          filters: |
+            java:
+              - 'plugin-core/src/**'
+              - '*.gradle*'
+              - 'gradle/**'
+              - 'buildSrc/**'
+              - 'gradle.properties'
+            chat_ui:
+              - 'plugin-core/chat-ui/**'
+              - 'plugin-core/js-tests/**'
+            mcp_server:
+              - 'mcp-server/**'
+              - 'plugin-experimental/**'
+              - '*.gradle*'
+              - 'gradle/**'
+              - 'buildSrc/**'
+              - 'gradle.properties'
+
   mcp-server-tests:
     name: MCP Server Tests
+    needs: [changes]
+    # Always run on push to master. On PRs, skip if neither mcp-server nor
+    # plugin-experimental sources changed (e.g. docs-only, workflow-only, or
+    # plugin-core-only PR).
+    if: github.event_name == 'push' || needs.changes.outputs.mcp_server == 'true'
     runs-on: ubuntu-latest
     environment: ci
     permissions:
@@ -74,6 +123,10 @@ jobs:
 
   build-and-test:
     name: Build & Test
+    needs: [changes]
+    # Always run on push to master. On PRs, skip if neither Java/Kotlin sources
+    # nor chat-ui sources changed (e.g. docs-only or workflow-only PR).
+    if: github.event_name == 'push' || needs.changes.outputs.java == 'true' || needs.changes.outputs.chat_ui == 'true'
     runs-on: ubuntu-latest
     environment: ci
     permissions:
@@ -183,7 +236,13 @@ jobs:
     #
     # The JetBrains plugin verifier downloads ~5 IDE distributions (3–5 GB each).
     # Free disk space is only needed here, keeping build-and-test leaner.
+    #
+    # On PRs, skipped when no Java/Kotlin sources or build config changed —
+    # the verifier only checks class files and descriptors, so chat-ui, docs,
+    # and workflow-only changes cannot affect API compatibility.
     name: Verify (Marketplace Compatibility)
+    needs: [changes]
+    if: github.event_name == 'push' || needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     environment: ci
     permissions:
