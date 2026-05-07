@@ -50,6 +50,7 @@ public final class ActiveAgentManager implements Disposable {
     static final int DEFAULT_MAX_TOOL_CALLS_PER_TURN = 0;
 
     private final Project project;
+    private final SessionSwitchService sessionSwitchService;
     private volatile boolean acpConnected;
 
     private volatile AbstractAgentClient acpClient;
@@ -60,6 +61,7 @@ public final class ActiveAgentManager implements Disposable {
 
     public ActiveAgentManager(@NotNull Project project) {
         this.project = project;
+        this.sessionSwitchService = SessionSwitchService.getInstance(project);
         LOG.info("ActiveAgentManager initialised for project: " + project.getName());
         // Pre-warm the shell environment cache on a background thread so the first connect
         // doesn't block on login-shell spawning (bash -l + nvm/sdkman/cargo init can take 1–5 s).
@@ -131,8 +133,7 @@ public final class ActiveAgentManager implements Disposable {
         // Kick off the session export. onAgentSwitch dispatches work to a pooled thread
         // and stores a CompletableFuture so the new agent can wait before createSession().
         try {
-            SessionSwitchService
-                .getInstance(project)
+            sessionSwitchService
                 .onAgentSwitch(previousId, profileId);
         } catch (Exception e) {
             LOG.warn("SessionSwitchService.onAgentSwitch failed", e);
@@ -257,7 +258,7 @@ public final class ActiveAgentManager implements Disposable {
         // Wait for any pending session export to finish before the ACP client starts.
         // CopilotClient.buildCommand() reads resumeSessionId to build the --resume CLI
         // flag, so the export must complete before the process is launched.
-        SessionSwitchService.getInstance(project).awaitPendingExport(10_000);
+        sessionSwitchService.awaitPendingExport(10_000);
 
         try {
             String agentId = getActiveProfileId();
@@ -332,7 +333,7 @@ public final class ActiveAgentManager implements Disposable {
 
         // Export the v2 session to native format before stopping the CLI.
         // start() calls awaitPendingExport() to wait for completion.
-        SessionSwitchService.getInstance(project).exportForRestart(getActiveProfileId());
+        sessionSwitchService.exportForRestart(getActiveProfileId());
 
         stop();
         clearCachedConfig();
@@ -347,8 +348,8 @@ public final class ActiveAgentManager implements Disposable {
         // can resume via --resume. This must be synchronous (best-effort with timeout)
         // because async tasks may not complete during IDE shutdown.
         try {
-            SessionSwitchService.getInstance(project).exportForRestart(getActiveProfileId());
-            SessionSwitchService.getInstance(project).awaitPendingExport(3000);
+            sessionSwitchService.exportForRestart(getActiveProfileId());
+            sessionSwitchService.awaitPendingExport(3000);
         } catch (Exception e) {
             LOG.warn("Failed to export session during dispose: " + e.getMessage());
         }
