@@ -1,5 +1,10 @@
 # Tool Execution Correlation Architecture
 
+> **Note:** The `ToolExecutionCorrelator` design in this document (sections up to "ToolChipRegistry Chip Correlation")
+> was an early architectural proposal. The class was never implemented — the actual result-correlation for Junie's
+> natural-language summaries is handled inline in the ACP client. Jump to
+> [ToolChipRegistry Chip Correlation](#toolchipregistry-chip-correlation) for the current, implemented architecture.
+
 ## Problem Statement
 
 Tool execution in the plugin happens through **two separate channels**:

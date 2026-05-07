@@ -307,16 +307,16 @@ public final class CopilotClient extends AcpClient {
         if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
             return protocolTitle.substring(MCP_TOOL_PREFIX.length());
         }
-        // Copilot CLI sends known tool names (bash, grep, task, etc.) directly, but
-        // for sub-agent "task" invocations it sends human-readable descriptions like
-        // "Post review comment on PR 500". Normalize to the actual tool name to prevent
-        // these descriptions from leaking into system notices and confusing the model.
+        // Copilot CLI sends known tool names (bash, grep, task, etc.) directly.
+        // Normalize to lowercase so the rest of the system uses consistent IDs.
         String lower = protocolTitle.toLowerCase();
         if (KNOWN_BUILTIN_TOOL_NAMES.contains(lower)) {
             return lower;
         }
-        // Unrecognized title — most likely a task sub-agent description
-        return "task";
+        // Unrecognized title (e.g. sub-agent internal calls like "Confirm new file exists"
+        // or human-readable task descriptions). Return as-is — ToolChipRegistry will correct
+        // the chip label to the real MCP tool name once execution is correlated via args hash.
+        return protocolTitle;
     }
 
     @Override
