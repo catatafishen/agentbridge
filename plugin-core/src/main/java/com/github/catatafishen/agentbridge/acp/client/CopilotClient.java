@@ -561,7 +561,7 @@ public final class CopilotClient extends AcpClient {
             String notice = buildSingleToolReprimand(toolId);
             PsiBridgeService psi = PsiBridgeService.getInstance(project);
             psi.addOnNudgeConsumed(misusedBuiltInTools::clear);
-            psi.fireSystemNotice(notice);
+            psi.fireNudge(notice);
         }
     }
 

@@ -181,7 +181,7 @@ public final class PsiBridgeService implements Disposable {
     private final java.util.Queue<String> messageQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
     private final java.util.concurrent.atomic.AtomicReference<Runnable> onNudgeConsumed =
         new java.util.concurrent.atomic.AtomicReference<>();
-    private final java.util.concurrent.atomic.AtomicReference<java.util.function.Consumer<String>> onSystemNotice =
+    private final java.util.concurrent.atomic.AtomicReference<java.util.function.Consumer<String>> onNudgeRequested =
         new java.util.concurrent.atomic.AtomicReference<>();
 
     public PsiBridgeService(@NotNull Project project) {
@@ -276,15 +276,13 @@ public final class PsiBridgeService implements Disposable {
         );
     }
 
-    public void setOnSystemNotice(@Nullable java.util.function.Consumer<String> callback) {
-        this.onSystemNotice.set(callback);
+    public void setOnNudgeRequested(@Nullable java.util.function.Consumer<String> callback) {
+        this.onNudgeRequested.set(callback);
     }
 
-    /**
-     * Delivers a system notice (e.g. built-in tool reprimand) to the registered UI callback.
-     */
-    public void fireSystemNotice(@NotNull String text) {
-        java.util.function.Consumer<String> cb = onSystemNotice.get();
+    /** Delivers a plugin-initiated nudge (e.g. built-in tool reprimand) to the UI. */
+    public void fireNudge(@NotNull String text) {
+        java.util.function.Consumer<String> cb = onNudgeRequested.get();
         if (cb != null) cb.accept(text);
     }
 

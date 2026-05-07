@@ -1865,10 +1865,11 @@ class ChatToolWindowContent(
         }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
 
-        // Route system notices (built-in tool reprimands) through the nudge flow so they
-        // appear as a regular nudge bubble and are injected into the next MCP tool result.
+        // Route plugin-initiated nudges (e.g. built-in tool reprimands) through the
+        // nudge flow so they appear as a regular nudge bubble and are injected into the
+        // next MCP tool result.
         val psiBridge = com.github.catatafishen.agentbridge.psi.PsiBridgeService.getInstance(project)
-        psiBridge.setOnSystemNotice { notice ->
+        psiBridge.setOnNudgeRequested { notice ->
             com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
                 submitNudge(notice)
             }
