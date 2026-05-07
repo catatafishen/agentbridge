@@ -18,13 +18,10 @@ name: SonarQube PR Analyze
 #
 # See docs/CI-SECURITY.md for the full rationale.
 
-# zizmor: ignore[dangerous-triggers] — workflow_run is the GitHub-recommended pattern
-# for running privileged analysis on fork PR code without giving the fork secrets access.
-# See docs/CI-SECURITY.md for the full rationale.
 on:
-  workflow_run:
-    workflows: ["SonarQube PR Build"]
-    types: [completed]
+  workflow_run: # zizmor: ignore[dangerous-triggers] — GitHub-recommended pattern for privileged fork PR analysis; see docs/CI-SECURITY.md
+    workflows: [ "SonarQube PR Build" ]
+    types: [ completed ]
 
 permissions:
   contents: read
