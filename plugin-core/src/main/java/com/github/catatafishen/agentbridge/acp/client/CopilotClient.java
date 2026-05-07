@@ -5,8 +5,8 @@ import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
-import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonArray;
@@ -307,16 +307,16 @@ public final class CopilotClient extends AcpClient {
         if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
             return protocolTitle.substring(MCP_TOOL_PREFIX.length());
         }
-        // Copilot CLI sends known tool names (bash, grep, task, etc.) directly, but
-        // for sub-agent "task" invocations it sends human-readable descriptions like
-        // "Post review comment on PR 500". Normalize to the actual tool name to prevent
-        // these descriptions from leaking into system notices and confusing the model.
+        // Copilot CLI sends known tool names (bash, grep, task, etc.) directly.
+        // Normalize to lowercase so the rest of the system uses consistent IDs.
         String lower = protocolTitle.toLowerCase();
         if (KNOWN_BUILTIN_TOOL_NAMES.contains(lower)) {
             return lower;
         }
-        // Unrecognized title — most likely a task sub-agent description
-        return "task";
+        // Unrecognized title (e.g. sub-agent internal calls like "Confirm new file exists"
+        // or human-readable task descriptions). Return as-is — ToolCallTracker will correct
+        // the chip label to the real MCP tool name once execution is correlated.
+        return protocolTitle;
     }
 
     @Override
@@ -555,29 +555,22 @@ public final class CopilotClient extends AcpClient {
     protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
         if (!userApproved) {
             misusedBuiltInTools.add(toolId);
-            // Inject reprimand into the next MCP tool result for immediate mid-turn
-            // feedback — the agent corrects behaviour within the same turn instead of
-            // waiting until the user sends another prompt.
+            // Notify the UI so it can show a nudge bubble and arm the pending nudge for
+            // injection into the next MCP tool result.  Chain the cleanup callback first
+            // so it fires before the UI's resolve callback when the nudge is consumed.
             String notice = buildSingleToolReprimand(toolId);
-            PsiBridgeService psi = PsiBridgeService.getInstance(project);
-            psi.setPendingNudge(notice);
-            // Fire system notice to the UI so the user can see it in the chat bubble.
-            psi.fireSystemNotice(notice);
-            // Once the nudge is consumed (agent saw it), clear the tracking set so
-            // beforeSendPrompt() doesn't repeat the same reprimand on the next prompt.
-            // Use addOnNudgeConsumed (not set) to chain with any existing callback,
-            // e.g. the UI callback from onNudgeClicked that clears pendingNudgeId.
-            psi.addOnNudgeConsumed(misusedBuiltInTools::clear);
+            AgentNudgeService nudgeService = AgentNudgeService.getInstance(project);
+            nudgeService.addOnNudgeConsumed(misusedBuiltInTools::clear);
+            nudgeService.fireNudge(notice);
         }
     }
 
     @Override
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
-        // System notices are now shown in the chat input area at end-of-turn
-        // (visible to the user) rather than silently prepended to the prompt.
-        // Mid-turn correction still happens via pendingNudge on tool results.
+        // Clear nudge state at turn start so mid-turn reprimands from the previous
+        // turn don't leak into the new prompt if they were never consumed.
         misusedBuiltInTools.clear();
-        PsiBridgeService.getInstance(project).setPendingNudge(null);
+        AgentNudgeService.getInstance(project).setPendingNudge(null);
         return request;
     }
 

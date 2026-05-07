@@ -1663,14 +1663,6 @@ class ChatConsolePanel(
         executeJs("ChatController.removeQueuedMessageByText('${escJs(text)}');")
     }
 
-    override fun showSystemNoticeBubble(id: String, text: String) {
-        executeJs("ChatController.showSystemNoticeBubble('${escJs(id)}','${escJs(text)}');")
-    }
-
-    override fun removeSystemNoticeBubble(id: String) {
-        executeJs("ChatController.removeSystemNoticeBubble('${escJs(id)}');")
-    }
-
     // ── Open in scratch file ─────────────────────────────────────────
 
     private fun handleOpenScratch(data: String) {

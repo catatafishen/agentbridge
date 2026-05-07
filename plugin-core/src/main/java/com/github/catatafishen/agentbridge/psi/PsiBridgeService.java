@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.psi;
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ToolCallRecord;
 import com.github.catatafishen.agentbridge.services.ToolCallTracker;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
@@ -172,18 +173,6 @@ public final class PsiBridgeService implements Disposable {
     private final ToolRegistry registry;
     private final java.util.Set<String> sessionAllowedTools =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final java.util.concurrent.atomic.AtomicReference<String> pendingNudge =
-        new java.util.concurrent.atomic.AtomicReference<>();
-    /**
-     * When true, {@link #consumePendingNudge()} is suppressed and returns {@code null}.
-     * Set while a sub-agent is active so nudges are held until the main agent resumes.
-     */
-    private volatile boolean nudgesHeld = false;
-    private final java.util.Queue<String> messageQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    private final java.util.concurrent.atomic.AtomicReference<Runnable> onNudgeConsumed =
-        new java.util.concurrent.atomic.AtomicReference<>();
-    private final java.util.concurrent.atomic.AtomicReference<java.util.function.Consumer<String>> onSystemNotice =
-        new java.util.concurrent.atomic.AtomicReference<>();
 
     public PsiBridgeService(@NotNull Project project) {
         this.project = project;
@@ -245,73 +234,6 @@ public final class PsiBridgeService implements Disposable {
      */
     public void clearSessionAllowedTools() {
         sessionAllowedTools.clear();
-    }
-
-    public void setPendingNudge(@Nullable String nudge) {
-        if (nudge == null) {
-            pendingNudge.set(null);
-            return;
-        }
-        pendingNudge.updateAndGet(existing -> mergeNudges(existing, nudge));
-    }
-
-    public void setOnNudgeConsumed(@Nullable Runnable callback) {
-        onNudgeConsumed.set(callback);
-    }
-
-    /**
-     * Holds or releases nudge delivery. While held, {@link #consumePendingNudge()} returns
-     * {@code null} so nudges are not injected into sub-agent tool results — they wait until the
-     * main agent resumes and makes the next tool call.
-     */
-    public void setNudgesHeld(boolean held) {
-        nudgesHeld = held;
-    }
-
-    public void addOnNudgeConsumed(@NotNull Runnable callback) {
-        onNudgeConsumed.accumulateAndGet(callback, (current, newCb) ->
-            current == null ? newCb : () -> {
-                current.run();
-                newCb.run();
-            }
-        );
-    }
-
-    public void setOnSystemNotice(@Nullable java.util.function.Consumer<String> callback) {
-        this.onSystemNotice.set(callback);
-    }
-
-    public void fireSystemNotice(@NotNull String text) {
-        java.util.function.Consumer<String> cb = onSystemNotice.get();
-        if (cb != null) cb.accept(text);
-    }
-
-    public void enqueueMessage(@NotNull String message) {
-        if (!message.trim().isEmpty()) {
-            messageQueue.offer(message.trim());
-        }
-    }
-
-    public void removeQueuedMessage(@NotNull String message) {
-        messageQueue.remove(message.trim());
-    }
-
-    @Nullable
-    public String getNextQueuedMessage() {
-        return messageQueue.poll();
-    }
-
-    @Nullable
-    private String consumePendingNudge() {
-        if (nudgesHeld) return null;
-        String nudge = pendingNudge.getAndSet(null);
-        if (nudge != null) {
-            // Clear the callback atomically to prevent stale callbacks from firing
-            // on future nudge sources (e.g., tool reprimands, revert nudges)
-            Runnable cb = onNudgeConsumed.getAndSet(null);
-            if (cb != null) cb.run();
-        }
-        return nudge;
     }
 
     /**
@@ -499,7 +421,7 @@ public final class PsiBridgeService implements Disposable {
 
             result = appendHighlightsIfApplicable(
                 req.toolName(), result, daemonWaiter, filePathForHighlights, vfForHighlights, semaphoreReleasedEarly);
-            result = appendNudgeToResult(result, consumePendingNudge());
+            result = AgentNudgeService.appendNudgeToResult(result, AgentNudgeService.getInstance(project).consumePendingNudge());
             if (result.startsWith("Error")) {
                 success = false;
                 errorMessage = result;
@@ -955,21 +877,6 @@ public final class PsiBridgeService implements Disposable {
         if (arguments.has("path")) return arguments.get("path").getAsString();
         if (arguments.has("file")) return arguments.get("file").getAsString();
         return null;
-    }
-
-    /**
-     * Merges a new nudge with any existing nudge text.
-     * Returns just the new nudge if there's no existing text; concatenates with double-newline otherwise.
-     */
-    static String mergeNudges(@Nullable String existing, @NotNull String newNudge) {
-        return (existing == null || existing.isEmpty()) ? newNudge : existing + "\n\n" + newNudge;
-    }
-
-    /**
-     * Appends a nudge message to a tool result, or returns the result unchanged if nudge is null.
-     */
-    static String appendNudgeToResult(@NotNull String result, @Nullable String nudge) {
-        return nudge != null ? result + "\n\n[User nudge]: " + nudge : result;
     }
 
     /**

@@ -493,7 +493,7 @@ class PromptOrchestrator(
             )
         )
 
-        val nextMsg = PsiBridgeService.getInstance(project).nextQueuedMessage
+        val nextMsg = AgentNudgeService.getInstance(project).nextQueuedMessage
         if (nextMsg != null) {
             callbacks.onQueuedMessageConsumed(nextMsg)
             ApplicationManager.getApplication().invokeLater {
@@ -635,7 +635,7 @@ class PromptOrchestrator(
             callbacks.onTimerIncrementToolCalls()
             activeSubAgentStack.addLast(toolCallId)
             agentManager.client.setSubAgentActive(true)
-            PsiBridgeService.getInstance(project).setNudgesHeld(true)
+            AgentNudgeService.getInstance(project).setNudgesHeld(true)
             agentManager.settings.setActiveAgentLabel(agentType)
             consolePanel().setCurrentAgent(
                 agentType,
@@ -770,7 +770,7 @@ class PromptOrchestrator(
             activeSubAgentStack.remove(toolCallId)
             if (activeSubAgentStack.isEmpty()) {
                 agentManager.client.setSubAgentActive(false)
-                PsiBridgeService.getInstance(project).setNudgesHeld(false)
+                AgentNudgeService.getInstance(project).setNudgesHeld(false)
                 agentManager.settings.setActiveAgentLabel(null)
                 consolePanel().setCurrentAgent(
                     agentManager.activeProfile.displayName,
