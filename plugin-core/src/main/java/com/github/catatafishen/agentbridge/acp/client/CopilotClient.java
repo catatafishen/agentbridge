@@ -591,17 +591,7 @@ public final class CopilotClient extends AcpClient {
         if (toolId.contains(" ")) {
             return bashDescriptionAlternative(toolId.toLowerCase());
         }
-        return switch (toolId) {
-            case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
-            case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
-            case "create" -> "agentbridge-create_file";
-            case "view" -> "agentbridge-read_file";
-            case "glob" -> "agentbridge-list_project_files";
-            case "grep" -> "agentbridge-search_text";
-            case "task" -> "agentbridge-run_command (for shell tasks)";
-            case "report_intent" -> "(not needed — IDE tracks intent automatically)";
-            default -> "the corresponding agentbridge-* tool";
-        };
+        return AcpClient.mcpAlternative(toolId);
     }
 
     /**
