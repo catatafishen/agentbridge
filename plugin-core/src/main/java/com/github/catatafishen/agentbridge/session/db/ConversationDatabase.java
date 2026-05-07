@@ -42,7 +42,7 @@ public final class ConversationDatabase implements Disposable {
     /**
      * Bumped whenever {@link ConversationSchema} changes. Stored in {@code schema_version} table.
      */
-    static final int SCHEMA_VERSION = 2;
+    static final int SCHEMA_VERSION = 3;
 
     private final Project project;
     // All access is inside synchronized(database) blocks — both volatile fields
@@ -148,7 +148,9 @@ public final class ConversationDatabase implements Disposable {
         return callback.call(connection);
     }
 
-    /** Callback for {@link #withConnection(ConnectionCallback)}. */
+    /**
+     * Callback for {@link #withConnection(ConnectionCallback)}.
+     */
     @FunctionalInterface
     public interface ConnectionCallback<T> {
         T call(@NotNull Connection conn) throws SQLException;
