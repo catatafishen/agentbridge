@@ -976,9 +976,9 @@ const ChatController = {
     showNudgeBubble(id: string, text: string): void {
         const existing = document.getElementById('nudge-' + id);
         if (existing) {
-            const bubble = existing.querySelector('message-bubble');
-            if (bubble) {
-                bubble.textContent = text;
+            const textSpan = existing.querySelector('.nudge-text');
+            if (textSpan) {
+                textSpan.textContent = text;
                 this._container()?.scheduleScrollIfNeeded();
             }
             return;
@@ -992,14 +992,21 @@ const ChatController = {
         msg.appendChild(meta);
         const bubble = document.createElement('message-bubble');
         bubble.setAttribute('type', 'user');
-        bubble.textContent = text;
+        const textSpan = document.createElement('span');
+        textSpan.className = 'nudge-text';
+        textSpan.textContent = text;
+        bubble.appendChild(textSpan);
+        const cancelX = document.createElement('button');
+        cancelX.type = 'button';
+        cancelX.className = 'nudge-cancel-x';
+        cancelX.title = 'Cancel nudge';
+        cancelX.textContent = '✕';
+        cancelX.onclick = (e: MouseEvent) => {
+            e.stopPropagation();
+            (globalThis as any)._bridge?.cancelNudge(id);
+        };
+        bubble.appendChild(cancelX);
         msg.appendChild(bubble);
-        const cancelBtn = document.createElement('button');
-        cancelBtn.type = 'button';
-        cancelBtn.className = 'quick-reply-btn nudge-cancel-btn';
-        cancelBtn.textContent = '✕ Cancel nudge';
-        cancelBtn.onclick = () => (globalThis as any)._bridge?.cancelNudge(id);
-        msg.appendChild(cancelBtn);
         // Insert before the first queued message so nudge appears above queued messages.
         const firstQueued = this._msgs().querySelector('.message-queued');
         if (firstQueued) {
@@ -1016,7 +1023,7 @@ const ChatController = {
         el.classList.remove('nudge-pending');
         el.classList.add('nudge-sent');
         el.querySelector('.nudge-label')?.remove();
-        el.querySelector('.nudge-cancel-btn')?.remove();
+        el.querySelector('.nudge-cancel-x')?.remove();
     },
 
     removeNudgeBubble(id: string): void {
