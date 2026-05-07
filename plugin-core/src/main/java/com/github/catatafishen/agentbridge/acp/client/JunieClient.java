@@ -24,7 +24,7 @@ import java.util.List;
  * Tool prefix: {@code Tool: agentbridge/read_file} → strip {@code Tool: agentbridge/}
  * MCP: injected via session/new mcpServers array
  * Model display: token count
- * Correlation: ToolChipRegistry handles chip correlation via args hash
+ * Correlation: ToolCallTracker handles chip correlation via args hash
  *
  * <h2>Chip correlation for Junie</h2>
  * Junie's {@code tool_call} update carries empty {@code content:[]} — the real arguments
@@ -281,7 +281,7 @@ public final class JunieClient extends AcpClient {
 
     @Override
     protected SessionUpdate processUpdate(SessionUpdate update) {
-        // No extra processing needed — ToolChipRegistry handles correlation via args hash
+        // No extra processing needed — ToolCallTracker handles correlation via args hash
         return update;
     }
 

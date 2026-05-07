@@ -51,7 +51,8 @@ interface ChatPanelApi : Disposable {
         id: String,
         title: String,
         arguments: String? = null,
-        kind: String? = null
+        kind: String? = null,
+        isMcpHandled: Boolean = false
     )
 
     data class ToolCallUpdate(

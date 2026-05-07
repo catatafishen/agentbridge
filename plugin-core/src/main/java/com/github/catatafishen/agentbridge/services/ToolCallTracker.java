@@ -231,7 +231,6 @@ public final class ToolCallTracker {
                         toolUseIdToRecordId.put(toolUseId, r.getRecordId());
                         LOG.info("ToolCallTracker [MCP]: correlated via acpClientId=" + toolUseId + " → " + r.getRecordId());
                         fireOnCorrelated(r);
-                        bridgeRegisterMcp(r);
                         return r;
                     }
                 }
@@ -241,7 +240,6 @@ public final class ToolCallTracker {
                     record.setMcpFields(toolName, args, kind, startTime);
                     LOG.info("ToolCallTracker [MCP]: correlated via toolUseId=" + toolUseId + " → " + existingRecordId);
                     fireOnCorrelated(record);
-                    bridgeRegisterMcp(record);
                     return record;
                 }
             }
@@ -255,7 +253,6 @@ public final class ToolCallTracker {
             if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, acpFirst.getRecordId());
             LOG.info("ToolCallTracker [MCP]: correlated via hash=" + argsHash + " → " + acpFirst.getRecordId());
             fireOnCorrelated(acpFirst);
-            bridgeRegisterMcp(acpFirst);
             return acpFirst;
         }
 
@@ -269,7 +266,6 @@ public final class ToolCallTracker {
 
         LOG.info("ToolCallTracker [MCP]: new record " + recordId + " tool=" + toolName);
         fireOnMcpRegistered(record);
-        bridgeRegisterMcp(record);
         return record;
     }
 
@@ -287,7 +283,6 @@ public final class ToolCallTracker {
         record.setMcpResult(result, success);
         LOG.debug("ToolCallTracker: mcpComplete " + recordId + " success=" + success + " resultLen=" + result.length());
         fireOnMcpCompleted(record);
-        bridgeStoreMcpResult(record);
     }
 
     /**
@@ -307,6 +302,37 @@ public final class ToolCallTracker {
         LOG.debug("ToolCallTracker: acpComplete " + recordId + " success=" + success);
         fireOnAcpCompleted(record);
         flush(record);
+    }
+
+    /**
+     * Called when ACP provides args for a tool call that was registered without them.
+     * Updates the record's args hash and attempts correlation with existing MCP records.
+     */
+    public synchronized void acpProvideArgs(@NotNull String acpClientId, @NotNull JsonObject args) {
+        String recordId = acpIdToRecordId.get(acpClientId);
+        if (recordId == null) return;
+        ToolCallRecord record = liveRecords.get(recordId);
+        if (record == null) return;
+
+        String newHash = ToolCallHasher.computeBaseHash(args);
+        record.updateArgsHash(newHash);
+        record.setAcpArgs(args);
+
+        // If not yet correlated, try to find an MCP-first record by the new hash
+        if (record.getMcpToolName() == null) {
+            ToolCallRecord mcpFirst = findNewestUnmatchedMcpRecord(newHash);
+            if (mcpFirst != null) {
+                record.setMcpFields(mcpFirst.getMcpToolName(), mcpFirst.getMcpArgs(),
+                    mcpFirst.getKind(), mcpFirst.getMcpStartedAt());
+                if (mcpFirst.getMcpResult() != null) {
+                    record.setMcpResult(mcpFirst.getMcpResult(), mcpFirst.isMcpSuccess());
+                }
+                liveRecords.remove(mcpFirst.getRecordId());
+                LOG.info("ToolCallTracker: acpProvideArgs correlated " + recordId + " via late hash=" + newHash);
+                fireOnCorrelated(record);
+                flushOlderUncorrelatedMcpRecords(record.getAcpSequence());
+            }
+        }
     }
 
     // ── Query ────────────────────────────────────────────────────────────────
@@ -358,26 +384,6 @@ public final class ToolCallTracker {
     }
 
     // ── Reset ────────────────────────────────────────────────────────────────
-
-    /**
-     * Bridge: delegates chip state transitions to the existing ToolChipRegistry during migration.
-     * This ensures the DOM chip state listener continues to fire. Will be removed once
-     * ChatConsolePanel switches to ToolCallTracker.Listener directly.
-     */
-    private void bridgeRegisterMcp(@NotNull ToolCallRecord record) {
-        ToolChipRegistry chipRegistry = ToolChipRegistry.getInstance(project);
-        chipRegistry.registerMcp(record.getMcpToolName(), record.getMcpArgs(),
-            record.getKind() != null ? record.getKind() : "other",
-            record.getAcpClientId());
-    }
-
-    /**
-     * Bridge: delegates result storage to ToolChipRegistry during migration.
-     */
-    private void bridgeStoreMcpResult(@NotNull ToolCallRecord record) {
-        ToolChipRegistry chipRegistry = ToolChipRegistry.getInstance(project);
-        chipRegistry.storeMcpResult(record.getMcpToolName(), record.getMcpArgs(), record.getMcpResult());
-    }
 
     /**
      * Full reset (session end). Flushes all records.
@@ -456,15 +462,7 @@ public final class ToolCallTracker {
     }
 
     private @NotNull String allocateRecordId(@Nullable String argsHash) {
-        if (argsHash == null) {
-            return "tc-" + UUID.randomUUID().toString().substring(0, 8);
-        }
-        // Use hash as base, disambiguate collisions
-        if (!liveRecords.containsKey(argsHash)) return argsHash;
-        for (int i = 2; ; i++) {
-            String candidate = argsHash + "-" + i;
-            if (!liveRecords.containsKey(candidate)) return candidate;
-        }
+        return "tc-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     // ── Event firing (on EDT) ────────────────────────────────────────────────

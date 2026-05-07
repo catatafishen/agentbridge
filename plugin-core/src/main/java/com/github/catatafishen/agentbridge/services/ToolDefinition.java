@@ -76,7 +76,7 @@ public interface ToolDefinition {
         OTHER;
 
         /**
-         * Lowercase wire value used for serialization and {@link ToolChipRegistry}.
+         * Lowercase wire value used for serialization and {@link ToolCallTracker}.
          */
         public String value() {
             return name().toLowerCase(java.util.Locale.ROOT);
