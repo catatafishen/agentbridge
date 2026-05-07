@@ -26,7 +26,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *
  * <p><b>Not turn-scoped.</b> Records stay live until explicitly completed or flushed.
  * MCP calls from non-ACP clients remain live indefinitely until ACP ordering proves
- * they will never be correlated (see flush logic in {@link #onAcpCompleted}).
+ * they will never be correlated (see flush logic in {@link #acpComplete}).
  */
 @Service(Service.Level.PROJECT)
 public final class ToolCallTracker {
@@ -163,8 +163,7 @@ public final class ToolCallTracker {
                     acpIdToRecordId.put(acpClientId, existingRecordId);
                     LOG.info("ToolCallTracker [ACP]: correlated via toolUseId=" + toolUseId + " → " + existingRecordId);
                     fireOnCorrelated(record);
-                    flushOlderUncorrelatedMcpRecords(seq);
-                    return record;
+                    flushOlderUncorrelatedMcpRecords(seq, existingRecordId);
                 }
             }
         }
@@ -179,7 +178,7 @@ public final class ToolCallTracker {
                 if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, mcpFirst.getRecordId());
                 LOG.info("ToolCallTracker [ACP]: correlated via hash=" + argsHash + " → " + mcpFirst.getRecordId());
                 fireOnCorrelated(mcpFirst);
-                flushOlderUncorrelatedMcpRecords(seq);
+                flushOlderUncorrelatedMcpRecords(seq, mcpFirst.getRecordId());
                 return mcpFirst;
             }
         }
@@ -281,6 +280,7 @@ public final class ToolCallTracker {
             return;
         }
         record.setMcpResult(result, success);
+        record.setState(success ? ToolCallRecord.State.COMPLETED : ToolCallRecord.State.FAILED);
         LOG.debug("ToolCallTracker: mcpComplete " + recordId + " success=" + success + " resultLen=" + result.length());
         fireOnMcpCompleted(record);
     }
@@ -330,7 +330,7 @@ public final class ToolCallTracker {
                 liveRecords.remove(mcpFirst.getRecordId());
                 LOG.info("ToolCallTracker: acpProvideArgs correlated " + recordId + " via late hash=" + newHash);
                 fireOnCorrelated(record);
-                flushOlderUncorrelatedMcpRecords(record.getAcpSequence());
+                flushOlderUncorrelatedMcpRecords(record.getAcpSequence(), recordId);
             }
         }
     }
@@ -403,19 +403,26 @@ public final class ToolCallTracker {
     // ── Flush logic ──────────────────────────────────────────────────────────
 
     /**
-     * Flush MCP-only records (no ACP counterpart) that are older than the latest
-     * correlated ACP call. Since ACP reports calls in order, if call N is already
-     * correlated and an MCP-only call has no ACP match, it will never get one.
+     * Flush MCP-only records (no ACP counterpart) that were inserted into the live set
+     * before the record that just correlated. Since ACP reports calls in order and the
+     * LinkedHashMap preserves insertion order, any uncorrelated MCP record inserted before
+     * a record that successfully correlated at ACP sequence {@code currentAcpSequence}
+     * will never receive an ACP match.
      *
      * <p>Called automatically when a new ACP registration correlates with an existing MCP record.
+     *
+     * @param correlatedRecordId the record ID that was just correlated — only records
+     *                           inserted before this one are eligible for flushing
      */
-    private void flushOlderUncorrelatedMcpRecords(int currentAcpSequence) {
+    private void flushOlderUncorrelatedMcpRecords(int currentAcpSequence, @NotNull String correlatedRecordId) {
         List<ToolCallRecord> toFlush = new ArrayList<>();
         for (ToolCallRecord r : liveRecords.values()) {
-            // MCP-only: has MCP data but no ACP client ID
-            if (r.getMcpToolName() != null && r.getAcpClientId() == null) {
-                // This record was registered before the current ACP call but never matched.
-                // Since ACP is ordered, it will never be correlated.
+            // Stop when we reach the just-correlated record — everything after is newer.
+            if (r.getRecordId().equals(correlatedRecordId)) break;
+
+            // MCP-only: has MCP data but no ACP client ID, and MCP execution is done.
+            // Records still executing might still receive an ACP match from a later stream event.
+            if (r.getMcpToolName() != null && r.getAcpClientId() == null && r.getMcpResult() != null) {
                 toFlush.add(r);
             }
         }

@@ -4,10 +4,10 @@
 
 Tool calls in the plugin flow through **two independent channels** that arrive in any order:
 
-| Channel | Source | Path |
-|---------|--------|------|
-| **ACP** (Agent Control Protocol) | Agent → `session/update` → `tool_call` event | `PromptOrchestrator.handleStreamingToolCall` |
-| **MCP** (Model Context Protocol) | Agent → `tools/call` JSON-RPC | `McpProtocolHandler` → `PsiBridgeService.runToolExecution` |
+| Channel                          | Source                                       | Path                                                       |
+|----------------------------------|----------------------------------------------|------------------------------------------------------------|
+| **ACP** (Agent Control Protocol) | Agent → `session/update` → `tool_call` event | `PromptOrchestrator.handleStreamingToolCall`               |
+| **MCP** (Model Context Protocol) | Agent → `tools/call` JSON-RPC                | `McpProtocolHandler` → `PsiBridgeService.runToolExecution` |
 
 ACP tells us *what* the agent wants to do (title, args, routing type).
 MCP tells us *how* it was executed (confirmed tool name, result, timing).
@@ -38,22 +38,22 @@ Each tool call is represented by a `ToolCallRecord` with a stable UUID-based `re
 
 ### States
 
-| State | Meaning |
-|-------|---------|
-| `PENDING` | ACP reported the call, MCP has not started |
-| `RUNNING` | MCP execution in progress |
-| `COMPLETED` | MCP execution finished successfully |
-| `FAILED` | MCP execution finished with error |
-| `EXTERNAL` | ACP reported a call that is not an MCP tool (built-in agent tool) |
+| State       | Meaning                                                           |
+|-------------|-------------------------------------------------------------------|
+| `PENDING`   | ACP reported the call, MCP has not started                        |
+| `RUNNING`   | MCP execution in progress                                         |
+| `COMPLETED` | MCP execution finished successfully                               |
+| `FAILED`    | MCP execution finished with error                                 |
+| `EXTERNAL`  | MCP-only call that was never correlated with ACP               |
 
 ### Routing Types
 
-| Type | Meaning |
-|------|---------|
-| `REGULAR` | Normal tool call |
-| `SUB_AGENT` | Agent launched a sub-agent task |
-| `SUB_AGENT_INTERNAL` | Internal call within a sub-agent |
-| `TASK_COMPLETE` | Sub-agent task completion notification |
+| Type                 | Meaning                                |
+|----------------------|----------------------------------------|
+| `REGULAR`            | Normal tool call                       |
+| `SUB_AGENT`          | Agent launched a sub-agent task        |
+| `SUB_AGENT_INTERNAL` | Internal call within a sub-agent       |
+| `TASK_COMPLETE`      | Sub-agent task completion notification |
 
 ## Correlation
 
@@ -78,6 +78,7 @@ updates the record's hash and retries correlation against orphan MCP records.
 ### Correlation result
 
 When a record becomes correlated:
+
 - `isCorrelated()` returns `true`
 - `getEffectiveToolName()` returns the confirmed MCP tool name (preferred over ACP title)
 - `onCorrelated` event fires to listeners (e.g. UI updates chip border style)
@@ -101,25 +102,26 @@ When a record becomes correlated:
 2. Calls tracker.mcpRegister(toolName, args, hash, toolUseId)
 3. Tracker creates record with RUNNING state, fires onMcpRegistered
 4. If args hash matches an existing ACP-only record → merge + fire onCorrelated
-5. When execution completes: tracker.mcpComplete(hash, result, success)
+5. When execution completes: tracker.mcpComplete(recordId, result, success)
 ```
 
 ## Event System
 
 `ToolCallTracker.Listener` fires events on the EDT via `invokeLater`:
 
-| Event | When | Typical consumer action |
-|-------|------|------------------------|
-| `onAcpRegistered` | ACP reports a new tool call | Create DOM chip |
-| `onMcpRegistered` | MCP starts executing a tool | (internal bookkeeping) |
-| `onCorrelated` | ACP↔MCP match found | Update chip to solid border |
-| `onMcpCompleted` | MCP execution finished | Set chip to complete/failed state |
-| `onAcpCompleted` | ACP reports completion | Flush the record |
-| `onFlushed` | Record removed from live set | DOM cleanup if needed |
+| Event             | When                         | Typical consumer action           |
+|-------------------|------------------------------|-----------------------------------|
+| `onAcpRegistered` | ACP reports a new tool call  | Create DOM chip                   |
+| `onMcpRegistered` | MCP starts executing a tool  | (internal bookkeeping)            |
+| `onCorrelated`    | ACP↔MCP match found          | Update chip to solid border       |
+| `onMcpCompleted`  | MCP execution finished       | Set chip to complete/failed state |
+| `onAcpCompleted`  | ACP reports completion       | Flush the record                  |
+| `onFlushed`       | Record removed from live set | DOM cleanup if needed             |
 
 ### ChatConsolePanel listener
 
 The chat panel's `trackerListener` subscribes to `onCorrelated` and `onMcpCompleted`:
+
 - `onCorrelated` → calls `markMcpHandled(recordId)` to give the chip a solid border
 - `onMcpCompleted` → calls `setToolCallState(recordId, complete/failed)`
 
@@ -133,20 +135,21 @@ Records are removed from the live set when they are no longer needed:
    is called. ACP is the ground truth for when an agent is done with a call.
 
 2. **MCP-only calls** (no ACP counterpart): flushed when a newer ACP-correlated call
-   arrives. Since ACP reports calls in order, if call N has been correlated and an
-   MCP-only call has `acpSequence < N`, it will never be correlated. This is handled
-   by `flushOlderUncorrelatedMcpRecords(currentSequence)`.
+   arrives, but only if the MCP-only record was inserted before the correlated record
+   in the live set *and* has already completed execution (`mcpResult != null`). Records
+   still executing are kept — they might still receive an ACP match from a later stream
+   event. This is handled by `flushOlderUncorrelatedMcpRecords(currentSequence, correlatedRecordId)`.
 
 3. **`clear()`**: called at session end to flush all remaining records.
 
 ## Lookup Methods
 
-| Method | Use case |
-|--------|----------|
-| `findByAcpId(acpClientId)` | PromptOrchestrator needs to update a call by ACP ID |
-| `findByRecordId(recordId)` | UI needs to read record data by stable ID |
-| `findByMcpCall(toolName, args)` | MCP tab: find ACP metadata for an MCP execution |
-| `getStoredResult(hash)` | Retrieve cached MCP result by args hash |
+| Method                          | Use case                                            |
+|---------------------------------|-----------------------------------------------------|
+| `findByAcpId(acpClientId)`      | PromptOrchestrator needs to update a call by ACP ID |
+| `findByRecordId(recordId)`      | UI needs to read record data by stable ID           |
+| `findByMcpCall(toolName, args)` | MCP tab: find ACP metadata for an MCP execution     |
+| `getStoredResult(recordId)`     | Retrieve cached MCP result by record ID             |
 
 ## Client-Specific Tool ID Resolution
 
@@ -160,11 +163,11 @@ maps the protocol title to an internal tool ID:
 
 ## File Reference
 
-| File | Responsibility |
-|------|----------------|
-| `services/ToolCallTracker.java` | Single source of truth, correlation, events |
-| `services/ToolCallRecord.java` | Mutable record aggregating ACP + MCP data |
-| `ui/PromptOrchestrator.kt` | ACP-side registration (`acpRegister`, `acpComplete`) |
-| `psi/PsiBridgeService.java` | MCP-side registration (`mcpRegister`, `mcpComplete`) |
-| `ui/ChatConsolePanel.kt` | UI listener for chip state updates |
-| `services/ToolCallHasher.java` | Deterministic JSON hashing utility |
+| File                            | Responsibility                                       |
+|---------------------------------|------------------------------------------------------|
+| `services/ToolCallTracker.java` | Single source of truth, correlation, events          |
+| `services/ToolCallRecord.java`  | Mutable record aggregating ACP + MCP data            |
+| `ui/PromptOrchestrator.kt`      | ACP-side registration (`acpRegister`, `acpComplete`) |
+| `psi/PsiBridgeService.java`     | MCP-side registration (`mcpRegister`, `mcpComplete`) |
+| `ui/ChatConsolePanel.kt`        | UI listener for chip state updates                   |
+| `services/ToolCallHasher.java`  | Deterministic JSON hashing utility                   |
