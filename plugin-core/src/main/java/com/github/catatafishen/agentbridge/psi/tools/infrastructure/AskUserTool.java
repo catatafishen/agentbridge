@@ -48,7 +48,7 @@ public final class AskUserTool extends InfrastructureTool {
 
     @Override
     public @NotNull String description() {
-        return "Ask the user a question and wait for their response. Blocks until the user replies (timeout: 120s). " +
+        return "Ask the user a question and wait for their response. Blocks until the user replies (timeout: 120s, extensible — the user can request more time). " +
             "Use options parameter to show quick-reply buttons.";
     }
 
