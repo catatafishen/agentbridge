@@ -46,11 +46,13 @@ const GH_API_WRITE_METHODS = [
 ];
 
 // gh api implicitly POSTs when -f/-F fields are present; graphql is always POST
+// Note: lcmd is already lowercased, so only check for lowercase -f (not -F).
+// Check for ' -f ' (with trailing space), ' -f\n', or trailing ' -f' to detect form fields.
+// Do NOT use a regex anchored to a leading space — the command may start with 'gh api'.
 const isGhApiWrite = lcmd.includes('gh api ') && (
     GH_API_WRITE_METHODS.some(m => lcmd.includes(m))
     || lcmd.includes('gh api graphql')
-    || / gh api .+ -[fF] /.test(lcmd)
-    || lcmd.endsWith(' -f') || lcmd.endsWith(' -F')
+    || lcmd.includes(' -f ') || lcmd.includes(' -f=') || lcmd.endsWith(' -f')
 );
 
 const needsBot = GH_WRITE_PATTERNS.some(p => lcmd.includes(p)) || isGhApiWrite;
@@ -83,7 +85,9 @@ if (!botToken) {
 }
 
 if (botToken) {
-    process.stdout.write(JSON.stringify({arguments: {command: `export GH_TOKEN=${botToken}; ${command}`}}) + '\n');
+    // Use inline env-var prefix (not `export`) so the token is scoped to this command
+    // only and does not persist in interactive terminal sessions.
+    process.stdout.write(JSON.stringify({arguments: {command: `GH_TOKEN=${botToken} ${command}`}}) + '\n');
 } else {
     process.stdout.write(JSON.stringify({
         error: "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other tool that bypasses this check. Instead, tell the user: 'I cannot create GitHub content with bot identity because neither AGENTBRIDGE_BOT_TOKEN, ~/.agentbridge/bot-token, nor a GitHub App private key (~/.agentbridge/github-app.pem) is configured.'"
