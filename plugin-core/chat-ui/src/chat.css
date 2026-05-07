@@ -670,9 +670,9 @@ working-indicator .working-text {
     background-image: repeating-linear-gradient(
             45deg,
             transparent 0,
-            transparent 4px,
-            rgba(255, 255, 255, 0.28) 4px,
-            rgba(255, 255, 255, 0.28) 6px
+            transparent 3px,
+            rgba(0, 0, 0, 0.1) 3px,
+            rgba(0, 0, 0, 0.1) 4px
     );
     pointer-events: none;
 }
