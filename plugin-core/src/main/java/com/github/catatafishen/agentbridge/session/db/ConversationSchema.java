@@ -50,6 +50,7 @@ final class ConversationSchema {
 
             if (currentVersion < 1) applyV1(stmt);
             if (currentVersion < 2) applyV2(stmt);
+            if (currentVersion < 3) applyV3(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -246,5 +247,47 @@ final class ConversationSchema {
     private static void applyV2(@NotNull Statement stmt) throws SQLException {
         stmt.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_commits_unique ON commits(turn_id, commit_hash)");
+    }
+
+    /**
+     * V3: make {@code is_mcp} nullable — {@code NULL} means unknown (pending MCP server
+     * confirmation), {@code 1} means confirmed MCP, {@code 0} means confirmed non-MCP.
+     *
+     * <p>SQLite does not support {@code ALTER COLUMN}, so the table is rebuilt.
+     * Existing rows are copied verbatim: previous {@code is_mcp = 1} values (confirmed
+     * by {@code enrichToolCallStats}) are preserved; previous {@code is_mcp = 0} values
+     * (set by the now-removed initial guess) remain as-is for historical data.
+     */
+    private static void applyV3(@NotNull Statement stmt) throws SQLException {
+        stmt.execute("PRAGMA foreign_keys = OFF");
+        stmt.execute("ALTER TABLE tool_call_events RENAME TO tool_call_events_old");
+        stmt.execute("""
+            CREATE TABLE tool_call_events (
+                event_id          TEXT PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+                tool_name         TEXT NOT NULL,
+                tool_kind         TEXT,
+                category          TEXT,
+                client_id         TEXT,
+                display_name      TEXT,
+                arguments         TEXT,
+                result            TEXT,
+                input_size_bytes  INTEGER NOT NULL DEFAULT 0,
+                output_size_bytes INTEGER NOT NULL DEFAULT 0,
+                duration_ms       INTEGER NOT NULL DEFAULT 0,
+                success           INTEGER NOT NULL DEFAULT 1,
+                error_message     TEXT,
+                status            TEXT,
+                file_path         TEXT,
+                auto_denied       INTEGER NOT NULL DEFAULT 0,
+                denial_reason     TEXT,
+                is_mcp            INTEGER
+            )
+            """);
+        stmt.execute("INSERT INTO tool_call_events SELECT * FROM tool_call_events_old");
+        stmt.execute("DROP TABLE tool_call_events_old");
+        stmt.execute("CREATE INDEX idx_tc_tool_name ON tool_call_events(tool_name)");
+        stmt.execute("CREATE INDEX idx_tc_client ON tool_call_events(client_id)");
+        stmt.execute("CREATE INDEX idx_tc_is_mcp ON tool_call_events(is_mcp)");
+        stmt.execute("PRAGMA foreign_keys = ON");
     }
 }

@@ -28,6 +28,22 @@ case "$lcmd" in
         exit 0 ;;
 esac
 
+# --- shell file writes (must use write_file / create_file) ---
+# Checked BEFORE the cat-read block so cat > file gets the correct write message.
+# Covers: cat > file, cat >> file, echo > file, echo >> file, printf > file,
+#         and heredoc writes like: cat > file << 'EOF' ... EOF
+WRITE_DENY="Shell file writes are not allowed via run_command — they bypass the IntelliJ editor buffer and cause desync. Use agentbridge-write_file to overwrite an existing file, or agentbridge-create_file for new files. These write through the IDE so IntelliJ stays in sync."
+case "$lcmd" in
+    *"cat >"*|*"cat>>"*)
+        hook_json_deny "$WRITE_DENY"
+        exit 0 ;;
+esac
+case "$lcmd" in
+    *"echo >"*|*"echo>>"*|*"printf >"*|*"printf>>"*)
+        hook_json_deny "$WRITE_DENY"
+        exit 0 ;;
+esac
+
 # --- cat/head/tail/less/more (must use read_file) ---
 case "$lcmd" in
     cat\ *|head\ *|tail\ *|less\ *|more\ *)
