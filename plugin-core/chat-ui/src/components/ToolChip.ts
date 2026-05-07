@@ -38,6 +38,7 @@ export default class ToolChip extends HTMLElement {
         const truncated = label.length > 50 ? label.substring(0, 47) + '\u2026' : label;
         this.className = this.className.replaceAll(/\bkind-\S+/g, '').replaceAll(/\bstatus-\S+/g, '').trim();
         this.classList.add('turn-chip', 'tool', `kind-${kind}`, `status-${status}`);
+        this.classList.toggle('failed', status === 'failed');
         this.innerHTML = '<span class="chip-ring" aria-hidden="true"></span> ' + escHtml(truncated);
         if (label.length > 50) {
             this.dataset.tip = label;

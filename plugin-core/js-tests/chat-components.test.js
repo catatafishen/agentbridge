@@ -154,12 +154,12 @@ describe('tool-chip', () => {
     });
 
     it('shows spinner when running', () => {
-        expect(chip.querySelector('.chip-spinner')).not.toBeNull();
+        expect(chip.querySelector('.chip-ring')).not.toBeNull();
     });
 
     it('removes spinner and shows no spinner on complete', () => {
         chip.setAttribute('status', 'complete');
-        expect(chip.querySelector('.chip-spinner')).toBeNull();
+        expect(chip.classList.contains('status-complete')).toBe(true);
         // No spinner means completed
         expect(chip.textContent).toContain('Read File');
     });
@@ -212,7 +212,7 @@ describe('subagent-chip', () => {
     });
 
     it('shows spinner when running', () => {
-        expect(chip.querySelector('.chip-spinner')).not.toBeNull();
+        expect(chip.querySelector('.chip-ring')).not.toBeNull();
     });
 
     it('completes when status changes', () => {
@@ -276,7 +276,7 @@ describe('quick-replies', () => {
         let received = null;
         document.addEventListener('quick-reply', e => {
             received = e.detail.text;
-        }, { once: true });
+        }, {once: true});
         qr.options = ['Force push:danger'];
         qr.querySelector('.quick-reply-btn').click();
         expect(received).toBe('Force push');
@@ -295,7 +295,7 @@ describe('quick-replies', () => {
         let received = false;
         document.addEventListener('quick-reply', () => {
             received = true;
-        }, { once: true });
+        }, {once: true});
         qr.options = ['Ok:dismiss'];
         const btn = qr.querySelector('.quick-reply-btn');
         expect(btn.textContent).toBe('Ok');
