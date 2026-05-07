@@ -1,7 +1,8 @@
 package com.github.catatafishen.agentbridge.psi;
 
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
-import com.github.catatafishen.agentbridge.services.ToolChipRegistry;
+import com.github.catatafishen.agentbridge.services.ToolCallRecord;
+import com.github.catatafishen.agentbridge.services.ToolCallTracker;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolPermission;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
@@ -472,6 +473,9 @@ public final class PsiBridgeService implements Disposable {
             ? ToolUtils.resolveVirtualFile(project, filePathForHighlights) : null;
         long preWriteStamp = getDocumentStamp(vfForHighlights);
 
+        ToolCallTracker tracker = ToolCallTracker.getInstance(project);
+        ToolCallRecord record = null;
+
         try (DaemonWaiter daemonWaiter = filePathForHighlights != null
             ? new DaemonWaiter(project, vfForHighlights, preWriteStamp) : null) {
 
@@ -482,14 +486,15 @@ public final class PsiBridgeService implements Disposable {
                 errorMessage = readinessError;
                 outputSize = readinessError.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
                 // Register the chip first so the result is correlated with a real chip,
-                // matching the normal execution path in executeWithSyncLock().
-                ToolChipRegistry chipRegistry = ToolChipRegistry.getInstance(project);
-                chipRegistry.registerMcp(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
-                chipRegistry.storeMcpResult(req.toolName(), req.chipArgs(), readinessError);
+                // matching the normal execution path.
+                record = tracker.mcpRegister(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
+                tracker.mcpComplete(record.getRecordId(), readinessError, false);
                 return readinessError;
             }
 
-            String result = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), req.toolUseId(), req.chipArgs(), requiresSync);
+            record = tracker.mcpRegister(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
+
+            String result = executeWithSyncLock(req.def(), req.arguments(), req.toolName(), requiresSync);
             if (writeRegistered.getAndSet(false)) writeBatchCoordinator.unregisterWrite();
 
             result = appendHighlightsIfApplicable(
@@ -500,7 +505,7 @@ public final class PsiBridgeService implements Disposable {
                 errorMessage = result;
             }
             outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.chipArgs(), result);
+            tracker.mcpComplete(record.getRecordId(), result, !result.startsWith("Error"));
             return result;
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
             // The instanceof + early-return pattern is intentional: splitting into a separate
@@ -510,7 +515,7 @@ public final class PsiBridgeService implements Disposable {
                 // IDE was temporarily busy — not a shutdown signal; return a retryable error.
                 success = false;
                 errorMessage = "Error: IDE is busy, please retry. " + e.getMessage();
-                ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), errorMessage);
+                tracker.mcpComplete(record.getRecordId(), errorMessage, false);
                 return errorMessage;
             }
             // All other PCE variants signal IDE shutdown or project disposal — must rethrow.
@@ -519,7 +524,7 @@ public final class PsiBridgeService implements Disposable {
             Thread.currentThread().interrupt();
             success = false;
             errorMessage = "Error: Tool execution interrupted: " + req.toolName();
-            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), errorMessage);
+            tracker.mcpComplete(record.getRecordId(), errorMessage, false);
             return errorMessage;
         } catch (Exception e) {
             LOG.warn("Tool call error: " + req.toolName(), e);
@@ -527,7 +532,7 @@ public final class PsiBridgeService implements Disposable {
             String modalDetail = EdtUtil.describeModalBlocker();
             errorMessage = buildErrorWithModalDetail(
                 formatBaseErrorMessage(e, modalDetail), modalDetail);
-            ToolChipRegistry.getInstance(project).storeMcpResult(req.toolName(), req.arguments(), errorMessage);
+            tracker.mcpComplete(record.getRecordId(), errorMessage, false);
             return errorMessage;
         } finally {
             if (writeRegistered.get()) writeBatchCoordinator.unregisterWrite();
@@ -543,21 +548,19 @@ public final class PsiBridgeService implements Disposable {
     }
 
     /**
-     * Acquires the per-tool sync lock (if this is a sync-category tool), registers the chip,
+     * Acquires the per-tool sync lock (if this is a sync-category tool),
      * executes the tool, then releases the lock in a finally block.
      *
      * <p>The lock is set into {@link #currentSyncLock} so that
      * {@code AgentEditSession.awaitReviewCompletion} can yield it while blocking for user review,
      * preventing the deadlock described in {@link #currentSyncLock}.</p>
      *
-     * @param chipArgs pre-hook arguments for chip registry correlation (matches what ACP hashes)
      * @throws Exception any exception from {@link ToolDefinition#execute} — caller handles it
      */
     private String executeWithSyncLock(ToolDefinition def, JsonObject arguments,
-                                       String toolName, @Nullable String toolUseId,
-                                       JsonObject chipArgs,
+                                       String toolName,
                                        boolean requiresSync) throws Exception {
-        String argumentsHash = ToolChipRegistry.computeBaseHash(arguments);
+        String argumentsHash = ToolCallTracker.computeHash(arguments);
         ReentrantLock syncLock = requiresSync
             ? toolLocks.computeIfAbsent(toolName, k -> new ReentrantLock())
             : null;
@@ -567,10 +570,6 @@ public final class PsiBridgeService implements Disposable {
             currentSyncLock.set(syncLock);
         }
         try {
-            // Register with chip registry BEFORE executing so the chip can transition to "running".
-            // Use chipArgs (pre-hook) for hash correlation — matches what the ACP client sees.
-            ToolChipRegistry.getInstance(project).registerMcp(
-                toolName, chipArgs, def.kind().value(), toolUseId);
             return def.execute(arguments, argumentsHash);
         } finally {
             if (syncLock != null) {
