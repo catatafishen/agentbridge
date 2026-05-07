@@ -54,7 +54,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: ci
     concurrency:
-      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.ref }}
+      # Use PR number to isolate each PR's concurrency group. With pull_request_target,
+      # github.ref is always the base branch (refs/heads/master), so using github.ref
+      # alone causes ALL PR runs and master push runs to share the same group and
+      # cancel each other. The PR number makes each PR independent while still
+      # cancelling stale runs within the same PR when new commits are pushed.
+      group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
     permissions:
       contents: read
