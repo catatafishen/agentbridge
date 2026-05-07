@@ -48,6 +48,14 @@ public final class AgentNudgeService {
         pendingNudge.updateAndGet(existing -> mergeNudges(existing, nudge));
     }
 
+    /**
+     * Replaces the pending nudge text directly without merging with any existing nudge.
+     * Use for reprimands: always shows the most recent issue, not a growing list.
+     */
+    public void setReprimandNudge(@NotNull String nudge) {
+        pendingNudge.set(nudge);
+    }
+
     public void setOnNudgeConsumed(@Nullable Runnable callback) {
         onNudgeConsumed.set(callback);
     }
@@ -74,12 +82,16 @@ public final class AgentNudgeService {
         this.onNudgeRequested.set(callback);
     }
 
-    /** Delivers a plugin-initiated reprimand nudge to the UI. */
+    /**
+     * Delivers a plugin-initiated reprimand nudge to the UI.
+     */
     public void fireNudge(@NotNull String text) {
         fireNudge(text, NudgeSource.REPRIMAND);
     }
 
-    /** Delivers a plugin-initiated nudge to the UI with an explicit source. */
+    /**
+     * Delivers a plugin-initiated nudge to the UI with an explicit source.
+     */
     public void fireNudge(@NotNull String text, @NotNull NudgeSource source) {
         java.util.function.BiConsumer<String, NudgeSource> cb = onNudgeRequested.get();
         if (cb != null) cb.accept(text, source);
