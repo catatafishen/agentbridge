@@ -91,7 +91,12 @@ public abstract class AcpClient extends AbstractAgentClient {
     private static final String VALUE_REJECT_ONCE = "reject_once";
     private static final String KEY_TOOL_CALL = "toolCall";
     private static final String ERR_PROMPT_FAILED_PREFIX = "Prompt failed for ";
-    private static final Set<String> ALLOWED_BUILT_IN_TOOLS = Set.of("web_fetch", "web_search", "task_complete");
+    private static final Set<String> ALLOWED_BUILT_IN_TOOLS = Set.of(
+        "web_fetch", "web_search", "task_complete",
+        // Copilot CLI meta-tools: sub-agent spawner, skill invoker, SQL runner, intent reporter —
+        // no MCP equivalents exist, so these are passed through rather than denied.
+        "task", "skill", "sql", "report_intent"
+    );
 
     protected final Gson gson = new GsonBuilder()
         .registerTypeAdapter(NewSessionResponse.class, new NewSessionResponseDeserializer())
@@ -1645,13 +1650,14 @@ public abstract class AcpClient extends AbstractAgentClient {
                 if (chosenOption == null) {
                     chosenOption = findFirstOption(params);
                 }
-            }
-            // Copilot CLI does not send tool_call_update completion events for approved built-in
-            // tools. Synthesize one so the tool chip clears its spinner immediately.
-            Consumer<SessionUpdate> builtInConsumer = updateConsumer;
-            if (builtInConsumer != null && !toolCallId.isEmpty()) {
-                builtInConsumer.accept(new SessionUpdate.ToolCallUpdate(
-                    toolCallId, SessionUpdate.ToolCallStatus.COMPLETED, null, null, null));
+                // Copilot CLI does not send tool_call_update completion events for approved built-in
+                // tools. Synthesize one so the tool chip clears its spinner immediately.
+                // Not needed for denied tools — handleAutoDeniedBuiltInTool already sends FAILED.
+                Consumer<SessionUpdate> builtInConsumer = updateConsumer;
+                if (builtInConsumer != null && !toolCallId.isEmpty()) {
+                    builtInConsumer.accept(new SessionUpdate.ToolCallUpdate(
+                        toolCallId, SessionUpdate.ToolCallStatus.COMPLETED, null, null, null));
+                }
             }
         } else {
             LOG.info(displayName() + ": auto-approving MCP tool '" + toolId + "' at ACP level (MCP server will check permissions)");
@@ -1701,6 +1707,18 @@ public abstract class AcpClient extends AbstractAgentClient {
             ));
         }
         return findDenyOption(params);
+    }
+
+    /**
+     * Called when a built-in tool request is processed (approved or auto-denied).
+     * Subclasses may override to react — e.g. injecting a reprimand notice.
+     *
+     * @param toolId       the built-in tool name
+     * @param userApproved {@code true} if the user explicitly approved, {@code false} if
+     *                     the tool was auto-approved without user interaction
+     */
+    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
+        // no-op by default
     }
 
     static String mcpAlternative(String builtInTool) {
