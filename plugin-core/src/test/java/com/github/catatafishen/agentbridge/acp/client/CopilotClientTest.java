@@ -162,8 +162,10 @@ class CopilotClientTest {
     }
 
     @Test
-    void resolveToolId_humanReadableDescriptionNormalizesToTask() throws Exception {
-        assertEquals("task", invokeResolveToolId("Post review comment on PR 500"));
+    void resolveToolId_humanReadableDescriptionPassedThrough() throws Exception {
+        // Unrecognized titles (e.g. sub-agent task descriptions) are returned as-is;
+        // ToolCallTracker will correct the display name once MCP execution correlates.
+        assertEquals("Post review comment on PR 500", invokeResolveToolId("Post review comment on PR 500"));
     }
 
     @Test
