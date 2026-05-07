@@ -26,7 +26,7 @@ public class McpStdioProxy {
 
     private static final Logger LOG = Logger.getLogger(McpStdioProxy.class.getName());
     private static final int CONNECT_TIMEOUT_MS = 500;
-    private static final int READ_TIMEOUT_MS = 180_000;
+    private static final int READ_TIMEOUT_MS = 600_000;
     private static final int RETRY_DELAY_MS = 500;
     private static final int MAX_RETRIES = 10;
 

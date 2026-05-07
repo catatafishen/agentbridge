@@ -596,14 +596,7 @@ working-indicator .working-text {
 }
 
 .turn-chip.tool.status-denied {
-    border-color: var(--error) !important;
-    background: var(--error-a05) !important;
-    color: var(--error) !important;
-}
-
-.turn-chip.tool.status-denied:hover {
-    background: var(--error-a12);
-    border-color: var(--error);
+    opacity: 0.75;
 }
 
 /* Pending: waiting for MCP to handle */
@@ -653,11 +646,6 @@ working-indicator .working-text {
     border-top-color: currentColor;
 }
 
-.turn-chip.failed {
-    background: var(--error-a06);
-    border-color: var(--error-a12);
-    color: var(--error);
-}
 
 .chip-spinner {
     display: inline-block;
@@ -669,23 +657,32 @@ working-indicator .working-text {
     animation: spin 0.6s linear infinite;
 }
 
-.chip-icon {
+.chip-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.chip-dot-other {
+    color: var(--think);
+}
+
+.chip-xmark {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 8px;
     height: 8px;
-    flex-shrink: 0;
     font-size: 9px;
     line-height: 1;
+    flex-shrink: 0;
 }
 
-.chip-icon-ok {
-    color: var(--green, #2ea043);
-}
-
-.chip-icon-fail {
-    color: var(--error, #f85149);
+.chip-xmark-other {
+    color: var(--think);
 }
 
 
