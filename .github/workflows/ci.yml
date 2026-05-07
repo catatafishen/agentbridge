@@ -63,7 +63,7 @@ jobs:
 
   mcp-server-tests:
     name: MCP Server Tests
-    needs: [changes]
+    needs: [ changes ]
     # Always run on push to master. On PRs, skip if neither mcp-server nor
     # plugin-experimental sources changed (e.g. docs-only, workflow-only, or
     # plugin-core-only PR).
@@ -123,7 +123,7 @@ jobs:
 
   build-and-test:
     name: Build & Test
-    needs: [changes]
+    needs: [ changes ]
     # Always run on push to master. On PRs, skip if neither Java/Kotlin sources
     # nor chat-ui sources changed (e.g. docs-only or workflow-only PR).
     if: github.event_name == 'push' || needs.changes.outputs.java == 'true' || needs.changes.outputs.chat_ui == 'true'
@@ -241,7 +241,7 @@ jobs:
     # the verifier only checks class files and descriptors, so chat-ui, docs,
     # and workflow-only changes cannot affect API compatibility.
     name: Verify (Marketplace Compatibility)
-    needs: [changes]
+    needs: [ changes ]
     if: github.event_name == 'push' || needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
     environment: ci
@@ -299,3 +299,25 @@ jobs:
       - name: Show disk space after plugin verification
         if: always()
         run: df -h /
+
+  # Aggregator: always runs so branch protection has a stable, unconditional
+  # check to require. Upstream jobs may be skipped on PRs that don't touch
+  # their respective source paths — this job converts those skips into a single
+  # always-present result. Named "Build, Test & Verify" to match the historical
+  # check name that GitHub remembers from before the job was split.
+  ci:
+    name: Build, Test & Verify
+    runs-on: ubuntu-latest
+    needs: [ mcp-server-tests, build-and-test, verify-marketplace ]
+    if: always()
+    steps:
+      - name: All CI jobs passed or were appropriately skipped
+        run: |
+          results=("${{ needs.mcp-server-tests.result }}" "${{ needs.build-and-test.result }}" "${{ needs.verify-marketplace.result }}")
+          for result in "${results[@]}"; do
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "::error::One or more CI jobs failed or were cancelled (results: ${results[*]})"
+              exit 1
+            fi
+          done
+          echo "All CI jobs passed or were appropriately skipped (results: ${results[*]})"
