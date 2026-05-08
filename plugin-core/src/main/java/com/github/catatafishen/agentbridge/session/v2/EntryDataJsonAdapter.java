@@ -216,6 +216,8 @@ public final class EntryDataJsonAdapter {
         addIfNonZero(json, "totalToolCalls", ts.getTotalToolCalls());
         addIfNonZero(json, "totalLinesAdded", ts.getTotalLinesAdded());
         addIfNonZero(json, "totalLinesRemoved", ts.getTotalLinesRemoved());
+        addNonEmpty(json, "gitBranchAtStart", ts.getGitBranchAtStart());
+        addNonEmpty(json, "gitBranchAtEnd", ts.getGitBranchAtEnd());
         json.addProperty(KEY_ENTRY_ID, ts.getEntryId());
         if (!ts.getCommitHashes().isEmpty()) {
             JsonArray arr = new JsonArray();
@@ -364,7 +366,10 @@ public final class EntryDataJsonAdapter {
             intVal(json, "totalLinesRemoved"),
             str(json, KEY_TIMESTAMP),
             entryId,
-            parseCommitHashes(json));
+            parseCommitHashes(json),
+            strOrNull(json, "gitBranchAtStart"),
+            strOrNull(json, "gitBranchAtEnd")
+        );
     }
 
     private static List<String> parseCommitHashes(@NotNull JsonObject json) {
