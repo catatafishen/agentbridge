@@ -81,6 +81,21 @@ public final class LiveToolCallService {
     }
 
     /**
+     * Updates the display name for an in-flight or completed entry. Called after ACP correlation
+     * provides a richer title (e.g. with argument summaries) than the original tool definition name.
+     * Safe no-op if the entry has already been evicted.
+     */
+    public synchronized void setDisplayName(long callId, @NotNull String displayName) {
+        for (int i = entries.size() - 1; i >= 0; i--) {
+            if (entries.get(i).callId() == callId) {
+                entries.set(i, entries.get(i).withDisplayName(displayName));
+                fireChanged();
+                return;
+            }
+        }
+    }
+
+    /**
      * Returns a snapshot of all current entries (newest last).
      */
     public synchronized @NotNull List<LiveToolCallEntry> getEntries() {

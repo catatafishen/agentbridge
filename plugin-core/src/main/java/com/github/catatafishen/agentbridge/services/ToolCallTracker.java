@@ -369,6 +369,16 @@ public final class ToolCallTracker {
     }
 
     /**
+     * Find a live record by the MCP tool-use ID that was passed in the protocol message.
+     * Returns {@code null} if the toolUseId is null or not yet registered.
+     */
+    public synchronized @Nullable ToolCallRecord findByToolUseId(@Nullable String toolUseId) {
+        if (toolUseId == null) return null;
+        String recordId = toolUseIdToRecordId.get(toolUseId);
+        return recordId != null ? liveRecords.get(recordId) : null;
+    }
+
+    /**
      * Get the stored MCP result for a record (for UI that needs the raw tool output).
      */
     public synchronized @Nullable String getStoredResult(@NotNull String recordId) {

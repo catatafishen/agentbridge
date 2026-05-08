@@ -562,6 +562,17 @@ public final class McpProtocolHandler {
             String resultText = PsiBridgeService.getInstance(project)
                 .callTool(toolName, arguments, toolUseId, originalArguments);
 
+            // Enrich the live entry display name with the ACP title once it is available.
+            // ACP registers before MCP executes, so the record (and its acpTitle) should
+            // already exist by the time callTool() returns.
+            ToolCallRecord trackerRecord = ToolCallTracker.getInstance(project).findByToolUseId(toolUseId);
+            if (trackerRecord != null) {
+                String acpTitle = trackerRecord.getAcpTitle();
+                if (acpTitle != null && !acpTitle.equals(displayName)) {
+                    liveService.setDisplayName(callId, acpTitle);
+                }
+            }
+
             long durationMs = System.currentTimeMillis() - callStartMs;
             var postOutcome = applyPostHook(toolName, arguments, resultText, durationMs, hookStages);
             resultText = postOutcome.output();
