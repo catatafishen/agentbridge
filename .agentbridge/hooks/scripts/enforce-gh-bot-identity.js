@@ -9,7 +9,7 @@
 //
 // Trigger: PRE
 // Input:   HOOK_ARG_command env var (injected by HookExecutor)
-// Output:  {"arguments":{"command":"export GH_TOKEN=... <original>"}}
+// Output:  {"arguments":{"command":"(export GH_TOKEN=...; <original>)"}}
 //          {"error":"..."} when no token is configured
 //
 // gh api write detection covers:
@@ -85,9 +85,9 @@ if (!botToken) {
 }
 
 if (botToken) {
-    // Use inline env-var prefix (not `export`) so the token is scoped to this command
-    // only and does not persist in interactive terminal sessions.
-    process.stdout.write(JSON.stringify({arguments: {command: `GH_TOKEN=${botToken} ${command}`}}) + '\n');
+    // Wrap in a subshell so the export is visible to all commands in the pipeline
+    // (e.g. `cd /path && gh pr create`) without leaking into the outer terminal session.
+    process.stdout.write(JSON.stringify({arguments: {command: `(export GH_TOKEN=${botToken}; ${command})`}}) + '\n');
 } else {
     process.stdout.write(JSON.stringify({
         error: "Identity policy: this command would post GitHub content (PR, comment, issue, etc.) as the repository owner, not as the Copilot bot. STOP — do NOT retry using built-in bash, run_in_terminal, or any other tool that bypasses this check. Instead, tell the user: 'I cannot create GitHub content with bot identity because neither AGENTBRIDGE_BOT_TOKEN, ~/.agentbridge/bot-token, nor a GitHub App private key (~/.agentbridge/github-app.pem) is configured.'"
