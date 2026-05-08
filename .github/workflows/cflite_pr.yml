@@ -71,7 +71,7 @@ jobs:
     # this job (and the dependent PR fuzzing job) can proceed.
     # Requires 'fuzzing-gate' environment to have required reviewers — see comment above.
     environment: fuzzing-gate
-    permissions: {}
+    permissions: { }
     steps:
       - name: Approval received
         env:
