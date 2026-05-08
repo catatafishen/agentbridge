@@ -533,7 +533,7 @@ public class TerminalToolsTest extends BasePlatformTestCase {
     }
 
     /**
-     * {@code run_in_terminal} must be declared as {@link Tool.Kind#EDIT} and
+     * {@code run_in_terminal} must be declared as {@link Tool.Kind#EXECUTE} and
      * {@code isOpenWorld()} must return {@code true} (it runs arbitrary OS commands).
      */
     public void testRunInTerminalKindAndOpenWorld() {
