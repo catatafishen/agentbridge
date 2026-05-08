@@ -50,24 +50,27 @@ jobs:
           > This comment is posted automatically whenever ClusterFuzzLite is triggered on a fork PR."
 
   # For fork PRs, this job acts as the explicit approval gate.
-  # It requires a maintainer to approve the 'fuzzing' environment deployment before proceeding.
+  # It requires a maintainer to approve the 'fuzzing-gate' environment deployment before proceeding.
   #
-  # Because this job only runs for fork PRs (see `if` condition below), the 'fuzzing'
+  # Because this job only runs for fork PRs (see `if` condition below), the 'fuzzing-gate'
   # environment effectively requires approval for forks only — same-repo PRs never reach
   # this job and are never subject to the environment gate.
   #
-  # IMPORTANT: The 'fuzzing' environment MUST be configured with required reviewers in the
-  # repository settings (Settings → Environments → fuzzing → Required reviewers). Without
-  # that setting, this job — and therefore the fuzzer — will run automatically for fork
-  # PRs with no approval, defeating the entire security model.
+  # Environment layout:
+  #   fuzzing-gate — required reviewers, no secrets (approval mechanism only)
+  #   fuzzing      — CFLITE_STORAGE_REPO_TOKEN, no required reviewers (secret store)
+  #
+  # IMPORTANT: The 'fuzzing-gate' environment MUST be configured with required reviewers
+  # (Settings → Environments → fuzzing-gate → Required reviewers). Without that setting,
+  # this job runs automatically for fork PRs with no approval, defeating the security model.
   fork-approval-gate:
     name: Maintainer approval gate (fork PR)
     if: github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     # The environment gate: requires a maintainer to click "Approve and deploy" before
     # this job (and the dependent PR fuzzing job) can proceed.
-    # Requires 'fuzzing' environment to have required reviewers configured — see comment above.
-    environment: fuzzing
+    # Requires 'fuzzing-gate' environment to have required reviewers — see comment above.
+    environment: fuzzing-gate
     steps:
       - name: Approval received
         run: echo "Maintainer approved fuzzing fork PR ${{ github.event.pull_request.number }} from ${{ github.event.pull_request.head.repo.full_name }}@${{ github.event.pull_request.head.sha }}"
@@ -76,7 +79,7 @@ jobs:
     name: ClusterFuzzLite PR
     # For fork PRs: wait for maintainer approval via fork-approval-gate.
     # For same-repo PRs: fork-approval-gate is skipped (result == 'skipped'), run directly.
-    needs: [fork-approval-gate]
+    needs: [ fork-approval-gate ]
     if: |
       always() && (
         needs.fork-approval-gate.result == 'success' ||
@@ -91,6 +94,9 @@ jobs:
       # cancelling stale runs within the same PR when new commits are pushed.
       group: ${{ github.workflow }}-${{ matrix.sanitizer }}-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
+    # Provides access to CFLITE_STORAGE_REPO_TOKEN (stored in the 'fuzzing' environment).
+    # No required reviewers on this environment — fork PRs are gated by fork-approval-gate above.
+    environment: fuzzing
     permissions:
       contents: read
       security-events: write
@@ -137,7 +143,8 @@ jobs:
           language: jvm
           github-token: ${{ secrets.GITHUB_TOKEN }}
           sanitizer: ${{ matrix.sanitizer }}
-          # CFLITE_STORAGE_REPO_TOKEN: fine-grained PAT scoped to catatafishen/agentbridge-cflite-storage only.
+          # CFLITE_STORAGE_REPO_TOKEN: stored in the 'fuzzing' environment (not a repo secret).
+          # Fine-grained PAT scoped to catatafishen/agentbridge-cflite-storage only.
           # Permissions: Read access to metadata; Read and Write access to code.
           # Blast radius if exfiltrated: write access to the fuzz corpus repo only — not the main codebase.
           storage-repo: https://${{ secrets.CFLITE_STORAGE_REPO_TOKEN }}@github.com/catatafishen/agentbridge-cflite-storage.git
