@@ -5,9 +5,8 @@ import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.google.gson.JsonObject;
 import com.intellij.database.dataSource.LocalDataSource;
 import com.intellij.database.psi.DataSourceManager;
-import com.intellij.openapi.application.ApplicationManager;
+import com.intellij.openapi.application.WriteAction;
 import com.intellij.openapi.project.Project;
-import com.intellij.openapi.util.Computable;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -89,8 +88,10 @@ public final class AddDataSourceTool extends DatabaseTool {
         String url = args.get(PARAM_URL).getAsString().trim();
         String username = args.has(PARAM_USERNAME) && !args.get(PARAM_USERNAME).isJsonNull()
             ? args.get(PARAM_USERNAME).getAsString().trim() : null;
-        String driverClass = args.has(PARAM_DRIVER_CLASS) && !args.get(PARAM_DRIVER_CLASS).isJsonNull()
+        String rawDriverClass = args.has(PARAM_DRIVER_CLASS) && !args.get(PARAM_DRIVER_CLASS).isJsonNull()
             ? args.get(PARAM_DRIVER_CLASS).getAsString().trim() : null;
+        // Treat blank driver_class the same as absent — fall through to auto-detection
+        String driverClass = (rawDriverClass != null && !rawDriverClass.isEmpty()) ? rawDriverClass : null;
 
         if (name.isEmpty()) {
             return "Error: 'name' cannot be empty";
@@ -108,9 +109,7 @@ public final class AddDataSourceTool extends DatabaseTool {
         }
 
         String resolvedDriverClass = driverClass;
-        // Explicit Computable<String> variable avoids ambiguity between runReadAction overloads in javac
-        Computable<String> action = () -> addDataSource(name, url, username, resolvedDriverClass);
-        String result = ApplicationManager.getApplication().runReadAction(action);
+        String result = WriteAction.compute(() -> addDataSource(name, url, username, resolvedDriverClass));
 
         activateDatabaseToolWindow();
         return result;
@@ -156,8 +155,12 @@ public final class AddDataSourceTool extends DatabaseTool {
     }
 
     private static @NotNull String extractScheme(@NotNull String url) {
-        int lastColon = url.lastIndexOf(':');
-        return lastColon > 0 ? url.substring(0, lastColon + 1) : url;
+        // Extract "jdbc:<subscheme>:" — find the colon after the sub-scheme name.
+        // e.g. "jdbc:postgresql://localhost:5432/db" → "jdbc:postgresql:" (not the host:port colon)
+        int firstColon = url.indexOf(':');
+        if (firstColon < 0) return url;
+        int secondColon = url.indexOf(':', firstColon + 1);
+        return secondColon > 0 ? url.substring(0, secondColon + 1) : url;
     }
 
     private static @NotNull String supportedSchemes() {

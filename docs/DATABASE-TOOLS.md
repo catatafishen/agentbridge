@@ -3,8 +3,8 @@
 AgentBridge is a bridge to the IntelliJ IDE. Every tool should proxy something IntelliJ
 already does well — it should not invent its own implementations.
 
-**JetBrains' built-in MCP server** (part of the AI Assistant plugin, available in all
-IntelliJ-based IDEs from 2025.1) provides comprehensive database tooling natively. AgentBridge
+**JetBrains' built-in MCP server** (the `com.intellij.mcpServer` plugin, available from
+IntelliJ 2026.1) provides comprehensive database tooling natively. AgentBridge
 proxies those tools in-process so agents benefit from follow-agent activation, single-endpoint
 routing, and MCP hooks — without any extra configuration.
 
@@ -36,12 +36,11 @@ See https://www.jetbrains.com/help/idea/mcp-server.html#database_specific_tools
 AgentBridge calls these tools **in-process** via reflection, bypassing the HTTP transport layer
 entirely. The sequence:
 
-1. `ExperimentalStartupActivity` checks if `com.intellij.mcpServer` plugin is present.
-2. If so, calls `JetBrainsMcpProxy.getRegisteredToolNames()` to discover which JetBrains tools
-   are actually live (varies by installed plugins).
-3. Creates a `JetBrainsProxyTool` for each matching tool and registers it in AgentBridge's
-   MCP server.
-4. When called, each proxy activates the Database tool window (follow-agent), then calls
+1. `PsiBridgeService` (in `plugin-core`) calls `JetBrainsProxyTool.createAll(project)` during startup.
+2. `createAll` calls `JetBrainsMcpProxy.getRegisteredToolNames()` to discover which JetBrains tools
+   are actually live (varies by installed plugins). Returns empty if `com.intellij.mcpServer` is absent.
+3. `createAll` creates a `JetBrainsProxyTool` for each matching tool and registers it.
+4. When called, each proxy activates the Database tool window (follow-agent), then delegates to
    `JetBrainsMcpProxy.callTool()`.
 5. `JetBrainsMcpProxy` locates the JetBrains `McpTool` instance via reflection, constructs a
    `McpCallInfo` (with the current `Project`), and invokes `McpTool.call()` via
@@ -54,9 +53,10 @@ Key implementation files:
 - `JetBrainsProxyTool.java` — `DatabaseTool` subclass with factory methods per tool
 - `PsiBridgeService.java` — calls `JetBrainsProxyTool.createAll(project)` during startup
 
-**Availability:** Only in IntelliJ 2026.1+ (`com.intellij.mcpServer` ships there). Earlier
-versions get only `database_add_source`. The proxy degrades gracefully — if the plugin is
-absent or tools fail to load, no proxy tools are registered.
+**Availability:** Only in IntelliJ 2026.1+ (`com.intellij.mcpServer` ships there). The proxy
+degrades gracefully — if the plugin is absent or tools fail to load, no proxy tools are
+registered. `database_add_source` is a separate experimental-plugin tool, available on any
+IDE version where the Database plugin is installed.
 
 **No compile-time dependency:** All mcpserver types are loaded via `Class.forName()` using the
 mcpserver plugin's own class loader. This keeps the experimental plugin's compile classpath free
