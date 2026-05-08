@@ -170,8 +170,8 @@ public final class ConversationWriter {
         if (!n.getSent()) return;
         insertEvent(conn, sessionId, n.getEntryId(), "nudge", n.getTimestamp(), "", "");
         insertSubtype(conn,
-            "INSERT OR IGNORE INTO nudge_events (event_id, text, nudge_id) VALUES (?, ?, ?)",
-            n.getEntryId(), n.getText(), n.getId());
+            "INSERT OR IGNORE INTO nudge_events (event_id, text, nudge_id, source) VALUES (?, ?, ?, ?)",
+            n.getEntryId(), n.getText(), n.getId(), n.getSource().getSerialized());
     }
 
     // ── Sessions ──────────────────────────────────────────────────────────────
