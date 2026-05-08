@@ -561,7 +561,12 @@ public final class CopilotClient extends AcpClient {
             boolean isBuiltIn = KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
                 || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX));
             if (isBuiltIn && shouldReprimand(title)) {
-                AgentNudgeService.getInstance(project).fireNudge(buildSingleToolReprimand(title));
+                com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode mode =
+                    com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getReprimandNudgeMode();
+                if (mode != com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED) {
+                    boolean showBubble = mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED;
+                    AgentNudgeService.getInstance(project).addNudge(buildSingleToolReprimand(title), NudgeSource.REPRIMAND, showBubble);
+                }
             }
         }
         return update;
@@ -576,7 +581,7 @@ public final class CopilotClient extends AcpClient {
      */
     @Override
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
-        AgentNudgeService.getInstance(project).clearHumanNudge();
+        AgentNudgeService.getInstance(project).clearHumanNudges();
         return request;
     }
 

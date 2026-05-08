@@ -7,109 +7,201 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Project-level service that owns the full lifecycle of pending nudges — human-typed instructions
+ * and system reprimands waiting to be injected into the next MCP tool result.
+ *
+ * <h3>Architecture contract</h3>
+ * <ul>
+ *   <li>All nudge state lives here — the UI holds only display-layer references (active bubble ID).</li>
+ *   <li>Callers decide whether a nudge should show a bubble ({@code showBubble}) before calling
+ *       {@link #addNudge}, typically by reading the {@code ReprimandNudgeMode} setting.</li>
+ *   <li>REPRIMAND nudges coalesce: a new REPRIMAND silently replaces the previous one without
+ *       firing a cancel event, preventing UI flicker during rapid reprimand updates.</li>
+ *   <li>{@link #clearHumanNudges()} is a silent purge (no listener events) — used at turn start
+ *       so human nudges don't bleed into the next turn. Reprimands survive until consumed.</li>
+ *   <li>{@link #consumePendingNudges()} drains the map atomically, merges human text first and
+ *       reprimand text after, and fires {@link Listener#onNudgesInjected} once.</li>
+ *   <li>Listener callbacks fire on the calling thread — UI listeners should dispatch to the EDT
+ *       themselves (e.g. via {@code ApplicationManager.getApplication().invokeLater}).</li>
+ * </ul>
+ *
+ * <p>The {@link #messageQueue} is a separate concern for queued messages scheduled to be
+ * sent at the start of the next agent turn. It does not interact with nudge state.</p>
+ */
 @Service(Service.Level.PROJECT)
 public final class AgentNudgeService {
 
-    private final java.util.concurrent.atomic.AtomicReference<String> pendingHumanNudge =
-        new java.util.concurrent.atomic.AtomicReference<>();
-    private final java.util.concurrent.atomic.AtomicReference<String> pendingReprimandNudge =
-        new java.util.concurrent.atomic.AtomicReference<>();
     /**
-     * When true, {@link #consumePendingNudge()} is suppressed and returns {@code null}.
-     * Set while a sub-agent is active so nudges are held until the main agent resumes.
+     * A single pending nudge waiting to be injected into the next MCP tool result.
+     */
+    public record NudgeEntry(String id, String text, NudgeSource source, boolean showBubble) {
+    }
+
+    /**
+     * Listener for nudge lifecycle events. Callbacks fire synchronously on the calling thread;
+     * implementations that update Swing UI must dispatch to the EDT themselves.
+     */
+    public interface Listener {
+        /**
+         * A new nudge was added. For REPRIMAND, the previous reprimand has already been replaced.
+         */
+        void onNudgeAdded(@NotNull NudgeEntry entry);
+
+        /**
+         * All pending nudges were drained and injected into an MCP tool result.
+         *
+         * @param entries    the consumed entries, in insertion order
+         * @param mergedText human nudge text followed by reprimand text, separated by blank lines
+         */
+        void onNudgesInjected(@NotNull List<NudgeEntry> entries, @NotNull String mergedText);
+
+        /**
+         * A nudge was explicitly cancelled by the user (cancel button).
+         * Not fired for REPRIMAND coalescing or {@link #clearHumanNudges()}.
+         */
+        void onNudgeCancelled(@NotNull NudgeEntry entry);
+    }
+
+    /**
+     * Insertion-ordered map of pending nudges, keyed by nudge ID. Guarded by {@code this}.
+     */
+    private final LinkedHashMap<String, NudgeEntry> pendingNudges = new LinkedHashMap<>();
+    /**
+     * When true, {@link #consumePendingNudges()} is suppressed so nudges wait until the
+     * main agent resumes after a sub-agent finishes.
      */
     private volatile boolean nudgesHeld = false;
+    private final AtomicInteger idCounter = new AtomicInteger();
+    private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
+    /**
+     * Queued messages to be sent at the start of the next agent turn (separate concern).
+     */
     private final java.util.Queue<String> messageQueue = new java.util.concurrent.ConcurrentLinkedQueue<>();
-    private final java.util.concurrent.atomic.AtomicReference<Runnable> onNudgeConsumed =
-        new java.util.concurrent.atomic.AtomicReference<>();
-    private final java.util.concurrent.atomic.AtomicReference<java.util.function.BiConsumer<String, NudgeSource>> onNudgeRequested =
-        new java.util.concurrent.atomic.AtomicReference<>();
 
     public static AgentNudgeService getInstance(@NotNull Project project) {
         return PlatformApiCompat.getService(project, AgentNudgeService.class);
     }
 
+    // ─── Listener management ────────────────────────────────────────────────
+
+    public void addListener(@NotNull Listener listener) {
+        listeners.add(listener);
+    }
+
+    public void removeListener(@NotNull Listener listener) {
+        listeners.remove(listener);
+    }
+
+    // ─── Nudge lifecycle ────────────────────────────────────────────────────
+
     /**
-     * Sets or accumulates a human nudge. Passing {@code null} clears all pending nudge state
-     * (both human and reprimand), which is done at turn start.
+     * Adds a nudge to the pending queue and notifies listeners.
+     *
+     * <p>REPRIMAND nudges coalesce: adding a new REPRIMAND silently removes any existing
+     * REPRIMAND entry (no {@link Listener#onNudgeCancelled} event). HUMAN nudges accumulate.
+     *
+     * @param text       the nudge text to inject into the next MCP tool result
+     * @param source     the originator; REPRIMAND entries coalesce, HUMAN entries accumulate
+     * @param showBubble whether the UI should display a nudge bubble for this nudge
+     * @return the nudge ID, which can be passed to {@link #cancelNudge(String)}
      */
-    public void setPendingNudge(@Nullable String nudge) {
-        if (nudge == null) {
-            pendingHumanNudge.set(null);
-            pendingReprimandNudge.set(null);
-            return;
+    @NotNull
+    public String addNudge(@NotNull String text, @NotNull NudgeSource source, boolean showBubble) {
+        String id = source.name().toLowerCase() + "-" + idCounter.incrementAndGet();
+        NudgeEntry entry = new NudgeEntry(id, text, source, showBubble);
+        synchronized (pendingNudges) {
+            if (source == NudgeSource.REPRIMAND) {
+                pendingNudges.values().removeIf(e -> e.source() == NudgeSource.REPRIMAND);
+            }
+            pendingNudges.put(id, entry);
         }
-        pendingHumanNudge.updateAndGet(existing -> mergeNudges(existing, nudge));
+        for (Listener l : listeners) l.onNudgeAdded(entry);
+        return id;
     }
 
     /**
-     * Clears only the human nudge slot, leaving any pending reprimand intact.
-     * Called at turn start — reprimands from a previous turn's denial should survive
-     * until the model makes an MCP call and the reprimand can be delivered.
+     * Cancels a pending nudge by ID and fires {@link Listener#onNudgeCancelled}.
+     * Used for explicit user-initiated cancellation (cancel button).
+     * Does nothing if the nudge was already consumed or not found.
+     *
+     * @return {@code true} if the nudge was found and removed
      */
-    public void clearHumanNudge() {
-        pendingHumanNudge.set(null);
+    public boolean cancelNudge(@NotNull String id) {
+        NudgeEntry removed;
+        synchronized (pendingNudges) {
+            removed = pendingNudges.remove(id);
+        }
+        if (removed != null) {
+            for (Listener l : listeners) l.onNudgeCancelled(removed);
+            return true;
+        }
+        return false;
     }
 
     /**
-     * Replaces the pending reprimand text without touching any human nudge.
-     * Subsequent reprimands replace the previous one (only the latest issue is shown),
-     * but human nudges are always preserved and delivered alongside the reprimand.
+     * Silently removes all pending HUMAN nudges without firing any listener events.
+     * Called at turn start — human nudges that were not delivered are discarded so they
+     * do not bleed into the next turn. Reprimands survive until consumed.
      */
-    public void setReprimandNudge(@NotNull String nudge) {
-        pendingReprimandNudge.set(nudge);
-    }
-
-    public void setOnNudgeConsumed(@Nullable Runnable callback) {
-        onNudgeConsumed.set(callback);
+    public void clearHumanNudges() {
+        synchronized (pendingNudges) {
+            pendingNudges.values().removeIf(e -> e.source() == NudgeSource.HUMAN);
+        }
     }
 
     /**
-     * Holds or releases nudge delivery. While held, {@link #consumePendingNudge()} returns
-     * {@code null} so nudges are not injected into sub-agent tool results — they wait until the
-     * main agent resumes and makes the next tool call.
+     * Returns the merged text of all pending nudges without consuming them.
+     * Human text comes first, then reprimand text, separated by blank lines.
+     * Returns {@code null} if no nudges are pending.
+     */
+    @Nullable
+    public String getPendingNudgesText() {
+        List<NudgeEntry> snapshot;
+        synchronized (pendingNudges) {
+            snapshot = new ArrayList<>(pendingNudges.values());
+        }
+        return mergeEntries(snapshot);
+    }
+
+    /**
+     * Holds or releases nudge injection. While held, {@link #consumePendingNudges()} returns
+     * {@code null} so nudges are not injected into sub-agent tool results — they wait until
+     * the main agent resumes and makes the next tool call.
      */
     public void setNudgesHeld(boolean held) {
         nudgesHeld = held;
     }
 
-    public void addOnNudgeConsumed(@NotNull Runnable callback) {
-        onNudgeConsumed.accumulateAndGet(callback, (current, newCb) ->
-            current == null ? newCb : () -> {
-                current.run();
-                newCb.run();
-            }
-        );
-    }
-
-    public void setOnNudgeRequested(@Nullable java.util.function.BiConsumer<String, NudgeSource> callback) {
-        this.onNudgeRequested.set(callback);
-    }
-
     /**
-     * Delivers a plugin-initiated reprimand nudge to the UI.
+     * Atomically drains all pending nudges, merges their text (human first, reprimand after),
+     * fires {@link Listener#onNudgesInjected}, and returns the merged text.
+     * Returns {@code null} when nudges are held (sub-agent active) or nothing is pending.
      */
-    public void fireNudge(@NotNull String text) {
-        fireNudge(text, NudgeSource.REPRIMAND);
-    }
-
-    /**
-     * Delivers a plugin-initiated nudge to the UI with an explicit source.
-     * <p>
-     * If the UI callback ({@link #setOnNudgeRequested}) is not registered (e.g. chat panel is
-     * not open), falls back to direct injection so the nudge still reaches the model via the
-     * next MCP tool result.
-     */
-    public void fireNudge(@NotNull String text, @NotNull NudgeSource source) {
-        java.util.function.BiConsumer<String, NudgeSource> cb = onNudgeRequested.get();
-        if (cb != null) {
-            cb.accept(text, source);
-        } else {
-            // Chat panel not open — inject directly so the model still receives the guidance.
-            if (source == NudgeSource.REPRIMAND) setReprimandNudge(text);
-            else setPendingNudge(text);
+    @Nullable
+    public String consumePendingNudges() {
+        if (nudgesHeld) return null;
+        List<NudgeEntry> consumed;
+        synchronized (pendingNudges) {
+            if (pendingNudges.isEmpty()) return null;
+            consumed = new ArrayList<>(pendingNudges.values());
+            pendingNudges.clear();
         }
+        String merged = mergeEntries(consumed);
+        if (merged != null) {
+            List<NudgeEntry> snap = List.copyOf(consumed);
+            for (Listener l : listeners) l.onNudgesInjected(snap, merged);
+        }
+        return merged;
     }
+
+    // ─── Message queue (separate concern) ───────────────────────────────────
 
     public void enqueueMessage(@NotNull String message) {
         if (!message.trim().isEmpty()) {
@@ -126,34 +218,11 @@ public final class AgentNudgeService {
         return messageQueue.poll();
     }
 
-    /**
-     * Atomically consumes all pending nudges (human + reprimand) and fires the registered callback.
-     * Human nudges are always preserved — reprimands never overwrite them.
-     * Returns {@code null} while nudges are held (sub-agent active) or when nothing is pending.
-     */
-    @Nullable
-    public String consumePendingNudge() {
-        if (nudgesHeld) return null;
-        String human = pendingHumanNudge.getAndSet(null);
-        String reprimand = pendingReprimandNudge.getAndSet(null);
-        String merged;
-        if (human != null && reprimand != null) {
-            merged = human + "\n\n" + reprimand;
-        } else if (human != null) {
-            merged = human;
-        } else {
-            merged = reprimand;
-        }
-        if (merged != null) {
-            Runnable cb = onNudgeConsumed.getAndSet(null);
-            if (cb != null) cb.run();
-        }
-        return merged;
-    }
+    // ─── Static utilities ────────────────────────────────────────────────────
 
     /**
-     * Merges a new nudge with any existing nudge text.
-     * Returns just the new nudge if there's no existing text; concatenates with double-newline otherwise.
+     * Concatenates two nudge strings with a blank-line separator.
+     * Returns {@code newNudge} unchanged if {@code existing} is null or blank.
      */
     public static String mergeNudges(@Nullable String existing, @NotNull String newNudge) {
         return (existing == null || existing.isEmpty()) ? newNudge : existing + "\n\n" + newNudge;
@@ -164,5 +233,24 @@ public final class AgentNudgeService {
      */
     public static String appendNudgeToResult(@NotNull String result, @Nullable String nudge) {
         return nudge != null ? result + "\n\n[User nudge]: " + nudge : result;
+    }
+
+    // ─── Private helpers ─────────────────────────────────────────────────────
+
+    @Nullable
+    private static String mergeEntries(@NotNull List<NudgeEntry> entries) {
+        String humanMerged = null;
+        String reprimandMerged = null;
+        for (NudgeEntry entry : entries) {
+            if (entry.source() == NudgeSource.HUMAN) {
+                humanMerged = mergeNudges(humanMerged, entry.text());
+            } else if (entry.source() == NudgeSource.REPRIMAND) {
+                reprimandMerged = mergeNudges(reprimandMerged, entry.text());
+            }
+        }
+        if (humanMerged == null && reprimandMerged == null) return null;
+        if (humanMerged == null) return reprimandMerged;
+        if (reprimandMerged == null) return humanMerged;
+        return humanMerged + "\n\n" + reprimandMerged;
     }
 }
