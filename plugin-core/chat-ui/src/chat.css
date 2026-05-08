@@ -657,28 +657,7 @@ working-indicator .working-text {
     animation: spin 0.6s linear infinite;
 }
 
-/* Non-MCP tool chips (native bash): subtle diagonal stripes to distinguish from MCP chips.
-   .tool is required to exclude ThinkingChip and SubagentChip which also use turn-chip. */
-.turn-chip.tool:not(.is-agentbridge-tool) {
-    position: relative;
-}
-
-.turn-chip.tool:not(.is-agentbridge-tool)::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background-image: repeating-linear-gradient(
-            45deg,
-            transparent 0,
-            transparent 3px,
-            rgba(0, 0, 0, 0.1) 3px,
-            rgba(0, 0, 0, 0.1) 4px
-    );
-    pointer-events: none;
-}
-
-/* Success: solid ring, animation stopped */
+/* Success: outlined circle — all chips */
 .status-complete .chip-ring,
 .status-success .chip-ring,
 .status-done .chip-ring {
@@ -686,24 +665,27 @@ working-indicator .working-text {
     animation: none;
 }
 
-/* Failure: ✕ glyph via ::before, ring border invisible */
+/* Success: filled circle — AgentBridge (MCP) chips only */
+.is-agentbridge-tool.status-complete .chip-ring,
+.is-agentbridge-tool.status-success .chip-ring,
+.is-agentbridge-tool.status-done .chip-ring {
+    background: currentColor;
+}
+
+/* Failure: broken (C-shaped) outlined circle — all chips */
 .status-failed .chip-ring,
 .status-error .chip-ring,
 .status-denied .chip-ring {
-    border-color: transparent;
+    border-color: currentColor;
+    border-right-color: transparent;
     animation: none;
 }
 
-.status-failed .chip-ring::before,
-.status-error .chip-ring::before,
-.status-denied .chip-ring::before {
-    content: '';
-    display: block;
-    width: 6px;
-    height: 6px;
-    background: linear-gradient(currentColor, currentColor) center / 2px 100% no-repeat,
-    linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
-    transform: rotate(45deg);
+/* Failure: filled broken circle — AgentBridge (MCP) chips only */
+.is-agentbridge-tool.status-failed .chip-ring,
+.is-agentbridge-tool.status-error .chip-ring,
+.is-agentbridge-tool.status-denied .chip-ring {
+    background: currentColor;
 }
 
 /* Subagent chips show no indicator on success */
