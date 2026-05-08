@@ -341,7 +341,8 @@ public final class ConversationWriter {
                 tool_call_count     = ?,
                 lines_added         = ?,
                 lines_removed       = ?,
-                git_branch_at_start = COALESCE(git_branch_at_start, ?)
+                git_branch_at_start = COALESCE(git_branch_at_start, ?),
+                git_branch_at_end   = COALESCE(git_branch_at_end, ?)
             WHERE id = ?
             """)) {
             ps.setString(1, endedAt);
@@ -355,7 +356,8 @@ public final class ConversationWriter {
             ps.setInt(9, stats.getLinesAdded());
             ps.setInt(10, stats.getLinesRemoved());
             ps.setString(11, stats.getGitBranchAtStart());
-            ps.setString(12, turnId);
+            ps.setString(12, stats.getGitBranchAtEnd());
+            ps.setString(13, turnId);
             ps.executeUpdate();
         }
     }
