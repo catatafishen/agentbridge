@@ -2293,7 +2293,13 @@ class ChatToolWindowContent(
 
                 ApplicationManager.getApplication().invokeLater {
                     com.intellij.openapi.command.WriteCommandAction.runWriteCommandAction(project) {
-                        editor.document.deleteString(offset, offset + trigger.length)
+                        val doc = editor.document
+                        val end = offset + trigger.length
+                        // Guard against stale offset: the document may have changed between
+                        // documentChanged() and this invokeLater callback (e.g. pasting a large block).
+                        if (end <= doc.textLength && doc.getText(com.intellij.openapi.util.TextRange(offset, end)) == trigger) {
+                            doc.deleteString(offset, end)
+                        }
                     }
                     contextManager.openFileSearchPopup()
                 }

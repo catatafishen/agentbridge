@@ -1042,6 +1042,10 @@ const ChatController = {
         el.classList.add('nudge-sent');
         el.querySelector('.nudge-label')?.remove();
         el.querySelector('.nudge-cancel-x')?.remove();
+        // Remove the info button: once resolved, nudge-pending is gone so message-bubble
+        // loses position:relative and the absolutely-positioned ? button escapes to the
+        // chat container's top-right corner.
+        el.querySelector('.nudge-info-btn')?.remove();
     },
 
     removeNudgeBubble(id: string): void {
