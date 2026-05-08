@@ -462,8 +462,9 @@ public final class ConversationReader {
                 // Derive pluginTool from is_mcp + tool_name.
                 // Old rows: tool_name may still carry the ACP prefix ("agentbridge-read_file") →
                 // stripMcpPrefix normalises them. New rows already store the canonical name.
-                Integer isMcp = (Integer) rs.getObject(9);
-                String pluginTool = (isMcp != null && isMcp == 1) ? stripMcpPrefix(toolName) : null;
+                int isMcpVal = rs.getInt(9);
+                boolean isMcpPresent = !rs.wasNull();
+                String pluginTool = (isMcpPresent && isMcpVal == 1) ? stripMcpPrefix(toolName) : null;
                 return new EntryData.ToolCall(
                     toolName,          // title = canonical tool name
                     rs.getString(2),   // arguments

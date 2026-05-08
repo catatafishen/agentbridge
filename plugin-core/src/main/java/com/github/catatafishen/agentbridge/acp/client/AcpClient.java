@@ -1082,11 +1082,15 @@ public abstract class AcpClient extends AbstractAgentClient {
     /**
      * Resolve a canonical tool name from the raw protocol title and kind.
      * <p>
-     * For MCP-bridged tools, returns the stripped MCP name (e.g., "read_file").
+     * For MCP-bridged tools (detected via {@link #isMcpToolTitle}), strips the prefix
+     * and returns the canonical MCP name (e.g., "read_file").
      * For native/built-in tools, returns the {@code kind} value (e.g., "read", "execute").
      * Subclasses may override to recognize additional built-in tool names.
      */
     protected @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
+        if (isMcpToolTitle(rawTitle)) {
+            return resolveToolId(rawTitle);
+        }
         return kind;
     }
 
