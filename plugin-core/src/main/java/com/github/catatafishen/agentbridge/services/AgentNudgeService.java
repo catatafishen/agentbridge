@@ -7,23 +7,12 @@ import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-/**
- * Project-level service that owns all nudge and message-queue state.
- *
- * <p>A <em>nudge</em> is a short plain-text hint injected into the next MCP tool result so the
- * agent sees it immediately without a round-trip message. Nudges are produced by user interactions
- * (e.g. the nudge bubble in the chat panel) or by plugin logic (e.g. built-in tool reprimands
- * from {@code CopilotClient.onBuiltInToolApproved})
- * and consumed once by {@link #consumePendingNudge()} inside
- * {@link com.github.catatafishen.agentbridge.psi.PsiBridgeService}.</p>
- *
- * <p>The message queue holds pre-typed user messages that are auto-sent at the end of the current
- * turn via {@link com.github.catatafishen.agentbridge.ui.PromptOrchestrator}.</p>
- */
 @Service(Service.Level.PROJECT)
 public final class AgentNudgeService {
 
-    private final java.util.concurrent.atomic.AtomicReference<String> pendingNudge =
+    private final java.util.concurrent.atomic.AtomicReference<String> pendingHumanNudge =
+        new java.util.concurrent.atomic.AtomicReference<>();
+    private final java.util.concurrent.atomic.AtomicReference<String> pendingReprimandNudge =
         new java.util.concurrent.atomic.AtomicReference<>();
     /**
      * When true, {@link #consumePendingNudge()} is suppressed and returns {@code null}.
@@ -40,20 +29,26 @@ public final class AgentNudgeService {
         return PlatformApiCompat.getService(project, AgentNudgeService.class);
     }
 
+    /**
+     * Sets or accumulates a human nudge. Passing {@code null} clears all pending nudge state
+     * (both human and reprimand), which is done at turn start.
+     */
     public void setPendingNudge(@Nullable String nudge) {
         if (nudge == null) {
-            pendingNudge.set(null);
+            pendingHumanNudge.set(null);
+            pendingReprimandNudge.set(null);
             return;
         }
-        pendingNudge.updateAndGet(existing -> mergeNudges(existing, nudge));
+        pendingHumanNudge.updateAndGet(existing -> mergeNudges(existing, nudge));
     }
 
     /**
-     * Replaces the pending nudge text directly without merging with any existing nudge.
-     * Use for reprimands: always shows the most recent issue, not a growing list.
+     * Replaces the pending reprimand text without touching any human nudge.
+     * Subsequent reprimands replace the previous one (only the latest issue is shown),
+     * but human nudges are always preserved and delivered alongside the reprimand.
      */
     public void setReprimandNudge(@NotNull String nudge) {
-        pendingNudge.set(nudge);
+        pendingReprimandNudge.set(nudge);
     }
 
     public void setOnNudgeConsumed(@Nullable Runnable callback) {
@@ -113,20 +108,28 @@ public final class AgentNudgeService {
     }
 
     /**
-     * Atomically consumes the pending nudge and fires the registered callback.
-     * Returns {@code null} while nudges are held (sub-agent active) or when no nudge is pending.
+     * Atomically consumes all pending nudges (human + reprimand) and fires the registered callback.
+     * Human nudges are always preserved — reprimands never overwrite them.
+     * Returns {@code null} while nudges are held (sub-agent active) or when nothing is pending.
      */
     @Nullable
     public String consumePendingNudge() {
         if (nudgesHeld) return null;
-        String nudge = pendingNudge.getAndSet(null);
-        if (nudge != null) {
-            // Clear the callback atomically to prevent stale callbacks from firing
-            // on future nudge sources (e.g., tool reprimands, revert nudges)
+        String human = pendingHumanNudge.getAndSet(null);
+        String reprimand = pendingReprimandNudge.getAndSet(null);
+        String merged;
+        if (human != null && reprimand != null) {
+            merged = human + "\n\n" + reprimand;
+        } else if (human != null) {
+            merged = human;
+        } else {
+            merged = reprimand;
+        }
+        if (merged != null) {
             Runnable cb = onNudgeConsumed.getAndSet(null);
             if (cb != null) cb.run();
         }
-        return nudge;
+        return merged;
     }
 
     /**

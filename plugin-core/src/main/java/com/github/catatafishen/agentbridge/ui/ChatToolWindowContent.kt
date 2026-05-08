@@ -103,6 +103,10 @@ class ChatToolWindowContent(
 
     @Volatile
     private var pendingNudgeText: String? = null
+
+    /** Human-typed portion of the active nudge bubble — accumulated across multiple human submissions. */
+    @Volatile
+    private var pendingHumanNudgeText: String? = null
     private lateinit var processingTimerPanel: ProcessingTimerPanel
     private lateinit var promptOrchestrator: PromptOrchestrator
     private lateinit var pasteToScratchHandler: PasteToScratchHandler
@@ -1082,15 +1086,22 @@ class ChatToolWindowContent(
     private fun submitNudge(text: String, source: NudgeSource = NudgeSource.HUMAN) {
         val existingId = pendingNudgeId
         if (existingId != null) {
-            // Reprimands replace the nudge text so only the latest issue is shown.
-            // Human nudges accumulate so the agent sees the full context.
-            pendingNudgeText = if (source == NudgeSource.REPRIMAND) text
-                               else (pendingNudgeText ?: "") + "\n\n" + text
+            if (source == NudgeSource.REPRIMAND) {
+                // Reprimands replace only the reprimand portion; always preserve human nudge text.
+                val humanPart = pendingHumanNudgeText
+                pendingNudgeText = if (humanPart.isNullOrEmpty()) text else "$humanPart\n\n$text"
+            } else {
+                // Human nudges accumulate so the agent sees the full context.
+                pendingHumanNudgeText = if (pendingHumanNudgeText.isNullOrEmpty()) text
+                                        else "$pendingHumanNudgeText\n\n$text"
+                pendingNudgeText = pendingHumanNudgeText
+            }
             consolePanel.showNudgeBubble(existingId, pendingNudgeText!!, source)
         } else {
             val id = System.currentTimeMillis().toString()
             pendingNudgeId = id
             pendingNudgeText = text
+            pendingHumanNudgeText = if (source == NudgeSource.HUMAN) text else null
             consolePanel.showNudgeBubble(id, text, source)
         }
         val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
@@ -1103,6 +1114,7 @@ class ChatToolWindowContent(
             val capturedText = pendingNudgeText
             pendingNudgeId = null
             pendingNudgeText = null
+            pendingHumanNudgeText = null
             ApplicationManager.getApplication().invokeLater {
                 consolePanel.resolveNudgeBubble(resolveId)
                 if (capturedText != null) {
@@ -1112,8 +1124,8 @@ class ChatToolWindowContent(
                 refreshShortcutHints()
             }
         }
-        // Reprimands replace pending text so only the last issue is injected.
-        // Human nudges merge so the agent sees the full context.
+        // Reprimands update only the reprimand slot; human nudges accumulate into the human slot.
+        // Both slots are merged in AgentNudgeService.consumePendingNudge() so the agent sees all.
         if (source == NudgeSource.REPRIMAND) nudgeService.setReprimandNudge(text)
         else nudgeService.setPendingNudge(text)
         refreshShortcutHints()
@@ -1123,6 +1135,7 @@ class ChatToolWindowContent(
     private fun clearAndRemoveNudge(nudgeId: String) {
         pendingNudgeId = null
         pendingNudgeText = null
+        pendingHumanNudgeText = null
         val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
         nudgeService.setPendingNudge(null)
         nudgeService.setOnNudgeConsumed(null)
