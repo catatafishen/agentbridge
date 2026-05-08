@@ -22,7 +22,7 @@ import java.sql.Statement;
  * database, replacing both JSONL session files and the now-deleted
  * {@code tool-stats.db}. Aggregation queries are in {@link com.github.catatafishen.agentbridge.session.db.ConversationStatistics}.
  *
- * <p>Schema follows the ER diagram in {@code scratches/conversation-db-er.md}:
+ * <p>Schema follows the ER diagram in {@code docs/CONVERSATION-DB-SCHEMA.md}:
  * sessions → turns (1 turn = 1 prompt) → events → typed event subtables, with
  * standalone events (no turn) for tool calls outside any ACP turn.
  *
@@ -42,7 +42,7 @@ public final class ConversationDatabase implements Disposable {
     /**
      * Bumped whenever {@link ConversationSchema} changes. Stored in {@code schema_version} table.
      */
-    static final int SCHEMA_VERSION = 3;
+    static final int SCHEMA_VERSION = 4;
 
     private final Project project;
     // All access is inside synchronized(database) blocks — both volatile fields

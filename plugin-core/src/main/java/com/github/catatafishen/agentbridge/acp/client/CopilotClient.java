@@ -565,7 +565,7 @@ public final class CopilotClient extends AcpClient {
                     com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getReprimandNudgeMode();
                 if (mode != com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED) {
                     boolean showBubble = mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED;
-                    AgentNudgeService.getInstance(project).addNudge(buildSingleToolReprimand(title), NudgeSource.REPRIMAND, showBubble);
+                    AgentNudgeService.getInstance(project).addNudge(buildSingleToolReprimand(title), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
                 }
             }
         }

@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.session.db;
 
 import com.github.catatafishen.agentbridge.ui.ContextFileRef;
 import com.github.catatafishen.agentbridge.ui.EntryData;
+import com.github.catatafishen.agentbridge.ui.NudgeSource;
 import com.intellij.openapi.diagnostic.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -507,7 +508,7 @@ public final class ConversationReader {
         @NotNull Connection conn, @NotNull String eventId, @NotNull String timestamp
     ) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
-            "SELECT text, nudge_id FROM nudge_events WHERE event_id = ?")) {
+            "SELECT text, nudge_id, source FROM nudge_events WHERE event_id = ?")) {
             ps.setString(1, eventId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
@@ -515,7 +516,8 @@ public final class ConversationReader {
                     rs.getString(1),  // text
                     nullToEmpty(rs.getString(2)),  // nudge_id
                     true,             // sent (only sent nudges are persisted)
-                    timestamp, eventId
+                    timestamp, eventId,
+                    NudgeSource.fromSerialized(nullToEmpty(rs.getString(3)))  // source
                 );
             }
         }
