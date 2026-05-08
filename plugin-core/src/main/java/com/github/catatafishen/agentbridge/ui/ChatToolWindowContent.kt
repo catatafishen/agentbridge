@@ -1955,7 +1955,9 @@ class ChatToolWindowContent(
                 }
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.SEND_SILENTLY -> {
                     // Inject into the next MCP tool result but show no bubble.
-                    nudgeService.setPendingNudge(notice)
+                    // Reprimands coalesce (latest wins); human nudges accumulate.
+                    if (source == NudgeSource.REPRIMAND) nudgeService.setReprimandNudge(notice)
+                    else nudgeService.setPendingNudge(notice)
                 }
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED -> {
                     com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {

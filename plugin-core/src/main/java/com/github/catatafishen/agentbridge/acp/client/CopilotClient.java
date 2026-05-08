@@ -561,7 +561,7 @@ public final class CopilotClient extends AcpClient {
             boolean isBuiltIn = KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
                 || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX));
             if (isBuiltIn && shouldReprimand(title)) {
-                AgentNudgeService.getInstance(project).setReprimandNudge(buildSingleToolReprimand(title));
+                AgentNudgeService.getInstance(project).fireNudge(buildSingleToolReprimand(title));
             }
         }
         return update;

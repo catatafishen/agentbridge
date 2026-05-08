@@ -95,10 +95,20 @@ public final class AgentNudgeService {
 
     /**
      * Delivers a plugin-initiated nudge to the UI with an explicit source.
+     * <p>
+     * If the UI callback ({@link #setOnNudgeRequested}) is not registered (e.g. chat panel is
+     * not open), falls back to direct injection so the nudge still reaches the model via the
+     * next MCP tool result.
      */
     public void fireNudge(@NotNull String text, @NotNull NudgeSource source) {
         java.util.function.BiConsumer<String, NudgeSource> cb = onNudgeRequested.get();
-        if (cb != null) cb.accept(text, source);
+        if (cb != null) {
+            cb.accept(text, source);
+        } else {
+            // Chat panel not open — inject directly so the model still receives the guidance.
+            if (source == NudgeSource.REPRIMAND) setReprimandNudge(text);
+            else setPendingNudge(text);
+        }
     }
 
     public void enqueueMessage(@NotNull String message) {
