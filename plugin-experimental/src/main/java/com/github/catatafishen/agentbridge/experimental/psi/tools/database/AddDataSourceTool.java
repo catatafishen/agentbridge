@@ -7,6 +7,7 @@ import com.intellij.database.dataSource.LocalDataSource;
 import com.intellij.database.psi.DataSourceManager;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Computable;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -107,8 +108,9 @@ public final class AddDataSourceTool extends DatabaseTool {
         }
 
         String resolvedDriverClass = driverClass;
-        String result = ApplicationManager.getApplication()
-            .runReadAction(() -> addDataSource(name, url, username, resolvedDriverClass));
+        // Explicit Computable<String> variable avoids ambiguity between runReadAction overloads in javac
+        Computable<String> action = () -> addDataSource(name, url, username, resolvedDriverClass);
+        String result = ApplicationManager.getApplication().runReadAction(action);
 
         activateDatabaseToolWindow();
         return result;
