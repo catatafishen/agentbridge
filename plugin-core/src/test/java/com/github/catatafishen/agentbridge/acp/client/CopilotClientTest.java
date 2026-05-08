@@ -266,6 +266,54 @@ class CopilotClientTest {
         assertTrue(result.contains("agentbridge-read_file"));
     }
 
+    // ── shouldReprimand (private static) ────────────────────────────────
+
+    @Test
+    void shouldReprimand_webFetchByName_isSuppressed() throws Exception {
+        assertFalse(invokeShouldReprimand("web_fetch"));
+        assertFalse(invokeShouldReprimand("web_search"));
+    }
+
+    @Test
+    void shouldReprimand_webFetchDescription_isSuppressed() throws Exception {
+        // Copilot CLI sends "Fetching <url>" as the ACP title for web_fetch calls.
+        assertFalse(invokeShouldReprimand("Fetching https://www.jetbrains.com/help/idea/mcp-server.html"));
+        assertFalse(invokeShouldReprimand("Fetching www.example.com/page"));
+        assertFalse(invokeShouldReprimand("Fetch https://api.example.com/data"));
+        assertFalse(invokeShouldReprimand("Some URL https://example.com result"));
+    }
+
+    @Test
+    void shouldReprimand_sqlToolByName_isSuppressed() throws Exception {
+        assertFalse(invokeShouldReprimand("sql"));
+    }
+
+    @Test
+    void shouldReprimand_sqlToolDescription_isSuppressed() throws Exception {
+        // Copilot CLI sends the sql tool's description parameter as the ACP title.
+        assertFalse(invokeShouldReprimand("Query ready todos"));
+        assertFalse(invokeShouldReprimand("Insert auth todos"));
+        assertFalse(invokeShouldReprimand("select * from todos"));
+    }
+
+    @Test
+    void shouldReprimand_metaTools_areSuppressed() throws Exception {
+        assertFalse(invokeShouldReprimand("report_intent"));
+        assertFalse(invokeShouldReprimand("skill"));
+        assertFalse(invokeShouldReprimand("task_complete"));
+    }
+
+    @Test
+    void shouldReprimand_bashAndDuplicates_areReprimanded() throws Exception {
+        assertTrue(invokeShouldReprimand("bash"));
+        assertTrue(invokeShouldReprimand("view"));
+        assertTrue(invokeShouldReprimand("grep"));
+        assertTrue(invokeShouldReprimand("glob"));
+        // bash-with-description that has no URL or SQL pattern
+        assertTrue(invokeShouldReprimand("TypeScript compile check"));
+        assertTrue(invokeShouldReprimand("Read PsiBridgeService constructor"));
+    }
+
     // ── copilotHome (package-private static) ────────────────────────────
 
     @Test
@@ -310,6 +358,12 @@ class CopilotClientTest {
         Method m = CopilotClient.class.getDeclaredMethod("buildSingleToolReprimand", String.class);
         m.setAccessible(true);
         return (String) m.invoke(allocateClient(), toolId);
+    }
+
+    private static boolean invokeShouldReprimand(String toolId) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("shouldReprimand", String.class);
+        m.setAccessible(true);
+        return (boolean) m.invoke(null, toolId);
     }
 
     @Nested

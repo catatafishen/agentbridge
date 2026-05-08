@@ -598,17 +598,47 @@ public final class CopilotClient extends AcpClient {
     }
 
     /**
-     * Returns {@code false} for built-in tools that have no meaningful MCP alternative
-     * (e.g. meta-tools like {@code report_intent}, {@code skill}, {@code sql}) to avoid
-     * misleading reprimands.
+     * Returns {@code false} for built-in tools that have no meaningful MCP alternative —
+     * e.g. meta-tools ({@code report_intent}, {@code skill}, {@code task_complete}), direct
+     * SQL queries ({@code sql}), and web fetch ({@code web_fetch}, {@code web_search}).
+     * <p>
+     * Copilot CLI sends the tool's {@code description} parameter as the ACP title for all
+     * built-in tools (not just bash). That means web_fetch("Fetching https://...") and
+     * sql("Query todos") both arrive as space-containing strings indistinguishable from bash
+     * descriptions. We detect them here by content patterns to avoid spurious reprimands.
      */
     private static boolean shouldReprimand(String toolId) {
         String lower = toolId.toLowerCase();
-        // Web tools and Copilot meta-tools have no meaningful MCP alternative — skip reprimand.
-        return !WEB_TOOLS.contains(lower) && switch (lower) {
+        if (WEB_TOOLS.contains(lower)) return false;
+        return switch (lower) {
             case "report_intent", "skill", "sql", "task_complete" -> false;
-            default -> true;
+            default -> !isWebFetchDescription(lower) && !isSqlToolDescription(lower);
         };
+    }
+
+    /**
+     * Detects descriptions that originate from a {@code web_fetch} call.
+     * Copilot CLI sends the URL or a "Fetching <url>" summary as the ACP title.
+     */
+    private static boolean isWebFetchDescription(String lower) {
+        return lower.startsWith("fetching ")
+            || lower.startsWith("fetch ")
+            || lower.contains("http://")
+            || lower.contains("https://")
+            || lower.contains("www.");
+    }
+
+    /**
+     * Detects descriptions that originate from a {@code sql} tool call.
+     * Copilot CLI sends the sql tool's {@code description} parameter as the ACP title
+     * (e.g. "Query ready todos", "Insert auth todos"). SQL-specific verbs at the start
+     * of the description are a reliable discriminator — bash descriptions rarely start
+     * with SELECT, INSERT, or QUERY.
+     */
+    private static boolean isSqlToolDescription(String lower) {
+        return lower.startsWith("select ")
+            || lower.startsWith("insert ")
+            || lower.startsWith("query ");
     }
 
     /**
