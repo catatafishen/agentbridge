@@ -1896,10 +1896,15 @@ class ChatToolWindowContent(
             override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
                 val existingId = activeBubbleId
                 if (existingId != null) {
-                    // Already showing a bubble — update its text with the latest merged content.
+                    // A bubble is already showing. Replace it with a new one so the cancel
+                    // button holds the new entry's ID. The old entry may have been removed
+                    // from the service by reprimand coalescing, making cancelNudge(existingId)
+                    // a no-op and the bubble un-dismissible.
                     val mergedText = nudgeService.getPendingNudgesText() ?: entry.text()
                     ApplicationManager.getApplication().invokeLater {
-                        consolePanel.showNudgeBubble(existingId, mergedText, entry.source())
+                        activeBubbleId = entry.id()
+                        consolePanel.removeNudgeBubble(existingId)
+                        consolePanel.showNudgeBubble(entry.id(), mergedText, entry.source())
                     }
                 } else if (entry.showBubble()) {
                     ApplicationManager.getApplication().invokeLater {

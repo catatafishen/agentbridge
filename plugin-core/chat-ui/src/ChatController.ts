@@ -996,7 +996,7 @@ const ChatController = {
         textSpan.className = 'nudge-text';
         textSpan.textContent = text;
         bubble.appendChild(textSpan);
-        if (source === 'reprimand') {
+        if (source === 'reprimand' || source === 'native_tool_reprimand' || source === 'tool_abuse_reprimand') {
             const infoBtn = document.createElement('button');
             infoBtn.type = 'button';
             infoBtn.className = 'nudge-info-btn';

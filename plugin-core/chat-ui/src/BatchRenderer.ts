@@ -209,7 +209,7 @@ function _renderNudgeSentTurn(turn: NudgeSentTurn): HTMLElement {
     const meta = document.createElement('message-meta');
     const label = document.createElement('span');
     label.className = 'ts nudge-sent-label';
-    const labelText = turn.source === 'reprimand' ? 'Reprimand' : 'Nudge';
+    const labelText = (turn.source === 'reprimand' || turn.source === 'native_tool_reprimand' || turn.source === 'tool_abuse_reprimand') ? 'Reprimand' : 'Nudge';
     label.textContent = turn.timestamp ? `${labelText} · ${turn.timestamp}` : labelText;
     meta.appendChild(label);
     msg.appendChild(meta);
