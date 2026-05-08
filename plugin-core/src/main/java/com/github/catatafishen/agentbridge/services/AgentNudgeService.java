@@ -43,6 +43,15 @@ public final class AgentNudgeService {
     }
 
     /**
+     * Clears only the human nudge slot, leaving any pending reprimand intact.
+     * Called at turn start — reprimands from a previous turn's denial should survive
+     * until the model makes an MCP call and the reprimand can be delivered.
+     */
+    public void clearHumanNudge() {
+        pendingHumanNudge.set(null);
+    }
+
+    /**
      * Replaces the pending reprimand text without touching any human nudge.
      * Subsequent reprimands replace the previous one (only the latest issue is shown),
      * but human nudges are always preserved and delivered alongside the reprimand.
