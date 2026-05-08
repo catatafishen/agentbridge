@@ -121,7 +121,22 @@ export class ToolCallsView extends PollableView {
                 .forEach(pre => savedPreScrolls.push(pre.scrollTop));
         }
 
-        this._list.innerHTML = items.map(item => this._renderItem(item)).join('');
+        const html: string[] = [];
+        let lastMinuteKey = '';
+        for (const item of items) {
+            if (item.timestamp) {
+                const d = new Date(item.timestamp);
+                const minuteKey = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+                if (minuteKey !== lastMinuteKey) {
+                    const mm = String(d.getMinutes()).padStart(2, '0');
+                    const ss = String(d.getSeconds()).padStart(2, '0');
+                    html.push(`<div class="tcv-time-sep">${mm}:${ss}</div>`);
+                    lastMinuteKey = minuteKey;
+                }
+            }
+            html.push(this._renderItem(item));
+        }
+        this._list.innerHTML = html.join('');
 
         if (this._expandedId !== null && savedPreScrolls.length > 0) {
             const pres = this._list.querySelectorAll<HTMLElement>('.tcv-detail pre, .tcv-stage-detail pre');
@@ -177,18 +192,18 @@ export class ToolCallsView extends PollableView {
             : '';
 
         // ── Metadata row (always shown at top of expanded chip) ──────────────
-        // Show the ACP display name when it differs from the MCP tool name.
-        const nameRow = item.title === item.toolName
-            ? ''
-            : `<span class="tcv-meta-item"><strong>${this.esc(item.title)}</strong></span>`;
-        const toolRow = `<span class="tcv-meta-item">MCP: ${this.esc(item.toolName)}</span>`;
-        const statusRow = `<span class="tcv-meta-item tcv-meta-status">${this.esc(item.status)}</span>`;
-        const durationRow = item.durationMs >= 0
-            ? `<span class="tcv-meta-item">${this._formatDuration(item.durationMs)}</span>`
+        // Show the ACP display name only when it's genuinely different from the base tool name
+        // (i.e. ACP has augmented it with context like "Run Command — npm build chat-ui").
+        // A title that is simply the humanized toolName (e.g. "Run Command" for "run_command")
+        // is already visible in the chip header and need not be repeated here.
+        const baseTitle = item.toolName.replaceAll('_', ' ').toLowerCase();
+        const nameRow = item.title.toLowerCase() !== baseTitle
+            ? `<span class="tcv-meta-item"><strong>${this.esc(item.title)}</strong></span>`
             : '';
+        const toolRow = `<span class="tcv-meta-item">MCP: ${this.esc(item.toolName)}</span>`;
         const ts = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
         const tsRow = ts ? `<span class="tcv-meta-item tcv-meta-ts">${this.esc(ts)}</span>` : '';
-        const metaSection = `<div class="tcv-meta-row">${nameRow}${toolRow}${statusRow}${durationRow}${tsRow}</div>`;
+        const metaSection = `<div class="tcv-meta-row">${nameRow}${toolRow}${tsRow}</div>`;
 
         // Default I/O view (shown when no pipeline stage is selected)
         const ioView = this._selectedStage ? '' : `

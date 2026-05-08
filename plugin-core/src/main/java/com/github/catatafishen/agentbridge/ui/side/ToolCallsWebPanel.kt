@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui.side
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry
 import com.github.catatafishen.agentbridge.services.LiveToolCallService
+import com.github.catatafishen.agentbridge.services.ToolRegistry
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.ChatTheme
 import com.intellij.openapi.Disposable
@@ -99,9 +100,10 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
 
     private fun pushAllEntries(entries: List<LiveToolCallEntry>) {
         if (!browserReady || browser == null) return
+        val registry = ToolRegistry.getInstance(project)
         val sb = StringBuilder("ToolCallsController.clear();")
         for (entry in entries) {
-            sb.append("ToolCallsController.upsert(").append(entryToJson(entry)).append(");")
+            sb.append("ToolCallsController.upsert(").append(entryToJson(entry, registry)).append(");")
         }
         executeJs(sb.toString())
     }
@@ -152,12 +154,16 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     companion object {
         private val LOG = Logger.getInstance(ToolCallsWebPanel::class.java)
 
-        fun entryToJson(entry: LiveToolCallEntry): String {
+        fun entryToJson(entry: LiveToolCallEntry, registry: ToolRegistry? = null): String {
             val sb = StringBuilder(256)
             sb.append("{\"id\":").append(entry.callId())
             sb.append(",\"title\":").append(escapeJson(entry.displayName()))
             sb.append(",\"toolName\":").append(escapeJson(entry.toolName()))
-            entry.category()?.let { sb.append(",\"kind\":").append(escapeJson(it)) }
+            // Prefer the live tool definition's kind so that any reclassification of tools
+            // (e.g. RunCommandTool changed from EDIT to EXECUTE) is reflected immediately
+            // even for entries that were recorded before the change.
+            val kind = registry?.findById(entry.toolName())?.kind()?.value() ?: entry.category()
+            kind?.let { sb.append(",\"kind\":").append(escapeJson(it)) }
             val status = when {
                 entry.isRunning -> "running"
                 entry.success() == true -> "success"

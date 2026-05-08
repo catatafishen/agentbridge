@@ -1388,6 +1388,16 @@ file-nav {
     margin-top: 3px;
 }
 
+.tcv-time-sep {
+    text-align: center;
+    font-size: 0.72em;
+    color: var(--muted);
+    opacity: 0.5;
+    margin: 4px 0 2px;
+    letter-spacing: 0.05em;
+    user-select: none;
+}
+
 .tcv-detail {
     flex-basis: 100%;
     margin-top: var(--sp-4, 8px);
