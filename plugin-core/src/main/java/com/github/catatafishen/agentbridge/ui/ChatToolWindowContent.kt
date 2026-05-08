@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.acp.model.Model
 import com.github.catatafishen.agentbridge.acp.model.SessionUpdate
 import com.github.catatafishen.agentbridge.psi.review.AgentEditSession
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager
+import com.github.catatafishen.agentbridge.services.AgentNudgeService
 import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.session.SessionSwitchService
 import com.github.catatafishen.agentbridge.session.db.ConversationService
@@ -99,14 +100,11 @@ class ChatToolWindowContent(
     private var isSending = false
 
     @Volatile
-    private var pendingNudgeId: String? = null
+    private var activeBubbleId: String? = null
 
+    /** Human-typed portion of the pending nudge bubble — for restore-to-input when a turn ends unhandled. */
     @Volatile
-    private var pendingNudgeText: String? = null
-
-    /** Human-typed portion of the active nudge bubble — accumulated across multiple human submissions. */
-    @Volatile
-    private var pendingHumanNudgeText: String? = null
+    private var pendingHumanText: String? = null
     private lateinit var processingTimerPanel: ProcessingTimerPanel
     private lateinit var promptOrchestrator: PromptOrchestrator
     private lateinit var pasteToScratchHandler: PasteToScratchHandler
@@ -1082,67 +1080,15 @@ class ChatToolWindowContent(
         submitNudge(text)
     }
 
-    /** Shows or appends a nudge bubble and arms the PsiBridge consume handler. */
-    private fun submitNudge(text: String, source: NudgeSource = NudgeSource.HUMAN) {
-        val existingId = pendingNudgeId
-        if (existingId != null) {
-            if (source == NudgeSource.REPRIMAND) {
-                // Reprimands replace only the reprimand portion; always preserve human nudge text.
-                val humanPart = pendingHumanNudgeText
-                pendingNudgeText = if (humanPart.isNullOrEmpty()) text else "$humanPart\n\n$text"
-            } else {
-                // Human nudges accumulate so the agent sees the full context.
-                pendingHumanNudgeText = if (pendingHumanNudgeText.isNullOrEmpty()) text
-                                        else "$pendingHumanNudgeText\n\n$text"
-                pendingNudgeText = pendingHumanNudgeText
-            }
-            consolePanel.showNudgeBubble(existingId, pendingNudgeText!!, source)
-        } else {
-            val id = System.currentTimeMillis().toString()
-            pendingNudgeId = id
-            pendingNudgeText = text
-            pendingHumanNudgeText = if (source == NudgeSource.HUMAN) text else null
-            consolePanel.showNudgeBubble(id, text, source)
-        }
-        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
-        // Register callback BEFORE arming the nudge to avoid race condition where
-        // a tool call consumes the nudge between setPendingNudge and setOnNudgeConsumed
-        val resolveId = pendingNudgeId!!
-        // Chain with (not replace) any existing callback — e.g., tool reprimand cleanup
-        // from CopilotClient.onBuiltInToolApproved() may already be registered
-        nudgeService.addOnNudgeConsumed {
-            val capturedText = pendingNudgeText
-            pendingNudgeId = null
-            pendingNudgeText = null
-            pendingHumanNudgeText = null
-            ApplicationManager.getApplication().invokeLater {
-                consolePanel.resolveNudgeBubble(resolveId)
-                if (capturedText != null) {
-                    consolePanel.addNudgeEntry(resolveId, capturedText, source)
-                    appendNewEntries()
-                }
-                refreshShortcutHints()
-            }
-        }
-        // Reprimands update only the reprimand slot; human nudges accumulate into the human slot.
-        // Both slots are merged in AgentNudgeService.consumePendingNudge() so the agent sees all.
-        if (source == NudgeSource.REPRIMAND) nudgeService.setReprimandNudge(text)
-        else nudgeService.setPendingNudge(text)
+    /** Submits a human nudge to the pending queue, which triggers the nudge listener to show the bubble. */
+    private fun submitNudge(text: String) {
+        AgentNudgeService.getInstance(project).addNudge(text, NudgeSource.HUMAN, true)
         refreshShortcutHints()
     }
 
-    /** Clears pending nudge state and removes the nudge bubble from the chat panel. */
+    /** Cancels the pending nudge in the service; the nudge listener handles bubble removal. */
     private fun clearAndRemoveNudge(nudgeId: String) {
-        pendingNudgeId = null
-        pendingNudgeText = null
-        pendingHumanNudgeText = null
-        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
-        nudgeService.setPendingNudge(null)
-        nudgeService.setOnNudgeConsumed(null)
-        ApplicationManager.getApplication().invokeLater {
-            consolePanel.removeNudgeBubble(nudgeId)
-            refreshShortcutHints()
-        }
+        AgentNudgeService.getInstance(project).cancelNudge(nudgeId)
     }
 
     private fun buildBubbleHtml(rawText: String, items: List<ContextItemData>): String? =
@@ -1201,7 +1147,7 @@ class ChatToolWindowContent(
                 java.awt.event.InputEvent.SHIFT_DOWN_MASK
             )
         ) to "New line"
-        if (pendingNudgeId != null || queuedTexts.isNotEmpty()) {
+        if (activeBubbleId != null || queuedTexts.isNotEmpty()) {
             list += KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0) to "Edit last"
         }
         shortcutHintPanel.setShortcuts(list)
@@ -1238,16 +1184,18 @@ class ChatToolWindowContent(
     }
 
     private fun restoreUnhandledNudgeIfNeeded() {
-        val nudgeId = pendingNudgeId ?: return
-        val nudgeText = pendingNudgeText
-        pendingNudgeId = null
-        pendingNudgeText = null
-        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
-        nudgeService.setPendingNudge(null)
-        nudgeService.setOnNudgeConsumed(null)
+        val bubbleId = activeBubbleId ?: return
+        // Capture human-typed text before clearing — reprimand text should not be restored to input.
+        val humanText = pendingHumanText
+        activeBubbleId = null
+        pendingHumanText = null
+        val nudgeService = AgentNudgeService.getInstance(project)
+        // Clear human nudges from the service (silent — no listener events).
+        // Any pending reprimand stays so it is silently injected at the start of the next turn.
+        nudgeService.clearHumanNudges()
         ApplicationManager.getApplication().invokeLater {
-            consolePanel.removeNudgeBubble(nudgeId)
-            nudgeText?.let { restoreUnhandledNudgeText(it) }
+            consolePanel.removeNudgeBubble(bubbleId)
+            humanText?.let { restoreUnhandledNudgeText(it) }
         }
     }
 
@@ -1912,11 +1860,9 @@ class ChatToolWindowContent(
         chatConsolePanel = ChatConsolePanel(project)
         consolePanel = chatConsolePanel
         chatConsolePanel.onLoadMoreRequested = ::onLoadMoreHistory
-        chatConsolePanel.onCancelNudge = { id ->
-            if (pendingNudgeId == id) clearAndRemoveNudge(id)
-        }
+        chatConsolePanel.onCancelNudge = { id -> clearAndRemoveNudge(id) }
         chatConsolePanel.onCancelQueuedMessage = { id, text ->
-            val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+            val nudgeService = AgentNudgeService.getInstance(project)
             nudgeService.removeQueuedMessage(text)
             // Drop the most-recent matching entry so Up-arrow recall reflects what's still queued.
             val lastIdx = queuedTexts.indexOfLast { it == text }
@@ -1943,29 +1889,55 @@ class ChatToolWindowContent(
         }
         com.intellij.openapi.util.Disposer.register(project, consolePanel)
 
-        // Route plugin-initiated nudges (e.g. built-in tool reprimands) through the
-        // nudge flow so they appear as a regular nudge bubble and are injected into the
-        // next MCP tool result. Respects the ReprimandNudgeMode setting.
-        val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
-        nudgeService.setOnNudgeRequested { notice, source ->
-            val mode = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().reprimandNudgeMode
-            when (mode) {
-                com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED -> {
-                    // Reprimand is fully disabled: no bubble, no injection.
+        // Subscribe to nudge lifecycle events. The listener manages all nudge UI:
+        // showing/updating the bubble, resolving it when consumed, and removing it when cancelled.
+        val nudgeService = AgentNudgeService.getInstance(project)
+        nudgeService.addListener(object : AgentNudgeService.Listener {
+            override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
+                val existingId = activeBubbleId
+                if (existingId != null) {
+                    // Already showing a bubble — update its text with the latest merged content.
+                    val mergedText = nudgeService.getPendingNudgesText() ?: entry.text()
+                    ApplicationManager.getApplication().invokeLater {
+                        consolePanel.showNudgeBubble(existingId, mergedText, entry.source())
+                    }
+                } else if (entry.showBubble()) {
+                    ApplicationManager.getApplication().invokeLater {
+                        activeBubbleId = entry.id()
+                        consolePanel.showNudgeBubble(entry.id(), entry.text(), entry.source())
+                        refreshShortcutHints()
+                    }
                 }
-                com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.SEND_SILENTLY -> {
-                    // Inject into the next MCP tool result but show no bubble.
-                    // Reprimands coalesce (latest wins); human nudges accumulate.
-                    if (source == NudgeSource.REPRIMAND) nudgeService.setReprimandNudge(notice)
-                    else nudgeService.setPendingNudge(notice)
+                if (entry.source() == NudgeSource.HUMAN) {
+                    pendingHumanText = AgentNudgeService.mergeNudges(pendingHumanText, entry.text())
                 }
-                com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED -> {
-                    com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-                        submitNudge(notice, source)
+            }
+
+            override fun onNudgesInjected(entries: List<AgentNudgeService.NudgeEntry>, mergedText: String) {
+                pendingHumanText = null
+                val bubbleId = activeBubbleId ?: return
+                activeBubbleId = null
+                ApplicationManager.getApplication().invokeLater {
+                    consolePanel.resolveNudgeBubble(bubbleId)
+                    val source = entries.firstOrNull { it.source() == NudgeSource.HUMAN }?.source()
+                        ?: NudgeSource.REPRIMAND
+                    consolePanel.addNudgeEntry(bubbleId, mergedText, source)
+                    appendNewEntries()
+                    refreshShortcutHints()
+                }
+            }
+
+            override fun onNudgeCancelled(entry: AgentNudgeService.NudgeEntry) {
+                if (entry.id() == activeBubbleId) {
+                    activeBubbleId = null
+                    pendingHumanText = null
+                    ApplicationManager.getApplication().invokeLater {
+                        consolePanel.removeNudgeBubble(entry.id())
+                        refreshShortcutHints()
                     }
                 }
             }
-        }
+        })
 
         ChatWebServer.getInstance(project)?.also { ws ->
             setupWebServerCallbacks(ws)
@@ -2132,23 +2104,23 @@ class ChatToolWindowContent(
                 // When disabled, the keystroke falls through to the editor's default
                 // caret-up behavior so multi-line navigation isn't blocked.
                 val empty = promptTextArea.text.isEmpty()
-                val hasPending = pendingNudgeId != null || queuedTexts.isNotEmpty()
+                val hasPending = activeBubbleId != null || queuedTexts.isNotEmpty()
                 e.presentation.isEnabledAndVisible = empty && hasPending
             }
 
             override fun actionPerformed(e: AnActionEvent) {
                 if (promptTextArea.text.isNotEmpty()) return
-                val nudgeId = pendingNudgeId
-                val nudgeText = pendingNudgeText
-                if (nudgeId != null && nudgeText != null) {
-                    promptTextArea.text = nudgeText
+                val nudgeId = activeBubbleId
+                if (nudgeId != null) {
+                    val nudgeText = AgentNudgeService.getInstance(project).getPendingNudgesText()
+                    if (!nudgeText.isNullOrEmpty()) promptTextArea.text = nudgeText
                     clearAndRemoveNudge(nudgeId)
                     refreshShortcutHints()
                     return
                 }
                 val lastQueued = queuedTexts.removeLastOrNull() ?: return
                 promptTextArea.text = lastQueued
-                val nudgeService = com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
+                val nudgeService = AgentNudgeService.getInstance(project)
                 nudgeService.removeQueuedMessage(lastQueued)
                 ApplicationManager.getApplication().invokeLater {
                     consolePanel.removeQueuedMessageByText(lastQueued)
@@ -2170,8 +2142,7 @@ class ChatToolWindowContent(
         val id = System.currentTimeMillis().toString()
         promptTextArea.text = ""
         consolePanel.showQueuedMessage(id, rawText)
-        com.github.catatafishen.agentbridge.services.AgentNudgeService.getInstance(project)
-            .enqueueMessage(rawText)
+        AgentNudgeService.getInstance(project).enqueueMessage(rawText)
         queuedTexts.addLast(rawText)
         refreshShortcutHints()
     }
@@ -2181,7 +2152,7 @@ class ChatToolWindowContent(
         if (rawText.isEmpty()) return
         if (isSending) {
             // Discard any pending nudge before stopping so setSendingState doesn't auto-send it
-            val nudgeId = pendingNudgeId
+            val nudgeId = activeBubbleId
             if (nudgeId != null) clearAndRemoveNudge(nudgeId)
             promptOrchestrator.stop()
             setSendingState(false)
@@ -2369,8 +2340,7 @@ class ChatToolWindowContent(
         )
     }
 
-
-private fun setupPromptDragDrop(editor: EditorEx) {
+    private fun setupPromptDragDrop(editor: EditorEx) {
         editor.contentComponent.dropTarget = java.awt.dnd.DropTarget(
             editor.contentComponent, java.awt.dnd.DnDConstants.ACTION_COPY,
             object : java.awt.dnd.DropTargetAdapter() {
@@ -2389,8 +2359,7 @@ private fun setupPromptDragDrop(editor: EditorEx) {
             })
     }
 
-
-private fun handleDrop(dtde: java.awt.dnd.DropTargetDropEvent, editor: EditorEx) {
+    private fun handleDrop(dtde: java.awt.dnd.DropTargetDropEvent, editor: EditorEx) {
         try {
             dtde.acceptDrop(java.awt.dnd.DnDConstants.ACTION_COPY)
             val transferable = dtde.transferable
@@ -2438,7 +2407,7 @@ private fun handleDrop(dtde: java.awt.dnd.DropTargetDropEvent, editor: EditorEx)
         }
     }
 
-private fun handleTextDrop(text: String, editor: EditorEx) {
+    private fun handleTextDrop(text: String, editor: EditorEx) {
         val chatInputSettings = com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance()
         val minLines = chatInputSettings.smartPasteMinLines
         val minChars = chatInputSettings.smartPasteMinChars
