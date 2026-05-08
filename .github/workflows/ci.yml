@@ -69,7 +69,6 @@ jobs:
     # plugin-core-only PR).
     if: github.event_name == 'push' || needs.changes.outputs.mcp_server == 'true'
     runs-on: ubuntu-latest
-    environment: ci
     permissions:
       contents: read
     steps:
@@ -128,7 +127,6 @@ jobs:
     # nor chat-ui sources changed (e.g. docs-only or workflow-only PR).
     if: github.event_name == 'push' || needs.changes.outputs.java == 'true' || needs.changes.outputs.chat_ui == 'true'
     runs-on: ubuntu-latest
-    environment: ci
     permissions:
       contents: read
     steps:
@@ -244,7 +242,6 @@ jobs:
     needs: [ changes ]
     if: github.event_name == 'push' || needs.changes.outputs.java == 'true'
     runs-on: ubuntu-latest
-    environment: ci
     permissions:
       contents: read
     steps:
