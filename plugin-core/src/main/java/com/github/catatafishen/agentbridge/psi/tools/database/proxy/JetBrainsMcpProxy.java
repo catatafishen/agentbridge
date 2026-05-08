@@ -2,6 +2,7 @@ package com.github.catatafishen.agentbridge.psi.tools.database.proxy;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -53,7 +54,7 @@ final class JetBrainsMcpProxy {
     static List<String> getRegisteredToolNames() {
         try {
             return List.copyOf(loadToolCache().keySet());
-        } catch (ReflectiveOperationException e) {
+        } catch (ReflectiveOperationException | RuntimeException e) {
             LOG.debug("JetBrains MCP tools not available: " + e.getMessage());
             return Collections.emptyList();
         }
@@ -88,6 +89,11 @@ final class JetBrainsMcpProxy {
             cached = toolCacheRef.get();
             if (cached != null) return cached;
             ClassLoader cl = findMcpClassLoader();
+            if (cl == null) {
+                // mcpserver plugin not installed — cache an empty map so callers degrade gracefully
+                toolCacheRef.set(Collections.emptyMap());
+                return Collections.emptyMap();
+            }
             Map<String, Object> loaded = discoverTools(cl);
             mcpClassLoaderRef.set(cl);
             toolCacheRef.set(loaded);
@@ -95,7 +101,7 @@ final class JetBrainsMcpProxy {
         }
     }
 
-    private static ClassLoader findMcpClassLoader() throws ReflectiveOperationException {
+    private static @Nullable ClassLoader findMcpClassLoader() throws ReflectiveOperationException {
         Class<?> pluginManagerClass = Class.forName("com.intellij.ide.plugins.PluginManagerCore");
         Class<?> pluginIdClass = Class.forName("com.intellij.openapi.extensions.PluginId");
         Object pluginId = pluginIdClass.getDeclaredMethod("getId", String.class)
@@ -104,7 +110,7 @@ final class JetBrainsMcpProxy {
         Object descriptor = pluginManagerClass.getDeclaredMethod("getPlugin", pluginIdClass)
             .invoke(null, pluginId);
         if (descriptor == null) {
-            throw new IllegalStateException("mcpserver plugin not installed (" + MCPSERVER_PLUGIN_ID + ")");
+            return null; // mcpserver plugin not installed; caller treats null as "not available"
         }
         return (ClassLoader) descriptor.getClass().getMethod("getPluginClassLoader").invoke(descriptor);
     }
