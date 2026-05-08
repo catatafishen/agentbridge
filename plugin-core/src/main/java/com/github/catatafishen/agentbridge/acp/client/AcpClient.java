@@ -1721,7 +1721,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         // no-op by default
     }
 
-    static String mcpAlternative(String builtInTool) {
+    protected String mcpAlternative(String builtInTool) {
         return switch (builtInTool) {
             case "bash" -> "agentbridge-run_command or agentbridge-run_in_terminal";
             case "edit" -> "agentbridge-edit_text or agentbridge-replace_symbol_body";
