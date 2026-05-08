@@ -1,8 +1,5 @@
 package com.github.catatafishen.agentbridge.psi.tools;
 
-import com.github.catatafishen.agentbridge.psi.tools.database.GetSchemaTool;
-import com.github.catatafishen.agentbridge.psi.tools.database.ListDataSourcesTool;
-import com.github.catatafishen.agentbridge.psi.tools.database.ListTablesTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddExceptionTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddTool;
 import com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointListTool;
@@ -335,16 +332,6 @@ class ToolDefinitionContractTest {
         );
     }
 
-    // ── Database tools ────────────────────────────────────────────────────────
-
-    static Stream<Tool> databaseTools() {
-        return Stream.of(
-            new ListDataSourcesTool(null),
-            new ListTablesTool(null),
-            new GetSchemaTool(null)
-        );
-    }
-
     // ── Infrastructure tools ──────────────────────────────────────────────────
 
     static Stream<Tool> infrastructureTools() {
@@ -367,7 +354,7 @@ class ToolDefinitionContractTest {
         List<Stream<Tool>> streams = List.of(
             gitTools(), fileTools(), editingTools(), debugTools(), editorTools(),
             navigationTools(), projectTools(), qualityTools(), refactoringTools(),
-            terminalTools(), testingTools(), databaseTools(), infrastructureTools()
+            terminalTools(), testingTools(), infrastructureTools()
         );
         return streams.stream().flatMap(s -> s);
     }
