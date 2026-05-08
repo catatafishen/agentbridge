@@ -43,10 +43,6 @@ class McpSchemaValidationTest {
      * Keep sorted by package for readability.
      */
     private static final String[] ALL_TOOL_CLASSES = {
-        // database
-        "com.github.catatafishen.agentbridge.psi.tools.database.ListDataSourcesTool",
-        "com.github.catatafishen.agentbridge.psi.tools.database.ListTablesTool",
-        "com.github.catatafishen.agentbridge.psi.tools.database.GetSchemaTool",
         // debug
         "com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointListTool",
         "com.github.catatafishen.agentbridge.psi.tools.debug.breakpoints.BreakpointAddTool",
