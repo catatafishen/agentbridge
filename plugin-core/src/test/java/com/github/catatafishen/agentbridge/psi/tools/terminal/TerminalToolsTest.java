@@ -537,8 +537,8 @@ public class TerminalToolsTest extends BasePlatformTestCase {
      * {@code isOpenWorld()} must return {@code true} (it runs arbitrary OS commands).
      */
     public void testRunInTerminalKindAndOpenWorld() {
-        assertEquals("run_in_terminal must be Kind.EDIT",
-            Tool.Kind.EDIT, runInTerminalTool.kind());
+        assertEquals("run_in_terminal must be Kind.EXECUTE",
+            Tool.Kind.EXECUTE, runInTerminalTool.kind());
         assertTrue("run_in_terminal must be open-world",
             runInTerminalTool.isOpenWorld());
     }
