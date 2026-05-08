@@ -6,6 +6,7 @@ import com.github.catatafishen.agentbridge.services.ChatWebServer
 import com.github.catatafishen.agentbridge.services.ToolCallRecord
 import com.github.catatafishen.agentbridge.services.ToolCallTracker
 import com.github.catatafishen.agentbridge.services.ToolRegistry
+import com.github.catatafishen.agentbridge.session.db.ConversationService
 import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.settings.ScratchTypeSettings
 import com.github.catatafishen.agentbridge.ui.ChatConsolePanel.Companion.instances
@@ -92,6 +93,26 @@ class ChatConsolePanel(
                 val jsKind = kind.replace("'", "\\'")
                 executeJs("ChatController.updateToolCallKind('$did','$jsKind')")
                 toolCallEntries[did]?.kind = kind
+            }
+            // Populate stats on the entry so they are written at INSERT time.
+            // Belt-and-suspenders: McpProtocolHandler.enrichConversationDb also updates
+            // the DB row if the INSERT already happened before this listener fires.
+            toolCallEntries[did]?.let { entry ->
+                entry.isMcp = true
+                entry.inputSizeBytes =
+                    record.mcpArgs?.toString()?.toByteArray(Charsets.UTF_8)?.size?.toLong() ?: 0L
+                entry.outputSizeBytes = record.resultBytes.toLong()
+                entry.durationMs = record.mcpDurationMs
+            }
+        }
+
+        override fun onAcpCompleted(record: ToolCallRecord) {
+            // If no MCP correlation happened, confirm this is a non-MCP (ACP-only) tool call.
+            if (record.isAcpOnly) {
+                val did = domId(record.recordId)
+                toolCallEntries[did]?.isMcp = false
+                // If the entry was already flushed to DB, mark it retroactively.
+                ConversationService.getInstance(project).markToolCallNonMcp(record.recordId)
             }
         }
     }
@@ -516,7 +537,8 @@ class ChatConsolePanel(
             EntryData.ToolCall(
                 cleanTitle, arguments, resolvedKind, null, null, null, filePath,
                 autoDenied = false, denialReason = null,
-                timestamp = timestamp(), agent = currentAgent
+                timestamp = timestamp(), agent = currentAgent,
+                entryId = id
             )
         entries.add(entry)
 
@@ -649,7 +671,8 @@ class ChatConsolePanel(
 
         val entry = EntryData.ToolCall(
             cleanTitle, arguments, resolvedKind,
-            timestamp = timestamp(), agent = currentAgent
+            timestamp = timestamp(), agent = currentAgent,
+            entryId = toolId
         )
         if (isMcpHandled) entry.pluginTool = cleanTitle
         toolCallNames[did] = cleanTitle

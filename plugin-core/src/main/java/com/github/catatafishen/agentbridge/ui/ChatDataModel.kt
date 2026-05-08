@@ -121,7 +121,17 @@ sealed class EntryData {
         val agent: String = "",
         val model: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString()
-    ) : EntryData()
+    ) : EntryData() {
+        /** Set by MCP protocol on completion; null = not yet executed via MCP. */
+        var isMcp: Boolean? = null
+        var inputSizeBytes: Long = 0
+        var outputSizeBytes: Long = 0
+        var durationMs: Long = 0
+        var mcpErrorMessage: String? = null
+
+        /** Human-readable display name from the MCP tool class (e.g. "Read File"). */
+        var mcpDisplayName: String? = null
+    }
 
     class SubAgent @JvmOverloads constructor(
         val agentType: String,

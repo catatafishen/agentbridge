@@ -385,13 +385,26 @@ public final class ConversationService implements Disposable {
      * Enriches an existing tool-call event row with performance stats.
      * Best-effort — silently returns if the writer is unavailable.
      */
+    @SuppressWarnings("java:S107")
+    // All 8 parameters map to distinct DB columns; a wrapper adds indirection without clarity.
     public void enrichToolCallStats(@NotNull String toolEventId, long inputSize, long outputSize,
                                     long durationMs, boolean success, @Nullable String errorMessage,
-                                    @Nullable String category) {
+                                    @Nullable String category, @Nullable String displayName) {
         ConversationWriter writer = getOrCreateWriter();
         if (writer == null) return;
         writer.enrichToolCallStats(toolEventId, inputSize, outputSize, durationMs,
-            success, errorMessage, category);
+            success, errorMessage, category, displayName);
+    }
+
+    /**
+     * Marks a tool-call event as non-MCP (ACP-only) if it was previously unknown (NULL).
+     * Called when ACP completes a tool call that was never correlated with an MCP execution.
+     * Best-effort — silently returns if the writer is unavailable.
+     */
+    public void markToolCallNonMcp(@NotNull String eventId) {
+        ConversationWriter writer = getOrCreateWriter();
+        if (writer == null) return;
+        writer.markToolCallNonMcp(eventId);
     }
 
     /**

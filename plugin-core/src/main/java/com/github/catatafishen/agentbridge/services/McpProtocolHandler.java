@@ -590,7 +590,8 @@ public final class McpProtocolHandler {
                 System.currentTimeMillis() - callStartMs, !isError);
 
             enrichConversationDb(new ToolCallEnrichmentData(
-                toolUseId, inputJson, fullResult, durationMs, !isError,
+                toolUseId, toolName, displayName, originalArguments,
+                inputJson, fullResult, durationMs, !isError,
                 isError ? resultText : null, kind, hookStages));
 
             return buildToolResult(msg, fullResult, isError);
@@ -608,7 +609,8 @@ public final class McpProtocolHandler {
                 System.currentTimeMillis() - callStartMs, !isError);
 
             enrichConversationDb(new ToolCallEnrichmentData(
-                toolUseId, inputJson, finalOutput, durationMs, false,
+                toolUseId, toolName, displayName, originalArguments,
+                inputJson, finalOutput, durationMs, false,
                 e.getMessage(), kind, hookStages));
 
             return buildToolResult(msg, finalOutput, isError);
@@ -619,6 +621,9 @@ public final class McpProtocolHandler {
 
     private record ToolCallEnrichmentData(
         @Nullable String toolUseId,
+        @NotNull String toolName,
+        @Nullable String displayName,
+        @NotNull JsonObject arguments,
         @NotNull String inputJson,
         @Nullable String output,
         long durationMs,
@@ -630,15 +635,24 @@ public final class McpProtocolHandler {
     }
 
     private void enrichConversationDb(@NotNull ToolCallEnrichmentData data) {
-        if (data.toolUseId() == null) return;
+        // Resolve the record to get the stable DB event_id (= record.recordId).
+        // Fallback: toolUseId lookup → MCP tool+args match → skip if neither succeeds.
+        ToolCallTracker tracker = ToolCallTracker.getInstance(project);
+        ToolCallRecord record = tracker.findByToolUseId(data.toolUseId());
+        if (record == null) {
+            record = tracker.findByMcpCall(data.toolName(), data.arguments());
+        }
+        String dbEventId = record != null ? record.getRecordId() : data.toolUseId();
+        if (dbEventId == null) return;
+
         ConversationService service = ConversationService.getInstance(project);
         long inputSize = data.inputJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
         long outputSize = data.output() != null
             ? data.output().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
-        service.enrichToolCallStats(data.toolUseId(), inputSize, outputSize, data.durationMs(),
-            data.success(), data.errorMessage(), data.category());
+        service.enrichToolCallStats(dbEventId, inputSize, outputSize, data.durationMs(),
+            data.success(), data.errorMessage(), data.category(), data.displayName());
         if (!data.hookStages().isEmpty()) {
-            service.recordHookStages(data.toolUseId(), data.hookStages());
+            service.recordHookStages(dbEventId, data.hookStages());
         }
     }
 

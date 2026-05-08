@@ -452,23 +452,29 @@ public final class ConversationReader {
     ) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement("""
             SELECT tool_name, arguments, tool_kind, result, status, file_path,
-                   auto_denied, denial_reason, display_name
+                   auto_denied, denial_reason, is_mcp
             FROM tool_call_events WHERE event_id = ?
             """)) {
             ps.setString(1, eventId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
+                String toolName = rs.getString(1);
+                // Derive pluginTool from is_mcp + tool_name.
+                // Old rows: tool_name may still carry the ACP prefix ("agentbridge-read_file") →
+                // stripMcpPrefix normalises them. New rows already store the canonical name.
+                Integer isMcp = (Integer) rs.getObject(9);
+                String pluginTool = (isMcp != null && isMcp == 1) ? stripMcpPrefix(toolName) : null;
                 return new EntryData.ToolCall(
-                    rs.getString(1),  // title = tool_name
-                    rs.getString(2),  // arguments
+                    toolName,          // title = canonical tool name
+                    rs.getString(2),   // arguments
                     nullToEmpty(rs.getString(3)),  // kind
-                    rs.getString(4),  // result
-                    rs.getString(5),  // status
-                    null,             // description
-                    rs.getString(6),  // filePath
+                    rs.getString(4),   // result
+                    rs.getString(5),   // status
+                    null,              // description
+                    rs.getString(6),   // filePath
                     rs.getInt(7) == 1, // autoDenied
-                    rs.getString(8),  // denialReason
-                    rs.getString(9),  // pluginTool = display_name
+                    rs.getString(8),   // denialReason
+                    pluginTool,        // from is_mcp + tool_name
                     timestamp, agent, model, eventId
                 );
             }
@@ -639,6 +645,19 @@ public final class ConversationReader {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Strips the ACP client prefix from a tool name to get the canonical MCP name.
+     * Handles both dash (Copilot/Junie) and underscore (OpenCode) prefix styles.
+     * Already-canonical names pass through unchanged.
+     */
+    @NotNull
+    private static String stripMcpPrefix(@NotNull String toolName) {
+        int dash = toolName.indexOf('-');
+        if (dash >= 0) return toolName.substring(dash + 1);
+        if (toolName.startsWith("agentbridge_")) return toolName.substring("agentbridge_".length());
+        return toolName;
+    }
 
     @NotNull
     private static String nullToEmpty(@Nullable String value) {

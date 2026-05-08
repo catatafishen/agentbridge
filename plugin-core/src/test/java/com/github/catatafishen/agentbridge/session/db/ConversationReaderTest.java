@@ -177,7 +177,7 @@ class ConversationReaderTest {
         EntryData.ToolCall tc = new EntryData.ToolCall(
             "agentbridge-read_file", "{\"path\":\"/src/Main.java\"}", "file",
             "file contents here", "success", null, "/src/Main.java",
-            false, null, "Read File",
+            false, null, "read_file",
             "2026-01-01T10:00:01Z", "assistant", "gpt-4", "e1"
         );
         writer.recordEntries("sess-1", "Copilot", "copilot", List.of(
@@ -189,7 +189,9 @@ class ConversationReaderTest {
         assertEquals(2, entries.size());
         assertTrue(entries.get(1) instanceof EntryData.ToolCall);
         EntryData.ToolCall loaded = (EntryData.ToolCall) entries.get(1);
-        assertEquals("agentbridge-read_file", loaded.getTitle());
+        // pluginTool is set and NOT NULL → canonicalToolName uses it as tool_name.
+        // Title after roundtrip = canonical name (prefix stripped).
+        assertEquals("read_file", loaded.getTitle());
         assertEquals("{\"path\":\"/src/Main.java\"}", loaded.getArguments());
         assertEquals("file", loaded.getKind());
         assertEquals("file contents here", loaded.getResult());

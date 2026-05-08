@@ -449,32 +449,56 @@ public final class ConversationWriter {
     ) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement("""
             INSERT OR IGNORE INTO tool_call_events (
-                event_id, tool_name, tool_kind, client_id, display_name,
-                arguments, result, status, file_path, auto_denied, denial_reason, is_mcp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                event_id, tool_name, tool_kind, client_id, category,
+                arguments, result, status, file_path, auto_denied, denial_reason,
+                input_size_bytes, output_size_bytes, duration_ms, is_mcp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)) {
             ps.setString(1, tc.getEntryId());
-            ps.setString(2, tc.getTitle());
+            // Canonical tool name: prefer pluginTool (set by tracker on MCP correlation),
+            // otherwise strip the ACP client prefix (e.g. "agentbridge-read_file" → "read_file").
+            ps.setString(2, canonicalToolName(tc));
             ps.setString(3, tc.getKind());
             ps.setString(4, emptyToNull(clientId));
-            ps.setString(5, tc.getPluginTool());
+            // category mirrors tool_kind initially; enrichToolCallStats overwrites with
+            // the authoritative value from the ToolDefinition on MCP completion.
+            ps.setString(5, tc.getKind());
             ps.setString(6, tc.getArguments());
             ps.setString(7, tc.getResult());
             ps.setString(8, tc.getStatus());
             ps.setString(9, tc.getFilePath());
             ps.setInt(10, tc.getAutoDenied() ? 1 : 0);
             ps.setString(11, tc.getDenialReason());
-            // pluginTool is the confirmed MCP tool name set by ToolCallTracker when ACP↔MCP
-            // correlation succeeds. It is the single source of truth for is_mcp=1.
-            // NULL = unknown at flush time; enrichToolCallStats will confirm 1 for any MCP
-            // tool whose flush races ahead of correlation.
-            if (tc.getPluginTool() != null) {
-                ps.setInt(12, 1);
+            // Stat fields: populated by onMcpCompleted when it fires before the 30s-throttled
+            // INSERT (Path 1). If INSERT races ahead, enrichToolCallStats UPDATE fills them in
+            // afterwards (Path 2). Both paths use record.recordId as the stable DB event_id.
+            ps.setLong(12, tc.getInputSizeBytes());
+            ps.setLong(13, tc.getOutputSizeBytes());
+            ps.setLong(14, tc.getDurationMs()); // column is NOT NULL DEFAULT 0; 0 = not yet measured
+            Boolean isMcp = tc.isMcp();
+            if (isMcp != null) {
+                ps.setInt(15, isMcp ? 1 : 0);
+            } else if (tc.getPluginTool() != null) {
+                // pluginTool set = ACP↔MCP correlation confirmed before flush.
+                ps.setInt(15, 1);
             } else {
-                ps.setNull(12, Types.INTEGER);
+                ps.setNull(15, Types.INTEGER);
             }
             ps.executeUpdate();
         }
+    }
+
+    /**
+     * Returns the canonical tool name for DB storage: uses pluginTool when available (confirms
+     * MCP correlation), otherwise strips the ACP client prefix so "agentbridge-read_file" becomes
+     * "read_file" and bare tool names like "bash" are stored unchanged.
+     */
+    @NotNull
+    private static String canonicalToolName(@NotNull EntryData.ToolCall tc) {
+        if (tc.getPluginTool() != null) return tc.getPluginTool();
+        String title = tc.getTitle();
+        int dash = title.indexOf('-');
+        return dash >= 0 ? title.substring(dash + 1) : title;
     }
 
     private void insertSubAgent(
@@ -540,14 +564,17 @@ public final class ConversationWriter {
 
     // ── MCP stats enrichment + hook executions ─────────────────────────────────
 
+    @SuppressWarnings("java:S107")
+    // All 8 parameters map to distinct SQL columns; a wrapper object would add indirection without clarity.
     public void enrichToolCallStats(
-        @NotNull String toolUseId,
+        @NotNull String dbEventId,
         long inputSizeBytes,
         long outputSizeBytes,
         long durationMs,
         boolean success,
         @Nullable String errorMessage,
-        @Nullable String category
+        @Nullable String category,
+        @Nullable String displayName
     ) {
         synchronized (database) {
             Connection conn = database.getConnection();
@@ -560,6 +587,7 @@ public final class ConversationWriter {
                     success           = ?,
                     error_message     = COALESCE(?, error_message),
                     category          = COALESCE(?, category),
+                    display_name      = COALESCE(?, display_name),
                     is_mcp            = 1
                 WHERE event_id = ?
                 """)) {
@@ -569,10 +597,25 @@ public final class ConversationWriter {
                 ps.setInt(4, success ? 1 : 0);
                 ps.setString(5, errorMessage);
                 ps.setString(6, category);
-                ps.setString(7, toolUseId);
+                ps.setString(7, displayName);
+                ps.setString(8, dbEventId);
                 ps.executeUpdate();
             } catch (SQLException e) {
-                LOG.warn("ConversationWriter: failed to enrich stats for event " + toolUseId, e);
+                LOG.warn("ConversationWriter: failed to enrich stats for event " + dbEventId, e);
+            }
+        }
+    }
+
+    public void markToolCallNonMcp(@NotNull String eventId) {
+        synchronized (database) {
+            Connection conn = database.getConnection();
+            if (conn == null) return;
+            try (PreparedStatement ps = conn.prepareStatement(
+                "UPDATE tool_call_events SET is_mcp = 0 WHERE event_id = ? AND is_mcp IS NULL")) {
+                ps.setString(1, eventId);
+                ps.executeUpdate();
+            } catch (SQLException e) {
+                LOG.warn("ConversationWriter: failed to mark non-MCP for event " + eventId, e);
             }
         }
     }

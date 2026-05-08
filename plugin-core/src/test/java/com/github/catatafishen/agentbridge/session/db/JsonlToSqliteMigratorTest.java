@@ -133,7 +133,7 @@ class JsonlToSqliteMigratorTest {
             .filter(e -> e instanceof EntryData.ToolCall)
             .map(e -> (EntryData.ToolCall) e)
             .findFirst().orElseThrow();
-        assertEquals("agentbridge-read_file", tc.getTitle());
+        assertEquals("read_file", tc.getTitle());
     }
 
     @Test
@@ -164,9 +164,9 @@ class JsonlToSqliteMigratorTest {
         // the part kind — this is the exact pattern that caused isEntryFormat() to return true
         // incorrectly (false positive from nested "type":) yet produce null from deserialize().
         String jsonl = """
-                {"type":"prompt","text":"New format","timestamp":"2026-01-01T10:00:00Z","entryId":"t1"}
-                {"id":"msg-1","role":"assistant","parts":[{"type":"text","text":"legacy response"}],"createdAt":1735689601000,"agent":"Copilot"}
-                """;
+            {"type":"prompt","text":"New format","timestamp":"2026-01-01T10:00:00Z","entryId":"t1"}
+            {"id":"msg-1","role":"assistant","parts":[{"type":"text","text":"legacy response"}],"createdAt":1735689601000,"agent":"Copilot"}
+            """;
         Files.writeString(sessionsDir.resolve("sess-1.jsonl"), jsonl);
 
         int count = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
@@ -514,9 +514,9 @@ class JsonlToSqliteMigratorTest {
     void migratesFileWithOnlyLegacyEntries() throws Exception {
         // No sessions-index.json — session discovered via file scan
         String jsonl = """
-                {"id":"user-1","role":"user","parts":[{"type":"text","text":"Fix the bug"}],"createdAt":1735689601000}
-                {"id":"asst-1","role":"assistant","parts":[{"type":"reasoning","text":"Let me look..."},{"type":"text","text":"Here is the fix"}],"createdAt":1735689602000,"agent":"Copilot"}
-                """;
+            {"id":"user-1","role":"user","parts":[{"type":"text","text":"Fix the bug"}],"createdAt":1735689601000}
+            {"id":"asst-1","role":"assistant","parts":[{"type":"reasoning","text":"Let me look..."},{"type":"text","text":"Here is the fix"}],"createdAt":1735689602000,"agent":"Copilot"}
+            """;
         Files.writeString(sessionsDir.resolve("abc-session.jsonl"), jsonl);
 
         int count = JsonlToSqliteMigrator.migrate(sessionsDir, writer);
