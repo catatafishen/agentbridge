@@ -1252,7 +1252,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
             ToolDefinition def = registry.findById(toolName);
             if (def != null) kind = SessionUpdate.ToolKind.fromCategory(def.category());
         }
-        cb.accept(new SessionUpdate.ToolCall(id, toolName, kind, args.toString(), null, null, null, null, null));
+        cb.accept(new SessionUpdate.ToolCall(id, toolName, toolName, kind, args.toString(), null, null, null, null, null));
     }
 
     private void emitMcpToolCallEnd(@NotNull JsonObject item, @NotNull Consumer<SessionUpdate> cb) {
@@ -1272,7 +1272,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
     private void emitNativeCommandItem(@NotNull JsonObject item, @NotNull Consumer<SessionUpdate> cb) {
         String id = item.has(F_ID) ? item.get(F_ID).getAsString() : UUID.randomUUID().toString();
         String cmd = item.has(F_COMMAND) ? item.get(F_COMMAND).getAsString() : "shell";
-        cb.accept(new SessionUpdate.ToolCall(id, "shell_command", SessionUpdate.ToolKind.OTHER,
+        cb.accept(new SessionUpdate.ToolCall(id, "shell_command", "shell_command", SessionUpdate.ToolKind.OTHER,
             buildCommandArgsJson(cmd), null, null, null, null, null));
         cb.accept(new SessionUpdate.ToolCallUpdate(id, SessionUpdate.ToolCallStatus.FAILED,
             null, "Declined: native shell execution is not permitted. Use MCP tools instead.", null));
@@ -1300,7 +1300,7 @@ public final class CodexAppServerClient extends AbstractAgentClient {
         String chipId = UUID.randomUUID().toString();
         Consumer<SessionUpdate> cb = activeTurnCallback.get();
         if (cb != null) {
-            cb.accept(new SessionUpdate.ToolCall(chipId, "ask_user", SessionUpdate.ToolKind.OTHER,
+            cb.accept(new SessionUpdate.ToolCall(chipId, "ask_user", "ask_user", SessionUpdate.ToolKind.OTHER,
                 toolArgs.toString(), null, null, null, null, null));
         }
 

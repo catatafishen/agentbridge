@@ -40,6 +40,11 @@ class AcpMessageParserTest {
                                                         @Nullable JsonObject argumentsObj) {
                 return null;
             }
+
+            @Override
+            public @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
+                return kind;
+            }
         },
         () -> "test-agent"
     );
@@ -448,6 +453,11 @@ class AcpMessageParserTest {
                                                             @NotNull String resolvedTitle,
                                                             @Nullable JsonObject argumentsObj) {
                     return "explore"; // Always detect as sub-agent for testing
+                }
+
+                @Override
+                public @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
+                    return kind;
                 }
             },
             () -> "test-agent"

@@ -82,6 +82,7 @@ class ChatConsolePanel(
             val did = domId(record.recordId)
             executeJs("ChatController.markMcpHandled('$did')")
             toolCallEntries[did]?.pluginTool = record.mcpToolName ?: toolCallNames[did]
+            record.acpName?.let { toolCallEntries[did]?.acpName = it }
         }
 
         override fun onMcpCompleted(record: ToolCallRecord) {
@@ -546,6 +547,7 @@ class ChatConsolePanel(
         toolCallNames[did] = cleanTitle
         toolCallEntries[did] = entry
         if (isMcpHandled) entry.pluginTool = cleanTitle
+        ToolCallTracker.getInstance(project).findByRecordId(id)?.acpName?.let { entry.acpName = it }
 
         val label = toolChipTitle(cleanTitle, arguments)
         val hasCustomRenderer = ToolRenderers.hasRenderer(cleanTitle, toolRegistry)
@@ -675,6 +677,7 @@ class ChatConsolePanel(
             entryId = toolId
         )
         if (isMcpHandled) entry.pluginTool = cleanTitle
+        record?.acpName?.let { entry.acpName = it }
         toolCallNames[did] = cleanTitle
         toolCallEntries[did] = entry
         entries.add(entry)

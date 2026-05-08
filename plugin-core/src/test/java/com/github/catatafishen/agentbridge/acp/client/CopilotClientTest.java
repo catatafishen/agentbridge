@@ -84,46 +84,21 @@ class CopilotClientTest {
         assertEquals("bash", result.get(0));
     }
 
-    // ── mcpAlternative (protected instance — Copilot-specific override) ─────
+    // ── resolveAcpName (protected instance — Copilot-specific override) ─────
 
     @Test
-    void mcpAlternative_bash() throws Exception {
-        assertTrue(invokeMcpAlternative("bash").contains("agentbridge-run_command"));
+    void resolveAcpName_mcpTool() throws Exception {
+        assertEquals("read_file", invokeResolveAcpName("agentbridge-read_file", "read"));
     }
 
     @Test
-    void mcpAlternative_edit() throws Exception {
-        assertTrue(invokeMcpAlternative("edit").contains("agentbridge-edit_text"));
+    void resolveAcpName_knownBuiltinTool() throws Exception {
+        assertEquals("bash", invokeResolveAcpName("bash", "execute"));
     }
 
     @Test
-    void mcpAlternative_create() throws Exception {
-        assertEquals("agentbridge-create_file", invokeMcpAlternative("create"));
-    }
-
-    @Test
-    void mcpAlternative_view() throws Exception {
-        assertEquals("agentbridge-read_file", invokeMcpAlternative("view"));
-    }
-
-    @Test
-    void mcpAlternative_glob() throws Exception {
-        assertEquals("agentbridge-list_project_files", invokeMcpAlternative("glob"));
-    }
-
-    @Test
-    void mcpAlternative_grep() throws Exception {
-        assertEquals("agentbridge-search_text", invokeMcpAlternative("grep"));
-    }
-
-    @Test
-    void mcpAlternative_reportIntent() throws Exception {
-        assertTrue(invokeMcpAlternative("report_intent").contains("not needed"));
-    }
-
-    @Test
-    void mcpAlternative_unknown() throws Exception {
-        assertEquals("the corresponding agentbridge-* tool", invokeMcpAlternative("some_unknown"));
+    void resolveAcpName_unknownFallsBackToKind() throws Exception {
+        assertEquals("read", invokeResolveAcpName("Some unknown tool", "read"));
     }
 
     // ── Reflection helpers (private static methods) ───────────────────
@@ -144,10 +119,10 @@ class CopilotClientTest {
         return (List<String>) m.invoke(null, mcpTools, builtinTools);
     }
 
-    private static String invokeMcpAlternative(String builtInTool) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("mcpAlternative", String.class);
+    private static String invokeResolveAcpName(String title, String kind) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("resolveAcpName", String.class, String.class);
         m.setAccessible(true);
-        return (String) m.invoke(allocateClient(), builtInTool);
+        return (String) m.invoke(allocateClient(), title, kind);
     }
 
     // ── resolveToolId (instance override — normalizes tool names) ──
@@ -243,27 +218,18 @@ class CopilotClientTest {
         assertNull(invokeParseToolCallArguments(params));
     }
 
-    // ── buildSingleToolReprimand (private static) ───────────────────────
+    // ── buildReprimand (private static) ───────────────────────────────
 
     @Test
-    void buildSingleToolReprimand_knownToolName() throws Exception {
-        String result = invokeBuildSingleToolReprimand("bash");
-        assertTrue(result.contains("[System notice]"));
-        assertTrue(result.contains("bash"));
-        assertTrue(result.contains("agentbridge-run_command"));
+    void buildReprimand_readKind() throws Exception {
+        String result = invokeBuildReprimand("read");
+        assertEquals("You used native read tools. Use Agentbridge MCP tools instead.", result);
     }
 
     @Test
-    void buildSingleToolReprimand_bashWithDescription_showsBashLabel() throws Exception {
-        // Copilot CLI sends the bash description as the ACP title (e.g. "Read PsiBridgeService constructor").
-        // The reprimand should show "bash" (the tool ID), not the quoted description.
-        String result = invokeBuildSingleToolReprimand("Read PsiBridgeService constructor");
-        assertTrue(result.contains("[System notice]"));
-        assertTrue(result.contains("bash"));
-        // Description text should NOT appear in the reprimand label
-        assertFalse(result.contains("\"Read PsiBridgeService constructor\""));
-        // But the alternative is still computed from the description keyword (starts with "read ")
-        assertTrue(result.contains("agentbridge-read_file"));
+    void buildReprimand_executeKind() throws Exception {
+        String result = invokeBuildReprimand("execute");
+        assertEquals("You used native execute tools. Use Agentbridge MCP tools instead.", result);
     }
 
     // ── shouldReprimand (private static) ────────────────────────────────
@@ -354,10 +320,10 @@ class CopilotClientTest {
         return (JsonObject) m.invoke(allocateClient(), params);
     }
 
-    private static String invokeBuildSingleToolReprimand(String toolId) throws Exception {
-        Method m = CopilotClient.class.getDeclaredMethod("buildSingleToolReprimand", String.class);
+    private static String invokeBuildReprimand(String kind) throws Exception {
+        Method m = CopilotClient.class.getDeclaredMethod("buildReprimand", String.class);
         m.setAccessible(true);
-        return (String) m.invoke(allocateClient(), toolId);
+        return (String) m.invoke(null, kind);
     }
 
     private static boolean invokeShouldReprimand(String toolId) throws Exception {

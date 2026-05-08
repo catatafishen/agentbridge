@@ -69,6 +69,7 @@ public final class ToolCallRecord {
     // ── ACP-side (set when ACP reports) ──────────────────────────────────────
 
     private @Nullable String acpClientId;
+    private @Nullable String acpName;
     private @Nullable String acpTitle;
     private @Nullable JsonObject acpArgs;
     private @NotNull RoutingType routingType = RoutingType.REGULAR;
@@ -121,12 +122,14 @@ public final class ToolCallRecord {
 
     void setAcpFields(
         @NotNull String acpClientId,
+        @Nullable String acpName,
         @NotNull String acpTitle,
         @Nullable JsonObject acpArgs,
         @NotNull RoutingType routingType,
         int acpSequence
     ) {
         this.acpClientId = acpClientId;
+        this.acpName = acpName;
         this.acpTitle = acpTitle;
         this.acpArgs = acpArgs;
         this.routingType = routingType;
@@ -211,6 +214,10 @@ public final class ToolCallRecord {
     // ACP-side
     public @Nullable String getAcpClientId() {
         return acpClientId;
+    }
+
+    public @Nullable String getAcpName() {
+        return acpName;
     }
 
     public @Nullable String getAcpTitle() {
@@ -312,10 +319,12 @@ public final class ToolCallRecord {
     }
 
     /**
-     * The best available tool name — MCP is authoritative, falls back to ACP title.
+     * The best available tool name — MCP is authoritative, then ACP canonical name,
+     * then falls back to ACP title.
      */
     public @NotNull String getEffectiveToolName() {
         if (mcpToolName != null) return mcpToolName;
+        if (acpName != null) return acpName;
         if (acpTitle != null) return acpTitle;
         return "unknown";
     }
@@ -324,6 +333,7 @@ public final class ToolCallRecord {
     public String toString() {
         return "ToolCallRecord{" + recordId +
             ", acp=" + acpClientId +
+            ", acpName=" + acpName +
             ", mcp=" + mcpToolName +
             ", state=" + state +
             ", routing=" + routingType +

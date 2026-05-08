@@ -43,8 +43,8 @@ class KiroProcessUpdateTest {
         @DisplayName("converts message chunk with mixed Text+Thinking to thought chunk")
         void mixedTextAndThinking() {
             var content = List.<ContentBlock>of(
-                    new ContentBlock.Text("visible text"),
-                    new ContentBlock.Thinking("internal reasoning")
+                new ContentBlock.Text("visible text"),
+                new ContentBlock.Thinking("internal reasoning")
             );
             var input = new SessionUpdate.AgentMessageChunk(content);
 
@@ -113,7 +113,7 @@ class KiroProcessUpdateTest {
         @DisplayName("ToolCall is returned as-is (not a message chunk)")
         void toolCallPassthrough() {
             var input = new SessionUpdate.ToolCall(
-                    "tc-1", "read_file", null, "{}", null, null, null, null, null
+                "tc-1", "read_file", null, null, "{}", null, null, null, null, null
             );
 
             SessionUpdate result = KiroClient.convertThinkingToThought(input);
@@ -125,7 +125,7 @@ class KiroProcessUpdateTest {
         @DisplayName("ToolCallUpdate is returned as-is")
         void toolCallUpdatePassthrough() {
             var input = new SessionUpdate.ToolCallUpdate(
-                    "tc-1", SessionUpdate.ToolCallStatus.COMPLETED, "result", null, null
+                "tc-1", SessionUpdate.ToolCallStatus.COMPLETED, "result", null, null
             );
 
             SessionUpdate result = KiroClient.convertThinkingToThought(input);
@@ -148,7 +148,7 @@ class KiroProcessUpdateTest {
         @DisplayName("Banner is returned as-is")
         void bannerPassthrough() {
             var input = new SessionUpdate.Banner(
-                    "warning msg", SessionUpdate.BannerLevel.WARNING, SessionUpdate.ClearOn.MANUAL
+                "warning msg", SessionUpdate.BannerLevel.WARNING, SessionUpdate.ClearOn.MANUAL
             );
 
             SessionUpdate result = KiroClient.convertThinkingToThought(input);
@@ -170,9 +170,9 @@ class KiroProcessUpdateTest {
         @DisplayName("message chunk with Image and Audio blocks (no Thinking) is unchanged")
         void nonThinkingMediaBlocks() {
             var content = List.<ContentBlock>of(
-                    new ContentBlock.Text("caption"),
-                    new ContentBlock.Image("base64", "image/png"),
-                    new ContentBlock.Audio("base64", "audio/wav")
+                new ContentBlock.Text("caption"),
+                new ContentBlock.Image("base64", "image/png"),
+                new ContentBlock.Audio("base64", "audio/wav")
             );
             var input = new SessionUpdate.AgentMessageChunk(content);
 

@@ -131,6 +131,9 @@ sealed class EntryData {
 
         /** Human-readable display name from the MCP tool class (e.g. "Read File"). */
         var mcpDisplayName: String? = null
+
+        /** Canonical tool name from ACP: MCP name for bridged tools, kind for native tools. */
+        var acpName: String? = null
     }
 
     class SubAgent @JvmOverloads constructor(

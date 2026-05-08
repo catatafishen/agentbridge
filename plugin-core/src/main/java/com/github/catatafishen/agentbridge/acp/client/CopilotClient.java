@@ -14,6 +14,7 @@ import com.github.catatafishen.agentbridge.ui.NudgeSource;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -316,6 +317,18 @@ public final class CopilotClient extends AcpClient {
     }
 
     @Override
+    protected @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
+        if (rawTitle.startsWith(MCP_TOOL_PREFIX)) {
+            return rawTitle.substring(MCP_TOOL_PREFIX.length());
+        }
+        String lower = rawTitle.toLowerCase();
+        if (KNOWN_BUILTIN_TOOL_NAMES.contains(lower)) {
+            return lower;
+        }
+        return kind;
+    }
+
+    @Override
     protected boolean isMcpToolTitle(@org.jetbrains.annotations.NotNull String protocolTitle) {
         if (protocolTitle.startsWith(MCP_TOOL_PREFIX)) {
             return true;
@@ -558,7 +571,6 @@ public final class CopilotClient extends AcpClient {
     protected SessionUpdate processUpdate(SessionUpdate update) {
         if (update instanceof SessionUpdate.ToolCall toolCall && !toolCall.isSubAgent()) {
             String title = toolCall.title();
-            // Built-in detection: known names (grep, view, bash…) or bash-with-description (has spaces).
             boolean isBuiltIn = KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
                 || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX));
             if (isBuiltIn && shouldReprimand(title)) {
@@ -566,7 +578,8 @@ public final class CopilotClient extends AcpClient {
                     com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getReprimandNudgeMode();
                 if (mode != com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.DISABLED) {
                     boolean showBubble = mode == com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode.ENABLED;
-                    AgentNudgeService.getInstance(project).addNudge(buildSingleToolReprimand(title), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
+                    String kind = toolCall.kind() != null ? toolCall.kind().value() : "unknown";
+                    AgentNudgeService.getInstance(project).addNudge(buildReprimand(kind), NudgeSource.NATIVE_TOOL_REPRIMAND, showBubble);
                 }
             }
         }
@@ -586,15 +599,8 @@ public final class CopilotClient extends AcpClient {
         return request;
     }
 
-    private String buildSingleToolReprimand(String toolId) {
-        // Copilot CLI sends the bash description as the ACP title (e.g. "Read PsiBridgeService constructor").
-        // Show the actual tool name "bash" in the reprimand — the description is what the agent was doing,
-        // not the tool ID, and it reads confusingly in a system notice.
-        boolean isBashWithDescription = toolId.contains(" ");
-        String label = isBashWithDescription ? "bash" : toolId;
-        String alternative = mcpAlternative(toolId);
-        return "[System notice] Use " + alternative + " — not the built-in " + label
-            + ". All agentbridge-* MCP tools are available.";
+    private static String buildReprimand(String kind) {
+        return "You used native " + kind + " tools. Use Agentbridge MCP tools instead.";
     }
 
     /**
@@ -659,35 +665,5 @@ public final class CopilotClient extends AcpClient {
     @Override
     protected boolean isAutoDenyEnabled() {
         return false;
-    }
-
-    @Override
-    protected String mcpAlternative(String toolId) {
-        // Copilot CLI sends the bash `description` as the protocol title; descriptions contain spaces.
-        if (toolId.contains(" ")) {
-            return bashDescriptionAlternative(toolId.toLowerCase());
-        }
-        return super.mcpAlternative(toolId);
-    }
-
-    /**
-     * Infers the best MCP alternative from the human-readable bash description.
-     * Copilot CLI sends the {@code description} parameter as the ACP title for bash calls,
-     * so we never know the literal tool name — only what the agent said it was doing.
-     */
-    private static String bashDescriptionAlternative(String lowerDesc) {
-        if (lowerDesc.startsWith("write ") || lowerDesc.startsWith("create ") || lowerDesc.startsWith("save ")) {
-            return "agentbridge-write_file (for existing files) or agentbridge-create_file (for new files)"
-                + " — these write through the IDE editor buffer and stay in sync with IntelliJ."
-                + " Never use shell redirection (cat >, tee, heredocs) to write project files.";
-        }
-        if (lowerDesc.startsWith("find ") || lowerDesc.startsWith("search ") || lowerDesc.startsWith("grep ")) {
-            return "agentbridge-search_text or agentbridge-search_symbols — these are IDE-integrated and semantic-aware.";
-        }
-        if (lowerDesc.startsWith("read ") || lowerDesc.startsWith("get ") || lowerDesc.startsWith("check ")) {
-            return "agentbridge-read_file (for files) or agentbridge-search_text (for content search).";
-        }
-        return "agentbridge-run_command for shell commands, agentbridge-write_file for file writes,"
-            + " or agentbridge-search_text for searches.";
     }
 }

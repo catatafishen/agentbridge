@@ -483,7 +483,7 @@ class SessionUpdateEnumTest {
 
         private ToolCall toolCall(String agentType, List<Location> locations) {
             return new ToolCall(
-                "tc-1", "title", ToolKind.READ, null,
+                "tc-1", "title", null, ToolKind.READ, null,
                 locations, agentType, null, null, null
             );
         }

@@ -387,7 +387,7 @@ public final class KiroClient extends AcpClient {
         String purpose = extractPurposeFromArgs(tc.arguments());
         if (purpose != null) {
             return new SessionUpdate.ToolCall(
-                tc.toolCallId(), tc.title(), tc.kind(), tc.arguments(),
+                tc.toolCallId(), tc.title(), tc.acpName(), tc.kind(), tc.arguments(),
                 tc.locations(), tc.agentType(), tc.subAgentDescription(),
                 tc.subAgentPrompt(), purpose
             );
