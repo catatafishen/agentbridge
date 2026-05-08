@@ -15,6 +15,7 @@ jobs:
   BatchFuzzing:
     name: ClusterFuzzLite Batch
     runs-on: ubuntu-latest
+    environment: fuzzing
     permissions:
       contents: read
       security-events: write
