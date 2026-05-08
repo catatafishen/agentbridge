@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.ui.side
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat
 import com.github.catatafishen.agentbridge.services.LiveToolCallEntry
 import com.github.catatafishen.agentbridge.services.LiveToolCallService
+import com.github.catatafishen.agentbridge.settings.McpServerSettings
 import com.github.catatafishen.agentbridge.ui.ChatTheme
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -112,7 +113,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
     }
 
     private fun buildPage(): String {
-        val cssVars = ChatTheme.buildCssVars()
+        val cssVars = ChatTheme.buildCssVars(McpServerSettings.getInstance(project))
         val css = loadResource("/chat/chat.css")
         val webAppCss = loadResource("/chat/web-app.css")
         val js = loadResource("/chat/chat-components.js")
@@ -135,7 +136,7 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
             ?: run { LOG.warn("Missing resource: $path"); "" }
 
     private fun updateThemeColors() {
-        val vars = ChatTheme.buildCssVars().replace("'", "\\'")
+        val vars = ChatTheme.buildCssVars(McpServerSettings.getInstance(project)).replace("'", "\\'")
         executeJs("document.documentElement.style.cssText='$vars'")
         val panelBg = JBUI.CurrentTheme.ToolWindow.background()
         browser?.setPageBackgroundColor("rgb(${panelBg.red},${panelBg.green},${panelBg.blue})")
