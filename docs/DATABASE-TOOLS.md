@@ -15,7 +15,7 @@ AgentBridge supplements with the one thing the native MCP does not cover: adding
 ## JetBrains' native database MCP tools (proxied by AgentBridge)
 
 Available when both the **Database Tools and SQL** plugin and the **JetBrains AI Assistant**
-plugin are installed, AND AgentBridge experimental is active (IntelliJ 2026.1+).
+plugin are installed, and IntelliJ 2026.1+ (when `com.intellij.mcpServer` first shipped).
 
 See https://www.jetbrains.com/help/idea/mcp-server.html#database_specific_tools
 
@@ -48,10 +48,11 @@ entirely. The sequence:
    `kotlinx.coroutines.BuildersKt.runBlocking()`.
 
 Key implementation files:
+
 - `JetBrainsMcpProxy.java` — reflection engine; discovers tools, bridges Java → Kotlin coroutines
 - `McpToolCallable.java` — `kotlin.jvm.functions.Function2` bridge for the suspend call
 - `JetBrainsProxyTool.java` — `DatabaseTool` subclass with factory methods per tool
-- `ExperimentalStartupActivity.java` — registers proxies conditionally at startup
+- `PsiBridgeService.java` — calls `JetBrainsProxyTool.createAll(project)` during startup
 
 **Availability:** Only in IntelliJ 2026.1+ (`com.intellij.mcpServer` ships there). Earlier
 versions get only `database_add_source`. The proxy degrades gracefully — if the plugin is

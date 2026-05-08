@@ -1,5 +1,6 @@
-package com.github.catatafishen.agentbridge.experimental.psi.tools.database.proxy;
+package com.github.catatafishen.agentbridge.psi.tools.database.proxy;
 
+import com.github.catatafishen.agentbridge.experimental.psi.tools.database.proxy.JetBrainsMcpProxy;
 import com.github.catatafishen.agentbridge.psi.tools.database.DatabaseTool;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.google.gson.JsonObject;
