@@ -834,6 +834,7 @@ class ChatConsolePanel(
                 timestamp = java.time.Instant.now().toString(),
                 commitHashes = stats.commitHashes,
                 gitBranchAtStart = stats.gitBranchAtStart,
+                gitBranchAtEnd = stats.gitBranchAtEnd,
             )
         )
         val statsJson = buildTurnSummaryJson(stats)
