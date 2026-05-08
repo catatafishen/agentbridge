@@ -131,7 +131,7 @@ public final class ConversationStatistics {
         """;
 
     private static final String SQL_TOOL_AGGREGATES = """
-        SELECT tce.tool_name,
+        SELECT COALESCE(tce.display_name, tce.tool_name)              AS tool_name,
                tce.category,
                COUNT(*)                                               AS call_count,
                ROUND(AVG(tce.duration_ms))                           AS avg_duration_ms,
@@ -141,9 +141,10 @@ public final class ConversationStatistics {
                SUM(CASE WHEN tce.success = 0 THEN 1 ELSE 0 END)     AS error_count
         FROM tool_call_events tce
         JOIN events e ON tce.event_id = e.id
-        WHERE (? IS NULL OR e.timestamp >= ?)
+        WHERE tce.is_mcp = 1
+          AND (? IS NULL OR e.timestamp >= ?)
           AND (? IS NULL OR tce.client_id = ?)
-        GROUP BY tce.tool_name, tce.category
+        GROUP BY COALESCE(tce.display_name, tce.tool_name), tce.category
         ORDER BY call_count DESC
         """;
 
@@ -155,7 +156,8 @@ public final class ConversationStatistics {
                SUM(CASE WHEN tce.success = 0 THEN 1 ELSE 0 END) AS total_errors
         FROM tool_call_events tce
         JOIN events e ON tce.event_id = e.id
-        WHERE (? IS NULL OR e.timestamp >= ?)
+        WHERE tce.is_mcp = 1
+          AND (? IS NULL OR e.timestamp >= ?)
           AND (? IS NULL OR tce.client_id = ?)
         """;
 

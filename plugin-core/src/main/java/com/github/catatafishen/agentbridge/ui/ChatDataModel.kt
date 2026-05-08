@@ -160,7 +160,9 @@ sealed class EntryData {
         override val timestamp: String = "",
         override val entryId: String = java.util.UUID.randomUUID().toString(),
         /** Hashes of git commits made during this prompt turn (best-effort: startHash..HEAD range). */
-        val commitHashes: List<String> = emptyList()
+        val commitHashes: List<String> = emptyList(),
+        /** Git branch active when the prompt was submitted. Null when git is unavailable. */
+        val gitBranchAtStart: String? = null,
     ) : EntryData()
 
     data class ContextFiles @JvmOverloads constructor(
