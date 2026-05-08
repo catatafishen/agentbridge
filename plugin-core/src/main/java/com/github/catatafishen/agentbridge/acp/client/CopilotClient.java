@@ -568,12 +568,15 @@ public final class CopilotClient extends AcpClient {
     }
 
     /**
-     * Clears stale reprimand state at turn start so nudges from the previous turn
-     * don't leak into the new prompt if they were never consumed.
+     * Clears the human nudge slot at turn start so user input from the previous turn
+     * doesn't leak into the new prompt. The reprimand slot is intentionally left intact:
+     * if the model ended a turn after a built-in tool was denied (without calling any MCP
+     * tool to consume the reprimand), the reprimand must survive to be delivered in the
+     * first MCP call of the next turn.
      */
     @Override
     protected PromptRequest beforeSendPrompt(PromptRequest request) {
-        AgentNudgeService.getInstance(project).setPendingNudge(null);
+        AgentNudgeService.getInstance(project).clearHumanNudge();
         return request;
     }
 
@@ -597,6 +600,26 @@ public final class CopilotClient extends AcpClient {
             case "report_intent", "skill", "sql", "task_complete" -> false;
             default -> true;
         };
+    }
+
+    /**
+     * Auto-deny is disabled for Copilot CLI in ACP mode.
+     * <p>
+     * Copilot CLI ends the current agent turn whenever a {@code session/request_permission}
+     * response uses {@code deny_once} or {@code reject_once} — the agent sees
+     * "The user rejected this tool call" and performs {@code end_turn} without retrying.
+     * This makes auto-deny counterproductive: the agent can't recover and use the correct
+     * MCP tool within the same turn.
+     * <p>
+     * With auto-deny off, disallowed built-in tools are auto-approved instead, and the
+     * reprimand nudge mechanism injects corrective guidance into the next MCP tool response.
+     * <p>
+     * Re-enable when Copilot CLI fixes in-turn recovery after ACP tool denial.
+     * Tracked: https://github.com/NousResearch/hermes-agent/issues/17284
+     */
+    @Override
+    protected boolean isAutoDenyEnabled() {
+        return false;
     }
 
     @Override

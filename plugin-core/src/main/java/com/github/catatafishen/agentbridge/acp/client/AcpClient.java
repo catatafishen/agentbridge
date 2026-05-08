@@ -1636,7 +1636,7 @@ public abstract class AcpClient extends AbstractAgentClient {
         if (!toolId.isEmpty() && isToolBlocked(protocolTitle, toolId)) {
             chosenOption = handleBlockedTool(toolId, toolCallId, params);
         } else if (isBuiltInTool(protocolTitle)) {
-            if (shouldAutoDenyBuiltInTool(toolId)) {
+            if (isAutoDenyEnabled() && shouldAutoDenyBuiltInTool(toolId)) {
                 chosenOption = handleAutoDeniedBuiltInTool(toolId, toolCallId, params);
             } else {
                 LOG.warn(displayName() + ": auto-approving built-in tool '" + toolId
@@ -1754,6 +1754,18 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     protected boolean excludeBuiltInTools() {
         return false;
+    }
+
+    /**
+     * Whether to automatically deny built-in tool requests (e.g. {@code bash}, {@code edit})
+     * instead of auto-approving them.
+     * <p>
+     * Defaults to {@code true}. Subclasses may override to disable auto-deny when the ACP
+     * client has a known bug where tool denial ends the current agent turn, making the agent
+     * unable to recover and retry with the correct MCP tool.
+     */
+    protected boolean isAutoDenyEnabled() {
+        return true;
     }
 
     private boolean isToolBlocked(String protocolTitle, String toolId) {
