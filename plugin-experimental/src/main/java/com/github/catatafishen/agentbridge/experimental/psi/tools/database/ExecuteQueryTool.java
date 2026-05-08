@@ -57,11 +57,6 @@ public final class ExecuteQueryTool extends DatabaseTool {
     }
 
     @Override
-    public boolean isReadOnly() {
-        return false;
-    }
-
-    @Override
     public @NotNull JsonObject inputSchema() {
         return schema(
             Param.required(PARAM_DATA_SOURCE, TYPE_STRING, "Name of the data source to execute the query against"),
@@ -141,14 +136,37 @@ public final class ExecuteQueryTool extends DatabaseTool {
         int maxRows) throws SQLException, RemoteException {
         RemoteResultSetMetaData meta = rs.getMetaData();
         int colCount = meta.getColumnCount();
+        String[] colNames = collectColumnNames(meta, colCount);
+        int[] colWidths = initColWidths(colNames);
+        List<String[]> rows = collectRows(rs, colCount, colWidths);
 
+        StringBuilder sb = new StringBuilder();
+        appendSummary(sb, rows.size(), colCount, maxRows, dataSourceName);
+        appendHeaderLine(sb, colNames, colWidths, colCount);
+        appendSeparatorLine(sb, colWidths, colCount);
+        appendDataRows(sb, rows, colWidths, colCount);
+        return sb.toString().trim();
+    }
+
+    private static String[] collectColumnNames(
+        @NotNull RemoteResultSetMetaData meta, int colCount) throws SQLException, RemoteException {
         String[] colNames = new String[colCount];
-        int[] colWidths = new int[colCount];
         for (int i = 0; i < colCount; i++) {
             colNames[i] = meta.getColumnLabel(i + 1);
+        }
+        return colNames;
+    }
+
+    private static int[] initColWidths(@NotNull String[] colNames) {
+        int[] colWidths = new int[colNames.length];
+        for (int i = 0; i < colNames.length; i++) {
             colWidths[i] = colNames[i].length();
         }
+        return colWidths;
+    }
 
+    private static List<String[]> collectRows(
+        @NotNull RemoteResultSet rs, int colCount, int[] colWidths) throws SQLException, RemoteException {
         List<String[]> rows = new ArrayList<>();
         while (rs.next()) {
             String[] row = new String[colCount];
@@ -159,26 +177,38 @@ public final class ExecuteQueryTool extends DatabaseTool {
             }
             rows.add(row);
         }
+        return rows;
+    }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append(rows.size()).append(" row(s), ").append(colCount).append(" column(s)");
-        if (maxRows > 0 && rows.size() >= maxRows) {
+    private static void appendSummary(
+        @NotNull StringBuilder sb, int rowCount, int colCount, int maxRows,
+        @NotNull String dataSourceName) {
+        sb.append(rowCount).append(" row(s), ").append(colCount).append(" column(s)");
+        if (maxRows > 0 && rowCount >= maxRows) {
             sb.append(" (limited to ").append(maxRows).append(")");
         }
         sb.append(" from '").append(dataSourceName).append("':\n\n");
+    }
 
+    private static void appendHeaderLine(
+        @NotNull StringBuilder sb, String[] colNames, int[] colWidths, int colCount) {
         for (int i = 0; i < colCount; i++) {
             if (i > 0) sb.append(" | ");
             sb.append(padRight(colNames[i], colWidths[i]));
         }
         sb.append("\n");
+    }
 
+    private static void appendSeparatorLine(@NotNull StringBuilder sb, int[] colWidths, int colCount) {
         for (int i = 0; i < colCount; i++) {
             if (i > 0) sb.append("-+-");
-            sb.append("-".repeat(colWidths[i]));
+            sb.repeat("-", colWidths[i]);
         }
         sb.append("\n");
+    }
 
+    private static void appendDataRows(
+        @NotNull StringBuilder sb, @NotNull List<String[]> rows, int[] colWidths, int colCount) {
         for (String[] row : rows) {
             for (int i = 0; i < colCount; i++) {
                 if (i > 0) sb.append(" | ");
@@ -187,15 +217,13 @@ public final class ExecuteQueryTool extends DatabaseTool {
             }
             sb.append("\n");
         }
-
-        return sb.toString().trim();
     }
 
     private static String padRight(String value, int width) {
         if (value.length() >= width) return value;
         StringBuilder sb = new StringBuilder(width);
         sb.append(value);
-        for (int i = value.length(); i < width; i++) sb.append(' ');
+        sb.repeat(" ", width - value.length());
         return sb.toString();
     }
 }
