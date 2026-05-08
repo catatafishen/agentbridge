@@ -76,13 +76,13 @@ class ModelGrouperTest {
             "m4" to "Beta/Model-D"
         )
 
-        // Favorites + Alpha + Beta + Zeta + Other
-        assertEquals(5, result.size)
-        assertEquals("Favorites", result[0].provider)
-        assertEquals("Alpha", result[1].provider)
-        assertEquals("Beta", result[2].provider)
-        assertEquals("Zeta", result[3].provider)
-        assertEquals("Other", result[4].provider)
+        // No favorites → Alpha + Beta + Zeta + Other (no Favorites group)
+        assertEquals(4, result.size)
+        assertEquals("Alpha", result[0].provider)
+        assertEquals("Beta", result[1].provider)
+        assertEquals("Zeta", result[2].provider)
+        assertEquals("Other", result[3].provider)
+        assertFalse(result.any { it.provider == "Favorites" })
     }
 
     // ── Test 5: displayName formatting ──────────────────────────────────
@@ -118,19 +118,19 @@ class ModelGrouperTest {
         assertEquals("Llama 3.1", groupedModel.displayName)
     }
 
-    // ── Test 6: Favorites group always present ──────────────────────────
+    // ── Test 6: Favorites group only when non-empty ──────────────────────
 
     @Test
-    fun `Favorites group is always present`() {
+    fun `Favorites group is absent when there are no favorites`() {
         val grouper = grouper()
         val result = grouper.groupModels(
             "m1" to "Nvidia/Llama 3.1"
         )
 
-        // Favorites (empty) + Nvidia
-        assertEquals(2, result.size)
-        assertEquals("Favorites", result[0].provider)
-        assertTrue(result[0].models.isEmpty())
+        // No favorites → only Nvidia group, no Favorites group
+        assertEquals(1, result.size)
+        assertEquals("Nvidia", result[0].provider)
+        assertFalse(result.any { it.provider == "Favorites" })
     }
 
     // ── Test 7: Single provider ─────────────────────────────────────────

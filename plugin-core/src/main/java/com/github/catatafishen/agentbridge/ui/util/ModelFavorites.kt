@@ -11,7 +11,7 @@ import com.intellij.openapi.project.Project
  * Backed by [PropertiesComponent], survives IDE restarts.
  * Storage format: JSON array `["providerId/modelId", ...]`.
  */
-class ModelFavorites(private val project: Project) {
+class ModelFavorites(project: Project) {
 
     companion object {
         private const val KEY = "agentbridge.favoriteModels"
@@ -34,7 +34,7 @@ class ModelFavorites(private val project: Project) {
     fun toSet(): Set<String> {
         val raw = props.getValue(KEY) ?: return emptySet()
         return try {
-            gson.fromJson<MutableSet<String>>(raw, setType)
+            gson.fromJson<MutableSet<String>>(raw, setType) ?: emptySet()
         } catch (_: Exception) {
             emptySet()
         }

@@ -6,6 +6,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
 
 import java.util.HashMap;
@@ -280,17 +282,12 @@ class ModelFavoritesTest {
         assertTrue(set.contains("claude-3-5-sonnet"));
     }
 
-    @Test
-    void toSet_returnsEmptySet_forCorruptedJson() {
-        fakeProps.setValue(KEY, "not valid json");
-
-        assertTrue(favorites.toSet().isEmpty());
-    }
-
-    @Test
-    void toSet_returnsEmptySet_forInvalidJsonType() {
-        // JSON is valid but not an array
-        fakeProps.setValue(KEY, "{\"key\": \"value\"}");
+    @ParameterizedTest
+    @ValueSource(strings = {"not valid json", "null", "{\"key\": \"value\"}"})
+    void toSet_returnsEmptySet_forUnparsableInput(String json) {
+        // "null" is valid JSON returning null (no exception) — ?: emptySet() guards against that.
+        // Corrupted JSON and wrong types are caught and return emptySet().
+        fakeProps.setValue(KEY, json);
 
         assertTrue(favorites.toSet().isEmpty());
     }

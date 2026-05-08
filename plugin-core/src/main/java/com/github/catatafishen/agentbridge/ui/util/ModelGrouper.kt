@@ -56,17 +56,13 @@ class ModelGrouper(private val favorites: Set<String>) {
 
         val result = mutableListOf<Group>()
 
-        // Always include Favorites group (even if empty)
-        result.add(Group("Favorites", favs))
+        if (favs.isNotEmpty()) {
+            result.add(Group("Favorites", favs))
+        }
 
         for (provider in sortedProviders) {
             val groupModels = providerGroups[provider] ?: continue
-            // Suppress provider header when single-provider + no favorites
-            if (favs.isEmpty() && sortedProviders.size == 1 && provider != OTHER) {
-                result.add(Group(provider, groupModels))
-            } else {
-                result.add(Group(provider, groupModels))
-            }
+            result.add(Group(provider, groupModels))
         }
 
         return result
