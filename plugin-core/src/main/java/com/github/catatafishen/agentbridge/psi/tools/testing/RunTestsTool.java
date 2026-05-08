@@ -96,7 +96,7 @@ public final class RunTestsTool extends TestingTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.EDIT;
+        return Kind.EXECUTE;
     }
 
     @Override

@@ -49,7 +49,7 @@ public final class RunCommandTool extends InfrastructureTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.EDIT;
+        return Kind.EXECUTE;
     }
 
     @Override

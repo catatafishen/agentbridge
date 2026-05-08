@@ -40,7 +40,7 @@ public final class RunInTerminalTool extends TerminalTool {
 
     @Override
     public @NotNull Kind kind() {
-        return Kind.EDIT;
+        return Kind.EXECUTE;
     }
 
     @Override
