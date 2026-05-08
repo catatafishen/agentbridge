@@ -74,6 +74,16 @@ public record LiveToolCallEntry(
     }
 
     /**
+     * Returns a copy with the given display name (used when ACP correlation provides a
+     * more descriptive title than the original tool definition name).
+     */
+    public LiveToolCallEntry withDisplayName(@NotNull String newDisplayName) {
+        return new LiveToolCallEntry(
+            callId, toolName, newDisplayName, input, output,
+            timestamp, durationMs, success, category, hasHooks, hookStages);
+    }
+
+    /**
      * Whether this entry is still in-flight.
      */
     public boolean isRunning() {
