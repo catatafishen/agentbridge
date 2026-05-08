@@ -194,7 +194,8 @@ public sealed interface SessionUpdate
      * A new tool call initiated by the agent.
      *
      * @param toolCallId          unique ID correlating with {@link ToolCallUpdate}
-     * @param title               normalised tool name (MCP prefix stripped)
+     * @param title               display title reported by the protocol (for UI display only)
+     * @param acpName             canonical tool name: MCP name for bridged tools, kind for native tools
      * @param kind                functional category for UI chip styling
      * @param arguments           serialised JSON string of the tool arguments, or null if empty
      * @param locations           file locations extracted from the tool event
@@ -206,6 +207,7 @@ public sealed interface SessionUpdate
     record ToolCall(
         @NotNull String toolCallId,
         @NotNull String title,
+        @Nullable String acpName,
         @Nullable ToolKind kind,
         @Nullable String arguments,
         @Nullable List<Location> locations,

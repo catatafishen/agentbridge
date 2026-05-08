@@ -451,12 +451,10 @@ public final class ConversationWriter {
             INSERT OR IGNORE INTO tool_call_events (
                 event_id, tool_name, tool_kind, client_id, category,
                 arguments, result, status, file_path, auto_denied, denial_reason,
-                input_size_bytes, output_size_bytes, duration_ms, is_mcp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                input_size_bytes, output_size_bytes, duration_ms, is_mcp, display_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)) {
             ps.setString(1, tc.getEntryId());
-            // Canonical tool name: prefer pluginTool (set by tracker on MCP correlation),
-            // otherwise strip the ACP client prefix (e.g. "agentbridge-read_file" → "read_file").
             ps.setString(2, canonicalToolName(tc));
             ps.setString(3, tc.getKind());
             ps.setString(4, emptyToNull(clientId));
@@ -484,18 +482,21 @@ public final class ConversationWriter {
             } else {
                 ps.setNull(15, Types.INTEGER);
             }
+            // ACP title is always a display string — store it as display_name on initial insert.
+            ps.setString(16, tc.getTitle());
             ps.executeUpdate();
         }
     }
 
     /**
      * Returns the canonical tool name for DB storage: uses pluginTool when available (confirms
-     * MCP correlation), otherwise strips the ACP client prefix so "agentbridge-read_file" becomes
-     * "read_file" and bare tool names like "bash" are stored unchanged.
+     * MCP correlation), then acpName (canonical ACP name: MCP name for bridged tools, kind for
+     * native tools). Falls back to stripping the ACP client prefix from the title.
      */
     @NotNull
     private static String canonicalToolName(@NotNull EntryData.ToolCall tc) {
         if (tc.getPluginTool() != null) return tc.getPluginTool();
+        if (tc.getAcpName() != null) return tc.getAcpName();
         String title = tc.getTitle();
         int dash = title.indexOf('-');
         return dash >= 0 ? title.substring(dash + 1) : title;

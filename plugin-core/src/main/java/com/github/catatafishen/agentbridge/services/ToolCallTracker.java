@@ -136,7 +136,8 @@ public final class ToolCallTracker {
      * Called when ACP reports a new tool call ({@code tool_call} notification).
      *
      * @param acpClientId the ACP-assigned tool call ID
-     * @param acpTitle    the display title reported by the protocol (may be imprecise)
+     * @param acpName     canonical tool name (MCP name for bridged tools, kind for native tools), or null
+     * @param acpTitle    the display title reported by the protocol (always a display string, never a tool name)
      * @param args        tool arguments (may be null for some agents like Junie)
      * @param kind        tool category (e.g. "file", "git") or null
      * @param routingType the call's role: REGULAR, SUB_AGENT, SUB_AGENT_INTERNAL, TASK_COMPLETE
@@ -145,6 +146,7 @@ public final class ToolCallTracker {
      */
     public synchronized @NotNull ToolCallRecord acpRegister(
         @NotNull String acpClientId,
+        @Nullable String acpName,
         @NotNull String acpTitle,
         @Nullable JsonObject args,
         @Nullable String kind,
@@ -159,7 +161,7 @@ public final class ToolCallTracker {
             if (existingRecordId != null) {
                 ToolCallRecord record = liveRecords.get(existingRecordId);
                 if (record != null && record.getAcpClientId() == null) {
-                    record.setAcpFields(acpClientId, acpTitle, args, routingType, seq);
+                    record.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
                     acpIdToRecordId.put(acpClientId, existingRecordId);
                     LOG.info("ToolCallTracker [ACP]: correlated via toolUseId=" + toolUseId + " → " + existingRecordId);
                     fireOnCorrelated(record);
@@ -173,7 +175,7 @@ public final class ToolCallTracker {
             String argsHash = ToolCallHasher.computeBaseHash(args);
             ToolCallRecord mcpFirst = findNewestUnmatchedMcpRecord(argsHash);
             if (mcpFirst != null) {
-                mcpFirst.setAcpFields(acpClientId, acpTitle, args, routingType, seq);
+                mcpFirst.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
                 acpIdToRecordId.put(acpClientId, mcpFirst.getRecordId());
                 if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, mcpFirst.getRecordId());
                 LOG.info("ToolCallTracker [ACP]: correlated via hash=" + argsHash + " → " + mcpFirst.getRecordId());
@@ -187,14 +189,14 @@ public final class ToolCallTracker {
         String argsHash = args != null ? ToolCallHasher.computeBaseHash(args) : null;
         String recordId = allocateRecordId(argsHash);
         ToolCallRecord record = new ToolCallRecord(recordId, argsHash);
-        record.setAcpFields(acpClientId, acpTitle, args, routingType, seq);
+        record.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
         if (kind != null) record.setKind(kind);
 
         liveRecords.put(recordId, record);
         acpIdToRecordId.put(acpClientId, recordId);
         if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, recordId);
 
-        LOG.info("ToolCallTracker [ACP]: new record " + recordId + " title=" + acpTitle + " routing=" + routingType);
+        LOG.info("ToolCallTracker [ACP]: new record " + recordId + " name=" + acpName + " title=" + acpTitle + " routing=" + routingType);
         fireOnAcpRegistered(record);
         return record;
     }

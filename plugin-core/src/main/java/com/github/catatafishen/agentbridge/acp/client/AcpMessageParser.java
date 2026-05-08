@@ -52,6 +52,14 @@ class AcpMessageParser {
         @Nullable JsonObject parseToolCallArguments(@NotNull JsonObject params);
 
         /**
+         * Resolve a canonical tool name from the raw protocol title and kind.
+         * For MCP tools, returns the stripped MCP name (e.g., "read_file").
+         * For known built-in tools, returns the tool name (e.g., "bash").
+         * For unknown native tools, returns the kind (e.g., "read", "execute").
+         */
+        @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind);
+
+        /**
          * Detect sub-agent invocations and return the agent type, or {@code null} if this is not
          * a sub-agent call.
          */
@@ -128,6 +136,9 @@ class AcpMessageParser {
             kind = SessionUpdate.ToolKind.fromString(params.get("kind").getAsString());
         }
 
+        String kindValue = kind != null ? kind.value() : null;
+        String acpName = delegate.resolveAcpName(title, kindValue);
+
         JsonObject argumentsObj = delegate.parseToolCallArguments(params);
         String arguments = argumentsObj != null ? argumentsObj.toString() : null;
 
@@ -152,7 +163,7 @@ class AcpMessageParser {
             subAgentPrompt = argumentsObj.has("prompt") ? argumentsObj.get("prompt").getAsString() : null;
         }
 
-        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, kind, arguments, locations, agentType, subAgentDesc, subAgentPrompt, null);
+        return new SessionUpdate.ToolCall(toolCallId, resolvedTitle, acpName, kind, arguments, locations, agentType, subAgentDesc, subAgentPrompt, null);
     }
 
     private SessionUpdate.ToolCallUpdate parseToolCallUpdate(JsonObject params) {
