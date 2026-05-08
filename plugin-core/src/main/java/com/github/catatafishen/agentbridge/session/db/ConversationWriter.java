@@ -331,16 +331,17 @@ public final class ConversationWriter {
         }
         try (PreparedStatement ps = conn.prepareStatement("""
             UPDATE turns SET
-                ended_at        = COALESCE(?, ended_at),
-                model           = COALESCE(?, model),
-                token_multiplier= COALESCE(?, token_multiplier),
-                input_tokens    = ?,
-                output_tokens   = ?,
-                cost_usd        = ?,
-                duration_ms     = ?,
-                tool_call_count = ?,
-                lines_added     = ?,
-                lines_removed   = ?
+                ended_at            = COALESCE(?, ended_at),
+                model               = COALESCE(?, model),
+                token_multiplier    = COALESCE(?, token_multiplier),
+                input_tokens        = ?,
+                output_tokens       = ?,
+                cost_usd            = ?,
+                duration_ms         = ?,
+                tool_call_count     = ?,
+                lines_added         = ?,
+                lines_removed       = ?,
+                git_branch_at_start = COALESCE(git_branch_at_start, ?)
             WHERE id = ?
             """)) {
             ps.setString(1, endedAt);
@@ -353,7 +354,8 @@ public final class ConversationWriter {
             ps.setInt(8, stats.getToolCallCount());
             ps.setInt(9, stats.getLinesAdded());
             ps.setInt(10, stats.getLinesRemoved());
-            ps.setString(11, turnId);
+            ps.setString(11, stats.getGitBranchAtStart());
+            ps.setString(12, turnId);
             ps.executeUpdate();
         }
     }
