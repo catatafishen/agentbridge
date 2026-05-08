@@ -416,7 +416,7 @@ public final class PsiBridgeService implements Disposable {
 
             result = appendHighlightsIfApplicable(
                 req.toolName(), result, daemonWaiter, filePathForHighlights, vfForHighlights, semaphoreReleasedEarly);
-            result = AgentNudgeService.appendNudgeToResult(result, AgentNudgeService.getInstance(project).consumePendingNudge());
+            result = AgentNudgeService.appendNudgeToResult(result, AgentNudgeService.getInstance(project).consumePendingNudges());
             if (result.startsWith("Error")) {
                 success = false;
                 errorMessage = result;

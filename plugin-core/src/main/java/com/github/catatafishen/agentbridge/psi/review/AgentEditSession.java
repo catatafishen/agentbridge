@@ -4,6 +4,7 @@ import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ChatWebServer;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
+import com.github.catatafishen.agentbridge.ui.NudgeSource;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
@@ -165,7 +166,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
     /**
      * Buffer of revert nudges accumulated during the current gate. Flushed on either
      * {@link RevertGateAction#SEND_NOW} (returned as the tool error) or on natural gate
-     * resolution (forwarded into {@link AgentNudgeService#setPendingNudge}).
+     * resolution (forwarded via {@link AgentNudgeService#addNudge}).
      */
     private final List<String> gateRevertBuffer = Collections.synchronizedList(new ArrayList<>());
 
@@ -628,7 +629,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
                         gateRevertBuffer.add(nudge);
                     }
                 } else {
-                    AgentNudgeService.getInstance(project).setPendingNudge(nudge);
+                    AgentNudgeService.getInstance(project).addNudge(nudge, NudgeSource.HUMAN, true);
                 }
             }
         }
@@ -999,7 +1000,7 @@ public final class AgentEditSession implements Disposable, PersistentStateCompon
             merged = String.join("\n\n", gateRevertBuffer);
             gateRevertBuffer.clear();
         }
-        AgentNudgeService.getInstance(project).setPendingNudge(merged);
+        AgentNudgeService.getInstance(project).addNudge(merged, NudgeSource.HUMAN, true);
     }
 
     static @NotNull String formatReviewTimeoutError(@NotNull String operation, int fileCount) {
