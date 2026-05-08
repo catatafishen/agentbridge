@@ -1,10 +1,13 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
 import com.github.catatafishen.agentbridge.acp.model.Model;
+import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
+import com.github.catatafishen.agentbridge.acp.model.SessionUpdate;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
+import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonArray;
@@ -539,6 +542,61 @@ public final class CopilotClient extends AcpClient {
         }
         result.addAll(builtinTools);
         return result;
+    }
+
+    // ─── Built-in tool reprimand ─────────────────────────────────────────────
+
+    /**
+     * Detects built-in tool calls in the session update stream and fires a reprimand nudge.
+     * This handles tools that execute WITHOUT requesting permission (e.g. "safe" read/search
+     * tools like grep, glob, view that Copilot may run silently without an ACP permission event).
+     * Tools that DO request permission are handled separately by the permission handler
+     * via auto-deny, but that path is only reached when Copilot asks — not when it skips the ask.
+     */
+    @Override
+    protected SessionUpdate processUpdate(SessionUpdate update) {
+        if (update instanceof SessionUpdate.ToolCall toolCall && !toolCall.isSubAgent()) {
+            String title = toolCall.title();
+            // Built-in detection: known names (grep, view, bash…) or bash-with-description (has spaces).
+            boolean isBuiltIn = KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
+                || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX));
+            if (isBuiltIn && shouldReprimand(title)) {
+                AgentNudgeService.getInstance(project).setReprimandNudge(buildSingleToolReprimand(title));
+            }
+        }
+        return update;
+    }
+
+    /**
+     * Clears stale reprimand state at turn start so nudges from the previous turn
+     * don't leak into the new prompt if they were never consumed.
+     */
+    @Override
+    protected PromptRequest beforeSendPrompt(PromptRequest request) {
+        AgentNudgeService.getInstance(project).setPendingNudge(null);
+        return request;
+    }
+
+    private String buildSingleToolReprimand(String toolId) {
+        boolean isBashWithDescription = toolId.contains(" ");
+        String label = isBashWithDescription ? "\"" + toolId + "\"" : toolId;
+        String alternative = mcpAlternative(toolId);
+        return "[System notice] Use " + alternative + " — not the built-in " + label
+            + ". All agentbridge-* MCP tools are available.";
+    }
+
+    /**
+     * Returns {@code false} for built-in tools that have no meaningful MCP alternative
+     * (e.g. meta-tools like {@code report_intent}, {@code skill}, {@code sql}) to avoid
+     * misleading reprimands.
+     */
+    private static boolean shouldReprimand(String toolId) {
+        String lower = toolId.toLowerCase();
+        // Web tools and Copilot meta-tools have no meaningful MCP alternative — skip reprimand.
+        return !WEB_TOOLS.contains(lower) && switch (lower) {
+            case "report_intent", "skill", "sql", "task_complete" -> false;
+            default -> true;
+        };
     }
 
     @Override
