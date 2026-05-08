@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -245,11 +246,24 @@ class CopilotClientTest {
     // ── buildSingleToolReprimand (private static) ───────────────────────
 
     @Test
-    void buildSingleToolReprimand_containsToolAndAlternative() throws Exception {
+    void buildSingleToolReprimand_knownToolName() throws Exception {
         String result = invokeBuildSingleToolReprimand("bash");
         assertTrue(result.contains("[System notice]"));
         assertTrue(result.contains("bash"));
         assertTrue(result.contains("agentbridge-run_command"));
+    }
+
+    @Test
+    void buildSingleToolReprimand_bashWithDescription_showsBashLabel() throws Exception {
+        // Copilot CLI sends the bash description as the ACP title (e.g. "Read PsiBridgeService constructor").
+        // The reprimand should show "bash" (the tool ID), not the quoted description.
+        String result = invokeBuildSingleToolReprimand("Read PsiBridgeService constructor");
+        assertTrue(result.contains("[System notice]"));
+        assertTrue(result.contains("bash"));
+        // Description text should NOT appear in the reprimand label
+        assertFalse(result.contains("\"Read PsiBridgeService constructor\""));
+        // But the alternative is still computed from the description keyword (starts with "read ")
+        assertTrue(result.contains("agentbridge-read_file"));
     }
 
     // ── copilotHome (package-private static) ────────────────────────────

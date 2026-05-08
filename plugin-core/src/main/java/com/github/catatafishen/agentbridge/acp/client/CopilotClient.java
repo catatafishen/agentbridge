@@ -587,8 +587,11 @@ public final class CopilotClient extends AcpClient {
     }
 
     private String buildSingleToolReprimand(String toolId) {
+        // Copilot CLI sends the bash description as the ACP title (e.g. "Read PsiBridgeService constructor").
+        // Show the actual tool name "bash" in the reprimand — the description is what the agent was doing,
+        // not the tool ID, and it reads confusingly in a system notice.
         boolean isBashWithDescription = toolId.contains(" ");
-        String label = isBashWithDescription ? "\"" + toolId + "\"" : toolId;
+        String label = isBashWithDescription ? "bash" : toolId;
         String alternative = mcpAlternative(toolId);
         return "[System notice] Use " + alternative + " — not the built-in " + label
             + ". All agentbridge-* MCP tools are available.";
