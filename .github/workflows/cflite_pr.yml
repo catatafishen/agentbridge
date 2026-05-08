@@ -73,7 +73,11 @@ jobs:
     environment: fuzzing-gate
     steps:
       - name: Approval received
-        run: echo "Maintainer approved fuzzing fork PR ${{ github.event.pull_request.number }} from ${{ github.event.pull_request.head.repo.full_name }}@${{ github.event.pull_request.head.sha }}"
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: echo "Maintainer approved fuzzing fork PR $PR_NUMBER from $HEAD_REPO@$HEAD_SHA"
 
   PR:
     name: ClusterFuzzLite PR
