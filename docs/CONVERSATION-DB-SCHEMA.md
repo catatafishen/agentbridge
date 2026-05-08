@@ -50,7 +50,7 @@ erDiagram
 
     events {
         TEXT id PK
-        TEXT turn_id FK "nullable — standalone events have no turn"
+        TEXT turn_id FK "nullable - standalone events have no turn"
         INTEGER sequence_num
         TEXT event_type
         TEXT agent_name
@@ -59,17 +59,17 @@ erDiagram
     }
 
     text_events {
-        TEXT event_id PK_FK
+        TEXT event_id PK "FK to events"
         TEXT content
     }
 
     thinking_events {
-        TEXT event_id PK_FK
+        TEXT event_id PK "FK to events"
         TEXT content
     }
 
     tool_call_events {
-        TEXT event_id PK_FK
+        TEXT event_id PK "FK to events"
         TEXT tool_name
         TEXT tool_kind
         TEXT category
@@ -86,11 +86,11 @@ erDiagram
         TEXT file_path
         INTEGER auto_denied
         TEXT denial_reason
-        INTEGER is_mcp "NULL=unknown, 1=confirmed MCP, 0=non-MCP"
+        INTEGER is_mcp "NULL=unknown, 1=MCP, 0=non-MCP"
     }
 
     sub_agent_events {
-        TEXT event_id PK_FK
+        TEXT event_id PK "FK to events"
         TEXT agent_type
         TEXT description
         TEXT prompt_text
@@ -102,10 +102,10 @@ erDiagram
     }
 
     nudge_events {
-        TEXT event_id PK_FK
+        TEXT event_id PK "FK to events"
         TEXT text
-        TEXT nudge_id "UUID of the NudgeEntry that was consumed"
-        TEXT source "human | native_tool_reprimand | tool_abuse_reprimand"
+        TEXT nudge_id "UUID of the NudgeEntry"
+        TEXT source "human or reprimand variant"
     }
 
     commits {
@@ -134,16 +134,16 @@ erDiagram
         TEXT applied_at
     }
 
-    sessions ||--o{ turns : "has"
-    turns ||--o{ turn_context_files : "references"
-    turns ||--o{ events : "contains"
-    turns ||--o{ commits : "produces"
-    events ||--o| text_events : "is-a"
-    events ||--o| thinking_events : "is-a"
-    events ||--o| tool_call_events : "is-a"
-    events ||--o| sub_agent_events : "is-a"
-    events ||--o| nudge_events : "is-a"
-    tool_call_events ||--o{ hook_executions : "has"
+    sessions ||--o{ turns: "has"
+    turns ||--o{ turn_context_files: "references"
+    turns ||--o{ events: "contains"
+    turns ||--o{ commits: "produces"
+    events ||--o| text_events: "is-a"
+    events ||--o| thinking_events: "is-a"
+    events ||--o| tool_call_events: "is-a"
+    events ||--o| sub_agent_events: "is-a"
+    events ||--o| nudge_events: "is-a"
+    tool_call_events ||--o{ hook_executions: "has"
 ```
 
 ---
