@@ -489,7 +489,7 @@ class PromptOrchestrator(
             TurnStatsData(
                 turnDuration, turnInputTokens, turnOutputTokens, turnCostUsd ?: 0.0,
                 turnToolCallCount, codeChanges[0], codeChanges[1], turnModelId, turnMultiplier,
-                commitHashes
+                commitHashes, turnStartGitBranch
             )
         )
 

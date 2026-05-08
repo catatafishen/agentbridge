@@ -833,6 +833,7 @@ class ChatConsolePanel(
                 totalLinesRemoved = (prev?.totalLinesRemoved ?: 0) + stats.linesRemoved,
                 timestamp = java.time.Instant.now().toString(),
                 commitHashes = stats.commitHashes,
+                gitBranchAtStart = stats.gitBranchAtStart,
             )
         )
         val statsJson = buildTurnSummaryJson(stats)
