@@ -277,7 +277,8 @@ public final class ConversationReader {
         try (PreparedStatement ps = conn.prepareStatement("""
             SELECT t.id, t.session_id, t.prompt_text, t.started_at, t.ended_at,
                    t.model, t.token_multiplier, t.input_tokens, t.output_tokens,
-                   t.cost_usd, t.duration_ms, t.tool_call_count, t.lines_added, t.lines_removed
+                   t.cost_usd, t.duration_ms, t.tool_call_count, t.lines_added, t.lines_removed,
+                   t.git_branch_at_start, t.git_branch_at_end
             FROM turns t
             ORDER BY t.started_at ASC
             """)) {
@@ -549,7 +550,8 @@ public final class ConversationReader {
 
         try (PreparedStatement ps = conn.prepareStatement("""
             SELECT ended_at, model, token_multiplier, input_tokens, output_tokens,
-                   cost_usd, duration_ms, tool_call_count, lines_added, lines_removed
+                   cost_usd, duration_ms, tool_call_count, lines_added, lines_removed,
+                   git_branch_at_start, git_branch_at_end
             FROM turns WHERE id = ? AND ended_at IS NOT NULL
             """)) {
             ps.setString(1, turnId);
@@ -581,7 +583,9 @@ public final class ConversationReader {
                         0, 0, 0, 0.0, 0, 0, 0,
                         existingStats.getTimestamp(),
                         existingStats.getEntryId(),
-                        hashes
+                        hashes,
+                        existingStats.getGitBranchAtStart(),
+                        existingStats.getGitBranchAtEnd()
                     ));
                     break;
                 }
@@ -608,13 +612,15 @@ public final class ConversationReader {
         int toolCallCount = rs.getInt("tool_call_count");
         int linesAdded = rs.getInt("lines_added");
         int linesRemoved = rs.getInt("lines_removed");
+        String branchAtStart = rs.getString("git_branch_at_start");
+        String branchAtEnd = rs.getString("git_branch_at_end");
 
         return new EntryData.TurnStats(
             turnId, durationMs, inputTokens, outputTokens, costUsd,
             toolCallCount, linesAdded, linesRemoved, model, multiplierStr,
             0, 0, 0, 0.0, 0, 0, 0,
             endedAt, turnId + "-stats",
-            List.of()
+            List.of(), branchAtStart, branchAtEnd
         );
     }
 
