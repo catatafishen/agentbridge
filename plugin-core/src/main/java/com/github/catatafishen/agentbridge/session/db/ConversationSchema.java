@@ -11,7 +11,7 @@ import java.sql.Statement;
 /**
  * DDL for the unified conversation history database.
  *
- * <p>Implements the schema documented in {@code scratches/conversation-db-er.md}
+ * <p>Implements the schema documented in {@code docs/CONVERSATION-DB-SCHEMA.md}
  * with one addition: the {@code hook_executions} table tracks each hook fire
  * for tool calls, capturing trigger, command, exit code, and input/output
  * payloads.
@@ -51,6 +51,7 @@ final class ConversationSchema {
             if (currentVersion < 1) applyV1(stmt);
             if (currentVersion < 2) applyV2(stmt);
             if (currentVersion < 3) applyV3(stmt);
+            if (currentVersion < 4) applyV4(stmt);
 
             stmt.executeUpdate(
                 "INSERT INTO schema_version (version, applied_at) VALUES ("
@@ -289,5 +290,18 @@ final class ConversationSchema {
         stmt.execute("CREATE INDEX idx_tc_client ON tool_call_events(client_id)");
         stmt.execute("CREATE INDEX idx_tc_is_mcp ON tool_call_events(is_mcp)");
         stmt.execute("PRAGMA foreign_keys = ON");
+    }
+
+    /**
+     * V4: add {@code source} column to {@code nudge_events}.
+     * Default {@code 'human'} is used for existing rows where the source is unknown.
+     * A best-effort update reclassifies rows whose old {@code nudge_id} prefix was {@code 'reprimand-'}
+     * (the legacy numbered-ID format) to {@code 'native_tool_reprimand'}.
+     */
+    private static void applyV4(@NotNull Statement stmt) throws SQLException {
+        stmt.execute(
+            "ALTER TABLE nudge_events ADD COLUMN source TEXT NOT NULL DEFAULT 'human'");
+        stmt.execute(
+            "UPDATE nudge_events SET source = 'native_tool_reprimand' WHERE nudge_id LIKE 'reprimand-%'");
     }
 }

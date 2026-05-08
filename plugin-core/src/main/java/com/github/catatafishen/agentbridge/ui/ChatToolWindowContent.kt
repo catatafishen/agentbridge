@@ -1920,7 +1920,7 @@ class ChatToolWindowContent(
                 ApplicationManager.getApplication().invokeLater {
                     consolePanel.resolveNudgeBubble(bubbleId)
                     val source = entries.firstOrNull { it.source() == NudgeSource.HUMAN }?.source()
-                        ?: NudgeSource.REPRIMAND
+                        ?: entries.first().source()
                     consolePanel.addNudgeEntry(bubbleId, mergedText, source)
                     appendNewEntries()
                     refreshShortcutHints()

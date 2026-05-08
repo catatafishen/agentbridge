@@ -10,8 +10,8 @@ import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Project-level service that owns the full lifecycle of pending nudges — human-typed instructions
@@ -78,7 +78,7 @@ public final class AgentNudgeService {
      * main agent resumes after a sub-agent finishes.
      */
     private volatile boolean nudgesHeld = false;
-    private final AtomicInteger idCounter = new AtomicInteger();
+
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
     /**
      * Queued messages to be sent at the start of the next agent turn (separate concern).
@@ -110,15 +110,16 @@ public final class AgentNudgeService {
      * @param text       the nudge text to inject into the next MCP tool result
      * @param source     the originator; REPRIMAND entries coalesce, HUMAN entries accumulate
      * @param showBubble whether the UI should display a nudge bubble for this nudge
-     * @return the nudge ID, which can be passed to {@link #cancelNudge(String)}
+     * @return a UUID nudge ID that can be passed to {@link #cancelNudge(String)}
      */
     @NotNull
     public String addNudge(@NotNull String text, @NotNull NudgeSource source, boolean showBubble) {
-        String id = source.name().toLowerCase() + "-" + idCounter.incrementAndGet();
+        String id = UUID.randomUUID().toString();
         NudgeEntry entry = new NudgeEntry(id, text, source, showBubble);
         synchronized (pendingNudges) {
-            if (source == NudgeSource.REPRIMAND) {
-                pendingNudges.values().removeIf(e -> e.source() == NudgeSource.REPRIMAND);
+            if (source.isReprimand()) {
+                // Coalesce per type: a new reprimand replaces any existing nudge of the same type.
+                pendingNudges.values().removeIf(e -> e.source() == source);
             }
             pendingNudges.put(id, entry);
         }
@@ -244,7 +245,7 @@ public final class AgentNudgeService {
         for (NudgeEntry entry : entries) {
             if (entry.source() == NudgeSource.HUMAN) {
                 humanMerged = mergeNudges(humanMerged, entry.text());
-            } else if (entry.source() == NudgeSource.REPRIMAND) {
+            } else if (entry.source().isReprimand()) {
                 reprimandMerged = mergeNudges(reprimandMerged, entry.text());
             }
         }
