@@ -21,7 +21,11 @@ public final class ExperimentalStartupActivity implements ProjectActivity {
         MacroToolRegistrar.getInstance(project).syncRegistrations();
         PsiBridgeService.getInstance(project).registerTool(new RunInspectionsTool(project));
         if (PlatformApiCompat.isPluginInstalled(DATABASE_PLUGIN_ID)) {
-            PsiBridgeService.getInstance(project).registerTool(new AddDataSourceTool(project));
+            try {
+                PsiBridgeService.getInstance(project).registerTool(new AddDataSourceTool(project));
+            } catch (NoClassDefFoundError e) {
+                // Database plugin present but API classes unavailable (version mismatch)
+            }
         }
         return Unit.INSTANCE;
     }

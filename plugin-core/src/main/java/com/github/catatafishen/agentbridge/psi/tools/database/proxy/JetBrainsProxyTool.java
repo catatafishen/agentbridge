@@ -90,6 +90,8 @@ public final class JetBrainsProxyTool extends DatabaseTool {
             return "Error: JetBrains MCP tool '" + toolId + "' is not available: " + e.getMessage();
         } catch (ReflectiveOperationException e) {
             return "Error: JetBrains MCP proxy failed for '" + toolId + "': " + e.getMessage();
+        } catch (RuntimeException e) {
+            return "Error: Unexpected failure invoking JetBrains MCP tool '" + toolId + "': " + e.getMessage();
         }
     }
 

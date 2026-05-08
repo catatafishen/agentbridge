@@ -109,7 +109,12 @@ public final class AddDataSourceTool extends DatabaseTool {
         }
 
         String resolvedDriverClass = driverClass;
-        String result = WriteAction.compute(() -> addDataSource(name, url, username, resolvedDriverClass));
+        String result;
+        try {
+            result = WriteAction.compute(() -> addDataSource(name, url, username, resolvedDriverClass));
+        } catch (RuntimeException e) {
+            return "Error: Failed to add data source '" + name + "': " + e.getMessage();
+        }
 
         activateDatabaseToolWindow();
         return result;
@@ -141,8 +146,7 @@ public final class AddDataSourceTool extends DatabaseTool {
             + "  URL:    " + url + "\n"
             + "  Driver: " + driverClass + "\n"
             + (username != null ? "  User:   " + username + "\n" : "")
-            + "\nThe Database tool window has been opened. "
-            + "Right-click the data source and choose 'Connect' to enter credentials and connect.";
+            + "\nRight-click the data source in the Database tool window and choose 'Connect' to enter credentials.";
     }
 
     private @Nullable String detectDriverClass(@NotNull String url) {

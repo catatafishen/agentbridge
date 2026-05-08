@@ -1,5 +1,6 @@
 package com.github.catatafishen.agentbridge.psi.tools.database.proxy;
 
+import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import org.jetbrains.annotations.Nullable;
@@ -101,18 +102,8 @@ final class JetBrainsMcpProxy {
         }
     }
 
-    private static @Nullable ClassLoader findMcpClassLoader() throws ReflectiveOperationException {
-        Class<?> pluginManagerClass = Class.forName("com.intellij.ide.plugins.PluginManagerCore");
-        Class<?> pluginIdClass = Class.forName("com.intellij.openapi.extensions.PluginId");
-        Object pluginId = pluginIdClass.getDeclaredMethod("getId", String.class)
-            .invoke(null, MCPSERVER_PLUGIN_ID);
-        //noinspection JavaReflectionInvocation — PluginManagerCore.getPlugin(PluginId) exists on all supported versions
-        Object descriptor = pluginManagerClass.getDeclaredMethod("getPlugin", pluginIdClass)
-            .invoke(null, pluginId);
-        if (descriptor == null) {
-            return null; // mcpserver plugin not installed; caller treats null as "not available"
-        }
-        return (ClassLoader) descriptor.getClass().getMethod("getPluginClassLoader").invoke(descriptor);
+    private static @Nullable ClassLoader findMcpClassLoader() {
+        return PlatformApiCompat.getPluginClassLoader(MCPSERVER_PLUGIN_ID);
     }
 
     private static Map<String, Object> discoverTools(ClassLoader cl) throws ReflectiveOperationException {
