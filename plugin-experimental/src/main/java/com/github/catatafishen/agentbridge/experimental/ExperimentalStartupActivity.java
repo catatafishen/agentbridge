@@ -1,6 +1,7 @@
 package com.github.catatafishen.agentbridge.experimental;
 
 import com.github.catatafishen.agentbridge.experimental.psi.tools.database.AddDataSourceTool;
+import com.github.catatafishen.agentbridge.experimental.psi.tools.database.proxy.JetBrainsProxyTool;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.tools.quality.RunInspectionsTool;
@@ -10,31 +11,23 @@ import com.intellij.openapi.startup.ProjectActivity;
 import kotlin.Unit;
 import kotlin.coroutines.Continuation;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
-/**
- * Startup activity for the experimental plugin variant.
- * <p>
- * Registers tools that require {@code @ApiStatus.Internal} or impl-JAR APIs:
- * <ul>
- *   <li>{@code RunInspectionsTool} — uses internal inspection runner APIs</li>
- *   <li>{@code AddDataSourceTool} — uses {@code LocalDataSource} + {@code DataSourceManager}
- *       (both {@code @ApiStatus.Internal}) to create new data sources programmatically.
- *       JetBrains' native MCP server (AI Assistant plugin) covers query execution and schema
- *       inspection; {@code AddDataSourceTool} fills the one gap it does not: adding sources.</li>
- * </ul>
- */
 public final class ExperimentalStartupActivity implements ProjectActivity {
 
     private static final String DATABASE_PLUGIN_ID = "com.intellij.database";
+    private static final String MCPSERVER_PLUGIN_ID = "com.intellij.mcpServer";
 
-    @Nullable
+    @NotNull
     @Override
     public Object execute(@NotNull Project project, @NotNull Continuation<? super Unit> continuation) {
         MacroToolRegistrar.getInstance(project).syncRegistrations();
         PsiBridgeService.getInstance(project).registerTool(new RunInspectionsTool(project));
         if (PlatformApiCompat.isPluginInstalled(DATABASE_PLUGIN_ID)) {
             PsiBridgeService.getInstance(project).registerTool(new AddDataSourceTool(project));
+        }
+        if (PlatformApiCompat.isPluginInstalled(MCPSERVER_PLUGIN_ID)) {
+            JetBrainsProxyTool.createAll(project)
+                .forEach(t -> PsiBridgeService.getInstance(project).registerTool(t));
         }
         return Unit.INSTANCE;
     }
