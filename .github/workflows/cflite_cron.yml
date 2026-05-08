@@ -15,6 +15,7 @@ jobs:
   Pruning:
     name: ClusterFuzzLite Corpus Pruning
     runs-on: ubuntu-latest
+    environment: fuzzing
     permissions:
       contents: read
     steps:
