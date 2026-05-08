@@ -49,10 +49,36 @@ jobs:
 
           > This comment is posted automatically whenever ClusterFuzzLite is triggered on a fork PR."
 
+  # For fork PRs, this job acts as the explicit approval gate.
+  # It requires a maintainer to approve the 'ci' environment deployment before proceeding.
+  #
+  # IMPORTANT: The 'ci' environment MUST be configured with required reviewers in the
+  # repository settings (Settings → Environments → ci → Required reviewers). Without
+  # that setting, this job — and therefore the fuzzer — will run automatically for fork
+  # PRs with no approval, defeating the entire security model.
+  fork-approval-gate:
+    name: Maintainer approval gate (fork PR)
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    # The environment gate: requires a maintainer to click "Approve and deploy" before
+    # this job (and the dependent PR fuzzing job) can proceed.
+    # Requires 'ci' environment to have required reviewers configured — see comment above.
+    environment: ci
+    steps:
+      - name: Approval received
+        run: echo "Maintainer approved fuzzing fork PR ${{ github.event.pull_request.number }} from ${{ github.event.pull_request.head.repo.full_name }}@${{ github.event.pull_request.head.sha }}"
+
   PR:
     name: ClusterFuzzLite PR
+    # For fork PRs: wait for maintainer approval via fork-approval-gate.
+    # For same-repo PRs: fork-approval-gate is skipped (result == 'skipped'), run directly.
+    needs: [fork-approval-gate]
+    if: |
+      always() && (
+        needs.fork-approval-gate.result == 'success' ||
+        needs.fork-approval-gate.result == 'skipped'
+      )
     runs-on: ubuntu-latest
-    environment: ci
     concurrency:
       # Use PR number to isolate each PR's concurrency group. With pull_request_target,
       # github.ref is always the base branch (refs/heads/master), so using github.ref
@@ -74,9 +100,9 @@ jobs:
         with:
           egress-policy: audit
 
-      # Intentionally checks out fork code to fuzz it. The `environment: ci` gate above
-      # requires maintainer approval before this runs. The warn-fork-fuzz job posts a
-      # security review reminder on the PR so approvers know to review the code first.
+      # Intentionally checks out fork code to fuzz it. The fork-approval-gate job above
+      # requires maintainer approval before this runs for fork PRs. The warn-fork-fuzz
+      # job posts a security review reminder on the PR so approvers know to review first.
       #
       # Why this is an accepted risk rather than a fixable issue:
       #   Fuzzing by definition requires executing the code under test. Unlike SonarQube
@@ -85,14 +111,6 @@ jobs:
       #   requirement. The environment gate + explicit reviewer warning is therefore the
       #   strongest practical mitigation available.
       #
-      #   The environment gate is a stronger safeguard than a regular PR approval because:
-      #   (a) it is a distinct, less common action that specifically prompts the reviewer
-      #   to ask "why is this requiring separate approval?", and (b) the warn-fork-fuzz
-      #   job posts an explicit security checklist before the gate can be triggered.
-      #   A maintainer who rubber-stamps the environment gate without reading that warning
-      #   is no less careful than one who merges a PR without review — and such a reviewer
-      #   would represent a process failure, not a workflow design failure.
-      #
       #   CFLITE_STORAGE_REPO_TOKEN scope (fine-grained PAT):
       #     Repository:   catatafishen/agentbridge-cflite-storage (only)
       #     Permissions:  Read access to metadata
@@ -100,7 +118,7 @@ jobs:
       #   Even if a malicious fork PR exfiltrates this token, the blast radius is limited
       #   to the fuzz corpus storage repository — not the main codebase.
       #
-      # NOSONAR: S7631 — mitigated by environment gate + explicit reviewer warning
+      # NOSONAR: S7631 — mitigated by fork-approval-gate job + explicit reviewer warning
       # zizmor: ignore[pull-request-target]
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2 NOSONAR
         with:
