@@ -258,7 +258,10 @@ class ConversationReaderTest {
         assertTrue(entries.size() >= 2);
         EntryData.TurnStats loaded = null;
         for (EntryData e : entries) {
-            if (e instanceof EntryData.TurnStats ts) { loaded = ts; break; }
+            if (e instanceof EntryData.TurnStats ts) {
+                loaded = ts;
+                break;
+            }
         }
         assertNotNull(loaded);
         assertEquals("t1", loaded.getTurnId());

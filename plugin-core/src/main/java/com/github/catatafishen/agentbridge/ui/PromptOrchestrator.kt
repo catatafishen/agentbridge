@@ -616,6 +616,7 @@ class PromptOrchestrator(
 
     private fun handleStreamingToolCall(toolCall: SessionUpdate.ToolCall) {
         val title = toolCall.title()
+        val acpName = toolCall.acpName()
         val toolCallId = toolCall.toolCallId()
         val kind = toolCall.kind()?.value() ?: "other"
         val arguments = toolCall.arguments()
@@ -626,7 +627,7 @@ class PromptOrchestrator(
         // emit the summary text and suppress the chip update.
         if (title == taskCompleteTool) {
             log.info("task_complete detected (id=$toolCallId) — suppressing chip creation")
-            acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.TASK_COMPLETE)
+            acpRegisterToolCall(toolCallId, acpName, title, arguments, kind, ToolCallRecord.RoutingType.TASK_COMPLETE)
             return
         }
 
@@ -646,7 +647,7 @@ class PromptOrchestrator(
             val description =
                 toolCall.subAgentDescription()?.takeIf { it.isNotBlank() } ?: title.ifBlank { "Sub-agent task" }
             val record =
-                acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT)
+                acpRegisterToolCall(toolCallId, acpName, title, arguments, kind, ToolCallRecord.RoutingType.SUB_AGENT)
             consolePanel().addSubAgentEntry(record.recordId, agentType, description, toolCall.subAgentPrompt())
         } else if (activeSubAgentId != null) {
             turnToolCallCount++
@@ -654,6 +655,7 @@ class PromptOrchestrator(
             val parentRecord = ToolCallTracker.getInstance(project).findByAcpId(activeSubAgentId!!)
             val record = acpRegisterToolCall(
                 toolCallId,
+                acpName,
                 title,
                 arguments,
                 kind,
@@ -670,7 +672,7 @@ class PromptOrchestrator(
             turnToolCallCount++
             callbacks.onTimerIncrementToolCalls()
             val record =
-                acpRegisterToolCall(toolCallId, title, arguments, kind, ToolCallRecord.RoutingType.REGULAR)
+                acpRegisterToolCall(toolCallId, acpName, title, arguments, kind, ToolCallRecord.RoutingType.REGULAR)
             consolePanel().addToolCallEntry(record.recordId, title, arguments, kind, record.isCorrelated)
         }
 
@@ -684,7 +686,7 @@ class PromptOrchestrator(
     }
 
     private fun acpRegisterToolCall(
-        toolCallId: String, title: String, arguments: String?,
+        toolCallId: String, acpName: String?, title: String, arguments: String?,
         kind: String, routingType: ToolCallRecord.RoutingType
     ): ToolCallRecord {
         val argsObj = arguments?.let {
@@ -697,7 +699,7 @@ class PromptOrchestrator(
         // For Claude CLI, the ACP toolCallId IS the toolUseId that MCP sees in _meta.
         // Passing it enables Priority 0 correlation (exact ID match) in the tracker.
         return ToolCallTracker.getInstance(project).acpRegister(
-            toolCallId, title, argsObj, kind, routingType, toolCallId
+            toolCallId, acpName, title, argsObj, kind, routingType, toolCallId
         )
     }
 

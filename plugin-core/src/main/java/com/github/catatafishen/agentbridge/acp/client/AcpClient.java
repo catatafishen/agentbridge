@@ -165,6 +165,11 @@ public abstract class AcpClient extends AbstractAgentClient {
             }
 
             @Override
+            public @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
+                return AcpClient.this.resolveAcpName(rawTitle, kind);
+            }
+
+            @Override
             public @Nullable JsonObject parseToolCallArguments(@NotNull JsonObject p) {
                 return AcpClient.this.parseToolCallArguments(p);
             }
@@ -1072,6 +1077,17 @@ public abstract class AcpClient extends AbstractAgentClient {
      */
     protected String resolveToolId(String protocolTitle) {
         return protocolTitle;
+    }
+
+    /**
+     * Resolve a canonical tool name from the raw protocol title and kind.
+     * <p>
+     * For MCP-bridged tools, returns the stripped MCP name (e.g., "read_file").
+     * For native/built-in tools, returns the {@code kind} value (e.g., "read", "execute").
+     * Subclasses may override to recognize additional built-in tool names.
+     */
+    protected @Nullable String resolveAcpName(@NotNull String rawTitle, @Nullable String kind) {
+        return kind;
     }
 
     /**

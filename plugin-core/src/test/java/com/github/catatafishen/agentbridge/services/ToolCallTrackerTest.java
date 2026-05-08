@@ -48,7 +48,7 @@ class ToolCallTrackerTest {
     void acpRegister_createsNewRecord_withPendingState() {
         JsonObject a = argsReadFile("/src/Main.java");
         ToolCallRecord rec = tracker.acpRegister(
-            "acp-1", "read_file", a, "file",
+            "acp-1", null, "read_file", a, "file",
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertNotNull(rec);
@@ -64,7 +64,7 @@ class ToolCallTrackerTest {
     @Test
     void acpRegister_withoutArgs_createsRecord() {
         ToolCallRecord rec = tracker.acpRegister(
-            "acp-2", "some_tool", null, null,
+            "acp-2", null, "some_tool", null, null,
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertNotNull(rec);
@@ -76,7 +76,7 @@ class ToolCallTrackerTest {
     @Test
     void acpRegister_setsRoutingType() {
         ToolCallRecord rec = tracker.acpRegister(
-            "acp-sub", "Task", null, null,
+            "acp-sub", null, "Task", null, null,
             ToolCallRecord.RoutingType.SUB_AGENT, null);
 
         assertEquals(ToolCallRecord.RoutingType.SUB_AGENT, rec.getRoutingType());
@@ -105,7 +105,7 @@ class ToolCallTrackerTest {
         // ACP registers first with toolUseId
         JsonObject a = argsReadFile("/file1.txt");
         ToolCallRecord acpRec = tracker.acpRegister(
-            "acp-10", "read_file", a, "file",
+            "acp-10", null, "read_file", a, "file",
             ToolCallRecord.RoutingType.REGULAR, "tool-use-42");
 
         assertEquals(1, tracker.liveCount());
@@ -136,7 +136,7 @@ class ToolCallTrackerTest {
 
         // ACP registers with same toolUseId → should correlate
         tracker.acpRegister(
-            "acp-20", "edit_text", a, "file",
+            "acp-20", null, "edit_text", a, "file",
             ToolCallRecord.RoutingType.REGULAR, "tool-use-99");
 
         // The record should be the same mcpRec updated in-place
@@ -152,7 +152,7 @@ class ToolCallTrackerTest {
         // ACP registers first
         JsonObject a = argsReadFile("/project/build.gradle");
         ToolCallRecord acpRec = tracker.acpRegister(
-            "acp-30", "read_file", a, "file",
+            "acp-30", null, "read_file", a, "file",
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertEquals(1, tracker.liveCount());
@@ -181,7 +181,7 @@ class ToolCallTrackerTest {
         // ACP registers with same args → correlates
         JsonObject acpArgs = argsReadFile("/src/Test.java");
         ToolCallRecord acpRec = tracker.acpRegister(
-            "acp-40", "read_file", acpArgs, "file",
+            "acp-40", null, "read_file", acpArgs, "file",
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertSame(mcpRec, acpRec);
@@ -193,7 +193,7 @@ class ToolCallTrackerTest {
     void noCorrelation_whenArgsDiffer() {
         // ACP registers
         JsonObject a1 = argsReadFile("/file-a.txt");
-        tracker.acpRegister("acp-50", "read_file", a1, "file",
+        tracker.acpRegister("acp-50", null, "read_file", a1, "file",
             ToolCallRecord.RoutingType.REGULAR, null);
 
         // MCP registers with different args → no correlation
@@ -246,7 +246,7 @@ class ToolCallTrackerTest {
     void acpComplete_flushesRecord() {
         JsonObject a = argsReadFile("/src/Foo.java");
         ToolCallRecord rec = tracker.acpRegister(
-            "acp-60", "read_file", a, "file",
+            "acp-60", null, "read_file", a, "file",
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertEquals(1, tracker.liveCount());
@@ -269,7 +269,7 @@ class ToolCallTrackerTest {
     @Test
     void acpComplete_failure_setsFailedState() {
         JsonObject a = argsReadFile("/src/Bar.java");
-        tracker.acpRegister("acp-70", "read_file", a, "file",
+        tracker.acpRegister("acp-70", null, "read_file", a, "file",
             ToolCallRecord.RoutingType.REGULAR, null);
 
         tracker.acpComplete("acp-70", false);
@@ -288,7 +288,7 @@ class ToolCallTrackerTest {
     void acpProvideArgs_updatesHashAndCorrelates() {
         // ACP registers without args
         ToolCallRecord acpRec = tracker.acpRegister(
-            "acp-80", "run_command", null, null,
+            "acp-80", null, "run_command", null, null,
             ToolCallRecord.RoutingType.REGULAR, null);
         assertNull(acpRec.getArgsHash());
 
@@ -316,7 +316,7 @@ class ToolCallTrackerTest {
 
     @Test
     void acpProvideArgs_noMatchingMcp_justUpdatesHash() {
-        tracker.acpRegister("acp-81", "some_tool", null, null,
+        tracker.acpRegister("acp-81", null, "some_tool", null, null,
             ToolCallRecord.RoutingType.REGULAR, null);
 
         JsonObject a = args("key", "value");
@@ -357,7 +357,7 @@ class ToolCallTrackerTest {
         // ACP arrives matching record C → correlates, and flushes A and B (completed, uncorrelated, older)
         JsonObject acpArgs = args("cmd", "echo c");
         ToolCallRecord correlated = tracker.acpRegister(
-            "acp-90", "run_command", acpArgs, "shell",
+            "acp-90", null, "run_command", acpArgs, "shell",
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertSame(mcpC, correlated);
@@ -391,7 +391,7 @@ class ToolCallTrackerTest {
         assertEquals(3, tracker.liveCount());
 
         // ACP correlates with C
-        tracker.acpRegister("acp-100", "run_command", args("cmd", "target"), "shell",
+        tracker.acpRegister("acp-100", null, "run_command", args("cmd", "target"), "shell",
             ToolCallRecord.RoutingType.REGULAR, null);
 
         // A is still running → NOT flushed; B is completed → flushed
@@ -406,10 +406,10 @@ class ToolCallTrackerTest {
 
     @Test
     void clear_removesAllRecords() {
-        tracker.acpRegister("acp-a", "tool_a", argsReadFile("/a"), null,
+        tracker.acpRegister("acp-a", null, "tool_a", argsReadFile("/a"), null,
             ToolCallRecord.RoutingType.REGULAR, null);
         tracker.mcpRegister("tool_b", argsReadFile("/b"), null, null);
-        tracker.acpRegister("acp-c", "tool_c", argsReadFile("/c"), null,
+        tracker.acpRegister("acp-c", null, "tool_c", argsReadFile("/c"), null,
             ToolCallRecord.RoutingType.SUB_AGENT, null);
 
         assertEquals(3, tracker.liveCount());
@@ -426,7 +426,7 @@ class ToolCallTrackerTest {
     @Test
     void findByAcpId_returnsCorrectRecord() {
         JsonObject a = argsReadFile("/hello.txt");
-        ToolCallRecord rec = tracker.acpRegister("acp-q1", "read_file", a, null,
+        ToolCallRecord rec = tracker.acpRegister("acp-q1", null, "read_file", a, null,
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertSame(rec, tracker.findByAcpId("acp-q1"));
@@ -501,7 +501,7 @@ class ToolCallTrackerTest {
     @Test
     void acpRegister_setsDisplayNameToAcpTitle() {
         ToolCallRecord rec = tracker.acpRegister(
-            "acp-dn", "my_tool_title", argsReadFile("/t.txt"), null,
+            "acp-dn", null, "my_tool_title", argsReadFile("/t.txt"), null,
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertEquals("my_tool_title", rec.getDisplayName());
@@ -512,7 +512,7 @@ class ToolCallTrackerTest {
         // ACP first sets displayName from title
         JsonObject a = argsReadFile("/dn.txt");
         ToolCallRecord rec = tracker.acpRegister(
-            "acp-dn2", "acp_title", a, null,
+            "acp-dn2", null, "acp_title", a, null,
             ToolCallRecord.RoutingType.REGULAR, null);
         assertEquals("acp_title", rec.getDisplayName());
 
@@ -525,7 +525,7 @@ class ToolCallTrackerTest {
     void effectiveToolName_prefersMcp() {
         JsonObject a = argsReadFile("/eff.txt");
         ToolCallRecord rec = tracker.acpRegister(
-            "acp-eff", "acp_name", a, null,
+            "acp-eff", null, "acp_name", a, null,
             ToolCallRecord.RoutingType.REGULAR, null);
         assertEquals("acp_name", rec.getEffectiveToolName());
 
@@ -535,11 +535,11 @@ class ToolCallTrackerTest {
 
     @Test
     void acpSequence_incrementsWithEachAcpRegistration() {
-        ToolCallRecord r1 = tracker.acpRegister("a1", "t1", argsReadFile("/1"), null,
+        ToolCallRecord r1 = tracker.acpRegister("a1", null, "t1", argsReadFile("/1"), null,
             ToolCallRecord.RoutingType.REGULAR, null);
-        ToolCallRecord r2 = tracker.acpRegister("a2", "t2", argsReadFile("/2"), null,
+        ToolCallRecord r2 = tracker.acpRegister("a2", null, "t2", argsReadFile("/2"), null,
             ToolCallRecord.RoutingType.REGULAR, null);
-        ToolCallRecord r3 = tracker.acpRegister("a3", "t3", argsReadFile("/3"), null,
+        ToolCallRecord r3 = tracker.acpRegister("a3", null, "t3", argsReadFile("/3"), null,
             ToolCallRecord.RoutingType.REGULAR, null);
 
         assertEquals(1, r1.getAcpSequence());
@@ -551,7 +551,7 @@ class ToolCallTrackerTest {
     void liveCount_reflectsCurrentState() {
         assertEquals(0, tracker.liveCount());
 
-        tracker.acpRegister("a", "t", argsReadFile("/a"), null,
+        tracker.acpRegister("a", null, "t", argsReadFile("/a"), null,
             ToolCallRecord.RoutingType.REGULAR, null);
         assertEquals(1, tracker.liveCount());
 
@@ -577,7 +577,7 @@ class ToolCallTrackerTest {
     void acpProvideArgs_carriesOverMcpResult_whenMcpAlreadyCompleted() {
         // ACP without args
         ToolCallRecord acpRec = tracker.acpRegister(
-            "acp-late", "tool", null, null,
+            "acp-late", null, "tool", null, null,
             ToolCallRecord.RoutingType.REGULAR, null);
 
         // MCP registers and completes
@@ -600,7 +600,7 @@ class ToolCallTrackerTest {
     void correlation_viaToolUseId_matchesAcpClientIdAsFallback() {
         // ACP registers with acpClientId = "tool-use-fallback", no toolUseId
         JsonObject a = argsReadFile("/fallback.txt");
-        tracker.acpRegister("tool-use-fallback", "read_file", a, null,
+        tracker.acpRegister("tool-use-fallback", null, "read_file", a, null,
             ToolCallRecord.RoutingType.REGULAR, null);
 
         // MCP registers with toolUseId matching the acpClientId
@@ -615,7 +615,7 @@ class ToolCallTrackerTest {
     @Test
     void kind_setFromAcpRegister() {
         JsonObject a = argsReadFile("/k.txt");
-        ToolCallRecord rec = tracker.acpRegister("acp-k", "t", a, "git",
+        ToolCallRecord rec = tracker.acpRegister("acp-k", null, "t", a, "git",
             ToolCallRecord.RoutingType.REGULAR, null);
         assertEquals("git", rec.getKind());
     }
@@ -623,7 +623,7 @@ class ToolCallTrackerTest {
     @Test
     void kind_nullFromAcpRegister_doesNotOverwrite() {
         JsonObject a = argsReadFile("/k2.txt");
-        ToolCallRecord rec = tracker.acpRegister("acp-k2", "t", a, null,
+        ToolCallRecord rec = tracker.acpRegister("acp-k2", null, "t", a, null,
             ToolCallRecord.RoutingType.REGULAR, null);
         assertNull(rec.getKind());
     }
