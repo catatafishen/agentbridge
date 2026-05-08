@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.experimental;
 
 import com.github.catatafishen.agentbridge.experimental.psi.tools.database.AddDataSourceTool;
-import com.github.catatafishen.agentbridge.experimental.psi.tools.database.ExecuteQueryTool;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.tools.quality.RunInspectionsTool;
@@ -19,10 +18,10 @@ import org.jetbrains.annotations.Nullable;
  * Registers tools that require {@code @ApiStatus.Internal} or impl-JAR APIs:
  * <ul>
  *   <li>{@code RunInspectionsTool} — uses internal inspection runner APIs</li>
- *   <li>{@code ExecuteQueryTool} — overwrites the main plugin's SQLite-only version with
- *       a full version using {@code DatabaseConnectionManager} (supports all databases)</li>
  *   <li>{@code AddDataSourceTool} — uses {@code LocalDataSource} + {@code DataSourceManager}
- *       (both {@code @ApiStatus.Internal}) to create new data sources programmatically</li>
+ *       (both {@code @ApiStatus.Internal}) to create new data sources programmatically.
+ *       JetBrains' native MCP server (AI Assistant plugin) covers query execution and schema
+ *       inspection; {@code AddDataSourceTool} fills the one gap it does not: adding sources.</li>
  * </ul>
  */
 public final class ExperimentalStartupActivity implements ProjectActivity {
@@ -35,7 +34,6 @@ public final class ExperimentalStartupActivity implements ProjectActivity {
         MacroToolRegistrar.getInstance(project).syncRegistrations();
         PsiBridgeService.getInstance(project).registerTool(new RunInspectionsTool(project));
         if (PlatformApiCompat.isPluginInstalled(DATABASE_PLUGIN_ID)) {
-            PsiBridgeService.getInstance(project).registerTool(new ExecuteQueryTool(project));
             PsiBridgeService.getInstance(project).registerTool(new AddDataSourceTool(project));
         }
         return Unit.INSTANCE;
