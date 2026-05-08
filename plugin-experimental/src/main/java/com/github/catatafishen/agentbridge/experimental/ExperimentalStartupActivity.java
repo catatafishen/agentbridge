@@ -1,7 +1,6 @@
 package com.github.catatafishen.agentbridge.experimental;
 
 import com.github.catatafishen.agentbridge.experimental.psi.tools.database.AddDataSourceTool;
-import com.github.catatafishen.agentbridge.experimental.psi.tools.database.proxy.JetBrainsProxyTool;
 import com.github.catatafishen.agentbridge.psi.PlatformApiCompat;
 import com.github.catatafishen.agentbridge.psi.PsiBridgeService;
 import com.github.catatafishen.agentbridge.psi.tools.quality.RunInspectionsTool;
@@ -15,7 +14,6 @@ import org.jetbrains.annotations.NotNull;
 public final class ExperimentalStartupActivity implements ProjectActivity {
 
     private static final String DATABASE_PLUGIN_ID = "com.intellij.database";
-    private static final String MCPSERVER_PLUGIN_ID = "com.intellij.mcpServer";
 
     @NotNull
     @Override
@@ -24,10 +22,6 @@ public final class ExperimentalStartupActivity implements ProjectActivity {
         PsiBridgeService.getInstance(project).registerTool(new RunInspectionsTool(project));
         if (PlatformApiCompat.isPluginInstalled(DATABASE_PLUGIN_ID)) {
             PsiBridgeService.getInstance(project).registerTool(new AddDataSourceTool(project));
-        }
-        if (PlatformApiCompat.isPluginInstalled(MCPSERVER_PLUGIN_ID)) {
-            JetBrainsProxyTool.createAll(project)
-                .forEach(t -> PsiBridgeService.getInstance(project).registerTool(t));
         }
         return Unit.INSTANCE;
     }
