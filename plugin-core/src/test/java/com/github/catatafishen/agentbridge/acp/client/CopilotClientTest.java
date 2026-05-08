@@ -83,7 +83,7 @@ class CopilotClientTest {
         assertEquals("bash", result.get(0));
     }
 
-    // ── mcpAlternative (private static) ─────────────────────────────────
+    // ── mcpAlternative (protected instance — Copilot-specific override) ─────
 
     @Test
     void mcpAlternative_bash() throws Exception {
@@ -146,7 +146,7 @@ class CopilotClientTest {
     private static String invokeMcpAlternative(String builtInTool) throws Exception {
         Method m = CopilotClient.class.getDeclaredMethod("mcpAlternative", String.class);
         m.setAccessible(true);
-        return (String) m.invoke(null, builtInTool);
+        return (String) m.invoke(allocateClient(), builtInTool);
     }
 
     // ── resolveToolId (instance override — normalizes tool names) ──
@@ -295,7 +295,7 @@ class CopilotClientTest {
     private static String invokeBuildSingleToolReprimand(String toolId) throws Exception {
         Method m = CopilotClient.class.getDeclaredMethod("buildSingleToolReprimand", String.class);
         m.setAccessible(true);
-        return (String) m.invoke(null, toolId);
+        return (String) m.invoke(allocateClient(), toolId);
     }
 
     @Nested
