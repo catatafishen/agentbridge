@@ -150,6 +150,7 @@ export class ToolCallsView extends PollableView {
     private _renderItem(item: ToolCallData): string {
         const expanded = item.id === this._expandedId;
         const kindClass = this._kindCssClass(item.kind);
+        const status = item.status || 'running';
         const duration = item.durationMs >= 0 ? this._formatDuration(item.durationMs) : '';
 
         let detail = '';
@@ -157,8 +158,10 @@ export class ToolCallsView extends PollableView {
             detail = this._renderDetail(item);
         }
 
-        // Use turn-chip/tool/kind-* classes for consistent color scheme with chat panel chips.
-        return `<div class="tcv-item turn-chip tool ${kindClass}${expanded ? ' tcv-expanded' : ''}" data-id="${item.id}">
+        // Mirror chat panel chip classes exactly: turn-chip tool is-agentbridge-tool kind-* status-*
+        // so chip-ring CSS (spinning/filled/broken circle) renders identically in both panels.
+        return `<div class="tcv-item turn-chip tool is-agentbridge-tool ${kindClass} status-${status}${expanded ? ' tcv-expanded' : ''}" data-id="${item.id}">
+            <span class="chip-ring" aria-hidden="true"></span>
             <span class="tcv-title">${this.esc(item.title)}</span>
             ${duration ? `<span class="tcv-duration">${duration}</span>` : ''}
             ${detail}
@@ -168,21 +171,27 @@ export class ToolCallsView extends PollableView {
     private _renderDetail(item: ToolCallData): string {
         const activeHooks = this._activeHooks(item.hookStages ?? []);
         const resultText = item.result || (item.status === 'running' ? '(still running)' : '');
-
         const pipeline = activeHooks.length > 0 ? this._renderPipeline(item, activeHooks) : '';
-
         const stageDetail = this._selectedStage
             ? this._renderStageDetail(item, activeHooks, this._selectedStage)
             : '';
 
-        // Show ACP display name if it differs from the MCP tool name.
-        const acpRow = item.title === item.toolName
+        // ── Metadata row (always shown at top of expanded chip) ──────────────
+        // Show the ACP display name when it differs from the MCP tool name.
+        const nameRow = item.title === item.toolName
             ? ''
-            : `<div class="tcv-acp-name">${this.esc(item.title)}</div>`;
+            : `<span class="tcv-meta-item"><strong>${this.esc(item.title)}</strong></span>`;
+        const toolRow = `<span class="tcv-meta-item">MCP: ${this.esc(item.toolName)}</span>`;
+        const statusRow = `<span class="tcv-meta-item tcv-meta-status">${this.esc(item.status)}</span>`;
+        const durationRow = item.durationMs >= 0
+            ? `<span class="tcv-meta-item">${this._formatDuration(item.durationMs)}</span>`
+            : '';
+        const ts = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
+        const tsRow = ts ? `<span class="tcv-meta-item tcv-meta-ts">${this.esc(ts)}</span>` : '';
+        const metaSection = `<div class="tcv-meta-row">${nameRow}${toolRow}${statusRow}${durationRow}${tsRow}</div>`;
 
         // Default I/O view (shown when no pipeline stage is selected)
         const ioView = this._selectedStage ? '' : `
-            ${acpRow}
             <div class="tcv-io">
                 <div class="tcv-io-section">
                     <div class="tcv-label">Input</div>
@@ -195,6 +204,7 @@ export class ToolCallsView extends PollableView {
             </div>`;
 
         return `<div class="tcv-detail">
+            ${metaSection}
             ${pipeline}
             ${stageDetail}
             ${ioView}
@@ -279,33 +289,28 @@ export class ToolCallsView extends PollableView {
     }
 
     private _renderStageDetail(item: ToolCallData, activeHooks: HookStage[], stage: string): string {
+        // Render stage content directly in tcv-detail without an extra wrapper box —
+        // the pre/code block already has its own visual container, so double-boxing is redundant.
         if (stage === 'input') {
-            return `<div class="tcv-stage-detail">
-                <div class="tcv-label">Input Arguments</div>
-                ${this._renderContent(item.arguments || '')}
-            </div>`;
+            return `<div class="tcv-label">Input Arguments</div>
+                ${this._renderContent(item.arguments || '')}`;
         }
         if (stage === 'output') {
             const resultText = item.result || (item.status === 'running' ? '(still running)' : '');
-            return `<div class="tcv-stage-detail">
-                <div class="tcv-label">Final Output</div>
-                ${this._renderContent(resultText)}
-            </div>`;
+            return `<div class="tcv-label">Output</div>
+                ${this._renderContent(resultText)}`;
         }
         if (stage === 'execution') {
-            const acpRow = item.title === item.toolName
-                ? ''
-                : `<div class="tcv-stage-meta"><span>ACP Display: <strong>${this.esc(item.title)}</strong></span></div>`;
-            return `<div class="tcv-stage-detail">
-                <div class="tcv-label">Tool Execution: ${this.esc(item.toolName)}</div>
-                ${acpRow}
-                ${item.durationMs > 0 ? `<div class="tcv-stage-meta">Duration: ${this._formatDuration(item.durationMs)}</div>` : ''}
-                <div class="tcv-label">Raw Output</div>
-                ${this._renderContent(item.result || '(still running)')}
-            </div>`;
+            const meta = item.durationMs > 0
+                ? `<div class="tcv-stage-meta"><span>Duration: ${this._formatDuration(item.durationMs)}</span></div>`
+                : '';
+            return `<div class="tcv-label">Tool: ${this.esc(item.toolName)}</div>
+                ${meta}
+                <div class="tcv-label">Output</div>
+                ${this._renderContent(item.result || '(still running)')}`;
         }
 
-        // Hook stages
+        // Hook stages — keep the tcv-stage-detail wrapper to visually separate them.
         const triggerMap: Record<string, string> = {
             permission: 'permission',
             pre: 'pre',

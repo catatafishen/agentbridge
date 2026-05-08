@@ -1393,20 +1393,34 @@ file-nav {
     margin-top: var(--sp-4, 8px);
 }
 
+/* ── Metadata summary row shown at the top of every expanded chip ── */
+
+.tcv-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin-bottom: var(--sp-4, 8px);
+    font-size: 0.8em;
+}
+
+.tcv-meta-item {
+    color: var(--muted);
+}
+
+.tcv-meta-item strong {
+    color: var(--fg, #c9d1d9);
+}
+
+.tcv-meta-ts {
+    opacity: 0.6;
+}
+
 .tcv-label {
     color: var(--muted);
     font-size: 0.78em;
     font-weight: 700;
     margin: var(--sp-4, 8px) 0 var(--sp-2, 4px);
     text-transform: uppercase;
-}
-
-.tcv-acp-name {
-    font-size: var(--font-size, 11pt);
-    color: var(--fg, #c9d1d9);
-    margin-bottom: var(--sp-2, 4px);
-    font-style: italic;
-    opacity: 0.7;
 }
 
 .tcv-detail pre {
