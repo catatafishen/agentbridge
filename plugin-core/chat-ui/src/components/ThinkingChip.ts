@@ -40,7 +40,12 @@ export default class ThinkingChip extends HTMLElement {
 
     attributeChangedCallback(name: string): void {
         if (!this._init) return;
-        if (name === 'status') this._render();
+        if (name === 'status') {
+            // CSS-only toggle — avoids innerHTML replacement and the childList DOM mutation
+            // that would trigger ChatContainer's MutationObserver → spurious scroll deferral.
+            const status = this.getAttribute('status') || 'complete';
+            this.classList.toggle('thinking-active', status === 'running' || status === 'thinking');
+        }
     }
 
     private _resolveLink(): void {

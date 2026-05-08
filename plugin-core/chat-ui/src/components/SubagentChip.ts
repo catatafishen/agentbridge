@@ -74,6 +74,15 @@ export default class SubagentChip extends HTMLElement {
 
     attributeChangedCallback(name: string): void {
         if (!this._init) return;
-        if (name === 'status' || name === 'label') this._render();
+        if (name === 'status') {
+            // CSS-only update — avoids childList DOM mutations → MutationObserver → scroll deferral.
+            const rawStatus = this.getAttribute('status') || 'running';
+            const status = rawStatus.replaceAll(/\s+/g, '-');
+            this.className = this.className.replaceAll(/\bstatus-\S+/g, '').trim();
+            this.classList.add(`status-${status}`);
+            this.classList.toggle('failed', status === 'failed');
+        } else if (name === 'label') {
+            this._render();
+        }
     }
 }

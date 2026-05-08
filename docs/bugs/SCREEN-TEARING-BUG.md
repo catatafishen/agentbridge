@@ -1,9 +1,10 @@
 # Screen Tearing Bug — JCEF OSR
 
-**Status**: Fix 8 applied — defer autoscroll by one rAF after DOM mutations to deny Chromium's compositor
-tile-translation cache reuse
+**Status**: Fix 12 applied — chip status changes use CSS-class-only updates instead of innerHTML replacement to
+eliminate spurious MutationObserver triggers during streaming
 **Scope**: JCEF Off-Screen Rendering (OSR) mode in the chat panel  
-**Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`, `chat.css`
+**Affected area**: `ChatConsolePanel.kt`, `ChatContainer.ts`, `ChatController.ts`, `MessageBubble.ts`, `chat.css`,
+`ToolChip.ts`, `ThinkingChip.ts`, `SubagentChip.ts`
 
 ---
 
@@ -547,6 +548,36 @@ in the same paint frame.
 
 ---
 
+### Fix 12 — CSS-only chip status updates to eliminate spurious MutationObserver triggers (2025)
+
+**Root cause**: After the chip redesign that introduced `chip-ring` (a persistent `<span>` in all
+chip states), `ToolChip._render()`, `SubagentChip._render()`, and `ThinkingChip._render()` continued
+to be called from `attributeChangedCallback` on every status/kind change. Each call replaced
+`this.innerHTML`, generating two childList DOM mutations (child removal + child insertion). With
+`ChatContainer`'s MutationObserver watching `childList: true, subtree: true`, every chip status
+transition triggered `_scheduleDeferredScroll()` — producing spurious scroll deferral calls during
+streaming that collide with concurrent `MessageBubble` rAF-renders.
+
+The chip redesign's intent (documented in the CSS comment: "no DOM replacement") was correct —
+the `chip-ring` span is always present and the `animation: spin` is paused by CSS class rules. Only
+`className` changes are needed on status transitions. The implementation diverged from the intent.
+
+**Fix**:
+
+- **`ToolChip.ts`**: Split `_render()` into `_renderAll()` (sets innerHTML, called ONLY from
+  `connectedCallback`) and `_applyClasses()` (updates `className`/`classList` only, called from
+  `attributeChangedCallback` for `status`/`kind` changes). Label changes update `lastChild.textContent`
+  (a `characterData` mutation, less disruptive than `childList`).
+
+- **`ThinkingChip.ts`**: `attributeChangedCallback` now calls `classList.toggle('thinking-active', ...)`
+  directly — no `_render()` call, no `innerHTML` write.
+
+- **`SubagentChip.ts`**: `attributeChangedCallback` for `status` changes updates `className`/`classList`
+  directly. `label` changes still call `_render()` because label content genuinely changes (and label
+  updates are rare compared to status transitions).
+
+---
+
 ## Code Locations
 
 | File                       | Component                        | Purpose                                                                                              |
@@ -578,6 +609,9 @@ in the same paint frame.
 | `MessageMeta.ts`           | `scheduleNavUpdate()`            | Two-rAF deferred nav update — separates nav button layout change from container scroll (Fix 11b)     |
 | `ChatContainer.ts`         | `_flushScrollOrRetry()`          | Retries the scroll when `renderPending` is true; caps at `MAX_SCROLL_RETRIES` (Fix 11a)              |
 | `MonitorSwitchRecovery.kt` | `triggerRecovery()`              | Refreshes OSR and asks the chat panel to replay DOM state after monitor changes                      |
+| `ToolChip.ts`              | `_applyClasses()`                | CSS-only status/kind update — no innerHTML, no childList DOM mutations (Fix 12)                      |
+| `ThinkingChip.ts`          | `attributeChangedCallback()`     | CSS-only thinking-active toggle — no innerHTML on status change (Fix 12)                             |
+| `SubagentChip.ts`          | `attributeChangedCallback()`     | CSS-only status update; `_render()` only for label changes (Fix 12)                                  |
 
 ---
 
@@ -651,4 +685,19 @@ When modifying the streaming pipeline, watch for:
     the scrolled content) and the `scrollTop` write in the same frame cause dirty-rect collapse.
     **Do not reduce `scheduleNavUpdate()` back to a single rAF** without re-testing chip strip
     overflow during streaming on both Linux and Windows.
+
+14. **`innerHTML` replacement on chip status changes** (Fix 12) — `ToolChip`, `ThinkingChip`, and
+    `SubagentChip` MUST NOT call `this.innerHTML = ...` from `attributeChangedCallback` for status or
+    kind changes. `innerHTML` replacement removes existing child nodes (childList mutation: removal)
+    and inserts new ones (childList mutation: insertion), firing `ChatContainer`'s MutationObserver
+    twice per status transition — triggering spurious `_scheduleDeferredScroll()` calls during
+    streaming. These collide with concurrent `MessageBubble` rAF-renders in exactly the way Fix 11
+    was designed to handle, but Fix 11's retry only applies to `MessageBubble.renderPending`; it does
+    not protect against chip-mutation-triggered scrolls.
+    **Status/kind changes MUST only update `this.className` / `classList`** — attribute changes on
+    elements are NOT observed by `ChatContainer`'s MutationObserver (`attributes: false`), so no
+    scroll deferral fires. See `ToolChip._applyClasses()`.
+    The chip-ring `<span>` is already in the DOM from `connectedCallback` (initial render); the CSS
+    `animation: spin` is paused by `.status-complete .chip-ring { animation: none }` — no DOM node
+    replacement is needed on status transitions.
 
