@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.experimental.psi.tools.database.proxy;
+package com.github.catatafishen.agentbridge.psi.tools.database.proxy;
 
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
@@ -147,7 +147,7 @@ final class JetBrainsMcpProxy {
             "runBlocking", coroutineContextClass, function2Class);
 
         Object result = runBlocking.invoke(null, coroutineContext,
-            new McpToolCallable(callMethod, tool, argsJsonObject));
+            new com.github.catatafishen.agentbridge.psi.tools.database.proxy.McpToolCallable(callMethod, tool, argsJsonObject));
         return extractResultText(cl, result);
     }
 

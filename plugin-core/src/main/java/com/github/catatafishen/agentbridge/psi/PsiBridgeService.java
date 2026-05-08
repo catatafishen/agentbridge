@@ -202,6 +202,11 @@ public final class PsiBridgeService implements Disposable {
 
         allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.memory.MemoryToolFactory.create(project));
 
+        // JetBrains' built-in database MCP tools, proxied in-process.
+        // Requires com.intellij.mcpServer (IJ 2026.1+) + AI Assistant plugin.
+        // Degrades gracefully to an empty list when absent.
+        allTools.addAll(com.github.catatafishen.agentbridge.psi.tools.database.proxy.JetBrainsProxyTool.createAll(project));
+
         // Rider's C#/C++ PSI lives in the ReSharper backend, not the IntelliJ frontend.
         // Symbol-based tools depend on detailed PSI that Rider doesn't provide, and testing
         // tools are JUnit-specific. Disable them to avoid confusing agents with broken tools.

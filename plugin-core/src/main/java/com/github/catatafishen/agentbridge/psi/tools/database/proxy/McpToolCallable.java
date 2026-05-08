@@ -1,4 +1,4 @@
-package com.github.catatafishen.agentbridge.experimental.psi.tools.database.proxy;
+package com.github.catatafishen.agentbridge.psi.tools.database.proxy;
 
 import java.lang.reflect.Method;
 
