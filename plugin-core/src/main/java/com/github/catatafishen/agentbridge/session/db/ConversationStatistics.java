@@ -105,9 +105,9 @@ public final class ConversationStatistics {
         """;
 
     private static final String SQL_BRANCH_TOTALS = """
-        SELECT t.git_branch_at_start                          AS branch,
-               MIN(date(t.started_at))                        AS first_detected,
-               COUNT(*)                                        AS turns,
+        SELECT COALESCE(t.git_branch_at_start, t.git_branch_at_end) AS branch,
+               MIN(date(t.started_at))                              AS first_detected,
+               COUNT(*)                                             AS turns,
                COALESCE(SUM(t.input_tokens),    0)            AS input_tokens,
                COALESCE(SUM(t.output_tokens),   0)            AS output_tokens,
                COALESCE(SUM(t.tool_call_count), 0)            AS tool_calls,
@@ -116,16 +116,16 @@ public final class ConversationStatistics {
                COALESCE(SUM(t.lines_removed),   0)            AS lines_removed,
                COALESCE(SUM(COALESCE(t.token_multiplier, 1.0)), 0) AS premium_requests
         FROM turns t
-        WHERE t.git_branch_at_start IS NOT NULL
+        WHERE COALESCE(t.git_branch_at_start, t.git_branch_at_end) IS NOT NULL
           AND (? IS NULL OR date(t.started_at) >= ?)
           AND (? IS NULL OR date(t.started_at) <= ?)
-        GROUP BY t.git_branch_at_start
+        GROUP BY COALESCE(t.git_branch_at_start, t.git_branch_at_end)
         ORDER BY turns DESC
         """;
 
     private static final String SQL_COUNT_UNATTRIBUTED = """
         SELECT COUNT(*) FROM turns
-        WHERE git_branch_at_start IS NULL
+        WHERE COALESCE(git_branch_at_start, git_branch_at_end) IS NULL
           AND (? IS NULL OR date(started_at) >= ?)
           AND (? IS NULL OR date(started_at) <= ?)
         """;

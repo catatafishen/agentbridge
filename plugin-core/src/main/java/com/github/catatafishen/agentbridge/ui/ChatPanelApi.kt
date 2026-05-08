@@ -8,7 +8,8 @@ data class TurnStatsData(
     val durationMs: Long, val inputTokens: Int, val outputTokens: Int, val costUsd: Double,
     val toolCallCount: Int, val linesAdded: Int, val linesRemoved: Int,
     val model: String, val multiplier: String, val commitHashes: List<String> = emptyList(),
-    val gitBranchAtStart: String? = null
+    val gitBranchAtStart: String? = null,
+    val gitBranchAtEnd: String? = null
 )
 
 /**

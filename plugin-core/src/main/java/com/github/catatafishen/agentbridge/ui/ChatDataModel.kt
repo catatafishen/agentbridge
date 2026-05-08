@@ -163,6 +163,8 @@ sealed class EntryData {
         val commitHashes: List<String> = emptyList(),
         /** Git branch active when the prompt was submitted. Null when git is unavailable. */
         val gitBranchAtStart: String? = null,
+        /** Git branch at turn end (fallback when at_start is missing). Null when git is unavailable. */
+        val gitBranchAtEnd: String? = null,
     ) : EntryData()
 
     data class ContextFiles @JvmOverloads constructor(
