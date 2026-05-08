@@ -1751,6 +1751,65 @@ class ChatToolWindowContent(
             return group
         }
 
+        override fun createActionPopup(context: DataContext, component: JComponent, disposeCallback: Runnable?): com.intellij.openapi.ui.popup.JBPopup {
+            if (agentManager.client.supportsModelGrouping()) {
+                return createGroupedPopup(disposeCallback)
+            }
+            return super.createActionPopup(context, component, disposeCallback)
+        }
+
+        private fun createGroupedPopup(disposeCallback: Runnable?): com.intellij.openapi.ui.popup.JBPopup {
+            val models = loadedModels.toList()
+            if (models.isEmpty()) {
+                return com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createComponentPopupBuilder(
+                    JBLabel("No models available"), null
+                ).createPopup()
+            }
+
+            val favorites = com.github.catatafishen.agentbridge.ui.util.ModelFavorites.getInstance(project)
+            val grouper = com.github.catatafishen.agentbridge.ui.util.ModelGrouper(favorites.toSet())
+            val groups = grouper.group(models)
+
+            val picker = ModelPickerPopup(groups)
+            picker.onModelSelected = { index ->
+                if (index != selectedModelIndex && index in loadedModels.indices) {
+                    val model = loadedModels[index]
+                    selectedModelIndex = index
+                    agentManager.settings.setSelectedModel(model.id())
+                    LOG.debug("Model selected: ${model.id()} (index=$index)")
+                    ApplicationManager.getApplication().invokeLater {
+                        consolePanel.setCurrentModel(model.id())
+                    }
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        try {
+                            val client = agentManager.client
+                            val sessionId = promptOrchestrator.currentSessionId
+                            if (sessionId != null) {
+                                client.setModel(sessionId, model.id())
+                                LOG.debug("Model switched to ${model.id()} on session $sessionId")
+                            } else {
+                                LOG.debug("No active session; model ${model.id()} will be used on next session")
+                            }
+                        } catch (ex: Exception) {
+                            LOG.warn("Failed to set model ${model.id()} via session/set_model", ex)
+                        }
+                    }
+                }
+            }
+            picker.onFavoriteToggled = { modelId ->
+                favorites.toggle(modelId)
+            }
+            val popup = picker.createPopup()
+            if (disposeCallback != null) {
+                popup.addListener(object : com.intellij.openapi.ui.popup.JBPopupListener {
+                    override fun onClosed(event: com.intellij.openapi.ui.popup.LightweightWindowEvent) {
+                        disposeCallback.run()
+                    }
+                })
+            }
+            return popup
+        }
+
         override fun update(e: AnActionEvent) {
             e.presentation.text = currentModelSelectorText()
             e.presentation.isEnabled = modelsStatusText == null && loadedModels.isNotEmpty()

@@ -66,6 +66,11 @@ public final class OpenCodeClient extends AcpClient {
     }
 
     @Override
+    public boolean supportsModelGrouping() {
+        return true;
+    }
+
+    @Override
     public List<AbstractAgentClient.AgentMode> getAvailableAgents() {
         List<AbstractAgentClient.AgentMode> agents = new ArrayList<>(builtInAgents());
         String basePath = project.getBasePath();

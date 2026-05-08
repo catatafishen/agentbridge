@@ -282,6 +282,15 @@ public abstract class AbstractAgentClient {
         return false;
     }
 
+    /**
+     * Whether this agent's model data can be grouped by provider in the model picker.
+     * When {@code true}, the UI renders models in collapsible provider sections
+     * with a favorites feature.
+     */
+    public boolean supportsModelGrouping() {
+        return false;
+    }
+
     // ─── Session Options ─────────────────────────────
 
     /**
