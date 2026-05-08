@@ -1,12 +1,10 @@
 package com.github.catatafishen.agentbridge.acp.client;
 
 import com.github.catatafishen.agentbridge.acp.model.Model;
-import com.github.catatafishen.agentbridge.acp.model.PromptRequest;
 import com.github.catatafishen.agentbridge.acp.model.PromptResponse;
 import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
-import com.github.catatafishen.agentbridge.services.AgentNudgeService;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.google.gson.JsonArray;
@@ -543,55 +541,13 @@ public final class CopilotClient extends AcpClient {
         return result;
     }
 
-    // ─── Built-in tool reprimand (Copilot-specific workaround for bug #556) ───
-
     @Override
-    protected void onBuiltInToolApproved(String toolId, boolean userApproved) {
-        if (!userApproved && shouldReprimand(toolId)) {
-            boolean isFirst = misusedBuiltInTools.isEmpty();
-            misusedBuiltInTools.add(toolId);
-            String notice = buildSingleToolReprimand(toolId);
-            AgentNudgeService nudgeService = AgentNudgeService.getInstance(project);
-            // Register the clear callback only once per batch so it doesn't fire multiple times.
-            if (isFirst) nudgeService.addOnNudgeConsumed(misusedBuiltInTools::clear);
-            nudgeService.fireNudge(notice);
-        }
-    }
-
-    @Override
-    protected PromptRequest beforeSendPrompt(PromptRequest request) {
-        // Clear nudge state at turn start so mid-turn reprimands from the previous
-        // turn don't leak into the new prompt if they were never consumed.
-        misusedBuiltInTools.clear();
-        AgentNudgeService.getInstance(project).setPendingNudge(null);
-        return request;
-    }
-
-    private static String buildSingleToolReprimand(String toolId) {
-        boolean isBashWithDescription = toolId.contains(" ");
-        String label = isBashWithDescription ? "\"" + toolId + "\"" : toolId;
-        String alternative = mcpAlternative(toolId);
-        return "[System notice] Use " + alternative + " — not the built-in " + label
-            + ". All agentbridge-* MCP tools are available.";
-    }
-
-    /**
-     * Returns false for built-in tools that don't have a meaningful MCP alternative
-     * (e.g. {@code report_intent}, {@code skill}, {@code sql}) to avoid misleading reprimands.
-     */
-    private static boolean shouldReprimand(String toolId) {
-        return switch (toolId) {
-            case "report_intent", "skill", "sql", "web_fetch", "web_search" -> false;
-            default -> true;
-        };
-    }
-
-    private static String mcpAlternative(String toolId) {
+    protected String mcpAlternative(String toolId) {
         // Copilot CLI sends the bash `description` as the protocol title; descriptions contain spaces.
         if (toolId.contains(" ")) {
             return bashDescriptionAlternative(toolId.toLowerCase());
         }
-        return AcpClient.mcpAlternative(toolId);
+        return super.mcpAlternative(toolId);
     }
 
     /**
