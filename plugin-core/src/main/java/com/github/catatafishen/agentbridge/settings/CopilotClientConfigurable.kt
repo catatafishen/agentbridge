@@ -15,6 +15,7 @@ import com.intellij.ui.components.JBTabbedPane
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.MAX_LINE_LENGTH_WORD_WRAP
 import com.intellij.ui.dsl.builder.bindItem
+import com.intellij.ui.dsl.builder.bindSelected
 import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.UIUtil
@@ -61,6 +62,23 @@ class CopilotClientConfigurable(@Suppress("UNUSED_PARAMETER") project: Project) 
             val link = HyperlinkLabel("Install from github.com/github/copilot-cli")
             link.setHyperlinkTarget("https://github.com/github/copilot-cli#installation")
             cell(link)
+        }
+        separator()
+        row {
+            checkBox("Hide system PATH from agent")
+                .comment(
+                    "Strips non-essential entries from the process PATH so the agent CLI " +
+                        "cannot detect tools like git, gh, or curl. This encourages the agent " +
+                        "to use AgentBridge MCP tools instead, which preserves IDE buffer sync, " +
+                        "enables follow-agent visibility, and routes API calls through the " +
+                        "plugin's identity hooks."
+                )
+                .bindSelected(
+                    { AgentProfileManager.getInstance().getProfile(AGENT_ID)?.isStripNonEssentialPath ?: true },
+                    { value ->
+                        AgentProfileManager.getInstance().getProfile(AGENT_ID)?.isStripNonEssentialPath = value
+                    }
+                )
         }
         separator()
         row("Copilot binary:") {

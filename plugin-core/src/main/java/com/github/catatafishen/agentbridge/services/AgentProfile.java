@@ -93,6 +93,7 @@ public final class AgentProfile {
 
     private boolean usePluginPermissions = true;
     private boolean excludeAgentBuiltInTools;
+    private boolean stripNonEssentialPath;
     private PermissionInjectionMethod permissionInjectionMethod = PermissionInjectionMethod.NONE;
 
     /**
@@ -168,6 +169,7 @@ public final class AgentProfile {
         copy.agentsDirectory = agentsDirectory;
         copy.usePluginPermissions = usePluginPermissions;
         copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
+        copy.stripNonEssentialPath = stripNonEssentialPath;
         copy.permissionInjectionMethod = permissionInjectionMethod;
         copy.supportsSessionMessage = supportsSessionMessage;
         copy.prependInstructionsTo = prependInstructionsTo;
@@ -202,6 +204,7 @@ public final class AgentProfile {
         copy.agentsDirectory = agentsDirectory;
         copy.usePluginPermissions = usePluginPermissions;
         copy.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
+        copy.stripNonEssentialPath = stripNonEssentialPath;
         copy.permissionInjectionMethod = permissionInjectionMethod;
         copy.supportsSessionMessage = supportsSessionMessage;
         copy.prependInstructionsTo = prependInstructionsTo;
@@ -236,6 +239,7 @@ public final class AgentProfile {
         this.agentsDirectory = other.agentsDirectory;
         this.usePluginPermissions = other.usePluginPermissions;
         this.excludeAgentBuiltInTools = other.excludeAgentBuiltInTools;
+        this.stripNonEssentialPath = other.stripNonEssentialPath;
         this.permissionInjectionMethod = other.permissionInjectionMethod;
         this.supportsSessionMessage = other.supportsSessionMessage;
         this.prependInstructionsTo = other.prependInstructionsTo;
@@ -443,6 +447,14 @@ public final class AgentProfile {
 
     public void setExcludeAgentBuiltInTools(boolean excludeAgentBuiltInTools) {
         this.excludeAgentBuiltInTools = excludeAgentBuiltInTools;
+    }
+
+    public boolean isStripNonEssentialPath() {
+        return stripNonEssentialPath;
+    }
+
+    public void setStripNonEssentialPath(boolean stripNonEssentialPath) {
+        this.stripNonEssentialPath = stripNonEssentialPath;
     }
 
     @NotNull
