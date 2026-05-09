@@ -25,6 +25,8 @@ export type ToolCallData = {
     status: string;
     timestamp: string;
     arguments: string;
+    /** Pre-hook arguments JSON; present only when a pre-hook modified the tool input. */
+    originalArguments?: string;
     result: string;
     durationMs: number;
     hasHooks: boolean;

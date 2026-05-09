@@ -13,23 +13,25 @@ import java.util.concurrent.atomic.AtomicLong;
  * Captures both input and output for inspection, unlike {@link ToolCallRecord}
  * which only stores sizing and duration for statistics.
  *
- * @param callId      unique monotonic ID for reliable completion matching (not affected by list eviction)
- * @param toolName    canonical MCP tool id (e.g. "read_file")
- * @param displayName human-readable tool name (e.g. "Read File"); falls back to toolName if unavailable
- * @param input       raw JSON arguments as a string (pretty-printed for readability)
- * @param output      raw response text (may be truncated at 8K for memory)
- * @param timestamp   when the call started
- * @param durationMs  wall-clock execution time; -1 while still running
- * @param success     true if completed without error; null while running
- * @param category    legacy field carrying the tool kind wire value (e.g. "read", "edit")
- * @param hasHooks    whether this tool call has active hook configuration
- * @param hookStages  ordered list of hook stage results captured during execution (empty if no hooks fired)
+ * @param callId        unique monotonic ID for reliable completion matching (not affected by list eviction)
+ * @param toolName      canonical MCP tool id (e.g. "read_file")
+ * @param displayName   human-readable tool name (e.g. "Read File"); falls back to toolName if unavailable
+ * @param input         raw JSON arguments as received by the tool (after pre-hook modifications)
+ * @param originalInput pre-hook JSON arguments; non-null only when a pre-hook modified the arguments
+ * @param output        raw response text (may be truncated at 8K for memory)
+ * @param timestamp     when the call started
+ * @param durationMs    wall-clock execution time; -1 while still running
+ * @param success       true if completed without error; null while running
+ * @param category      legacy field carrying the tool kind wire value (e.g. "read", "edit")
+ * @param hasHooks      whether this tool call has active hook configuration
+ * @param hookStages    ordered list of hook stage results captured during execution (empty if no hooks fired)
  */
 public record LiveToolCallEntry(
     long callId,
     @NotNull String toolName,
     @NotNull String displayName,
     @NotNull String input,
+    @Nullable String originalInput,
     @NotNull String output,
     @NotNull Instant timestamp,
     long durationMs,
@@ -47,11 +49,12 @@ public record LiveToolCallEntry(
     public static LiveToolCallEntry started(@NotNull String toolName,
                                             @NotNull String displayName,
                                             @NotNull String input,
+                                            @Nullable String originalInput,
                                             @Nullable String category,
                                             boolean hasHooks) {
         return new LiveToolCallEntry(
             ID_SEQ.incrementAndGet(), toolName, displayName,
-            truncate(input), "", Instant.now(), -1, null, category, hasHooks,
+            truncate(input), truncateNullable(originalInput), "", Instant.now(), -1, null, category, hasHooks,
             List.of());
     }
 
@@ -60,7 +63,7 @@ public record LiveToolCallEntry(
      */
     public LiveToolCallEntry completed(@NotNull String output, long durationMs, boolean success) {
         return new LiveToolCallEntry(
-            callId, toolName, displayName, input, truncate(output),
+            callId, toolName, displayName, input, originalInput, truncate(output),
             timestamp, durationMs, success, category, hasHooks, hookStages);
     }
 
@@ -69,7 +72,7 @@ public record LiveToolCallEntry(
      */
     public LiveToolCallEntry withHookStages(@NotNull List<HookStageResult> stages) {
         return new LiveToolCallEntry(
-            callId, toolName, displayName, input, output,
+            callId, toolName, displayName, input, originalInput, output,
             timestamp, durationMs, success, category, hasHooks, List.copyOf(stages));
     }
 
@@ -79,7 +82,7 @@ public record LiveToolCallEntry(
      */
     public LiveToolCallEntry withDisplayName(@NotNull String newDisplayName) {
         return new LiveToolCallEntry(
-            callId, toolName, newDisplayName, input, output,
+            callId, toolName, newDisplayName, input, originalInput, output,
             timestamp, durationMs, success, category, hasHooks, hookStages);
     }
 
@@ -90,8 +93,13 @@ public record LiveToolCallEntry(
         return success == null;
     }
 
-    private static String truncate(String s) {
-        if (s == null || s.length() <= MAX_IO_CHARS) return s != null ? s : "";
+    private static @NotNull String truncate(@NotNull String s) {
+        if (s.length() <= MAX_IO_CHARS) return s;
         return s.substring(0, MAX_IO_CHARS) + "\n[…truncated]";
+    }
+
+    private static @Nullable String truncateNullable(@Nullable String s) {
+        if (s == null) return null;
+        return truncate(s);
     }
 }

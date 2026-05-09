@@ -553,9 +553,10 @@ public final class McpProtocolHandler {
         String kind = definition != null ? definition.kind().value() : null;
         String displayName = definition != null ? definition.displayName() : toolName;
         String inputJson = arguments.toString();
+        String originalInputJson = originalArguments.toString().equals(inputJson) ? null : originalArguments.toString();
         ToolHookConfig hookConfig = HookRegistry.getInstance(project).findConfig(toolName);
         boolean hasHooks = hookConfig != null && !hookConfig.isEmpty();
-        long callId = liveService.recordStart(toolName, displayName, inputJson, kind, hasHooks);
+        long callId = liveService.recordStart(toolName, displayName, inputJson, kind, hasHooks, originalInputJson);
         long callStartMs = System.currentTimeMillis();
 
         McpCallContext.setCurrent(sessionKey(project));

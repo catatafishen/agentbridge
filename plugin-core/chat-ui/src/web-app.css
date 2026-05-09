@@ -1433,6 +1433,22 @@ file-nav {
     text-transform: uppercase;
 }
 
+.tcv-diff-btn {
+    background: none;
+    border: 1px solid var(--muted);
+    border-radius: 3px;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.75em;
+    padding: 1px 5px;
+    vertical-align: middle;
+}
+
+.tcv-diff-btn:hover {
+    border-color: var(--fg);
+    color: var(--fg);
+}
+
 .tcv-detail pre {
     max-height: 160px;
     overflow: auto;

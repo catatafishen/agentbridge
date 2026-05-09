@@ -1763,4 +1763,21 @@ public final class PlatformApiCompat {
         @NotNull com.intellij.ui.popup.list.ListPopupImpl popup) {
         return popup.getListStep();
     }
+
+    /**
+     * Creates a {@link com.intellij.ui.jcef.JBCefJSQuery} for the given JCEF browser.
+     *
+     * <p><b>Why extracted:</b> {@code JBCefJSQuery.create(JBCefBrowser)} is deprecated in
+     * favor of {@code create(JBCefBrowserBase)}, but {@code JBCefBrowser} does not extend
+     * {@code JBCefBrowserBase} in all supported IDE SDK versions. This wrapper isolates the
+     * deprecation in one place instead of suppressing it at every call site.</p>
+     */
+    // JBCefJSQuery.create(JBCefBrowser) is the only overload compatible with JBCefBrowser across
+    // all supported SDK versions (2024.3-2025.2). The recommended create(JBCefBrowserBase) requires
+    // JBCefBrowser to extend JBCefBrowserBase, which is not guaranteed across all targeted versions.
+    @SuppressWarnings("deprecation")
+    public static @NotNull com.intellij.ui.jcef.JBCefJSQuery createJSQuery(
+        @NotNull com.intellij.ui.jcef.JBCefBrowser browser) {
+        return com.intellij.ui.jcef.JBCefJSQuery.create(browser);
+    }
 }

@@ -288,7 +288,7 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         return row;
     }
 
-    private static JPanel createDetailPanel(LiveToolCallEntry entry) {
+    private JPanel createDetailPanel(LiveToolCallEntry entry) {
         JPanel detail = new JPanel();
         detail.setLayout(new BoxLayout(detail, BoxLayout.Y_AXIS));
         detail.setBorder(JBUI.Borders.empty(4, 12));
@@ -304,10 +304,24 @@ final class ToolCallListPanel extends JPanel implements Disposable {
         detail.add(Box.createVerticalStrut(6));
 
         // Input section
+        JPanel inputHeader = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        inputHeader.setOpaque(false);
+        inputHeader.setAlignmentX(Component.LEFT_ALIGNMENT);
         JBLabel inputLabel = new JBLabel("Input:");
         inputLabel.setFont(inputLabel.getFont().deriveFont(Font.BOLD, 11f));
-        inputLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        detail.add(inputLabel);
+        inputHeader.add(inputLabel);
+        if (entry.originalInput() != null) {
+            JButton diffBtn = new JButton("View diff");
+            diffBtn.setFont(diffBtn.getFont().deriveFont(10f));
+            diffBtn.setMargin(JBUI.insets(0, 6));
+            String originalInput = entry.originalInput();
+            String toolName = entry.toolName();
+            diffBtn.addActionListener(ev ->
+                ToolCallInputDiffViewer.showDiff(project, originalInput, entry.input(), toolName));
+            inputHeader.add(Box.createHorizontalStrut(6));
+            inputHeader.add(diffBtn);
+        }
+        detail.add(inputHeader);
 
         JTextArea inputArea = createReadOnlyTextArea(entry.input());
         JBScrollPane inputScroll = wrapInScrollPane(inputArea);

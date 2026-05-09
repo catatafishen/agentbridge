@@ -37,13 +37,16 @@ public final class LiveToolCallService {
 
     /**
      * Records a tool call starting. Returns the call ID for later completion via {@link #complete}.
+     *
+     * @param originalInputJson pre-hook arguments JSON; non-null only when a pre-hook modified the arguments
      */
     public synchronized long recordStart(@NotNull String toolName,
                                          @NotNull String displayName,
                                          @NotNull String inputJson,
                                          @org.jetbrains.annotations.Nullable String kind,
-                                         boolean hasHooks) {
-        LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, displayName, inputJson, kind, hasHooks);
+                                         boolean hasHooks,
+                                         @org.jetbrains.annotations.Nullable String originalInputJson) {
+        LiveToolCallEntry entry = LiveToolCallEntry.started(toolName, displayName, inputJson, originalInputJson, kind, hasHooks);
         entries.add(entry);
         evictIfNeeded();
         fireChanged();
