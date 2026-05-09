@@ -583,18 +583,7 @@ public final class ConversationWriter {
 
     // ── MCP stats enrichment + hook executions ─────────────────────────────────
 
-    @SuppressWarnings("java:S107")
-    // All 8 parameters map to distinct SQL columns; a wrapper object would add indirection without clarity.
-    public void enrichToolCallStats(
-        @NotNull String dbEventId,
-        long inputSizeBytes,
-        long outputSizeBytes,
-        long durationMs,
-        boolean success,
-        @Nullable String errorMessage,
-        @Nullable String category,
-        @Nullable String displayName
-    ) {
+    public void enrichToolCallStats(@NotNull ToolCallStatsEnrichment stats) {
         synchronized (database) {
             Connection conn = database.getConnection();
             if (conn == null) return;
@@ -610,17 +599,17 @@ public final class ConversationWriter {
                     is_mcp            = 1
                 WHERE event_id = ?
                 """)) {
-                ps.setLong(1, inputSizeBytes);
-                ps.setLong(2, outputSizeBytes);
-                ps.setLong(3, durationMs);
-                ps.setInt(4, success ? 1 : 0);
-                ps.setString(5, errorMessage);
-                ps.setString(6, category);
-                ps.setString(7, displayName);
-                ps.setString(8, dbEventId);
+                ps.setLong(1, stats.inputSizeBytes());
+                ps.setLong(2, stats.outputSizeBytes());
+                ps.setLong(3, stats.durationMs());
+                ps.setInt(4, stats.success() ? 1 : 0);
+                ps.setString(5, stats.errorMessage());
+                ps.setString(6, stats.category());
+                ps.setString(7, stats.displayName());
+                ps.setString(8, stats.dbEventId());
                 ps.executeUpdate();
             } catch (SQLException e) {
-                LOG.warn("ConversationWriter: failed to enrich stats for event " + dbEventId, e);
+                LOG.warn("ConversationWriter: failed to enrich stats for event " + stats.dbEventId(), e);
             }
         }
     }

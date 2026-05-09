@@ -350,7 +350,8 @@ class ConversationWriterTest {
                 false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-enrich")
         ));
 
-        writer.enrichToolCallStats("ev-enrich", 256, 1024, 150, true, null, "file", "Read File");
+        writer.enrichToolCallStats(new ToolCallStatsEnrichment(
+            "ev-enrich", 256, 1024, 150, true, null, "file", "Read File"));
 
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(
@@ -377,7 +378,8 @@ class ConversationWriterTest {
                 false, null, null, "2026-01-01T10:00:01Z", "", "", "ev-fail")
         ));
 
-        writer.enrichToolCallStats("ev-fail", 100, 500, 3000, false, "timeout expired", "shell", null);
+        writer.enrichToolCallStats(new ToolCallStatsEnrichment(
+            "ev-fail", 100, 500, 3000, false, "timeout expired", "shell", null));
 
         try (Statement s = conn.createStatement();
              ResultSet rs = s.executeQuery(

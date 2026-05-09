@@ -17,6 +17,7 @@ import com.github.catatafishen.agentbridge.services.hooks.HookRegistry;
 import com.github.catatafishen.agentbridge.services.hooks.HookStageResult;
 import com.github.catatafishen.agentbridge.services.hooks.ToolHookConfig;
 import com.github.catatafishen.agentbridge.session.db.ConversationService;
+import com.github.catatafishen.agentbridge.session.db.ToolCallStatsEnrichment;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
 import com.github.catatafishen.agentbridge.settings.McpToolFilter;
 import com.google.gson.Gson;
@@ -649,8 +650,9 @@ public final class McpProtocolHandler {
         long inputSize = data.inputJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
         long outputSize = data.output() != null
             ? data.output().getBytes(java.nio.charset.StandardCharsets.UTF_8).length : 0;
-        service.enrichToolCallStats(dbEventId, inputSize, outputSize, data.durationMs(),
-            data.success(), data.errorMessage(), data.category(), data.displayName());
+        service.enrichToolCallStats(new ToolCallStatsEnrichment(
+            dbEventId, inputSize, outputSize, data.durationMs(),
+            data.success(), data.errorMessage(), data.category(), data.displayName()));
         if (!data.hookStages().isEmpty()) {
             service.recordHookStages(dbEventId, data.hookStages());
         }
