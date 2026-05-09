@@ -27,6 +27,7 @@ import com.github.catatafishen.agentbridge.session.db.ConversationService;
 import com.github.catatafishen.agentbridge.settings.AcpClientBinaryResolver;
 import com.github.catatafishen.agentbridge.settings.BinaryDetector;
 import com.github.catatafishen.agentbridge.settings.McpServerSettings;
+import com.github.catatafishen.agentbridge.settings.PathSanitizer;
 import com.github.catatafishen.agentbridge.settings.ShellEnvironment;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -42,6 +43,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -1040,6 +1042,22 @@ public abstract class AcpClient extends AbstractAgentClient {
     protected abstract List<String> buildCommand(String cwd, int mcpPort);
 
     /**
+     * Whether to strip non-essential PATH entries before launching the agent process.
+     * When enabled, the process PATH is sanitized to include only essential system
+     * directories, Node.js, and the CLI binary itself. This prevents the agent CLI
+     * from detecting tools (git, gh, curl, etc.) that should be accessed through MCP
+     * instead.
+     * <p>
+     * Subclasses override this to return {@code true} for agents that advertise
+     * detected tools in their system prompt (e.g. Copilot's {@code <environment_context>}).
+     *
+     * @see PathSanitizer
+     */
+    protected boolean shouldStripNonEssentialPath() {
+        return false;
+    }
+
+    /**
      * Extra environment variables for the agent process.
      *
      * @param mcpPort the MCP server port for this session
@@ -1169,6 +1187,16 @@ public abstract class AcpClient extends AbstractAgentClient {
 
         // Merge shell environment (for PATH, etc.)
         pb.environment().putAll(ShellEnvironment.getEnvironment());
+
+        // Strip non-essential PATH entries to prevent the agent CLI from detecting
+        // and advertising tools (git, gh, curl) that should be accessed through MCP.
+        // Must happen after ShellEnvironment merge (needs full PATH to strip from)
+        // and after resolveCommand (needs full PATH to find the binary).
+        if (shouldStripNonEssentialPath()) {
+            String originalPath = pb.environment().getOrDefault("PATH", "");
+            String resolvedBinaryDir = Path.of(resolvedCommand.getFirst()).getParent().toString();
+            pb.environment().put("PATH", PathSanitizer.sanitize(originalPath, resolvedBinaryDir));
+        }
 
         // Override with custom environment (these take precedence)
         Map<String, String> env = buildEnvironment(mcpPort, cwd);
