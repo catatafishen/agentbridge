@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Writes full file content or creates a new file through IntelliJ's editor buffer.
@@ -156,11 +157,17 @@ public class WriteFileTool extends FileTool {
             }
         });
 
-        String result = resultFuture.get(15, TimeUnit.SECONDS);
-        followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
-            HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
-        FileAccessTracker.recordWrite(project, pathStr);
-        return result + getGitFileStatus(project, pathStr);
+        try {
+            String result = resultFuture.get(15, TimeUnit.SECONDS);
+            followFileIfEnabled(project, pathStr, followRange[0], followRange[1],
+                HIGHLIGHT_EDIT, agentLabel(project) + " is editing");
+            FileAccessTracker.recordWrite(project, pathStr);
+            return result + getGitFileStatus(project, pathStr);
+        } catch (TimeoutException e) {
+            String detail = EdtUtil.describeModalBlocker();
+            throw new TimeoutException("EDT did not process write within 15s for " + pathStr + "."
+                + (detail.isEmpty() ? " No visible modal dialog — possible phantom modality leak." : detail));
+        }
     }
 
     private void writeFileFullContent(VirtualFile vf, String pathStr, String newContent,

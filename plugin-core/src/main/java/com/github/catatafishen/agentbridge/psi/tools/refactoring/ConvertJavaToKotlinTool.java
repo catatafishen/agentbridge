@@ -1,11 +1,11 @@
 package com.github.catatafishen.agentbridge.psi.tools.refactoring;
 
+import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.ToolUtils;
 import com.github.catatafishen.agentbridge.ui.renderers.RefactorRenderer;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
@@ -125,7 +125,7 @@ public final class ConvertJavaToKotlinTool extends RefactoringTool {
         // invokeAndWait runs inline when already on the EDT (tests) and otherwise
         // blocks the calling thread until the EDT task completes — which is exactly
         // the semantics we want for synchronous tool invocation.
-        ApplicationManager.getApplication().invokeAndWait(() -> {
+        EdtUtil.invokeAndWait(() -> {
             try {
                 holder[0] = convertAll(requestedPaths);
             } catch (Exception e) {
@@ -180,7 +180,7 @@ public final class ConvertJavaToKotlinTool extends RefactoringTool {
                 convertModule(api, entry.getKey(), entry.getValue());
             }
 
-            ApplicationManager.getApplication().invokeAndWait(() -> {
+            EdtUtil.invokeAndWait(() -> {
                 PsiDocumentManager.getInstance(project).commitAllDocuments();
                 FileDocumentManager.getInstance().saveAllDocuments();
             });

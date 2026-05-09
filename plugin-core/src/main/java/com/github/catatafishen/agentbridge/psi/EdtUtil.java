@@ -57,7 +57,18 @@ public final class EdtUtil {
     }
 
     /**
-     * Dispatch a runnable to the EDT using the default (write-safe) modality state.
+     * Dispatch a runnable to the EDT using {@link ModalityState#defaultModalityState()}.
+     * <p>
+     * This uses the standard write-safe modality state required by {@code TransactionGuard}.
+     * From a background thread, {@code defaultModalityState()} resolves to {@code NON_MODAL},
+     * which may be deferred if the IDE enters a phantom modal state (e.g., from a crashed
+     * third-party plugin intention). In that scenario, tools will time out via
+     * {@link #invokeAndWait(Runnable)} rather than block indefinitely, and the timeout error
+     * message includes diagnostics about what modal is blocking.
+     * <p>
+     * {@code ModalityState.any()} cannot be used here because {@code TransactionGuardImpl}
+     * explicitly rejects it for model changes (document writes, VFS modifications), throwing
+     * "Write-unsafe context" errors.
      */
     public static void invokeLater(Runnable runnable) {
         ApplicationManager.getApplication().invokeLater(runnable, ModalityState.defaultModalityState());
@@ -82,6 +93,7 @@ public final class EdtUtil {
         }
 
         CompletableFuture<Void> future = new CompletableFuture<>();
+        // Use defaultModalityState() for TransactionGuard write-safety — see invokeLater() Javadoc.
         ApplicationManager.getApplication().invokeLater(() -> {
             try {
                 runnable.run();

@@ -35,6 +35,9 @@ import java.util.concurrent.CompletableFuture;
  */
 public abstract class QualityTool extends Tool {
 
+    private static final com.intellij.openapi.diagnostic.Logger LOG =
+        com.intellij.openapi.diagnostic.Logger.getInstance(QualityTool.class);
+
     protected static final String ERROR_IDE_INITIALIZING =
         "{\"error\": \"IDE is still initializing. Please wait a moment and try again.\"}";
     protected static final String FORMAT_LOCATION = "%s:%d [%s] %s";
@@ -104,7 +107,9 @@ public abstract class QualityTool extends Tool {
     /**
      * Returns the names of all intention actions available at the current caret position
      * in {@code editor}. Filters by {@code isAvailable()} in a read action.
-     * Silently skips any action whose {@code isAvailable()} throws.
+     * Skips any action whose {@code isAvailable()} throws, logging at WARN level
+     * to aid debugging of third-party plugin issues (e.g., Kotlin K2 intentions that
+     * attempt illegal lock escalation inside ReadAction).
      *
      * <p>Must be called on the EDT (caret position must already be set by the caller).</p>
      */
@@ -118,8 +123,9 @@ public abstract class QualityTool extends Tool {
                         String text = action.getText();
                         if (!text.isBlank()) names.add(text);
                     }
-                } catch (Exception ignored) {
-                    // Poorly implemented intentions may throw — skip them silently
+                } catch (Exception e) {
+                    LOG.warn("Intention " + action.getClass().getSimpleName()
+                        + " threw during isAvailable() — skipping", e);
                 }
             }
         });
