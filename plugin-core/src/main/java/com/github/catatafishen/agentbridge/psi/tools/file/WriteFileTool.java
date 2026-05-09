@@ -135,7 +135,9 @@ public class WriteFileTool extends FileTool {
             }
         }
 
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean(false);
         EdtUtil.invokeLater(() -> {
+            if (cancelled.get()) return;
             try {
                 VirtualFile vf = resolveVirtualFile(pathStr);
 
@@ -164,9 +166,12 @@ public class WriteFileTool extends FileTool {
             FileAccessTracker.recordWrite(project, pathStr);
             return result + getGitFileStatus(project, pathStr);
         } catch (TimeoutException e) {
+            cancelled.set(true);
             String detail = EdtUtil.describeModalBlocker();
-            throw new TimeoutException("EDT did not process write within 15s for " + pathStr + "."
+            var te = new TimeoutException("EDT did not process write within 15s for " + pathStr + "."
                 + (detail.isEmpty() ? " No visible modal dialog — possible phantom modality leak." : detail));
+            te.initCause(e);
+            throw te;
         }
     }
 

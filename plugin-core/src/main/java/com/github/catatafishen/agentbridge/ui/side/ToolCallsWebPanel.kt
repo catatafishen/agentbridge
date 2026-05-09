@@ -53,9 +53,11 @@ class ToolCallsWebPanel(private val project: Project) : JPanel(BorderLayout()), 
                     val original = parsed.get("original").asString
                     val modified = parsed.get("modified").asString
                     val toolName = parsed.get("tool").asString
-                    ApplicationManager.getApplication().invokeLater {
+                    // ModalityState.any(): safe here because showDiff is UI-only (no model writes),
+                    // and using defaultModalityState would fail during a phantom modality leak.
+                    ApplicationManager.getApplication().invokeLater({
                         ToolCallInputDiffViewer.showDiff(project, original, modified, toolName)
-                    }
+                    }, com.intellij.openapi.application.ModalityState.any())
                 } catch (e: Exception) {
                     LOG.warn("openInputDiff: failed to parse request", e)
                 }
