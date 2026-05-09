@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 import java.util.zip.ZipInputStream
 
@@ -504,6 +505,17 @@ tasks {
             "-Didea.suppressed.plugins.id=",             // Don't suppress any plugins
             "-Didea.plugin.in.sandbox.mode=true"         // Sandbox mode
         )
+    }
+
+    named<VerifyPluginTask>("verifyPlugin") {
+        // The plugin verifier runs each IDE in a separate coroutine on Dispatchers.Default
+        // (ForkJoinPool.common). Multiple workers share a CachingJarFileSystemProvider that
+        // caches ZipFileSystem instances by URI. When one coroutine's thread is interrupted
+        // (e.g., during cancellation), the NIO channel closure propagates to all co-readers of
+        // the same cached ZipFileSystem, causing ClosedByInterruptException in other workers.
+        // Forcing parallelism=1 makes IDE checks run sequentially on one thread, eliminating
+        // the shared-filesystem race without degrading correctness.
+        jvmArgs("-Djava.util.concurrent.ForkJoinPool.common.parallelism=1")
     }
 }
 
