@@ -28,7 +28,7 @@ function formatInline(text: string): string {
     //  2. `inline code`
     //  3. [text](url)
     //  4. bare https?:// URL
-    const PATTERN = /\*\*(.+?)\*\*|`([^`]+)`|\[([^\]]+)]\(([^)]+)\)|(https?:\/\/[^\s<>[\]()]+)/g;
+    const PATTERN = /\*\*([^*\n]+)\*\*|`([^`]+)`|\[([^\]]+)]\(([^)]+)\)|(https?:\/\/[^\s<>[\]()]+)/g;
     let last = 0;
     let m: RegExpExecArray | null;
     while ((m = PATTERN.exec(text)) !== null) {
@@ -55,7 +55,7 @@ function formatInline(text: string): string {
     return result.join('');
 }
 
-const THINK_TAG_PATTERN = /<(think|thinking)>([\s\S]*?)<\/\1>/gi;
+const THINK_TAG_PATTERN = /<(think|thinking)>([^<]*(?:<(?!\/(?:think|thinking)>)[^<]*)*)<\/\1>/gi;
 const WRAPPER_TAG_LINE_PATTERN = /^\s*<\/?(task_result|commentary|example|code)>\s*$/gim;
 
 function buildThinkingBlockHtml(content: string): string {

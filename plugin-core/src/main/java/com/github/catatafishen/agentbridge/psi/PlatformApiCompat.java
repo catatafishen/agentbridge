@@ -819,7 +819,7 @@ public final class PlatformApiCompat {
             for (com.intellij.openapi.vcs.VcsRoot vr : detected) {
                 com.intellij.openapi.vcs.AbstractVcs vcs = vr.getVcs();
                 com.intellij.openapi.vfs.VirtualFile path = vr.getPath();
-                if (vcs != null && path != null && "Git".equals(vcs.getName())) {
+                if (vcs != null && "Git".equals(vcs.getName())) {
                     roots.add(path.getPath());
                 }
             }

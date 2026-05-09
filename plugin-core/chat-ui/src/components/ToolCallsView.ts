@@ -197,9 +197,9 @@ export class ToolCallsView extends PollableView {
         // A title that is simply the humanized toolName (e.g. "Run Command" for "run_command")
         // is already visible in the chip header and need not be repeated here.
         const baseTitle = item.toolName.replaceAll('_', ' ').toLowerCase();
-        const nameRow = item.title.toLowerCase() !== baseTitle
-            ? `<span class="tcv-meta-item"><strong>${this.esc(item.title)}</strong></span>`
-            : '';
+        const nameRow = item.title.toLowerCase() === baseTitle
+            ? ''
+            : `<span class="tcv-meta-item"><strong>${this.esc(item.title)}</strong></span>`;
         const toolRow = `<span class="tcv-meta-item">MCP: ${this.esc(item.toolName)}</span>`;
         const ts = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
         const tsRow = ts ? `<span class="tcv-meta-item tcv-meta-ts">${this.esc(ts)}</span>` : '';

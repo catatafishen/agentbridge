@@ -639,13 +639,13 @@ public final class McpProtocolHandler {
         // Resolve the record to get the stable DB event_id (= record.recordId).
         // Fallback: toolUseId lookup → MCP tool+args match → skip if neither succeeds.
         ToolCallTracker tracker = ToolCallTracker.getInstance(project);
-        ToolCallRecord record = tracker.findByToolUseId(data.toolUseId());
-        if (record == null) {
-            record = tracker.findByMcpCall(data.toolName(), data.arguments());
+        ToolCallRecord callRecord = tracker.findByToolUseId(data.toolUseId());
+        if (callRecord == null) {
+            callRecord = tracker.findByMcpCall(data.toolName(), data.arguments());
         }
-        String dbEventId = record != null ? record.getRecordId() : data.toolUseId();
+        String dbEventId = callRecord != null ? callRecord.getRecordId() : data.toolUseId();
         if (dbEventId == null) return;
-        if (record == null) {
+        if (callRecord == null) {
             LOG.debug("[MCP] No tracker record for tool '" + data.toolName()
                 + "'; falling back to toolUseId '" + dbEventId + "' for DB enrichment");
         }

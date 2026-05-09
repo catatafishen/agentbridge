@@ -257,19 +257,42 @@ public final class TripleExtractor {
         // stripping (e.g., a trailing close-paren left after an inline code span
         // was unwrapped) — without this, objects like ") the text wraps" pass
         // through and pollute the KG.
-        String cleaned = raw.replaceAll("^[^\\p{L}\\p{N}]++", "")
-            .replaceAll("[.,:;!?]++$", "")
-            .strip();
-        if (cleaned.length() > MAX_OBJECT_LENGTH) {
-            int cutoff = cleaned.lastIndexOf(' ', MAX_OBJECT_LENGTH);
+        // Manual iteration avoids regex ReDoS (possessive quantifiers not always safe in Java).
+        String stripped = stripLeadingNonAlphanumeric(raw);
+        stripped = stripTrailingPunctuation(stripped).strip();
+
+        if (stripped.length() > MAX_OBJECT_LENGTH) {
+            int cutoff = stripped.lastIndexOf(' ', MAX_OBJECT_LENGTH);
             if (cutoff > 30) {
-                cleaned = cleaned.substring(0, cutoff);
+                stripped = stripped.substring(0, cutoff);
             } else {
-                cleaned = cleaned.substring(0, MAX_OBJECT_LENGTH);
+                stripped = stripped.substring(0, MAX_OBJECT_LENGTH);
             }
         }
-        cleaned = trimTrailingWeakWords(cleaned);
-        return cleaned;
+        return trimTrailingWeakWords(stripped);
+    }
+
+    private static @NotNull String stripLeadingNonAlphanumeric(@NotNull String s) {
+        int start = 0;
+        while (start < s.length()) {
+            int cp = s.codePointAt(start);
+            if (Character.isLetter(cp) || Character.isDigit(cp)) break;
+            start += Character.charCount(cp);
+        }
+        return start == 0 ? s : s.substring(start);
+    }
+
+    private static @NotNull String stripTrailingPunctuation(@NotNull String s) {
+        int end = s.length();
+        while (end > 0) {
+            char c = s.charAt(end - 1);
+            if (c == '.' || c == ',' || c == ':' || c == ';' || c == '!' || c == '?') {
+                end--;
+            } else {
+                break;
+            }
+        }
+        return end == s.length() ? s : s.substring(0, end);
     }
 
     /**

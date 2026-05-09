@@ -401,7 +401,7 @@ public final class PsiBridgeService implements Disposable {
         long preWriteStamp = getDocumentStamp(vfForHighlights);
 
         ToolCallTracker tracker = ToolCallTracker.getInstance(project);
-        ToolCallRecord record = tracker.mcpRegister(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
+        ToolCallRecord callRecord = tracker.mcpRegister(req.toolName(), req.chipArgs(), req.def().kind().value(), req.toolUseId());
 
         try (DaemonWaiter daemonWaiter = filePathForHighlights != null
             ? new DaemonWaiter(project, vfForHighlights, preWriteStamp) : null) {
@@ -412,7 +412,7 @@ public final class PsiBridgeService implements Disposable {
                 success = false;
                 errorMessage = readinessError;
                 outputSize = readinessError.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-                tracker.mcpComplete(record.getRecordId(), readinessError, false);
+                tracker.mcpComplete(callRecord.getRecordId(), readinessError, false);
                 return readinessError;
             }
 
@@ -427,7 +427,7 @@ public final class PsiBridgeService implements Disposable {
                 errorMessage = result;
             }
             outputSize = result.getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
-            tracker.mcpComplete(record.getRecordId(), result, !result.startsWith("Error"));
+            tracker.mcpComplete(callRecord.getRecordId(), result, !result.startsWith("Error"));
             return result;
         } catch (com.intellij.openapi.progress.ProcessCanceledException e) {
             // The instanceof + early-return pattern is intentional: splitting into a separate
@@ -437,7 +437,7 @@ public final class PsiBridgeService implements Disposable {
                 // IDE was temporarily busy — not a shutdown signal; return a retryable error.
                 success = false;
                 errorMessage = "Error: IDE is busy, please retry. " + e.getMessage();
-                tracker.mcpComplete(record.getRecordId(), errorMessage, false);
+                tracker.mcpComplete(callRecord.getRecordId(), errorMessage, false);
                 return errorMessage;
             }
             // All other PCE variants signal IDE shutdown or project disposal — must rethrow.
@@ -446,7 +446,7 @@ public final class PsiBridgeService implements Disposable {
             Thread.currentThread().interrupt();
             success = false;
             errorMessage = "Error: Tool execution interrupted: " + req.toolName();
-            tracker.mcpComplete(record.getRecordId(), errorMessage, false);
+            tracker.mcpComplete(callRecord.getRecordId(), errorMessage, false);
             return errorMessage;
         } catch (Exception e) {
             LOG.warn("Tool call error: " + req.toolName(), e);
@@ -454,7 +454,7 @@ public final class PsiBridgeService implements Disposable {
             String modalDetail = EdtUtil.describeModalBlocker();
             errorMessage = buildErrorWithModalDetail(
                 formatBaseErrorMessage(e, modalDetail), modalDetail);
-            tracker.mcpComplete(record.getRecordId(), errorMessage, false);
+            tracker.mcpComplete(callRecord.getRecordId(), errorMessage, false);
             return errorMessage;
         } finally {
             if (writeRegistered.get()) writeBatchCoordinator.unregisterWrite();

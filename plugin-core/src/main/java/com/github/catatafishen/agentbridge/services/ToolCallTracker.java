@@ -32,6 +32,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class ToolCallTracker {
 
     private static final Logger LOG = Logger.getInstance(ToolCallTracker.class);
+    private static final String LISTENER_ERROR_MSG = "Listener error";
     private final Project project;
 
     /**
@@ -42,37 +43,37 @@ public final class ToolCallTracker {
         /**
          * ACP reported a new tool call — chip can be created in DOM.
          */
-        default void onAcpRegistered(@NotNull ToolCallRecord record) {
+        default void onAcpRegistered(@NotNull ToolCallRecord callRecord) {
         }
 
         /**
          * MCP execution started for an uncorrelated call (no ACP counterpart yet).
          */
-        default void onMcpRegistered(@NotNull ToolCallRecord record) {
+        default void onMcpRegistered(@NotNull ToolCallRecord callRecord) {
         }
 
         /**
          * ACP and MCP matched — the record now has both sides.
          */
-        default void onCorrelated(@NotNull ToolCallRecord record) {
+        default void onCorrelated(@NotNull ToolCallRecord callRecord) {
         }
 
         /**
          * MCP execution finished, result stored in record.
          */
-        default void onMcpCompleted(@NotNull ToolCallRecord record) {
+        default void onMcpCompleted(@NotNull ToolCallRecord callRecord) {
         }
 
         /**
          * ACP reported COMPLETED or FAILED — terminal state.
          */
-        default void onAcpCompleted(@NotNull ToolCallRecord record) {
+        default void onAcpCompleted(@NotNull ToolCallRecord callRecord) {
         }
 
         /**
          * Record removed from live set (for cleanup).
          */
-        default void onFlushed(@NotNull ToolCallRecord record) {
+        default void onFlushed(@NotNull ToolCallRecord callRecord) {
         }
     }
 
@@ -132,18 +133,6 @@ public final class ToolCallTracker {
 
     // ── ACP channel: tool call reported by the agent protocol ─────────────────
 
-    /**
-     * Called when ACP reports a new tool call ({@code tool_call} notification).
-     *
-     * @param acpClientId the ACP-assigned tool call ID
-     * @param acpName     canonical tool name (MCP name for bridged tools, kind for native tools), or null
-     * @param acpTitle    the display title reported by the protocol (always a display string, never a tool name)
-     * @param args        tool arguments (may be null for some agents like Junie)
-     * @param kind        tool category (e.g. "file", "git") or null
-     * @param routingType the call's role: REGULAR, SUB_AGENT, SUB_AGENT_INTERNAL, TASK_COMPLETE
-     * @param toolUseId   Claude CLI's toolUseId from _meta (for Priority 0 correlation), or null
-     * @return the record (may be newly created or previously registered by MCP)
-     */
     public synchronized @NotNull ToolCallRecord acpRegister(
         @NotNull String acpClientId,
         @Nullable String acpName,
@@ -159,13 +148,13 @@ public final class ToolCallTracker {
         if (toolUseId != null) {
             String existingRecordId = toolUseIdToRecordId.get(toolUseId);
             if (existingRecordId != null) {
-                ToolCallRecord record = liveRecords.get(existingRecordId);
-                if (record != null && record.getAcpClientId() == null) {
-                    record.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
+                ToolCallRecord callRecord = liveRecords.get(existingRecordId);
+                if (callRecord != null && callRecord.getAcpClientId() == null) {
+                    callRecord.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
                     acpIdToRecordId.put(acpClientId, existingRecordId);
                     LOG.info("ToolCallTracker [ACP]: correlated via toolUseId=" + toolUseId + " → " + existingRecordId);
-                    fireOnCorrelated(record);
-                    flushOlderUncorrelatedMcpRecords(seq, existingRecordId);
+                    fireOnCorrelated(callRecord);
+                    flushOlderUncorrelatedMcpRecords(existingRecordId);
                 }
             }
         }
@@ -180,37 +169,29 @@ public final class ToolCallTracker {
                 if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, mcpFirst.getRecordId());
                 LOG.info("ToolCallTracker [ACP]: correlated via hash=" + argsHash + " → " + mcpFirst.getRecordId());
                 fireOnCorrelated(mcpFirst);
-                flushOlderUncorrelatedMcpRecords(seq, mcpFirst.getRecordId());
+                flushOlderUncorrelatedMcpRecords(mcpFirst.getRecordId());
                 return mcpFirst;
             }
         }
 
         // No existing MCP record — create new ACP-first record
         String argsHash = args != null ? ToolCallHasher.computeBaseHash(args) : null;
-        String recordId = allocateRecordId(argsHash);
-        ToolCallRecord record = new ToolCallRecord(recordId, argsHash);
-        record.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
-        if (kind != null) record.setKind(kind);
+        String recordId = allocateRecordId();
+        ToolCallRecord callRecord = new ToolCallRecord(recordId, argsHash);
+        callRecord.setAcpFields(acpClientId, acpName, acpTitle, args, routingType, seq);
+        if (kind != null) callRecord.setKind(kind);
 
-        liveRecords.put(recordId, record);
+        liveRecords.put(recordId, callRecord);
         acpIdToRecordId.put(acpClientId, recordId);
         if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, recordId);
 
         LOG.info("ToolCallTracker [ACP]: new record " + recordId + " name=" + acpName + " title=" + acpTitle + " routing=" + routingType);
-        fireOnAcpRegistered(record);
-        return record;
+        fireOnAcpRegistered(callRecord);
+        return callRecord;
     }
 
     // ── MCP channel: tool execution by our MCP server ────────────────────────
 
-    /**
-     * Called by PsiBridgeService immediately before executing a tool.
-     *
-     * @param toolName  the canonical MCP tool name
-     * @param args      tool arguments
-     * @param kind      tool category
-     * @param toolUseId Claude CLI's toolUseId from _meta, or null
-     */
     public synchronized @NotNull ToolCallRecord mcpRegister(
         @NotNull String toolName,
         @NotNull JsonObject args,
@@ -223,8 +204,8 @@ public final class ToolCallTracker {
         if (toolUseId != null) {
             String existingRecordId = toolUseIdToRecordId.get(toolUseId);
             if (existingRecordId == null) {
-                // ACP may have registered with same toolUseId under a different key scheme;
-                // check if there's a record that has this ACP client ID matching
+                // ACP may have registered with same toolUseId under a different key scheme —
+                // check if there's a record that has this ACP client ID matching.
                 // (In practice Claude sends toolUseId in _meta that matches the ACP tool_use.id)
                 for (ToolCallRecord r : liveRecords.values()) {
                     if (toolUseId.equals(r.getAcpClientId()) && r.getMcpToolName() == null) {
@@ -236,12 +217,12 @@ public final class ToolCallTracker {
                     }
                 }
             } else {
-                ToolCallRecord record = liveRecords.get(existingRecordId);
-                if (record != null && record.getMcpToolName() == null) {
-                    record.setMcpFields(toolName, args, kind, startTime);
+                ToolCallRecord callRecord = liveRecords.get(existingRecordId);
+                if (callRecord != null && callRecord.getMcpToolName() == null) {
+                    callRecord.setMcpFields(toolName, args, kind, startTime);
                     LOG.info("ToolCallTracker [MCP]: correlated via toolUseId=" + toolUseId + " → " + existingRecordId);
-                    fireOnCorrelated(record);
-                    return record;
+                    fireOnCorrelated(callRecord);
+                    return callRecord;
                 }
             }
         }
@@ -258,81 +239,70 @@ public final class ToolCallTracker {
         }
 
         // No ACP record — create MCP-first record
-        String recordId = allocateRecordId(argsHash);
-        ToolCallRecord record = new ToolCallRecord(recordId, argsHash);
-        record.setMcpFields(toolName, args, kind, startTime);
+        String recordId = allocateRecordId();
+        ToolCallRecord callRecord = new ToolCallRecord(recordId, argsHash);
+        callRecord.setMcpFields(toolName, args, kind, startTime);
 
-        liveRecords.put(recordId, record);
+        liveRecords.put(recordId, callRecord);
         if (toolUseId != null) toolUseIdToRecordId.put(toolUseId, recordId);
 
         LOG.info("ToolCallTracker [MCP]: new record " + recordId + " tool=" + toolName);
-        fireOnMcpRegistered(record);
-        return record;
+        fireOnMcpRegistered(callRecord);
+        return callRecord;
     }
 
     // ── Completion ───────────────────────────────────────────────────────────
 
-    /**
-     * Called when MCP tool execution finishes. Stores result and timing data.
-     */
     public synchronized void mcpComplete(@NotNull String recordId, @NotNull String result, boolean success) {
-        ToolCallRecord record = liveRecords.get(recordId);
-        if (record == null) {
+        ToolCallRecord callRecord = liveRecords.get(recordId);
+        if (callRecord == null) {
             LOG.warn("ToolCallTracker: mcpComplete for unknown record " + recordId);
             return;
         }
-        record.setMcpResult(result, success);
-        record.setState(success ? ToolCallRecord.State.COMPLETED : ToolCallRecord.State.FAILED);
+        callRecord.setMcpResult(result, success);
+        callRecord.setState(success ? ToolCallRecord.State.COMPLETED : ToolCallRecord.State.FAILED);
         LOG.debug("ToolCallTracker: mcpComplete " + recordId + " success=" + success + " resultLen=" + result.length());
-        fireOnMcpCompleted(record);
+        fireOnMcpCompleted(callRecord);
     }
 
-    /**
-     * Called when ACP reports COMPLETED or FAILED for a tool call.
-     * This is the terminal event — the record is flushed from the live set.
-     */
     public synchronized void acpComplete(@NotNull String acpClientId, boolean success) {
         String recordId = acpIdToRecordId.get(acpClientId);
         if (recordId == null) {
             LOG.debug("ToolCallTracker: acpComplete for unknown acpClientId=" + acpClientId);
             return;
         }
-        ToolCallRecord record = liveRecords.get(recordId);
-        if (record == null) return;
+        ToolCallRecord callRecord = liveRecords.get(recordId);
+        if (callRecord == null) return;
 
-        record.setState(success ? ToolCallRecord.State.COMPLETED : ToolCallRecord.State.FAILED);
+        callRecord.setState(success ? ToolCallRecord.State.COMPLETED : ToolCallRecord.State.FAILED);
         LOG.debug("ToolCallTracker: acpComplete " + recordId + " success=" + success);
-        fireOnAcpCompleted(record);
-        flush(record);
+        fireOnAcpCompleted(callRecord);
+        flush(callRecord);
     }
 
-    /**
-     * Called when ACP provides args for a tool call that was registered without them.
-     * Updates the record's args hash and attempts correlation with existing MCP records.
-     */
     public synchronized void acpProvideArgs(@NotNull String acpClientId, @NotNull JsonObject args) {
         String recordId = acpIdToRecordId.get(acpClientId);
         if (recordId == null) return;
-        ToolCallRecord record = liveRecords.get(recordId);
-        if (record == null) return;
+        ToolCallRecord callRecord = liveRecords.get(recordId);
+        if (callRecord == null) return;
 
         String newHash = ToolCallHasher.computeBaseHash(args);
-        record.updateArgsHash(newHash);
-        record.setAcpArgs(args);
+        callRecord.updateArgsHash(newHash);
+        callRecord.setAcpArgs(args);
 
         // If not yet correlated, try to find an MCP-first record by the new hash
-        if (record.getMcpToolName() == null) {
+        if (callRecord.getMcpToolName() == null) {
             ToolCallRecord mcpFirst = findNewestUnmatchedMcpRecord(newHash);
             if (mcpFirst != null) {
-                record.setMcpFields(mcpFirst.getMcpToolName(), mcpFirst.getMcpArgs(),
+                callRecord.setMcpFields(mcpFirst.getMcpToolName(), mcpFirst.getMcpArgs(),
                     mcpFirst.getKind(), mcpFirst.getMcpStartedAt());
                 if (mcpFirst.getMcpResult() != null) {
-                    record.setMcpResult(mcpFirst.getMcpResult(), mcpFirst.isMcpSuccess());
+                    callRecord.setMcpResult(mcpFirst.getMcpResult(), mcpFirst.isMcpSuccess());
                 }
                 liveRecords.remove(mcpFirst.getRecordId());
                 LOG.info("ToolCallTracker: acpProvideArgs correlated " + recordId + " via late hash=" + newHash);
-                fireOnCorrelated(record);
-                flushOlderUncorrelatedMcpRecords(record.getAcpSequence(), recordId);
+                fireOnCorrelated(callRecord);
+                flushOlderUncorrelatedMcpRecords(recordId);
             }
         }
     }
@@ -380,12 +350,9 @@ public final class ToolCallTracker {
         return recordId != null ? liveRecords.get(recordId) : null;
     }
 
-    /**
-     * Get the stored MCP result for a record (for UI that needs the raw tool output).
-     */
     public synchronized @Nullable String getStoredResult(@NotNull String recordId) {
-        ToolCallRecord record = liveRecords.get(recordId);
-        return record != null ? record.getMcpResult() : null;
+        ToolCallRecord callRecord = liveRecords.get(recordId);
+        return callRecord != null ? callRecord.getMcpResult() : null;
     }
 
     /**
@@ -426,7 +393,7 @@ public final class ToolCallTracker {
      * @param correlatedRecordId the record ID that was just correlated — only records
      *                           inserted before this one are eligible for flushing
      */
-    private void flushOlderUncorrelatedMcpRecords(int currentAcpSequence, @NotNull String correlatedRecordId) {
+    private void flushOlderUncorrelatedMcpRecords(@NotNull String correlatedRecordId) {
         List<ToolCallRecord> toFlush = new ArrayList<>();
         for (ToolCallRecord r : liveRecords.values()) {
             // Stop when we reach the just-correlated record — everything after is newer.
@@ -445,13 +412,13 @@ public final class ToolCallTracker {
         }
     }
 
-    private void flush(@NotNull ToolCallRecord record) {
-        liveRecords.remove(record.getRecordId());
-        if (record.getAcpClientId() != null) {
-            acpIdToRecordId.remove(record.getAcpClientId());
+    private void flush(@NotNull ToolCallRecord callRecord) {
+        liveRecords.remove(callRecord.getRecordId());
+        if (callRecord.getAcpClientId() != null) {
+            acpIdToRecordId.remove(callRecord.getAcpClientId());
         }
         // Don't remove from toolUseIdToRecordId — it's harmless and avoids iteration
-        fireOnFlushed(record);
+        fireOnFlushed(callRecord);
     }
 
     // ── Internal: matching ───────────────────────────────────────────────────
@@ -480,85 +447,85 @@ public final class ToolCallTracker {
         return result;
     }
 
-    private @NotNull String allocateRecordId(@Nullable String argsHash) {
+    private @NotNull String allocateRecordId() {
         return "tc-" + UUID.randomUUID().toString().substring(0, 8);
     }
 
     // ── Event firing (on EDT) ────────────────────────────────────────────────
 
-    private void fireOnAcpRegistered(@NotNull ToolCallRecord record) {
+    private void fireOnAcpRegistered(@NotNull ToolCallRecord callRecord) {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
                 try {
-                    l.onAcpRegistered(record);
+                    l.onAcpRegistered(callRecord);
                 } catch (Exception e) {
-                    LOG.warn("Listener error", e);
+                    LOG.warn(LISTENER_ERROR_MSG, e);
                 }
             }
         });
     }
 
-    private void fireOnMcpRegistered(@NotNull ToolCallRecord record) {
+    private void fireOnMcpRegistered(@NotNull ToolCallRecord callRecord) {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
                 try {
-                    l.onMcpRegistered(record);
+                    l.onMcpRegistered(callRecord);
                 } catch (Exception e) {
-                    LOG.warn("Listener error", e);
+                    LOG.warn(LISTENER_ERROR_MSG, e);
                 }
             }
         });
     }
 
-    private void fireOnCorrelated(@NotNull ToolCallRecord record) {
+    private void fireOnCorrelated(@NotNull ToolCallRecord callRecord) {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
                 try {
-                    l.onCorrelated(record);
+                    l.onCorrelated(callRecord);
                 } catch (Exception e) {
-                    LOG.warn("Listener error", e);
+                    LOG.warn(LISTENER_ERROR_MSG, e);
                 }
             }
         });
     }
 
-    private void fireOnMcpCompleted(@NotNull ToolCallRecord record) {
+    private void fireOnMcpCompleted(@NotNull ToolCallRecord callRecord) {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
                 try {
-                    l.onMcpCompleted(record);
+                    l.onMcpCompleted(callRecord);
                 } catch (Exception e) {
-                    LOG.warn("Listener error", e);
+                    LOG.warn(LISTENER_ERROR_MSG, e);
                 }
             }
         });
     }
 
-    private void fireOnAcpCompleted(@NotNull ToolCallRecord record) {
+    private void fireOnAcpCompleted(@NotNull ToolCallRecord callRecord) {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
                 try {
-                    l.onAcpCompleted(record);
+                    l.onAcpCompleted(callRecord);
                 } catch (Exception e) {
-                    LOG.warn("Listener error", e);
+                    LOG.warn(LISTENER_ERROR_MSG, e);
                 }
             }
         });
     }
 
-    private void fireOnFlushed(@NotNull ToolCallRecord record) {
+    private void fireOnFlushed(@NotNull ToolCallRecord callRecord) {
         if (listeners.isEmpty()) return;
         ApplicationManager.getApplication().invokeLater(() -> {
             for (Listener l : listeners) {
                 try {
-                    l.onFlushed(record);
+                    l.onFlushed(callRecord);
                 } catch (Exception e) {
-                    LOG.warn("Listener error", e);
+                    LOG.warn(LISTENER_ERROR_MSG, e);
                 }
             }
         });
