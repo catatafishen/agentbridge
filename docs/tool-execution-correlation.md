@@ -26,25 +26,34 @@ Each tool call is represented by a `ToolCallRecord` with a stable UUID-based `re
 ├──────────────────┬──────────────────────────────────┤
 │ ACP side         │ MCP side                         │
 │  acpClientId     │  mcpToolName (confirmed name)    │
-│  acpTitle        │  mcpArgs                         │
-│  acpArgs         │  mcpResult                       │
-│  routingType     │  mcpSuccess                      │
-│  acpSequence     │  mcpStartedAt / mcpCompletedAt   │
+│  acpName         │  mcpArgs                         │
+│  acpTitle        │  mcpResult                       │
+│  acpArgs         │  mcpSuccess                      │
+│  routingType     │  mcpStartedAt / mcpCompletedAt   │
 ├──────────────────┴──────────────────────────────────┤
 │ Shared: argsHash, state, kind, displayName,         │
 │         correlated (bool), resultBytes              │
 └─────────────────────────────────────────────────────┘
 ```
 
+**`acpName`** is the canonical tool name resolved from ACP protocol data:
+
+- For MCP-bridged tools: the stripped tool ID (e.g. `"read_file"` from `"agentbridge-read_file"`)
+- For known built-in tools: the lowercase name (e.g. `"bash"`, `"grep"`)
+- For unrecognized tools: the ACP `kind` value (e.g. `"read"`, `"execute"`)
+
+**`getEffectiveToolName()`** returns the best available name in priority order:
+`mcpToolName` → `acpName` → `acpTitle` → `"unknown"`
+
 ### States
 
-| State       | Meaning                                                           |
-|-------------|-------------------------------------------------------------------|
-| `PENDING`   | ACP reported the call, MCP has not started                        |
-| `RUNNING`   | MCP execution in progress                                         |
-| `COMPLETED` | MCP execution finished successfully                               |
-| `FAILED`    | MCP execution finished with error                                 |
-| `EXTERNAL`  | MCP-only call that was never correlated with ACP               |
+| State       | Meaning                                          |
+|-------------|--------------------------------------------------|
+| `PENDING`   | ACP reported the call, MCP has not started       |
+| `RUNNING`   | MCP execution in progress                        |
+| `COMPLETED` | MCP execution finished successfully              |
+| `FAILED`    | MCP execution finished with error                |
+| `EXTERNAL`  | MCP-only call that was never correlated with ACP |
 
 ### Routing Types
 
@@ -80,7 +89,7 @@ updates the record's hash and retries correlation against orphan MCP records.
 When a record becomes correlated:
 
 - `isCorrelated()` returns `true`
-- `getEffectiveToolName()` returns the confirmed MCP tool name (preferred over ACP title)
+- `getEffectiveToolName()` returns the best name: mcpToolName → acpName → acpTitle
 - `onCorrelated` event fires to listeners (e.g. UI updates chip border style)
 
 ## Registration Flow
@@ -89,7 +98,7 @@ When a record becomes correlated:
 
 ```
 1. PromptOrchestrator receives tool_call from ACP stream
-2. Calls tracker.acpRegister(acpClientId, title, args, hash, routingType, toolUseId)
+2. Calls tracker.acpRegister(acpClientId, acpName, title, args, kind, routingType, toolUseId)
 3. Tracker creates record with PENDING state, fires onAcpRegistered
 4. If args hash matches an existing MCP-only record → merge + fire onCorrelated
 5. PromptOrchestrator passes recordId to ChatConsolePanel for DOM chip creation
@@ -135,10 +144,10 @@ Records are removed from the live set when they are no longer needed:
    is called. ACP is the ground truth for when an agent is done with a call.
 
 2. **MCP-only calls** (no ACP counterpart): flushed when a newer ACP-correlated call
-   arrives, but only if the MCP-only record was inserted before the correlated record
-   in the live set *and* has already completed execution (`mcpResult != null`). Records
-   still executing are kept — they might still receive an ACP match from a later stream
-   event. This is handled by `flushOlderUncorrelatedMcpRecords(currentSequence, correlatedRecordId)`.
+   arrives, but only if the MCP-only record has already completed execution
+   (`mcpResult != null`). Records still executing are kept — they might still receive
+   an ACP match from a later stream event. This is handled by
+   `flushOlderUncorrelatedMcpRecords(correlatedRecordId)`.
 
 3. **`clear()`**: called at session end to flush all remaining records.
 
@@ -151,23 +160,38 @@ Records are removed from the live set when they are no longer needed:
 | `findByMcpCall(toolName, args)` | MCP tab: find ACP metadata for an MCP execution     |
 | `getStoredResult(recordId)`     | Retrieve cached MCP result by record ID             |
 
-## Client-Specific Tool ID Resolution
+## Client-Specific Tool Name Resolution
 
-ACP clients resolve tool names differently. The `resolveToolId` method in each client
-maps the protocol title to an internal tool ID:
+ACP clients resolve tool names through two methods:
 
-- **MCP tools**: Strip the MCP prefix (e.g. `agentbridge-read_file` → `read_file`)
-- **Known built-in tools**: Normalize to lowercase (e.g. `Bash` → `bash`)
-- **Unrecognized titles**: Pass through as-is — `ToolCallTracker` will correct the
-  display name to the confirmed MCP tool name once execution is correlated
+### `resolveToolId(title)` — for MCP-bridged tools
+
+Maps the protocol title to a bare tool ID by stripping the MCP prefix:
+
+- **Copilot CLI**: `agentbridge-read_file` → `read_file`
+- **OpenCode**: `agentbridge_read_file` → `read_file`
+- **Hermes**: `mcp_agentbridge_read_file` → `read_file`
+- **Kiro**: `@agentbridge/read_file` → `read_file`
+
+### `resolveAcpName(title, kind)` — canonical name for all tools
+
+Called during ACP registration to produce the `acpName` field:
+
+- If title starts with MCP prefix → `resolveToolId(title)` (e.g. `"read_file"`)
+- If title is a known built-in name → lowercase title (e.g. `"bash"`)
+- Otherwise → the `kind` value (e.g. `"read"`, `"execute"`, `"fetch"`)
+
+The ACP `title` is always a display string and is **never** used as a tool name.
+It is stored in `acpTitle` and `displayName` for UI rendering only.
 
 ## File Reference
 
-| File                            | Responsibility                                       |
-|---------------------------------|------------------------------------------------------|
-| `services/ToolCallTracker.java` | Single source of truth, correlation, events          |
-| `services/ToolCallRecord.java`  | Mutable record aggregating ACP + MCP data            |
-| `ui/PromptOrchestrator.kt`      | ACP-side registration (`acpRegister`, `acpComplete`) |
-| `psi/PsiBridgeService.java`     | MCP-side registration (`mcpRegister`, `mcpComplete`) |
-| `ui/ChatConsolePanel.kt`        | UI listener for chip state updates                   |
-| `services/ToolCallHasher.java`  | Deterministic JSON hashing utility                   |
+| File                                      | Responsibility                                       |
+|-------------------------------------------|------------------------------------------------------|
+| `services/ToolCallTracker.java`           | Single source of truth, correlation, events          |
+| `services/ToolCallRecord.java`            | Mutable record aggregating ACP + MCP data            |
+| `ui/PromptOrchestrator.kt`                | ACP-side registration (`acpRegister`, `acpComplete`) |
+| `psi/PsiBridgeService.java`               | MCP-side registration (`mcpRegister`, `mcpComplete`) |
+| `ui/ChatConsolePanel.kt`                  | UI listener for chip state updates                   |
+| `services/ToolCallHasher.java`            | Deterministic JSON hashing utility                   |
+| `session/db/ToolCallStatsEnrichment.java` | Record for MCP stats DB enrichment                   |
