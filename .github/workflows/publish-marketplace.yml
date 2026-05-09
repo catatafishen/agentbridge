@@ -76,7 +76,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Selected:** \`$SELECTED_TAG\`" >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Step 1: Extract and display the changelog for review ──────────────
+  # ── Step 1: Show release notes for review and editing ───────────────
   preview:
     name: Preview changelog for ${{ needs.resolve-tag.outputs.tag }}
     needs: resolve-tag
@@ -89,54 +89,42 @@ jobs:
         with:
           egress-policy: audit
 
-      - name: Download plugin ZIP from GitHub Release
+      - name: Display release notes for review
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
-        run: |
-          gh release download "$RELEASE_TAG" \
-            --repo "${{ github.repository }}" \
-            --pattern "agentbridge-*.zip" \
-            --dir release-artifacts
-          ls -la release-artifacts/
-
-      - name: Extract and display changelog
-        env:
-          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
           CHANNEL: ${{ inputs.channel }}
         run: |
-          PLUGIN_ZIP=$(ls release-artifacts/agentbridge-*.zip | head -1)
-          echo "Plugin ZIP: $PLUGIN_ZIP"
+          # Fetch the release body (markdown) — this is editable on GitHub
+          gh release view "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --json body --jq '.body' > release-body.md
 
-          # plugin.xml is inside the main plugin JAR inside the ZIP.
-          # Extract all JARs, then find the one that contains META-INF/plugin.xml
-          # (the first JAR alphabetically is a dependency, not the plugin JAR).
-          rm -rf /tmp/plugin-extract
-          unzip -o -q "$PLUGIN_ZIP" '*.jar' -d /tmp/plugin-extract
-          PLUGIN_JAR=$(find /tmp/plugin-extract -name '*.jar' -exec \
-            sh -c 'unzip -l "$1" META-INF/plugin.xml >/dev/null 2>&1 && echo "$1"' _ {} \; \
-            | head -1)
-          echo "Plugin JAR: ${PLUGIN_JAR:-<not found>}"
+          EDIT_URL="https://github.com/${{ github.repository }}/releases/edit/${RELEASE_TAG}"
 
-          if [[ -n "$PLUGIN_JAR" ]]; then
-            CHANGE_NOTES=$(unzip -p "$PLUGIN_JAR" META-INF/plugin.xml \
-              | sed -n '/<change-notes>/,/<\/change-notes>/p' \
-              | sed 's/<change-notes><!\[CDATA\[//;s/\]\]><\/change-notes>//' \
-              | sed '/^$/d')
-          fi
-
-          echo "### 📋 Changelog for $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [[ -n "${CHANGE_NOTES:-}" ]]; then
-            echo "$CHANGE_NOTES" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "_Could not extract changelog — plugin.xml may use the dev placeholder._" >> "$GITHUB_STEP_SUMMARY"
-          fi
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "---" >> "$GITHUB_STEP_SUMMARY"
-          echo "**Channel:** \`$CHANNEL\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "> ✅ Review the changelog above, then approve the **publish** environment to upload." >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### 📝 Marketplace change notes for $RELEASE_TAG"
+            echo ""
+            echo "The release notes below will be converted to HTML and published"
+            echo "as the marketplace change notes."
+            echo ""
+            echo "---"
+            echo ""
+            cat release-body.md
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Channel:** \`$CHANNEL\`"
+            echo ""
+            echo "### ✏️ Want to edit before publishing?"
+            echo ""
+            echo "1. [**Edit the release notes on GitHub**]($EDIT_URL)"
+            echo "2. Modify the body — it will be converted to HTML for the marketplace"
+            echo "3. Save your changes"
+            echo "4. Then approve the **marketplace** environment below"
+            echo ""
+            echo "> If the notes look good as-is, just approve directly."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Step 2: Upload (requires 'marketplace' environment approval) ──────
   publish:
@@ -167,6 +155,107 @@ jobs:
             --pattern "agentbridge-*.zip" \
             --dir release-artifacts
           ls -la release-artifacts/
+
+      - name: Read release notes and convert to HTML
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.resolve-tag.outputs.tag }}
+        run: |
+          # Read the (potentially edited) release body
+          gh release view "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --json body --jq '.body' > release-body.md
+
+          # Convert GitHub-Flavored Markdown → HTML
+          # pandoc is pre-installed on ubuntu-latest runners
+          pandoc -f gfm -t html --no-highlight release-body.md -o release-body.html
+
+          # Strip <details>/<summary> wrappers (marketplace may not render them)
+          # but keep the content inside visible
+          sed -i \
+            -e 's/<details>//g' \
+            -e 's/<\/details>//g' \
+            -e 's/<summary>[^<]*<\/summary>//g' \
+            release-body.html
+
+          # Assemble full marketplace changelog: static header + release notes
+          cat > marketplace-changelog.html << 'HEADER'
+          <p><b>AgentBridge</b> connects AI coding agents to your IDE via 100+ MCP tools
+          for code intelligence, navigation, editing, debugging, and git.</p>
+          <p>
+            <a href="https://github.com/catatafishen/agentbridge">GitHub</a> &middot;
+            <a href="https://github.com/catatafishen/agentbridge/releases">All Releases</a>
+          </p>
+          <hr/>
+          HEADER
+          cat release-body.html >> marketplace-changelog.html
+
+          echo "### Generated marketplace HTML" >> "$GITHUB_STEP_SUMMARY"
+          echo '```html' >> "$GITHUB_STEP_SUMMARY"
+          cat marketplace-changelog.html >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Patch plugin ZIP with updated changelog
+        run: |
+          PLUGIN_ZIP=$(ls release-artifacts/agentbridge-*.zip | head -1)
+          echo "Patching: $PLUGIN_ZIP"
+
+          # Unzip the outer plugin distribution
+          mkdir -p work/plugin
+          unzip -o -q "$PLUGIN_ZIP" -d work/plugin
+
+          # Find the JAR that contains META-INF/plugin.xml
+          MAIN_JAR=$(find work/plugin -name '*.jar' -exec \
+            sh -c 'unzip -l "$1" META-INF/plugin.xml >/dev/null 2>&1 && echo "$1"' _ {} \; \
+            | head -1)
+
+          if [[ -z "$MAIN_JAR" ]]; then
+            echo "::error::Could not find plugin JAR with META-INF/plugin.xml"
+            exit 1
+          fi
+          echo "Plugin JAR: $MAIN_JAR"
+
+          # Extract plugin.xml from the JAR
+          mkdir -p work/xml
+          unzip -o -q "$MAIN_JAR" META-INF/plugin.xml -d work/xml
+
+          # Replace <change-notes> section with the new HTML
+          python3 << 'PYEOF'
+          import re
+
+          with open('work/xml/META-INF/plugin.xml') as f:
+              xml = f.read()
+          with open('marketplace-changelog.html') as f:
+              notes = f.read()
+
+          patched = re.sub(
+              r'<change-notes>.*?</change-notes>',
+              '<change-notes><![CDATA[\n' + notes + '\n]]></change-notes>',
+              xml, flags=re.DOTALL
+          )
+
+          if patched == xml:
+              print("::warning::No <change-notes> section found — changelog not patched")
+          else:
+              print("Patched <change-notes> section in plugin.xml")
+
+          with open('work/xml/META-INF/plugin.xml', 'w') as f:
+              f.write(patched)
+          PYEOF
+
+          # Update the JAR with the modified plugin.xml
+          MAIN_JAR_ABS=$(realpath "$MAIN_JAR")
+          (cd work/xml && zip -q "$MAIN_JAR_ABS" META-INF/plugin.xml)
+
+          # Repackage the outer ZIP
+          PATCHED_ZIP="patched-$(basename "$PLUGIN_ZIP")"
+          (cd work/plugin && zip -r -q "../../$PATCHED_ZIP" .)
+
+          # Replace original with patched version
+          rm -rf release-artifacts
+          mkdir release-artifacts
+          mv "$PATCHED_ZIP" "release-artifacts/$(basename "$PLUGIN_ZIP")"
+          echo "Patched ZIP ready: release-artifacts/$(basename "$PLUGIN_ZIP")"
 
       - name: Upload to JetBrains Marketplace
         env:
