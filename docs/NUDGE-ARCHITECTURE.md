@@ -78,6 +78,8 @@ graph TD
 ## REPRIMAND nudge lifecycle
 
 Triggered when the agent calls a native tool (bash, grep, read…) instead of the MCP equivalent.
+The reprimand message explains three categories of harm: bypassed identity hooks, lost follow-agent
+visibility, and broken IDE buffer sync.
 
 ```mermaid
 sequenceDiagram

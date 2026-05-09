@@ -8,6 +8,8 @@ import com.github.catatafishen.agentbridge.agent.AbstractAgentClient;
 import com.github.catatafishen.agentbridge.agent.AgentSessionException;
 import com.github.catatafishen.agentbridge.services.ActiveAgentManager;
 import com.github.catatafishen.agentbridge.services.AgentNudgeService;
+import com.github.catatafishen.agentbridge.services.AgentProfile;
+import com.github.catatafishen.agentbridge.services.AgentProfileManager;
 import com.github.catatafishen.agentbridge.services.ToolDefinition;
 import com.github.catatafishen.agentbridge.services.ToolRegistry;
 import com.github.catatafishen.agentbridge.ui.NudgeSource;
@@ -271,7 +273,9 @@ public final class CopilotClient extends AcpClient {
 
     @Override
     protected boolean shouldStripNonEssentialPath() {
-        return true;
+        AgentProfileManager mgr = AgentProfileManager.getInstance();
+        AgentProfile profile = mgr.getProfile(AGENT_ID);
+        return profile != null && profile.isStripNonEssentialPath();
     }
 
     // ─── Session ─────────────────────────────────────
@@ -617,7 +621,9 @@ public final class CopilotClient extends AcpClient {
     }
 
     private static String buildReprimand(String kind) {
-        return "You used native " + kind + " tools. Use Agentbridge MCP tools instead.";
+        return "You used native " + kind + " tools. Use Agentbridge MCP tools instead — "
+            + "native tools bypass the plugin's identity hooks, follow-agent visibility, "
+            + "and IDE buffer sync.";
     }
 
     /**
