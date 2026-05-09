@@ -254,6 +254,28 @@ public abstract class FileTool extends Tool {
     private static volatile long lastProjectViewSelectMs;
 
     /**
+     * Minimum interval between file-open navigations. When multiple tool calls
+     * arrive in a burst (e.g. 10+ read_file calls within 1 second), each one
+     * triggers {@code followFileIfEnabled}, which opens the file in the editor.
+     * Opening a file triggers IntelliJ's VCS integration (git log, git blame for
+     * annotations), and cascading git operations can block EDT for tens of seconds.
+     *
+     * <p>This cooldown ensures only the first file-open in a burst window actually
+     * navigates; subsequent calls within the window are silently dropped. The
+     * {@link #NAVIGATING} guard prevents <i>reentrant</i> calls within a single
+     * EDT dispatch, but does not prevent sequential {@code invokeLater} dispatches
+     * from opening many files in rapid succession — this cooldown fills that gap.
+     *
+     * <p><b>Incident reference:</b> 2026-05-09: 10+ simultaneous read_file calls
+     * triggered VCS annotations on each file → git log (54s) + git blame (80s)
+     * blocked EDT for 72 seconds → permanent JCEF OSR freeze.
+     *
+     * @see com.github.catatafishen.agentbridge.ui.EdtFreezeRecovery
+     */
+    private static final long FOLLOW_FILE_COOLDOWN_MS = 2_000;
+    private static volatile long lastFollowFileMs;
+
+    /**
      * Notifies the {@link AgentEditSession} that a file is about to be modified.
      * Starts the session (if the review setting is enabled), captures a before-snapshot,
      * and sets the agent-edit marker so the session's document listener can distinguish
@@ -326,6 +348,14 @@ public abstract class FileTool extends Tool {
             LOG.debug("followFileIfEnabled skipped: setting disabled for project " + project.getName());
             return;
         }
+
+        long now = System.currentTimeMillis();
+        if (now - lastFollowFileMs < FOLLOW_FILE_COOLDOWN_MS) {
+            LOG.info("followFileIfEnabled throttled: " + pathStr
+                + " (cooldown " + FOLLOW_FILE_COOLDOWN_MS + "ms)");
+            return;
+        }
+        lastFollowFileMs = now;
 
         EdtUtil.invokeLater(() -> {
             AtomicBoolean nav = NAVIGATING.computeIfAbsent(project, k -> new AtomicBoolean(false));

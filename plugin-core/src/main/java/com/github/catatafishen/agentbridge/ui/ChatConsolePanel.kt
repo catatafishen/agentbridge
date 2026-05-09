@@ -1572,6 +1572,9 @@ class ChatConsolePanel(
      * Detects when the panel moves to a different monitor (or the underlying
      * display changes) and forces JCEF's OSR renderer to recover. All logic
      * lives in [MonitorSwitchRecovery]; see issue #237.
+     *
+     * Also registers with [EdtFreezeRecovery] to recover after prolonged EDT
+     * blocks (e.g. cascading VCS operations blocking EDT for 30+ seconds).
      */
     private fun setupMonitorChangeListener() {
         val b = browser ?: return
@@ -1580,6 +1583,9 @@ class ChatConsolePanel(
             onRecovered = { recoverBrowserStateAfterMonitorSwitch() },
             parentDisposable = this,
         ).also { it.install() }
+
+        val freezeRecovery = EdtFreezeRecovery.getInstance(this)
+        freezeRecovery.register(b) { recoverBrowserStateAfterMonitorSwitch() }
     }
 
     // ── Permission requests ────────────────────────────────────────
