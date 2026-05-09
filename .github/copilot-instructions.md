@@ -261,6 +261,22 @@ Always edit the **source** files in `plugin-core/chat-ui/src/` and run the build
 - **Testing**: JUnit 5, unit tests via `run_tests`
 - **All code**: Java 21. Kotlin shims only when IntelliJ API requires it.
 
+### GitHub Operations
+
+When working with GitHub (PRs, issues, comments, API calls), use either:
+
+- `agentbridge-http_request` — for GitHub REST API calls directly
+- `agentbridge-run_command` with `gh` — for operations where the `gh` CLI is
+  more convenient
+
+**Authentication is handled automatically by the plugin.** Short-lived bot
+identity tokens are silently injected into outgoing requests by the plugin's MCP
+hooks. You do not need to manage tokens or pass credentials — either approach
+works and auth "just works".
+
+Avoid using native `bash` with `gh` — route through `agentbridge-run_command`
+so the call is visible in the IDE Run panel and goes through the plugin's hooks.
+
 ### JCEF Cursor Bridge
 
 CSS `cursor` values in the JCEF chat panel do **not** propagate to the Swing host. All cursor
