@@ -5,8 +5,12 @@ import kotlin.text.Regex;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -65,34 +69,26 @@ class InspectionResultRendererTest {
             assertEquals("Unused variable 'x'", match.getGroupValues().get(4));
         }
 
-        @Test
-        void matchesFindingWithToolId() {
-            String line = "com/example/Foo.kt:10 [WARNING/SpellCheckingInspection] Typo in 'teh'";
-            MatchResult match = FINDING_PATTERN.matchEntire(line);
-            assertNotNull(match);
-            assertEquals("WARNING/SpellCheckingInspection", match.getGroupValues().get(3));
+        static Stream<Arguments> findingPatternCases() {
+            return Stream.of(
+                Arguments.of("com/example/Foo.kt:10 [WARNING/SpellCheckingInspection] Typo in 'teh'", 3, "WARNING/SpellCheckingInspection"),
+                Arguments.of("File.java:1 [WEAK_WARNING] Redundant cast", 3, "WEAK_WARNING"),
+                Arguments.of("very/deep/nested/path/to/file/Example.java:999 [INFO] Message", 1, "very/deep/nested/path/to/file/Example.java")
+            );
         }
 
-        @Test
-        void matchesWeakWarning() {
-            String line = "File.java:1 [WEAK_WARNING] Redundant cast";
-            MatchResult match = FINDING_PATTERN.matchEntire(line);
+        @ParameterizedTest
+        @MethodSource("findingPatternCases")
+        void matchesFindingPattern(String input, int groupIndex, String expectedValue) {
+            MatchResult match = FINDING_PATTERN.matchEntire(input);
             assertNotNull(match);
-            assertEquals("WEAK_WARNING", match.getGroupValues().get(3));
+            assertEquals(expectedValue, match.getGroupValues().get(groupIndex));
         }
 
         @ParameterizedTest
         @ValueSource(strings = {"", "Found 5 problems across 3 files"})
         void doesNotMatchNonFindingInput(String input) {
             assertNull(FINDING_PATTERN.matchEntire(input));
-        }
-
-        @Test
-        void matchesLongPath() {
-            String line = "very/deep/nested/path/to/file/Example.java:999 [INFO] Message";
-            MatchResult match = FINDING_PATTERN.matchEntire(line);
-            assertNotNull(match);
-            assertEquals("very/deep/nested/path/to/file/Example.java", match.getGroupValues().get(1));
         }
     }
 

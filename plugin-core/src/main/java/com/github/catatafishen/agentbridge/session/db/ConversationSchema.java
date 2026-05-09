@@ -284,7 +284,15 @@ final class ConversationSchema {
                 is_mcp            INTEGER
             )
             """);
-        stmt.execute("INSERT INTO tool_call_events SELECT * FROM tool_call_events_old");
+        stmt.execute("""
+            INSERT INTO tool_call_events (event_id, tool_name, tool_kind, category, client_id,
+                display_name, arguments, result, input_size_bytes, output_size_bytes, duration_ms,
+                success, error_message, status, file_path, auto_denied, denial_reason, is_mcp)
+            SELECT event_id, tool_name, tool_kind, category, client_id,
+                display_name, arguments, result, input_size_bytes, output_size_bytes, duration_ms,
+                success, error_message, status, file_path, auto_denied, denial_reason, is_mcp
+            FROM tool_call_events_old
+            """);
         stmt.execute("DROP TABLE tool_call_events_old");
         stmt.execute("CREATE INDEX idx_tc_tool_name ON tool_call_events(tool_name)");
         stmt.execute("CREATE INDEX idx_tc_client ON tool_call_events(client_id)");

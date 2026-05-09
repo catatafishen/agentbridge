@@ -54,7 +54,7 @@ public final class HermesClient extends AcpClient {
     protected List<String> buildCommand(String cwd, int mcpPort) {
         // --accept-hooks auto-approves shell hooks that would otherwise prompt
         // on a TTY we don't have when launched from the IDE plugin.
-        return List.of("hermes", "acp", "--accept-hooks");
+        return List.of(AGENT_ID, "acp", "--accept-hooks");
     }
 
     @Override

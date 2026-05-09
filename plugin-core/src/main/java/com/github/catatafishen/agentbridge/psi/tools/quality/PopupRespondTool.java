@@ -194,6 +194,9 @@ public final class PopupRespondTool extends QualityTool {
             }
             return result;
         } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             LOG.warn("popup_respond: replay of '" + taken.originalTool() + "' failed", e);
             return "Error: replay failed: " + e.getMessage();
         }
