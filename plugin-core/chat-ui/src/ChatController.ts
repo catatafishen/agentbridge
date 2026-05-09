@@ -111,6 +111,21 @@ function _buildTurnSummaryBar(stats: {
     return bar;
 }
 
+/** Close all open nudge info popups when clicking anywhere outside them. */
+let _nudgeInfoDocListenerAdded = false;
+function _ensureNudgeInfoDocListener(): void {
+    if (_nudgeInfoDocListenerAdded) return;
+    _nudgeInfoDocListenerAdded = true;
+    document.addEventListener('click', (e: Event) => {
+        if (!(e.target as HTMLElement).closest('.nudge-info-btn')) {
+            document.querySelectorAll<HTMLElement>('.nudge-info-btn.nudge-info-open').forEach(b => {
+                b.classList.remove('nudge-info-open');
+                b.setAttribute('aria-expanded', 'false');
+            });
+        }
+    });
+}
+
 const ChatController = {
     _domMessageLimit: 80,
 
@@ -1001,17 +1016,35 @@ const ChatController = {
             infoBtn.type = 'button';
             infoBtn.className = 'nudge-info-btn';
             infoBtn.setAttribute('aria-label', 'About this nudge');
+            infoBtn.setAttribute('aria-expanded', 'false');
             infoBtn.textContent = '?';
-            const tooltip = document.createElement('div');
-            tooltip.className = 'nudge-info-tooltip';
-            tooltip.innerHTML =
+            const popup = document.createElement('div');
+            popup.className = 'nudge-info-tooltip';
+            popup.innerHTML =
                 'AgentBridge automatically sent this nudge to correct the agent\u2019s tool usage. ' +
                 '<a class="nudge-settings-link" href="#">Open UI/UX settings</a>';
-            tooltip.querySelector('.nudge-settings-link')!.addEventListener('click', (e: Event) => {
+            popup.querySelector('.nudge-settings-link')!.addEventListener('click', (e: Event) => {
                 e.preventDefault();
+                e.stopPropagation();
+                infoBtn.classList.remove('nudge-info-open');
+                infoBtn.setAttribute('aria-expanded', 'false');
                 (globalThis as any)._bridge?.openSettings?.();
             });
-            infoBtn.appendChild(tooltip);
+            infoBtn.appendChild(popup);
+            infoBtn.addEventListener('click', (e: Event) => {
+                e.stopPropagation();
+                const willOpen = !infoBtn.classList.contains('nudge-info-open');
+                // Close any other open popups first
+                document.querySelectorAll<HTMLElement>('.nudge-info-btn.nudge-info-open').forEach(b => {
+                    b.classList.remove('nudge-info-open');
+                    b.setAttribute('aria-expanded', 'false');
+                });
+                if (willOpen) {
+                    infoBtn.classList.add('nudge-info-open');
+                    infoBtn.setAttribute('aria-expanded', 'true');
+                }
+            });
+            _ensureNudgeInfoDocListener();
             bubble.appendChild(infoBtn);
         }
         const cancelX = document.createElement('button');
