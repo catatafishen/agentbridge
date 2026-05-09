@@ -270,6 +270,53 @@ Every file write through `write_file` triggers:
 
 This runs inside a single undoable command group on the EDT.
 
+### JCEF OSR Freeze After Prolonged EDT Block
+
+**Summary:** A prolonged EDT (Event Dispatch Thread) freeze (30+ seconds) can permanently stall
+the JCEF off-screen renderer. The JS engine remains alive (`executeJs` succeeds, DOM updates),
+but the visual viewport is stuck on the pre-freeze frame.
+
+**Chain of events (first observed 2026-05-09):**
+
+1. **Trigger:** Burst of 10+ simultaneous `read_file` MCP tool calls.
+2. **Amplification:** Each `read_file` call invokes `followFileIfEnabled()`, which opens the file
+   in the editor via `OpenFileDescriptor.navigate()`.
+3. **VCS cascade:** Opening each file triggers IntelliJ's VCS integration — `git log` (to fetch
+   revision info) and `git blame` (for gutter annotations) per file. On large repositories these
+   can take 10–80 seconds *each*.
+4. **EDT blocked:** The git operations cascaded, blocking EDT for 72 seconds total
+   (`git log` 54s + `git log` 12s + `git blame` 80s).
+5. **JCEF desynchronized:** In OSR mode, CEF delivers rendered frames to Swing via `onPaint()`
+   callbacks. During the freeze, Swing couldn't process `repaint()`. After EDT unblocked, CEF
+   stopped delivering new frames — it believed the last frame was acknowledged, but Swing never
+   actually painted it. Without a `wasResized()` or `invalidate()` signal, no fresh frame was
+   ever sent.
+6. **Permanent freeze:** The panel appeared permanently frozen — the scrollbar indicated more
+   content below (DOM was updated by JS), but the visual viewport was stuck and unresponsive
+   to mouse events.
+
+**Defenses implemented:**
+
+| Defense | Class | Purpose |
+|---------|-------|---------|
+| `EdtFreezeRecovery` | `ui/EdtFreezeRecovery.kt` | EDT heartbeat monitor. Detects freezes >30s and triggers JCEF OSR recovery (`setWindowVisibility` toggle + `wasResized` + `invalidate`) on all registered browsers. Logs at ERROR level. |
+| `followFileIfEnabled` cooldown | `psi/tools/file/FileTool.java` | 2-second cooldown between file-open navigations. When 10+ tool calls arrive in a burst, only the first opens a file; subsequent calls are throttled. Prevents cascading VCS operations. |
+| `MonitorSwitchRecovery` | `ui/MonitorSwitchRecovery.kt` | Pre-existing. Recovers JCEF after monitor/display changes. Same recovery sequence, different trigger. |
+
+**Debugging similar issues:**
+
+1. Check `~/.cache/JetBrains/IntelliJIdea*/log/idea.log` (and rotated `idea.1.log`, `idea.2.log`)
+   for `UI was frozen for Nms` from `PerformanceWatcherImpl`.
+2. Look for `git log took Nms` or `git blame took Nms` from `git4idea.commands.GitHandler`.
+3. Check `ActionUpdater` logs — `N ms to grab EDT` values above 100ms indicate EDT contention.
+   Values above 1000ms indicate a serious freeze.
+4. Thread dumps are saved to `~/.cache/JetBrains/IntelliJIdea*/log/threadDumps-freeze-*`.
+   These show what was on EDT during the freeze.
+5. Our `EdtFreezeRecovery` logs at ERROR level: search for `EDT was unresponsive for` to find
+   automatic recovery events.
+6. The `read_ide_log` MCP tool only reads the current in-memory log — for historical analysis,
+   grep the rotated log files directly.
+
 ### JCEF Cursor Bridge
 
 JCEF does **not** propagate CSS `cursor` values to the Swing host component. Setting
