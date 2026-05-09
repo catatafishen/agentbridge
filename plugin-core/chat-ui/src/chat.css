@@ -2924,6 +2924,12 @@ pre.word-wrap code {
     background: rgba(128, 128, 128, 0.25);
 }
 
+.nudge-info-btn.nudge-info-open {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.3);
+    outline: 1px solid rgba(128, 128, 128, 0.4);
+}
+
 .nudge-info-tooltip {
     display: none;
     position: absolute;
@@ -2944,8 +2950,7 @@ pre.word-wrap code {
     pointer-events: auto;
 }
 
-.nudge-info-btn:hover .nudge-info-tooltip,
-.nudge-info-tooltip:hover {
+.nudge-info-btn.nudge-info-open .nudge-info-tooltip {
     display: block;
 }
 
