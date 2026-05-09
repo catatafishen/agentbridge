@@ -560,19 +560,16 @@ public final class CopilotClient extends AcpClient {
 
     // ─── Built-in tool reprimand ─────────────────────────────────────────────
 
-    /**
-     * Detects built-in tool calls in the session update stream and fires a reprimand nudge.
-     * This handles tools that execute WITHOUT requesting permission (e.g. "safe" read/search
-     * tools like grep, glob, view that Copilot may run silently without an ACP permission event).
-     * Tools that DO request permission are handled separately by the permission handler
-     * via auto-deny, but that path is only reached when Copilot asks — not when it skips the ask.
-     */
     @Override
     protected SessionUpdate processUpdate(SessionUpdate update) {
         if (update instanceof SessionUpdate.ToolCall toolCall && !toolCall.isSubAgent()) {
             // Skip kind=OTHER — these are meta-tools (report_intent, sql, skill) or
             // third-party MCP tools the user explicitly configured. No reprimand needed.
             if (toolCall.kind() == SessionUpdate.ToolKind.OTHER) return update;
+
+            // Skip reprimands during history replay — historical tool calls are outside the
+            // agent's current context, so reprimanding would be confusing and spurious.
+            if (isRestoringHistory()) return update;
 
             String title = toolCall.title();
             boolean isBuiltIn = !isMcpToolTitle(title)

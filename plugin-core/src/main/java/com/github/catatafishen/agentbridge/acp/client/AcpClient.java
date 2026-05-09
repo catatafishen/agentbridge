@@ -634,6 +634,15 @@ public abstract class AcpClient extends AbstractAgentClient {
     }
 
     /**
+     * Returns {@code true} while {@link #sendLoadSessionRequest} is replaying historical
+     * {@code session/update} notifications. Subclasses can use this to skip side-effects
+     * (e.g. reprimand nudges) that should not fire for historical tool calls.
+     */
+    protected boolean isRestoringHistory() {
+        return restoringHistory;
+    }
+
+    /**
      * Enables conversation history injection as a fallback when session loading fails.
      * Shows a notification to the user explaining the limitation if resumption was expected.
      *
