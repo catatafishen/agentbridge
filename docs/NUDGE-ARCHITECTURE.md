@@ -181,3 +181,8 @@ doesn't lose their manually-typed instruction.
 4. **`clearHumanNudges()` fires no events.** It is a silent purge — not a cancellation.
 5. **`cancelNudge()` fires `onNudgeCancelled`.** It is for explicit user-initiated cancellation
    only (cancel button). Coalescing and turn-start cleanup do not use it.
+6. **`activeBubbleId` must only be read and written on the EDT.** `onNudgeAdded` fires from
+   a background thread — reading `activeBubbleId` there would race against EDT writes. The
+   check for an existing bubble and the update of `activeBubbleId` must both happen inside the
+   `invokeLater` block so each queued runnable sees the value written by the previous one.
+   Violating this causes multiple bubbles to appear simultaneously (issue #523).
