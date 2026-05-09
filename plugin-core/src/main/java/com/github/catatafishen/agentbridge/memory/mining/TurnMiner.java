@@ -177,12 +177,9 @@ public final class TurnMiner {
                 .evidence(evidenceJson)
                 .build();
 
-            String result = context.store().addDrawer(drawer, vector);
-            if (result != null) {
-                extractTriples(combinedText, context.wing(), drawerId, context.kg());
-                return new MineExchangeResult(1, 0, 0);
-            }
-            return new MineExchangeResult(0, 0, 1);
+            context.store().addDrawer(drawer, vector);
+            extractTriples(combinedText, context.wing(), drawerId, context.kg());
+            return new MineExchangeResult(1, 0, 0);
         } catch (Exception e) {
             LOG.warn("Failed to mine exchange", e);
             return new MineExchangeResult(0, 0, 0);

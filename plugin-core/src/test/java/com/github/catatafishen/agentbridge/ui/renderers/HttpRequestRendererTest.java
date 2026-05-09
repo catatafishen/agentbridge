@@ -3,11 +3,18 @@ package com.github.catatafishen.agentbridge.ui.renderers;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
+import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for the pure parsing methods in {@link HttpRequestRenderer}.
@@ -21,49 +28,29 @@ class HttpRequestRendererTest {
     @Nested
     class ParseStatusLine {
 
-        @Test
-        void parsesNewFormat() {
-            var info = HttpRequestRenderer.parseStatusLine("HTTP 200 (123ms)\n\nbody");
-            assertNotNull(info);
-            assertEquals(200, info.code());
-            assertEquals("(123ms)", info.detail());
+        static Stream<Arguments> validStatusLines() {
+            return Stream.of(
+                Arguments.of("HTTP 200 (123ms)\n\nbody", 200, "(123ms)"),
+                Arguments.of("HTTP 404 Not Found\n\n--- Body ---\nNo page", 404, "Not Found"),
+                Arguments.of("HTTP 500 Internal Server Error", 500, "Internal Server Error"),
+                Arguments.of("HTTP 301 Moved Permanently\n\nLocation: /new", 301, "Moved Permanently"),
+                Arguments.of("HTTP 204 No Content", 204, "No Content")
+            );
         }
 
-        @Test
-        void parsesOldFormatWithMessage() {
-            var info = HttpRequestRenderer.parseStatusLine("HTTP 404 Not Found\n\n--- Body ---\nNo page");
+        @ParameterizedTest
+        @MethodSource("validStatusLines")
+        void parsesValidStatusLine(String input, int expectedCode, String expectedDetail) {
+            var info = HttpRequestRenderer.parseStatusLine(input);
             assertNotNull(info);
-            assertEquals(404, info.code());
-            assertEquals("Not Found", info.detail());
-        }
-
-        @Test
-        void parsesServerError() {
-            var info = HttpRequestRenderer.parseStatusLine("HTTP 500 Internal Server Error");
-            assertNotNull(info);
-            assertEquals(500, info.code());
-            assertEquals("Internal Server Error", info.detail());
-        }
-
-        @Test
-        void parsesRedirect() {
-            var info = HttpRequestRenderer.parseStatusLine("HTTP 301 Moved Permanently\n\nLocation: /new");
-            assertNotNull(info);
-            assertEquals(301, info.code());
+            assertEquals(expectedCode, info.code());
+            assertEquals(expectedDetail, info.detail());
         }
 
         @ParameterizedTest
         @ValueSource(strings = {"Not an HTTP response", "", "HTTP200", "HTTP abc OK"})
         void returnsNullForInvalidInput(String input) {
             assertNull(HttpRequestRenderer.parseStatusLine(input));
-        }
-
-        @Test
-        void parsesCodeOnlyWithDetail() {
-            var info = HttpRequestRenderer.parseStatusLine("HTTP 204 No Content");
-            assertNotNull(info);
-            assertEquals(204, info.code());
-            assertEquals("No Content", info.detail());
         }
     }
 

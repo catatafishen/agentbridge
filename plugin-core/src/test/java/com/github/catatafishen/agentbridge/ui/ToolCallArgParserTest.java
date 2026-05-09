@@ -5,8 +5,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
+
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -262,34 +266,22 @@ class ToolCallArgParserTest {
     @DisplayName("extractDiffFromArgs")
     class ExtractDiffFromArgs {
 
-        @Test
+        static Stream<Arguments> validDiffPairs() {
+            return Stream.of(
+                Arguments.of("{\"old_str\":\"foo\",\"new_str\":\"bar\"}", "foo", "bar"),
+                Arguments.of("{\"old_str\":\"\",\"new_str\":\"added\"}", "", "added"),
+                Arguments.of("{\"old_str\":\"removed\",\"new_str\":\"\"}", "removed", "")
+            );
+        }
+
+        @ParameterizedTest
+        @MethodSource("validDiffPairs")
         @DisplayName("extracts old_str and new_str pair")
-        void extractsOldAndNewStr() {
-            Pair<String, String> result =
-                parser.extractDiffFromArgs("{\"old_str\":\"foo\",\"new_str\":\"bar\"}");
+        void extractsDiffPair(String json, String expectedOld, String expectedNew) {
+            Pair<String, String> result = parser.extractDiffFromArgs(json);
             assertNotNull(result);
-            assertEquals("foo", result.getFirst());
-            assertEquals("bar", result.getSecond());
-        }
-
-        @Test
-        @DisplayName("returns pair when old_str is blank but new_str is not")
-        void returnsWhenOldStrBlankNewStrNot() {
-            Pair<String, String> result =
-                parser.extractDiffFromArgs("{\"old_str\":\"\",\"new_str\":\"added\"}");
-            assertNotNull(result);
-            assertEquals("", result.getFirst());
-            assertEquals("added", result.getSecond());
-        }
-
-        @Test
-        @DisplayName("returns pair when new_str is blank but old_str is not")
-        void returnsWhenNewStrBlankOldStrNot() {
-            Pair<String, String> result =
-                parser.extractDiffFromArgs("{\"old_str\":\"removed\",\"new_str\":\"\"}");
-            assertNotNull(result);
-            assertEquals("removed", result.getFirst());
-            assertEquals("", result.getSecond());
+            assertEquals(expectedOld, result.getFirst());
+            assertEquals(expectedNew, result.getSecond());
         }
 
         @ParameterizedTest

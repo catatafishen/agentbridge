@@ -3,7 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools.file;
 import com.github.catatafishen.agentbridge.psi.EdtUtil;
 import com.github.catatafishen.agentbridge.psi.McpErrorCode;
 import com.github.catatafishen.agentbridge.psi.ToolError;
-import com.github.catatafishen.agentbridge.psi.ToolUtils;
+
 import com.google.gson.JsonObject;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.vfs.VirtualFile;

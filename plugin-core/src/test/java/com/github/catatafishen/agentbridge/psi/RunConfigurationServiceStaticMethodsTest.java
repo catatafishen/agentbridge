@@ -14,7 +14,10 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Tests for private static methods in {@link RunConfigurationService} via reflection.
@@ -96,11 +99,22 @@ class RunConfigurationServiceStaticMethodsTest {
             assertNull(call(args, "application"));
         }
 
-        @Test
-        void normalArgsAllowed() throws Exception {
+        static Stream<Arguments> allowedProgramArgs() {
+            return Stream.of(
+                Arguments.of("--verbose --port 8080", "application"),
+                // "test" alone doesn't match general abuse patterns, only gradle-specific check
+                Arguments.of("test --info", "application"),
+                // null configType means we only run general abuse detection (test alone won't match)
+                Arguments.of("test --info", null)
+            );
+        }
+
+        @ParameterizedTest
+        @MethodSource("allowedProgramArgs")
+        void allowedArgsReturnsNull(String programArgs, String configType) throws Exception {
             JsonObject args = new JsonObject();
-            args.addProperty("program_args", "--verbose --port 8080");
-            assertNull(call(args, "application"));
+            args.addProperty("program_args", programArgs);
+            assertNull(call(args, configType));
         }
 
         static Stream<Arguments> blockedCommands() {
@@ -120,22 +134,6 @@ class RunConfigurationServiceStaticMethodsTest {
             assertNotNull(result);
             assertTrue(result.contains(expectedSubstring),
                 "Expected result to contain '" + expectedSubstring + "' but was: " + result);
-        }
-
-        @Test
-        void gradleTestTaskAllowedForNonGradleType() throws Exception {
-            JsonObject args = new JsonObject();
-            args.addProperty("program_args", "test --info");
-            // "test" alone doesn't match general abuse patterns, only gradle-specific check
-            assertNull(call(args, "application"));
-        }
-
-        @Test
-        void nullConfigTypeAllowed() throws Exception {
-            JsonObject args = new JsonObject();
-            args.addProperty("program_args", "test --info");
-            // null configType means we only run general abuse detection (test alone won't match)
-            assertNull(call(args, null));
         }
     }
 }
