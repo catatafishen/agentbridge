@@ -1584,7 +1584,7 @@ class ChatConsolePanel(
             parentDisposable = this,
         ).also { it.install() }
 
-        val freezeRecovery = EdtFreezeRecovery.getInstance(this)
+        val freezeRecovery = project.getService(EdtFreezeRecovery::class.java)
         freezeRecovery.register(b) { recoverBrowserStateAfterMonitorSwitch() }
     }
 

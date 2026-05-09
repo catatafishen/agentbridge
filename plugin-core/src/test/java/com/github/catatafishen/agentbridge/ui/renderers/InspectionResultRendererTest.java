@@ -4,6 +4,7 @@ import kotlin.text.MatchResult;
 import kotlin.text.Regex;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -56,6 +57,7 @@ class InspectionResultRendererTest {
     }
 
     @Nested
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     class FindingPatternRegex {
 
         @Test
@@ -69,7 +71,7 @@ class InspectionResultRendererTest {
             assertEquals("Unused variable 'x'", match.getGroupValues().get(4));
         }
 
-        static Stream<Arguments> findingPatternCases() {
+        Stream<Arguments> findingPatternCases() {
             return Stream.of(
                 Arguments.of("com/example/Foo.kt:10 [WARNING/SpellCheckingInspection] Typo in 'teh'", 3, "WARNING/SpellCheckingInspection"),
                 Arguments.of("File.java:1 [WEAK_WARNING] Redundant cast", 3, "WEAK_WARNING"),

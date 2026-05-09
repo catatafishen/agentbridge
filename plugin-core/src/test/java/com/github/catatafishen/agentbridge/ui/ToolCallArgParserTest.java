@@ -4,6 +4,7 @@ import kotlin.Pair;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -264,9 +265,10 @@ class ToolCallArgParserTest {
 
     @Nested
     @DisplayName("extractDiffFromArgs")
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     class ExtractDiffFromArgs {
 
-        static Stream<Arguments> validDiffPairs() {
+        Stream<Arguments> validDiffPairs() {
             return Stream.of(
                 Arguments.of("{\"old_str\":\"foo\",\"new_str\":\"bar\"}", "foo", "bar"),
                 Arguments.of("{\"old_str\":\"\",\"new_str\":\"added\"}", "", "added"),
