@@ -3,6 +3,7 @@ package com.github.catatafishen.agentbridge.psi.tools;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.util.ThrowableComputable;
+
 import java.util.function.Supplier;
 
 /**
@@ -20,11 +21,12 @@ public final class ApplicationPlatformFacade implements PlatformFacade { // NOSO
 
     static final ApplicationPlatformFacade INSTANCE = new ApplicationPlatformFacade();
 
-    private ApplicationPlatformFacade() {}
+    private ApplicationPlatformFacade() {
+    }
 
     @Override
     public void invokeLater(Runnable action) {
-        ApplicationManager.getApplication().invokeLater(action);
+        com.github.catatafishen.agentbridge.psi.EdtUtil.invokeLater(action);
     }
 
     @Override
@@ -34,12 +36,12 @@ public final class ApplicationPlatformFacade implements PlatformFacade { // NOSO
 
     @Override
     public void invokeAndWait(Runnable action) {
-        ApplicationManager.getApplication().invokeAndWait(action);
+        com.github.catatafishen.agentbridge.psi.EdtUtil.invokeAndWait(action);
     }
 
     @Override
     public void invokeAndWaitWriteAction(Runnable action) {
-        ApplicationManager.getApplication().invokeAndWait(
+        com.github.catatafishen.agentbridge.psi.EdtUtil.invokeAndWait(
             () -> ApplicationManager.getApplication().runWriteAction(action)
         );
     }

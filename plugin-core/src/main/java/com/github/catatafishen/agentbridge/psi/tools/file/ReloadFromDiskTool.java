@@ -158,7 +158,7 @@ public final class ReloadFromDiskTool extends FileTool {
     }
 
     private void commitDocuments() {
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeAndWait(() ->
+        com.github.catatafishen.agentbridge.psi.EdtUtil.invokeAndWait(() ->
             com.intellij.psi.PsiDocumentManager.getInstance(project).commitAllDocuments());
     }
 }
