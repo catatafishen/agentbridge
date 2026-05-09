@@ -269,6 +269,11 @@ public final class CopilotClient extends AcpClient {
         return Map.of();
     }
 
+    @Override
+    protected boolean shouldStripNonEssentialPath() {
+        return true;
+    }
+
     // ─── Session ─────────────────────────────────────
 
     @Override
@@ -481,9 +486,11 @@ public final class CopilotClient extends AcpClient {
             "Full-featured IntelliJ coding assistant with access to all IDE tools",
             merge(allMcpToolIds(), WEB_TOOLS),
             """
-                You are a coding assistant with full access to IntelliJ IDEA tools.
+                You are running inside an IntelliJ IDEA plugin. All interactions with the
+                system go through AgentBridge MCP tools. You do NOT have direct access to
+                git, curl, gh, or any CLI tool — use the agentbridge equivalents instead.
 
-                IMPORTANT — use IntelliJ tools, not shell commands, for the following:
+                IMPORTANT — use IntelliJ MCP tools, not shell commands, for the following:
                 - Git: use git_status, git_diff, git_log, git_commit, git_stage, git_branch, etc.
                   Do NOT run git via run_command or run_in_terminal — it causes editor buffer desync.
                 - File reading: use read_file, not cat/head/tail via run_command.
@@ -491,6 +498,9 @@ public final class CopilotClient extends AcpClient {
                 - Text search: use search_text and search_symbols, not grep/rg via run_command.
                 - File search: use list_project_files, not find via run_command.
                 - Build/test: use build_project and run_tests, not Gradle tasks via run_command.
+                - HTTP/API calls: use http_request, not curl/gh/wget via run_command.
+                  The plugin injects bot identity tokens into http_request — native tools
+                  bypass this and actions will be attributed to the user instead of the bot.
                 """
         );
     }
@@ -501,8 +511,10 @@ public final class CopilotClient extends AcpClient {
             "Read-only IntelliJ code explorer for analysing and understanding a codebase",
             merge(exploreMcpToolIds(), WEB_TOOLS),
             """
-                You are a read-only code analysis assistant. Your role is to explore, search,
-                and explain the codebase — not to make any changes.
+                You are a read-only code analysis assistant running inside an IntelliJ IDEA
+                plugin. Your role is to explore, search, and explain the codebase — not to
+                make any changes. You do NOT have direct access to git, curl, gh, or any
+                CLI tool — use only the AgentBridge MCP tools provided.
 
                 Use IntelliJ tools for all exploration:
                 - read_file, list_project_files, get_file_outline for file content
@@ -521,14 +533,17 @@ public final class CopilotClient extends AcpClient {
             "Focused IntelliJ code editing assistant — makes targeted changes and validates them",
             merge(editMcpToolIds(), WEB_TOOLS),
             """
-                You are a precise code editing assistant. Make targeted, minimal changes
-                and verify them with build_project or run_tests after each edit.
+                You are a precise code editing assistant running inside an IntelliJ IDEA
+                plugin. Make targeted, minimal changes and verify them with build_project
+                or run_tests after each edit. You do NOT have direct access to git, curl,
+                gh, or any CLI tool — use only the AgentBridge MCP tools provided.
 
-                IMPORTANT — use IntelliJ tools, not shell commands:
+                IMPORTANT — use IntelliJ MCP tools, not shell commands:
                 - Git: use git_status, git_diff, git_commit, etc., not git via run_command.
                 - File editing: use edit_text, write_file, replace_symbol_body.
                 - Search: use search_text, search_symbols, not grep via run_command.
                 - Build/test: use build_project and run_tests.
+                - HTTP/API calls: use http_request, not curl/gh via run_command.
                 """
         );
     }

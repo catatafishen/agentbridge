@@ -41,6 +41,7 @@ replacement from the table below instead.
 | List / inspect git state             | `bash git …`          | `agentbridge-git_status` / `_diff` / `_log` / `_blame`    |
 | Stage / commit / push / branch       | `bash git …`          | `agentbridge-git_stage` / `_commit` / `_push` / `_branch` |
 | Delegate a sub-task to another agent | `task`                | Do it yourself using the tools above                      |
+| Make HTTP/API calls (GitHub, etc.)   | `bash curl/gh …`      | `agentbridge-http_request`                                |
 | Announce what you are doing          | `report_intent`       | Omit — the IDE surfaces this via tool call names          |
 
 ### Allowed exceptions
@@ -49,16 +50,29 @@ replacement from the table below instead.
 - `github-mcp-server-*` — remote GitHub queries; no IDE equivalent.
 - `skill`, `sql` — Copilot-internal, no IDE equivalent; use sparingly.
 
-## Why this matters (one paragraph)
+## Why this matters
 
 The IDE has live editor buffers with unsaved edits, a PSI index that understands
-symbols semantically, and a VCS layer that knows what is staged. Built-in CLI
-tools see none of that — they read and write raw disk files behind the IDE's
-back. Every time you use a built-in tool, any unsaved edit in that file is
-invisible to you, subsequent reads through the IDE appear stale, and formatters
-/ inspections run against disk content that does not match what the user sees
-on screen. The host plugin's entire purpose is to keep the IDE authoritative;
-calling a built-in tool defeats that.
+symbols semantically, and a VCS layer that knows what is staged. Using native CLI
+tools instead of MCP equivalents causes **three categories of harm**:
+
+1. **Tool hooks are bypassed.** The plugin injects bot identity tokens, audit
+   trails, and short-lived OAuth credentials into MCP tool calls. Native tools
+   (bash, gh, curl, git) bypass these hooks entirely — API calls will be
+   attributed to the user's personal identity, git commits will use the wrong
+   author, and the audit log will have gaps.
+
+2. **Follow-agent mode is bypassed.** The plugin makes agent actions visible to
+   the user — terminal commands appear in the IDE, file changes are highlighted,
+   git operations show in the VCS panel. Native tools are invisible: the user
+   sees nothing and has no way to monitor or intervene.
+
+3. **IDE buffer sync is lost.** Built-in CLI tools read and write raw disk files
+   behind the IDE's back. Unsaved edits become invisible to the agent, subsequent
+   reads through the IDE appear stale, and formatters / inspections run against
+   disk content that does not match what the user sees. Git commands via bash
+   also modify files and refs outside the IDE's VCS layer, desynchronizing the
+   editor state.
 
 If a built-in tool is the only way to achieve something, say so out loud and ask
 the user — do not silently reach for it.
