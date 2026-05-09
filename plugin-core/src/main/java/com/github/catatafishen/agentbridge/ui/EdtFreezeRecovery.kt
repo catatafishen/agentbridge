@@ -1,8 +1,9 @@
 package com.github.catatafishen.agentbridge.ui
 
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.project.Project
 import com.intellij.ui.jcef.JBCefBrowser
 import javax.swing.SwingUtilities
 import javax.swing.Timer
@@ -10,6 +11,9 @@ import javax.swing.Timer
 /**
  * Detects prolonged EDT (Event Dispatch Thread) freezes and forces JCEF OSR
  * recovery on all registered browsers when a freeze ends.
+ *
+ * Registered as a project-level service so all [ChatConsolePanel] instances
+ * within the same project share a single heartbeat timer and recovery registry.
  *
  * ## Why this exists
  *
@@ -49,8 +53,9 @@ import javax.swing.Timer
  * See `DEVELOPMENT.md` § "JCEF OSR Freeze After Prolonged EDT Block" for
  * the full chain of events.
  */
-internal class EdtFreezeRecovery private constructor(
-    parentDisposable: Disposable,
+@Service(Service.Level.PROJECT)
+internal class EdtFreezeRecovery(
+    @Suppress("unused") private val project: Project,
 ) : Disposable {
 
     private val log = Logger.getInstance(EdtFreezeRecovery::class.java)
@@ -80,7 +85,6 @@ internal class EdtFreezeRecovery private constructor(
     }.apply { isRepeats = true }
 
     init {
-        Disposer.register(parentDisposable, this)
         heartbeatTimer.start()
         log.info("EDT freeze recovery installed (interval=${HEARTBEAT_INTERVAL_MS}ms, threshold=${FREEZE_THRESHOLD_MS}ms)")
     }
@@ -130,19 +134,5 @@ internal class EdtFreezeRecovery private constructor(
     companion object {
         private const val HEARTBEAT_INTERVAL_MS = 5_000
         private const val FREEZE_THRESHOLD_MS = 30_000
-
-        private val instances = java.util.concurrent.ConcurrentHashMap<Disposable, EdtFreezeRecovery>()
-
-        /**
-         * Gets or creates the singleton recovery instance for the given parent disposable.
-         * Typically called once per project with the project as parent.
-         */
-        fun getInstance(parentDisposable: Disposable): EdtFreezeRecovery {
-            return instances.computeIfAbsent(parentDisposable) { parent ->
-                val recovery = EdtFreezeRecovery(parent)
-                Disposer.register(parent) { instances.remove(parent) }
-                recovery
-            }
-        }
     }
 }

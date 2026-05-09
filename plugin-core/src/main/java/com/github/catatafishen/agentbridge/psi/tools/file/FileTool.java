@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Abstract base for file tools. Provides shared static utilities for
@@ -273,7 +274,7 @@ public abstract class FileTool extends Tool {
      * @see com.github.catatafishen.agentbridge.ui.EdtFreezeRecovery
      */
     private static final long FOLLOW_FILE_COOLDOWN_MS = 2_000;
-    private static volatile long lastFollowFileMs;
+    private static final AtomicLong lastFollowFileMs = new AtomicLong();
 
     /**
      * Notifies the {@link AgentEditSession} that a file is about to be modified.
@@ -350,12 +351,13 @@ public abstract class FileTool extends Tool {
         }
 
         long now = System.currentTimeMillis();
-        if (now - lastFollowFileMs < FOLLOW_FILE_COOLDOWN_MS) {
+        long prev = lastFollowFileMs.get();
+        if (now - prev < FOLLOW_FILE_COOLDOWN_MS
+            || !lastFollowFileMs.compareAndSet(prev, now)) {
             LOG.info("followFileIfEnabled throttled: " + pathStr
                 + " (cooldown " + FOLLOW_FILE_COOLDOWN_MS + "ms)");
             return;
         }
-        lastFollowFileMs = now;
 
         EdtUtil.invokeLater(() -> {
             AtomicBoolean nav = NAVIGATING.computeIfAbsent(project, k -> new AtomicBoolean(false));

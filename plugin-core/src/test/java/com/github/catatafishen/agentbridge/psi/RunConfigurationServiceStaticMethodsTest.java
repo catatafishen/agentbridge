@@ -6,6 +6,7 @@ import com.google.gson.JsonPrimitive;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -87,6 +88,7 @@ class RunConfigurationServiceStaticMethodsTest {
     }
 
     @Nested
+    @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     class CheckProgramArgsAbuse {
 
         private String call(JsonObject args, String configType) throws Exception {
@@ -99,7 +101,7 @@ class RunConfigurationServiceStaticMethodsTest {
             assertNull(call(args, "application"));
         }
 
-        static Stream<Arguments> allowedProgramArgs() {
+        Stream<Arguments> allowedProgramArgs() {
             return Stream.of(
                 Arguments.of("--verbose --port 8080", "application"),
                 // "test" alone doesn't match general abuse patterns, only gradle-specific check
@@ -117,7 +119,7 @@ class RunConfigurationServiceStaticMethodsTest {
             assertNull(call(args, configType));
         }
 
-        static Stream<Arguments> blockedCommands() {
+        Stream<Arguments> blockedCommands() {
             return Stream.of(
                 Arguments.of("git push origin main", "application", "Error:"),
                 Arguments.of("test --info", "gradle", "run_tests"),
