@@ -381,19 +381,10 @@ public final class ConversationService implements Disposable {
         return reader.loadAdjacentTurnIds(sessionId, referenceTurnId, count);
     }
 
-    /**
-     * Enriches an existing tool-call event row with performance stats.
-     * Best-effort — silently returns if the writer is unavailable.
-     */
-    @SuppressWarnings("java:S107")
-    // All 8 parameters map to distinct DB columns; a wrapper adds indirection without clarity.
-    public void enrichToolCallStats(@NotNull String toolEventId, long inputSize, long outputSize,
-                                    long durationMs, boolean success, @Nullable String errorMessage,
-                                    @Nullable String category, @Nullable String displayName) {
+    public void enrichToolCallStats(@NotNull ToolCallStatsEnrichment stats) {
         ConversationWriter writer = getOrCreateWriter();
         if (writer == null) return;
-        writer.enrichToolCallStats(toolEventId, inputSize, outputSize, durationMs,
-            success, errorMessage, category, displayName);
+        writer.enrichToolCallStats(stats);
     }
 
     /**
