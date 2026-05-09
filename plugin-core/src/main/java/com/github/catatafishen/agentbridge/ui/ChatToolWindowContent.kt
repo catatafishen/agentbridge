@@ -1893,30 +1893,35 @@ class ChatToolWindowContent(
         // showing/updating the bubble, resolving it when consumed, and removing it when cancelled.
         val nudgeService = AgentNudgeService.getInstance(project)
         nudgeService.addListener(object : AgentNudgeService.Listener {
-            override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
-                val existingId = activeBubbleId
-                if (existingId != null) {
-                    // A bubble is already showing. Replace it with a new one so the cancel
-                    // button holds the new entry's ID. The old entry may have been removed
-                    // from the service by reprimand coalescing, making cancelNudge(existingId)
-                    // a no-op and the bubble un-dismissible.
-                    val mergedText = nudgeService.getPendingNudgesText() ?: entry.text()
-                    ApplicationManager.getApplication().invokeLater {
-                        activeBubbleId = entry.id()
-                        consolePanel.removeNudgeBubble(existingId)
-                        consolePanel.showNudgeBubble(entry.id(), mergedText, entry.source())
-                    }
-                } else if (entry.showBubble()) {
-                    ApplicationManager.getApplication().invokeLater {
-                        activeBubbleId = entry.id()
-                        consolePanel.showNudgeBubble(entry.id(), entry.text(), entry.source())
-                        refreshShortcutHints()
-                    }
-                }
-                if (entry.source() == NudgeSource.HUMAN) {
-                    pendingHumanText = AgentNudgeService.mergeNudges(pendingHumanText, entry.text())
-                }
-            }
+override fun onNudgeAdded(entry: AgentNudgeService.NudgeEntry) {
+    // Track pending human text synchronously so it isn't lost if the nudge is never shown.
+    if (entry.source() == NudgeSource.HUMAN) {
+        pendingHumanText = AgentNudgeService.mergeNudges(pendingHumanText, entry.text())
+    }
+    if (!entry.showBubble()) return
+
+    // IMPORTANT: activeBubbleId must be read INSIDE invokeLater (on the EDT), not here.
+    // onNudgeAdded fires from a background thread. If multiple reprimands arrive before the
+    // EDT processes any of the queued runnables, reading activeBubbleId here would return null
+    // for every call — each would skip the "remove existing bubble" branch and post its own
+    // showNudgeBubble, resulting in multiple visible bubbles. By reading activeBubbleId inside
+    // invokeLater, each queued runnable sees the value written by the previous one, so at most
+    // one bubble is visible at any time.
+    ApplicationManager.getApplication().invokeLater {
+        val existingId = activeBubbleId
+        if (existingId != null) {
+            consolePanel.removeNudgeBubble(existingId)
+        }
+        activeBubbleId = entry.id()
+        // Use the service's current pending text. By the time the EDT runs, reprimand
+        // coalescing may have advanced past this entry, so getPendingNudgesText() reflects
+        // the most recent state. Falls back to entry.text() only when nudges were already
+        // consumed (the bubble will be immediately resolved by onNudgesInjected).
+        val mergedText = nudgeService.getPendingNudgesText() ?: entry.text()
+        consolePanel.showNudgeBubble(entry.id(), mergedText, entry.source())
+        refreshShortcutHints()
+    }
+}
 
             override fun onNudgesInjected(entries: List<AgentNudgeService.NudgeEntry>, mergedText: String) {
                 pendingHumanText = null
