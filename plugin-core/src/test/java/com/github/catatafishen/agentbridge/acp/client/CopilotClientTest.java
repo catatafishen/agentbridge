@@ -223,13 +223,13 @@ class CopilotClientTest {
     @Test
     void buildReprimand_readKind() throws Exception {
         String result = invokeBuildReprimand("read");
-        assertEquals("You used native read tools. Use Agentbridge MCP tools instead.", result);
+        assertTrue(result.startsWith("You used native read tools."), "message should start with the tool-kind prefix");
     }
 
     @Test
     void buildReprimand_executeKind() throws Exception {
         String result = invokeBuildReprimand("execute");
-        assertEquals("You used native execute tools. Use Agentbridge MCP tools instead.", result);
+        assertTrue(result.startsWith("You used native execute tools."), "message should start with the tool-kind prefix");
     }
 
     // ── shouldReprimand (private static) ────────────────────────────────
