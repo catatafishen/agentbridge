@@ -570,6 +570,10 @@ public final class CopilotClient extends AcpClient {
     @Override
     protected SessionUpdate processUpdate(SessionUpdate update) {
         if (update instanceof SessionUpdate.ToolCall toolCall && !toolCall.isSubAgent()) {
+            // Skip kind=OTHER — these are meta-tools (report_intent, sql, skill) or
+            // third-party MCP tools the user explicitly configured. No reprimand needed.
+            if (toolCall.kind() == SessionUpdate.ToolKind.OTHER) return update;
+
             String title = toolCall.title();
             boolean isBuiltIn = !isMcpToolTitle(title)
                 && (KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
