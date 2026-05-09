@@ -571,8 +571,9 @@ public final class CopilotClient extends AcpClient {
     protected SessionUpdate processUpdate(SessionUpdate update) {
         if (update instanceof SessionUpdate.ToolCall toolCall && !toolCall.isSubAgent()) {
             String title = toolCall.title();
-            boolean isBuiltIn = KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
-                || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX));
+            boolean isBuiltIn = !isMcpToolTitle(title)
+                && (KNOWN_BUILTIN_TOOL_NAMES.contains(title.toLowerCase())
+                || (title.contains(" ") && !title.startsWith(MCP_TOOL_PREFIX)));
             if (isBuiltIn && shouldReprimand(title)) {
                 com.github.catatafishen.agentbridge.settings.ChatInputSettings.ReprimandNudgeMode mode =
                     com.github.catatafishen.agentbridge.settings.ChatInputSettings.getInstance().getReprimandNudgeMode();

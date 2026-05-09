@@ -645,6 +645,10 @@ public final class McpProtocolHandler {
         }
         String dbEventId = record != null ? record.getRecordId() : data.toolUseId();
         if (dbEventId == null) return;
+        if (record == null) {
+            LOG.debug("[MCP] No tracker record for tool '" + data.toolName()
+                + "'; falling back to toolUseId '" + dbEventId + "' for DB enrichment");
+        }
 
         ConversationService service = ConversationService.getInstance(project);
         long inputSize = data.inputJson().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
