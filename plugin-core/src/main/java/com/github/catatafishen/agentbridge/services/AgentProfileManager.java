@@ -65,6 +65,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         public String customBinaryPath = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public String prependInstructionsTo = ""; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
         public List<String> customCliModels = new ArrayList<>(); // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
+        public boolean stripNonEssentialPath; // NOSONAR - IntelliJ XmlSerializer persists public state fields directly.
     }
 
     /**
@@ -122,6 +123,9 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
             if (o.customCliModels != null && !o.customCliModels.isEmpty()) {
                 profile.setCustomCliModels(new ArrayList<>(o.customCliModels));
             }
+            if (o.stripNonEssentialPath) {
+                profile.setStripNonEssentialPath(true);
+            }
         }
     }
 
@@ -134,13 +138,16 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         o.prependInstructionsTo = pit.equals(nullToEmpty(defaults.getPrependInstructionsTo())) ? "" : pit;
         List<String> models = current.getCustomCliModels();
         o.customCliModels = models.equals(defaults.getCustomCliModels()) ? new ArrayList<>() : new ArrayList<>(models);
+        o.stripNonEssentialPath = current.isStripNonEssentialPath() != defaults.isStripNonEssentialPath()
+            && current.isStripNonEssentialPath();
         return o;
     }
 
     private static boolean hasUserData(ProfileOverride o) {
         return !o.customBinaryPath.isEmpty()
             || !o.prependInstructionsTo.isEmpty()
-            || !o.customCliModels.isEmpty();
+            || !o.customCliModels.isEmpty()
+            || o.stripNonEssentialPath;
     }
 
     private static String nullToEmpty(@Nullable String s) {
@@ -254,6 +261,7 @@ public final class AgentProfileManager implements PersistentStateComponent<Agent
         p.setInstallUrl("https://github.com/github/copilot-cli#installation");
         p.setSupportsOAuthSignIn(true);
         p.setPrependInstructionsTo(".github/copilot-instructions.md");
+        p.setStripNonEssentialPath(true);
         return p;
     }
 
